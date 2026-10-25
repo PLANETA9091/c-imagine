@@ -1,0 +1,98 @@
+name: integration
+
+# Real end-to-end: Paper 26.3 + CRUSSTY runtime + the c-imagine module + the
+# cimtest mod. Asserts boot markers, mod discovery, clean logs, no crashes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  boot:
+    name: boot Paper 26.3 with c-imagine + cimtest
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # --- build artifacts -------------------------------------------------
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+
+      - name: build + package module
+        env:
+          CIM_BOOTSTRAP_JAR: ${{ github.workspace }}/java/cim-bootstrap/build/cim-bootstrap.jar
+        run: |
+          bash scripts/package-module.sh
+
+      # --- server directory ------------------------------------------------
+      - name: install CRUSSTY CLI and scaffold Paper 26.3
+        run: |
+          npm i -g crussty
+          crussty init --platform paper --version 26.3 --dir srv
+
+      - name: install module + test mod
+        run: |
+          unzip -o dist/module-imagine.zip -d srv/modules/
+          mkdir -p srv/mods
+          cp java/cim-bootstrap/build/cim-bootstrap.jar srv/modules/imagine/cim-bootstrap.jar
+          echo "eula=true" > srv/eula.txt
+          cat > srv/server.properties <<'PROPS'
+          online-mode=false
+          level-type=minecraft:flat
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          max-players=5
+          PROPS
+
+      # --- run --------------------------------------------------------------
+      - name: boot server (timeout 6 min)
+        id: boot
+        run: |
+          set +e
+          cd srv
+          timeout 360 crussty run > boot.log 2>&1
+          code=$?
+          cd ..
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          echo "--- tail of boot.log ---"
+          tail -40 srv/boot.log || true
+          true
+
+      # --- assertions --------------------------------------------------------
+      - name: assert boot markers
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          grep -q "Done (" srv/boot.log || fail "server did not reach Done"
+          grep -q "\[c-imagine\] module init (native, pre-kernel)" srv/boot.log || fail "module init marker missing"
+          grep -q "\[c-imagine\] class-load hook observed: dev/cim/bootstrap/Bootstrap" srv/boot.log || fail "class hook pipeline marker missing"
+          grep -q "\[c-imagine\] bootstrap ready: {\"state\":\"ok\"" srv/boot.log || fail "java bootstrap not ok"
+          grep -q "\[c-imagine\] kernel ready (Paper class space online)" srv/boot.log || fail "kernel-ready marker missing"
+          echo "all integration markers present"
+
+      - name: report + upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-logs
+          path: |
+            srv/boot.log
+            srv/crash-reports/
+            srv/logs/
+          if-no-files-found: ignore

@@ -1,0 +1,51 @@
+name: visual
+
+# Visual parity pipeline. M0: protocol-level smoke of the visual data path
+# (registry snapshots + mapping tables the F2V v2 packet hooks will consume).
+# M5 (roadmap): real vanilla client under xvfb with screenshot diffing
+# against NeoForge-rendered ground truth.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  protocol-smoke:
+    name: visual data path smoke (M0)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: f2v translation-plan smoke test
+        run: |
+          # The plan builder is the contract every M4 packet rewrite obeys.
+          cargo test -p cim-f2v
+          cargo test -p cim-registry
+
+      - name: visual contract fixture (cimtest defaults)
+        run: |
+          cat > /tmp/visual-contract.md <<'EOF'
+          | modded key | renders as (vanilla) | scale |
+          |---|---|---|
+          | cimtest:test_entity | minecraft:iron_golem | 0.5 |
+          | cimtest:test_block | minecraft:iron_block | 1.0 |
+          EOF
+          cat /tmp/visual-contract.md >> "$GITHUB_STEP_SUMMARY"
+
+      # M5 milestone (see docs/ROADMAP.md): xvfb + headless vanilla client
+      # + screenshot diff vs NeoForge ground truth. Scaffolded there; kept
+      # out of M0 until the protocol bot (cim-proto based) exists.
+
+  # Placeholder naming the future job so the intent is visible in the UI.
+  xvfb-client-diff:
+    name: xvfb client diff (M5 — not yet active)
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "activated at M5"

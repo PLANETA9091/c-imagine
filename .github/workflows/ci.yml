@@ -1,0 +1,91 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: rust (fmt, clippy, test, release build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: fmt
+        run: cargo fmt --all -- --check
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: tests
+        run: cargo test --workspace
+      - name: release build (module)
+        run: cargo build -p imagine --release
+      - name: release build (benches compile)
+        run: cargo bench --no-run --workspace
+
+  java-bootstrap:
+    name: java bootstrap (javac 21, jar)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: build
+        run: bash scripts/build-bootstrap.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cim-bootstrap-jar
+          path: java/cim-bootstrap/build/cim-bootstrap.jar
+          if-no-files-found: error
+
+  paper-plugin:
+    name: paper plugin (maven, paper-api 26.3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: resolve newest stable paper-api for 26.3
+        id: paper
+        run: |
+          PV=$(bash scripts/resolve-paper-version.sh 26.3)
+          echo "version=$PV" >> "$GITHUB_OUTPUT"
+          echo "paper-api version: $PV"
+      - name: build
+        working-directory: paper-plugin
+        run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cim-paper-plugin
+          path: paper-plugin/target/cim-paper-plugin.jar
+          if-no-files-found: error
+
+  test-mods:
+    name: test mod cimtest (NeoForge 1.21.1, ModDevGradle)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build
+        working-directory: test-mods
+        run: gradle build --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cimtest-mod-jar
+          path: test-mods/build/libs/cimtest-1.0.0.jar
+          if-no-files-found: error
