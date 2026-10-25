@@ -4,12 +4,14 @@
 cargo-timing*.html
 
 # Java / Gradle
-build/
 .gradle/
 *.class
 java/cim-bootstrap/build/
+/test-mods/build/
 
 # Vendored CRUSSTY SDK ships prebuilt bytecode helpers — keep them.
+# NOTE: negation only works when no parent dir is ignored, hence the
+# anchored /dist/ and /target/ patterns below.
 !third_party/**/*.class
 
 # Paper / server runtime artifacts (never commit)
@@ -23,7 +25,7 @@ usercache.json
 *.log
 
 # Module packaging output
-dist/
+/dist/
 
 # IDE
 .idea/

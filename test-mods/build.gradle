@@ -16,13 +16,6 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(21)
 neoForge {
     version = project.neo_version
 
-    // Server run for CI smoke tests (no client runs in CI).
-    runs {
-        server {
-            serverDirectory = file('run')
-        }
-    }
-
     mods {
         cimtest {
             sourceSet sourceSets.main

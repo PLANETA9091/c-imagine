@@ -13,7 +13,9 @@
     <description>Paper-side lifecycle bridge for the c-imagine CRUSSTY module</description>
 
     <properties>
-        <maven.compiler.release>21</maven.compiler.release>
+        <!-- Paper 26.3 API jars are class-file v69: the compiler must be JDK 25
+             and the plugin bytecode targets Java 25 (the runtime Paper uses). -->
+        <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Overridden by CI after resolving the newest stable 26.3 API build. -->
         <paper.version>26.3.build.223-stable</paper.version>
