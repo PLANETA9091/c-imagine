@@ -1,5 +1,10 @@
 # c-imagine
 
+![ci](https://github.com/PLANETA9091/c-imagine/actions/workflows/ci.yml/badge.svg)
+![integration](https://github.com/PLANETA9091/c-imagine/actions/workflows/integration.yml/badge.svg)
+![profiling](https://github.com/PLANETA9091/c-imagine/actions/workflows/profiling.yml/badge.svg)
+![visual](https://github.com/PLANETA9091/c-imagine/actions/workflows/visual.yml/badge.svg)
+
 **Run NeoForge 1.21.1 mods inside Paper 26.3 — one process, one server, one world.**
 
 `c-imagine` is a [CRUSSTY](https://github.com/PLANETA9091/CRUSSTY) native module that
