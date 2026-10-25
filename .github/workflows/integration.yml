@@ -18,6 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # JDK 21 first (gradle toolchain for the NeoForge 1.21.1 test mod),
+      # then JDK 25 (Paper 26.3 runtime; last setup wins for JAVA_HOME).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -30,7 +36,13 @@ jobs:
         with:
           node-version: 22
 
+      - uses: gradle/actions/setup-gradle@v4
+
       # --- build artifacts -------------------------------------------------
+      - name: build cimtest mod (NeoForge 1.21.1)
+        working-directory: test-mods
+        run: gradle build --no-daemon
+
       - name: build java bootstrap
         run: bash scripts/build-bootstrap.sh
 
@@ -50,7 +62,7 @@ jobs:
         run: |
           unzip -o dist/module-imagine.zip -d srv/modules/
           mkdir -p srv/mods
-          cp java/cim-bootstrap/build/cim-bootstrap.jar srv/modules/imagine/cim-bootstrap.jar
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv/mods/
           echo "eula=true" > srv/eula.txt
           cat > srv/server.properties <<'PROPS'
           online-mode=false
@@ -81,8 +93,10 @@ jobs:
           fail() { echo "ASSERTION FAILED: $1"; exit 1; }
           grep -q "Done (" srv/boot.log || fail "server did not reach Done"
           grep -q "\[c-imagine\] module init (native, pre-kernel)" srv/boot.log || fail "module init marker missing"
+          grep -q "module imagine -> init rc=0" srv/boot.log || fail "module init rc != 0"
           grep -q "\[c-imagine\] class-load hook observed: dev/cim/bootstrap/Bootstrap" srv/boot.log || fail "class hook pipeline marker missing"
           grep -q "\[c-imagine\] bootstrap ready: {\"state\":\"ok\"" srv/boot.log || fail "java bootstrap not ok"
+          grep -q "\[c-imagine\] mods (1): cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
           grep -q "\[c-imagine\] kernel ready (Paper class space online)" srv/boot.log || fail "kernel-ready marker missing"
           echo "all integration markers present"
 

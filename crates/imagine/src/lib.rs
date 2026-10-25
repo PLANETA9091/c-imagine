@@ -126,9 +126,81 @@ fn run_bootstrap(
             .attach_current_thread()
             .map_err(|e| format!("attach_current_thread: {e}"))?;
 
+        // The bootstrap jar is NOT on the system classpath, so a bare
+        // FindClass cannot see it. Build a dedicated URLClassLoader over the
+        // deployed jar (bootstrap parent -> fully isolated) and load the
+        // entrypoint through it:
+        //   File f = new File(jarPath);
+        //   URL url = f.toURI().toURL();
+        //   URLClassLoader loader = new URLClassLoader(new URL[]{url}, null);
+        //   Class<?> boot = Class.forName("dev.cim.bootstrap.Bootstrap", true, loader);
+        let jpath = env
+            .new_string(jar_path.to_string_lossy().as_ref())
+            .map_err(|e| format!("new_string(jar): {e}"))?;
+        let file_cls = env
+            .find_class("java/io/File")
+            .map_err(|e| format!("find File: {e}"))?;
+        let file = env
+            .new_object(
+                file_cls,
+                "(Ljava/lang/String;)V",
+                &[jni::objects::JValue::Object(&jpath)],
+            )
+            .map_err(|e| format!("new File: {e}"))?;
+        let uri = env
+            .call_method(&file, "toURI", "()Ljava/net/URI;", &[])
+            .map_err(|e| format!("File.toURI: {e}"))?
+            .l()
+            .map_err(|e| format!("File.toURI l(): {e}"))?;
+        let url = env
+            .call_method(&uri, "toURL", "()Ljava/net/URL;", &[])
+            .map_err(|e| format!("URI.toURL: {e}"))?
+            .l()
+            .map_err(|e| format!("URI.toURL l(): {e}"))?;
+
+        let url_cls = env
+            .find_class("java/net/URL")
+            .map_err(|e| format!("find URL: {e}"))?;
+        let url_array = env
+            .new_object_array(1, url_cls, &url)
+            .map_err(|e| format!("URL[] alloc: {e}"))?;
+
+        let ucl_cls = env
+            .find_class("java/net/URLClassLoader")
+            .map_err(|e| format!("find URLClassLoader: {e}"))?;
+        let null_parent = jni::objects::JObject::null();
+        let loader = env
+            .new_object(
+                ucl_cls,
+                "([Ljava/net/URL;Ljava/lang/ClassLoader;)V",
+                &[
+                    jni::objects::JValue::Object(&url_array),
+                    jni::objects::JValue::Object(&null_parent),
+                ],
+            )
+            .map_err(|e| format!("new URLClassLoader: {e}"))?;
+
+        let class_cls = env
+            .find_class("java/lang/Class")
+            .map_err(|e| format!("find Class: {e}"))?;
+        let boot_name = env
+            .new_string("dev.cim.bootstrap.Bootstrap")
+            .map_err(|e| format!("new_string(name): {e}"))?;
         let class = env
-            .find_class("dev/cim/bootstrap/Bootstrap")
-            .map_err(|e| format!("find Bootstrap: {e}"))?;
+            .call_static_method(
+                class_cls,
+                "forName",
+                "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;",
+                &[
+                    jni::objects::JValue::Object(&boot_name),
+                    jni::objects::JValue::Bool(1),
+                    jni::objects::JValue::Object(&loader),
+                ],
+            )
+            .map_err(|e| format!("Class.forName(Bootstrap): {e}"))?
+            .l()
+            .map_err(|e| format!("forName l(): {e}"))?;
+        let boot_cls = jni::objects::JClass::from(class);
 
         let options_json = serde_options_json(jar_path, opts);
         let jopts = env
@@ -137,7 +209,7 @@ fn run_bootstrap(
 
         let ret = env
             .call_static_method(
-                class,
+                boot_cls,
                 "init",
                 "(Ljava/lang/String;)Ljava/lang/String;",
                 &[jni::objects::JValue::Object(&jopts)],
