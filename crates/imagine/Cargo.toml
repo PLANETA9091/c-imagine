@@ -1,0 +1,19 @@
+[package]
+name = "imagine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "c-imagine: the CRUSSTY native module embedding a mini NeoForge 1.21.1 layer into Paper 26.3"
+
+[lib]
+name = "imagine"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cim-core = { workspace = true }
+cim-modscan = { workspace = true }
+cplug-abi = { workspace = true }
+cplug-sdk = { workspace = true }
+jni = { workspace = true }
+jni-sys = { workspace = true }
