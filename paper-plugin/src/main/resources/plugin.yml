@@ -1,0 +1,11 @@
+name: c-imagine
+version: 0.1.0
+main: dev.cim.paper.CimPlugin
+api-version: '1.21'
+description: Paper-side lifecycle bridge for the c-imagine CRUSSTY module (mini NeoForge 1.21.1 inside Paper 26.3)
+author: PLANETA9091
+website: https://github.com/PLANETA9091/c-imagine
+commands:
+  cim:
+    description: c-imagine module status
+    usage: /cim

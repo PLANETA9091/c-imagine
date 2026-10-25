@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "cimtest:block/test_block" }
+  }
+}

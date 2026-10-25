@@ -1,0 +1,5 @@
+{
+  "block.cimtest.test_block": "CIM Test Block",
+  "item.cimtest.test_block": "CIM Test Block",
+  "entity.cimtest.test_entity": "CIM Test Entity"
+}

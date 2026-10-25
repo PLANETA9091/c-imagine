@@ -1,0 +1,35 @@
+plugins {
+    id 'java-library'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+
+version = '1.0.0'
+group = 'dev.cim'
+
+base {
+    archivesName = 'cimtest'
+}
+
+// Mojang ships Java 21 to end users in 1.21.1, so mods target Java 21.
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+
+neoForge {
+    version = project.neo_version
+
+    // Server run for CI smoke tests (no client runs in CI).
+    runs {
+        server {
+            serverDirectory = file('run')
+        }
+    }
+
+    mods {
+        cimtest {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
