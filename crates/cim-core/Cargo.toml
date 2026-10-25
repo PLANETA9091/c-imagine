@@ -1,0 +1,10 @@
+[package]
+name = "cim-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "c-imagine core: ids, resource locations, version pins, shared errors"
+
+[dependencies]
+thiserror = { workspace = true }

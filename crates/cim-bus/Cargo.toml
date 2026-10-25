@@ -1,0 +1,10 @@
+[package]
+name = "cim-bus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "c-imagine event bus for the embedded mini-NeoForge layer"
+
+[dependencies]
+cim-core = { workspace = true }

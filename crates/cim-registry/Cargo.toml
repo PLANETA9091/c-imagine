@@ -1,0 +1,11 @@
+[package]
+name = "cim-registry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "c-imagine registry snapshots, diffs, modded id allocation and 1.21.1<->26.3 remaps"
+
+[dependencies]
+cim-core = { workspace = true }
+thiserror = { workspace = true }

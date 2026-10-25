@@ -1,0 +1,14 @@
+[package]
+name = "cim-f2v"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "F2V v2: modded->vanilla visual translation for vanilla clients (Rust rewrite, packet-level)"
+
+[dependencies]
+cim-core = { workspace = true }
+cim-proto = { workspace = true }
+cim-registry = { workspace = true }
+cim-bus = { workspace = true }
+thiserror = { workspace = true }

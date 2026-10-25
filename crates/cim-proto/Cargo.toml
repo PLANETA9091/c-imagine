@@ -1,0 +1,20 @@
+[package]
+name = "cim-proto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "c-imagine Minecraft protocol primitives: varint codec, packet framing, compression"
+
+[dependencies]
+cim-core = { workspace = true }
+flate2 = { workspace = true }
+thiserror = { workspace = true }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "varint"
+harness = false

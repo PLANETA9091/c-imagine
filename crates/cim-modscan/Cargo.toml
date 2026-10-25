@@ -1,0 +1,14 @@
+[package]
+name = "cim-modscan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "c-imagine mod jar scanner: neoforge.mods.toml, @Mod bytecode scan, jar-in-jar, dependency load order"
+
+[dependencies]
+cim-core = { workspace = true }
+toml = { workspace = true }
+zip = { workspace = true }
+thiserror = { workspace = true }
+serde = { version = "1", features = ["derive"] }
