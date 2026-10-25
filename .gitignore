@@ -9,6 +9,9 @@ build/
 *.class
 java/cim-bootstrap/build/
 
+# Vendored CRUSSTY SDK ships prebuilt bytecode helpers — keep them.
+!third_party/**/*.class
+
 # Paper / server runtime artifacts (never commit)
 run/
 srv/
