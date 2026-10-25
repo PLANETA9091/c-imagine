@@ -1,0 +1,35 @@
+# Rust
+/target/
+**/*.rs.bk
+cargo-timing*.html
+
+# Java / Gradle
+build/
+.gradle/
+*.class
+java/cim-bootstrap/build/
+
+# Paper / server runtime artifacts (never commit)
+run/
+srv/
+eula.txt
+server.properties
+logs/
+crash-reports/
+usercache.json
+*.log
+
+# Module packaging output
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keep the embedded bootstrap placeholder tracked, but ignore real jars
+# dropped into embedded/ by local tooling (CI overwrites it deliberately).

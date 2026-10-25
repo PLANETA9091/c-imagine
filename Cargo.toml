@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cim-core",
+    "crates/cim-bus",
+    "crates/cim-proto",
+    "crates/cim-modscan",
+    "crates/cim-registry",
+    "crates/cim-bridge",
+    "crates/cim-f2v",
+    "crates/imagine",
+]
+exclude = ["third_party/cplug-abi", "third_party/cplug-sdk"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/PLANETA9091/c-imagine"
+rust-version = "1.85"
+
+[workspace.dependencies]
+cim-core = { path = "crates/cim-core" }
+cim-bus = { path = "crates/cim-bus" }
+cim-proto = { path = "crates/cim-proto" }
+cim-modscan = { path = "crates/cim-modscan" }
+cim-registry = { path = "crates/cim-registry" }
+cim-bridge = { path = "crates/cim-bridge" }
+cim-f2v = { path = "crates/cim-f2v" }
+cplug-abi = { path = "third_party/cplug-abi" }
+cplug-sdk = { path = "third_party/cplug-sdk" }
+
+thiserror = "2"
+toml = "0.8"
+zip = "4"
+flate2 = "1"
+jni = "0.21"
+jni-sys = "0.3"
+jvmti-bindings = "2"
+criterion = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+# NOTE: `panic = "abort"` is deliberately NOT set — the module .so lives inside
+# the server JVM; any panic must unwind at the JNI boundary, never abort the host.
