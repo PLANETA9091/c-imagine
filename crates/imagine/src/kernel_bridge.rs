@@ -90,48 +90,68 @@ fn bridge_loop() -> Result<(), String> {
         std::thread::sleep(Duration::from_millis(500));
     };
 
-    // 2) resolve the plugin INSTANCE through the Bukkit registry and wait for
-    //    the world to become ready (plugin flag, polled)
-    let plugin = attached("plugin resolve", |env| {
-        let bukkit = unsafe { JClass::from_raw(bukkit_cls.as_jclass() as jobject) };
-        let server = env
-            .call_static_method(&bukkit, "getServer", "()Lorg/bukkit/Server;", &[])
-            .map_err(|e| format!("Bukkit.getServer: {e}"))?
-            .l()
-            .map_err(|e| format!("getServer l(): {e}"))?;
-        let pm = env
-            .call_method(
-                &server,
-                "getPluginManager",
-                "()Lorg/bukkit/plugin/PluginManager;",
-                &[],
-            )
-            .map_err(|e| format!("getPluginManager: {e}"))?
-            .l()
-            .map_err(|e| format!("pm l(): {e}"))?;
-        let name = env
-            .new_string("c-imagine")
-            .map_err(|e| format!("new_string: {e}"))?;
-        let plugin = env
-            .call_method(
-                &pm,
-                "getPlugin",
-                "(Ljava/lang/String;)Lorg/bukkit/plugin/Plugin;",
-                &[JValue::Object(&name)],
-            )
-            .map_err(|e| format!("getPlugin: {e}"))?
-            .l()
-            .map_err(|e| format!("plugin l(): {e}"))?;
-        if plugin.is_null() {
-            return Err("c-imagine plugin not registered in Paper".into());
+    // 2) resolve the plugin INSTANCE through the Bukkit registry. The Bukkit
+    //    CLASS loads early in Paper's boot but the server instance (and the
+    //    plugin registry) only exist after plugins enable — retry until both
+    //    are live, then wait for the world (plugin flag, polled).
+    let plugin = {
+        let deadline = Instant::now() + Duration::from_secs(300);
+        let mut resolved: Option<jni::objects::GlobalRef> = None;
+        loop {
+            if Instant::now() > deadline {
+                return Err("bridge: plugin instance never resolved".into());
+            }
+            let attempt = attached("plugin resolve", |env| {
+                let bukkit = unsafe { JClass::from_raw(bukkit_cls.as_jclass() as jobject) };
+                let server = env
+                    .call_static_method(&bukkit, "getServer", "()Lorg/bukkit/Server;", &[])
+                    .map_err(|e| format!("Bukkit.getServer: {e}"))?
+                    .l()
+                    .map_err(|e| format!("getServer l(): {e}"))?;
+                if server.is_null() {
+                    // class up, instance not set yet — try again shortly
+                    return Err("server instance not set yet".into());
+                }
+                let pm = env
+                    .call_method(
+                        &server,
+                        "getPluginManager",
+                        "()Lorg/bukkit/plugin/PluginManager;",
+                        &[],
+                    )
+                    .map_err(|e| format!("getPluginManager: {e}"))?
+                    .l()
+                    .map_err(|e| format!("pm l(): {e}"))?;
+                let name = env
+                    .new_string("c-imagine")
+                    .map_err(|e| format!("new_string: {e}"))?;
+                let plugin = env
+                    .call_method(
+                        &pm,
+                        "getPlugin",
+                        "(Ljava/lang/String;)Lorg/bukkit/plugin/Plugin;",
+                        &[JValue::Object(&name)],
+                    )
+                    .map_err(|e| format!("getPlugin: {e}"))?
+                    .l()
+                    .map_err(|e| format!("plugin l(): {e}"))?;
+                if plugin.is_null() {
+                    return Err("c-imagine plugin not registered yet".into());
+                }
+                eprintln!("[c-imagine] bridge: plugin instance resolved");
+                // GlobalRef is 'static — the only JNI handle type allowed to
+                // escape this attach scope.
+                env.new_global_ref(&plugin)
+                    .map_err(|e| format!("plugin global ref: {e}"))
+            });
+            if let Some(g) = attempt {
+                resolved = Some(g);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1000));
         }
-        eprintln!("[c-imagine] bridge: plugin instance resolved");
-        // GlobalRef is 'static — the only JNI handle type allowed to escape
-        // this attach scope.
-        env.new_global_ref(&plugin)
-            .map_err(|e| format!("plugin global ref: {e}"))
-    })
-    .ok_or("bridge: plugin resolve failed")?;
+        resolved.expect("resolved above")
+    };
     let plugin_obj = plugin.as_obj();
 
     {

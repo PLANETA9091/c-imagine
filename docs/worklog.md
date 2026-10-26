@@ -216,3 +216,15 @@ Work Log:
 
 Stage Summary:
 - Expecting full green; bridge smoke markers next.
+
+---
+Task ID: 3.12
+Agent: main
+Task: bridge race fix — Bukkit class loads before the server instance exists
+
+Work Log:
+- CI boot.log artifact: "getPluginManager: Null pointer in call_method obj argument" — the bridge thread resolved Bukkit the moment the CLASS loaded, before Bukkit.setServer()/plugin enable.
+- Fix: plugin-instance resolution now retries (1s cadence, 5 min deadline) until getServer() and getPlugin("c-imagine") are both live; world-ready poll unchanged.
+
+Stage Summary:
+- Bridge lifecycle: class online -> instance online -> world ready -> smoke.
