@@ -142,6 +142,13 @@ jobs:
           timeout 240 crussty run > boot.log 2>&1
           code=$?
           timeout 90 crussty stop || true
+          # wait for the actual server JVM to exit (crussty guard checks a
+          # LIVE pid from -Donload.pidFile= — Paper shutdown takes seconds)
+          for i in $(seq 1 60); do
+            pgrep -f onload.pidFile >/dev/null || break
+            sleep 2
+          done
+          pgrep -f onload.pidFile >/dev/null && { pkill -9 -f onload.pidFile || true; sleep 5; }
           cd ..
           echo "exit=$code" >> "$GITHUB_OUTPUT"
           echo "--- tail of boot.log ---"
@@ -242,22 +249,22 @@ jobs:
       # The world dir persists (SIGTERM -> Paper saves). A second boot must
       # restore the modded state from the sidecar with the stand-in intact:
       # the zero-orphan-state acceptance for the milestone.
-      - name: restart server (timeout 6 min)
+      - name: restart server (timeout 4 min)
         id: boot2
         run: |
           set +e
           cd srv
-          # boot1 was SIGTERM'd by `timeout` — the engine's singleton guard may
-          # still hold the pid lock ("crussty: server already running"), so
-          # stop it explicitly and wait for the lock to release.
+          # boot1 was killed after its window — the engine's singleton guard
+          # checks a LIVE pid (from -Donload.pidFile=), and the server JVM
+          # can outlive the CLI for seconds while Paper saves. Stop, then
+          # wait for the JVM process itself to disappear.
           timeout 90 crussty stop || true
-          for i in 1 2 3 4 5 6 7 8 9 10; do
-            if ! crussty status 2>/dev/null | grep -qi "running"; then
-              break
-            fi
-            sleep 3
+          for i in $(seq 1 60); do
+            pgrep -f onload.pidFile >/dev/null || break
+            sleep 2
           done
-          timeout 360 crussty run > boot2.log 2>&1
+          pgrep -f onload.pidFile >/dev/null && { pkill -9 -f onload.pidFile || true; sleep 5; }
+          timeout 240 crussty run > boot2.log 2>&1
           code=$?
           cd ..
           echo "exit=$code" >> "$GITHUB_OUTPUT"
