@@ -109,6 +109,67 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         });
     }
 
+    // ---- entity projection surface (M3.4, KernelBridge reflection targets) ----
+
+    /**
+     * Spawn a kernel entity from a 26.3 entity-type key string
+     * ("minecraft:oak_boat" — ALREADY remapped by the caller). Returns the
+     * spawned entity's UUID string, or null on failure.
+     */
+    public String paperSpawnEntity(String world, double x, double y, double z, String typeKey) {
+        return callSync(() -> {
+            try {
+                String bare = typeKey.contains(":")
+                        ? typeKey.substring(typeKey.indexOf(':') + 1) : typeKey;
+                org.bukkit.entity.EntityType type =
+                        org.bukkit.entity.EntityType.valueOf(bare.toUpperCase(java.util.Locale.ROOT));
+                org.bukkit.Location loc = world(world)
+                        .getSpawnLocation().add(x, y, z);
+                org.bukkit.entity.Entity e = world(world).spawnEntity(loc, type);
+                return e.getUniqueId().toString();
+            } catch (Exception ex) {
+                log().warning(LOG_PREFIX + "paperSpawnEntity(" + typeKey + ") failed: " + ex);
+                return null;
+            }
+        });
+    }
+
+    /**
+     * List entities in a cube around a point. Each row is
+     * {@code uuid|type-key|x|y|z} with 26.3 keys (the caller translates).
+     */
+    public String[] paperListEntities(String world, double x, double y, double z, double radius) {
+        return callSync(() -> {
+            org.bukkit.util.BoundingBox box = org.bukkit.util.BoundingBox.of(
+                    new org.bukkit.Location(world(world), x - radius, y - radius, z - radius),
+                    new org.bukkit.Location(world(world), x + radius, y + radius, z + radius));
+            java.util.List<String> rows = new java.util.ArrayList<>();
+            for (org.bukkit.entity.Entity e : world(world).getNearbyEntities(box)) {
+                org.bukkit.Location l = e.getLocation();
+                rows.add(e.getUniqueId() + "|" + e.getType().getKey()
+                        + "|" + l.getX() + "|" + l.getY() + "|" + l.getZ());
+            }
+            return rows.toArray(new String[0]);
+        });
+    }
+
+    /** Remove a kernel entity by UUID (Paper side). True when it existed. */
+    public boolean paperRemoveEntity(String world, String uuid) {
+        return callSync(() -> {
+            try {
+                java.util.UUID id = java.util.UUID.fromString(uuid);
+                org.bukkit.entity.Entity e = world(world).getEntity(id);
+                if (e == null) {
+                    return false;
+                }
+                e.remove();
+                return true;
+            } catch (IllegalArgumentException badUuid) {
+                return false;
+            }
+        });
+    }
+
     // ---- helpers -------------------------------------------------------------
 
     private World world(String name) {

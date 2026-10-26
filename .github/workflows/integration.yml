@@ -210,6 +210,13 @@ jobs:
             || fail "bridge smoke: M3.2 chain->iron_chain drift leg missing"
           grep -q "bridge smoke: note leg set=true.*value-set ok" srv/boot.log \
             || fail "bridge smoke: M3.2 note_block value-set leg missing"
+          # M3.4 entity projection legs: 1.21.1 boat spawns as the 26.3
+          # oak_boat (registry split), the layer view translates back, pig
+          # passes identity, despawn through the facade removes it
+          grep -q "bridge smoke: entity boat leg uuid=.*boat split ok" srv/boot.log \
+            || fail "bridge smoke: M3.4 boat split entity leg missing"
+          grep -q "bridge smoke: entity pig leg uuid=.*identity ok" srv/boot.log \
+            || fail "bridge smoke: M3.4 pig identity entity leg missing"
           grep -q "\[c-imagine\] bridge smoke: ALL OK" srv/boot.log \
             || fail "bridge smoke did not end ALL OK"
           # M3.3: the modded write left a persisted sidecar record (the

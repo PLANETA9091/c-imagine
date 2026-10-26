@@ -9,3 +9,10 @@ description = "c-imagine registry snapshots, diffs, modded id allocation and 1.2
 [dependencies]
 cim-core = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "drift"
+harness = false

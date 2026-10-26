@@ -157,10 +157,77 @@ public final class KernelBridge {
                     + " paper=" + paperNote + " layer=" + layerNote
                     + (noteOk ? " (value-set ok)" : " (MISMATCH)"));
 
+            // 6) M3.4 entity projection legs: spawn through the LAYER name,
+            //    verify the kernel world holds the remapped type, verify the
+            //    layer view translates back, then despawn through the facade.
+            Class<?> pluginClass = plugin.getClass();
+            Method spawnEntity = pluginClass.getMethod("paperSpawnEntity",
+                    String.class, double.class, double.class, double.class, String.class);
+            Method listEntities = pluginClass.getMethod("paperListEntities",
+                    String.class, double.class, double.class, double.class, double.class);
+            Method removeEntity = pluginClass.getMethod("paperRemoveEntity",
+                    String.class, String.class);
+
+            // 6a) remapped type: 1.21.1 boat -> 26.3 oak_boat
+            String boatLayer = "minecraft:boat";
+            String boatKernel = StateMapper.get().layerToKernelKey("entity_type", boatLayer);
+            String boatUuid = (String) spawnEntity.invoke(plugin, world,
+                    (double) x + 3, (double) y, (double) z, boatKernel);
+            boolean boatSeen = false;
+            boolean boatBack = false;
+            boolean boatGone = false;
+            if (boatUuid != null) {
+                String[] rows = (String[]) listEntities.invoke(plugin, world,
+                        (double) x + 3, (double) y, (double) z, 8.0);
+                for (String row : rows) {
+                    String[] f = row.split("\\|", -1);
+                    if (f.length < 2) {
+                        continue;
+                    }
+                    if (f[1].equals(boatKernel) && f[0].equals(boatUuid)) {
+                        boatSeen = true;
+                    }
+                    // the layer view translates 26.3 keys back to 1.21.1 names
+                    if (StateMapper.get().kernelToLayerKey("entity_type", f[1]).equals(boatLayer)
+                            && f[0].equals(boatUuid)) {
+                        boatBack = true;
+                    }
+                }
+                removeEntity.invoke(plugin, world, boatUuid);
+                String[] after = (String[]) listEntities.invoke(plugin, world,
+                        (double) x + 3, (double) y, (double) z, 8.0);
+                boatGone = true;
+                for (String row : after) {
+                    if (row.startsWith(boatUuid)) {
+                        boatGone = false;
+                    }
+                }
+            }
+            boolean boatOk = boatUuid != null && boatSeen && boatBack && boatGone;
+            System.out.println(LOG + " bridge smoke: entity boat leg uuid=" + boatUuid
+                    + " kernel=" + boatKernel
+                    + " seen=" + boatSeen + " layerView=minecraft:boat (" + boatBack + ")"
+                    + " removed&gone=" + boatGone
+                    + (boatOk ? " (boat split ok)" : " (MISMATCH)"));
+
+            // 6b) identity type: pig passes the tables untouched
+            String pigKernel = StateMapper.get().layerToKernelKey("entity_type", "minecraft:pig");
+            String pigUuid = (String) spawnEntity.invoke(plugin, world,
+                    (double) x + 5, (double) y, (double) z, pigKernel);
+            boolean pigOk = pigUuid != null && "minecraft:pig".equals(pigKernel);
+            if (pigUuid != null) {
+                removeEntity.invoke(plugin, world, pigUuid);
+            }
+            System.out.println(LOG + " bridge smoke: entity pig leg uuid=" + pigUuid
+                    + " type=" + pigKernel + (pigOk ? " (identity ok)" : " (MISMATCH)"));
+
+            boolean entityOk = boatOk && pigOk;
+
             boolean allOk = setOk && vanilla.equals(paperSees) && moddedSet
                     && modded.equals(layerView)
                     && broke && "minecraft:air".equals(afterBreak)
-                    && driftOk && noteOk;
+                    && driftOk && noteOk
+                    && entityOk;
             System.out.println(LOG + " bridge smoke: " + (allOk ? "ALL OK" : "FAILED"));
         } catch (Throwable t) {
             StringBuilder chain = new StringBuilder(String.valueOf(t));

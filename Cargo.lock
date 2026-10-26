@@ -204,6 +204,7 @@ name = "cim-registry"
 version = "0.1.0"
 dependencies = [
  "cim-core",
+ "criterion",
  "thiserror 2.0.21",
 ]
 
