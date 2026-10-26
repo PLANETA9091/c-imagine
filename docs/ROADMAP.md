@@ -24,6 +24,9 @@ and asserts discovery + markers; profiling gate green; all unit tests green.
 - Relocated MC 1.21.1 + NeoForge 21.1.x downloaded/installed by CI (content-addressed
   cache), booted headless inside Paper JVM.
 - Logical server constructs without a tick thread; registries snapshot into cim-registry.
+- Upstream ground-truth jobs (per `docs/runtime-analysis/`): decompile vanilla 26.3
+  client (official mappings + Vineflower) and census the 26.3 server classes; results
+  cached as per-version artifacts — F2V v2 and the remap tables cite these, not folklore.
 
 **Accept:** integration log shows `[c-imagine] layer boot ok (vanilla registries: N)`;
 RSS delta within M1 budget.

@@ -73,6 +73,8 @@ paper-plugin/         Paper-side plugin (bridge lifecycle, /cim command)
 test-mods/            first-party NeoForge 1.21.1 test mod (cimtest)
 third_party/          vendored cplug-abi + cplug-sdk (MIT, from CRUSSTY)
 docs/                 ARCHITECTURE / ROADMAP / F2V_ANALYSIS / MODPACK
+docs/runtime-analysis/  deep upstream analysis: vanilla MC 26.3 (+client), Paper 26.3,
+                        NeoForge 1.21.1, CRUSSTY, cross-version gap — all measured
 ```
 
 ## Quick start (module authors / server admins)
