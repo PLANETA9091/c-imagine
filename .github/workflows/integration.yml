@@ -125,28 +125,41 @@ jobs:
           grep -q "\[c-imagine\] module init (native, pre-kernel)" srv/boot.log || fail "module init marker missing"
           grep -q "module imagine -> init rc=0" srv/boot.log || fail "module init rc != 0"
           grep -q "\[c-imagine\] class-load hook observed: dev/cim/bootstrap/Bootstrap" srv/boot.log || fail "class hook pipeline marker missing"
-          grep -q "\[c-imagine\] bootstrap ready: {\"state\":\"ok\"" srv/boot.log || fail "java bootstrap not ok"
-          grep -qE "\[c-imagine\] mods \([0-9]+\): .*cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
           grep -q "\[c-imagine\] kernel ready (Paper class space online)" srv/boot.log || fail "kernel-ready marker missing"
-          # M1: relocated 1.21.1 layer boots and snapshots vanilla registries
-          LAYER_LINE=$(grep -oE "\[c-imagine\] layer boot ok \(vanilla registries: [0-9]+" srv/boot.log | tail -1)
-          [ -n "$LAYER_LINE" ] || fail "layer boot ok marker missing"
-          REGS=$(echo "$LAYER_LINE" | grep -oE "[0-9]+$")
-          echo "layer registries: $REGS"
-          [ "$REGS" -ge 70 ] || fail "vanilla registries count too low: $REGS"
+          grep -qE "\[c-imagine\] mods \([0-9]+\): .*cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
+          # The ready marker is the combined nested status JSON
+          # {"init":{...,"layer":{...}},"mods":{...}} — parse it properly.
+          python3 - <<'PY'
+          import json, re
+          log = open('srv/boot.log', encoding='utf-8', errors='replace').read()
+          m = re.search(r'\[c-imagine\] bootstrap ready: (\{.*)', log)
+          assert m, "bootstrap ready marker missing"
+          ready, _ = json.JSONDecoder().raw_decode(m.group(1))
+          init = ready.get('init') or {}
+          assert init.get('state') == 'ok', f"init not ok: {init.get('error')}"
+          layer = init.get('layer') or {}
+          assert layer.get('state') == 'ok', f"layer boot not ok: {layer.get('error')}"
+          regs = layer.get('registries') or 0
+          assert regs >= 70, f"vanilla registries too low: {regs}"
+          print(f"layer registries: {regs}")
+          mods = ready.get('mods') or {}
+          assert mods.get('state') == 'ok', f"mods not ok: {mods.get('error')}"
+          print(f"mods: {mods.get('mods')} in {mods.get('tookMs')} ms; registered={mods.get('registered')}")
+          registered = mods.get('registered') or {}
+          for k in ('ITEM', 'BLOCK', 'BLOCK_ENTITY_TYPE', 'ENTITY_TYPE'):
+              assert registered.get(k, 0) >= 1, f"no {k} registrations: {registered}"
+          entries = json.dumps(mods.get('moddedEntries') or {}, ensure_ascii=False)
+          assert 'cimtest:test_block' in entries, f"cimtest:test_block missing: {entries}"
+          assert 'cimtest:test_block_entity' in entries, "cimtest:test_block_entity missing"
+          assert 'cimtest:test_entity' in entries, "cimtest:test_entity missing"
+          print("M2 live-boot: real mods + cimtest registration verified")
+          PY
           # M2: real-FML mod execution over the composite mod set (real mods +
           # cimtest) inside the live Paper JVM
           grep -q "\[c-imagine\] mod execution ok" srv/boot.log || fail "M2 mod execution FAILED"
           for m in appleskin neoforge cimtest ferritecore jade jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
           done
-          REG=$(grep -oE "registered=\{[^}]*\}" srv/boot.log | tail -1)
-          echo "cimtest registrations: $REG"
-          echo "$REG" | grep -q "ITEM=[1-9]" || fail "no ITEM registrations on live boot"
-          echo "$REG" | grep -q "BLOCK=[1-9]" || fail "no BLOCK registrations on live boot"
-          echo "$REG" | grep -q "ENTITY_TYPE=[1-9]" || fail "no ENTITY_TYPE registrations on live boot"
-          grep -q "cimtest:test_block" srv/boot.log || fail "cimtest:test_block not registered on live boot"
-          grep -q "cimtest:test_entity" srv/boot.log || fail "cimtest:test_entity not registered on live boot"
           echo "all integration markers present (incl. M1 layer boot + M2 real mods)"
 
       - name: report + upload logs

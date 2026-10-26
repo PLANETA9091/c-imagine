@@ -105,3 +105,20 @@ Work Log:
 Stage Summary:
 - Pushed a09b861 (live-boot job) + clippy/fmt hardening. All builds/tests now owned by GitHub CI; sandbox does only light edits.
 - Watching: ci + integration (boot w/ real mods, harness) on a09b861.
+
+---
+Task ID: 3.4
+Agent: main
+Task: CI validation round 1 — m2-real-mods harness job GREEN; boot assertion format fix
+
+Work Log:
+- m2-real-mods job (Modrinth mods + cimtest through real FML in shadow space): SUCCESS on first run.
+- boot job failed on a STALE marker assertion: ready line is now nested JSON
+  {"init":{...,"layer":{...}},"mods":{...}} but the check expected the old flat {"state":"ok"}.
+  The live boot itself PASSED: layer registries=78, mods=8 in 736 ms, registered={ITEM=1,BLOCK=1,BLOCK_ENTITY_TYPE=1,ENTITY_TYPE=1}, moddedEntries=[cimtest:*].
+- Rewrote the assertion step to parse the nested JSON robustly (raw_decode + per-key assertions), validated against the real CI boot.log artifact.
+- ci.yml green on 8775439 (fmt/clippy/test/release).
+
+Stage Summary:
+- M2 is effectively proven end-to-end on CI: real mods load through the real FML pipeline both in the harness and inside the live Paper 26.3 boot.
+- Next: green boot on 8775439-fix, then M2 parity ground-truth (real NeoForge 21.1.265 server run) + M2.1 annotation descriptors.
