@@ -41,6 +41,10 @@ jobs:
           java-version: 21
       - name: build
         run: bash scripts/build-bootstrap.sh
+      - name: bridge selftests (M3.2 tables + M3.3 sidecar)
+        run: |
+          java -cp java/cim-bootstrap/build/cim-bootstrap.jar dev.cim.bridge.StateMapper --selftest
+          java -cp java/cim-bootstrap/build/cim-bootstrap.jar dev.cim.bridge.SidecarStore --selftest
       - uses: actions/upload-artifact@v4
         with:
           name: cim-bootstrap-jar

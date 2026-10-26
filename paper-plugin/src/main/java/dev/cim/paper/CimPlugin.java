@@ -142,7 +142,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.1)");
+        sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.3)");
         sender.sendMessage(LOG_PREFIX + "kernel: Paper 26.3 | layer: mini NeoForge 1.21.1");
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
         sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));

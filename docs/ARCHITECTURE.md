@@ -152,9 +152,28 @@ The layer never stores authoritative state. It translates:
 |---|---|
 | `level.getBlockState(pos)` | Paper chunk query, block-state remap 26.3→1.21.1 |
 | `level.setBlock(pos, st, flags)` | Paper set-block, remap 1.21.1→26.3, flag semantics mapped |
-| entity iteration / spawn | Paper entity list projected as layer `Entity` proxies |
+| entity iteration / spawn | Paper entity list projected as layer `Entity` proxies (M3.4) |
 | registries | snapshot from Paper + modded ids from `cim-registry` allocator |
 | capabilities/data components | marshalled through `cim-bridge` ring as typed frames |
+
+Translation data (M3.2): `scripts/gen-remap-tables.py` pins mcmeta snapshots
+for 1.21.1 (registries `0eaeabd2` / summary `7cffbcda`) and 26.3 (registries
+`2240df23` / summary `d96c75fe`) and generates drift TSVs carried by BOTH the
+Java bootstrap jar (`/cim/*.tsv`) and `cim-registry/data/` (byte-equality is
+unit-tested on both sides). At the 26.3 RELEASE the drift is small: one block
+rename (chain→iron_chain), one value-set growth (note_block instrument),
+attribute flattening, boat/potion entity splits; fluid registry unchanged.
+The bridge applies the tables as a pure string function; modded namespaces
+never enter them.
+
+Modded states (M3.1+M3.3): a write whose key is outside `minecraft:` records
+the full state in the **sidecar** (`dev.cim.bridge.SidecarStore`, write-through
+TSV journal under `c-imagine/sidecar.tsv`) and places a `structure_void`
+stand-in in the Paper world; reads resolve sidecar positions back to the
+modded state, culling entries whose stand-in disappeared (self-healing). The
+journal survives restarts, giving the zero-orphan-state contract: after a
+restart the layer reports the same modded states, and entries whose Paper
+world no longer holds a stand-in are culled instead of haunting the bridge.
 
 Transport: `cim-bridge` SPSC byte ring (u32-length-prefixed frames, cache-padded
 head/tail, zero allocation in steady state) between Paper threads and the loader

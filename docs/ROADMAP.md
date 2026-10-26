@@ -66,14 +66,35 @@ the Paper 26.3 JVM via CRUSSTY; `parity-real-neoforge` job — a REAL NeoForge
 markers (cross-boot parity contract). Remaining M2.1 toggle: runtime-visible
 annotation descriptors.
 
-## M3 — State bridge v1
+## M3 — State bridge v1 (M3.1 + M3.2 + M3.3 done, 2026-10-26)
 
-- Block read/write, entity projection, scheduler riding Paper's tick.
-- cimtest TestBlock becomes placeable/breakable in the Paper world with state visible
-  to both worlds (Paper API + layer API read the same block).
+- [x] **M3.1 facade** — block read/write through Paper: vanilla states round-trip;
+      modded ids recorded in a sidecar with a `structure_void` stand-in in the
+      Paper world; break via Paper observed by the layer. Proven live on CI
+      (`bridge smoke: ALL OK`).
+- [x] **M3.2 state-translation tables** — `scripts/gen-remap-tables.py` pins
+      mcmeta registries+summary snapshots (1.21.1 `0eaeabd2`, 26.3 `2240df23`)
+      and emits drift TSVs consumed byte-identically by the Java
+      `dev.cim.bridge.StateMapper` and the Rust `cim-registry::drift` mirror.
+      Measured 1.21.1->26.3 drift (release-pinned): blocks 1060->1286 with ONE
+      rename (chain->iron_chain) and one value-set growth (note_block
+      instrument +trumpet*), attributes flattened (generic./player. -> bare),
+      entity_type boat/chest_boat split per wood (default oak), thrown potion
+      entity -> splash_potion, fluid registry UNCHANGED (5->5 — the earlier
+      "fluid shrink" was a measurement against an unpinned snapshot).
+      Live-boot legs assert chain->iron_chain + note_block through Paper.
+- [x] **M3.3 persistent sidecar** — `dev.cim.bridge.SidecarStore`: write-through
+      TSV journal at `<cwd>/c-imagine/sidecar.tsv`, last-wins replay, torn-tail
+      tolerant, tombstone erases; cull-on-read when a Paper stand-in vanished
+      (self-healing, zero orphan state); restore census logged per boot. CI
+      boots the server TWICE and asserts `sidecar restore: cimtest:test_block @
+      ... (stand-in intact)` + `1 live, 0 culled` on the second boot.
+- [ ] **M3.4 entity projection** — layer entity iteration/spawn projected as
+      Paper entities (entity_type remap via the M3.2 registry tables).
 
-**Accept:** integration scenario: place via layer → Paper API sees it; break via
-Paper → layer event fires; zero orphan state after restart (world reopened cleanly).
+**Accept:** integration scenario: place via layer -> Paper API sees it; break
+via Paper -> layer event fires; restart -> sidecar restore with zero orphan
+state (second boot asserts restore markers).
 
 ## M4 — F2V v2 packet translation v1
 

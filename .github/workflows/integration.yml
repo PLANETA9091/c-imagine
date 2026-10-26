@@ -2,10 +2,19 @@ name: integration
 
 # Real end-to-end: Paper 26.3 + CRUSSTY runtime + the c-imagine module + the
 # cimtest mod. Asserts boot markers, mod discovery, clean logs, no crashes.
+#
+# Actions policy (owner directive, updated): Actions minutes are UNLIMITED —
+# this workflow runs on every push to main (the three jobs are the real
+# proof: harness + live Paper boot + real-NeoForge parity), on manual
+# dispatch, and once a week as a scheduled regression net. The local loop
+# (scripts/local-check.sh + scripts/run-m2-harness.sh) stays for iteration
+# speed, not for economy.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * 1" # weekly regression net, Monday 02:00 UTC
 
 env:
   CARGO_TERM_COLOR: always
@@ -106,6 +115,7 @@ jobs:
           cat > srv/server.properties <<'PROPS'
           online-mode=false
           level-type=minecraft:flat
+          level-seed=42
           view-distance=4
           simulation-distance=4
           spawn-protection=0
@@ -194,9 +204,59 @@ jobs:
             || fail "bridge smoke: modded stand-in leg missing"
           grep -q "bridge smoke: paper-side break ok=true.*observed" srv/boot.log \
             || fail "bridge smoke: paper-side break not observed by the layer"
+          # M3.2 state-translation legs: 1.21.1 chain rename through the live
+          # kernel + note_block value-set identity
+          grep -q "bridge smoke: drift leg set=true.*chain->iron_chain ok" srv/boot.log \
+            || fail "bridge smoke: M3.2 chain->iron_chain drift leg missing"
+          grep -q "bridge smoke: note leg set=true.*value-set ok" srv/boot.log \
+            || fail "bridge smoke: M3.2 note_block value-set leg missing"
           grep -q "\[c-imagine\] bridge smoke: ALL OK" srv/boot.log \
             || fail "bridge smoke did not end ALL OK"
-          echo "all integration markers present (incl. M1 layer boot + M2 real mods + M3 bridge smoke)"
+          # M3.3: the modded write left a persisted sidecar record (the
+          # restore census on boot 1 is legitimately 0 live — smoke order)
+          [ -f srv/c-imagine/sidecar.tsv ] || fail "sidecar.tsv missing after first boot"
+          grep -q "cimtest:test_block" srv/c-imagine/sidecar.tsv \
+            || fail "cimtest:test_block not persisted to sidecar.tsv"
+          echo "all integration markers present (incl. M1 layer boot + M2 real mods + M3.2 drift + M3.3 sidecar)"
+
+      # --- M3.3 restart contract ---------------------------------------------
+      # The world dir persists (SIGTERM -> Paper saves). A second boot must
+      # restore the modded state from the sidecar with the stand-in intact:
+      # the zero-orphan-state acceptance for the milestone.
+      - name: restart server (timeout 6 min)
+        id: boot2
+        run: |
+          set +e
+          cd srv
+          timeout 360 crussty run > boot2.log 2>&1
+          code=$?
+          cd ..
+          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          echo "--- tail of boot2.log ---"
+          tail -25 srv/boot2.log || true
+          true
+
+      - name: assert M3.3 restore markers
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          grep -q "Done (" srv/boot2.log || fail "second boot did not reach Done"
+          grep -q "sidecar restore: cimtest:test_block @ .* (stand-in intact)" srv/boot2.log \
+            || fail "M3.3: modded state not restored from the persisted sidecar"
+          grep -q "sidecar restore: 1 live, 0 culled" srv/boot2.log \
+            || fail "M3.3: restore census wrong (stand-in lost or ghost culled)"
+          grep -q "\[c-imagine\] bridge smoke: ALL OK" srv/boot2.log \
+            || fail "second boot smoke failed"
+          echo "M3.3 restart contract: modded state survived the restart (zero orphan state)"
+
+      - name: report + upload restart logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-restart-logs
+          path: |
+            srv/boot2.log
+            srv/c-imagine/sidecar.tsv
+          if-no-files-found: ignore
 
       - name: report + upload logs
         if: always()

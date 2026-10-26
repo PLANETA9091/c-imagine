@@ -8,6 +8,8 @@
 //! - [`RegistrySnapshot`] + [`SnapshotDiff`] detect drift across reloads and
 //!   drive F2V v2 translation tables.
 
+pub mod drift;
+
 use cim_core::{CimError, MODDED_ID_BASE};
 use std::collections::HashMap;
 

@@ -258,3 +258,27 @@ Work Log:
 Stage Summary:
 - M3.1 DONE (synchronous string-valued facade; sidecar for modded states).
 - Next: M3.2 — blockstate remap tables (cim-registry) for vanilla drift (1.21.1 <-> 26.3 property diff, boat split, fluid shrink fixtures); M3.3 — persistent sidecar (survive restart, zero orphan state); M3.4 — entity projection; ring transport (cim-bridge) when throughput matters.
+
+---
+Task ID: 4
+Agent: main
+Task: M3.2 (state-translation tables) + M3.3 (persistent sidecar) — sandbox rebuild, implementation, local verification
+
+Work Log:
+- Sandbox was reset again; environment restored: rustup (1.99.1), portable JDK 21 (Adoptium, no sudo for apt), repo clone at cf68779.
+- CI policy per owner: first economized (dispatch+weekly), then owner granted UNLIMITED Actions minutes -> restored push triggers on integration/visual + nightly profiling; local loop kept for speed (scripts/local-check.sh).
+- Pinned mcmeta snapshots via GitHub API: 1.21.1 registries 0eaeabd259d0.../summary 7cffbcda..., 26.3 registries 2240df2376.../summary d96c75fe.... CORRECTED the M0.5 numbers: at the 26.3 RELEASE block=1286 (not 1294), item=1658, entity_type=161, fluid 5->5 (NO shrink — earlier figure was an unpinned-latest measurement error).
+- scripts/gen-remap-tables.py: registry census + per-block property diff + explicit pairing rules (attribute flattening generic./player.->bare; boat->oak_boat, chest_boat->oak_chest_boat, potion->splash_potion; chain->iron_chain). Truly removed (no target): bed BE, 4 data components, 2 memories, 5 sensors, 6 sounds.
+- Drift is TINY at release: 1059 shared blocks, 1 prop-drift block (note_block instrument +4 trumpet values), 1 renamed block (chain). Tables: blockstate-drift.tsv + registry-drift.tsv + remap-manifest.tsv written to BOTH java resources and crates/cim-registry/data (byte-equality unit-tested both sides).
+- Java dev.cim.bridge.StateMapper: pure-string translation both directions + registry key translation; brace-balanced minified-JSON scan for the drift rows; --selftest main (15 fixtures) ALL OK. Found+fixed 3 bugs via selftest: nested-map brace tracking, split("\t",-1) for empty targets, block renames living in registry table.
+- Rust cim-registry::drift: same tables via include_str!, same semantics, 8 tests (13 total in crate) green.
+- KernelBridge: layerWrite/layerRead now route through StateMapper; smoke gained drift leg (minecraft:chain[axis=y] -> Paper holds iron_chain, layer reports chain) + note_block value leg.
+- M3.3 dev.cim.bridge.SidecarStore: write-through TSV journal (<cwd>/c-imagine/sidecar.tsv), last-wins replay, torn-tail tolerant, tombstone erases, cull-on-read when the Paper stand-in vanished (zero orphan state, self-healing); --selftest ALL OK.
+- KernelBridge smoke: restore-verify step (census "N live, M culled") + modded leg rides the store.
+- integration.yml: level-seed=42, M3.2 assertions, SECOND boot + M3.3 restore assertions ("sidecar restore: cimtest:test_block ... (stand-in intact)", "1 live, 0 culled"). ci.yml: bridge selftests step. scripts/build-cimtest-offline.sh: javac against layer jars (2.1 s, replaces gradle in sandbox).
+- Restored NeoForge 21.1.265 layer locally (installer had died mid-neoform twice; -Xmx1500m fixed it), Modrinth mods, offline cimtest.
+- Harness re-verified after all M3 changes: 8 mods, mod execution ok in 664 ms, registrations intact, layer boot 6304 ms (78 registries), total 8.6 s.
+
+Stage Summary:
+- M3.2 + M3.3 implemented, locally verified (rust 13+ tests, 2 Java selftests, harness green, measurements logged). Pushing for full CI validation incl. the new two-boot restart contract.
+- Next: M3.4 entity projection (entity_type remap via registry tables), then M4 packet translation.

@@ -1,0 +1,58 @@
+# generated 2026-10-26T18:19:27Z by scripts/gen-remap-tables.py
+# old 1.21.1: registries 0eaeabd259d09369c6fc45b810cc5a675c3c1af4 summary 7cffbcdad5fa36f22acef6bd4b869ecad4ca3fd9
+# new 26.3: registries 2240df2376509bfaf12becbb36e156e29f8ecb4d summary d96c75fec200c4580dd75e033a76341521165461
+# registry	old_key	new_key (empty = removed in 26.3)
+attribute	generic.armor	armor
+attribute	generic.armor_toughness	armor_toughness
+attribute	generic.attack_damage	attack_damage
+attribute	generic.attack_knockback	attack_knockback
+attribute	generic.attack_speed	attack_speed
+attribute	generic.burning_time	burning_time
+attribute	generic.explosion_knockback_resistance	explosion_knockback_resistance
+attribute	generic.fall_damage_multiplier	fall_damage_multiplier
+attribute	generic.flying_speed	flying_speed
+attribute	generic.follow_range	follow_range
+attribute	generic.gravity	gravity
+attribute	generic.jump_strength	jump_strength
+attribute	generic.knockback_resistance	knockback_resistance
+attribute	generic.luck	luck
+attribute	generic.max_absorption	max_absorption
+attribute	generic.max_health	max_health
+attribute	generic.movement_efficiency	movement_efficiency
+attribute	generic.movement_speed	movement_speed
+attribute	generic.oxygen_bonus	oxygen_bonus
+attribute	generic.safe_fall_distance	safe_fall_distance
+attribute	generic.scale	scale
+attribute	generic.step_height	step_height
+attribute	generic.water_movement_efficiency	water_movement_efficiency
+attribute	player.block_break_speed	block_break_speed
+attribute	player.block_interaction_range	block_interaction_range
+attribute	player.entity_interaction_range	entity_interaction_range
+attribute	player.mining_efficiency	mining_efficiency
+attribute	player.sneaking_speed	sneaking_speed
+attribute	player.submerged_mining_speed	submerged_mining_speed
+attribute	player.sweeping_damage_ratio	sweeping_damage_ratio
+attribute	zombie.spawn_reinforcements	spawn_reinforcements
+block	chain	iron_chain
+block_entity_type	bed	
+data_component_type	fire_resistant	
+data_component_type	hide_additional_tooltip	
+data_component_type	hide_tooltip	
+data_component_type	map_color	
+entity_type	boat	oak_boat
+entity_type	chest_boat	oak_chest_boat
+entity_type	potion	splash_potion
+item	chain	iron_chain
+memory_module_type	interactable_doors	
+memory_module_type	is_tempted	
+sensor_type	armadillo_temptations	
+sensor_type	axolotl_temptations	
+sensor_type	camel_temptations	
+sensor_type	goat_temptations	
+sensor_type	sniffer_temptations	
+sound_event	entity.goat.screaming.horn_break	
+sound_event	entity.leash_knot.break	
+sound_event	entity.leash_knot.place	
+sound_event	entity.puffer_fish.ambient	
+sound_event	entity.wolf.howl	
+sound_event	item.goat_horn.play	

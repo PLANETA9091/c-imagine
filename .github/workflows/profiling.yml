@@ -5,7 +5,7 @@ name: profiling
 #  - bare Paper vs Paper+c-imagine boot time + RSS budget gate
 on:
   schedule:
-    - cron: "0 3 * * *" # nightly
+    - cron: "0 3 * * *" # nightly budget gate (Actions minutes are unlimited)
   workflow_dispatch:
 
 env:

@@ -1,10 +1,7 @@
 package dev.cim.bridge;
 
 import java.lang.reflect.Method;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * M3.1 kernel state bridge (facade side, loaded on the bootstrap loader).
@@ -21,10 +18,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *   CimPlugin (Paper space) ─ Bukkit API (main-thread hop) ─ Paper chunks
  * </pre>
  *
- * <p>Translation rules v1:
+ * <p>Translation rules (M3.1 facade + M3.2 tables):
  * <ul>
- *   <li>vanilla 1.21.1 blockstate strings pass through (same-name blocks;
- *       property drift is the M3.2 cim-registry table's job);</li>
+ *   <li>vanilla 1.21.1 blockstate strings pass through {@link StateMapper}
+ *       (measured drift: chain->iron_chain rename, note_block instrument
+ *       value-set growth; everything else is identical at 26.3 release);</li>
  *   <li>modded ids ({@code cimtest:*}, anything outside {@code minecraft:})
  *       have no 26.3 registry entry — writes record the modded state in a
  *       sidecar and place a stand-in block in the Paper world; reads of
@@ -38,16 +36,13 @@ public final class KernelBridge {
     private static final String LOG = "[c-imagine]";
     /** Paper-side stand-in for modded blocks (26.3 has no modded registry). */
     private static final String STAND_IN = "minecraft:structure_void";
-    /** Sidecar: modded layer states keyed by (world,x,y,z). */
-    private static final Map<String, String> SIDECAR = new ConcurrentHashMap<>();
-
-    private KernelBridge() {
-    }
-
-    /** Serialize a bridge position key (world,x,y,z). */
-    private static String key(String world, int x, int y, int z) {
-        return world + "," + x + "," + y + "," + z;
-    }
+    /**
+     * Sidecar: modded layer states keyed by (world,x,y,z). M3.3: write-through
+     * to {@code <cwd>/c-imagine/sidecar.tsv} so modded state survives restart
+     * (zero orphan state); entries whose Paper stand-in disappeared are culled
+     * on read (self-healing, see {@link #layerRead}).
+     */
+    private static final SidecarStore SIDECAR = SidecarStore.shared();
 
     /**
      * M3.1 smoke, called by the native module after the Paper world is ready.
@@ -80,6 +75,36 @@ public final class KernelBridge {
             int y = 100;
             int z = 0;
 
+            // 0) M3.3 restore: verify every persisted sidecar entry against
+            //    the Paper world. Stand-in intact -> the modded state is
+            //    live again (zero orphan state); stand-in gone -> cull.
+            int restored = 0;
+            int culled = 0;
+            String restoreDetail = "";
+            for (String[] e : SIDECAR.snapshot()) {
+                String ew = e[0];
+                int ex = Integer.parseInt(e[1]);
+                int ey = Integer.parseInt(e[2]);
+                int ez = Integer.parseInt(e[3]);
+                String state = e[4];
+                String paperNow = (String) getBlock.invoke(plugin, ew, ex, ey, ez);
+                if (paperNow.startsWith(STAND_IN)) {
+                    restored++;
+                    restoreDetail = state + " @ " + ew + "," + ex + "," + ey + "," + ez;
+                    System.out.println(LOG + " sidecar restore: " + state
+                            + " @ " + ew + "," + ex + "," + ey + "," + ez + " (stand-in intact)");
+                } else {
+                    culled++;
+                    SIDECAR.erase(ew, ex, ey, ez);
+                    System.out.println(LOG + " sidecar cull: " + state
+                            + " @ " + ew + "," + ex + "," + ey + "," + ez
+                            + " (Paper now " + paperNow + ")");
+                }
+            }
+            System.out.println(LOG + " sidecar restore: " + restored + " live, "
+                    + culled + " culled"
+                    + (restored > 0 ? " (last: " + restoreDetail + ")" : ""));
+
             // 1) vanilla block: layer write → kernel storage → kernel read
             String vanilla = "minecraft:yellow_terracotta";
             boolean setOk = kernelSet(setBlock, plugin, world, x, y, z, vanilla);
@@ -97,7 +122,7 @@ public final class KernelBridge {
             System.out.println(LOG + " bridge smoke: modded set ok=" + moddedSet
                     + " paper=" + paperModded + " (stand-in expected)"
                     + " layer=" + layerView
-                    + " sidecar=" + SIDECAR.get(key(world, x, y, z + 1)));
+                    + " sidecar=" + SIDECAR.get(world, x, y, z + 1));
 
             // 3) break on the Paper side → the layer facade observes air
             boolean broke = (Boolean) paperSetAir.invoke(plugin, world, x, y, z);
@@ -106,9 +131,36 @@ public final class KernelBridge {
                     + " layer observes=" + afterBreak
                     + ("minecraft:air".equals(afterBreak) ? " (observed)" : " (MISMATCH)"));
 
+            // 4) M3.2 drift leg: a 1.21.1 state with a RENAMED block. The
+            //    Paper world must end up holding iron_chain (26.3 name) while
+            //    the layer view still reports the 1.21.1 name. Bukkit stores
+            //    every property on read (waterlogged default), so prefix match.
+            String chain1211 = "minecraft:chain[axis=y]";
+            boolean chainSet = kernelSet(setBlock, plugin, world, x, y, z + 2, chain1211);
+            String paperChain = (String) getBlock.invoke(plugin, world, x, y, z + 2);
+            String layerChain = kernelGet(getBlock, plugin, world, x, y, z + 2);
+            boolean driftOk = chainSet && paperChain.startsWith("minecraft:iron_chain[axis=y")
+                    && layerChain.startsWith("minecraft:chain[axis=y");
+            System.out.println(LOG + " bridge smoke: drift leg set=" + chainSet
+                    + " paper=" + paperChain + " layer=" + layerChain
+                    + (driftOk ? " (chain->iron_chain ok)" : " (MISMATCH)"));
+
+            // 5) M3.2 identity leg: drifted VALUE-SET block, unchanged value —
+            //    note_block instrument=harp exists on both sides.
+            String note = "minecraft:note_block[instrument=harp]";
+            boolean noteSet = kernelSet(setBlock, plugin, world, x, y, z + 3, note);
+            String paperNote = (String) getBlock.invoke(plugin, world, x, y, z + 3);
+            String layerNote = kernelGet(getBlock, plugin, world, x, y, z + 3);
+            boolean noteOk = noteSet && paperNote.startsWith("minecraft:note_block[instrument=harp")
+                    && layerNote.startsWith("minecraft:note_block[instrument=harp");
+            System.out.println(LOG + " bridge smoke: note leg set=" + noteSet
+                    + " paper=" + paperNote + " layer=" + layerNote
+                    + (noteOk ? " (value-set ok)" : " (MISMATCH)"));
+
             boolean allOk = setOk && vanilla.equals(paperSees) && moddedSet
                     && modded.equals(layerView)
-                    && broke && "minecraft:air".equals(afterBreak);
+                    && broke && "minecraft:air".equals(afterBreak)
+                    && driftOk && noteOk;
             System.out.println(LOG + " bridge smoke: " + (allOk ? "ALL OK" : "FAILED"));
         } catch (Throwable t) {
             StringBuilder chain = new StringBuilder(String.valueOf(t));
@@ -120,12 +172,22 @@ public final class KernelBridge {
     }
 
     /**
-     * Layer-side read facade: resolves the modded sidecar first, otherwise
-     * the kernel string passes through (v1 identity translation).
+     * Layer-side read facade: resolves the modded sidecar first (culling
+     * entries whose Paper stand-in no longer exists — zero orphan state),
+     * otherwise translates the kernel string back (M3.2 tables).
      */
     public static String layerRead(String world, int x, int y, int z, String kernelState) {
-        String modded = SIDECAR.get(key(world, x, y, z));
-        return modded != null ? modded : kernelState;
+        String modded = SIDECAR.get(world, x, y, z);
+        if (modded != null) {
+            if (kernelState != null && kernelState.startsWith(STAND_IN)) {
+                return modded;
+            }
+            // the stand-in was replaced/broken underneath us: self-heal
+            SIDECAR.erase(world, x, y, z);
+            System.out.println(LOG + " sidecar cull: " + modded + " @ "
+                    + world + "," + x + "," + y + "," + z + " (Paper now " + kernelState + ")");
+        }
+        return StateMapper.get().kernelToLayerState(kernelState);
     }
 
     /** Facade write through the plugin surface: translate, then set in Paper. */
@@ -144,21 +206,22 @@ public final class KernelBridge {
 
     /**
      * Layer-side write facade: route modded states into the sidecar and
-     * return the kernel-facing state; vanilla states pass through.
+     * return the kernel-facing state; vanilla states go through the M3.2
+     * drift tables (renames, property-set and value-set drift).
      */
     public static String layerWrite(String world, int x, int y, int z, String layerState) {
         String s = layerState.toLowerCase(Locale.ROOT);
         if (s.startsWith("minecraft:") || s.startsWith("air")) {
-            SIDECAR.remove(key(world, x, y, z));
-            return layerState;
+            SIDECAR.erase(world, x, y, z);
+            return StateMapper.get().layerToKernelState(layerState);
         }
         // modded namespace: record and stand in
-        SIDECAR.put(key(world, x, y, z), layerState);
+        SIDECAR.put(world, x, y, z, layerState);
         return STAND_IN;
     }
 
     /** Sidecar census (diagnostics). */
-    public static java.util.List<Map.Entry<String, String>> sidecarEntries() {
-        return List.copyOf(SIDECAR.entrySet());
+    public static java.util.List<String[]> sidecarEntries() {
+        return SIDECAR.snapshot();
     }
 }
