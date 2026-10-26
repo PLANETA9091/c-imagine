@@ -66,7 +66,7 @@ the Paper 26.3 JVM via CRUSSTY; `parity-real-neoforge` job — a REAL NeoForge
 markers (cross-boot parity contract). Remaining M2.1 toggle: runtime-visible
 annotation descriptors.
 
-## M3 — State bridge v1 (M3.1 + M3.2 + M3.3 done, 2026-10-26)
+## M3 — State bridge v1 (DONE — M3.1–M3.4, 2026-10-26)
 
 - [x] **M3.1 facade** — block read/write through Paper: vanilla states round-trip;
       modded ids recorded in a sidecar with a `structure_void` stand-in in the
@@ -89,8 +89,14 @@ annotation descriptors.
       (self-healing, zero orphan state); restore census logged per boot. CI
       boots the server TWICE and asserts `sidecar restore: cimtest:test_block @
       ... (stand-in intact)` + `1 live, 0 culled` on the second boot.
-- [ ] **M3.4 entity projection** — layer entity iteration/spawn projected as
-      Paper entities (entity_type remap via the M3.2 registry tables).
+- [x] **M3.4 entity projection** — layer entity spawn/list/remove projected as
+      Paper entities with entity_type remap through the M3.2 registry tables
+      (1.21.1 boat -> 26.3 oak_boat, pig identity). CI-proven live:
+      `boat split ok` (uuid-channel + box-scan, polls=1) + `identity ok`;
+      paper-api 26.3 surfaces pinned by javap (`setChunkForceLoaded` —
+      `setForceLoaded` removed). Entity legs own a force ticket around the
+      chunk: spawn chunks without players are block-ticking only (1.20.5+
+      ticket semantics), spawned entities stay untracked otherwise.
 
 **Accept:** integration scenario: place via layer -> Paper API sees it; break
 via Paper -> layer event fires; restart -> sidecar restore with zero orphan

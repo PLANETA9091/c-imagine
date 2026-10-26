@@ -304,3 +304,24 @@ Stage Summary:
 - F2V 2.0 groundwork measured and pinned in docs; implementation deferred to M5/M6 per owner.
 - M3.4 fix pushed for CI validation (ci+integration path-filtered triggers fire for this push by design).
 - Next: green integration on the fix -> tick M3.4 -> M4 packet translation v1 (incl. ClientboundPostEffects family mapping).
+
+---
+Task ID: 6
+Agent: main
+Task: M3.4 CI validation marathon — integration matrix GREEN, milestone closed
+
+Work Log:
+- Round 1 (cd5c64e, with absolute-coord fix): still "M3.4 boat split entity leg missing" — spawned boat invisible to the same-tick box scan.
+- Round 2 (7889e0c): smoke reworked to poll with diagnostics; evidence polls=60 lastRows=0 primary=false — NO channel ever sees the entity; pig invisible too; zero entities near spawn.
+- Root cause (measured, not guessed): spawn chunks WITHOUT PLAYERS are block-ticking but NOT entity-ticking (Minecraft 1.20.5+ ticket semantics, kept in 26.3) — Bukkit-spawned entities stay untracked forever (getEntity AND getNearbyEntities blind).
+- Round 3 (386ec8d): added paperForceChunk (chunk force ticket around each entity leg) -> BOTH workflows went Maven-red: paper-api 26.3 removed World#setForceLoaded. Fast path established: downloaded paper-api 26.3.build.223 jar from repo.papermc.io and javap'd it (artifacts/paper-api-26.3.jar) — the rename is setChunkForceLoaded; verified all other used surfaces (getEntity(UUID), spawnEntity(Location,EntityType), BoundingBox scan) exist.
+- Round 4 (bd01c2a): rename fix -> ci GREEN; boot1 FULLY GREEN incl. "boat split ok" (polls=1! — force ticket makes the chunk entity-tick instantly) + "pig identity ok"; NEW latent failure surfaced: boot2 "crussty: server already running" — the two-boot M3.3 contract never executed past this point in any earlier run (boat leg failed first every time).
+- crussty guard reverse-engineered from the engine binary (strings): run refuses while the pid recorded via -Donload.pidFile= is ALIVE; no `status` subcommand; `stop` signals but the Paper JVM outlives the CLI by seconds while saving.
+- Round 5 (f4bfef7): stop+status-wait insufficient (status loop broke instantly — no such subcommand) -> boot2 still "already running".
+- Round 6 (93d4a52): wait for the JVM PROCESS itself (pgrep -f onload.pidFile, up to 120 s) + pkill -9 fallback, in BOTH boot steps; boot windows 360s->240s (Done+smoke need ~100 s). FULLY GREEN.
+
+Stage Summary:
+- integration@93d4a52 GREEN end-to-end: boot1 ALL OK (vanilla/modded/drift/note legs + entity legs: boat split ok polls=1 primary+scan, pig identity ok), boot2 "sidecar restore: cimtest:test_block @ world,0,100,1 (stand-in intact)" + M3.3 restart contract green. M3 (3.1-3.4) CLOSED.
+- ci@bd01c2a GREEN (last code-bearing commit).
+- CI economy: docs/workflow-only pushes burn nothing (path filters); today's 6 integration runs were required matrix validation.
+- Next: M4 — F2V v2 packet translation v1 (net hooks, protocol bot; ClientboundPostEffects family mapping per the F2V 2.0 doc).
