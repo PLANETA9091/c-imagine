@@ -177,3 +177,19 @@ Work Log:
 Stage Summary:
 - M2 DONE (M2.1 annotation toggle tracked as follow-up).
 - Next: M3 — state bridge v1 (block read/write through Paper, entity projection, Paper tick scheduler).
+
+---
+Task ID: 3.9
+Agent: main
+Task: M3.1 kernel state bridge — place/break across the two worlds (facade v1)
+
+Work Log:
+- Design zero-RegisterNatives: module poll thread resolves dev.cim.paper.CimPlugin via JVMTI classes::find_class, resolves the plugin INSTANCE through Bukkit.getServer().getPluginManager().getPlugin, polls isWorldReady(), then invokes KernelBridge.runSmoke(pluginObj) on the bootstrap loader — the facade reflects on the plugin BY NAME (String/primitive values only; no shared types).
+- crates/imagine/src/kernel_bridge.rs: poll loop + JNI plumbing (leaked global ref of the bootstrap URLClassLoader; 'static GlobalRef for the plugin object).
+- dev/cim/bridge/KernelBridge.java: synchronous facade — vanilla states pass through; modded ids (cimtest:*) → sidecar record + Paper stand-in (minecraft:structure_void); air clears the sidecar (break).
+- CimPlugin: isWorldReady (ServerLoadEvent), worldName, layerGetBlock/layerSetBlock/paperSetAir with a main-thread hop (callSyncMethod) since bridge callers run on module threads; /cim extended with bridge state.
+- boot job: builds the paper plugin (mvn) and deploys it into srv/plugins/; assertions for all four smoke markers (vanilla roundtrip, modded stand-in, paper-side break observed by layer, ALL OK).
+- clippy -D warnings clean; release build ok; harness still green (957 ms).
+
+Stage Summary:
+- M3.1 bridge ready for the live-boot CI validation (place via layer -> Paper sees it; break via Paper -> layer observes).

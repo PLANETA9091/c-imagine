@@ -46,6 +46,10 @@ jobs:
       - name: build java bootstrap
         run: bash scripts/build-bootstrap.sh
 
+      - name: build paper plugin jar
+        working-directory: paper-plugin
+        run: mvn -q -B package
+
       - name: build + package module
         env:
           CIM_BOOTSTRAP_JAR: ${{ github.workspace }}/java/cim-bootstrap/build/cim-bootstrap.jar
@@ -88,6 +92,8 @@ jobs:
       - name: install module + test mod
         run: |
           unzip -o dist/module-imagine.zip -d srv/modules/
+          mkdir -p srv/plugins
+          cp paper-plugin/target/cim-paper-plugin-0.1.0.jar srv/plugins/
           mkdir -p srv/mods
           cp test-mods/build/libs/cimtest-1.0.0.jar srv/mods/
           # M2: real NeoForge 1.21.1 mods ride along the first-party test mod
@@ -178,7 +184,19 @@ jobs:
             || fail "shadow log pipeline broken: [cimtest] constructed marker missing"
           grep -q "\[cim-layer\].*\[cimtest\] common setup ok" srv/boot.log \
             || fail "shadow log pipeline broken: [cimtest] common setup marker missing"
-          echo "all integration markers present (incl. M1 layer boot + M2 real mods)"
+          # M3.1 kernel state bridge: place via layer -> Paper sees it; break
+          # via Paper -> the layer facade observes it; modded id -> stand-in
+          grep -q "\[c-imagine\] bridge: plugin instance resolved" srv/boot.log \
+            || fail "bridge: plugin instance never resolved"
+          grep -q "bridge smoke: vanilla set ok=true.*roundtrip ok" srv/boot.log \
+            || fail "bridge smoke: vanilla roundtrip missing"
+          grep -q "bridge smoke: modded set ok=true" srv/boot.log \
+            || fail "bridge smoke: modded stand-in leg missing"
+          grep -q "bridge smoke: paper-side break ok=true.*observed" srv/boot.log \
+            || fail "bridge smoke: paper-side break not observed by the layer"
+          grep -q "\[c-imagine\] bridge smoke: ALL OK" srv/boot.log \
+            || fail "bridge smoke did not end ALL OK"
+          echo "all integration markers present (incl. M1 layer boot + M2 real mods + M3 bridge smoke)"
 
       - name: report + upload logs
         if: always()

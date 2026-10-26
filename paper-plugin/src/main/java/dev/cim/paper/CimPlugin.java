@@ -1,10 +1,14 @@
 package dev.cim.paper;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.logging.Logger;
+import org.bukkit.Bukkit;
+import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -12,20 +16,28 @@ import org.bukkit.plugin.java.JavaPlugin;
  *
  * <p>The native module (pre-kernel) owns the heavy lifting; this plugin owns
  * the Paper-visible lifecycle: bridge health reporting, the /cim command, and
- * the attach point where M3's state bridge will register Paper event
- * listeners.
+ * the M3.1 kernel state bridge surface.
  *
- * <p>The module persists its combined boot status to
- * {@code <server root>/c-imagine/status.json} — the file is the M2 module→
- * plugin bridge (no cross-loader JVM tricks needed). /cim status renders it;
- * M3 replaces the file with the cim-bridge ring transport.
+ * <p>Bridge contract (values, never types — the module's class space is
+ * hermetic and the two worlds must not share a classloader):
+ * <ul>
+ *   <li>{@link #isWorldReady()} — polled by the module (native side) until
+ *       the Paper world accepts block operations;</li>
+ *   <li>{@link #worldName()}, {@link #layerGetBlock}, {@link #layerSetBlock},
+ *       {@link #paperSetAir()} — invoked by {@code dev.cim.bridge.KernelBridge}
+ *       through reflection on the plugin instance the module passes over;</li>
+ *   <li>every Bukkit call hops to the main thread (bridge callers run on
+ *       module threads; Paper API is main-thread-only).</li>
+ * </ul>
  *
  * <p>Deliberately minimal API usage (plain Bukkit surface) so it compiles
  * against every 26.3 API build.
  */
-public final class CimPlugin extends JavaPlugin {
+public final class CimPlugin extends JavaPlugin implements Listener {
 
     public static final String LOG_PREFIX = "[c-imagine] ";
+
+    private volatile boolean worldReady;
 
     private Logger log() {
         return getLogger();
@@ -35,6 +47,14 @@ public final class CimPlugin extends JavaPlugin {
     public void onEnable() {
         log().info(LOG_PREFIX + "paper plugin enabled (bridge lifecycle owner)");
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
+        getServer().getPluginManager().registerEvents(this, this);
+    }
+
+    @EventHandler
+    public void onServerLoad(ServerLoadEvent event) {
+        worldReady = true;
+        log().info(LOG_PREFIX + "world ready (ServerLoadEvent " + event.getType()
+                + ") — bridge open");
     }
 
     @Override
@@ -42,13 +62,86 @@ public final class CimPlugin extends JavaPlugin {
         log().info(LOG_PREFIX + "paper plugin disabled");
     }
 
+    // ---- module-polled state ------------------------------------------------
+
+    /** Polled by the native module before opening the bridge. */
+    public boolean isWorldReady() {
+        return worldReady && !getServer().getWorlds().isEmpty();
+    }
+
+    /** Default (over)world name for bridge coordinates. */
+    public String worldName() {
+        World w = getServer().getWorlds().get(0);
+        return w.getName();
+    }
+
+    // ---- bridge surface (KernelBridge reflection targets) --------------------
+
+    /** Kernel block read, serialized as a 26.3 blockstate string. */
+    public String layerGetBlock(String world, int x, int y, int z) {
+        return callSync(() -> {
+            Block b = world(world).getBlockAt(x, y, z);
+            return b.getBlockData().getAsString();
+        });
+    }
+
+    /** Kernel block write from a (possibly 1.21.1) blockstate string. */
+    public boolean layerSetBlock(String world, int x, int y, int z, String state) {
+        return callSync(() -> {
+            try {
+                org.bukkit.block.data.BlockData data = Bukkit.createBlockData(state);
+                world(world).getBlockAt(x, y, z).setBlockData(data);
+                return true;
+            } catch (Exception e) {
+                log().warning(LOG_PREFIX + "layerSetBlock(" + state + ") failed: " + e);
+                return false;
+            }
+        });
+    }
+
+    /** Paper-side break (drives the layer→observes-air smoke leg). */
+    public boolean paperSetAir(String world, int x, int y, int z) {
+        return callSync(() -> world(world).getBlockAt(x, y, z).setAir(true));
+    }
+
+    // ---- helpers -------------------------------------------------------------
+
+    private World world(String name) {
+        World w = Bukkit.getWorld(name);
+        if (w == null) {
+            throw new IllegalStateException("world not found: " + name);
+        }
+        return w;
+    }
+
+    /** Run a Bukkit operation on the main thread; block the caller until done. */
+    private <T> T callSync(java.util.function.Supplier<T> op) {
+        if (Bukkit.isPrimaryThread()) {
+            return op.get();
+        }
+        try {
+            return Bukkit.getScheduler().callSyncMethod(this, op::get).get();
+        } catch (java.util.concurrent.CompletionException e) {
+            Throwable c = e.getCause() == null ? e : e.getCause();
+            throw new IllegalStateException("bridge main-thread hop failed: " + c, c);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("bridge main-thread hop interrupted", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable c = e.getCause() == null ? e : e.getCause();
+            throw new IllegalStateException("bridge main-thread hop failed: " + c, c);
+        }
+    }
+
+    // ---- command surface ------------------------------------------------------
+
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M2)");
+        sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.1)");
         sender.sendMessage(LOG_PREFIX + "kernel: Paper 26.3 | layer: mini NeoForge 1.21.1");
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
-        String[] status = readStatusLines();
-        for (String line : status) {
+        sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));
+        for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }
         return true;
@@ -66,17 +159,19 @@ public final class CimPlugin extends JavaPlugin {
      * side): a regex over the known fields keeps the plugin dependency-free.
      */
     private String[] readStatusLines() {
-        Path file = Path.of(System.getProperty("user.dir"), "c-imagine", "status.json");
-        if (!Files.isRegularFile(file)) {
+        java.nio.file.Path file = java.nio.file.Path.of(
+                System.getProperty("user.dir"), "c-imagine", "status.json");
+        if (!java.nio.file.Files.isRegularFile(file)) {
             return new String[] {"status: module has not written status.json yet"
                     + " (still booting or failed before ready)"};
         }
         try {
-            String json = Files.readString(file);
+            String json = java.nio.file.Files.readString(file);
             return new String[] {
-                "status: " + extract(json, "ready"),
-                "layer: " + extractLayer(json),
-                "mods: " + extractMods(json),
+                "status: " + (json.contains("\"init\":{\"state\":\"ok\"")
+                        && json.contains("\"mods\":{\"state\":\"ok\"") ? "ok" : "degraded"),
+                "layer: " + extract(json, "\"registries\":(\\d+)"),
+                "mods: " + extract(json, "\"mods\":(\\d+),\"registered\""),
                 "detail: " + file,
             };
         } catch (Exception e) {
@@ -85,27 +180,8 @@ public final class CimPlugin extends JavaPlugin {
         }
     }
 
-    /** "ok"/"error" top-level mood of the combined status. */
-    private String extract(String json, String unused) {
-        boolean initOk = json.contains("\"init\":{\"state\":\"ok\"");
-        boolean modsOk = json.contains("\"mods\":{\"state\":\"ok\"");
-        return initOk && modsOk ? "ok" : (initOk ? "init ok, mods degraded" : "degraded");
-    }
-
-    private String extractLayer(String json) {
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("\"registries\":(\\d+)").matcher(json);
-        return m.find()
-                ? "booted, vanilla registries=" + m.group(1)
-                : "booted";
-    }
-
-    private String extractMods(String json) {
-        java.util.regex.Matcher count = java.util.regex.Pattern
-                .compile("\"mods\":(\\d+),\"registered\"").matcher(json);
-        java.util.regex.Matcher entries = java.util.regex.Pattern
-                .compile("\"moddedEntries\":\\{([^}]*)\\}").matcher(json);
-        String head = count.find() ? count.group(1) + " mods executed" : "mods unknown";
-        return head + (entries.find() ? ", modded entries: " + entries.group(1) : "");
+    private String extract(String json, String regex) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(json);
+        return m.find() ? m.group(1) : "unknown";
     }
 }

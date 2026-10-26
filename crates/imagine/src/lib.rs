@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 use cplug_abi::{CPluginApi, JavaVmPtr};
 
+mod kernel_bridge;
 mod layerconfig;
 mod modwatch;
 mod native_reloc;
@@ -236,6 +237,18 @@ fn run_bootstrap(
                 ],
             )
             .map_err(|e| format!("new URLClassLoader: {e}"))?;
+
+        // M3.1 kernel bridge: stash the loader (leaked process-lifetime global
+        // ref) and arm the bridge poll thread. The thread resolves the Paper
+        // plugin through JVMTI once Bukkit's loader comes online, waits for
+        // the world, then drives KernelBridge.runSmoke on the facade side.
+        let loader_global = env
+            .new_global_ref(&loader)
+            .map_err(|e| format!("loader global ref: {e}"))?;
+        let loader_raw = loader_global.as_obj().as_raw() as usize;
+        std::mem::forget(loader_global); // process lifetime by design
+        kernel_bridge::init(vm.0 as *mut jni::sys::JavaVM, loader_raw);
+        kernel_bridge::start();
 
         let class_cls = env
             .find_class("java/lang/Class")
