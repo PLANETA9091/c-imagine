@@ -39,15 +39,32 @@ and asserts discovery + markers; profiling gate green; all unit tests green.
 **Accept:** integration log shows `[c-imagine] layer boot ok (vanilla registries: N)`
 (N ≥ 70 asserted in CI); RSS delta within M1 budget.
 
-## M2 — Mod execution: registries + events
+## M2 — Mod execution: real FML hosting (DONE — status 2026-10-26)
 
-- `mods/` jars relocated into `cim.shadow.mods.<modid>.*` and loaded by
-  ShadowClassLoader; `@Mod` entrypoints constructed; `cim-bus` wired to NeoForge
-  event surfaces (game bus subset): registry events, server lifecycle, tick, login.
-- cimtest mod registers block/item/BE/entity **through the layer** and logs.
+Implemented as **M2.0 real-FML-on-shadow** (design: worklog Task 3.1):
 
-**Accept:** integration asserts cimtest registration markers + `/cim status` reports
-loaded mods; watchdog (JVMTI heap sampling) reports layer usage in step summary.
+- Mod classes keep their ORIGINAL binary names (refs-only design) and resolve
+  layer namespaces through the ShadowClassLoader reference-rewriting stage;
+  the neoforge universal jar participates as a real (fully relocated) layer mod.
+- Real FML 1.21.1 pipeline inside the shadow space: real mods.toml parsing
+  (NightConfig), `ModFile`/`ModFileInfo`/`ModInfo`, `ModList` + `LoadingModList`,
+  real JPMS `ModuleLayer` over the ShadowClassLoader, real `FMLModContainer`
+  (constructor-injection rule + `AutomaticEventSubscriber` via native scan data),
+  `NewRegistryEvent` → `GameData.unfreezeData/postRegisterEvents/freezeData`,
+  FMLCommonSetup/FMLDedicatedServerSetup, game bus start.
+- Real mods from Modrinth ride along: JEI 19.70 (incl. jarjar mezz_config),
+  Jade 15.10.6, AppleSkin 3.0.9, FerriteCore 7.0.3, spark 1.10.124.
+- Shadow-space slf4j→log4j2 stack scoped to the shadow loader (multi-jar
+  `getResources` fix + packaged `log4j2.component.properties`), producing
+  `[cim-layer]` lines with the first-party `[cimtest]` markers.
+
+**Accept (all green on CI):** `m2-real-mods` job — 8 mods constructed, cimtest
+registers `{ITEM=1, BLOCK=1, BLOCK_ENTITY_TYPE=1, ENTITY_TYPE=1}` through the real
+`RegisterEvent` pipeline (~0.7–0.9 s); live `boot` job — the same mod set inside
+the Paper 26.3 JVM via CRUSSTY; `parity-real-neoforge` job — a REAL NeoForge
+21.1.265 server boots the identical mod set and prints the same `[cimtest]`
+markers (cross-boot parity contract). Remaining M2.1 toggle: runtime-visible
+annotation descriptors.
 
 ## M3 — State bridge v1
 

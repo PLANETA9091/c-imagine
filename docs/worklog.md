@@ -137,3 +137,16 @@ Work Log:
 Stage Summary:
 - Shadow space now logs through its own (scoped) slf4j→log4j2 stack; parity contract established with the real server.
 - Pushed: f8eec68 (assert format fix) + log-pipeline + parity job.
+
+---
+Task ID: 3.6
+Agent: main
+Task: CI round 2 — boot + parity GREEN, harness path fix
+
+Work Log:
+- integration 4071465: boot Paper (8 real mods, [cim-layer] markers) GREEN; parity-real-neoforge (real NeoForge 21.1.265 server, same mod set, [cimtest] markers) GREEN on first run; m2-real-mods harness failed on a relative-path bug in run-m2-harness.sh (cd into OUT broke the manifest path).
+- Fix: script resolves LAYER/MODS/OUT to absolute paths up front. Verified locally with a nested relative out dir.
+- docs/ROADMAP.md: M2 section rewritten to DONE status with the M2.0 design summary + acceptance evidence.
+
+Stage Summary:
+- M2 effectively complete and proven on CI from three angles: harness, live Paper boot, real NeoForge parity server. Remaining: green harness job on the path fix + M2.1 annotation toggle.

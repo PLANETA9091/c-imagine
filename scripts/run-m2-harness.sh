@@ -17,6 +17,12 @@ LAYER="${1:?usage: run-m2-harness.sh <layerDir> <modsDir> <outDir>}"
 MODS="${2:?usage: run-m2-harness.sh <layerDir> <modsDir> <outDir>}"
 OUT="${3:?usage: run-m2-harness.sh <layerDir> <modsDir> <outDir>}"
 
+# Absolute paths up front: the java step cds into OUT, which would otherwise
+# break relative layer/mods/manifest paths passed by the caller.
+mkdir -p "$OUT"; OUT="$(cd "$OUT" && pwd)"
+LAYER="$(cd "$LAYER" && pwd)"
+MODS="$(cd "$MODS" && pwd)"
+
 LIB="$ROOT/target/release/libimagine.so"
 CLI="$ROOT/target/release/cim-manifest"
 JAR="$ROOT/java/cim-bootstrap/build/cim-bootstrap.jar"
