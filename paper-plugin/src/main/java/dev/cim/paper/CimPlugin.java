@@ -167,7 +167,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             int cx = (int) Math.floor(x) >> 4;
             int cz = (int) Math.floor(z) >> 4;
             boolean was = w.isChunkForceLoaded(cx, cz);
-            w.setForceLoaded(cx, cz, on);
+            // paper-api 26.3: World#setForceLoaded was renamed —
+            // setChunkForceLoaded is the supported surface (javap-verified
+            // against the 26.3 build).
+            w.setChunkForceLoaded(cx, cz, on);
             return was;
         });
     }
