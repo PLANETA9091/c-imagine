@@ -68,3 +68,23 @@ Work Log:
 Stage Summary:
 - M2.0 = real FML on our runtime, glue ≈ 1 orchestrator class + ModuleLayer factory + loader jar extension + Rust manifest pipeline.
 
+
+---
+Task ID: 3.2
+Agent: main
+Task: M2.0 bring-up on real mods — registration pipeline diagnostics + fixes; CI-first workflow established
+
+Work Log:
+- Sandbox survived partially this time; uncommitted M2 glue (~1500 lines) committed and pushed FIRST (afaa438) per owner's push-often directive.
+- LocalHarness end-to-end bring-up: init (relocation armed, layer boot, mod jars into shadow loader, defineLayerEarly) -> loadMods (FmlHost.run).
+- First failure: NewRegistryEvent left neoforge:* registries pending — root cause: manifest lacked the layer "neoforge" mod (prepend_layer_neoforge requires CIM_LAYER_DIR env; cim-manifest invocation missed it).
+- Traced real NeoForge 21.1.265 sources: NeoForgeRegistries.<clinit> eagerly builds registries (RegistryBuilder.create -> trackModdedRegistry); NeoForgeMod ctor attaches NeoForgeRegistriesSetup handlers to its MOD bus; postNewRegistryEvent posts in mod order -> registration clears pending set.
+- After CIM_LAYER_DIR fix: all 7 containers constructed (5 real Modrinth mods + jarjar mezz_config + neoforge 21.1.265 universal + ClientNeoForgeMod dist-skipped).
+- Registration looked empty (registered={}, moddedEntries=[]) — diagRegisterProbe added to FmlHost (-Dcim.diag=true): ModList identity ok, buses ok, manual RegisterEvent(ITEM) post ok. Insight: the 5 real mods register NOTHING via RegisterEvent (behavioral mods) — empty delta is CORRECT.
+- Added cimtest (rebuilt via javac against the mojmap layer jars — offline path) -> full registration verified: registered={ITEM=1,BLOCK=1,BLOCK_ENTITY_TYPE=1,ENTITY_TYPE=1}, moddedEntries=[cimtest:test_block, cimtest:test_block_entity, cimtest:test_entity]. Real FML pipeline (NewRegistryEvent -> unfreeze -> RegisterEvent per registry in mod order -> freeze) works end-to-end in the shadow space.
+- Fixed FmlHost index-pairing bug: mods skipped by dist filter desynced (mods, containers) parallel loops (IndexOutOfBoundsException) -> containerMods paired list.
+- Full composite run: 8 mods (JEI 19.70.0.460, Jade 15.10.6, AppleSkin 3.0.9, FerriteCore 7.0.3, spark 1.10.124 + jarjar mezz_config + neoforge universal + cimtest) — mod execution ok in ~720 ms.
+
+Stage Summary:
+- M2.0 = real FML hosting works on real NeoForge 1.21.1 mods: discovery, JPMS layer, containers, ctor injection, AutomaticEventSubscriber, NewRegistryEvent, per-registry RegisterEvent, freeze, setup events, game bus start.
+- Next: CI job for the M2 harness (all builds/tests on GitHub CI), push, then M2 parity (real NeoForge ground-truth server) + M2.1 runtime-visible annotations.

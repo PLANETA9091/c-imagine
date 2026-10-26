@@ -195,6 +195,10 @@ public final class FmlHost {
             Method construct = containerCls.getDeclaredMethod("constructMod");
             construct.setAccessible(true);
             List<Object> containers = new ArrayList<>();
+            // Paired with containers index-by-index: mods skipped by the dist
+            // filter are excluded here too, so downstream (mod, container)
+            // parallel loops stay aligned.
+            List<ModSpec> containerMods = new ArrayList<>();
             for (ModSpec mod : mods) {
                 Object scanData = buildScanData(mod);
                 Object info = infoBySpec.get(mod);
@@ -209,6 +213,7 @@ public final class FmlHost {
                 }
                 containers.add(containerCtor.newInstance(
                         info, entrypoints, scanData, layer));
+                containerMods.add(mod);
             }
 
             // containers into ModList (package-private; load order preserved)
@@ -268,8 +273,8 @@ public final class FmlHost {
                     .getMethod("acceptEvent", Class.forName(EVENT));
             Object queue = Class.forName(DEFERRED_QUEUE)
                     .getConstructor(String.class).newInstance("Mod Construction");
-            for (int i = 0; i < mods.size(); i++) {
-                ModSpec mod = mods.get(i);
+            for (int i = 0; i < containerMods.size(); i++) {
+                ModSpec mod = containerMods.get(i);
                 Object container = containers.get(i);
                 try {
                     construct.invoke(container);
@@ -285,6 +290,10 @@ public final class FmlHost {
                 acceptEvent.invoke(container, event);
             }
             Class.forName(DEFERRED_QUEUE).getMethod("runTasks").invoke(queue);
+
+            if (Boolean.getBoolean("cim.diag")) {
+                diagRegisterProbe(containers);
+            }
 
             // 6) real registration flow (per-registry RegisterEvent, mod order)
             Class.forName(REGISTRY_MANAGER).getMethod("postNewRegistryEvent").invoke(null);
@@ -903,6 +912,68 @@ public final class FmlHost {
         Field f = cls.getDeclaredField(field);
         f.setAccessible(true);
         f.set(null, value);
+    }
+
+    /**
+     * Diagnostics for the registration pipeline (enabled with
+     * {@code -Dcim.diag=1}).
+     *
+     * <ol>
+     *   <li>Verifies the shadow-space {@code ModList.get()} identity and
+     *       container count — {@code GameData.postRegisterEvents()} posts
+     *       through {@code ModList.get()}; a detached instance silently
+     *       drops every event.</li>
+     *   <li>Verifies every container's event bus is non-null (acceptEvent
+     *       returns silently on null).</li>
+     *   <li>Manually posts a {@code RegisterEvent} for the ITEM registry on
+     *       every container and measures the registry delta — isolates
+     *       "events not posted" from "listeners not attached".</li>
+     * </ol>
+     */
+    private static void diagRegisterProbe(List<Object> containers) {
+        try {
+            Object modList = getStatic(Class.forName(MOD_LIST), "INSTANCE");
+            Object ids = call(modList, "getMods"); // returns List<ModInfo>
+            int idCount = ids instanceof List<?> l ? l.size() : -1;
+            System.out.println(LOG + "[diag] ModList.get() = " + modList
+                    + " modInfoCount=" + idCount);
+
+            Class<?> modContainer = Class.forName(MOD_CONTAINER);
+            Class<?> regEventCls = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.neoforge.registries.RegisterEvent");
+            Class<?> bir = Class.forName(BUILT_IN_REGISTRIES);
+            Object itemRegistry = getStatic(bir, "ITEM");
+            Method acceptEvent = modContainer.getMethod("acceptEvent", Class.forName(EVENT));
+            Object itemKey = itemRegistry.getClass().getMethod("key").invoke(itemRegistry);
+            Constructor<?> regEventCtor = regEventCls.getDeclaredConstructor(Class.forName(
+                    "cim.shadow.mc1211.net.minecraft.resources.ResourceKey"),
+                    Class.forName("cim.shadow.mc1211.net.minecraft.core.Registry"));
+            regEventCtor.setAccessible(true);
+            Object regEvent = regEventCtor.newInstance(itemKey, itemRegistry);
+
+            int before = registryCensus().getOrDefault("ITEM", -1);
+            for (Object c : containers) {
+                Object bus = call(c, "getEventBus");
+                String modId = String.valueOf(call(c, "getModId"));
+                System.out.println(LOG + "[diag] container " + modId
+                        + " bus=" + (bus != null ? "ok" : "NULL"));
+                try {
+                    acceptEvent.invoke(c, regEvent);
+                } catch (Throwable t) {
+                    Throwable cause = t instanceof InvocationTargetException && t.getCause() != null
+                            ? t.getCause() : t;
+                    System.out.println(LOG + "[diag] manual RegisterEvent post on " + modId
+                            + " FAILED: " + cause);
+                }
+            }
+            int after = registryCensus().getOrDefault("ITEM", -1);
+            System.out.println(LOG + "[diag] manual RegisterEvent(ITEM) post delta: "
+                    + before + " -> " + after);
+        } catch (Throwable t) {
+            Throwable cause = t instanceof InvocationTargetException && t.getCause() != null
+                    ? t.getCause() : t;
+            System.out.println(LOG + "[diag] register probe failed: " + cause);
+        }
     }
 
     private static Object getStatic(Class<?> cls, String field) throws Exception {
