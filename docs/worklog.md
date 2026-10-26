@@ -240,3 +240,21 @@ Work Log:
 
 Stage Summary:
 - Expecting ALL OK on the next boot run.
+
+---
+Task ID: 3.14
+Agent: main
+Task: M3.1 closure — bridge smoke ALL OK on live CI boot
+
+Work Log:
+- integration bc69607 FULLY GREEN (ci, visual, integration incl. parity + harness).
+- Live-boot artifact evidence:
+  * vanilla leg: layer write -> Paper stores yellow_terracotta -> roundtrip ok
+  * modded leg: cimtest:test_block -> Paper stores structure_void (stand-in), layer view resolves sidecar=cimtest:test_block
+  * break leg: Paper-side setType(AIR) -> layer facade observes minecraft:air
+  * bridge smoke: ALL OK
+- M2 + M3.1 acceptance met on GitHub CI, all builds/tests owned by CI per owner directive.
+
+Stage Summary:
+- M3.1 DONE (synchronous string-valued facade; sidecar for modded states).
+- Next: M3.2 — blockstate remap tables (cim-registry) for vanilla drift (1.21.1 <-> 26.3 property diff, boat split, fluid shrink fixtures); M3.3 — persistent sidecar (survive restart, zero orphan state); M3.4 — entity projection; ring transport (cim-bridge) when throughput matters.
