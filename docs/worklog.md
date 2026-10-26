@@ -164,3 +164,16 @@ Work Log:
 
 Stage Summary:
 - M2 acceptance surface complete: mods run (harness + live boot), parity server green, /cim status bridge file contract in place.
+
+---
+Task ID: 3.8
+Agent: main
+Task: M2 closure — all integration jobs green on CI
+
+Work Log:
+- integration 8954c6c + e88c713: FULLY GREEN (ci, visual, integration).
+- Three-way proof of M2: (1) m2-real-mods harness — 8 mods through real FML in the shadow space; (2) live boot — same set inside the Paper 26.3 JVM via CRUSSTY with status.json bridge asserted; (3) parity-real-neoforge — real NeoForge 21.1.265 server prints identical [cimtest] markers.
+
+Stage Summary:
+- M2 DONE (M2.1 annotation toggle tracked as follow-up).
+- Next: M3 — state bridge v1 (block read/write through Paper, entity projection, Paper tick scheduler).
