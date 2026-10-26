@@ -101,7 +101,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     /** Paper-side break (drives the layer→observes-air smoke leg). */
     public boolean paperSetAir(String world, int x, int y, int z) {
-        return callSync(() -> world(world).getBlockAt(x, y, z).setAir(true));
+        // paper-api 26.3: Block#setAir(boolean) is gone — setType(Material) is
+        // the supported surface (verified against the 26.3 build in CI).
+        return callSync(() -> {
+            world(world).getBlockAt(x, y, z).setType(org.bukkit.Material.AIR);
+            return true;
+        });
     }
 
     // ---- helpers -------------------------------------------------------------

@@ -193,3 +193,15 @@ Work Log:
 
 Stage Summary:
 - M3.1 bridge ready for the live-boot CI validation (place via layer -> Paper sees it; break via Paper -> layer observes).
+
+---
+Task ID: 3.10
+Agent: main
+Task: CI round 3 — paper-api 26.3 surface drift fix
+
+Work Log:
+- paper-plugin compile failure on CI: Block#setAir(boolean) no longer exists in paper-api 26.3 — replaced with setType(Material.AIR) (void return wrapped).
+- Harness + parity jobs stayed green; only the plugin surface drifted.
+
+Stage Summary:
+- Pushing fix; expecting full green on the next run (bridge smoke runs in the live boot).
