@@ -90,6 +90,9 @@ jobs:
           unzip -o dist/module-imagine.zip -d srv/modules/
           mkdir -p srv/mods
           cp test-mods/build/libs/cimtest-1.0.0.jar srv/mods/
+          # M2: real NeoForge 1.21.1 mods ride along the first-party test mod
+          bash scripts/fetch-real-mods.sh srv/realmods
+          cp srv/realmods/*.jar srv/mods/
           echo "eula=true" > srv/eula.txt
           cat > srv/server.properties <<'PROPS'
           online-mode=false
@@ -123,7 +126,7 @@ jobs:
           grep -q "module imagine -> init rc=0" srv/boot.log || fail "module init rc != 0"
           grep -q "\[c-imagine\] class-load hook observed: dev/cim/bootstrap/Bootstrap" srv/boot.log || fail "class hook pipeline marker missing"
           grep -q "\[c-imagine\] bootstrap ready: {\"state\":\"ok\"" srv/boot.log || fail "java bootstrap not ok"
-          grep -q "\[c-imagine\] mods (1): cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
+          grep -qE "\[c-imagine\] mods \([0-9]+\): .*cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
           grep -q "\[c-imagine\] kernel ready (Paper class space online)" srv/boot.log || fail "kernel-ready marker missing"
           # M1: relocated 1.21.1 layer boots and snapshots vanilla registries
           LAYER_LINE=$(grep -oE "\[c-imagine\] layer boot ok \(vanilla registries: [0-9]+" srv/boot.log | tail -1)
@@ -131,7 +134,20 @@ jobs:
           REGS=$(echo "$LAYER_LINE" | grep -oE "[0-9]+$")
           echo "layer registries: $REGS"
           [ "$REGS" -ge 70 ] || fail "vanilla registries count too low: $REGS"
-          echo "all integration markers present (incl. M1 layer boot)"
+          # M2: real-FML mod execution over the composite mod set (real mods +
+          # cimtest) inside the live Paper JVM
+          grep -q "\[c-imagine\] mod execution ok" srv/boot.log || fail "M2 mod execution FAILED"
+          for m in appleskin neoforge cimtest ferritecore jade jei spark; do
+            grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
+          done
+          REG=$(grep -oE "registered=\{[^}]*\}" srv/boot.log | tail -1)
+          echo "cimtest registrations: $REG"
+          echo "$REG" | grep -q "ITEM=[1-9]" || fail "no ITEM registrations on live boot"
+          echo "$REG" | grep -q "BLOCK=[1-9]" || fail "no BLOCK registrations on live boot"
+          echo "$REG" | grep -q "ENTITY_TYPE=[1-9]" || fail "no ENTITY_TYPE registrations on live boot"
+          grep -q "cimtest:test_block" srv/boot.log || fail "cimtest:test_block not registered on live boot"
+          grep -q "cimtest:test_entity" srv/boot.log || fail "cimtest:test_entity not registered on live boot"
+          echo "all integration markers present (incl. M1 layer boot + M2 real mods)"
 
       - name: report + upload logs
         if: always()
@@ -216,8 +232,12 @@ jobs:
             grep -q "\[c-imagine\] mod $m: constructed" $L || fail "mod $m not constructed"
           done
           # cimtest registrations went through the real RegisterEvent pipeline
-          grep -q "registered={ITEM=1, BLOCK=1, BLOCK_ENTITY_TYPE=1, ENTITY_TYPE=1}" $L \
-            || fail "cimtest registrations missing: $(grep -oE 'registered=\{[^}]*\}' $L | tail -1)"
+          REG=$(grep -oE "registered=\{[^}]*\}" $L | tail -1)
+          echo "cimtest registrations: $REG"
+          echo "$REG" | grep -q "ITEM=[1-9]" || fail "no ITEM registrations"
+          echo "$REG" | grep -q "BLOCK=[1-9]" || fail "no BLOCK registrations"
+          echo "$REG" | grep -q "BLOCK_ENTITY_TYPE=[1-9]" || fail "no BLOCK_ENTITY_TYPE registrations"
+          echo "$REG" | grep -q "ENTITY_TYPE=[1-9]" || fail "no ENTITY_TYPE registrations"
           grep -q "cimtest:test_block" $L || fail "cimtest:test_block not registered"
           grep -q "cimtest:test_block_entity" $L || fail "cimtest:test_block_entity not registered"
           grep -q "cimtest:test_entity" $L || fail "cimtest:test_entity not registered"
