@@ -96,7 +96,7 @@ fn bridge_loop() -> Result<(), String> {
     //    are live, then wait for the world (plugin flag, polled).
     let plugin = {
         let deadline = Instant::now() + Duration::from_secs(300);
-        let mut resolved: Option<jni::objects::GlobalRef> = None;
+        let resolved;
         loop {
             if Instant::now() > deadline {
                 return Err("bridge: plugin instance never resolved".into());
@@ -145,12 +145,12 @@ fn bridge_loop() -> Result<(), String> {
                     .map_err(|e| format!("plugin global ref: {e}"))
             });
             if let Some(g) = attempt {
-                resolved = Some(g);
+                resolved = g;
                 break;
             }
             std::thread::sleep(Duration::from_millis(1000));
         }
-        resolved.expect("resolved above")
+        resolved
     };
     let plugin_obj = plugin.as_obj();
 
