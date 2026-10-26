@@ -155,6 +155,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
+     * Force-load the chunk containing (x, z) so it ENTITY-TICKS without
+     * players. Spawn chunks without players are block-ticking only (Minecraft
+     * 1.20.5+ semantics): entities spawned there stay untracked and invisible
+     * to getEntity/getNearbyEntities. The facade owns a force ticket around
+     * entity-projection operations. Returns the previous force state.
+     */
+    public boolean paperForceChunk(String world, double x, double z, boolean on) {
+        return callSync(() -> {
+            org.bukkit.World w = world(world);
+            int cx = (int) Math.floor(x) >> 4;
+            int cz = (int) Math.floor(z) >> 4;
+            boolean was = w.isChunkForceLoaded(cx, cz);
+            w.setForceLoaded(cx, cz, on);
+            return was;
+        });
+    }
+
+    /**
      * Resolve an entity by UUID and return its 26.3 type key
      * ("minecraft:oak_boat"), or null when absent. UUID lookup is the
      * registration-authoritative channel (box scans can lag a tick behind

@@ -169,6 +169,14 @@ public final class KernelBridge {
                     String.class, String.class);
             Method removeEntity = pluginClass.getMethod("paperRemoveEntity",
                     String.class, String.class);
+            Method forceChunk = pluginClass.getMethod("paperForceChunk",
+                    String.class, double.class, double.class, boolean.class);
+
+            // Spawn chunks without players are block-ticking but NOT
+            // entity-ticking (Minecraft 1.20.5+ ticket semantics) — spawned
+            // entities stay untracked (getEntity AND getNearbyEntities both
+            // blind, polls=60/lastRows=0 proven on CI). Force-load the leg
+            // chunks around projection operations so they entity-tick.
 
             // 6a) remapped type: 1.21.1 boat -> 26.3 oak_boat.
             // Visibility contract: the Paper world holds the remapped entity
@@ -185,12 +193,17 @@ public final class KernelBridge {
             boolean boatOk = false;
             int polls = 0;
             int lastRows = -1;
+            String firstType = null;
             if (boatUuid != null) {
+                forceChunk.invoke(plugin, world, (double) x + 3, (double) z, true);
                 for (int i = 0; i < 60 && !boatPrimary; i++) {
                     String t = (String) getEntityType.invoke(plugin, world, boatUuid);
                     String[] rows = (String[]) listEntities.invoke(plugin, world,
                             (double) x + 3, (double) y, (double) z, 8.0);
                     polls++;
+                    if (firstType == null && (t != null || rows.length > 0)) {
+                        firstType = String.valueOf(t);
+                    }
                     lastRows = rows.length;
                     if (boatKernel.equals(t)) {
                         boatPrimary = true;
@@ -209,7 +222,7 @@ public final class KernelBridge {
                 boolean boatBack =
                         StateMapper.get().kernelToLayerKey("entity_type", boatKernel)
                                 .equals(boatLayer);
-                removeEntity.invoke(plugin, world, boatUuid);
+                boolean removed = (Boolean) removeEntity.invoke(plugin, world, boatUuid);
                 for (int i = 0; i < 60; i++) {
                     String t = (String) getEntityType.invoke(plugin, world, boatUuid);
                     String[] after = (String[]) listEntities.invoke(plugin, world,
@@ -226,13 +239,15 @@ public final class KernelBridge {
                     }
                     Thread.sleep(50);
                 }
+                forceChunk.invoke(plugin, world, (double) x + 3, (double) z, false);
                 boatOk = boatPrimary && boatBack && boatGone;
                 System.out.println(LOG + " bridge smoke: entity boat leg uuid=" + boatUuid
                         + " kernel=" + boatKernel
                         + " primary=" + boatPrimary + " scan=" + boatScan
                         + " back=minecraft:boat (" + boatBack + ")"
-                        + " removed&gone=" + boatGone
+                        + " removed=" + removed + "&gone=" + boatGone
                         + " polls=" + polls + " lastRows=" + lastRows
+                        + " firstType=" + firstType
                         + (boatOk ? " (boat split ok)" : " (MISMATCH)"));
             } else {
                 System.out.println(LOG + " bridge smoke: entity boat leg uuid=null"
@@ -246,6 +261,7 @@ public final class KernelBridge {
                     (double) x + 5, (double) y, (double) z, pigKernel);
             boolean pigPrimary = false;
             if (pigUuid != null) {
+                forceChunk.invoke(plugin, world, (double) x + 5, (double) z, true);
                 for (int i = 0; i < 60 && !pigPrimary; i++) {
                     String t = (String) getEntityType.invoke(plugin, world, pigUuid);
                     if ("minecraft:pig".equals(t)) {
@@ -255,6 +271,7 @@ public final class KernelBridge {
                     }
                 }
                 removeEntity.invoke(plugin, world, pigUuid);
+                forceChunk.invoke(plugin, world, (double) x + 5, (double) z, false);
             }
             boolean pigOk = pigUuid != null && "minecraft:pig".equals(pigKernel) && pigPrimary;
             System.out.println(LOG + " bridge smoke: entity pig leg uuid=" + pigUuid
