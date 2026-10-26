@@ -8,7 +8,13 @@ description = "c-imagine mod jar scanner: neoforge.mods.toml, @Mod bytecode scan
 
 [dependencies]
 cim-core = { workspace = true }
+cim-reloc = { workspace = true }
 toml = { workspace = true }
 zip = { workspace = true }
 thiserror = { workspace = true }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "cim-manifest"
+path = "src/bin/manifest.rs"

@@ -47,6 +47,9 @@ public final class ShadowClassLoader extends ClassLoader {
     };
 
     private final AtomicLong defined = new AtomicLong();
+    /** Index (into {@link #jars}) of the first mod jar — earlier jars are the
+     * 1.21.1 layer set and keep M1 full-relocation semantics. */
+    private volatile int modJarStart = Integer.MAX_VALUE;
     private final List<JarFile> jars = new ArrayList<>();
     private final List<URL> jarUrls = new ArrayList<>();
     /** requested entry path (relocated or original) → (jar index, on-disk entry path) */
@@ -209,6 +212,38 @@ public final class ShadowClassLoader extends ClassLoader {
         }
     }
 
+    /**
+     * Extend the shadow space with mod jars (M2). Must be called after
+     * {@link NativeReloc#registerMods} so the index resolves mod classes to
+     * their relocated paths. Resets the index; the next class load rebuilds
+     * it over the full jar set (layer jars keep their earlier order — mod
+     * jars are appended, in manifest order).
+     */
+    public static synchronized void addModJars(java.util.List<String> jarPaths) {
+        ShadowClassLoader loader = instance;
+        if (loader == null) {
+            throw new IllegalStateException("ShadowClassLoader not prepared");
+        }
+        for (String p : jarPaths) {
+            if (p == null || p.isEmpty()) {
+                continue;
+            }
+            try {
+                loader.jars.add(new JarFile(new java.io.File(p), true,
+                        java.util.zip.ZipFile.OPEN_READ, Runtime.version()));
+                loader.jarUrls.add(Path.of(p).toUri().toURL());
+            } catch (Exception e) {
+                throw new IllegalStateException("mod jar open: " + p + ": " + e, e);
+            }
+        }
+        if (loader.modJarStart == Integer.MAX_VALUE) {
+            loader.modJarStart = loader.jars.size() - jarPaths.size();
+        }
+        loader.index = null; // rebuilt lazily over the extended set
+        System.out.println("[c-imagine] shadow loader: +" + jarPaths.size()
+                + " mod jar(s), total " + loader.jars.size());
+    }
+
     public static ShadowClassLoader get() {
         ShadowClassLoader l = instance;
         if (l == null) {
@@ -255,7 +290,13 @@ public final class ShadowClassLoader extends ClassLoader {
         // relocation would skip the rewrite entirely).
         byte[] relocated;
         try {
-            relocated = NativeReloc.relocate(source.internalName(), bytes);
+            if (source.jarIdx() >= modJarStart) {
+                // M2 mod class: keep the original binary name; rewrite only
+                // the references into the layer namespaces.
+                relocated = NativeReloc.relocateMod(source.internalName(), bytes);
+            } else {
+                relocated = NativeReloc.relocate(source.internalName(), bytes);
+            }
         } catch (Throwable t) {
             throw new ClassNotFoundException(name + " (relocation failed: " + t + ")", t);
         }
@@ -302,10 +343,15 @@ public final class ShadowClassLoader extends ClassLoader {
             while (entries.hasMoreElements()) {
                 JarEntry e = entries.nextElement();
                 String name = e.getName();
-                if (name.endsWith("/")) {
+                if (name.endsWith("/") || name.endsWith("module-info.class")) {
                     continue;
                 }
-                map.putIfAbsent(name, new IndexEntry(i, name));
+                if (name.endsWith(".class")) {
+                    String internal = name.substring(0, name.length() - ".class".length());
+                    map.putIfAbsent(name, new IndexEntry(i, name, internal));
+                } else {
+                    map.putIfAbsent(name, new IndexEntry(i, name));
+                }
                 if (name.endsWith(".class")) {
                     String internal = name.substring(0, name.length() - ".class".length());
                     String relocated = NativeReloc.mapInternal(internal);
@@ -355,10 +401,30 @@ public final class ShadowClassLoader extends ClassLoader {
     @Override
     public java.util.Enumeration<URL> getResources(String name) throws IOException {
         URL single = findResource(name);
+        if (single == null && name.startsWith("META-INF/services/")) {
+            System.out.println("[c-imagine][dbg] getResources MISS: " + name);
+        }
         return java.util.Collections.enumeration(single == null ? List.of() : List.of(single));
     }
 
     /** Child-first: JDK from the platform loader, everything else from here. */
+    /**
+     * Two-arg module-aware findClass: {@code Class.forName(Module, String)}
+     * routes here through the final {@code loadClass(Module, String)} and the
+     * DEFAULT implementation returns null for any named module. We load by
+     * binary name through our own index; the caller's
+     * {@code c.getModule() == module} attribution check stays authoritative
+     * (modules are attributed by the package sets in the descriptors).
+     */
+    @Override
+    protected Class<?> findClass(String moduleName, String name) {
+        try {
+            return findClass(name);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
+    }
+
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
         synchronized (getClassLoadingLock(name)) {

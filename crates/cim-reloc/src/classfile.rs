@@ -223,6 +223,56 @@ impl ClassFile {
     /// Returns the new bytes plus rewrite statistics. Never mutates the
     /// original slot contents; rewritten entries point at appended UTF-8s.
     pub fn rewrite(&self, table: &RelocationTable) -> Result<(Vec<u8>, RewriteStats), ParseError> {
+        self.rewrite_at(table, &crate::at::AccessTransformTable::default(), "")
+    }
+
+    /// Full rewrite with an access-transform database: matching classes and
+    /// members get their access flags widened before emission. Directives
+    /// are keyed by the ORIGINAL (on-disk) class name.
+    pub fn rewrite_at(
+        &self,
+        table: &RelocationTable,
+        at: &crate::at::AccessTransformTable,
+        original_name: &str,
+    ) -> Result<(Vec<u8>, RewriteStats), ParseError> {
+        self.rewrite_internal_at(table, None, at, original_name)
+    }
+
+    /// Rewrite references only (M2 mod classes): the class keeps its original
+    /// binary name; every reference into the layer namespaces is rewritten.
+    pub fn rewrite_refs_only(
+        &self,
+        table: &RelocationTable,
+        self_name: &str,
+    ) -> Result<(Vec<u8>, RewriteStats), ParseError> {
+        self.rewrite_internal(table, Some(self_name))
+    }
+
+    /// Refs-only rewrite with an access-transform database.
+    pub fn rewrite_refs_only_at(
+        &self,
+        table: &RelocationTable,
+        at: &crate::at::AccessTransformTable,
+        self_name: &str,
+    ) -> Result<(Vec<u8>, RewriteStats), ParseError> {
+        self.rewrite_internal_at(table, Some(self_name), at, self_name)
+    }
+
+    fn rewrite_internal(
+        &self,
+        table: &RelocationTable,
+        self_exempt: Option<&str>,
+    ) -> Result<(Vec<u8>, RewriteStats), ParseError> {
+        self.rewrite_internal_at(table, self_exempt, &crate::at::AccessTransformTable::default(), "")
+    }
+
+    fn rewrite_internal_at(
+        &self,
+        table: &RelocationTable,
+        self_exempt: Option<&str>,
+        at: &crate::at::AccessTransformTable,
+        original_name: &str,
+    ) -> Result<(Vec<u8>, RewriteStats), ParseError> {
         let mut stats = RewriteStats::default();
         let mut intern = Utf8Intern::new();
         // New entries start after the original pool (index == entries.len()).
@@ -254,6 +304,10 @@ impl ClassFile {
                         .map_err(|_| ParseError::Truncated("non-utf8 class name"))?;
                     // Class entries carry either a plain internal name or an
                     // array descriptor ("[L...;").
+                    if self_exempt == Some(name) {
+                        // self-reference: never rename the class's own name
+                        continue;
+                    }
                     let mapped = if name.starts_with('[') {
                         table.map_descriptor(name)
                     } else {
@@ -312,6 +366,35 @@ impl ClassFile {
 
         // Member declaration descriptors (field_info / method_info).
         let mut body = self.body.clone();
+        // Access transformers (M2): widen class + member access exactly like
+        // a real AT-patched runtime. Lookups use the ORIGINAL names — the
+        // pool is untouched at this point.
+        if let Some(class_ats) = at.for_class(original_name) {
+            for a in class_ats.iter() {
+                body.access = crate::at::apply(body.access, *a);
+            }
+        }
+        for member in body.fields.iter_mut() {
+            if let Some(name) = self.utf8(member.name).and_then(|b| std::str::from_utf8(b).ok()) {
+                if let Some(a) = at.for_member(original_name, name) {
+                    member.access = crate::at::apply(member.access, a);
+                }
+            }
+        }
+        for member in body.methods.iter_mut() {
+            if let (Some(name), Some(desc)) = (
+                self.utf8(member.name).and_then(|b| std::str::from_utf8(b).ok()),
+                self.utf8(member.descriptor).and_then(|b| std::str::from_utf8(b).ok()),
+            ) {
+                let key = format!("{name}{desc}");
+                if let Some(a) = at
+                    .for_member(original_name, &key)
+                    .or_else(|| at.for_member(original_name, name))
+                {
+                    member.access = crate::at::apply(member.access, a);
+                }
+            }
+        }
         for member in body.fields.iter_mut().chain(body.methods.iter_mut()) {
             if let Some(mapped) = self.rewrite_descriptor(table, member.descriptor)? {
                 let idx = intern_descriptor(&mapped, &mut stats, &mut intern, &mut next_index)?;
@@ -319,55 +402,97 @@ impl ClassFile {
             }
         }
 
-        let total = self.entries.len() + intern.len();
-        if total > u16::MAX as usize {
-            return Err(ParseError::PoolOverflow);
-        }
-
         // ---- rebuild -----------------------------------------------------
+        // The pool is emitted into its own buffer and the cp_count is written
+        // only after the whole body was built: the refs-only annotation pass
+        // interns fresh UTF-8s while re-emitting the body, and the header
+        // must count them.
+        let mut pool: Vec<u8> = Vec::with_capacity(48 * 1024);
         let mut out: Vec<u8> = Vec::with_capacity(64 * 1024);
         out.extend_from_slice(&[0xCA, 0xFE, 0xBA, 0xBE]);
         out.extend_from_slice(&self.minor_version.to_be_bytes());
         out.extend_from_slice(&self.major_version.to_be_bytes());
-        out.extend_from_slice(&(total as u16).to_be_bytes());
+        // cp_count is written after the body (see below).
 
         for slot in 1..self.entries.len() {
             match rewritten.get(&(slot as u16)) {
                 Some(e) => {
-                    out.push(e.tag);
-                    out.extend_from_slice(&e.data);
+                    pool.push(e.tag);
+                    pool.extend_from_slice(&e.data);
                 }
                 None => {
                     if let Some(e) = &self.entries[slot] {
-                        out.push(e.tag);
+                        pool.push(e.tag);
                         if e.tag == TAG_UTF8 {
                             // Parsed utf8 payload is the raw content; the
                             // on-disk form carries a u2 length prefix.
-                            out.extend_from_slice(&(e.data.len() as u16).to_be_bytes());
+                            pool.extend_from_slice(&(e.data.len() as u16).to_be_bytes());
                         }
-                        out.extend_from_slice(&e.data);
+                        pool.extend_from_slice(&e.data);
                     }
                     // Placeholder slot after long/double: write nothing.
                 }
             }
         }
+        // NOTE: the appended-UTF8 block is emitted AFTER the body is built —
+        // the refs-only annotation pass interns fresh UTF-8s while re-emitting
+        // the body, and they must land in the pool too.
+
+        // Body with updated member descriptors (and, in refs-only mode,
+        // rewritten runtime annotation descriptors so JVM reflection sees the
+        // relocated annotation classes — the eventbus's @SubscribeEvent check
+        // depends on this).
+        let rewrite_annos = true;
+        let mut body_out: Vec<u8> = Vec::with_capacity(16 * 1024);
+        body_out.extend_from_slice(&body.access.to_be_bytes());
+        body_out.extend_from_slice(&body.this_class.to_be_bytes());
+        body_out.extend_from_slice(&body.super_class.to_be_bytes());
+        body_out.extend_from_slice(&(body.interfaces.len() as u16).to_be_bytes());
+        for iface in &body.interfaces {
+            body_out.extend_from_slice(&iface.to_be_bytes());
+        }
+        // Signatures AND runtime annotations are rewritten in BOTH modes:
+        // JVM reflection resolves annotation type/enum/class descriptors by
+        // name, and the eventbus's @SubscribeEvent check (plus
+        // AnnotationParser default values) breaks on raw descriptors. FML's
+        // own raw-byte annotation scanning is replaced by the cim-modscan
+        // Rust scanner, so raw preservation is no longer required.
+        write_members_annos(
+            &mut body_out, &body.fields, self, table, &mut intern, &mut next_index, &mut stats,
+            rewrite_annos,
+        )?;
+        write_members_annos(
+            &mut body_out, &body.methods, self, table, &mut intern, &mut next_index, &mut stats,
+            rewrite_annos,
+        )?;
+        rewrite_attr_block(
+            &body.class_attrs,
+            &mut body_out,
+            self,
+            table,
+            &mut intern,
+            &mut next_index,
+            &mut stats,
+            rewrite_annos,
+        )?;
+
+        // Emit the appended UTF-8s (member descriptors AND annotation
+        // descriptors, both interned while building the body).
         for content in &intern.appended {
-            out.push(TAG_UTF8);
-            out.extend_from_slice(&(content.len() as u16).to_be_bytes());
-            out.extend_from_slice(content);
+            pool.push(TAG_UTF8);
+            pool.extend_from_slice(&(content.len() as u16).to_be_bytes());
+            pool.extend_from_slice(content);
         }
 
-        // Body with updated member descriptors.
-        out.extend_from_slice(&body.access.to_be_bytes());
-        out.extend_from_slice(&body.this_class.to_be_bytes());
-        out.extend_from_slice(&body.super_class.to_be_bytes());
-        out.extend_from_slice(&(body.interfaces.len() as u16).to_be_bytes());
-        for iface in &body.interfaces {
-            out.extend_from_slice(&iface.to_be_bytes());
+        // Final pool count: member descriptors AND annotation descriptors
+        // both appended while building the body.
+        let total = self.entries.len() + intern.len();
+        if total > u16::MAX as usize {
+            return Err(ParseError::PoolOverflow);
         }
-        write_members(&mut out, &body.fields);
-        write_members(&mut out, &body.methods);
-        out.extend_from_slice(&body.class_attrs);
+        out.extend_from_slice(&(total as u16).to_be_bytes());
+        out.extend_from_slice(&pool);
+        out.extend_from_slice(&body_out);
 
         stats.utf8_added = intern.len();
         Ok((out, stats))
@@ -515,3 +640,295 @@ fn read_u32(bytes: &[u8], pos: &mut usize) -> Option<u32> {
 }
 
 use std::collections::HashMap;
+
+
+/// Attribute names carrying runtime annotations whose type descriptors the
+/// JVM resolves by name at reflection time (refs-only mode rewrites them).
+const RUNTIME_ANNOTATION_ATTRS: [&str; 4] = [
+    "RuntimeVisibleAnnotations",
+    "RuntimeInvisibleAnnotations",
+    "RuntimeVisibleParameterAnnotations",
+    "RuntimeInvisibleParameterAnnotations",
+];
+
+/// Annotation-element payload rewritten in BOTH modes: annotation DEFAULT
+/// values (e.g. `@SubscribeEvent(priority = EventPriority.NORMAL)`) are read
+/// by the JVM's AnnotationParser on the annotation interface itself — a layer
+/// class — and its enum/class element descriptors must point at the
+/// relocated names or reflection blows up with wrong-name NoClassDefFound.
+const ANNOTATION_DEFAULT_ATTR: &str = "AnnotationDefault";
+
+
+/// Rewrite one raw attribute block (count + entries), re-emitting runtime
+/// annotation payloads with relocated type descriptors.
+fn rewrite_attr_block(
+    block: &[u8],
+    out: &mut Vec<u8>,
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    rewrite_annotations: bool,
+) -> Result<(), ParseError> {
+    if block.len() < 2 {
+        out.extend_from_slice(block);
+        return Ok(());
+    }
+    let count = u16::from_be_bytes([block[0], block[1]]);
+    let mut pos = 2usize;
+    let mut new_block: Vec<u8> = Vec::with_capacity(block.len());
+    new_block.extend_from_slice(&count.to_be_bytes());
+    for _ in 0..count {
+        if pos + 6 > block.len() {
+            // malformed tail: copy verbatim
+            new_block.extend_from_slice(&block[pos..]);
+            break;
+        }
+        let name_idx = u16::from_be_bytes([block[pos], block[pos + 1]]);
+        let len = u32::from_be_bytes([
+            block[pos + 2],
+            block[pos + 3],
+            block[pos + 4],
+            block[pos + 5],
+        ]) as usize;
+        let content = block
+            .get(pos + 6..pos + 6 + len)
+            .ok_or(ParseError::Truncated("attr content"))?;
+        pos += 6 + len;
+
+        let attr_name = cf
+            .utf8(name_idx)
+            .and_then(|b| std::str::from_utf8(b).ok().map(String::from));
+        let anno_kind = attr_name.as_deref().and_then(|n| {
+            if n.ends_with("ParameterAnnotations") {
+                Some(true)
+            } else if RUNTIME_ANNOTATION_ATTRS.contains(&n) {
+                Some(false)
+            } else {
+                None
+            }
+        });
+        let is_annotation_default = attr_name.as_deref() == Some(ANNOTATION_DEFAULT_ATTR);
+        if attr_name.as_deref() == Some("Signature") && content.len() >= 2 {
+            // Generic signatures: one utf8 index; the JVM resolves class-type
+            // segments through reflection by NAME, so they must be rewritten
+            // in BOTH modes (layer classes' signatures reference relocated
+            // types too — the eventbus's generic listener plumbing hits it).
+            let sig_idx = u16::from_be_bytes([content[0], content[1]]);
+            let orig = cf
+                .utf8(sig_idx)
+                .ok_or(ParseError::Truncated("signature utf8"))?;
+            let orig = std::str::from_utf8(orig)
+                .map_err(|_| ParseError::Truncated("non-utf8 signature"))?;
+            let mapped = table.map_signature(orig);
+            let new_idx = if mapped == orig {
+                sig_idx
+            } else {
+                let idx = intern.intern(mapped.as_bytes(), next_index);
+                stats.descriptors_rewritten += 1;
+                idx
+            };
+            new_block.extend_from_slice(&name_idx.to_be_bytes());
+            new_block.extend_from_slice(&2u32.to_be_bytes());
+            new_block.extend_from_slice(&new_idx.to_be_bytes());
+        } else if is_annotation_default {
+            // AnnotationDefault: a bare element_value (no leading count).
+            let mut r = ByteCursor::new(content);
+            let mut o: Vec<u8> = Vec::with_capacity(content.len());
+            rewrite_element_value(cf, table, intern, next_index, stats, &mut r, &mut o)?;
+            o.extend_from_slice(r.rest());
+            new_block.extend_from_slice(&name_idx.to_be_bytes());
+            new_block.extend_from_slice(&(o.len() as u32).to_be_bytes());
+            new_block.extend_from_slice(&o);
+        } else if rewrite_annotations && anno_kind.is_some() {
+            let is_param = anno_kind.unwrap();
+            let rewritten = if is_param {
+                // Runtime*ParameterAnnotations: num_params u1, then per param
+                // (num_annotations u2 + annotations).
+                let mut r = ByteCursor::new(content);
+                let mut o: Vec<u8> = Vec::with_capacity(content.len());
+                let num_params = r.u1().ok_or(ParseError::Truncated("param count"))?;
+                o.push(num_params);
+                for _ in 0..num_params {
+                    let num = r.u2().ok_or(ParseError::Truncated("param anno count"))?;
+                    o.extend_from_slice(&num.to_be_bytes());
+                    for _ in 0..num {
+                        rewrite_annotation(cf, table, intern, next_index, stats, &mut r, &mut o)?;
+                    }
+                }
+                o.extend_from_slice(r.rest());
+                o
+            } else {
+                rewrite_annotation_payload(cf, table, intern, next_index, stats, content)?
+            };
+            new_block.extend_from_slice(&name_idx.to_be_bytes());
+            new_block.extend_from_slice(&(rewritten.len() as u32).to_be_bytes());
+            new_block.extend_from_slice(&rewritten);
+        } else {
+            new_block.extend_from_slice(&block[pos - len - 6..pos]);
+        }
+    }
+    out.extend_from_slice(&new_block);
+    Ok(())
+}
+
+/// Re-emit one Runtime*Annotations payload with relocated annotation type
+/// descriptors (and enum/class element descriptors).
+fn rewrite_annotation_payload(
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    content: &[u8],
+) -> Result<Vec<u8>, ParseError> {
+    let mut r = ByteCursor::new(content);
+    let mut out: Vec<u8> = Vec::with_capacity(content.len());
+    let num = r.u2().ok_or(ParseError::Truncated("anno count"))?;
+    out.extend_from_slice(&num.to_be_bytes());
+    for _ in 0..num {
+        rewrite_annotation(cf, table, intern, next_index, stats, &mut r, &mut out)?;
+    }
+    out.extend_from_slice(r.rest());
+    Ok(out)
+}
+
+fn rewrite_annotation(
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    r: &mut ByteCursor<'_>,
+    out: &mut Vec<u8>,
+) -> Result<(), ParseError> {
+    let type_idx = r.u2().ok_or(ParseError::Truncated("anno type idx"))?;
+    out.extend_from_slice(&rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes());
+    let num_pairs = r.u2().ok_or(ParseError::Truncated("anno pairs"))?;
+    out.extend_from_slice(&num_pairs.to_be_bytes());
+    for _ in 0..num_pairs {
+        let name_idx = r.u2().ok_or(ParseError::Truncated("anno pair name"))?;
+        out.extend_from_slice(&name_idx.to_be_bytes());
+        rewrite_element_value(cf, table, intern, next_index, stats, r, out)?;
+    }
+    Ok(())
+}
+
+fn rewrite_element_value(
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    r: &mut ByteCursor<'_>,
+    out: &mut Vec<u8>,
+) -> Result<(), ParseError> {
+    let tag = r.u1().ok_or(ParseError::Truncated("element tag"))?;
+    out.push(tag);
+    match tag {
+        b'e' => {
+            // enum: type descriptor (rewritten) + constant name (kept)
+            let type_idx = r.u2().ok_or(ParseError::Truncated("enum type"))?;
+            out.extend_from_slice(&rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes());
+            let const_idx = r.u2().ok_or(ParseError::Truncated("enum const"))?;
+            out.extend_from_slice(&const_idx.to_be_bytes());
+        }
+        b'c' => {
+            // class element: descriptor rewritten (handles [L...;)
+            let idx = r.u2().ok_or(ParseError::Truncated("class element"))?;
+            out.extend_from_slice(&rewrite_utf8_desc(cf, table, intern, next_index, stats, idx)?.to_be_bytes());
+        }
+        b'@' => {
+            rewrite_annotation(cf, table, intern, next_index, stats, r, out)?;
+        }
+        b'[' => {
+            let num = r.u2().ok_or(ParseError::Truncated("array element"))?;
+            out.extend_from_slice(&num.to_be_bytes());
+            for _ in 0..num {
+                rewrite_element_value(cf, table, intern, next_index, stats, r, out)?;
+            }
+        }
+        _ => {
+            // every other tag carries exactly one u2 constant-pool index —
+            // primitive consts and string consts are never relocated.
+            let idx = r.u2().ok_or(ParseError::Truncated("element const"))?;
+            out.extend_from_slice(&idx.to_be_bytes());
+        }
+    }
+    Ok(())
+}
+
+/// Map one utf8 slot holding an `L…;` descriptor (or array descriptor);
+/// returns the NEW utf8 index (original when unchanged).
+fn rewrite_utf8_desc(
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    idx: u16,
+) -> Result<u16, ParseError> {
+    let orig = cf
+        .utf8(idx)
+        .ok_or(ParseError::Truncated("descriptor utf8"))?;
+    let orig = std::str::from_utf8(orig).map_err(|_| ParseError::Truncated("non-utf8 descriptor"))?;
+    let mapped = table.map_descriptor(orig);
+    if mapped == orig {
+        return Ok(idx);
+    }
+    let new_idx = intern.intern(mapped.as_bytes(), next_index);
+    stats.descriptors_rewritten += 1;
+    Ok(new_idx)
+}
+
+fn write_members_annos(
+    out: &mut Vec<u8>,
+    members: &[Member],
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    rewrite_annotations: bool,
+) -> Result<(), ParseError> {
+    out.extend_from_slice(&(members.len() as u16).to_be_bytes());
+    for m in members {
+        out.extend_from_slice(&m.access.to_be_bytes());
+        out.extend_from_slice(&m.name.to_be_bytes());
+        out.extend_from_slice(&m.descriptor.to_be_bytes());
+        rewrite_attr_block(&m.attrs, out, cf, table, intern, next_index, stats, rewrite_annotations)?;
+    }
+    Ok(())
+}
+
+/// Minimal big-endian cursor over a byte slice (annotation payloads).
+struct ByteCursor<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> ByteCursor<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+
+    fn u1(&mut self) -> Option<u8> {
+        let b = *self.buf.get(self.pos)?;
+        self.pos += 1;
+        Some(b)
+    }
+
+    fn u2(&mut self) -> Option<u16> {
+        if self.pos + 2 > self.buf.len() {
+            return None;
+        }
+        let v = u16::from_be_bytes([self.buf[self.pos], self.buf[self.pos + 1]]);
+        self.pos += 2;
+        Some(v)
+    }
+
+    fn rest(&self) -> &[u8] {
+        &self.buf[self.pos.min(self.buf.len())..]
+    }
+}

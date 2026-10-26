@@ -38,6 +38,7 @@
 use cim_core::CimError;
 use std::collections::HashMap;
 
+pub mod at;
 pub mod classfile;
 
 /// One prefix rewrite rule over internal (slash-separated) names.
@@ -58,10 +59,17 @@ impl Rule {
     }
 }
 
-/// Ordered relocation rules with longest-prefix matching.
+/// Ordered relocation rules with longest-prefix matching, plus an
+/// **exact-name** map that takes priority over prefix rules.
+///
+/// Exact entries exist for the M2 mod space: when two mods share a top-level
+/// package, a single prefix rule cannot split them apart, so every class of
+/// the losing jars gets a per-class entry. The lookup is O(1) for exact
+/// names and scans the (small) prefix rule list otherwise.
 #[derive(Debug, Clone, Default)]
 pub struct RelocationTable {
     rules: Vec<Rule>,
+    exact: HashMap<String, String>,
 }
 
 /// Guard prefix: names under the shadow space are never re-relocated
@@ -78,21 +86,39 @@ impl RelocationTable {
                 Rule::new("com/mojang/", "cim/shadow/mojang/com/mojang/"),
                 Rule::new("net/neoforged/", "cim/shadow/neoforge/net/neoforged/"),
             ],
+            exact: HashMap::new(),
         }
     }
 
     /// Empty table (passthrough). Used by tests and the M2 mod-relocation
     /// builder, which assembles per-mod tables explicitly.
     pub fn empty() -> Self {
-        Self { rules: Vec::new() }
+        Self {
+            rules: Vec::new(),
+            exact: HashMap::new(),
+        }
     }
 
     pub fn add_rule(&mut self, from: &str, to: &str) {
         self.rules.push(Rule::new(from, to));
     }
 
+    /// Register an exact internal-name mapping (highest priority).
+    /// The key must not be a shadow name (idempotency guard below).
+    pub fn add_exact(&mut self, from: &str, to: &str) {
+        if from.starts_with(SHADOW_PREFIX) {
+            return;
+        }
+        self.exact.insert(from.to_string(), to.to_string());
+    }
+
     pub fn rules(&self) -> &[Rule] {
         &self.rules
+    }
+
+    /// Number of exact-name entries (diagnostics).
+    pub fn exact_count(&self) -> usize {
+        self.exact.len()
     }
 
     /// Map an internal (slash) class name. Returns `None` when the name is
@@ -100,6 +126,11 @@ impl RelocationTable {
     pub fn map_internal(&self, name: &str) -> Option<String> {
         if name.starts_with(SHADOW_PREFIX) {
             return None;
+        }
+        // Exact-name entries win over prefix rules (they exist precisely to
+        // override an ambiguous shared prefix).
+        if let Some(to) = self.exact.get(name) {
+            return Some(to.clone());
         }
         let mut best: Option<&Rule> = None;
         for rule in &self.rules {
@@ -121,6 +152,47 @@ impl RelocationTable {
             Some(mapped) => mapped.replace('/', "."),
             None => name.to_string(),
         }
+    }
+
+    /// Map a generic signature (JVMS §4.7.9.1), rewriting every class-type
+    /// signature segment (`L<name>;`) it can. Type variables (`T…;`) and
+    /// segments with type arguments (`…<…>;`) pass through unchanged — the
+    /// first `;` scan is only trusted for plain class segments, which is
+    /// exactly what relocation needs (generic hierarchies of layer types are
+    /// resolved through reflection by these strings).
+    pub fn map_signature(&self, signature: &str) -> String {
+        let bytes = signature.as_bytes();
+        let mut out = String::with_capacity(signature.len() + 8);
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if bytes[i] == b'L' {
+                if let Some(end) = bytes[i + 1..].iter().position(|&b| b == b';') {
+                    let segment = &signature[i + 1..i + 1 + end];
+                    if !segment.contains('<') {
+                        match self.map_internal(segment) {
+                            Some(mapped) => {
+                                out.push('L');
+                                out.push_str(&mapped);
+                                out.push(';');
+                                i += end + 2;
+                                continue;
+                            }
+                            None => {
+                                // copy the whole segment verbatim (an 'L'
+                                // inside a class name can't mislead: the
+                                // segment is consumed either way)
+                                out.push_str(&signature[i..=i + 1 + end]);
+                                i += end + 2;
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+            out.push(signature[i..].chars().next().unwrap_or('\u{fffd}'));
+            i += signature[i..].chars().next().map_or(1, char::len_utf8);
+        }
+        out
     }
 
     /// True when the internal name belongs to the layer's relocation space.
@@ -162,7 +234,9 @@ impl RelocationTable {
         out
     }
 
-    /// The table as JSON (debugging / Java-side diagnostics).
+    /// The table as JSON (debugging / Java-side diagnostics). Exact entries
+    /// are summarized as a count — the full set can be tens of thousands of
+    /// names for a real modpack.
     pub fn to_json(&self) -> String {
         let rules: Vec<String> = self
             .rules
@@ -175,7 +249,11 @@ impl RelocationTable {
                 )
             })
             .collect();
-        format!("{{\"rules\":[{}]}}", rules.join(","))
+        format!(
+            "{{\"rules\":[{}],\"exactCount\":{}}}",
+            rules.join(","),
+            self.exact.len()
+        )
     }
 }
 
@@ -201,13 +279,52 @@ pub fn relocate_class(
     internal_name: &str,
     bytes: &[u8],
 ) -> Result<Vec<u8>, CimError> {
+    relocate_class_at(table, &at::AccessTransformTable::default(), internal_name, bytes)
+}
+
+/// Relocate with an access-transform database applied (M2): matching
+/// classes/members get widened access exactly like a real AT-patched runtime.
+pub fn relocate_class_at(
+    table: &RelocationTable,
+    at: &at::AccessTransformTable,
+    internal_name: &str,
+    bytes: &[u8],
+) -> Result<Vec<u8>, CimError> {
     if !table.needs_relocation(internal_name) {
         return Ok(bytes.to_vec());
     }
     let file = classfile::ClassFile::parse(bytes)
         .map_err(|e| CimError::InvalidData(format!("reloc {internal_name}: {e}")))?;
     let (out, _stats) = file
-        .rewrite(table)
+        .rewrite_at(table, at, internal_name)
+        .map_err(|e| CimError::InvalidData(format!("reloc {internal_name}: {e}")))?;
+    Ok(out)
+}
+
+/// Relocate one class file from the M2 mod space: the class keeps its
+/// original binary name; only its references into the layer namespaces
+/// (`net.minecraft` / `com.mojang` / `net.neoforged`) are rewritten.
+/// Classes with no layer references pass through byte-identical.
+pub fn relocate_class_refs_only(
+    table: &RelocationTable,
+    internal_name: &str,
+    bytes: &[u8],
+) -> Result<Vec<u8>, CimError> {
+    relocate_class_refs_only_at(table, &at::AccessTransformTable::default(), internal_name, bytes)
+}
+
+/// Refs-only relocation with an access-transform database (mod ATs widen
+/// vanilla/MC members they touch).
+pub fn relocate_class_refs_only_at(
+    table: &RelocationTable,
+    at: &at::AccessTransformTable,
+    internal_name: &str,
+    bytes: &[u8],
+) -> Result<Vec<u8>, CimError> {
+    let file = classfile::ClassFile::parse(bytes)
+        .map_err(|e| CimError::InvalidData(format!("reloc {internal_name}: {e}")))?;
+    let (out, _stats) = file
+        .rewrite_refs_only_at(table, at, internal_name)
         .map_err(|e| CimError::InvalidData(format!("reloc {internal_name}: {e}")))?;
     Ok(out)
 }
@@ -337,7 +454,31 @@ mod tests {
         let t = RelocationTable::layer_default();
         let json = t.to_json();
         assert!(json.starts_with("{\"rules\":["));
-        assert!(json.ends_with("]}"));
+        assert!(json.contains("\"exactCount\":0"));
         assert!(json.contains("cim/shadow/mc1211"));
+    }
+
+    #[test]
+    fn exact_entries_win_over_prefix_rules() {
+        let mut t = RelocationTable::empty();
+        t.add_rule("mezz/", "cim/shadow/mavenjei/mezz/");
+        t.add_exact("mezz/jei/shared/X", "cim/shadow/mavenjade/mezz/jei/shared/X");
+        assert_eq!(
+            t.map_internal("mezz/jei/shared/X").unwrap(),
+            "cim/shadow/mavenjade/mezz/jei/shared/X"
+        );
+        assert_eq!(
+            t.map_internal("mezz/jei/other/Y").unwrap(),
+            "cim/shadow/mavenjei/mezz/jei/other/Y"
+        );
+        assert_eq!(t.exact_count(), 1);
+    }
+
+    #[test]
+    fn exact_entries_guard_against_shadow_keys() {
+        let mut t = RelocationTable::empty();
+        t.add_exact("cim/shadow/mc1211/net/minecraft/A", "oops/should/not/happen");
+        assert!(t.map_internal("cim/shadow/mc1211/net/minecraft/A").is_none());
+        assert_eq!(t.exact_count(), 0);
     }
 }

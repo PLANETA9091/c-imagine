@@ -90,6 +90,16 @@ impl Annotation {
     }
 }
 
+/// One method-level annotation hit (the scanner's interest set).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MethodAnnotation {
+    /// Method name, e.g. `commonSetup`.
+    pub method: String,
+    /// Method descriptor, e.g. `(Lnet/neoforged/fml/event/lifecycle/FMLCommonSetupEvent;)V`.
+    pub descriptor: String,
+    pub annotation: Annotation,
+}
+
 /// Class-level facts the scanner cares about.
 #[derive(Debug, Default, Clone)]
 pub struct ClassInfo {
@@ -97,11 +107,15 @@ pub struct ClassInfo {
     /// Internal class name, e.g. `dev/cim/testmod/CimTestMod`.
     pub this_class: String,
     pub annotations: Vec<Annotation>,
+    /// Runtime-visible method annotations (interest-filtered by the scanner;
+    /// the parser collects all of them, capped).
+    pub method_annotations: Vec<MethodAnnotation>,
 }
 
 const MAX_POOL_ENTRIES: usize = 65_535;
 const MAX_ANNOTATIONS: usize = 256;
 const MAX_ANNOTATION_DEPTH: usize = 8;
+const MAX_METHODS_PARSED: usize = 2_000;
 
 /// Resolved constant pool values the annotation parser needs.
 #[derive(Debug, Default)]
@@ -155,6 +169,23 @@ impl<'a> Reader<'a> {
         let b = self.take(4)?;
         Ok(u32::from_be_bytes([b[0], b[1], b[2], b[3]]))
     }
+}
+
+/// Skip a field_info table (name/descriptor/attributes) without parsing.
+fn skip_members(r: &mut Reader<'_>) -> Result<(), ScannerError> {
+    let count = r.u2()? as usize;
+    for _ in 0..count {
+        r.u2()?; // access
+        r.u2()?; // name
+        r.u2()?; // descriptor
+        let attrs = r.u2()? as usize;
+        for _ in 0..attrs {
+            r.u2()?; // attr name index
+            let len = r.u4()? as usize;
+            r.take(len)?;
+        }
+    }
+    Ok(())
 }
 
 /// Parse a class file. Errors are descriptive, never panics.
@@ -230,12 +261,18 @@ pub fn parse_class(bytes: &[u8]) -> Result<ClassInfo, ScannerError> {
     }
 
     let mut pool = Pool::default();
+    // Resolution is two-pass: UTF-8 entries first (forward references from
+    // Class/String constants are legal — javac emits `cp[2]=Class -> cp[4]=Utf8`
+    // routinely), then the dependent entries.
+    for (idx, entry) in raw.iter().enumerate().skip(1) {
+        let idx = u16::try_from(idx).map_err(|_| ScannerError::ClassFile("cp overflow".into()))?;
+        if let Some(Raw::Utf8(s)) = entry {
+            pool.utf8.insert(idx, s.clone());
+        }
+    }
     for (idx, entry) in raw.iter().enumerate().skip(1) {
         let idx = u16::try_from(idx).map_err(|_| ScannerError::ClassFile("cp overflow".into()))?;
         match entry {
-            Some(Raw::Utf8(s)) => {
-                pool.utf8.insert(idx, s.clone());
-            }
             Some(Raw::Str(u)) => {
                 let s = pool.utf8.get(u).cloned().ok_or_else(|| {
                     ScannerError::ClassFile(format!("string {idx} -> utf8 {u} missing"))
@@ -248,6 +285,12 @@ pub fn parse_class(bytes: &[u8]) -> Result<ClassInfo, ScannerError> {
                 })?;
                 pool.classes.insert(idx, s);
             }
+            _ => {}
+        }
+    }
+    for (idx, entry) in raw.iter().enumerate().skip(1) {
+        let idx = u16::try_from(idx).map_err(|_| ScannerError::ClassFile("cp overflow".into()))?;
+        match entry {
             Some(Raw::Int(v)) => {
                 pool.ints.insert(idx, *v);
             }
@@ -272,30 +315,48 @@ pub fn parse_class(bytes: &[u8]) -> Result<ClassInfo, ScannerError> {
     let iface_count = r.u2()? as usize;
     r.take(iface_count * 2)?;
 
-    // Fields and methods share the member_info shape: skip structurally.
-    let skip_members = |r: &mut Reader| -> Result<(), ScannerError> {
-        let count = r.u2()? as usize;
-        for _ in 0..count {
-            r.u2()?; // access
-            r.u2()?; // name
-            r.u2()?; // descriptor
-            let attrs = r.u2()? as usize;
-            for _ in 0..attrs {
-                r.u2()?; // attr name index
-                let len = r.u4()? as usize;
-                r.take(len)?;
+    // Fields: skip structurally (field annotations are not in the scanner's
+    // interest set and their names/descriptors are irrelevant).
+    skip_members(&mut r)?;
+
+    // Methods: parse names + RuntimeVisibleAnnotations (@SubscribeEvent).
+    let method_count = r.u2()? as usize;
+    let mut method_annotations = Vec::new();
+    for _ in 0..method_count.min(MAX_METHODS_PARSED) {
+        let _access = r.u2()?;
+        let name_idx = r.u2()?;
+        let desc_idx = r.u2()?;
+        let attr_count = r.u2()? as usize;
+        for _ in 0..attr_count {
+            let attr_name_idx = r.u2()?;
+            let len = r.u4()? as usize;
+            let data = r.take(len)?;
+            if pool.str_at(attr_name_idx)? == "RuntimeVisibleAnnotations" {
+                let mut ar = Reader { buf: data, pos: 0 };
+                let count = ar.u2()? as usize;
+                if count > MAX_ANNOTATIONS {
+                    return Err(ScannerError::ClassFile(format!(
+                        "too many method annotations: {count}"
+                    )));
+                }
+                for _ in 0..count {
+                    let annotation = parse_annotation(&mut ar, &pool, 0)?;
+                    method_annotations.push(MethodAnnotation {
+                        method: pool.str_at(name_idx)?.to_string(),
+                        descriptor: pool.str_at(desc_idx)?.to_string(),
+                        annotation,
+                    });
+                }
             }
         }
-        Ok(())
-    };
-    skip_members(&mut r)?;
-    skip_members(&mut r)?;
+    }
 
     // Class attributes.
     let mut info = ClassInfo {
         major_version: major,
         this_class,
         annotations: Vec::new(),
+        method_annotations,
     };
     let attr_count = r.u2()? as usize;
     for _ in 0..attr_count {
@@ -386,7 +447,17 @@ fn parse_element_value(
         }
         b's' => {
             let idx = r.u2()?;
-            ElementValue::Str(pool.strings.get(&idx).cloned().unwrap_or_default())
+            // JVMS says 's' references a CONSTANT_String, but real javac
+            // output (verified via javap on production mods, e.g. Jade
+            // 15.10.x compiled with JDK 21) sometimes references the Utf8
+            // entry directly. Accept both; fail loudly otherwise.
+            let s = pool
+                .strings
+                .get(&idx)
+                .cloned()
+                .or_else(|| pool.utf8.get(&idx).cloned())
+                .unwrap_or_else(|| format!("<unresolved-string-{idx}>"));
+            ElementValue::Str(s)
         }
         b'e' => {
             let type_idx = r.u2()?;
@@ -512,8 +583,13 @@ pub(crate) mod tests {
         }
     }
 
-    /// Assemble a valid class file with a single class-level annotation.
-    fn fixture_class(descriptor: &str, pairs: &[(&str, ElementValue)]) -> Vec<u8> {
+    /// Assemble a valid class file with a single class-level annotation and
+    /// optional methods carrying runtime-visible annotations.
+    fn fixture_class_full(
+        descriptor: &str,
+        pairs: &[(&str, ElementValue)],
+        methods: &[(&str, &str, &str, &[(&str, ElementValue)])], // (name, desc, ann-desc, pairs)
+    ) -> Vec<u8> {
         let mut p = PoolBuilder::new();
         let attr_name = p.utf8("RuntimeVisibleAnnotations");
         let ann_type = p.utf8(descriptor);
@@ -522,9 +598,9 @@ pub(crate) mod tests {
         let super_utf = p.utf8("java/lang/Object");
         let super_class = p.class(super_utf);
 
-        // Annotation payload.
+        // Class-level annotation payload.
         let mut payload = Vec::new();
-        payload.extend_from_slice(&1u16.to_be_bytes()); // num annotations
+        payload.extend_from_slice(&1u16.to_be_bytes());
         payload.extend_from_slice(&ann_type.to_be_bytes());
         payload.extend_from_slice(&(pairs.len() as u16).to_be_bytes());
         for (name, value) in pairs {
@@ -533,17 +609,43 @@ pub(crate) mod tests {
             payload.extend(element_value_bytes(&mut p, value));
         }
 
-        // Attribute header.
         let mut attr = Vec::new();
         attr.extend_from_slice(&attr_name.to_be_bytes());
         attr.extend_from_slice(&(payload.len() as u32).to_be_bytes());
         attr.extend_from_slice(&payload);
 
+        // Method_info table with one annotated method per fixture entry.
+        let mut methods_bytes = Vec::new();
+        methods_bytes.extend_from_slice(&(methods.len() as u16).to_be_bytes());
+        for (name, desc, mdesc, mpairs) in methods {
+            let name_idx = p.utf8(name);
+            let desc_idx = p.utf8(desc);
+            let mdesc_type = p.utf8(mdesc);
+            let mut mpayload = Vec::new();
+            mpayload.extend_from_slice(&1u16.to_be_bytes());
+            mpayload.extend_from_slice(&mdesc_type.to_be_bytes());
+            mpayload.extend_from_slice(&(mpairs.len() as u16).to_be_bytes());
+            for (mname, mvalue) in *mpairs {
+                let mname_idx = p.utf8(mname);
+                mpayload.extend_from_slice(&mname_idx.to_be_bytes());
+                mpayload.extend(element_value_bytes(&mut p, mvalue));
+            }
+            let mut mattr = Vec::new();
+            mattr.extend_from_slice(&attr_name.to_be_bytes());
+            mattr.extend_from_slice(&(mpayload.len() as u32).to_be_bytes());
+            mattr.extend_from_slice(&mpayload);
+            methods_bytes.extend_from_slice(&0x0009u16.to_be_bytes()); // public static
+            methods_bytes.extend_from_slice(&name_idx.to_be_bytes());
+            methods_bytes.extend_from_slice(&desc_idx.to_be_bytes());
+            methods_bytes.extend_from_slice(&1u16.to_be_bytes()); // 1 attribute
+            methods_bytes.extend_from_slice(&mattr);
+        }
+
         // Class assembly.
         let mut out = Vec::new();
         out.extend_from_slice(&0xCAFE_BABEu32.to_be_bytes());
         out.extend_from_slice(&0u16.to_be_bytes()); // minor
-        out.extend_from_slice(&52u16.to_be_bytes()); // major (Java 8)
+        out.extend_from_slice(&52u16.to_be_bytes()); // major
         out.extend_from_slice(&(p.count + 1).to_be_bytes()); // cp_count
         out.extend_from_slice(&p.bytes);
         out.extend_from_slice(&0x0021u16.to_be_bytes()); // public super
@@ -551,10 +653,14 @@ pub(crate) mod tests {
         out.extend_from_slice(&super_class.to_be_bytes());
         out.extend_from_slice(&0u16.to_be_bytes()); // interfaces
         out.extend_from_slice(&0u16.to_be_bytes()); // fields
-        out.extend_from_slice(&0u16.to_be_bytes()); // methods
+        out.extend_from_slice(&methods_bytes);
         out.extend_from_slice(&1u16.to_be_bytes()); // class attributes
         out.extend_from_slice(&attr);
         out
+    }
+
+    fn fixture_class(descriptor: &str, pairs: &[(&str, ElementValue)]) -> Vec<u8> {
+        fixture_class_full(descriptor, pairs, &[])
     }
 
     /// A class annotated with NeoForge's `@Mod("modid")`.
@@ -592,6 +698,36 @@ pub(crate) mod tests {
             "Lnet/neoforged/fml/common/Mod;"
         );
         assert_eq!(info.annotations[0].modid_values(), ["cimcoded"]);
+    }
+
+    #[test]
+    fn parses_method_annotations() {
+        let info = parse_class(&fixture_class_full(
+            "Lnet/neoforged/fml/common/Mod;",
+            &[("value", ElementValue::Str("m".into()))],
+            &[
+                (
+                    "commonSetup",
+                    "(Lnet/neoforged/fml/event/lifecycle/FMLCommonSetupEvent;)V",
+                    "Lnet/neoforged/bus/api/SubscribeEvent;",
+                    &[],
+                ),
+                ("unannotated", "()V", "Lother/Ann;", &[]),
+            ],
+        ))
+        .unwrap();
+        assert_eq!(info.method_annotations.len(), 2);
+        let hit = &info.method_annotations[0];
+        assert_eq!(hit.method, "commonSetup");
+        assert_eq!(
+            hit.descriptor,
+            "(Lnet/neoforged/fml/event/lifecycle/FMLCommonSetupEvent;)V"
+        );
+        assert_eq!(
+            hit.annotation.type_descriptor,
+            "Lnet/neoforged/bus/api/SubscribeEvent;"
+        );
+        assert_eq!(info.method_annotations[1].method, "unannotated");
     }
 
     #[test]

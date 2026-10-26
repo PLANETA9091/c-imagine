@@ -46,7 +46,11 @@ pub fn build_load_order(mods: &[ScannedMod]) -> Result<Vec<String>, DepsError> {
         let Some(toml) = &m.toml else { continue };
         let declared = m.mod_ids();
         for (owner, dep) in toml.mandatory_dependencies() {
-            if BUILTIN_MOD_IDS.contains(&dep.mod_id.as_str()) {
+            // Builtin ids are provided by the layer — unless a jar actually
+            // DECLARES the id (the neoforge universal jar declares
+            // `neoforge`), in which case it participates in the order as a
+            // real prerequisite.
+            if BUILTIN_MOD_IDS.contains(&dep.mod_id.as_str()) && !ids.contains(&dep.mod_id) {
                 continue;
             }
             if !ids.contains(&dep.mod_id) {

@@ -95,6 +95,12 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
     let server_root = opts.server_root();
     let layer_cfg = layerconfig::load(&server_root);
     let module_lib = layerconfig::module_lib_path().unwrap_or_default();
+    // modwatch reads the layer dir through the env contract to locate the
+    // neoforge universal jar (it is a layer jar AND a mod).
+    if !layer_cfg.layer_dir.is_empty() {
+        let abs = server_root.join(&layer_cfg.layer_dir);
+        std::env::set_var("CIM_LAYER_DIR", &abs);
+    }
     if !layer_cfg.layer_dir.is_empty() {
         eprintln!(
             "{} layer config: dir={} moduleLib={}",
@@ -108,22 +114,31 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
         );
     }
 
-    // 3) Drive the Java side through JNI.
-    let status = run_bootstrap(vm, &jar_path, &opts, &layer_cfg.layer_dir, &module_lib);
-    eprintln!("{} bootstrap ready: {status}", cim_core::LOG_PREFIX);
-
-    // 4) Scan mods/ (static, no class loading) and report load order.
+    // 3) Scan mods/ (static, no class loading) and build the manifest.
+    //    Runs before the Java call: the manifest travels inside the same JNI
+    //    session (registerMods + loadMods consume it on the Java side).
     let mods_dir = opts
         .mods_dir
         .clone()
         .unwrap_or_else(|| PathBuf::from("mods"));
-    let count = modwatch::scan_and_report(&mods_dir);
+    let (manifest, count) = modwatch::scan_and_build_manifest(&mods_dir);
     eprintln!(
         "{} loader: scanned {} jar(s) in {}",
         cim_core::LOG_PREFIX,
         count,
         mods_dir.display()
     );
+
+    // 4) Drive the Java side through JNI: layer boot, then mod execution.
+    let status = run_bootstrap(
+        vm,
+        &jar_path,
+        &opts,
+        &layer_cfg.layer_dir,
+        &module_lib,
+        manifest,
+    );
+    eprintln!("{} bootstrap ready: {status}", cim_core::LOG_PREFIX);
 }
 
 fn deploy_bootstrap() -> Result<PathBuf, String> {
@@ -140,6 +155,7 @@ fn run_bootstrap(
     opts: &options::ModuleOptions,
     layer_dir: &str,
     module_lib: &str,
+    manifest: Option<String>,
 ) -> String {
     let result = (|| -> Result<String, String> {
         let jvm = unsafe { jni::JavaVM::from_raw(vm.0 as *mut jni_sys::JavaVM) }
@@ -228,21 +244,59 @@ fn run_bootstrap(
         let jopts = env
             .new_string(options_json)
             .map_err(|e| format!("new_string: {e}"))?;
+        let empty = env.new_string("").map_err(|e| format!("new_string: {e}"))?;
+        let jmanifest = match &manifest {
+            Some(json) => env
+                .new_string(json.as_str())
+                .map_err(|e| format!("new_string(manifest): {e}"))?,
+            None => empty,
+        };
 
         let ret = env
             .call_static_method(
-                boot_cls,
+                &boot_cls,
                 "init",
-                "(Ljava/lang/String;)Ljava/lang/String;",
-                &[jni::objects::JValue::Object(&jopts)],
+                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;",
+                &[
+                    jni::objects::JValue::Object(&jopts),
+                    jni::objects::JValue::Object(&jmanifest),
+                ],
             )
             .map_err(|e| format!("Bootstrap.init: {e}"))?;
         let ret_obj = ret.l().map_err(|e| format!("ret.l: {e}"))?;
         let jstr = jni::objects::JString::from(ret_obj);
         let text = env
             .get_string(&jstr)
-            .map_err(|e| format!("get_string: {e}"))?;
-        Ok(text.to_string_lossy().into_owned())
+            .map_err(|e| format!("get_string: {e}"))?
+            .to_string_lossy()
+            .into_owned();
+
+        // M2: mod execution — hand the manifest to the shadow space. The
+        // Java side arms the mod relocation rules, extends the shadow loader
+        // with the mod jars and runs the FML pipeline (construct + register).
+        let mods_status = match manifest {
+            Some(json) => {
+                let jjson = env
+                    .new_string(json.as_str())
+                    .map_err(|e| format!("new_string(manifest): {e}"))?;
+                let mret = env
+                    .call_static_method(
+                        &boot_cls,
+                        "loadMods",
+                        "(Ljava/lang/String;)Ljava/lang/String;",
+                        &[jni::objects::JValue::Object(&jjson)],
+                    )
+                    .map_err(|e| format!("Bootstrap.loadMods: {e}"))?;
+                let mobj = mret.l().map_err(|e| format!("loadMods l(): {e}"))?;
+                let mstr = jni::objects::JString::from(mobj);
+                let text = env.get_string(&mstr).map_err(|e| format!("get_string: {e}"))?;
+                let owned = text.to_string_lossy().into_owned();
+                owned
+            }
+            None => "{\"state\":\"skipped\",\"reason\":\"no mods\"}".to_string(),
+        };
+
+        Ok(format!("{{\"init\":{text},\"mods\":{mods_status}}}"))
     })();
 
     match result {

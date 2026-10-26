@@ -16,11 +16,18 @@
 
 pub mod classfile;
 pub mod deps;
+pub mod loader;
+pub mod manifest;
 pub mod modstoml;
 pub mod scanner;
 
 pub use deps::{build_load_order, DepsError};
-pub use scanner::{scan_file, scan_jar, ScannedMod};
+pub use manifest::{
+    build_layer_manifest, build_relocation_table, shadow_internal, AnnEntry, AnnMember, AnnPair,
+    AnnValue, LayerManifest, ModEntry, MOD_SHADOW_PREFIX,
+};
+pub use loader::{scan_dir_full, ScanStats};
+pub use scanner::{scan_file, scan_jar, AnnotationHit, ScannedMod};
 
 use std::path::Path;
 

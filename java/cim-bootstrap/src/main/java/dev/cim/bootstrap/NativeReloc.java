@@ -77,6 +77,42 @@ public final class NativeReloc {
         return mapInternal0(internalName);
     }
 
+    /**
+     * Arm the M2 mod-space relocation rules from the layer manifest JSON
+     * (produced by the native scanner). Must be called before any mod class
+     * is defined: the shadow loader's jar index resolves mod classes through
+     * {@link #mapInternal}, which only knows mod packages afterwards.
+     *
+     * <p>Failure is logged on the native side and reflected here by a
+     * best-effort contract: the rules are armed best-effort, and any mod
+     * class that still fails to relocate fails loudly at define time.
+     */
+    public static void registerMods(String manifestJson) {
+        if (manifestJson == null || manifestJson.isEmpty()) {
+            return;
+        }
+        ensureLoaded();
+        registerMods0(manifestJson);
+    }
+
+    /**
+     * Mod-space relocation (M2): rewrite references into the layer
+     * namespaces while keeping the class's own binary name. Always parses;
+     * returns the input array when nothing changed.
+     */
+    static byte[] relocateMod(String internalName, byte[] classBytes) {
+        ensureLoaded();
+        byte[] out = relocateMod0(internalName, classBytes);
+        if (out == null || out.length == 0) {
+            throw new IllegalStateException("native relocation failed for " + internalName);
+        }
+        return out;
+    }
+
+    private static native void registerMods0(String manifestJson);
+
+    private static native byte[] relocateMod0(String internalName, byte[] classBytes);
+
     private static native String mapInternal0(String internalName);
 
     private static native byte[] relocate0(String internalName, byte[] classBytes);

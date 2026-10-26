@@ -1,6 +1,6 @@
 //! Jar scanning: mods.toml + bytecode `@Mod` discovery + jar-in-jar + mixins.
 
-use crate::classfile::parse_class;
+use crate::classfile::{parse_class, Annotation};
 use crate::modstoml::{parse_mods_toml, ModsToml};
 use crate::ScannerError;
 use std::io::{Cursor, Read, Seek};
@@ -25,6 +25,33 @@ pub struct ScannedMod {
     pub mixin_configs: Vec<String>,
     /// Nested jars discovered under `META-INF/jarjar/`.
     pub nested: Vec<ScannedMod>,
+    /// Every class entry (internal names), capped at [`MAX_CLASSES_SCANNED`].
+    /// Drives the M2 exact/prefix relocation table.
+    pub classes: Vec<String>,
+    /// Interest-set annotation hits: class-level `@Mod` / `@EventBusSubscriber`
+    /// and method-level `@SubscribeEvent` (feeds `ModFileScanData`).
+    pub annotation_hits: Vec<AnnotationHit>,
+    /// `META-INF/services/` entries: (service binary name, provider binary
+    /// names). Feeds the JPMS module descriptors (`provides`) — ServiceLoader
+    /// silently skips classpath providers that live in named modules, so the
+    /// services must be declared in the module descriptor.
+    pub services: Vec<(String, Vec<String>)>,
+    /// Layer-flavoured entry (the NeoForge universal jar): already fully
+    /// shadow-relocated, NOT re-added to the loader, relocated entrypoints.
+    pub layer: bool,
+    /// Override for the manifest `jar` path (empty string = layer jar, skip).
+    pub jar_override: String,
+}
+
+/// One annotation hit with its target member (`None` = class level).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnnotationHit {
+    /// Internal name of the declaring class (original, unrelocated).
+    pub class_internal: String,
+    /// `Some((method, descriptor))` for method-level hits.
+    pub member: Option<(String, String)>,
+    /// The parsed annotation (type descriptor + element values).
+    pub annotation: Annotation,
 }
 
 impl ScannedMod {
@@ -57,6 +84,11 @@ pub const MOD_ANNOTATION_DESCRIPTORS: [&str; 2] = [
     "Lnet/neoforged/fml/common/Mod;",
     "Lnet/minecraftforge/fml/common/Mod;",
 ];
+
+/// Class-level annotation descriptors the scan data needs besides `@Mod`.
+const EVENT_BUS_SUBSCRIBER: &str = "Lnet/neoforged/fml/common/EventBusSubscriber;";
+/// Method-level annotation descriptor for automatic subscribers.
+const SUBSCRIBE_EVENT: &str = "Lnet/neoforged/bus/api/SubscribeEvent;";
 
 const NEOFORGE_MODS_TOML: &str = "META-INF/neoforge.mods.toml";
 const LEGACY_MODS_TOML: &str = "META-INF/mods.toml";
@@ -132,12 +164,34 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
             });
             continue;
         }
+        if name.starts_with("META-INF/services/") && !name.ends_with('/') {
+            let service = name.trim_start_matches("META-INF/services/").to_string();
+            let mut entry = match archive.by_name(name) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            let mut content = String::new();
+            if entry.read_to_string(&mut content).is_ok() {
+                let providers: Vec<String> = content
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(String::from)
+                    .collect();
+                if !providers.is_empty() {
+                    out.services.push((service, providers));
+                }
+            }
+            continue;
+        }
         if !name.ends_with(".class") || name.ends_with("module-info.class") {
             continue;
         }
         if classes_scanned >= MAX_CLASSES_SCANNED {
             continue;
         }
+        let internal = name.trim_end_matches(".class").to_string();
+        out.classes.push(internal.clone());
         let mut entry = match archive.by_name(name) {
             Ok(e) => e,
             Err(_) => continue,
@@ -160,6 +214,31 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
                             }
                         }
                         out.entrypoint_classes.push(info.this_class.clone());
+                        // @Mod entries travel in the scan data too: FML's
+                        // AutomaticEventSubscriber maps classes to mod ids
+                        // through them, and the dist attribute drives the
+                        // server-side entrypoint filter.
+                        out.annotation_hits.push(AnnotationHit {
+                            class_internal: internal.clone(),
+                            member: None,
+                            annotation: ann.clone(),
+                        });
+                    }
+                    if ann.type_descriptor == EVENT_BUS_SUBSCRIBER {
+                        out.annotation_hits.push(AnnotationHit {
+                            class_internal: internal.clone(),
+                            member: None,
+                            annotation: ann.clone(),
+                        });
+                    }
+                }
+                for ma in &info.method_annotations {
+                    if ma.annotation.type_descriptor == SUBSCRIBE_EVENT {
+                        out.annotation_hits.push(AnnotationHit {
+                            class_internal: internal.clone(),
+                            member: Some((ma.method.clone(), ma.descriptor.clone())),
+                            annotation: ma.annotation.clone(),
+                        });
                     }
                 }
             }
