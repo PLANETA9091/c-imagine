@@ -113,8 +113,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     /**
      * Spawn a kernel entity from a 26.3 entity-type key string
-     * ("minecraft:oak_boat" — ALREADY remapped by the caller). Returns the
-     * spawned entity's UUID string, or null on failure.
+     * ("minecraft:oak_boat" — ALREADY remapped by the caller). Coordinates are
+     * ABSOLUTE world coordinates, same convention as the block bridge surface
+     * (getBlockAt/layerSetBlock). Returns the spawned entity's UUID string,
+     * or null on failure.
      */
     public String paperSpawnEntity(String world, double x, double y, double z, String typeKey) {
         return callSync(() -> {
@@ -123,9 +125,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         ? typeKey.substring(typeKey.indexOf(':') + 1) : typeKey;
                 org.bukkit.entity.EntityType type =
                         org.bukkit.entity.EntityType.valueOf(bare.toUpperCase(java.util.Locale.ROOT));
-                org.bukkit.Location loc = world(world)
-                        .getSpawnLocation().add(x, y, z);
-                org.bukkit.entity.Entity e = world(world).spawnEntity(loc, type);
+                org.bukkit.entity.Entity e = world(world).spawnEntity(
+                        new org.bukkit.Location(world(world), x, y, z), type);
                 return e.getUniqueId().toString();
             } catch (Exception ex) {
                 log().warning(LOG_PREFIX + "paperSpawnEntity(" + typeKey + ") failed: " + ex);
