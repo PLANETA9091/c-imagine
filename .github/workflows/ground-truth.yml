@@ -42,7 +42,7 @@ jobs:
           if-no-files-found: error
 
   decompile-client:
-    name: decompile vanilla 26.3 client (official mappings)
+    name: decompile vanilla client (official mappings)
     if: github.event_name == 'workflow_dispatch'
     needs: census
     runs-on: ubuntu-latest
@@ -55,24 +55,33 @@ jobs:
           java-version: 21
       - name: fetch client jar + official mappings + toolchain
         run: bash scripts/fetch-decompile-inputs.sh 26.3 work
+      - name: resolve decompiled version
+        id: ver
+        run: echo "version=$(cat work/RESOLVED_VERSION | cut -d= -f2)" >> "$GITHUB_OUTPUT"
       - name: convert mappings (proguard → tiny v2)
         run: |
           cd work
-          javac -cp mapping-io.jar ConvertMappings.java
+          javac -cp mapping-io.jar -d . ../tools/ground-truth/ConvertMappings.java
           java -cp mapping-io.jar:. ConvertMappings client.txt client.tiny
-      - name: remap client jar (official → named)
+      - name: remap client jar (obf → named)
         run: |
           cd work
-          java -jar tiny-remapper.jar client.jar client-named.jar client.tiny official named
+          # Mojang's proguard mappings map named -> obf (left = named), and the
+          # conversion preserves that as source=named/target=obf; the client
+          # jar is in the obf namespace, so remap target -> source.
+          java -cp "tiny-remapper.jar:mapping-io.jar:asm.jar:asm-commons.jar:asm-tree.jar:asm-analysis.jar:asm-util.jar" \
+            net.fabricmc.tinyremapper.Main client.jar client-named.jar client.tiny target source
       - name: decompile (Vineflower)
         run: |
           cd work
           java -Xmx6g -jar vineflower.jar --silent client-named.jar sources/ || true
           mkdir -p ../out
-          zip -qr ../out/client-26.3-sources.zip sources/
-          zip -qr ../out/client-26.3-named.jar.zip client-named.jar
+          V=${{ steps.ver.outputs.version }}
+          zip -qr ../out/client-$V-sources.zip sources/
+          zip -qr ../out/client-$V-named.jar.zip client-named.jar
+          echo "decompiled version: $V"
       - uses: actions/upload-artifact@v4
         with:
-          name: vanilla-client-26.3-sources
+          name: vanilla-client-sources
           path: out/
           if-no-files-found: error

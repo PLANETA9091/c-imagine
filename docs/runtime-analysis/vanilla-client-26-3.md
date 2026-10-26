@@ -51,27 +51,25 @@ From F2V v1's documented invariants (inherited by v2, `F2V_ANALYSIS.md §6`):
 The client jar ships **without sources** and its classes are obfuscated with official
 Mojang mappings published alongside (`client.txt`, proguard format, URL in the
 version manifest). To answer rendering questions with facts instead of folklore, CI
-will (M1, new job, cached artifact):
+will (M1, `ground-truth.yml`, cached artifact):
 
-1. download `client.jar` + `client.txt` for 26.3 from the version manifest (both
-   already proven downloadable — the jars are in this workspace);
-2. remap obf → named with a tiny-remapper-based tool (mappings converted from
-   proguard to tiny v2 once, cached);
-3. decompile targeted packages with Vineflower:
-   - `EntityRenderDispatcher`, `EntityRenderers` — how spawn/metadata packets become
-     renderers (drives F2V v2's metadata rewriting rules);
-   - display-entity renderers (`ItemDisplayRenderer`, `BlockDisplayRenderer`,
-     `TextDisplayRenderer`) — interpolation semantics v2 depends on;
-   - `ItemRenderer` + model engine — `custom_model_data` / `item_model` resolution
-     order (M6 pack synthesis correctness);
-   - `LevelRenderer` chunk path — what block-update traffic the client can absorb
-     without visible artifacts (M4 `sanitize` thresholds);
-   - `Connection` + codec classes — 777 protocol framing for the `cim-proto` bot;
-4. publish the decompiled trees as a per-version CI artifact; docs cite it.
+1. download `client.jar` + `client.txt` from the version manifest;
+2. convert mappings (proguard → tiny v2 via mapping-io) and remap with
+   tiny-remapper — direction note: Mojang's proguard maps **named → obf**, and the
+   client jar is obf, so the remap runs `target → source` (validated locally:
+   the full named client, e.g. `net/minecraft/client/Minecraft.class`, comes out);
+3. decompile with Vineflower; publish the sources as a CI artifact; docs cite it.
 
-The same pipeline runs against the 1.21.1 client (mappings for 3955) so that visual
-contracts (M5) can compare client behavior **across versions**, not only against
-screenshots.
+**26.x mappings caveat (verified 2026-10-26):** Mojang stopped publishing
+`client_mappings` in the 26.x version metadata (downloads carry client+server only).
+Until the new distribution channel is identified, the ground-truth decompile falls
+back to the newest version that still ships official mappings (1.21.1) and records
+the resolved version in its artifact. Finding the 26.x mappings channel is a small
+open analysis item.
+
+The same pipeline runs against the 1.21.1 client (DataVersion 3955 mappings) so that
+visual contracts (M5) can compare client behavior **across versions**, not only
+against screenshots.
 
 ## 5. Versioning pressure
 

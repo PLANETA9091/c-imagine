@@ -3,7 +3,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import net.fabricmc.mappingio.MappingReader;
 import net.fabricmc.mappingio.format.MappingFormat;
-import net.fabricmc.mappingio.format.Tiny2Writer;
+import net.fabricmc.mappingio.format.tiny.Tiny2FileWriter;
 import net.fabricmc.mappingio.tree.MemoryMappingTree;
 
 /**
@@ -23,7 +23,7 @@ public final class ConvertMappings {
         MemoryMappingTree tree = new MemoryMappingTree();
         // MappingReader detects proguard (Mojang official mappings) natively.
         MappingReader.read(src, MappingFormat.PROGUARD_FILE, tree);
-        try (Tiny2Writer writer = new Tiny2Writer(Files.newBufferedWriter(dst), false)) {
+        try (Tiny2FileWriter writer = new Tiny2FileWriter(Files.newBufferedWriter(dst), false)) {
             tree.accept(writer);
         }
         System.out.println("converted " + src + " -> " + dst
