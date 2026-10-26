@@ -131,13 +131,17 @@ jobs:
           PROPS
 
       # --- run --------------------------------------------------------------
-      - name: boot server (timeout 6 min)
+      - name: boot server (timeout 4 min)
         id: boot
         run: |
           set +e
           cd srv
-          timeout 360 crussty run > boot.log 2>&1
+          # Done + full bridge smoke take ~100 s; the rest of the window is
+          # only safety margin. On SIGTERM the engine lock may linger — stop
+          # explicitly so the M3.3 restart step starts clean.
+          timeout 240 crussty run > boot.log 2>&1
           code=$?
+          timeout 90 crussty stop || true
           cd ..
           echo "exit=$code" >> "$GITHUB_OUTPUT"
           echo "--- tail of boot.log ---"
@@ -243,6 +247,16 @@ jobs:
         run: |
           set +e
           cd srv
+          # boot1 was SIGTERM'd by `timeout` — the engine's singleton guard may
+          # still hold the pid lock ("crussty: server already running"), so
+          # stop it explicitly and wait for the lock to release.
+          timeout 90 crussty stop || true
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if ! crussty status 2>/dev/null | grep -qi "running"; then
+              break
+            fi
+            sleep 3
+          done
           timeout 360 crussty run > boot2.log 2>&1
           code=$?
           cd ..
