@@ -205,3 +205,14 @@ Work Log:
 
 Stage Summary:
 - Pushing fix; expecting full green on the next run (bridge smoke runs in the live boot).
+
+---
+Task ID: 3.11
+Agent: main
+Task: boot job artifact name fix
+
+Work Log:
+- pom finalName is cim-paper-plugin (no version suffix) — cp path corrected.
+
+Stage Summary:
+- Expecting full green; bridge smoke markers next.

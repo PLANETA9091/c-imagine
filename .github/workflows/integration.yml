@@ -93,7 +93,7 @@ jobs:
         run: |
           unzip -o dist/module-imagine.zip -d srv/modules/
           mkdir -p srv/plugins
-          cp paper-plugin/target/cim-paper-plugin-0.1.0.jar srv/plugins/
+          cp paper-plugin/target/cim-paper-plugin.jar srv/plugins/
           mkdir -p srv/mods
           cp test-mods/build/libs/cimtest-1.0.0.jar srv/mods/
           # M2: real NeoForge 1.21.1 mods ride along the first-party test mod
