@@ -58,6 +58,33 @@ jobs:
           npm i -g crussty
           crussty init --platform paper --version 26.3 --dir srv
 
+      # --- M1: embedded 1.21.1 layer --------------------------------------
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: srv/layer1211
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          JAVA_HOME="$JAVA_HOME_21_X64" java -jar nf-installer.jar --installServer srv/layer1211
+          find srv/layer1211 -name "*.jar" | wc -l
+
+      - name: configure c-imagine layer
+        run: |
+          mkdir -p srv/crus
+          cat > srv/crus/c-imagine.json <<'JSON'
+          {"layerDir": "layer1211/libraries"}
+          JSON
+          # layer boot needs headroom alongside Paper (M0 budget stays in place
+          # for bare boots; this boot runs Paper + relocated 1.21.1 stack)
+          sed -i 's/memory = "2G"/memory = "6G"/' srv/crussty.toml
+          cat srv/crussty.toml
+
       - name: install module + test mod
         run: |
           unzip -o dist/module-imagine.zip -d srv/modules/
@@ -98,7 +125,13 @@ jobs:
           grep -q "\[c-imagine\] bootstrap ready: {\"state\":\"ok\"" srv/boot.log || fail "java bootstrap not ok"
           grep -q "\[c-imagine\] mods (1): cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
           grep -q "\[c-imagine\] kernel ready (Paper class space online)" srv/boot.log || fail "kernel-ready marker missing"
-          echo "all integration markers present"
+          # M1: relocated 1.21.1 layer boots and snapshots vanilla registries
+          LAYER_LINE=$(grep -oE "\[c-imagine\] layer boot ok \(vanilla registries: [0-9]+" srv/boot.log | tail -1)
+          [ -n "$LAYER_LINE" ] || fail "layer boot ok marker missing"
+          REGS=$(echo "$LAYER_LINE" | grep -oE "[0-9]+$")
+          echo "layer registries: $REGS"
+          [ "$REGS" -ge 70 ] || fail "vanilla registries count too low: $REGS"
+          echo "all integration markers present (incl. M1 layer boot)"
 
       - name: report + upload logs
         if: always()

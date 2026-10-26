@@ -93,9 +93,37 @@ rewritten by the same pass. Mods never see Paper's classes; Paper never sees lay
 classes. Cross-boundary calls happen only through the bridge (§4.4) with explicit
 data marshalling.
 
+Relocation surfaces (M1, implemented in `cim-reloc`):
+
+- **constant pool** — `CONSTANT_Class` entries, `CONSTANT_NameAndType` and
+  `CONSTANT_MethodType` descriptors; rewrites are appended as fresh UTF-8s, original
+  slots untouched (annotations/signatures keep raw strings — FML scans raw bytes);
+- **member declarations** — every `field_info`/`method_info` descriptor_index:
+  HotSpot's native verifier resolves declared types from these strings at define
+  time, so declarations must be relocated (pool-only rewriting broke `putstatic`
+  verification with `NoClassDefFoundError ... (wrong name)`);
+- deliberately untouched: `Signature` attributes, annotation descriptors,
+  `CONSTANT_String` literals (reflection over names → `ClassNames.decode` shim, M2+).
+
+Loader details that matter (all fixture-tested):
+
+- jar order mirrors NeoForge's `unix_args.txt` `-DlegacyClassPath` (the library set
+  ships multiple versions of some artifacts — e.g. guava 20.0 next to 32.1.2); FML
+  resolves them by module-layer order, we mirror the list order;
+- jars are opened with `Runtime.version()` so **multi-release entries** resolve
+  (log4j-api's Java-9+ `StackLocator` lives under `META-INF/versions/9`; the base
+  Java-7 class breaks caller lookup on modern JVMs);
+- the loader is hermetic: parent = platform loader for JDK prefixes only, **no**
+  fallback to the host application loader — a missing dependency fails loudly instead
+  of silently binding a 1.21.1 class to a Paper 26.3 lookalike;
+- resources resolve under original paths (indexed), classes additionally under
+  relocated paths.
+
 Known limits (tracked): bytecode that reflects over its own class *name strings*
 needs a name-mapping shim (`cim.shadow.ClassNames.decode`); agents that attach JVMTI
-themselves are unsupported in-process and get the M8 child-JVM mode.
+themselves are unsupported in-process and get the M8 child-JVM mode. The M1 boot also
+seeds minimal FML statics (`FmlStateShim`: empty `LoadingModList`) — replaced by the
+real FML pipeline inside the shadow space at M2.
 
 ### 4.3 Boot sequence
 

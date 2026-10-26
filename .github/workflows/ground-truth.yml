@@ -1,0 +1,78 @@
+name: ground-truth
+
+# Upstream ground-truth artifacts (docs/runtime-analysis/ §M1 debt):
+# 1. census — class/data census of the vanilla 26.3 and 1.21.1 server jars
+#    (cheap, runs on push and weekly).
+# 2. decompile — vanilla 26.3 client decompiled through the official Mojang
+#    mappings (expensive; workflow_dispatch only, ~15-25 min).
+#
+# Artifacts are per-version and feed F2V v2 + remap tables with facts instead
+# of folklore. Nothing here is committed to the repo (artifact-only, per
+# AGENTS.md).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  census:
+    name: vanilla server class census (26.3 + 1.21.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: census both versions
+        run: |
+          mkdir -p out
+          python scripts/census_server.py 26.3 out/census-26.3
+          python scripts/census_server.py 1.21.1 out/census-1.21.1
+          python scripts/census_diff.py out/census-26.3.json out/census-1.21.1.json out/census-diff.md
+          cat out/census-diff.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanilla-server-census
+          path: out/
+          if-no-files-found: error
+
+  decompile-client:
+    name: decompile vanilla 26.3 client (official mappings)
+    if: github.event_name == 'workflow_dispatch'
+    needs: census
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: fetch client jar + official mappings + toolchain
+        run: bash scripts/fetch-decompile-inputs.sh 26.3 work
+      - name: convert mappings (proguard → tiny v2)
+        run: |
+          cd work
+          javac -cp mapping-io.jar ConvertMappings.java
+          java -cp mapping-io.jar:. ConvertMappings client.txt client.tiny
+      - name: remap client jar (official → named)
+        run: |
+          cd work
+          java -jar tiny-remapper.jar client.jar client-named.jar client.tiny official named
+      - name: decompile (Vineflower)
+        run: |
+          cd work
+          java -Xmx6g -jar vineflower.jar --silent client-named.jar sources/ || true
+          mkdir -p ../out
+          zip -qr ../out/client-26.3-sources.zip sources/
+          zip -qr ../out/client-26.3-named.jar.zip client-named.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vanilla-client-26.3-sources
+          path: out/
+          if-no-files-found: error

@@ -13,7 +13,9 @@ use std::path::PathBuf;
 
 use cplug_abi::{CPluginApi, JavaVmPtr};
 
+mod layerconfig;
 mod modwatch;
+mod native_reloc;
 mod options;
 
 /// Sendable wrapper around the process-global JavaVM pointer.
@@ -88,11 +90,29 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
         }
     };
 
-    // 2) Drive the Java side through JNI.
-    let status = run_bootstrap(vm, &jar_path, &opts);
+    // 2) Layer configuration (crus/c-imagine.json in the server root) and
+    //    this module's own .so path (for the Java relocation natives).
+    let server_root = opts.server_root();
+    let layer_cfg = layerconfig::load(&server_root);
+    let module_lib = layerconfig::module_lib_path().unwrap_or_default();
+    if !layer_cfg.layer_dir.is_empty() {
+        eprintln!(
+            "{} layer config: dir={} moduleLib={}",
+            cim_core::LOG_PREFIX,
+            layer_cfg.layer_dir,
+            if module_lib.is_empty() {
+                "<unknown>"
+            } else {
+                &module_lib
+            }
+        );
+    }
+
+    // 3) Drive the Java side through JNI.
+    let status = run_bootstrap(vm, &jar_path, &opts, &layer_cfg.layer_dir, &module_lib);
     eprintln!("{} bootstrap ready: {status}", cim_core::LOG_PREFIX);
 
-    // 3) Scan mods/ (static, no class loading) and report load order.
+    // 4) Scan mods/ (static, no class loading) and report load order.
     let mods_dir = opts
         .mods_dir
         .clone()
@@ -118,6 +138,8 @@ fn run_bootstrap(
     vm: SendVmPtr,
     jar_path: &std::path::Path,
     opts: &options::ModuleOptions,
+    layer_dir: &str,
+    module_lib: &str,
 ) -> String {
     let result = (|| -> Result<String, String> {
         let jvm = unsafe { jni::JavaVM::from_raw(vm.0 as *mut jni_sys::JavaVM) }
@@ -202,7 +224,7 @@ fn run_bootstrap(
             .map_err(|e| format!("forName l(): {e}"))?;
         let boot_cls = jni::objects::JClass::from(class);
 
-        let options_json = serde_options_json(jar_path, opts);
+        let options_json = serde_options_json(jar_path, opts, layer_dir, module_lib);
         let jopts = env
             .new_string(options_json)
             .map_err(|e| format!("new_string: {e}"))?;
@@ -232,7 +254,12 @@ fn run_bootstrap(
     }
 }
 
-fn serde_options_json(jar_path: &std::path::Path, opts: &options::ModuleOptions) -> String {
+fn serde_options_json(
+    jar_path: &std::path::Path,
+    opts: &options::ModuleOptions,
+    layer_dir: &str,
+    module_lib: &str,
+) -> String {
     // Tiny hand-rolled JSON (no serde dependency at the module boundary).
     let jar = jar_path.to_string_lossy().replace('\\', "/");
     let mods = opts
@@ -241,7 +268,9 @@ fn serde_options_json(jar_path: &std::path::Path, opts: &options::ModuleOptions)
         .map(|p| p.to_string_lossy().replace('\\', "/"))
         .unwrap_or_default();
     format!(
-        "{{\"jar\":\"{jar}\",\"mods\":\"{mods}\",\"kernel\":\"{}\"}}",
-        opts.kernel.replace('\\', "/")
+        "{{\"jar\":\"{jar}\",\"mods\":\"{mods}\",\"kernel\":\"{}\",\"layerDir\":\"{}\",\"moduleLib\":\"{}\"}}",
+        opts.kernel.replace('\\', "/"),
+        layer_dir.replace('\\', "/"),
+        module_lib.replace('\\', "/"),
     )
 }

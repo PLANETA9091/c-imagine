@@ -13,6 +13,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 cim-core = { workspace = true }
 cim-modscan = { workspace = true }
+cim-reloc = { workspace = true }
 cplug-abi = { workspace = true }
 cplug-sdk = { workspace = true }
 jni = { workspace = true }

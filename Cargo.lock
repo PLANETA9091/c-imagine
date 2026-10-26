@@ -206,6 +206,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cim-reloc"
+version = "0.1.0"
+dependencies = [
+ "cim-core",
+ "zip",
+]
+
+[[package]]
 name = "cipher"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -521,6 +529,7 @@ version = "0.1.0"
 dependencies = [
  "cim-core",
  "cim-modscan",
+ "cim-reloc",
  "cplug-abi",
  "cplug-sdk",
  "jni",

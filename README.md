@@ -116,4 +116,9 @@ inside a single JVM.
 ## Status
 
 M0 — foundation: repository, architecture, core crates, CRUSSTY module skeleton,
-CI/integration/profiling pipelines. NeoForge mod *execution* begins at M2 (see roadmap).
+CI/integration/profiling pipelines. ✅
+M1 — embedded 1.21.1 layer boots: `cim-reloc` (shadow-namespace relocation of the
+real MC 1.21.1 + NeoForge 21.1.265 stack), shadow classloader, layer boot inside
+Paper JVM with vanilla registry snapshot; ground-truth CI jobs. ✅ (matrix green)
+M2 — mod execution: real FML discovery pipeline + mod relocation, `cimtest`
+registration through the layer. ⏳ next

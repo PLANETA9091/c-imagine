@@ -68,9 +68,8 @@ pub fn parse_str(raw: &str) -> ModuleOptions {
 
 impl ModuleOptions {
     /// Server root inferred from the modules dir (`<root>/modules` → `<root>`).
-    /// Falls back to the current dir when unknown.
-    /// M1 wires this into layer install paths; kept exercised by tests.
-    #[cfg_attr(not(test), expect(dead_code))]
+    /// Falls back to the current dir when unknown. Used to locate the layer
+    /// config (`crus/c-imagine.json`).
     pub fn server_root(&self) -> PathBuf {
         self.modules_dir
             .as_ref()

@@ -19,17 +19,25 @@ and asserts discovery + markers; profiling gate green; all unit tests green.
 
 ## M1 — Embedded vanilla 1.21.1 layer boots (shadow namespace)
 
-- Relocation stage over the class-load hook pipeline (relocation tables in Rust,
-  ASM transform on the Java side).
-- Relocated MC 1.21.1 + NeoForge 21.1.x downloaded/installed by CI (content-addressed
-  cache), booted headless inside Paper JVM.
-- Logical server constructs without a tick thread; registries snapshot into cim-registry.
-- Upstream ground-truth jobs (per `docs/runtime-analysis/`): decompile vanilla 26.3
-  client (official mappings + Vineflower) and census the 26.3 server classes; results
-  cached as per-version artifacts — F2V v2 and the remap tables cite these, not folklore.
+- [x] Relocation stage: `cim-reloc` (relocation tables + full class-file rewriter:
+      constant pool **and** member declaration descriptors; appended-UTF8 strategy
+      keeps annotation/signature strings raw; fixture-tested + real-class smoke test).
+- [x] Relocation runtime: JNI bridge (`NativeReloc`), shadow loader (hermetic,
+      central-dir index, MR-JAR-aware, `legacyClassPath` ordering), layer config
+      (`crus/c-imagine.json`), module lib discovery (`/proc/self/maps`).
+- [x] Relocated MC 1.21.1 + NeoForge 21.1.265 installed by CI (actions cache,
+      content-addressed by version), booted headless inside Paper JVM.
+- [x] Logical server construct: real `Bootstrap.bootStrap()` runs in the shadow
+      space; registry census snapshot reported (`vanilla registries: 78` locally).
+- [x] Upstream ground-truth jobs: `ground-truth.yml` — vanilla server class census
+      (26.3 + 1.21.1, diffed; verified locally: 7436 vs 6148 classes) and the
+      dispatch-only 26.3 client decompile (official mappings → tiny v2 →
+      tiny-remapper → Vineflower).
+- [ ] M1 minimal FML statics (`FmlStateShim`) replaced by the real FML discovery
+      pipeline inside the shadow space (first M2 task).
 
-**Accept:** integration log shows `[c-imagine] layer boot ok (vanilla registries: N)`;
-RSS delta within M1 budget.
+**Accept:** integration log shows `[c-imagine] layer boot ok (vanilla registries: N)`
+(N ≥ 70 asserted in CI); RSS delta within M1 budget.
 
 ## M2 — Mod execution: registries + events
 

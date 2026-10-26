@@ -5,6 +5,7 @@ members = [
     "crates/cim-bus",
     "crates/cim-proto",
     "crates/cim-modscan",
+    "crates/cim-reloc",
     "crates/cim-registry",
     "crates/cim-bridge",
     "crates/cim-f2v",
@@ -24,6 +25,7 @@ cim-core = { path = "crates/cim-core" }
 cim-bus = { path = "crates/cim-bus" }
 cim-proto = { path = "crates/cim-proto" }
 cim-modscan = { path = "crates/cim-modscan" }
+cim-reloc = { path = "crates/cim-reloc" }
 cim-registry = { path = "crates/cim-registry" }
 cim-bridge = { path = "crates/cim-bridge" }
 cim-f2v = { path = "crates/cim-f2v" }
