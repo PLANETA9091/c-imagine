@@ -165,59 +165,98 @@ public final class KernelBridge {
                     String.class, double.class, double.class, double.class, String.class);
             Method listEntities = pluginClass.getMethod("paperListEntities",
                     String.class, double.class, double.class, double.class, double.class);
+            Method getEntityType = pluginClass.getMethod("paperGetEntityType",
+                    String.class, String.class);
             Method removeEntity = pluginClass.getMethod("paperRemoveEntity",
                     String.class, String.class);
 
-            // 6a) remapped type: 1.21.1 boat -> 26.3 oak_boat
+            // 6a) remapped type: 1.21.1 boat -> 26.3 oak_boat.
+            // Visibility contract: the Paper world holds the remapped entity
+            // (UUID-channel, registration-authoritative) and the box-scan
+            // projection sees it; both polls are bounded — Paper may register
+            // the spawn on a later entity-tick batch.
             String boatLayer = "minecraft:boat";
             String boatKernel = StateMapper.get().layerToKernelKey("entity_type", boatLayer);
             String boatUuid = (String) spawnEntity.invoke(plugin, world,
                     (double) x + 3, (double) y, (double) z, boatKernel);
-            boolean boatSeen = false;
-            boolean boatBack = false;
+            boolean boatPrimary = false; // uuid-channel: Paper holds the remapped type
+            boolean boatScan = false;    // box-scan projection saw the row
             boolean boatGone = false;
+            boolean boatOk = false;
+            int polls = 0;
+            int lastRows = -1;
             if (boatUuid != null) {
-                String[] rows = (String[]) listEntities.invoke(plugin, world,
-                        (double) x + 3, (double) y, (double) z, 8.0);
-                for (String row : rows) {
-                    String[] f = row.split("\\|", -1);
-                    if (f.length < 2) {
-                        continue;
+                for (int i = 0; i < 60 && !boatPrimary; i++) {
+                    String t = (String) getEntityType.invoke(plugin, world, boatUuid);
+                    String[] rows = (String[]) listEntities.invoke(plugin, world,
+                            (double) x + 3, (double) y, (double) z, 8.0);
+                    polls++;
+                    lastRows = rows.length;
+                    if (boatKernel.equals(t)) {
+                        boatPrimary = true;
                     }
-                    if (f[1].equals(boatKernel) && f[0].equals(boatUuid)) {
-                        boatSeen = true;
+                    for (String row : rows) {
+                        if (row.startsWith(boatUuid)) {
+                            boatScan = true;
+                        }
                     }
-                    // the layer view translates 26.3 keys back to 1.21.1 names
-                    if (StateMapper.get().kernelToLayerKey("entity_type", f[1]).equals(boatLayer)
-                            && f[0].equals(boatUuid)) {
-                        boatBack = true;
+                    if (!boatPrimary) {
+                        Thread.sleep(50);
                     }
                 }
+                // the layer view translates 26.3 keys back to 1.21.1 names —
+                // a pure table property of the projection (oak_boat -> boat)
+                boolean boatBack =
+                        StateMapper.get().kernelToLayerKey("entity_type", boatKernel)
+                                .equals(boatLayer);
                 removeEntity.invoke(plugin, world, boatUuid);
-                String[] after = (String[]) listEntities.invoke(plugin, world,
-                        (double) x + 3, (double) y, (double) z, 8.0);
-                boatGone = true;
-                for (String row : after) {
-                    if (row.startsWith(boatUuid)) {
-                        boatGone = false;
+                for (int i = 0; i < 60; i++) {
+                    String t = (String) getEntityType.invoke(plugin, world, boatUuid);
+                    String[] after = (String[]) listEntities.invoke(plugin, world,
+                            (double) x + 3, (double) y, (double) z, 8.0);
+                    boolean scanClean = true;
+                    for (String row : after) {
+                        if (row.startsWith(boatUuid)) {
+                            scanClean = false;
+                        }
                     }
+                    if (t == null && scanClean) {
+                        boatGone = true;
+                        break;
+                    }
+                    Thread.sleep(50);
                 }
+                boatOk = boatPrimary && boatBack && boatGone;
+                System.out.println(LOG + " bridge smoke: entity boat leg uuid=" + boatUuid
+                        + " kernel=" + boatKernel
+                        + " primary=" + boatPrimary + " scan=" + boatScan
+                        + " back=minecraft:boat (" + boatBack + ")"
+                        + " removed&gone=" + boatGone
+                        + " polls=" + polls + " lastRows=" + lastRows
+                        + (boatOk ? " (boat split ok)" : " (MISMATCH)"));
+            } else {
+                System.out.println(LOG + " bridge smoke: entity boat leg uuid=null"
+                        + " kernel=" + boatKernel + " (MISMATCH: spawn failed)");
             }
-            boolean boatOk = boatUuid != null && boatSeen && boatBack && boatGone;
-            System.out.println(LOG + " bridge smoke: entity boat leg uuid=" + boatUuid
-                    + " kernel=" + boatKernel
-                    + " seen=" + boatSeen + " layerView=minecraft:boat (" + boatBack + ")"
-                    + " removed&gone=" + boatGone
-                    + (boatOk ? " (boat split ok)" : " (MISMATCH)"));
 
-            // 6b) identity type: pig passes the tables untouched
+            // 6b) identity type: pig passes the tables untouched (and is
+            // actually observable through the facade before despawn)
             String pigKernel = StateMapper.get().layerToKernelKey("entity_type", "minecraft:pig");
             String pigUuid = (String) spawnEntity.invoke(plugin, world,
                     (double) x + 5, (double) y, (double) z, pigKernel);
-            boolean pigOk = pigUuid != null && "minecraft:pig".equals(pigKernel);
+            boolean pigPrimary = false;
             if (pigUuid != null) {
+                for (int i = 0; i < 60 && !pigPrimary; i++) {
+                    String t = (String) getEntityType.invoke(plugin, world, pigUuid);
+                    if ("minecraft:pig".equals(t)) {
+                        pigPrimary = true;
+                    } else {
+                        Thread.sleep(50);
+                    }
+                }
                 removeEntity.invoke(plugin, world, pigUuid);
             }
+            boolean pigOk = pigUuid != null && "minecraft:pig".equals(pigKernel) && pigPrimary;
             System.out.println(LOG + " bridge smoke: entity pig leg uuid=" + pigUuid
                     + " type=" + pigKernel + (pigOk ? " (identity ok)" : " (MISMATCH)"));
 

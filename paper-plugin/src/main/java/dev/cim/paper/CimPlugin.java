@@ -154,6 +154,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         });
     }
 
+    /**
+     * Resolve an entity by UUID and return its 26.3 type key
+     * ("minecraft:oak_boat"), or null when absent. UUID lookup is the
+     * registration-authoritative channel (box scans can lag a tick behind
+     * section indexing).
+     */
+    public String paperGetEntityType(String world, String uuid) {
+        return callSync(() -> {
+            try {
+                org.bukkit.entity.Entity e =
+                        world(world).getEntity(java.util.UUID.fromString(uuid));
+                return e == null ? null : e.getType().getKey().toString();
+            } catch (IllegalArgumentException badUuid) {
+                return null;
+            }
+        });
+    }
+
     /** Remove a kernel entity by UUID (Paper side). True when it existed. */
     public boolean paperRemoveEntity(String world, String uuid) {
         return callSync(() -> {
