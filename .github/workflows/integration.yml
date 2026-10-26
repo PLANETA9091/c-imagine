@@ -143,3 +143,94 @@ jobs:
             srv/crash-reports/
             srv/logs/
           if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------
+  # M2: real-FML mod execution over REAL NeoForge 1.21.1 mods (Modrinth)
+  # in the shadow space via the local harness (no Paper, no CRUSSTY).
+  # Owner requirement: early, visible progression against third-party mods.
+  # ---------------------------------------------------------------------
+  m2-real-mods:
+    name: M2 real mods (Modrinth) — FML pipeline in shadow space
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # --- build (all on CI per owner directive) --------------------------
+      - name: build rust (release)
+        run: cargo build --release --quiet
+
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+
+      - name: build cimtest mod (NeoForge 1.21.1)
+        working-directory: test-mods
+        run: gradle build --no-daemon
+
+      # --- 1.21.1 layer (cached) ------------------------------------------
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer1211
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-installer.jar --installServer layer1211
+          find layer1211 -name "*.jar" | wc -l
+
+      # --- real mods -------------------------------------------------------
+      - name: fetch real NeoForge 1.21.1 mods (Modrinth)
+        run: |
+          bash scripts/fetch-real-mods.sh realmods
+          mkdir -p mods
+          cp realmods/*.jar mods/
+          cp test-mods/build/libs/cimtest-1.0.0.jar mods/
+
+      # --- run -------------------------------------------------------------
+      - name: run M2 harness (relocation + real FML mod execution)
+        run: bash scripts/run-m2-harness.sh layer1211/libraries mods out
+
+      # --- assertions ------------------------------------------------------
+      - name: assert M2 markers
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          L=out/harness.log
+          grep -q "mod execution ok" $L || fail "mod execution FAILED (see harness.log)"
+          # every real mod + layer + cimtest constructed through real FML
+          for m in appleskin neoforge cimtest ferritecore jade mezz_config jei spark; do
+            grep -q "\[c-imagine\] mod $m: constructed" $L || fail "mod $m not constructed"
+          done
+          # cimtest registrations went through the real RegisterEvent pipeline
+          grep -q "registered={ITEM=1, BLOCK=1, BLOCK_ENTITY_TYPE=1, ENTITY_TYPE=1}" $L \
+            || fail "cimtest registrations missing: $(grep -oE 'registered=\{[^}]*\}' $L | tail -1)"
+          grep -q "cimtest:test_block" $L || fail "cimtest:test_block not registered"
+          grep -q "cimtest:test_block_entity" $L || fail "cimtest:test_block_entity not registered"
+          grep -q "cimtest:test_entity" $L || fail "cimtest:test_entity not registered"
+          # timing report for the trend
+          grep -oE "mod execution ok \(mods=[0-9]+, registered=[^)]+\)" $L | tail -1
+          echo "M2 real-mod markers: all present"
+
+      - name: report + upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m2-real-mods-logs
+          path: |
+            out/harness.log
+            out/m2manifest.json
+          if-no-files-found: ignore
