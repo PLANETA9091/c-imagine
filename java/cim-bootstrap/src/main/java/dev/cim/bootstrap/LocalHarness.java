@@ -55,6 +55,44 @@ public final class LocalHarness {
         System.out.println("[c-imagine][local] loadMods:");
         String mods = Bootstrap.loadMods(manifest);
         System.out.println("[c-imagine][local] loadMods -> " + mods);
+
+        if (args.length >= 5 && args[4].contains("probe-log4j")) {
+            ClassLoader sl = ShadowClassLoader.get();
+            System.out.println("[c-imagine][probe] jarCount=" + ShadowClassLoader.jarCount()
+                    + " loaded=" + ShadowClassLoader.loadedClassCount());
+            try {
+                String datPath = "META-INF/org/apache/logging/log4j/core/config/plugins/Log4j2Plugins.dat";
+                System.out.println("[c-imagine][probe] dat(new path) URLs: "
+                        + java.util.Collections.list(sl.getResources(datPath)));
+                System.out.println("[c-imagine][probe] dat(old path) URLs: "
+                        + java.util.Collections.list(sl.getResources("META-INF/Log4j2Plugins.dat")));
+            } catch (Throwable t) {
+                System.out.println("[c-imagine][probe] dat lookup failed: " + t);
+            }
+            try {
+                System.out.println("[c-imagine][probe] LoggerFactory.class: "
+                        + sl.getResource("org/slf4j/LoggerFactory.class"));
+            } catch (Throwable t) {
+                System.out.println("[c-imagine][probe] slf4j lookup failed: " + t);
+            }
+            try {
+                System.out.println("[c-imagine][probe] props: " + sl.getResource("log4j2.component.properties"));
+                var in = sl.getResourceAsStream("log4j2.component.properties");
+                if (in != null) {
+                    System.out.println("[c-imagine][probe] props size: " + in.readAllBytes().length);
+                }
+            } catch (Throwable t) {
+                System.out.println("[c-imagine][probe] props lookup failed: " + t);
+            }
+            try {
+                Class<?> slf = Class.forName("org.slf4j.LoggerFactory", true, sl);
+                Object logger = slf.getMethod("getLogger", String.class).invoke(null, "cim.probe");
+                logger.getClass().getMethod("info", String.class)
+                        .invoke(logger, "shadow slf4j->log4j probe line");
+            } catch (Throwable t) {
+                System.out.println("[c-imagine][probe] logger probe failed: " + t);
+            }
+        }
     }
 
     private static String json(String s) {

@@ -93,6 +93,9 @@ jobs:
           # M2: real NeoForge 1.21.1 mods ride along the first-party test mod
           bash scripts/fetch-real-mods.sh srv/realmods
           cp srv/realmods/*.jar srv/mods/
+          # shadow-space log4j config (relative path resolves against the
+          # crussty CWD, which is srv/)
+          cp scripts/log4j2-layer.xml srv/
           echo "eula=true" > srv/eula.txt
           cat > srv/server.properties <<'PROPS'
           online-mode=false
@@ -160,6 +163,13 @@ jobs:
           for m in appleskin neoforge cimtest ferritecore jade jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
           done
+          # shadow-space log pipeline: first-party mod markers must reach the
+          # boot log through the layer's own slf4j/log4j stack — the same
+          # lines the real NeoForge server emits (parity contract)
+          grep -q "\[cim-layer\].*\[cimtest\] mod constructed" srv/boot.log \
+            || fail "shadow log pipeline broken: [cimtest] constructed marker missing"
+          grep -q "\[cim-layer\].*\[cimtest\] common setup ok" srv/boot.log \
+            || fail "shadow log pipeline broken: [cimtest] common setup marker missing"
           echo "all integration markers present (incl. M1 layer boot + M2 real mods)"
 
       - name: report + upload logs
@@ -256,6 +266,12 @@ jobs:
           grep -q "cimtest:test_entity" $L || fail "cimtest:test_entity not registered"
           # timing report for the trend
           grep -oE "mod execution ok \(mods=[0-9]+, registered=[^)]+\)" $L | tail -1
+          # shadow-space log pipeline parity markers (identical lines the
+          # real NeoForge server prints — see the parity-real-neoforge job)
+          grep -q "\[cim-layer\].*\[cimtest\] mod constructed" $L \
+            || fail "shadow log pipeline broken: [cimtest] constructed marker missing"
+          grep -q "\[cim-layer\].*\[cimtest\] common setup ok" $L \
+            || fail "shadow log pipeline broken: [cimtest] common setup marker missing"
           echo "M2 real-mod markers: all present"
 
       - name: report + upload logs
@@ -266,4 +282,91 @@ jobs:
           path: |
             out/harness.log
             out/m2manifest.json
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------
+  # M2 parity ground truth: the SAME mod set (real Modrinth mods + cimtest)
+  # on a REAL NeoForge 21.1.265 dedicated server. The first-party [cimtest]
+  # markers are the parity contract: every line printed there must appear
+  # identically in the c-imagine boots (live boot + harness).
+  # ---------------------------------------------------------------------
+  parity-real-neoforge:
+    name: ground truth — real NeoForge 21.1.265 server (same mod set)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build cimtest mod (NeoForge 1.21.1)
+        working-directory: test-mods
+        run: gradle build --no-daemon
+
+      - name: restore NeoForge 21.1.265 server (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer1211
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-installer.jar --installServer layer1211
+
+      - name: prepare server directory (isolated copy)
+        run: |
+          cp -r layer1211 srv-parity
+          mkdir -p srv-parity/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv-parity/mods/
+          bash scripts/fetch-real-mods.sh realmods
+          cp realmods/*.jar srv-parity/mods/
+          echo "eula=true" > srv-parity/eula.txt
+          cat > srv-parity/server.properties <<'PROPS'
+          online-mode=false
+          level-type=minecraft:flat
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          max-players=5
+          PROPS
+
+      - name: boot real NeoForge server (timeout 5 min)
+        run: |
+          set +e
+          cd srv-parity
+          timeout 300 ./run.sh > boot.log 2>&1
+          code=$?
+          cd ..
+          echo "exit=$code"
+          tail -30 srv-parity/boot.log || true
+          true
+
+      - name: assert real-server parity markers
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          L=srv-parity/boot.log
+          grep -q "Done (" $L || fail "real NeoForge server did not reach Done"
+          grep -q "\[cimtest\] mod constructed (registration queues armed)" $L \
+            || fail "cimtest constructed marker missing on real server"
+          grep -q "\[cimtest\] common setup ok (block=cimtest:test_block" $L \
+            || fail "cimtest common setup marker missing on real server"
+          echo "real NeoForge 21.1.265 parity markers: all present"
+
+      - name: report + upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-real-neoforge-logs
+          path: |
+            srv-parity/boot.log
+            srv-parity/logs/
           if-no-files-found: ignore

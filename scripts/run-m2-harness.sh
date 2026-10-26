@@ -35,8 +35,12 @@ CIM_LAYER_DIR="$LAYER" "$CLI" "$MODS" "$MANIFEST"
 
 echo "=== LocalHarness (real FML pipeline) ==="
 mkdir -p "$OUT/game"
+# Shadow-space log4j config (scoped via log4j2.component.properties in the
+# bootstrap jar): relative path resolves against the java CWD.
+cp "$ROOT/scripts/log4j2-layer.xml" "$OUT/"
 # pipefail-safe tee: the harness exit code propagates
 set -o pipefail
+cd "$OUT"
 java -cp "$JAR" -Dcim.gamedir="$OUT/game" \
   dev.cim.bootstrap.LocalHarness "$LIB" "$LAYER" "$MODS" "$MANIFEST" \
   2>&1 | tee "$OUT/harness.log"

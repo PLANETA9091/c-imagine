@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- log4j2 configuration for the shadow (1.21.1) space inside c-imagine.
+     Looked up through log4j2.component.properties on the ShadowClassLoader,
+     so it only ever affects the embedded layer's log4j copy — never Paper's.
+     Prefix [cim-layer] marks every shadow-space line; CI parity jobs grep
+     the first-party mod markers ([cimtest] ...) out of these lines. -->
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="cim-layer-console" target="SYSTEM_OUT">
+      <PatternLayout pattern="[cim-layer] %-5level %logger{1} - %msg%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <Root level="INFO">
+      <AppenderRef ref="cim-layer-console"/>
+    </Root>
+  </Loggers>
+</Configuration>

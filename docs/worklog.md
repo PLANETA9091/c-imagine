@@ -122,3 +122,18 @@ Work Log:
 Stage Summary:
 - M2 is effectively proven end-to-end on CI: real mods load through the real FML pipeline both in the harness and inside the live Paper 26.3 boot.
 - Next: green boot on 8775439-fix, then M2 parity ground-truth (real NeoForge 21.1.265 server run) + M2.1 annotation descriptors.
+
+---
+Task ID: 3.5
+Agent: main
+Task: shadow-space log pipeline fix + M2 parity ground-truth job
+
+Work Log:
+- Shadow log4j was silent: (a) getResources returned only the FIRST jar hit — log4j aggregates plugin caches per jar (Log4j2Plugins.dat lives in META-INF/org/apache/logging/log4j/core/config/plugins/ in 2.22.1) and ServiceLoader needs all providers — without log4j-core's dat, 0 core converters load, layouts fail, log lines drop; (b) no config → DefaultConfiguration.
+- Fixes: ShadowClassLoader.getResources now enumerates ALL jars (hermetic, MR-aware); scoped log4j2 config via log4j2.component.properties packaged in cim-bootstrap.jar (visible only to the shadow loader) + scripts/log4j2-layer.xml at process CWD.
+- Result: [cim-layer] INFO lines in harness output incl. first-party markers "[cimtest] mod constructed (registration queues armed)" and "[cimtest] common setup ok (block=cimtest:test_block, ...)". Harness re-verified: mod execution ok, 946 ms.
+- integration.yml: [cim-layer] marker assertions in boot + m2-real-mods jobs; NEW parity-real-neoforge job — REAL NeoForge 21.1.265 dedicated server boots the SAME mod set (real Modrinth mods + cimtest); the [cimtest] markers are the cross-boot parity contract.
+
+Stage Summary:
+- Shadow space now logs through its own (scoped) slf4j→log4j2 stack; parity contract established with the real server.
+- Pushed: f8eec68 (assert format fix) + log-pipeline + parity job.

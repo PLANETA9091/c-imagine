@@ -14,6 +14,8 @@ mkdir -p "$OUT/classes"
 # shellcheck disable=SC2046
 javac --release 21 -Xlint:all -d "$OUT/classes" $(find "$SRC" -name '*.java')
 
-jar --create --file "$JAR" --main-class dev.cim.bootstrap.Bootstrap -C "$OUT/classes" .
+jar --create --file "$JAR" --main-class dev.cim.bootstrap.Bootstrap \
+    -C "$OUT/classes" . \
+    -C "$ROOT/java/cim-bootstrap/src/main/resources" .
 
 echo "built: $JAR"

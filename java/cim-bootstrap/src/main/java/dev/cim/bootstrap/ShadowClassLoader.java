@@ -400,11 +400,27 @@ public final class ShadowClassLoader extends ClassLoader {
 
     @Override
     public java.util.Enumeration<URL> getResources(String name) throws IOException {
-        URL single = findResource(name);
-        if (single == null && name.startsWith("META-INF/services/")) {
+        // FULL multi-jar enumeration: log4j-core aggregates its plugin caches
+        // (Log4j2Plugins.dat — one per jar: core + FML) and ServiceLoader
+        // providers (META-INF/services/*) through getResources. Returning only
+        // the first hit silently broke the shadow-space log pipeline (0 core
+        // converters → layout parse errors → dropped log lines) and would
+        // break any multi-provider service lookup.
+        List<URL> out = new ArrayList<>();
+        for (int i = 0; i < jars.size(); i++) {
+            if (jars.get(i).getJarEntry(name) == null) {
+                continue;
+            }
+            String base = jarUrls.get(i).toString();
+            if (!base.endsWith("/")) {
+                base = base + "!/";
+            }
+            out.add(new URL("jar:" + base + name));
+        }
+        if (out.isEmpty() && name.startsWith("META-INF/services/")) {
             System.out.println("[c-imagine][dbg] getResources MISS: " + name);
         }
-        return java.util.Collections.enumeration(single == null ? List.of() : List.of(single));
+        return java.util.Collections.enumeration(out);
     }
 
     /** Child-first: JDK from the platform loader, everything else from here. */
