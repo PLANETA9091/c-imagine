@@ -2,7 +2,7 @@ name: ground-truth
 
 # Upstream ground-truth artifacts (docs/runtime-analysis/ §M1 debt):
 # 1. census — class/data census of the vanilla 26.3 and 1.21.1 server jars
-#    (cheap, runs on push and weekly).
+#    (cheap; runs on dispatch).
 # 2. decompile — vanilla 26.3 client decompiled through the official Mojang
 #    mappings (expensive; workflow_dispatch only, ~15-25 min).
 #
@@ -11,9 +11,7 @@ name: ground-truth
 # AGENTS.md).
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: "0 4 * * 1"
+  workflow_dispatch: # economy mode (owner directive 2026-10-26): dispatch only
 
 env:
   CARGO_TERM_COLOR: always

@@ -1,10 +1,22 @@
 name: ci
 
+# Actions policy (owner directive, 2026-10-26): minutes nearly exhausted —
+# sparing use. Fast guard runs on push to main ONLY when code changes
+# (paths below); docs-only pushes burn nothing. Manual dispatch for anything else.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+    paths:
+      - "crates/**"
+      - "third_party/**"
+      - "java/**"
+      - "paper-plugin/**"
+      - "test-mods/**"
+      - "tools/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

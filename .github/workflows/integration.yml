@@ -3,15 +3,23 @@ name: integration
 # Real end-to-end: Paper 26.3 + CRUSSTY runtime + the c-imagine module + the
 # cimtest mod. Asserts boot markers, mod discovery, clean logs, no crashes.
 #
-# Actions policy (owner directive, updated): Actions minutes are UNLIMITED —
-# this workflow runs on every push to main (the three jobs are the real
-# proof: harness + live Paper boot + real-NeoForge parity), on manual
-# dispatch, and once a week as a scheduled regression net. The local loop
-# (scripts/local-check.sh + scripts/run-m2-harness.sh) stays for iteration
-# speed, not for economy.
+# Actions policy (owner directive, updated 2026-10-26): minutes nearly
+# exhausted — SPARING use. Runs on push to main only when runtime code changes
+# (paths filter below), on manual dispatch, and once a week as a scheduled
+# regression net. Docs-only pushes run nothing. The local loop
+# (scripts/local-check.sh + scripts/run-m2-harness.sh) stays for iteration.
 on:
   push:
     branches: [main]
+    paths:
+      - "crates/**"
+      - "java/**"
+      - "paper-plugin/**"
+      - "test-mods/**"
+      - "scripts/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/integration.yml"
   workflow_dispatch:
   schedule:
     - cron: "0 2 * * 1" # weekly regression net, Monday 02:00 UTC

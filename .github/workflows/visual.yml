@@ -4,14 +4,10 @@ name: visual
 # (registry snapshots + mapping tables the F2V v2 packet hooks will consume).
 # M5 (roadmap): real vanilla client under xvfb with screenshot diffing
 # against NeoForge-rendered ground truth.
-# Actions policy (owner directive, updated): minutes are UNLIMITED — runs on
-# every push to main + dispatch + weekly regression net.
+# Actions policy (owner directive, updated 2026-10-26): minutes nearly
+# exhausted — dispatch-only.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: "0 3 * * 1" # weekly regression net, Monday 03:00 UTC
 
 env:
   CARGO_TERM_COLOR: always
