@@ -48,3 +48,23 @@ Work Log:
 
 Stage Summary:
 - (in progress)
+
+---
+Task ID: 3.1
+Agent: main
+Task: M2 deep analysis — real FML 1.21.1 hosting design (loader-4.0.45 + bus-8.0.5 + neoforge-21.1.265 sources)
+
+Work Log:
+- Downloaded + extracted FML sources: maven.neoforged.net fancymodloader/loader-4.0.45, bus-8.0.5, modlauncher-11.0.5, neoforge-21.1.265 sources.
+- Traced the real server mod-loading pipeline: ServerModLoader.load → CommonModLoader.begin/load/finish → ModLoader.gatherAndInitializeMods → RegistryManager.postNewRegistryEvent (mod buses) → GameData.unfreezeData/postRegisterEvents/freezeData → FMLCommonSetupEvent/FMLDedicatedServerSetupEvent → NeoForge.EVENT_BUS.start().
+- Key facts: FMLModContainer(IModInfo, entrypoints, ModFileScanData, ModuleLayer) — allowed ctor args {IEventBus, ModContainer, FMLModContainer, Dist}; exactly 1 public ctor. AutomaticEventSubscriber.inject uses scan data + FMLLoader.getBindings().getGameBus(). BusBuilder: mod bus = markerType(IModBusEvent)+allowPerPhasePost; game bus NeoForge.EVENT_BUS = startShutdown + IModBusEvent checker; post() on shutdown bus is a no-op; start() after registration.
+- FMLLoader statics are package-private but reflective-seedable: dist, gameLayer, loadingModList, bindings (IBindingsProvider → Proxy → NeoForge.EVENT_BUS), backgroundScanHandler.
+- Real ModFile(SecureJar.from(modjar), parser, attrs) → ModFileParser.modsTomlParser (real NightConfig toml parsing!) → real ModFileInfo/ModInfo. ModList.of(modFiles, sortedInfos) + setLoadedMods (reflective).
+- ModFileScanData.AnnotationData records + asm Type — we build from Rust scan (relocated class names).
+- Discovery of entrypoints = scan data @Mod targets → we supply RELOCATED names from cim-modscan.
+- Decision (M2.0): own orchestration loop calling the REAL FML pieces (ModFile/ModFileInfo/ModInfo/ModList/FMLModContainer/AutomaticEventSubscriber/RegistryManager/GameData/DeferredWorkQueue) on a real ModuleLayer built over ShadowClassLoader via ModuleLayer.defineModules with custom ModuleDescriptors (per-mod module, packages = original + relocated).
+- Known limit M2.0: runtime annotation descriptors stay raw (JVM reflection sees no @Mod on shadow classes) — harmless for construct path; ASM-based mod self-scanning (JEI plugin discovery) unaffected. M2.1 toggle: relocate runtime-visible annotation descriptors.
+
+Stage Summary:
+- M2.0 = real FML on our runtime, glue ≈ 1 orchestrator class + ModuleLayer factory + loader jar extension + Rust manifest pipeline.
+
