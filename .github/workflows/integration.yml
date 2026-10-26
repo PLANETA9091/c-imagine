@@ -157,6 +157,14 @@ jobs:
           assert 'cimtest:test_entity' in entries, "cimtest:test_entity missing"
           print("M2 live-boot: real mods + cimtest registration verified")
           PY
+          # module->plugin bridge: the module persists the combined status for /cim status
+          python3 - <<'PY'
+          import json
+          status = json.load(open('srv/c-imagine/status.json', encoding='utf-8'))
+          assert status.get('init', {}).get('state') == 'ok', f"status.json init not ok: {status}"
+          assert status.get('mods', {}).get('state') == 'ok', f"status.json mods not ok: {status}"
+          print("status.json bridge:", status.get('mods', {}).get('mods'), "mods")
+          PY
           # M2: real-FML mod execution over the composite mod set (real mods +
           # cimtest) inside the live Paper JVM
           grep -q "\[c-imagine\] mod execution ok" srv/boot.log || fail "M2 mod execution FAILED"

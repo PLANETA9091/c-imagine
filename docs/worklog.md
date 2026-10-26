@@ -150,3 +150,17 @@ Work Log:
 
 Stage Summary:
 - M2 effectively complete and proven on CI from three angles: harness, live Paper boot, real NeoForge parity server. Remaining: green harness job on the path fix + M2.1 annotation toggle.
+
+---
+Task ID: 3.7
+Agent: main
+Task: /cim status bridge — module persists status.json, Paper plugin renders it
+
+Work Log:
+- lib.rs: run_bootstrap result (combined nested status JSON) persisted to <server_root>/c-imagine/status.json (non-fatal on failure).
+- paper-plugin CimPlugin: /cim status renders the file (regex extraction, no JSON deps on the Paper side); plugin.yml untouched.
+- integration boot job: python assertion on srv/c-imagine/status.json (init + mods ok).
+- cargo check/clippy -D warnings clean.
+
+Stage Summary:
+- M2 acceptance surface complete: mods run (harness + live boot), parity server green, /cim status bridge file contract in place.

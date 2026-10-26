@@ -139,6 +139,25 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
         manifest,
     );
     eprintln!("{} bootstrap ready: {status}", cim_core::LOG_PREFIX);
+
+    // Persist the combined status for the Paper-side companion plugin
+    // (/cim status reads it — see paper-plugin CimPlugin). Failure is
+    // non-fatal: the file is a convenience bridge, not a boot dependency.
+    let status_dir = server_root.join("c-imagine");
+    if let Err(e) = std::fs::create_dir_all(&status_dir)
+        .and_then(|_| std::fs::write(status_dir.join("status.json"), &status))
+    {
+        eprintln!(
+            "{} WARN: status.json write failed: {e}",
+            cim_core::LOG_PREFIX
+        );
+    } else {
+        eprintln!(
+            "{} status file: {}",
+            cim_core::LOG_PREFIX,
+            status_dir.join("status.json").display()
+        );
+    }
 }
 
 fn deploy_bootstrap() -> Result<PathBuf, String> {
