@@ -102,15 +102,29 @@ state (second boot asserts restore markers).
   rewriting modded ids → vanilla stand-ins; registry-driven mapping tables.
 - Vanilla client (protocol bot, `cim-proto` based) joins and observes cimtest entity
   as a mapped vanilla type with correct metadata.
+- Owner directive (supplemented 2026-10-26, measured in
+  `runtime-analysis/f2v2-client-capabilities.md`): 26.3 carries a native
+  server→client post-effect channel (`ClientboundPostEffectsPacket` +
+  `post_effect` registry, 5 vanilla chains). Packet translation must map this
+  family 767↔777 and expose a post-effect control surface to the F2F layer
+  (implementation deferred to M4/M5 as reached).
 
 **Accept:** protocol bot asserts observed entity type/metadata; no client kicks for
 unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
 
-## M5 — Visual ground truth (real client harness)
+## M5 — Visual ground truth (real client harness) + F2V 2.0 visual direction
 
 - `cim-visual-harness`: headless vanilla client under xvfb in CI, screenshot capture.
 - Comparison pipeline: NeoForge 1.21.1 render (ground truth) vs c-imagine view —
   pixel-diff report artifact, threshold gate; per-mod visual contracts from the modpack.
+- **F2V 2.0 visual direction (owner vision, deferred until reached)**: modded
+  content rendered on vanilla 26.3 clients via the measured 26.3 surface —
+  post-effect chains requested server-side (`ClientboundPostEffectsPacket`) for
+  atmosphere/overlays, ItemsAdder/Oraxen-style item rendering through the
+  registry-based `items/` definitions (`range_dispatch`/`select` on free
+  `custom_model_data`), `equipment/` assets for armor, palette-driven recolors.
+  Original F2V (jefthebuilder/F2V, 1.21.1-era, read-only reference) mapped to
+  legacy `models/item` overrides — the 26.3 registry surface is strictly cleaner.
 
 **Accept:** visual.yml uploads diff report; cimtest block+entity within threshold.
 
@@ -118,6 +132,11 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
 
 - PackBuilder port: model/texture extraction from mod jars, OBJ support, server
   resource-pack push, connected-texture basics.
+- Emit the registry-based 26.3 surface (per `runtime-analysis/f2v2-client-capabilities.md` §8):
+  `items/<id>.json` definitions + atlas directory sources, `equipment/<id>.json`,
+  `font` composition (`reference`/`include/*`), `paletted_permutations` +
+  `textures/palettes`, `post_effect` chains riding existing pass/program vocabulary;
+  pack format 97.1.
 
 **Accept:** visual diff improves for cimtest custom model; pack size capped; hot reload.
 

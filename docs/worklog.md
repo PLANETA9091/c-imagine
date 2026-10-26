@@ -282,3 +282,25 @@ Work Log:
 Stage Summary:
 - M3.2 + M3.3 implemented, locally verified (rust 13+ tests, 2 Java selftests, harness green, measurements logged). Pushing for full CI validation incl. the new two-boot restart contract.
 - Next: M3.4 entity projection (entity_type remap via registry tables), then M4 packet translation.
+
+---
+Task ID: 5
+Agent: main
+Task: F2V 2.0 groundwork (owner vision) — measured 26.3 client visual capabilities; integration red fix (M3.4 boat leg); CI economy mode
+
+Work Log:
+- Sandbox partially survived (artifacts intact: jdk21, layer1211, mcmeta snapshots, mods; cargo 1.99.1 at ~/.cargo needs PATH). Repo confirmed at 198d88d, synced with origin.
+- Owner directive: F2V 2.0 = render everything through post effects + ItemsAdder/Oraxen-style items; analyze the whole vanilla client jar; supplement the roadmap but implement ONLY when the roadmap reaches it. Original F2V repo is reference (cloned read-only).
+- Downloaded vanilla client jars 26.3 (40MB) + 1.21.1 (26MB); scripts/analyze-client-visual.py + scan-client-anchors.py + read-263-registries.py (persisted, raw JSON in artifacts/analysis/).
+- MEASURED headline: in 26.3 client asset systems became REGISTRIES (mcmeta 2240df23, 136 registries): post_effect(5: blur,creeper,entity_outline,invert,spider), item_definition(1658), model(4192), texture(3964), block_definition(1288), equipment(45), atlas(12), font(7), timeline(4), world_clock(2), environment_attribute(51), dialog(3).
+- Server->client post-effect channel EXISTS: ClientboundPostEffectsPacket + handlePostEffects/apply/clear/requested/failed lifecycle in client bytecode; ServerPlayer.post_effects field; SuggestionProviders.POST_EFFECTS; datafix rename minecraft:post_effect->minecraft:post_effects. ShaderManager loads post_effect/<id>.json via FileToIdConverter; LevelTargetBundle/LevelRenderer named targets; blaze3d RenderPipelines rework (shaders/program/* GONE, core .json program specs GONE).
+- Item pipeline: items/*.json 1658 defs, makers histogram (model 2253, special 91, select 71, dye 50, composite 34, condition 26, range_dispatch 8, constant 11); special renderers incl NEW copper_golem_statue(32); custom_model_data referenced by 0 vanilla defs (hook free). Equipment assets 45 (carpets/harnesses/copper). Client palette system (textures/palettes + TrimMaterials$Palette). Fonts compose via reference provider + include/* fragments. waypoint_style assets + WaypointStyleManager.
+- Cloned jefthebuilder/F2V (read-only): pack/* 50 classes (CustomModelDataRanges, ItemModelVoxelizer, ArmorModelBuilder, PackHttpServer...) + vm/discovery/* 39 bytecode scanners — 1.21.1-era legacy overrides approach; 26.3 registry surface strictly cleaner.
+- Wrote docs/runtime-analysis/f2v2-client-capabilities.md (+ F2F surface table, constraints); ROADMAP M4/M5/M6 supplemented (deferred until reached).
+- CI: integration RED on 198d88d (boot job: "M3.4 boat split entity leg missing"). Root cause from CI log: kernel spawned oak_boat OK (uuid returned) but paperListEntities scan missed it — COORDINATE CONVENTION MISMATCH: paperSpawnEntity used getSpawnLocation().add(x,y,z) (spawn-relative) while paperListEntities and ALL block methods use absolute coordinates; smoke coords (0,100,0) absolute. Fixed paperSpawnEntity to absolute Location. No other getSpawnLocation uses remain.
+- CI economy mode per owner: ci.yml push+paths(code only, PR trigger dropped), integration.yml push+paths + weekly net + dispatch, profiling/visual/ground-truth dispatch-only (nightly/weekly crons dropped). Stale "minutes are UNLIMITED" comments replaced.
+
+Stage Summary:
+- F2V 2.0 groundwork measured and pinned in docs; implementation deferred to M5/M6 per owner.
+- M3.4 fix pushed for CI validation (ci+integration path-filtered triggers fire for this push by design).
+- Next: green integration on the fix -> tick M3.4 -> M4 packet translation v1 (incl. ClientboundPostEffects family mapping).
