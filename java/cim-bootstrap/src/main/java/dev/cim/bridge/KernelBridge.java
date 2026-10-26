@@ -82,18 +82,21 @@ public final class KernelBridge {
 
             // 1) vanilla block: layer write → kernel storage → kernel read
             String vanilla = "minecraft:yellow_terracotta";
-            boolean setOk = (Boolean) setBlock.invoke(plugin, world, x, y, z, vanilla);
+            boolean setOk = kernelSet(setBlock, plugin, world, x, y, z, vanilla);
             String paperSees = (String) getBlock.invoke(plugin, world, x, y, z);
             System.out.println(LOG + " bridge smoke: vanilla set ok=" + setOk
                     + " paper=" + paperSees
                     + (vanilla.equals(paperSees) ? " (roundtrip ok)" : " (MISMATCH)"));
 
-            // 2) modded block: sidecar + stand-in
+            // 2) modded block: sidecar + stand-in. Paper-side view is the
+            //    stand-in; the layer view (kernelGet) resolves the sidecar.
             String modded = "cimtest:test_block";
-            boolean moddedSet = (Boolean) setBlock.invoke(plugin, world, x, y, z + 1, modded);
+            boolean moddedSet = kernelSet(setBlock, plugin, world, x, y, z + 1, modded);
             String paperModded = (String) getBlock.invoke(plugin, world, x, y, z + 1);
+            String layerView = kernelGet(getBlock, plugin, world, x, y, z + 1);
             System.out.println(LOG + " bridge smoke: modded set ok=" + moddedSet
                     + " paper=" + paperModded + " (stand-in expected)"
+                    + " layer=" + layerView
                     + " sidecar=" + SIDECAR.get(key(world, x, y, z + 1)));
 
             // 3) break on the Paper side → the layer facade observes air
@@ -104,7 +107,7 @@ public final class KernelBridge {
                     + ("minecraft:air".equals(afterBreak) ? " (observed)" : " (MISMATCH)"));
 
             boolean allOk = setOk && vanilla.equals(paperSees) && moddedSet
-                    && modded.equals(SIDECAR.get(key(world, x, y, z + 1)))
+                    && modded.equals(layerView)
                     && broke && "minecraft:air".equals(afterBreak);
             System.out.println(LOG + " bridge smoke: " + (allOk ? "ALL OK" : "FAILED"));
         } catch (Throwable t) {
@@ -123,6 +126,20 @@ public final class KernelBridge {
     public static String layerRead(String world, int x, int y, int z, String kernelState) {
         String modded = SIDECAR.get(key(world, x, y, z));
         return modded != null ? modded : kernelState;
+    }
+
+    /** Facade write through the plugin surface: translate, then set in Paper. */
+    private static boolean kernelSet(Method setBlock, Object plugin, String world,
+                                     int x, int y, int z, String layerState) throws Exception {
+        String kernelState = layerWrite(world, x, y, z, layerState);
+        return (Boolean) setBlock.invoke(plugin, world, x, y, z, kernelState);
+    }
+
+    /** Facade read through the plugin surface: read Paper, then translate. */
+    private static String kernelGet(Method getBlock, Object plugin, String world,
+                                    int x, int y, int z) throws Exception {
+        String kernelState = (String) getBlock.invoke(plugin, world, x, y, z);
+        return layerRead(world, x, y, z, kernelState);
     }
 
     /**

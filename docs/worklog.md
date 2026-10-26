@@ -228,3 +228,15 @@ Work Log:
 
 Stage Summary:
 - Bridge lifecycle: class online -> instance online -> world ready -> smoke.
+
+---
+Task ID: 3.13
+Agent: main
+Task: bridge smoke — modded leg routed through the facade translation
+
+Work Log:
+- CI: bridge resolves plugin after retry, world-ready fires, vanilla leg PASSes (roundtrip ok); modded leg failed because runSmoke invoked plugin.layerSetBlock directly — createBlockData("cimtest:test_block") has no 26.3 registry entry.
+- Fix: runSmoke now goes through KernelBridge.kernelSet/kernelGet (layerWrite -> stand-in -> Paper; layerRead -> sidecar resolution).
+
+Stage Summary:
+- Expecting ALL OK on the next boot run.
