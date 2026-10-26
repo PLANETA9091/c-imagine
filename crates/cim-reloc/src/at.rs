@@ -65,13 +65,19 @@ impl AccessTransformTable {
 
     /// The class-level access transform for `class_internal`, if any.
     pub fn for_class(&self, class_internal: &str) -> Option<&[AccessTransform]> {
-        self.classes.get(class_internal).map(|c| c.class_level.as_slice())
+        self.classes
+            .get(class_internal)
+            .map(|c| c.class_level.as_slice())
     }
 
     /// The member-level access transform for a field/method of
     /// `class_internal`.
     pub fn for_member(&self, class_internal: &str, member_key: &str) -> Option<AccessTransform> {
-        self.classes.get(class_internal)?.members.get(member_key).copied()
+        self.classes
+            .get(class_internal)?
+            .members
+            .get(member_key)
+            .copied()
     }
 }
 
@@ -98,13 +104,18 @@ fn parse_line(line: &str) -> Option<(String, Option<String>, AccessTransform)> {
             "s" => make_static = true,
             "i" => clear_static = true,
             "" => {}
-            other => return None, // unknown modifier — skip the line
+            _other => return None, // unknown modifier — skip the line
         }
     }
     if visibility == 0 && modifier != "default" && !modifier.contains("default") {
         return None;
     }
-    let at = AccessTransform { visibility, clear_final, clear_static, make_static };
+    let at = AccessTransform {
+        visibility,
+        clear_final,
+        clear_static,
+        make_static,
+    };
     let member = member.map(|m| {
         // method entries carry a descriptor in parentheses; strip any
         // trailing genericThrows garbage defensively
@@ -145,19 +156,36 @@ mod tests {
              public net.minecraft.client.Options$FieldAccess\n\
              garbage line without modifier\n",
         );
-        assert!(t.for_member("net/minecraft/world/item/CreativeModeTabs", "HOTBAR").is_some());
-        let f = t.for_member("net/minecraft/client/Options", "keyMappings").unwrap();
+        assert!(t
+            .for_member("net/minecraft/world/item/CreativeModeTabs", "HOTBAR")
+            .is_some());
+        let f = t
+            .for_member("net/minecraft/client/Options", "keyMappings")
+            .unwrap();
         assert!(f.clear_final);
         assert_eq!(f.visibility, ACC_PUBLIC);
-        let m = t.for_member("net/minecraft/advancements/CriteriaTriggers", "register(Ljava/lang/String;)V").unwrap();
+        let m = t
+            .for_member(
+                "net/minecraft/advancements/CriteriaTriggers",
+                "register(Ljava/lang/String;)V",
+            )
+            .unwrap();
         assert_eq!(m.visibility, ACC_PUBLIC);
-        assert!(!t.for_class("net/minecraft/client/Options$FieldAccess").unwrap().is_empty());
+        assert!(!t
+            .for_class("net/minecraft/client/Options$FieldAccess")
+            .unwrap()
+            .is_empty());
         assert!(t.for_member("no/such/Class", "x").is_none());
     }
 
     #[test]
     fn apply_widens_and_clears_final() {
-        let at = AccessTransform { visibility: ACC_PUBLIC, clear_final: true, clear_static: false, make_static: false };
+        let at = AccessTransform {
+            visibility: ACC_PUBLIC,
+            clear_final: true,
+            clear_static: false,
+            make_static: false,
+        };
         assert_eq!(apply(0x0012, at), 0x0001); // private final -> public
     }
 }

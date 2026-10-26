@@ -583,12 +583,15 @@ pub(crate) mod tests {
         }
     }
 
+    /// (name, desc, ann-desc, pairs) for one method-level annotation.
+    type MethodAnnSpec<'a> = (&'a str, &'a str, &'a str, &'a [(&'a str, ElementValue)]);
+
     /// Assemble a valid class file with a single class-level annotation and
     /// optional methods carrying runtime-visible annotations.
     fn fixture_class_full(
         descriptor: &str,
         pairs: &[(&str, ElementValue)],
-        methods: &[(&str, &str, &str, &[(&str, ElementValue)])], // (name, desc, ann-desc, pairs)
+        methods: &[MethodAnnSpec<'_>],
     ) -> Vec<u8> {
         let mut p = PoolBuilder::new();
         let attr_name = p.utf8("RuntimeVisibleAnnotations");

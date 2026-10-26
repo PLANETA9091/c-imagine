@@ -12,7 +12,7 @@
 //! The manifest JSON is the single channel into the Java shadow space:
 //! `Bootstrap.loadMods(json)` receives it via JNI after the layer boot.
 
-use cim_modscan::{build_layer_manifest, scan_dir_full};
+use cim_modscan::build_layer_manifest;
 use std::path::Path;
 
 /// Scan `dir`, report to stderr, and build the layer manifest.
@@ -92,16 +92,11 @@ pub fn scan_and_build_manifest(dir: &Path) -> (Option<String>, usize) {
             (json, stats.jars)
         }
         Err(e) => {
-            eprintln!(
-                "{} ERROR: manifest build: {}",
-                cim_core::LOG_PREFIX,
-                e
-            );
+            eprintln!("{} ERROR: manifest build: {}", cim_core::LOG_PREFIX, e);
             (None, stats.jars)
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,6 @@
 //! Real-jar probe (skipped unless `CIM_PROBE_JAR` points at a mod jar).
 
-use std::io::{Cursor, Read};
+use std::io::Read;
 
 #[test]
 fn probe_real_jar() {
@@ -11,7 +11,13 @@ fn probe_real_jar() {
     let file = std::fs::File::open(&path).expect("open jar");
     let scanned = cim_modscan::scan_jar(std::io::BufReader::new(file)).expect("scan");
     println!("file: {path}");
-    println!("toml ids: {:?}", scanned.toml.as_ref().map(|t| t.mods.iter().map(|m| m.mod_id.clone()).collect::<Vec<_>>()));
+    println!(
+        "toml ids: {:?}",
+        scanned
+            .toml
+            .as_ref()
+            .map(|t| t.mods.iter().map(|m| m.mod_id.clone()).collect::<Vec<_>>())
+    );
     println!("code ids: {:?}", scanned.code_mod_ids);
     println!("entrypoints: {:?}", scanned.entrypoint_classes);
     println!("classes: {}", scanned.classes.len());
@@ -49,7 +55,10 @@ fn probe_real_jar() {
             }
             Err(e) => {
                 parse_fail += 1;
-                if buf.windows(30).any(|w| w == b"Lnet/neoforged/fml/common/Mod;") {
+                if buf
+                    .windows(30)
+                    .any(|w| w == b"Lnet/neoforged/fml/common/Mod;")
+                {
                     hit_but_failed.push((name, e.to_string()));
                 }
             }

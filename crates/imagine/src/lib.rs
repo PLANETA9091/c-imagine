@@ -289,7 +289,9 @@ fn run_bootstrap(
                     .map_err(|e| format!("Bootstrap.loadMods: {e}"))?;
                 let mobj = mret.l().map_err(|e| format!("loadMods l(): {e}"))?;
                 let mstr = jni::objects::JString::from(mobj);
-                let text = env.get_string(&mstr).map_err(|e| format!("get_string: {e}"))?;
+                let text = env
+                    .get_string(&mstr)
+                    .map_err(|e| format!("get_string: {e}"))?;
                 let owned = text.to_string_lossy().into_owned();
                 owned
             }

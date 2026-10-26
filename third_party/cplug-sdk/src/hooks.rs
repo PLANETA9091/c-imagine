@@ -38,14 +38,14 @@ pub fn register(pattern: &str, cb: impl Fn(&str) + Send + Sync + 'static) {
         .push((pattern.to_string(), Box::new(cb)));
 }
 
-/// Reentrancy guard (DEADLOCK LAW, observed on Paper 1.21.8): a patch
-/// callback that triggers a class load of its own (ASM ClassWriter resolving
-/// bootstrap-method constants, helper classes, …) re-enters the JVMTI
-/// ClassFileLoadHook on the SAME thread. dispatch/dispatch_bytes hold the
-/// registry mutex across callbacks — a nested dispatch then self-deadlocks
-/// on a non-reentrant std::sync::Mutex and, transitively, every other
-/// thread's hook invocation blocks behind the frozen registry. Nested loads
-/// are helper/asm-internal classes — they must pass through UNPATCHED.
+// Reentrancy guard (DEADLOCK LAW, observed on Paper 1.21.8): a patch
+// callback that triggers a class load of its own (ASM ClassWriter resolving
+// bootstrap-method constants, helper classes, …) re-enters the JVMTI
+// ClassFileLoadHook on the SAME thread. dispatch/dispatch_bytes hold the
+// registry mutex across callbacks — a nested dispatch then self-deadlocks
+// on a non-reentrant std::sync::Mutex and, transitively, every other
+// thread's hook invocation blocks behind the frozen registry. Nested loads
+// are helper/asm-internal classes — they must pass through UNPATCHED.
 thread_local! {
     static IN_DISPATCH: Cell<bool> = const { Cell::new(false) };
 }

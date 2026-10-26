@@ -279,7 +279,12 @@ pub fn relocate_class(
     internal_name: &str,
     bytes: &[u8],
 ) -> Result<Vec<u8>, CimError> {
-    relocate_class_at(table, &at::AccessTransformTable::default(), internal_name, bytes)
+    relocate_class_at(
+        table,
+        &at::AccessTransformTable::default(),
+        internal_name,
+        bytes,
+    )
 }
 
 /// Relocate with an access-transform database applied (M2): matching
@@ -310,7 +315,12 @@ pub fn relocate_class_refs_only(
     internal_name: &str,
     bytes: &[u8],
 ) -> Result<Vec<u8>, CimError> {
-    relocate_class_refs_only_at(table, &at::AccessTransformTable::default(), internal_name, bytes)
+    relocate_class_refs_only_at(
+        table,
+        &at::AccessTransformTable::default(),
+        internal_name,
+        bytes,
+    )
 }
 
 /// Refs-only relocation with an access-transform database (mod ATs widen
@@ -462,7 +472,10 @@ mod tests {
     fn exact_entries_win_over_prefix_rules() {
         let mut t = RelocationTable::empty();
         t.add_rule("mezz/", "cim/shadow/mavenjei/mezz/");
-        t.add_exact("mezz/jei/shared/X", "cim/shadow/mavenjade/mezz/jei/shared/X");
+        t.add_exact(
+            "mezz/jei/shared/X",
+            "cim/shadow/mavenjade/mezz/jei/shared/X",
+        );
         assert_eq!(
             t.map_internal("mezz/jei/shared/X").unwrap(),
             "cim/shadow/mavenjade/mezz/jei/shared/X"
@@ -477,8 +490,13 @@ mod tests {
     #[test]
     fn exact_entries_guard_against_shadow_keys() {
         let mut t = RelocationTable::empty();
-        t.add_exact("cim/shadow/mc1211/net/minecraft/A", "oops/should/not/happen");
-        assert!(t.map_internal("cim/shadow/mc1211/net/minecraft/A").is_none());
+        t.add_exact(
+            "cim/shadow/mc1211/net/minecraft/A",
+            "oops/should/not/happen",
+        );
+        assert!(t
+            .map_internal("cim/shadow/mc1211/net/minecraft/A")
+            .is_none());
         assert_eq!(t.exact_count(), 0);
     }
 }

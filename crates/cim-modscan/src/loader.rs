@@ -28,7 +28,10 @@ fn read_at_entries(jar_path: &Path) -> Vec<String> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    for name in ["META-INF/accesstransformer.cfg", "META-INF/accesstransformer.cfg.disabled"] {
+    for name in [
+        "META-INF/accesstransformer.cfg",
+        "META-INF/accesstransformer.cfg.disabled",
+    ] {
         if let Ok(mut entry) = zip.by_name(name) {
             use std::io::Read;
             let mut text = String::new();
@@ -86,16 +89,10 @@ pub fn scan_dir_full(dir: &Path) -> (Vec<ScannedMod>, ScanStats) {
                         stats.nested_extracted += 1;
                         extracted.push(sm);
                     }
-                    Err(e) => eprintln!(
-                        "WARN: nested scan failed ({}): {e}",
-                        path.display()
-                    ),
+                    Err(e) => eprintln!("WARN: nested scan failed ({}): {e}", path.display()),
                 },
                 Ok(None) => {}
-                Err(e) => eprintln!(
-                    "WARN: nested extract failed ({}): {e}",
-                    nested.file_name
-                ),
+                Err(e) => eprintln!("WARN: nested extract failed ({}): {e}", nested.file_name),
             }
         }
     }
@@ -194,7 +191,10 @@ fn extract_nested(
 /// module's loader thread); missing/absent → no neoforge entry (mod execution
 /// then fails loudly at registration, which is the correct signal).
 pub fn prepend_layer_neoforge(mods: &mut Vec<ScannedMod>) -> Vec<String> {
-    let Some(layer_dir) = std::env::var("CIM_LAYER_DIR").ok().filter(|v| !v.is_empty()) else {
+    let Some(layer_dir) = std::env::var("CIM_LAYER_DIR")
+        .ok()
+        .filter(|v| !v.is_empty())
+    else {
         return Vec::new();
     };
     let root = std::path::Path::new(&layer_dir);
@@ -202,7 +202,11 @@ pub fn prepend_layer_neoforge(mods: &mut Vec<ScannedMod>) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(&base) else {
         return Vec::new();
     };
-    let mut candidates: Vec<PathBuf> = entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let mut candidates: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
     candidates.sort();
     // pick the highest version dir (last) — matching the installer layout
     for vdir in candidates.iter().rev() {
@@ -228,7 +232,11 @@ pub fn prepend_layer_neoforge(mods: &mut Vec<ScannedMod>) -> Vec<String> {
                         .unwrap_or_default();
                     let at = read_at_entries(universal);
                     mods.insert(0, sm);
-                    eprintln!("neoforge layer mod: {} ({} AT lines)", universal.display(), at.len());
+                    eprintln!(
+                        "neoforge layer mod: {} ({} AT lines)",
+                        universal.display(),
+                        at.len()
+                    );
                     return at;
                 }
                 Err(e) => eprintln!("WARN: neoforge universal scan failed: {e}"),

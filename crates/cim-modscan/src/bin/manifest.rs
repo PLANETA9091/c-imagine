@@ -76,14 +76,20 @@ fn main() {
         let bench_started = Instant::now();
         for m in &scanned {
             let Some(path) = &m.path else { continue };
-            let Ok(file) = std::fs::File::open(path) else { continue };
-            let Ok(mut zip) = zip::ZipArchive::new(file) else { continue };
+            let Ok(file) = std::fs::File::open(path) else {
+                continue;
+            };
+            let Ok(mut zip) = zip::ZipArchive::new(file) else {
+                continue;
+            };
             let names: Vec<String> = zip.file_names().map(str::to_string).collect();
             for name in names {
                 if !name.ends_with(".class") {
                     continue;
                 }
-                let Ok(mut entry) = zip.by_name(&name) else { continue };
+                let Ok(mut entry) = zip.by_name(&name) else {
+                    continue;
+                };
                 let mut buf = Vec::with_capacity(entry.size() as usize);
                 if entry.read_to_end(&mut buf).is_err() {
                     continue;

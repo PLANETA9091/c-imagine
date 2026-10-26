@@ -128,7 +128,10 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_relocateMod0<'l
             cim_reloc::relocate_class_refs_only_at(&table(), &at_table(), &jname, &bytes)
                 .map_err(|e| e.to_string())?;
 
-        if std::env::var("CIM_DUMP_RELOC").map(|v| v == "1").unwrap_or(false) {
+        if std::env::var("CIM_DUMP_RELOC")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+        {
             let path = std::env::temp_dir()
                 .join("cim-dump")
                 .join(format!("{}.class", jname.replace('/', "_")));
@@ -223,9 +226,8 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_relocate0<'loca
             .map_err(|e| format!("get_byte_array_region: {e}"))?;
         let bytes: Vec<u8> = signed.into_iter().map(|b| b as u8).collect();
 
-        let relocated =
-            cim_reloc::relocate_class_at(&table(), &at_table(), &jname, &bytes)
-                .map_err(|e| e.to_string())?;
+        let relocated = cim_reloc::relocate_class_at(&table(), &at_table(), &jname, &bytes)
+            .map_err(|e| e.to_string())?;
         let arr = env
             .new_byte_array(relocated.len() as i32)
             .map_err(|e| format!("new_byte_array: {e}"))?;

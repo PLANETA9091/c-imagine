@@ -126,7 +126,10 @@ pub enum AnnValue {
     Int(i64),
     Float(f64),
     Str(String),
-    Enum { desc: String, constant: String },
+    Enum {
+        desc: String,
+        constant: String,
+    },
     Class(String),
     List(Vec<AnnValue>),
 }
@@ -170,9 +173,8 @@ impl From<&ElementValue> for AnnValue {
 /// Jars that failed to scan are reported as errors by the caller (they are
 /// skipped here — the loader must never see a half-described mod).
 pub fn build_layer_manifest(scanned: &[ScannedMod]) -> Result<LayerManifest, ScannerError> {
-    let order = build_load_order(scanned).map_err(|e| {
-        ScannerError::Zip(format!("dependency resolution: {e}"))
-    })?;
+    let order = build_load_order(scanned)
+        .map_err(|e| ScannerError::Zip(format!("dependency resolution: {e}")))?;
 
     // id → jar (first jar declaring the id wins).
     let mut jar_by_id: HashMap<String, &ScannedMod> = HashMap::new();
@@ -358,7 +360,10 @@ pub fn build_relocation_table(manifest: &LayerManifest) -> RelocationTable {
         for class in &entry.classes {
             let needs_exact = match class.split_once('/') {
                 None => true, // root-level class: no prefix rule can reach it
-                Some((top, _)) => owner.get(top).map(|o| *o != mod_id.as_str()).unwrap_or(false),
+                Some((top, _)) => owner
+                    .get(top)
+                    .map(|o| *o != mod_id.as_str())
+                    .unwrap_or(false),
             };
             if needs_exact {
                 table.add_exact(class, &shadow_internal(mod_id, class));
@@ -371,8 +376,8 @@ pub fn build_relocation_table(manifest: &LayerManifest) -> RelocationTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scanner::AnnotationHit;
     use crate::classfile::Annotation;
+    use crate::scanner::AnnotationHit;
 
     fn scanned(id: &str, _packages: &[&str], classes: &[&str]) -> ScannedMod {
         let toml = format!("[[mods]]\nmodId = \"{id}\"\nversion = \"1.0.0\"\n");
@@ -438,10 +443,7 @@ mod tests {
         let ann = Annotation {
             type_descriptor: "Lnet/neoforged/fml/common/EventBusSubscriber;".into(),
             values: vec![
-                (
-                    "modid".into(),
-                    ElementValue::Str("cimtest".into()),
-                ),
+                ("modid".into(), ElementValue::Str("cimtest".into())),
                 (
                     "value".into(),
                     ElementValue::Array(vec![ElementValue::Enum {

@@ -263,7 +263,12 @@ impl ClassFile {
         table: &RelocationTable,
         self_exempt: Option<&str>,
     ) -> Result<(Vec<u8>, RewriteStats), ParseError> {
-        self.rewrite_internal_at(table, self_exempt, &crate::at::AccessTransformTable::default(), "")
+        self.rewrite_internal_at(
+            table,
+            self_exempt,
+            &crate::at::AccessTransformTable::default(),
+            "",
+        )
     }
 
     fn rewrite_internal_at(
@@ -375,7 +380,10 @@ impl ClassFile {
             }
         }
         for member in body.fields.iter_mut() {
-            if let Some(name) = self.utf8(member.name).and_then(|b| std::str::from_utf8(b).ok()) {
+            if let Some(name) = self
+                .utf8(member.name)
+                .and_then(|b| std::str::from_utf8(b).ok())
+            {
                 if let Some(a) = at.for_member(original_name, name) {
                     member.access = crate::at::apply(member.access, a);
                 }
@@ -383,8 +391,10 @@ impl ClassFile {
         }
         for member in body.methods.iter_mut() {
             if let (Some(name), Some(desc)) = (
-                self.utf8(member.name).and_then(|b| std::str::from_utf8(b).ok()),
-                self.utf8(member.descriptor).and_then(|b| std::str::from_utf8(b).ok()),
+                self.utf8(member.name)
+                    .and_then(|b| std::str::from_utf8(b).ok()),
+                self.utf8(member.descriptor)
+                    .and_then(|b| std::str::from_utf8(b).ok()),
             ) {
                 let key = format!("{name}{desc}");
                 if let Some(a) = at
@@ -458,11 +468,23 @@ impl ClassFile {
         // own raw-byte annotation scanning is replaced by the cim-modscan
         // Rust scanner, so raw preservation is no longer required.
         write_members_annos(
-            &mut body_out, &body.fields, self, table, &mut intern, &mut next_index, &mut stats,
+            &mut body_out,
+            &body.fields,
+            self,
+            table,
+            &mut intern,
+            &mut next_index,
+            &mut stats,
             rewrite_annos,
         )?;
         write_members_annos(
-            &mut body_out, &body.methods, self, table, &mut intern, &mut next_index, &mut stats,
+            &mut body_out,
+            &body.methods,
+            self,
+            table,
+            &mut intern,
+            &mut next_index,
+            &mut stats,
             rewrite_annos,
         )?;
         rewrite_attr_block(
@@ -606,6 +628,7 @@ fn read_attr_block(bytes: &[u8], pos: &mut usize) -> Result<Vec<u8>, ParseError>
     Ok(bytes[start..*pos].to_vec())
 }
 
+#[allow(dead_code)] // symmetric writer kept alongside the reader for tests
 fn write_members(out: &mut Vec<u8>, members: &[Member]) {
     out.extend_from_slice(&(members.len() as u16).to_be_bytes());
     for m in members {
@@ -641,7 +664,6 @@ fn read_u32(bytes: &[u8], pos: &mut usize) -> Option<u32> {
 
 use std::collections::HashMap;
 
-
 /// Attribute names carrying runtime annotations whose type descriptors the
 /// JVM resolves by name at reflection time (refs-only mode rewrites them).
 const RUNTIME_ANNOTATION_ATTRS: [&str; 4] = [
@@ -658,9 +680,9 @@ const RUNTIME_ANNOTATION_ATTRS: [&str; 4] = [
 /// relocated names or reflection blows up with wrong-name NoClassDefFound.
 const ANNOTATION_DEFAULT_ATTR: &str = "AnnotationDefault";
 
-
 /// Rewrite one raw attribute block (count + entries), re-emitting runtime
 /// annotation payloads with relocated type descriptors.
+#[allow(clippy::too_many_arguments)] // raw attribute rewrite needs full context
 fn rewrite_attr_block(
     block: &[u8],
     out: &mut Vec<u8>,
@@ -742,7 +764,7 @@ fn rewrite_attr_block(
             new_block.extend_from_slice(&(o.len() as u32).to_be_bytes());
             new_block.extend_from_slice(&o);
         } else if rewrite_annotations && anno_kind.is_some() {
-            let is_param = anno_kind.unwrap();
+            let is_param = matches!(anno_kind, Some(true));
             let rewritten = if is_param {
                 // Runtime*ParameterAnnotations: num_params u1, then per param
                 // (num_annotations u2 + annotations).
@@ -804,7 +826,9 @@ fn rewrite_annotation(
     out: &mut Vec<u8>,
 ) -> Result<(), ParseError> {
     let type_idx = r.u2().ok_or(ParseError::Truncated("anno type idx"))?;
-    out.extend_from_slice(&rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes());
+    out.extend_from_slice(
+        &rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes(),
+    );
     let num_pairs = r.u2().ok_or(ParseError::Truncated("anno pairs"))?;
     out.extend_from_slice(&num_pairs.to_be_bytes());
     for _ in 0..num_pairs {
@@ -830,14 +854,18 @@ fn rewrite_element_value(
         b'e' => {
             // enum: type descriptor (rewritten) + constant name (kept)
             let type_idx = r.u2().ok_or(ParseError::Truncated("enum type"))?;
-            out.extend_from_slice(&rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes());
+            out.extend_from_slice(
+                &rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes(),
+            );
             let const_idx = r.u2().ok_or(ParseError::Truncated("enum const"))?;
             out.extend_from_slice(&const_idx.to_be_bytes());
         }
         b'c' => {
             // class element: descriptor rewritten (handles [L...;)
             let idx = r.u2().ok_or(ParseError::Truncated("class element"))?;
-            out.extend_from_slice(&rewrite_utf8_desc(cf, table, intern, next_index, stats, idx)?.to_be_bytes());
+            out.extend_from_slice(
+                &rewrite_utf8_desc(cf, table, intern, next_index, stats, idx)?.to_be_bytes(),
+            );
         }
         b'@' => {
             rewrite_annotation(cf, table, intern, next_index, stats, r, out)?;
@@ -872,7 +900,8 @@ fn rewrite_utf8_desc(
     let orig = cf
         .utf8(idx)
         .ok_or(ParseError::Truncated("descriptor utf8"))?;
-    let orig = std::str::from_utf8(orig).map_err(|_| ParseError::Truncated("non-utf8 descriptor"))?;
+    let orig =
+        std::str::from_utf8(orig).map_err(|_| ParseError::Truncated("non-utf8 descriptor"))?;
     let mapped = table.map_descriptor(orig);
     if mapped == orig {
         return Ok(idx);
@@ -882,6 +911,7 @@ fn rewrite_utf8_desc(
     Ok(new_idx)
 }
 
+#[allow(clippy::too_many_arguments)] // attribute re-emission needs full context
 fn write_members_annos(
     out: &mut Vec<u8>,
     members: &[Member],
@@ -897,7 +927,16 @@ fn write_members_annos(
         out.extend_from_slice(&m.access.to_be_bytes());
         out.extend_from_slice(&m.name.to_be_bytes());
         out.extend_from_slice(&m.descriptor.to_be_bytes());
-        rewrite_attr_block(&m.attrs, out, cf, table, intern, next_index, stats, rewrite_annotations)?;
+        rewrite_attr_block(
+            &m.attrs,
+            out,
+            cf,
+            table,
+            intern,
+            next_index,
+            stats,
+            rewrite_annotations,
+        )?;
     }
     Ok(())
 }

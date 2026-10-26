@@ -88,3 +88,20 @@ Work Log:
 Stage Summary:
 - M2.0 = real FML hosting works on real NeoForge 1.21.1 mods: discovery, JPMS layer, containers, ctor injection, AutomaticEventSubscriber, NewRegistryEvent, per-registry RegisterEvent, freeze, setup events, game bus start.
 - Next: CI job for the M2 harness (all builds/tests on GitHub CI), push, then M2 parity (real NeoForge ground-truth server) + M2.1 runtime-visible annotations.
+
+---
+Task ID: 3.3
+Agent: main
+Task: CI-first hardening — clippy/-D-warnings clean, fmt clean, harness script, live-boot real-mod job
+
+Work Log:
+- ci.yml failure diagnosed: cargo fmt --check + clippy -D warnings on the uncommitted-to-legacy M2 glue.
+- Fixed 10 clippy warnings (needless unwrap after is_some, too_many_arguments allowances with rationale, unused imports/variables, unused doc comment -> plain comment, complex type -> MethodAnnSpec alias, dead_code allowance for symmetric writer).
+- cargo test --workspace: 81 tests green.
+- scripts/run-m2-harness.sh: single entry point (cim-manifest + LocalHarness) for local + CI.
+- integration.yml: m2-real-mods CI job (real Modrinth mods + cimtest, marker assertions, timing) + boot job now loads real mods through the LIVE Paper/CRUSSTY boot with registration assertions.
+- Verified harness after rewriter edits: mod execution ok, 716 ms, same registrations.
+
+Stage Summary:
+- Pushed a09b861 (live-boot job) + clippy/fmt hardening. All builds/tests now owned by GitHub CI; sandbox does only light edits.
+- Watching: ci + integration (boot w/ real mods, harness) on a09b861.
