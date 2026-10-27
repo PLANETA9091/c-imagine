@@ -346,3 +346,24 @@ Stage Summary:
 - M4 boot blocker REMOVED (pending CI integration green on 7502ad5).
 - Postfx wire format + common drift pinned for M4 translation tables.
 - Next: CI integration validation -> cimbot full contract on live boot -> M4 packet translation v1.
+
+---
+Task ID: 8
+Agent: main
+Task: sandbox rebirth #2 recovery + M4 wire contract wired into CI (cimbot joins the live boot)
+
+Work Log:
+- Sandbox reset again: repo + artifacts/clients + srv-m4 stand + toolchain survived; worklog at repo root lost (docs/worklog.md tracked copy survived), analysis scripts + raw analysis JSON lost (distilled docs survived — the push-WIP policy paid off).
+- Recovered state: origin/main at bbb0689 synced; UNPUSHED gem found — docs/runtime-analysis/post-effect-schema-26-3.md (chain grammar + 5 vanilla chains census). Pushed immediately as 23db776 (owner directive: push WIP constantly, sandbox can die any moment).
+- CI read: integration@7502ad5 GREEN (weave fix validated end-to-end), ci@bbb0689 GREEN — M3 closed, M4 boot blocker REMOVED confirmed on CI.
+- CI-minutes economy: checked ci.yml path filters do NOT include workflows — the bot wiring push triggers integration only (3 jobs), ci.yml stays asleep. Docs pushes trigger nothing (verified filters).
+- M4.1 implemented (e58aac0): integration.yml boot step now launches cimbot in a background subshell inside the boot window — waits for the Done marker (90x2 s), joins 127.0.0.1:25565 as "cimbot", the plugin's async net leg (KernelBridge leg 7 -> CimPlugin.startNetLeg) drives the full wire contract; server window ends early ONLY when BOTH cimbot-exit exists AND "bridge smoke: ALL OK" is in boot.log (timing analysis: killing on bot-exit alone would truncate the smoke legs that assert boot markers need) with the 240 s hard cap intact.
+- New assert step: cimbot JSON report (ok/joined/registries>=25/packets_read>200/all 7 contract checks), server-side markers (bot joined, net leg complete, netty net-watch attach, post_effects census >= 2), artifacts uploaded (cimbot.log, report, exit code) for red-run debugging.
+- BOT CONTRACT PRE-FLIGHT (deep, javap -c against nested server-26.3.jar): every cimbot codec verified against the 26.3 STREAM_CODEC compositions BEFORE the first live run — ClientboundPlayerPositionPacket = composite(VAR_INT, PositionMoveRotation(Vec3,Vec3,FLOAT,FLOAT), Relative.SET_STREAM_CODEC); Relative.SET_STREAM_CODEC is ByteBufCodecs.INT.map = plain i32 BE bitmask (NOT varint — would have desynced a varint reader); AddEntity = varint/UUID/registry-varint/3xf64/Vec3.LP_STREAM_CODEC/3xbyte/varint; LpVec3 = u8 lowest (0->ZERO) + u8 middle + u32 BE highest + (lowest&0b100)->varint — bit-exact with skip_lp_vec3; AcceptTeleportation = VAR_INT + 3xDOUBLE + 2xFLOAT; PosRot = 3xf64 + 2xf32 + flags byte. ALL MATCH — pinned in protocol-767-777.md section 9.
+- Local hygiene without heavy runs (owner banned local server boots — sandbox hang risk): cargo fmt clean, clippy -D warnings clean (warm dev cache, 0.44 s), cargo test --workspace (dev profile) = 108 passed / 0 failed across 23 suites. Release compilation left to CI (OOM-risk locally, cargo test --release died mid-compile twice).
+- Live-wire risks that bytecode cannot prove (documented): registry_data NBT shapes (fixture-tested), chunk section formats (frame-skipped by design), Paper config-phase ordering. The integration run is the oracle.
+
+Stage Summary:
+- M4.1 (bot on live boot) pushed e58aac0; integration run in flight — expected outcome: either GREEN contract (M4 acceptance criterion 1+2 proven) or a precise red with bot artifacts to iterate on.
+- Next: CI validation loop -> on green, tick M4 bot leg in ROADMAP, then M4 net-hooks deepening (rewrite paths for entity metadata / chunk-batch, registry-driven tables) and the RSS profiling gate.
+- Lesson recorded: release-profile cargo builds can die in this sandbox — CI is the build farm now; local is for edit + fast checks only.

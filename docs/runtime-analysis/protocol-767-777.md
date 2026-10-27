@@ -199,3 +199,32 @@ lazily on the FIRST socket):
   `cplug-sdk::weave::emit_switch` already does correctly.
 - Workaround tracked separately (disk-class pre-shift compensation) until the
   runtime ships the fix.
+
+## 9. Play-phase wire formats bytecode-proven (cimbot contract pre-flight)
+
+Verified against the nested 26.3 server jar (`server-26.3.jar`,
+`META-INF/versions/26.3/`) with `javap -c` before the first live bot run —
+every codec the bot parses/encodes matches the client/server STREAM_CODEC
+composition exactly. This is the "no desync on the live wire" guarantee for
+the M4 integration leg.
+
+| packet | 777 codec (bytecode) | cimbot codec | verdict |
+|---|---|---|---|
+| `ClientboundPlayerPositionPacket` | `composite(VAR_INT(id), PositionMoveRotation.STREAM_CODEC, Relative.SET_STREAM_CODEC)` | varint id + 3xf64 pos + 3xf64 delta + f32 yRot + f32 xRot + **i32 BE** relatives | match |
+| `PositionMoveRotation` | `composite(Vec3, Vec3, FLOAT, FLOAT)` | (unfolded above) | match |
+| `Relative.SET_STREAM_CODEC` | `ByteBufCodecs.INT.map(unpack, pack)` — **plain i32 BE bitmask, NOT varint** (9 members X..ROTATE_DELTA, bit = ordinal) | `rd_i32` | match |
+| `ClientboundAddEntityPacket` | member codec: `varint id, UUID, registry(EntityType) varint, f64 x/y/z, Vec3.LP_STREAM_CODEC movement, byte xRot/yRot/yHeadRot, varint data` | identical order | match |
+| `Vec3.LP_STREAM_CODEC` (`LpVec3.read`) | `u8 lowest` (0 → `Vec3.ZERO`, stop) → `u8 middle` → `u32 BE highest` → `if lowest & 0b100: varint continuation` | `skip_lp_vec3` | match |
+| `ServerboundAcceptTeleportationPacket` | `composite(VAR_INT, DOUBLE, DOUBLE, DOUBLE, FLOAT, FLOAT)` | varint id + 3xf64 + 2xf32 | match (777 CHANGED vs 767 id-only echo) |
+| `ServerboundMovePlayer$PosRot` | member codec: `f64 x/y/z, f32 yRot/xRot, byte flags` (bit0 onGround, bit1 horizontalCollision) | identical, flags = 0x01/0x00 | match |
+
+Measurement artifacts: extracted classes under the sandbox `javap` session
+(`ClientboundPlayerPositionPacket`, `PositionMoveRotation`, `Relative`,
+`ClientboundAddEntityPacket`, `LpVec3`, `ServerboundAcceptTeleportationPacket`,
+`ServerboundMovePlayerPacket$PosRot`); re-derivable any time from
+`artifacts/clients/client-26.3.jar` → nested `server-26.3.jar` (bundler).
+
+Consequence: the first live cimbot join should not desync on any of the
+parsed paths. Remaining live-wire risks are the ones bytecode alone cannot
+prove: `registry_data` NBT shapes (fixture-tested), chunk section formats
+(frame-skipped by design), and Paper's config-phase ordering.
