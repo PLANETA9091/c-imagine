@@ -132,11 +132,16 @@ jobs:
           # Java-only screenshot/diff tools (measured: runners ship IM7 with
           # no `import`/`xwd`); Robot needs the X display
           javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java
-          # Xvfb display; the client renders via software GL (llvmpipe)
-          Xvfb :99 -screen 0 1280x720x24 &
+          # MEASURED (run 4): GlDevice needs a matching GLX visual — install
+          # the software GL/Vulkan stack explicitly and expose GLX on Xvfb
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           XVFB_PID=$!
           sleep 3
           export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
           LAUNCH=$(cat visual-client/launch.txt)
           # cwd must be the client dir (assets/game dir are resolved there);
           # the launch line carries ABSOLUTE classpaths (measured fix)
