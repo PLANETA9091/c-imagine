@@ -70,10 +70,17 @@ jobs:
           python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           ls visual-client | head
           wc -c visual-client/classpath.txt visual-client/launch.txt
-      - name: scaffold bare Paper 26.3 (crussty init, no module)
+      - name: fetch Paper 26.3 (fill API v3, bare — no module)
         run: |
-          npm i -g crussty
-          crussty init --platform paper --version 26.3 --dir srv
+          set -euo pipefail
+          mkdir -p srv
+          # MEASURED (first dispatch): crussty init downloads Paper lazily on
+          # `run` — a bare visual job needs the paperclip jar directly.
+          URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['downloads']['server:default']['url'])")
+          echo "paper: $URL"
+          curl -sL --max-time 300 -o srv/paper.jar "$URL"
+          wc -c srv/paper.jar
       - name: stage plugin + pack (pre-boot build, deterministic)
         run: |
           set -euo pipefail
@@ -107,7 +114,8 @@ jobs:
           cd srv
           mkfifo console.in
           # keep the FIFO open and feed console commands from a file later
-          tail -f console.in | java -Xmx2G -jar $(ls versions/*/paper-*.jar 2>/dev/null | head -1 || echo launcher.jar) --nogui > boot.log 2>&1 &
+          # paperclip patches the Mojang jar on first boot (network needed)
+          tail -f console.in | java -Xmx2G -jar paper.jar --nogui > boot.log 2>&1 &
           echo $! > ../srv.pid
           cd ..
           # wait for Done (120 x 2s)
