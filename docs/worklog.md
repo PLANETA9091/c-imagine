@@ -511,3 +511,17 @@ Work Log:
 Stage Summary:
 - The item surface now covers BOTH 26.3 dispatch families (floats + strings); the entity channel is on the wire contract; the harness join path is fully bytecode-proven (onboarding + pack accept + resolution).
 - Next: run 8 result (expect join + pack reload + [CHAT] + 3-screenshot pixel contract) -> postfx tint pixel leg + visual wand leg -> M5 close.
+
+---
+Task ID: 10-g
+Agent: main
+Task: M5.3 run 8 autopsy — THE CLIENT JOINED (pack applied, world rendered); death-by-slime fix + postfx/wand pixel legs
+
+Work Log:
+- visual run 8 (d4c33e8) artifact measured: startup reload -> SECOND reload "vanilla, vanilla, server/00000000/..." (the servers.dat seed auto-accepted the config-phase pack — the acceptTextures chain works end-to-end on a real client) -> "[System] [CHAT] cimviewer joined the game" (the ChatComponent [CHAT] marker) -> all three hotbar screenshots captured at full 1280x720 (the explicit --width/--height fix works).
+- SINGLE remaining defect (visible in the shots): a superflat SLIME killed cimviewer between the baseline and the item shots — shots 01/02 show the death screen; the give legs ran on a corpse; the AE asserts correctly failed. The render pipeline itself is PROVEN healthy (sky, clouds, terrain, HUD, hand, day cycle visible).
+- Fixes: difficulty=peaceful in the harness server.properties (no hostile spawns in superflat); /cim postfx <player> <id|clear> console surface added to the plugin (the harness-side driver for the atmosphere channel); postfx pixel legs in visual.yml (cimsepia requested between hotbar shots; AE(cmd,postfx-on) > 5000 gates the chain RESOLUTION client-side — failedPostEffects would leave the frame untouched); run 9 dispatched.
+- Next-cycle legs staged: the wand select pixel contract (brick + custom_model_data strings -> shot AE) completes BOTH item families on the pixel layer.
+
+Stage Summary:
+- M5.3 is one run away: join + pack + render are DONE (measured); the remaining gate is alive-viewer screenshots (peaceful) + the postfx resolution proof.
