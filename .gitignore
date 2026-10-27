@@ -39,3 +39,7 @@ Thumbs.db
 # Keep the embedded bootstrap placeholder tracked, but ignore real jars
 # dropped into embedded/ by local tooling (CI overwrites it deliberately).
 paper-plugin/target/
+
+# Excluded-crates keep their own target dirs out of git.
+third_party/*/target/
+artifacts-srvcheck/

@@ -55,20 +55,24 @@ pub unsafe extern "C" fn cplugin_init(
         eprintln!("{} class-load hook observed: {name}", cim_core::LOG_PREFIX);
     });
 
-    // M4 WEAVE REPAIR: the runtime 0.2.0 NetHooks brick prepends a 3-byte
-    // `invokestatic dev/crussty/hooks/NetHooks.*` to method code WITHOUT
-    // fixing branch offsets / switch padding / stack maps — any woven method
-    // containing a switch fails verification (`handleIntention` is the
-    // proven case: VerifyError on the FIRST client socket, dormant through
-    // M0-M3 because nothing connected). Our byte hook receives the woven
-    // bytes and strips the foreign prefix, restoring the pristine class
-    // (byte-for-byte method code — fixture-tested in cplug-sdk). The stripped
-    // hook events belong to the runtime's optional packet-events brick, which
-    // c-imagine does not consume (it has its own NetWatch).
-    // Measured weave targets (runtime 0.2.0): the handshake listener is the
-    // only ACTIVE NetHooks weave; the other rule classes verify fine today —
-    // the hook list below covers them defensively and is a no-op unless a
-    // foreign prefix is actually present.
+    // Runtime 0.2.0 NetHooks weave repair (measured, fixture-proven): the
+    // runtime prepends `invokestatic dev/crussty/hooks/NetHooks.*` + `nop`
+    // (4 bytes) at method entry and shifts every offset-sensitive attribute
+    // by +4 (exception pcs, LineNumberTable, LocalVariable(Type)Table, one
+    // StackMapTable frame delta). Our byte hook receives the woven bytes and
+    // mirrors those fixups back (strip_invokestatic_prefix — 82-method
+    // byte-identical proof on the live Connection capture, cplug-sdk tests).
+    // Legacy runtimes inserted a bare 3-byte prefix with no attribute work;
+    // both shapes are detected (nop byte present or not). Without the repair
+    // the JVM rejects the class: "Invalid pc in LineNumberTable" on
+    // net/minecraft/network/Connection at first socket bind (the 0.1.x
+    // VerifyError family had the same trigger). The stripped hook events
+    // belong to the runtime's optional packet-events brick, which c-imagine
+    // does not consume (it has its own NetWatch).
+    // Measured weave targets (runtime 0.2.0): Connection carries two
+    // method-entry hooks (channelInactive, setupInboundProtocol); the other
+    // rule classes verify fine today — the hook list below covers them
+    // defensively and is a no-op unless a foreign prefix is actually present.
     for pattern in [
         "net/minecraft/server/network/ServerHandshakePacketListenerImpl",
         "net/minecraft/network/Connection",
@@ -76,6 +80,13 @@ pub unsafe extern "C" fn cplugin_init(
         "net/minecraft/network/PacketEncoder",
     ] {
         cplug_sdk::hooks::register_bytes(pattern, move |name, data| {
+            // Diagnostics: dump the raw woven bytes (CIM_DUMP_WOVEN=<dir>) so
+            // the strip can be diffed against the pristine kernel class.
+            if let Some(dir) = std::env::var_os("CIM_DUMP_WOVEN") {
+                let safe = name.replace('/', "_");
+                let path = std::path::Path::new(&dir).join(format!("{safe}.woven.class"));
+                let _ = std::fs::write(path, data);
+            }
             match cplug_sdk::weave::strip_invokestatic_prefix(
                 data.to_vec(),
                 "dev/crussty/hooks/NetHooks",

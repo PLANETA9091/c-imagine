@@ -939,25 +939,74 @@ mod tests {
     }
 }
 
-/// Repair for a foreign injector that prepends a 3-byte
-/// `invokestatic <target_class>.*` to method code WITHOUT fixing up any
-/// offset-sensitive structure (branch targets, switch padding, stack map
-/// frames). Removing the prefix restores the original bytes exactly, so the
-/// repair is a pure splice: delete the 3 bytes from every method whose code
-/// starts with an `invokestatic` into `target_class`, and decrement the code
-/// length + attribute length by 3. Exception-table pcs and StackMapTable
-/// offsets were left untouched by the faulty injector, so after the splice
-/// they line up with the restored (original) instruction positions again.
+/// One pending byte-level repair against the class file. Applied in
+/// descending file-position order.
+#[derive(Clone, Copy, Debug)]
+enum Edit {
+    /// Overwrite 1 byte.
+    Set1(u8),
+    /// Overwrite a big-endian u2.
+    Set2(u16),
+    /// Overwrite a big-endian u4.
+    Set4(u32),
+    /// Delete `len` bytes at the position.
+    Del(usize),
+}
+
+impl Edit {
+    fn is_del(&self) -> bool {
+        matches!(self, Edit::Del(_))
+    }
+}
+
+/// Repair for a foreign injector that prepends a hook call to method code.
+///
+/// Two weave shapes exist (measured from CRUSSTY runtime sources + live
+/// captures):
+///
+/// 1. **Method-entry, 4 bytes** (runtime 0.2.0 `plan_method_entry`):
+///    `invokestatic <target_class>.*` + `nop` (0x00). The 4-byte size keeps
+///    tableswitch/lookupswitch padding valid (offset % 4 residue unchanged).
+///    The injector then shifts every offset-sensitive attribute by +4
+///    (`plan_code_fixups`): exception-table pcs, `LineNumberTable.start_pc`,
+///    `LocalVariable(Type)Table.start_pc`/`length`, and exactly ONE
+///    `StackMapTable` frame delta (the first frame whose absolute offset
+///    exceeds the insertion point — later frames ride along relatively).
+/// 2. **Before-call, 3 bytes** (`plan_before_call`, legacy runtimes): bare
+///    `invokestatic` inserted in front of a call site. When such a site sits
+///    at code offset 0 it is indistinguishable from (1) except for the
+///    missing `nop`.
+///
+/// Detection here is prefix-shaped only (code[0] == 0xb8 invoking
+/// `target_class`): strip length N = 4 when code[3] == 0x00 (nop), else 3.
+/// A method-entry insert shifts the code array UNIFORMLY, so relative branch
+/// operands and switch padding need no fixups (injector `branch_delta` is 0
+/// for pc == 0 as well). What must be mirrored back is the attribute work:
+///
+/// * code length u4 -= N, Code attribute length u4 -= N;
+/// * exception table: every `start_pc`/`end_pc`/`handler_pc` > 0 -= N;
+/// * `LineNumberTable`: every `start_pc` > 0 -= N;
+/// * `LocalVariableTable`/`LocalVariableTypeTable`: `start_pc` > 0 -> -= N,
+///   otherwise (start_pc == 0) `length` -= N;
+/// * `StackMapTable`: decode frames (deltas are relative), find the FIRST
+///   frame with absolute offset > 0, subtract N from its delta and
+///   re-encode: inline same/1-stack frames stay inline (or convert back from
+///   the extended 247/251 form the injector may have grown them into —
+///   removing 2 attribute bytes), extended/chop/append/full frames rewrite
+///   their u2 delta.
+///
+/// The result is semantically pristine per-method bytecode with the injector's
+/// dead constant-pool entries left in place (legal and inert).
 ///
 /// Returns `Ok(None)` when no method matched (class untouched).
 pub fn strip_invokestatic_prefix(
     mut bytes: Vec<u8>,
     target_class: &str,
 ) -> Result<Option<Vec<u8>>, String> {
+    // (file position, edit). Applied in descending position order.
+    let mut edits: Vec<(usize, Edit)> = Vec::new();
+
     let cp = Cp::parse(&bytes)?;
-    // Collect (code_len_pos, attr_len_pos) for every matching method, then
-    // splice in REVERSE file order so earlier positions stay valid.
-    let mut matches: Vec<(usize, usize)> = Vec::new();
     let mut p = cp.end;
     p += 6; // access, this, super
     let ifaces = u16at(&bytes, p) as usize;
@@ -965,6 +1014,7 @@ pub fn strip_invokestatic_prefix(
     p = skip_fields(&bytes, p)?;
     let methods = u16at(&bytes, p) as usize;
     p += 2;
+    let mut matched = false;
     for _ in 0..methods {
         let attr_count = u16at(&bytes, p + 6) as usize;
         p += 8;
@@ -973,13 +1023,14 @@ pub fn strip_invokestatic_prefix(
             let attr_len = u32at(&bytes, p + 2) as usize;
             let attr_body = p + 6;
             let a_name = cp.utf8(&bytes, attr_name_idx).unwrap_or_default();
-            if a_name == "Code" && attr_len >= 11 {
+            if a_name == "Code" && attr_len >= 12 {
                 let code_len = u32at(&bytes, attr_body + 4) as usize;
-                if code_len >= 3 && bytes[attr_body + 8] == 0xb8 {
+                if code_len >= 4 && bytes[attr_body + 8] == 0xb8 {
                     let cp_idx = u16at(&bytes, attr_body + 9);
                     if let Ok((cls, _, _)) = methodref_target(&bytes, &cp, cp_idx) {
                         if cls == target_class {
-                            matches.push((attr_body + 4, p + 2));
+                            matched = true;
+                            plan_strip(&bytes, &cp, attr_body, &mut edits)?;
                         }
                     }
                 }
@@ -987,22 +1038,221 @@ pub fn strip_invokestatic_prefix(
             p = attr_body + attr_len;
         }
     }
-    if matches.is_empty() {
+    if !matched {
         return Ok(None);
     }
-    for (code_len_pos, attr_len_pos) in matches.iter().rev() {
-        let code_len = u32at(&bytes, *code_len_pos) as usize;
-        let attr_len = u32at(&bytes, *attr_len_pos) as usize;
-        // splice out the 3-byte prefix (code bytes start at code_len_pos + 4)
-        let start = code_len_pos + 4;
-        bytes.drain(start..start + 3);
-        // code length u4 -= 3, attribute length u4 -= 3
-        let new_code = (code_len - 3) as u32;
-        let new_attr = (attr_len - 3) as u32;
-        bytes[*code_len_pos..*code_len_pos + 4].copy_from_slice(&new_code.to_be_bytes());
-        bytes[*attr_len_pos..*attr_len_pos + 4].copy_from_slice(&new_attr.to_be_bytes());
+
+    // Apply edits from the END of the file backwards so earlier positions
+    // stay valid throughout. Position ties: deletes before overwrites at the
+    // same offset is the only safe order; BTreeMap-free approach: stable sort
+    // by (pos desc, kind order) with Del ranking first at equal pos.
+    edits.sort_by(|a, b| {
+        b.0.cmp(&a.0).then_with(|| a.1.is_del().cmp(&b.1.is_del()))
+    });
+    for (pos, e) in edits {
+        match e {
+            Edit::Set1(v) => bytes[pos] = v,
+            Edit::Set2(v) => bytes[pos..pos + 2].copy_from_slice(&v.to_be_bytes()),
+            Edit::Set4(v) => bytes[pos..pos + 4].copy_from_slice(&v.to_be_bytes()),
+            Edit::Del(len) => {
+                bytes.drain(pos..pos + len);
+            }
+        }
     }
     Ok(Some(bytes))
+}
+
+/// verification_type_info payload size for the strip's frame walk (infallible
+/// variant of `vti_len` for already-bounded slices): 1 byte for scalar tags,
+/// 3 for object/uninitialized (tag + u2 cp / offset).
+fn vti_len_at(bytes: &[u8], o: usize) -> usize {
+    match bytes[o] {
+        0..=5 => 1,
+        _ => 3,
+    }
+}
+
+/// Plan all file edits that undo one woven method's `invokestatic[+nop]`
+/// prefix (4- or 3-byte) plus the injector's attribute shifts.
+///
+/// `code_attr_body` points at the Code attribute body (max_stack u2):
+/// `+0 max_stack, +2 max_locals, +4 code_len(u4), +8 code bytes, ...`.
+/// Layout after the code array: exc_count u2, exc entries (8 bytes each),
+/// then sub-attributes `(name u2, len u4, payload)`.
+fn plan_strip(
+    bytes: &[u8],
+    cp: &Cp,
+    code_attr_body: usize,
+    edits: &mut Vec<(usize, Edit)>,
+) -> Result<(), String> {
+    let code_len_pos = code_attr_body + 4;
+    let code_len = u32at(bytes, code_len_pos) as usize;
+    let code_start = code_attr_body + 8;
+    // N = 4 when the hook call is followed by the alignment nop, else 3.
+    let n = if bytes[code_start + 3] == 0x00 { 4usize } else { 3usize };
+
+    // The Code attribute length u4 sits at body - 4 (name_idx u2 + len u4
+    // precede the body).
+    let attr_len_pos = code_attr_body - 4;
+    let attr_len = u32at(bytes, attr_len_pos) as usize;
+
+    // 1) exception table: every pc > 0 shifts back by N (the injector
+    //    shifted every pc > 0 forward for a pc == 0 insert).
+    let mut q = code_start + code_len;
+    let exc_count = u16at(bytes, q) as usize;
+    q += 2;
+    for _ in 0..exc_count {
+        for k in 0..3 {
+            let pos = q + k * 2;
+            let v = u16at(bytes, pos);
+            if v > 0 {
+                edits.push((pos, Edit::Set2(v - n as u16)));
+            }
+        }
+        q += 8;
+    }
+
+    // 2) sub-attributes. The StackMapTable mirror may SHRINK its attribute
+    //    (extended frame grown by the injector converts back to inline),
+    //    so plan it first and fold the shrink into the length updates.
+    let mut shrink = 0usize;
+    let sub_count = u16at(bytes, q) as usize;
+    q += 2;
+    for _ in 0..sub_count {
+        let name_idx = u16at(bytes, q);
+        let sub_len = u32at(bytes, q + 2) as usize;
+        let body = q + 6;
+        let name = cp.utf8(bytes, name_idx).unwrap_or_default();
+        match name {
+            "LineNumberTable" => {
+                let cnt = u16at(bytes, body) as usize;
+                for i in 0..cnt {
+                    let pos = body + 2 + i * 4;
+                    let start = u16at(bytes, pos);
+                    if start > 0 {
+                        edits.push((pos, Edit::Set2(start - n as u16)));
+                    }
+                }
+            }
+            "LocalVariableTable" | "LocalVariableTypeTable" => {
+                let cnt = u16at(bytes, body) as usize;
+                for i in 0..cnt {
+                    let pos = body + 2 + i * 10;
+                    let start = u16at(bytes, pos);
+                    let length = u16at(bytes, pos + 2);
+                    if start > 0 {
+                        edits.push((pos, Edit::Set2(start - n as u16)));
+                    } else if length > 0 {
+                        edits.push((pos + 2, Edit::Set2(length - n as u16)));
+                    }
+                }
+            }
+            "StackMapTable" => {
+                shrink += plan_smt_strip(bytes, body, n, edits)?;
+            }
+            _ => {}
+        }
+        q = body + sub_len;
+    }
+
+    // 3) code array prefix removal + the three length fields (code len,
+    //    Code attr len, and the SMT attr len when it shrank — pushed inside
+    //    plan_smt_strip).
+    edits.push((code_start, Edit::Del(n)));
+    edits.push((code_len_pos, Edit::Set4((code_len - n) as u32)));
+    edits.push((attr_len_pos, Edit::Set4((attr_len - n - shrink) as u32)));
+    Ok(())
+}
+
+/// Mirror one StackMapTable back: the injector bumped the delta of exactly
+/// the first frame whose absolute offset exceeds the insertion point (all
+/// later frames ride along via relative deltas). Decoding follows the same
+/// rules the injector used (inline 0..=63 delta = frame_type; 64..=127
+/// delta = frame_type - 64; extended/chop/append/full carry an explicit u2).
+///
+/// Returns the number of attribute bytes this mirror removes (0 or 2 — the
+/// extended→inline conversion). The StackMapTable attribute length u4 sits
+/// at `body - 4` and is patched here when the shrink happens.
+fn plan_smt_strip(
+    bytes: &[u8],
+    body: usize,
+    n: usize,
+    edits: &mut Vec<(usize, Edit)>,
+) -> Result<usize, String> {
+    let count = u16at(bytes, body) as usize;
+    let mut pos = body + 2;
+    let mut prev_abs: i64 = -1;
+    for k in 0..count {
+        let ft = bytes[pos];
+        let (delta, entry_len): (u16, usize) = match ft {
+            0..=63 => (u16::from(ft), 1),
+            64..=127 => (u16::from(ft - 64), 1 + vti_len_at(bytes, pos + 1)),
+            247 => (u16at(bytes, pos + 1), 3 + vti_len_at(bytes, pos + 3)),
+            248..=251 => (u16at(bytes, pos + 1), 3),
+            252..=254 => {
+                let nn = (ft - 251) as usize;
+                let mut size = 3usize;
+                for _ in 0..nn {
+                    size += vti_len_at(bytes, pos + size);
+                }
+                (u16at(bytes, pos + 1), size)
+            }
+            255 => {
+                let locals = u16at(bytes, pos + 3) as usize;
+                let mut size = 7usize;
+                for _ in 0..locals {
+                    size += vti_len_at(bytes, pos + size);
+                }
+                let stack = u16at(bytes, pos + size) as usize;
+                size += 2;
+                for _ in 0..stack {
+                    size += vti_len_at(bytes, pos + size);
+                }
+                (u16at(bytes, pos + 1), size)
+            }
+            _ => return Err(format!("StackMapTable frame #{k}: reserved frame_type {ft}")),
+        };
+        let abs = if k == 0 {
+            i64::from(delta)
+        } else {
+            prev_abs + i64::from(delta) + 1
+        };
+        if abs > 0 {
+            // This is the frame the injector bumped. Reverse its delta by N.
+            let new = i64::from(delta) - n as i64;
+            if new < 0 {
+                return Err(format!(
+                    "StackMapTable frame #{k}: delta {delta} < strip {n} (not an injector bump?)"
+                ));
+            }
+            match ft {
+                // inline same_frame: delta encodes into the frame_type byte
+                0..=63 => edits.push((pos, Edit::Set1(new as u8))),
+                // inline same_locals_1_stack_item: delta in frame_type - 64,
+                // the verification_type_info payload stays untouched
+                64..=127 => edits.push((pos, Edit::Set1(64 + new as u8))),
+                // Extended forms the injector may have produced by growing an
+                // inline frame (its rewrite: 251/247 + u2). When the restored
+                // delta fits inline again, convert back — the canonical javac
+                // encoding — shrinking the attribute by 2 bytes.
+                247 | 251 if new <= 63 => {
+                    let inline_ft = if ft == 251 { new as u8 } else { 64 + new as u8 };
+                    let smt_len_pos = body - 4;
+                    let smt_len = u32at(bytes, smt_len_pos) as usize;
+                    edits.push((pos, Edit::Set1(inline_ft)));
+                    edits.push((pos + 1, Edit::Del(2)));
+                    edits.push((smt_len_pos, Edit::Set4((smt_len - 2) as u32)));
+                    return Ok(2);
+                }
+                // extended / chop / append / full: explicit u2 delta
+                _ => edits.push((pos + 1, Edit::Set2(new as u16))),
+            }
+            return Ok(0); // exactly one frame was bumped
+        }
+        prev_abs = abs;
+        pos += entry_len;
+    }
+    Ok(0)
 }
 
 #[cfg(test)]
@@ -1077,5 +1327,102 @@ mod repair_tests {
         let r = strip_invokestatic_prefix(orig.to_vec(), "dev/crussty/hooks/NetHooks")
             .expect("strip failed");
         assert!(r.is_none(), "no method should match in the pristine class");
+    }
+
+    /// Full structural comparison: after the strip, EVERY method's Code
+    /// attribute (code array, exception table, LineNumberTable,
+    /// LocalVariable(Type)Table, StackMapTable) must be byte-identical to
+    /// the pristine kernel class. Proven on the live 0.2.0 weave capture of
+    /// net/minecraft/network/Connection — two method-entry hooks with real
+    /// attribute fixups (the class whose 3-byte-only splice produced
+    /// "Invalid pc in LineNumberTable").
+    #[test]
+    fn strip_restores_pristine_connection_structure() {
+        let woven = include_bytes!("fixtures/woven-connection.class").to_vec();
+        let orig = include_bytes!("fixtures/orig-connection.class").to_vec();
+        let repaired = strip_invokestatic_prefix(woven.clone(), "dev/crussty/hooks/NetHooks")
+            .expect("strip failed")
+            .expect("no prefix matched — fixture stale");
+
+        // Per-method Code-attribute serialization (the exact byte range of
+        // the Code attribute body), keyed in file order.
+        let code_bodies = |c: &[u8]| -> Vec<(String, String, Vec<u8>)> {
+            let cp = Cp::parse(c).expect("cp parse");
+            let mut out = Vec::new();
+            let mut p = cp.end;
+            p += 6;
+            let ifaces = u16at(c, p) as usize;
+            p += 2 + ifaces * 2;
+            p = skip_fields(c, p).expect("fields");
+            let methods = u16at(c, p) as usize;
+            p += 2;
+            for _ in 0..methods {
+                let name = cp.utf8(c, u16at(c, p + 2)).unwrap_or_default();
+                let desc = cp.utf8(c, u16at(c, p + 4)).unwrap_or_default();
+                let attr_count = u16at(c, p + 6) as usize;
+                p += 8;
+                for _ in 0..attr_count {
+                    let a_name = cp.utf8(c, u16at(c, p)).unwrap_or_default();
+                    let alen = u32at(c, p + 2) as usize;
+                    let body = p + 6;
+                    if a_name == "Code" {
+                        out.push((
+                            name.to_string(),
+                            desc.to_string(),
+                            c[body..body + alen].to_vec(),
+                        ));
+                    }
+                    p = body + alen;
+                }
+            }
+            out
+        };
+
+        let r = code_bodies(&repaired);
+        let o = code_bodies(&orig);
+        assert_eq!(r.len(), o.len(), "same method count");
+        let mut compared = 0;
+        for (a, b) in r.iter().zip(o.iter()) {
+            assert_eq!(a.0, b.0, "method name order");
+            assert_eq!(
+                a.2, b.2,
+                "Code attribute body of {}{} must be byte-identical after the repair",
+                a.0, a.1
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 82, "Connection method count (measured)");
+        // idempotent: a second pass matches nothing
+        let again = strip_invokestatic_prefix(repaired.clone(), "dev/crussty/hooks/NetHooks")
+            .expect("second strip failed");
+        assert!(again.is_none(), "repair must be idempotent");
+    }
+
+    /// javap structural validation of the stripped Connection (skipped when
+    /// no JDK is available locally).
+    #[test]
+    fn stripped_connection_passes_javap() {
+        let woven = include_bytes!("fixtures/woven-connection.class").to_vec();
+        let repaired = strip_invokestatic_prefix(woven, "dev/crussty/hooks/NetHooks")
+            .expect("strip failed")
+            .expect("no prefix matched — fixture stale");
+        let dir = std::env::temp_dir().join(format!("cplug-strip-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Connection.class");
+        std::fs::write(&path, &repaired).unwrap();
+        let javap = std::process::Command::new("javap")
+            .args(["-v", "-p"])
+            .arg(&path)
+            .output();
+        match javap {
+            Ok(out) => {
+                assert!(
+                    out.status.success(),
+                    "javap rejected stripped class:\n{}",
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            Err(_) => eprintln!("javap not available, skipping"),
+        }
     }
 }
