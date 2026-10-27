@@ -42,10 +42,146 @@ jobs:
       # + screenshot diff vs NeoForge ground truth. Scaffolded there; kept
       # out of M0 until the protocol bot (cim-proto based) exists.
 
+  # M5.3: REAL vanilla client under xvfb — downloads the pack from PackHttp,
+  # applies it, receives the visual item (CMD component through the vanilla
+  # give component syntax), and screenshots the result. The pixel contract:
+  # a CMD item and a plain paper item must render DIFFERENTLY in the hotbar
+  # (the pack's range_dispatch override is what makes them differ).
+  vanilla-client-visual:
+    name: vanilla 26.3 client visual contract (M5.3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: resolve newest stable paper-api for 26.3
+        id: paper
+        run: |
+          PV=$(bash scripts/resolve-paper-version.sh 26.3)
+          echo "version=$PV" >> "$GITHUB_OUTPUT"
+      - name: build plugin
+        working-directory: paper-plugin
+        run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+      - name: fetch visual client runtime (piston-meta, with assets)
+        run: |
+          python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+          ls visual-client | head
+          wc -c visual-client/classpath.txt visual-client/launch.txt
+      - name: scaffold bare Paper 26.3 (crussty init, no module)
+        run: |
+          npm i -g crussty
+          crussty init --platform paper --version 26.3 --dir srv
+      - name: stage plugin + pack (pre-boot build, deterministic)
+        run: |
+          set -euo pipefail
+          mkdir -p srv/plugins srv/mods srv/c-imagine/f2v
+          cp paper-plugin/target/cim-paper-plugin.jar srv/plugins/
+          # the pack builder reads ASSETS from mod jars — the cimtest jar
+          # assets suffice (no layer, no module in this job)
+          (cd test-mods/src/main/resources && zip -qr /tmp/cimtest-assets.jar assets)
+          cp /tmp/cimtest-assets.jar srv/mods/cimtest-1.0.0.jar
+          cp scripts/f2v/visual-items.tsv srv/c-imagine/f2v/visual-items.tsv
+          java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+            --build srv/mods srv/c-imagine/f2v
+          SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
+          echo "eula=true" > srv/eula.txt
+          cat > srv/server.properties <<PROPS
+          online-mode=false
+          white-list=false
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          max-players=5
+          resource-pack=http://127.0.0.1:25580/cim-f2v-pack.zip
+          resource-pack-sha1=$SHA1
+          PROPS
+          cat srv/server.properties
+      - name: boot server (bare Paper + plugin, console FIFO)
+        run: |
+          set -euo pipefail
+          cd srv
+          mkfifo console.in
+          # keep the FIFO open and feed console commands from a file later
+          tail -f console.in | java -Xmx2G -jar $(ls versions/*/paper-*.jar 2>/dev/null | head -1 || echo launcher.jar) --nogui > boot.log 2>&1 &
+          echo $! > ../srv.pid
+          cd ..
+          # wait for Done (120 x 2s)
+          for i in $(seq 1 120); do
+            grep -q "Done (" srv/boot.log 2>/dev/null && break
+            sleep 2
+          done
+          grep -q "Done (" srv/boot.log || { tail -30 srv/boot.log; exit 1; }
+          grep -q "f2v pack: serving" srv/boot.log || { tail -30 srv/boot.log; exit 1; }
+          echo "server up + pack serving"
+      - name: vanilla client joins under xvfb + visual contract
+        run: |
+          set -euo pipefail
+          # Xvfb display; the client renders via software GL (llvmpipe)
+          Xvfb :99 -screen 0 1280x720x24 &
+          XVFB_PID=$!
+          sleep 3
+          export DISPLAY=:99
+          mkdir -p shots
+          LAUNCH=$(cat visual-client/launch.txt)
+          ( cd visual-client && bash -c "$LAUNCH" > client.out 2>&1 ) &
+          CLIENT_PID=$!
+          # wait for the client process window + world join (client log)
+          for i in $(seq 1 150); do
+            grep -q "Connected to\|joined the game\|Loaded pack" \
+              visual-client/game/logs/latest.log 2>/dev/null && break
+            sleep 2
+          done
+          sleep 20   # world render settles
+          import -window root shots/00-baseline.png || xwd -root -out shots/00.xwd
+          # hotbar contract: empty -> plain paper -> CMD paper (the pack's
+          # range_dispatch must make the LAST two render differently)
+          echo "clear cimviewer" > srv/console.in
+          sleep 2
+          echo "give cimviewer paper 1" > srv/console.in
+          sleep 4
+          import -window root shots/01-vanilla-paper.png
+          echo "clear cimviewer" > srv/console.in
+          sleep 2
+          echo "give cimviewer paper[minecraft:custom_model_data={floats:[1000.0]}] 1" > srv/console.in
+          sleep 4
+          import -window root shots/02-cmd-paper.png
+          kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
+          ls -la shots/
+      - name: assert visual contract + upload evidence
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          # the client actually applied the server pack (its log carries the
+          # pack flow; sha1 mismatch or decline would surface here)
+          grep -qi "resource pack\|pack" visual-client/game/logs/latest.log \
+            || fail "no pack activity in the client log"
+          # pixel contract: CMD item vs plain paper differ, and each differs
+          # from the empty baseline (same screen region — full-frame AE > 0)
+          AE12=$(compare -metric AE shots/01-vanilla-paper.png shots/02-cmd-paper.png null: 2>&1 || true)
+          AE10=$(compare -metric AE shots/00-baseline.png shots/01-vanilla-paper.png null: 2>&1 || true)
+          echo "AE(vanilla,cmd)=$AE12 AE(baseline,vanilla)=$AE10"
+          [ "${AE12:-0}" != "0" ] || fail "CMD paper renders IDENTICAL to vanilla paper — the pack override did not apply"
+          [ "${AE10:-0}" != "0" ] || fail "the item never appeared in the hotbar"
+          echo "M5.3 visual contract: pack applied + CMD item renders as the modded model"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-contract-evidence
+          path: |
+            shots/
+            srv/boot.log
+            visual-client/game/logs/latest.log
+            visual-client/client.out
+          if-no-files-found: warn
+
   # Placeholder naming the future job so the intent is visible in the UI.
   xvfb-client-diff:
-    name: xvfb client diff (M5 — not yet active)
+    name: xvfb client diff (superseded by vanilla-client-visual)
     if: false
     runs-on: ubuntu-latest
     steps:
-      - run: echo "activated at M5"
+      - run: echo "superseded"

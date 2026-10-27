@@ -288,7 +288,9 @@ jobs:
           # wire-level: the CMD component must ride the vanilla container
           # codec to the client (netty outbound object proof, same policy as
           # the block leg — Paper-side object, not a bot parse)
-          grep -Eq "net watch: container content -> cimbot .*cmd=" srv/boot.log \
+          # MEASURED 1a1a5ce: addItem syncs via the SLOT packet (content
+          # packets appear on window resync) — watch both classes
+          grep -Eq "net watch: container (content|slot) -> cimbot .*cmd=" srv/boot.log \
             || fail "custom_model_data never rode the wire to the client"
           # pack content sanity: the override def + modded model rode the zip
           unzip -p srv/c-imagine/f2v/pack.zip assets/minecraft/items/paper.json \

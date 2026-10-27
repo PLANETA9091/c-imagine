@@ -196,9 +196,15 @@ public final class NetWatch {
                     // F2V 2.0 item leg: the wire fact that the visual item's
                     // custom_model_data component RIDES the vanilla container
                     // codec to the client (the pack dispatches on it).
+                    // MEASURED on 1a1a5ce: addItem syncs via the SLOT packet —
+                    // content packets appear on window resync; watch both.
                     plugin.getLogger().info(CimPlugin.LOG_PREFIX
                             + "net watch: container content -> " + player
                             + " (" + describeContainerContent(msg) + ")");
+                } else if (deep && cls.equals("ClientboundContainerSetSlotPacket")) {
+                    plugin.getLogger().info(CimPlugin.LOG_PREFIX
+                            + "net watch: container slot -> " + player
+                            + " (" + describeContainerSlot(msg) + ")");
                 }
             } catch (Throwable t) {
                 // the watcher must NEVER break the pipeline
@@ -228,10 +234,36 @@ public final class NetWatch {
     }
 
     /**
+     * Best-effort CMD summary for ONE NMS ItemStack: "item=<toString>",
+     * plus "cmd=<component>" when the item carries custom_model_data
+     * (DataComponents.CUSTOM_MODEL_DATA via ItemStack.get — mojang-mapped
+     * 26.3 surface). Returns "<no cmd>" when the item is empty or bare.
+     */
+    private static String describeItemCmd(Object item) {
+        try {
+            if (item == null) {
+                return "<empty>";
+            }
+            Object cmdType = Class.forName("net.minecraft.core.component.DataComponents")
+                    .getField("CUSTOM_MODEL_DATA").get(null);
+            Object cmd = null;
+            for (Method m : item.getClass().getMethods()) {
+                if (m.getName().equals("get") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInstance(cmdType)) {
+                    cmd = m.invoke(item, cmdType);
+                    break;
+                }
+            }
+            return String.valueOf(item) + (cmd == null ? "" : " cmd=" + cmd);
+        } catch (Throwable t) {
+            return "<unavailable: " + t.getClass().getSimpleName() + ">";
+        }
+    }
+
+    /**
      * Best-effort slot/CMD summary for container content (reflection): slot
      * count +, for the first item carrying one, the custom_model_data
-     * component (DataComponents.CUSTOM_MODEL_DATA via ItemStack.get —
-     * mojang-mapped 26.3 surface).
+     * component.
      */
     private static String describeContainerContent(Object packet) {
         try {
@@ -248,28 +280,45 @@ public final class NetWatch {
             java.util.List<?> slots = (java.util.List<?>) items;
             int n = slots.size();
             StringBuilder sb = new StringBuilder(n + " slots");
-            Object cmdType = Class.forName("net.minecraft.core.component.DataComponents")
-                    .getField("CUSTOM_MODEL_DATA").get(null);
             for (int i = 0; i < n; i++) {
                 Object item = slots.get(i);
                 if (item == null) {
                     continue;
                 }
-                Object cmd = null;
-                for (Method m : item.getClass().getMethods()) {
-                    if (m.getName().equals("get") && m.getParameterCount() == 1
-                            && m.getParameterTypes()[0].isInstance(cmdType)) {
-                        cmd = m.invoke(item, cmdType);
-                        break;
-                    }
-                }
-                if (cmd != null) {
-                    sb.append(", slot").append(i).append('=')
-                      .append(String.valueOf(item)).append(" cmd=").append(cmd);
+                String desc = describeItemCmd(item);
+                if (desc.contains("cmd=")) {
+                    sb.append(", slot").append(i).append('=').append(desc);
                     break; // one wire-level CMD proof is enough per packet
                 }
             }
             return sb.toString();
+        } catch (Throwable t) {
+            return "<unavailable: " + t.getClass().getSimpleName() + ">";
+        }
+    }
+
+    /** Single-slot sync (the addItem path — MEASURED 1a1a5ce). */
+    private static String describeContainerSlot(Object packet) {
+        try {
+            Object item = null;
+            for (Method m : packet.getClass().getMethods()) {
+                if ((m.getName().equals("getItemStack") || m.getName().equals("getItem"))
+                        && m.getParameterCount() == 0) {
+                    item = m.invoke(packet);
+                    break;
+                }
+            }
+            if (item == null) {
+                item = connectionField(packet.getClass(), "itemStack").get(packet);
+            }
+            int slot = -1;
+            try {
+                Object s = connectionField(packet.getClass(), "slot").get(packet);
+                slot = ((Number) s).intValue();
+            } catch (Throwable ignored) {
+                // slot number is diagnostic, not required
+            }
+            return "slot" + slot + "=" + describeItemCmd(item);
         } catch (Throwable t) {
             return "<unavailable: " + t.getClass().getSimpleName() + ">";
         }
