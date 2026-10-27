@@ -73,6 +73,9 @@ jobs:
         run: |
           bash scripts/package-module.sh
 
+      - name: build cimbot (protocol bot)
+        run: cargo build --release --bin cimbot --quiet
+
       # --- server directory ------------------------------------------------
       - name: install CRUSSTY CLI and scaffold Paper 26.3
         run: |
@@ -131,16 +134,39 @@ jobs:
           PROPS
 
       # --- run --------------------------------------------------------------
-      - name: boot server (timeout 4 min)
+      # M4 wire contract runs INSIDE the boot window: the protocol bot waits
+      # for the Done marker, joins as "cimbot", the plugin's async net leg
+      # drives the full wire contract against it (projected oak_boat,
+      # post_effects apply+clear, drift block_update, remove_entities), and
+      # the bot exits as soon as every leg is observed. Server window then
+      # ends EARLY (12 s grace for the net-leg log lines to flush) — that is
+      # the CI-minutes saving; the hard cap stays 240 s for safety.
+      - name: boot server + protocol bot (cap 4 min)
         id: boot
         run: |
           set +e
+          # background observer: wait for Done, then run the bot
+          (
+            for i in $(seq 1 90); do
+              grep -q "Done (" srv/boot.log 2>/dev/null && break
+              sleep 2
+            done
+            ./target/release/cimbot --host 127.0.0.1 --port 25565 --name cimbot \
+              --timeout 150 --report cimbot-report.json > cimbot.log 2>&1
+            echo $? > cimbot-exit
+          ) &
+          BOT_PID=$!
           cd srv
-          # Done + full bridge smoke take ~100 s; the rest of the window is
-          # only safety margin. On SIGTERM the engine lock may linger — stop
-          # explicitly so the M3.3 restart step starts clean.
-          timeout 240 crussty run > boot.log 2>&1
-          code=$?
+          crussty run > boot.log 2>&1 &
+          SRV_PID=$!
+          # window: early end only when BOTH the bot contract finished AND
+          # the bridge smoke printed ALL OK (the assert below needs that
+          # marker); hard cap 240 s otherwise.
+          for i in $(seq 1 120); do
+            [ -f ../cimbot-exit ] && grep -q "bridge smoke: ALL OK" srv/boot.log 2>/dev/null && { sleep 12; break; }
+            kill -0 "$SRV_PID" 2>/dev/null || break
+            sleep 2
+          done
           timeout 90 crussty stop || true
           # wait for the actual server JVM to exit (crussty guard checks a
           # LIVE pid from -Donload.pidFile= — Paper shutdown takes seconds)
@@ -150,10 +176,50 @@ jobs:
           done
           pgrep -f onload.pidFile >/dev/null && { pkill -9 -f onload.pidFile || true; sleep 5; }
           cd ..
-          echo "exit=$code" >> "$GITHUB_OUTPUT"
+          wait $BOT_PID 2>/dev/null || true
+          echo "--- tail of cimbot.log ---"
+          tail -15 cimbot.log 2>/dev/null || true
           echo "--- tail of boot.log ---"
           tail -40 srv/boot.log || true
           true
+
+      - name: assert M4 wire contract (protocol bot)
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          [ -f cimbot-exit ] || fail "protocol bot never ran (cimbot-exit missing)"
+          code=$(cat cimbot-exit)
+          [ "$code" = "0" ] || { tail -40 cimbot.log || true; fail "cimbot exited $code (wire contract not observed)"; }
+          python3 - <<'PY'
+          import json
+          r = json.load(open('cimbot-report.json', encoding='utf-8'))
+          assert r.get('ok') is True, f"bot report not ok: {r.get('errors')}"
+          assert r.get('joined') is True, "bot did not reach play"
+          assert r.get('registries_parsed', 0) >= 25, \
+              f"registries parsed too low: {r.get('registries_parsed')}"
+          assert r.get('packets_read', 0) > 200, \
+              f"too few packets seen: {r.get('packets_read')}"
+          checks = {c['name']: c['passed'] for c in r.get('checks', [])}
+          for name in ('entity leg: add_entity', 'entity leg: set_entity_data',
+                       'entity leg: remove_entities', 'post_effects apply',
+                       'post_effects clear', 'block_update leg',
+                       'block drift state iron_chain[axis=y'):
+              assert checks.get(name) is True, \
+                  f"bot check not passed: {name} (checks={checks})"
+          print(f"cimbot wire contract: all {len(checks)} checks passed, "
+                f"{len(r.get('observations', []))} observations")
+          for o in r.get('observations', []):
+              print(f"  observed: {o['kind']} {o['detail']}")
+          PY
+          # server-side net-leg markers (the driver side of the contract)
+          grep -q "f2v net: bot joined name=cimbot" srv/boot.log \
+            || fail "server net leg never saw the bot join"
+          grep -q "f2v net: leg complete boat=" srv/boot.log \
+            || fail "server net leg did not complete"
+          grep -q "net watch attached: cimbot" srv/boot.log \
+            || fail "netty net-watch was not attached to the bot channel"
+          pc=$(grep -c "net watch: post_effects -> cimbot" srv/boot.log || true)
+          [ "${pc:-0}" -ge 2 ] || fail "postfx apply+clear not both seen server-side (count=$pc)"
+          echo "M4 wire contract: bot legs + server net leg + netty watch verified"
 
       # --- assertions --------------------------------------------------------
       - name: assert boot markers
@@ -301,6 +367,9 @@ jobs:
           name: integration-logs
           path: |
             srv/boot.log
+            cimbot.log
+            cimbot-report.json
+            cimbot-exit
             srv/crash-reports/
             srv/logs/
           if-no-files-found: ignore
