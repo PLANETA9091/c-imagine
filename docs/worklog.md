@@ -367,3 +367,24 @@ Stage Summary:
 - M4.1 (bot on live boot) pushed e58aac0; integration run in flight — expected outcome: either GREEN contract (M4 acceptance criterion 1+2 proven) or a precise red with bot artifacts to iterate on.
 - Next: CI validation loop -> on green, tick M4 bot leg in ROADMAP, then M4 net-hooks deepening (rewrite paths for entity metadata / chunk-batch, registry-driven tables) and the RSS profiling gate.
 - Lesson recorded: release-profile cargo builds can die in this sandbox — CI is the build farm now; local is for edit + fast checks only.
+
+---
+Task ID: 9
+Agent: main
+Task: M4 wire contract CI marathon — live table measured, five defects root-caused
+
+Work Log:
+- Owner policy update: NO local server runs (sandbox hang risk) — CI is the test farm; local is edit+light checks only. Honored: fmt/clippy/test (108 unit tests, dev profile) locally; everything heavier went to Actions.
+- Pushed unpushed post_effect schema doc (23db776), then wired the bot into integration.yml (e58aac0). Bot joins INSIDE the boot window via a background subshell that waits for the Done marker; early window close only when BOTH cimbot-exit AND "bridge smoke: ALL OK" exist (240 s hard cap); new assert step parses cimbot-report.json + server-side markers; bot artifacts uploaded.
+- Iteration 1 (e58aac0): bot kicked "You are not whitelisted" — Paper 26.3 defaults white-list=true now. Also found the window-loop path bug (grep'd srv/boot.log from cwd srv). Fixed both (f596b64). Cancelled a redundant integration run triggered by a scripts/ push (path filter includes scripts/**).
+- Iteration 2 (f596b64): bot joined, 6/7 green. add_entity oak_boat + post_effects [[],[creeper],[]] + remove_entities LIVE. set_entity_data missing, block_update missing, then overall timeout.
+- Wire-format pre-flight (javap -c, nested server-26.3.jar): player_position = VAR_INT + PositionMoveRotation(Vec3,Vec3,F32,F32) + Relative.SET_STREAM_CODEC (ByteBufCodecs.INT.map — plain i32 BE bitmask, NOT varint); add_entity = varint/UUID/registry-varint/3xf64/Vec3.LP_STREAM_CODEC/3xbyte/varint; LpVec3 = u8 lowest (0->ZERO) + u8 middle + u32 BE highest + (lowest&0b100)->varint; accept_teleportation = VAR_INT + 3xDOUBLE + 2xFLOAT. ALL MATCH cimbot codecs (protocol doc §9).
+- set_entity_data root cause: a fresh boat with default data sends NO metadata — the leg needs a REAL change. Added paperSetEntityGlowing (javap-verified Entity#setGlowing in paper-api 26.3.build.223) -> PASS next iteration.
+- NetWatch attach: PlayerJoinEvent never fired on the CI wire order (census stayed total=0) — attach moved into runNetLeg. Then iteration 5 exposed the 26.3 reflection path change: listener-level "channel" field GONE — Connection.channel is PUBLIC now (javap); attach walks ServerPlayer.connection (listener) -> .connection (Connection) -> .channel.
+- LIVE WIRE TABLE measured: cimbot censuses every frame-skipped play id into BotReport.unknown_ids; run-3 histogram = 31920 packets. Live-confirmed: add_entity=1, chunk_batch_finished=11, login=50, player_position=73, remove_entities=78, post_effects=83, set_entity_data=101 (all proven by successful parse+server echo, not by assumption). CI Paper build differs from the local bundle build (142/67 static init in b223/225/226) — build drift documented; static init of GameProtocols is NOT the wire order source of truth; IdDispatchCodec.build() = insertion order (bytecode-proven, no sort).
+- block_update: iterations 3-4 proved the double replay added ZERO packets on any id (census diff) — Paper 26.3 emits NO clientbound single block updates to late-joining bots. Leg moved to netty-level proof: NetWatch logs outbound ClientboundBlockUpdatePacket (pos + translated block key) and ClientboundSectionBlocksUpdatePacket (entries) at deep level; bot runs --no-expect-block; section parser (ids 84..=86, 26.3 SectionPos packing x<<42|y|z<<20, entries varLong state<<12|local) kept as an observation leg + 2 unit tests.
+- Also: census-visual-263.py restored INTO the repo (raw inventory JSON + registry-migration proof: 26.3 client code has ZERO post_effect path literals vs 1.21.1 six hardcoded chains); protocol doc §10 (live-vs-static table drift); worklog updated every step; every push within minutes of the work (owner directive).
+
+Stage Summary:
+- Five defects root-caused from CI logs alone (whitelist, window path, join-event, channel field, block-update policy). Bot contract: 7/9 live-verified, block leg re-proven at netty level, attach fixed for 26.3 — iteration 6 (dc3255d+f6a...) pending CI.
+- The unknown_ids census + the 7 live-confirmed ids are the foundation of the M4 translation tables (per common-packet-drift doc §5 policy).

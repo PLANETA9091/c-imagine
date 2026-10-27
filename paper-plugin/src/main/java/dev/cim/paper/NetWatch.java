@@ -99,8 +99,13 @@ public final class NetWatch {
             Object craft = player;
             Method getHandle = craft.getClass().getMethod("getHandle");
             Object serverPlayer = getHandle.invoke(craft);
-            Object listener = connectionField(serverPlayer.getClass(), "connection").get(serverPlayer);
-            Channel channel = (Channel) connectionField(listener.getClass(), "channel").get(listener);
+            Channel channel = channelOf(serverPlayer);
+            if (channel == null) {
+                plugin.getLogger().warning(CimPlugin.LOG_PREFIX
+                        + "net watch attach failed for " + player.getName()
+                        + ": channel not found");
+                return;
+            }
             if (channel.pipeline().get(HANDLER_NAME) != null) {
                 return;
             }
@@ -116,16 +121,27 @@ public final class NetWatch {
 
     public void detach(Player player) {
         try {
-            Method getHandle = player.getClass().getMethod("getHandle");
-            Object serverPlayer = getHandle.invoke(player);
-            Object listener = connectionField(serverPlayer.getClass(), "connection").get(serverPlayer);
-            Channel channel = (Channel) connectionField(listener.getClass(), "channel").get(listener);
-            if (channel.pipeline().get(HANDLER_NAME) != null) {
+            Object serverPlayer = player.getClass().getMethod("getHandle").invoke(player);
+            Channel channel = channelOf(serverPlayer);
+            if (channel != null && channel.pipeline().get(HANDLER_NAME) != null) {
                 channel.pipeline().remove(HANDLER_NAME);
             }
         } catch (Throwable ignored) {
             // player channel already torn down
         }
+    }
+
+    /**
+     * Resolve the player's netty channel (26.3 path, reflection):
+     * ServerPlayer.connection (ServerGamePacketListenerImpl)
+     * .connection (net.minecraft.network.Connection)
+     * .channel (PUBLIC io.netty.channel.Channel — Paper 26.3 field,
+     * verified by javap; the old listener-level "channel" field is gone).
+     */
+    private static Channel channelOf(Object serverPlayer) throws Exception {
+        Object listener = connectionField(serverPlayer.getClass(), "connection").get(serverPlayer);
+        Object conn = connectionField(listener.getClass(), "connection").get(listener);
+        return (Channel) connectionField(conn.getClass(), "channel").get(conn);
     }
 
     static Field connectionField(Class<?> cls, String name) throws NoSuchFieldException {
