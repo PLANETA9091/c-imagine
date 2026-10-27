@@ -180,7 +180,12 @@ def main() -> int:
                      .replace("${clientid}", "c-imagine")
                      .replace("${auth_xuid}", "0")
                      .replace("${user_properties}", "{}"))
+    # MEASURED (visual run 3): 26.3 renders through the new "renderpearl"
+    # stack — the Vulkan backend dies on CI runners (no ICD); the client
+    # ships an OpenGL backend switchable by launch argument
+    # (net.minecraft.client.PreferredGraphicsApi: default/vulkan/opengl).
     launch = (f"java {resolved_jvm} {vjson['mainClass']} {resolved_game} "
+              f"--graphicsBackend opengl "
               f"--quickPlayMultiplayer 127.0.0.1:25565")
     (out / "launch.txt").write_text(launch + "\n")
 
