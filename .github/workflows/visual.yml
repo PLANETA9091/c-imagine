@@ -143,21 +143,46 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           LAUNCH=$(cat visual-client/launch.txt)
+          # MEASURED (run 6 javap autopsy): quickPlayMultiplayer reads
+          # <gameDir>/servers.dat SYNCHRONOUSLY (ServerList.load -> get(ip)
+          # exact match) and takes the entry's pack policy. Without the file
+          # the client builds a fresh PROMPT entry and stalls forever on the
+          # PackConfirmScreen under xvfb. Pre-seed the bytecode-proven
+          # layout: NbtIo.read(Path) = UNCOMPRESSED NBT, key "acceptTextures"
+          # (Codec.BOOL optionalFieldOf) = true -> ENABLED -> ALLOWED ->
+          # ServerPackManager auto-accepts the config-phase pack push.
+          python3 scripts/visual/make_servers_dat.py visual-client/game
           # cwd must be the client dir (assets/game dir are resolved there);
           # the launch line carries ABSOLUTE classpaths (measured fix)
           ( cd visual-client && bash -c "$LAUNCH" > client.out 2>&1 ) &
           CLIENT_PID=$!
           # wait for the world join — client.out is the log4j stdout mirror
           # (measured: latest.log may lag/land elsewhere under software GL);
-          # llvmpipe shader compilation is SLOW — 12 min budget
+          # llvmpipe shader compilation is SLOW — 12 min budget.
+          # Markers (javap-proven): the SECOND "Reloading ResourceManager"
+          # line is the server pack being applied (startup reload is the
+          # first); "joined the game" is the [CHAT]-logged play-phase marker
+          # (ChatComponent logs [CHAT] <msg> at INFO to stdout).
           JOINED=0
           for i in $(seq 1 240); do
             if grep -q "joined the game" visual-client/client.out 2>/dev/null; then JOINED=1; break; fi
+            RELOADS=$(grep -c "Reloading ResourceManager" visual-client/client.out 2>/dev/null || true)
+            if [ "$RELOADS" -ge 2 ] && [ "$((i % 10))" = "0" ]; then
+              echo "[wait] pack reload seen (reloads=$RELOADS), waiting for play-phase chat marker..."
+            fi
+            # every ~90s: progress tail so a stall is diagnosable WITHOUT
+            # burning the whole 12-minute blind window again (run 6 lesson)
+            if [ "$((i % 30))" = "0" ]; then
+              echo "--- [wait $i] client.out progress tail ---"
+              tail -8 visual-client/client.out || true
+            fi
             sleep 3
           done
           if [ "$JOINED" != "1" ]; then
             echo "--- client.out tail ---"; tail -60 visual-client/client.out || true
             find visual-client -name "*.log" -o -name "latest.txt" | head
+            # stall-state screenshots: run 6 would have been solved by these
+            java -cp vtools Shot shots/stall-state.png || true
             exit 1
           fi
           sleep 30   # world render settles (software GL)
@@ -200,6 +225,7 @@ jobs:
             srv/boot.log
             visual-client/game/logs/latest.log
             visual-client/client.out
+            visual-client/game/servers.dat
           if-no-files-found: warn
 
   # Placeholder naming the future job so the intent is visible in the UI.
