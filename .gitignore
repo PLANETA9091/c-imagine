@@ -43,3 +43,4 @@ paper-plugin/target/
 # Excluded-crates keep their own target dirs out of git.
 third_party/*/target/
 artifacts-srvcheck/
+artifacts-loc/
