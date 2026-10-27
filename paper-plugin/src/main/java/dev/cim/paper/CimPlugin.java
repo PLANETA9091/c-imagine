@@ -119,6 +119,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /**
      * Rebuild into a scratch dir for sha1 verification WITHOUT touching the
      * stored zip (integrity-first: serve what the properties hash covers).
+     * Both manifests come from the REAL f2v dir (the scratch dir is empty —
+     * measured 19ad1e3: an equipment manifest read from the scratch dir
+     * silently drops the armor assets and breaks the sha1 match).
      */
     private dev.cim.f2v.F2vPack.Result rebuildForVerification(Path modsDir, Path base,
             Path manifest) throws IOException {
@@ -126,7 +129,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         try {
             List<dev.cim.f2v.F2vPack.VisualItem> rows = Files.isRegularFile(manifest)
                     ? dev.cim.f2v.F2vPack.readManifest(manifest) : List.of();
-            return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows);
+            List<dev.cim.f2v.F2vPack.EquipmentAsset> equipment =
+                    dev.cim.f2v.F2vPack.readEquipmentManifest(
+                            base.resolve("visual-equipment.tsv"));
+            return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows, equipment);
         } finally {
             // keep the tree small; the stored pack.zip is the served truth
             try {
