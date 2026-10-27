@@ -525,3 +525,20 @@ Work Log:
 
 Stage Summary:
 - M5.3 is one run away: join + pack + render are DONE (measured); the remaining gate is alive-viewer screenshots (peaceful) + the postfx resolution proof.
+
+---
+Task ID: 10-h
+Agent: main
+Task: M5.3 run 9 — PIXEL PROOFS LANDED (modded cube renders; cimsepia tints the frame); equipment M6 pull-forward; run 10 = full contract
+
+Work Log:
+- visual run 9 artifact measured (5 shots, all legs executed): shot 02 shows the CMD paper rendering AS THE MODDED IRON CUBE in the hotbar AND in hand (range_dispatch works on a stock client — the F2F item channel is PIXEL-PROVEN); shot 03 shows the ENTIRE FRAME tinted golden by the pack-contributed c-imagine:cimsepia chain (the atmosphere channel is PIXEL-PROVEN — the client resolves pack-contributed post_effect registry entries); shot 00 shows the alive peaceful viewer (a pig, no slimes).
+- The ONLY failure was the assert step's weak grep: latest.log lives in visual-client/logs/ (cwd-relative — measured run 7), not game/logs/. Replaced with the ROBUST marker: the SECOND "Reloading ResourceManager: vanilla, vanilla, server/..." line in client.out (the pack repository id rides the reload log — javap-proven earlier).
+- M6 pull-forward (armor channel): F2vPack emits equipment/<ns>/<name>.json (vanilla iron.json schema measured from the 26.3 client jar: layers.humanoid[].texture) and maps the LEGACY 1.21.1 armor texture locations (textures/models/armor/<name>_layer_N.png) to the 26.3 canonical locations (textures/entity/equipment/humanoid[_leggings]/<ns>/<name>.png). Manifest: scripts/f2v/visual-equipment.tsv. Bug found by selftest: the texture target lost the assets/<ns>/ prefix — fixed and selftested. Real build: 11 entries, 0 warnings.
+- Plugin: equipVisualArmor leg — leather_helmet with EquippableComponent.setModel(cimtest:test_armor) (javap-proven: the accessors live on ItemMeta — getEquippable/setEquippable; the codec fields slot(required)/asset_id(optional) proven in the client jar). Integration asserts server-side + pack content.
+- Visual harness: F5 third-person pixel leg via the new Key.java Robot tool (item replace armor.head -> shots 07/08 -> AE gate) — the armor layer is the ONLY delta between the two third-person shots.
+- integration@1dd099a SUCCESS: wand strings wire leg + M5.4 display leg green together.
+- run 10 dispatched (full contract: baseline, paper/CMD, postfx on/clear, brick/CMD-strings, thirdperson/armor).
+
+Stage Summary:
+- FIVE F2F channels are now pixel- or wire-proven on real stock 26.3 clients: items (range_dispatch), items (select), atmosphere (postfx chains), entities (display rigs), armor (equipment). Run 10 closes the M5 accept criterion.
