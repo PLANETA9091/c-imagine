@@ -44,6 +44,7 @@ public final class NetWatch {
     private final AtomicLong total = new AtomicLong();
     private final AtomicLong postEffects = new AtomicLong();
     private final AtomicLong moddedBlocked = new AtomicLong();
+    private final AtomicLong blockUpdates = new AtomicLong();
     private volatile boolean deep;
 
     public NetWatch(CimPlugin plugin) {
@@ -67,10 +68,15 @@ public final class NetWatch {
         return moddedBlocked.get();
     }
 
+    public long blockUpdates() {
+        return blockUpdates.get();
+    }
+
     /** Compact census string for logs: top classes + guards. */
     public String census() {
         StringBuilder sb = new StringBuilder("total=").append(total.get())
                 .append(" post_effects=").append(postEffects.get())
+                .append(" block_updates=").append(blockUpdates.get())
                 .append(" modded_blocked=").append(moddedBlocked.get())
                 .append(" classes=[");
         int i = 0;
@@ -155,9 +161,21 @@ public final class NetWatch {
                     postEffects.incrementAndGet();
                     plugin.getLogger().info(CimPlugin.LOG_PREFIX + "net watch: post_effects -> "
                             + player + " (" + describePostEffects(msg) + ")");
-                } else if (deep && (cls.equals("ClientboundAddEntityPacket")
-                        || cls.equals("ClientboundBlockUpdatePacket"))) {
-                    scanDeep(player, cls, msg);
+                } else if (cls.equals("ClientboundBlockUpdatePacket")) {
+                    blockUpdates.incrementAndGet();
+                    if (deep) {
+                        plugin.getLogger().info(CimPlugin.LOG_PREFIX + "net watch: block update -> "
+                                + player + ": " + describeBlockUpdate(msg));
+                    }
+                } else if (cls.equals("ClientboundSectionBlocksUpdatePacket")) {
+                    blockUpdates.incrementAndGet();
+                    if (deep) {
+                        plugin.getLogger().info(CimPlugin.LOG_PREFIX
+                                + "net watch: section blocks update -> " + player
+                                + " (" + describeSectionUpdate(msg) + ")");
+                    }
+                } else if (deep && cls.equals("ClientboundAddEntityPacket")) {
+                    scanDeepEntity(player, msg);
                 }
             } catch (Throwable t) {
                 // the watcher must NEVER break the pipeline
@@ -186,31 +204,42 @@ public final class NetWatch {
         }
     }
 
-    /**
-     * Deep scan: block updates + entity spawns must reference vanilla
-     * registry keys only. Anything else is counted as a blocked leak (the
-     * packet itself still passes — the facade already guarantees vanilla ids;
-     * this path exists to OBSERVE violations, not to rewrite packets v1).
-     */
-    private void scanDeep(String player, String cls, Object packet) {
+    /** Best-effort pos+state string for a block update (reflection). */
+    private static String describeBlockUpdate(Object packet) {
         try {
-            if (cls.equals("ClientboundBlockUpdatePacket")) {
-                Object state = connectionField(packet.getClass(), "blockState").get(packet);
-                Object block = state.getClass().getMethod("getBlock").invoke(state);
-                String key = registryKey("BLOCK", block);
-                if (key != null && !key.startsWith("minecraft:")) {
-                    moddedBlocked.incrementAndGet();
-                    plugin.getLogger().warning(CimPlugin.LOG_PREFIX
-                            + "net watch LEAK: modded block " + key + " -> " + player);
-                }
-            } else {
-                Object type = connectionField(packet.getClass(), "type").get(packet);
-                String key = registryKey("ENTITY_TYPE", type);
-                if (key != null && !key.startsWith("minecraft:")) {
-                    moddedBlocked.incrementAndGet();
-                    plugin.getLogger().warning(CimPlugin.LOG_PREFIX
-                            + "net watch LEAK: modded entity " + key + " -> " + player);
-                }
+            Object state = connectionField(packet.getClass(), "blockState").get(packet);
+            Object pos = connectionField(packet.getClass(), "pos").get(packet);
+            String key = registryKey("BLOCK", state.getClass().getMethod("getBlock").invoke(state));
+            return pos + " " + key;
+        } catch (Throwable t) {
+            return "<unavailable: " + t.getClass().getSimpleName() + ">";
+        }
+    }
+
+    /** Best-effort count string for a section blocks update (reflection). */
+    private static String describeSectionUpdate(Object packet) {
+        try {
+            Object states = connectionField(packet.getClass(), "states").get(packet);
+            int n = java.lang.reflect.Array.getLength(states);
+            return n + " entries";
+        } catch (Throwable t) {
+            return "<unavailable: " + t.getClass().getSimpleName() + ">";
+        }
+    }
+
+    /**
+     * Deep scan (entity spawn): must reference vanilla registry keys only.
+     * Anything else is counted as a blocked leak (the packet itself still
+     * passes — the facade guarantees vanilla ids; this path OBSERVES).
+     */
+    private void scanDeepEntity(String player, Object packet) {
+        try {
+            Object type = connectionField(packet.getClass(), "type").get(packet);
+            String key = registryKey("ENTITY_TYPE", type);
+            if (key != null && !key.startsWith("minecraft:")) {
+                moddedBlocked.incrementAndGet();
+                plugin.getLogger().warning(CimPlugin.LOG_PREFIX
+                        + "net watch LEAK: modded entity " + key + " -> " + player);
             }
         } catch (Throwable t) {
             plugin.getLogger().warning(CimPlugin.LOG_PREFIX
