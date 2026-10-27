@@ -129,35 +129,44 @@ jobs:
       - name: vanilla client joins under xvfb + visual contract
         run: |
           set -euo pipefail
+          # Java-only screenshot/diff tools (measured: runners ship IM7 with
+          # no `import`/`xwd`); Robot needs the X display
+          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java
           # Xvfb display; the client renders via software GL (llvmpipe)
           Xvfb :99 -screen 0 1280x720x24 &
           XVFB_PID=$!
           sleep 3
           export DISPLAY=:99
-          mkdir -p shots
           LAUNCH=$(cat visual-client/launch.txt)
+          # cwd must be the client dir (assets/game dir are resolved there);
+          # the launch line carries ABSOLUTE classpaths (measured fix)
           ( cd visual-client && bash -c "$LAUNCH" > client.out 2>&1 ) &
           CLIENT_PID=$!
-          # wait for the client process window + world join (client log)
+          # wait for the world join (client log); fail loud with the tail
+          JOINED=0
           for i in $(seq 1 150); do
-            grep -q "Connected to\|joined the game\|Loaded pack" \
-              visual-client/game/logs/latest.log 2>/dev/null && break
+            if grep -q "joined the game" visual-client/game/logs/latest.log 2>/dev/null; then JOINED=1; break; fi
             sleep 2
           done
+          if [ "$JOINED" != "1" ]; then
+            echo "--- client.out tail ---"; tail -40 visual-client/client.out || true
+            echo "--- latest.log tail ---"; tail -40 visual-client/game/logs/latest.log || true
+            exit 1
+          fi
           sleep 20   # world render settles
-          import -window root shots/00-baseline.png || xwd -root -out shots/00.xwd
+          java -cp vtools Shot shots/00-baseline.png
           # hotbar contract: empty -> plain paper -> CMD paper (the pack's
           # range_dispatch must make the LAST two render differently)
           echo "clear cimviewer" > srv/console.in
           sleep 2
           echo "give cimviewer paper 1" > srv/console.in
           sleep 4
-          import -window root shots/01-vanilla-paper.png
+          java -cp vtools Shot shots/01-vanilla-paper.png
           echo "clear cimviewer" > srv/console.in
           sleep 2
           echo "give cimviewer paper[minecraft:custom_model_data={floats:[1000.0]}] 1" > srv/console.in
           sleep 4
-          import -window root shots/02-cmd-paper.png
+          java -cp vtools Shot shots/02-cmd-paper.png
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -165,15 +174,15 @@ jobs:
           fail() { echo "ASSERTION FAILED: $1"; exit 1; }
           # the client actually applied the server pack (its log carries the
           # pack flow; sha1 mismatch or decline would surface here)
-          grep -qi "resource pack\|pack" visual-client/game/logs/latest.log \
+          grep -qi "pack" visual-client/game/logs/latest.log \
             || fail "no pack activity in the client log"
-          # pixel contract: CMD item vs plain paper differ, and each differs
-          # from the empty baseline (same screen region — full-frame AE > 0)
-          AE12=$(compare -metric AE shots/01-vanilla-paper.png shots/02-cmd-paper.png null: 2>&1 || true)
-          AE10=$(compare -metric AE shots/00-baseline.png shots/01-vanilla-paper.png null: 2>&1 || true)
+          # pixel contract (Java-only diff): CMD item vs plain paper differ,
+          # and the item differs from the empty baseline
+          AE12=$(java -cp vtools PixelDiff shots/01-vanilla-paper.png shots/02-cmd-paper.png)
+          AE10=$(java -cp vtools PixelDiff shots/00-baseline.png shots/01-vanilla-paper.png)
           echo "AE(vanilla,cmd)=$AE12 AE(baseline,vanilla)=$AE10"
-          [ "${AE12:-0}" != "0" ] || fail "CMD paper renders IDENTICAL to vanilla paper — the pack override did not apply"
-          [ "${AE10:-0}" != "0" ] || fail "the item never appeared in the hotbar"
+          [ "$AE10" != "0" ] || fail "the item never appeared in the hotbar"
+          [ "$AE12" != "0" ] || fail "CMD paper renders IDENTICAL to vanilla paper — the pack override did not apply"
           echo "M5.3 visual contract: pack applied + CMD item renders as the modded model"
       - uses: actions/upload-artifact@v4
         if: always()

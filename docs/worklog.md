@@ -456,3 +456,18 @@ Work Log:
 Stage Summary:
 - The full visual chain is now instrumented end-to-end: pack -> config push -> bot accept (wire) -> give -> SLOT packet carries CMD (wire) -> pack range_dispatch (pixel proof pending the xvfb run).
 - Next: integration green -> dispatch visual.yml once -> fix harness first-run issues -> M5.3 done + registry_names census answers the postfx delivery fork.
+
+---
+Task ID: 10-d
+Agent: main
+Task: M5.3 xvfb harness — first two dispatches diagnosed (classpath cwd bug, missing X tools), fixes pushed
+
+Work Log:
+- visual run 1 (a4cd7ad): "Unable to access jarfile launcher.jar" — crussty init downloads Paper LAZILY on `run`; a bare job must fetch the paperclip jar directly. Fixed: fill API v3 (builds/latest -> downloads["server:default"].url, measured build 226 STABLE).
+- visual run 2 (7b16b10): server booted (boot step green); the client never started — client.out: "ClassNotFoundException: net.minecraft.client.main.Main". ROOT CAUSE measured: fetch-visual-client resolved paths RELATIVE ("visual-client/...") while the client runs with cwd=visual-client — the classpath pointed inside itself. FIX: pathlib .resolve() — the whole launch line is absolute.
+- Second blocker in the same run: `import`/`xwd` command not found (ubuntu-latest ships IM7 without the legacy X tools). FIX: Java-only harness tools (scripts/visual/Shot.java — Robot screenshot; PixelDiff.java — pure-count pixel diff), compiled in-job, zero external deps.
+- Also: the join-wait loop now fails LOUD with client.out + latest.log tails (the silent 150x2s drain cost 5 minutes of the first run).
+- Live registry-name census (from integration@1383a66 artifacts, 32 streamed): post_effect NOT synced (nor item_definition/model/texture/equipment) — pack-contributed chains + server-requested ids is the ONLY delivery; documented in f2v2-pack-synthesis-26-3.md with the full measured list (incl. new 26.3 families: sulfur_cube_archetype, block_transformer, zombie_nautilus_variant, test_environment/test_instance).
+
+Stage Summary:
+- Harness iteration 3 dispatched-ready; expected: client boots, joins, downloads the pack, three screenshots, pixel contract asserts.

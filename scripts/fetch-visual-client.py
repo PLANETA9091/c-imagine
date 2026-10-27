@@ -71,7 +71,9 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    out = pathlib.Path(args.out)
+    # ABSOLUTE paths everywhere: the launch line must survive any cwd
+    # (measured: relative classpath + cd visual-client => ClassNotFound)
+    out = pathlib.Path(args.out).resolve()
     manifest = json.loads(http_get(MANIFEST))
     entry = next((v for v in manifest["versions"] if v["id"] == args.version), None)
     if entry is None:
