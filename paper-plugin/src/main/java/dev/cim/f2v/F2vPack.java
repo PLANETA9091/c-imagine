@@ -280,13 +280,19 @@ public final class F2vPack {
         String ns = asset.assetId().substring(0, colon);
         String name = asset.assetId().substring(colon + 1);
         int added = 0;
+        // MEASURED (EquipmentClientInfo$Layer bootstrap): the client resolves
+        // the layer texture id by KEEPING ITS NAMESPACE and rewriting the
+        // path to "textures/entity/equipment/<layer-dir>/<path>.png" —
+        // "cimtest:test_armor" lands at
+        // assets/cimtest/textures/entity/equipment/humanoid/test_armor.png
+        // (NO namespace subdirectory inside the texture tree).
         added += copyEquipmentTexture(jars, ns, asset.legacyLayer1(),
                 "assets/" + ns + "/textures/entity/equipment/humanoid/"
-                        + ns + "/" + name + ".png", entries, warnings);
+                        + name + ".png", entries, warnings);
         if (asset.legacyLayer2() != null) {
             added += copyEquipmentTexture(jars, ns, asset.legacyLayer2(),
                     "assets/" + ns + "/textures/entity/equipment/humanoid_leggings/"
-                            + ns + "/" + name + ".png", entries, warnings);
+                            + name + ".png", entries, warnings);
         }
         if (added == 0) {
             warnings.add("no armor textures found for " + asset.assetId()
@@ -884,11 +890,11 @@ public final class F2vPack {
             expect(failures, equipJson.contains("\"texture\": \"fakemod:shiny\""),
                     "equipment json texture ref");
             expect(failures, entries.containsKey(
-                    "assets/fakemod/textures/entity/equipment/humanoid/fakemod/shiny.png"),
-                    "layer_1 mapped to humanoid location");
+                    "assets/fakemod/textures/entity/equipment/humanoid/shiny.png"),
+                    "layer_1 mapped to humanoid location (path-only formula)");
             expect(failures, entries.containsKey(
-                    "assets/fakemod/textures/entity/equipment/humanoid_leggings/fakemod/shiny.png"),
-                    "layer_2 mapped to humanoid_leggings location");
+                    "assets/fakemod/textures/entity/equipment/humanoid_leggings/shiny.png"),
+                    "layer_2 mapped to humanoid_leggings location (path-only formula)");
             // the modded post-effect chain rides every non-empty pack
             String chain = str(entries, "assets/c-imagine/post_effect/cimsepia.json");
             expect(failures, chain.contains("\"minecraft:post/color_convolve\""),
