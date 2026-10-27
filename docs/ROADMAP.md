@@ -130,16 +130,32 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
 - `cim-visual-harness`: headless vanilla client under xvfb in CI, screenshot capture.
 - Comparison pipeline: NeoForge 1.21.1 render (ground truth) vs c-imagine view —
   pixel-diff report artifact, threshold gate; per-mod visual contracts from the modpack.
-- **F2V 2.0 visual direction (owner vision, deferred until reached)**: modded
+- [x] **M5.2 item visual parity v1 (pulled forward from M6, 2026-10-27)**: the
+      stock-client rendering channel — `dev.cim.f2v.F2vPack` builds a 26.3
+      resource pack from mod-jar assets (measured surface:
+      `f2v2-pack-synthesis-26-3.md`): `items/<host>.json` range_dispatch over the
+      free `custom_model_data` hook (pack format 97.1 from the client's own
+      version.json), modded model graphs + auto-atlased textures copied at
+      original paths, deterministic zip (sha1 asserted stable by CI and by the
+      plugin's boot-time rebuild). Delivery rides the CONFIG-phase
+      `resource_pack_push` (id 9) via server.properties + loopback `PackHttp`;
+      cimbot walks the real vanilla accept state machine (ACCEPTED →
+      SUCCESSFULLY_LOADED, ServerboundResourcePackPacket ordinals measured); the
+      give leg hands out the host item + CustomModelDataComponent (javap-verified
+      paper-api 26.3 surface) and verifies the inventory. integration.yml asserts
+      built + deterministic + served + accepted + loaded + inventory-verified.
+- **F2V 2.0 visual direction (owner vision, partially reached — M5.2 done)**: modded
   content rendered on vanilla 26.3 clients via the measured 26.3 surface —
-  post-effect chains requested server-side (`ClientboundPostEffectsPacket`) for
-  atmosphere/overlays, ItemsAdder/Oraxen-style item rendering through the
-  registry-based `items/` definitions (`range_dispatch`/`select` on free
-  `custom_model_data`), `equipment/` assets for armor, palette-driven recolors.
-  Original F2V (jefthebuilder/F2V, 1.21.1-era, read-only reference) mapped to
-  legacy `models/item` overrides — the 26.3 registry surface is strictly cleaner.
+  post-effect chains requested server-side (`ClientboundPostEffectsPacket`, M4
+  bot leg proven) for atmosphere/overlays, ItemsAdder/Oraxen-style item rendering
+  through the registry-based `items/` definitions (`range_dispatch`/`select` on free
+  `custom_model_data`) — **v1 implemented (M5.2)**, `equipment/` assets for armor,
+  palette-driven recolors still M6. Original F2V (jefthebuilder/F2V, 1.21.1-era,
+  read-only reference) mapped to legacy `models/item` overrides — the 26.3
+  registry surface is strictly cleaner.
 
-**Accept:** visual.yml uploads diff report; cimtest block+entity within threshold.
+**Accept:** visual.yml uploads diff report; cimtest block+entity within threshold
+(harness — pending); M5.2 wire/server contract asserted green in integration.yml.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 

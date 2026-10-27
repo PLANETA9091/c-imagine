@@ -394,3 +394,31 @@ Stage Summary (Task 9 final):
 - Final bot report: ok=true, joined, 1995 packets, checks: registries=32, entity table, joined play, add_entity, set_entity_data, remove_entities, postfx apply+clear, block_update leg (server-proven). Server census: total=1808, post_effects=3, block_updates=4 (air->iron_chain x2 outbound at netty level), modded_blocked=0.
 - Translation-layer inputs pinned: live wire table (7 ids proven), drift policy (identity 11+5, drop-with-log 3), postfx wire codec validated both directions.
 - Next (M4 continuation): net hooks DEEPENING — rewrite paths (entity metadata serializers 767->777, chunk-batch section states, postfx emulation toward a 767 client), RSS profiling gate (dispatch-only), then M5 visual harness.
+
+---
+Task ID: 10
+Agent: main
+Task: M5.2 — F2V 2.0 item visual parity v1: pack synthesis + config-phase pack contract + visual item leg (owner directive: a stock vanilla client must render modded content IDENTICALLY to a modded client)
+
+Work Log:
+- Deep pre-measurement (all from real artifacts, zero guesses):
+  * client-26.3.jar version.json: pack_version resource_major=97/minor=1 (confirms the ROADMAP pin), protocol 777, world_version 5023, java 25.
+  * pack.mcmeta 26.3 schema measured from the client's embedded datapacks: "min_format"/"max_format" (int or [major,minor] via PackFormat compactListCodec); legacy "pack_format" tolerated (DFU ignores unknown keys). Emitted shape: pack_format 97 + min/max_format [97,1].
+  * items/ def schema measured from vanilla bow/compass defs: range_dispatch entries[].threshold + model nodes + fallback. custom_model_data referenced by ZERO vanilla defs (re-grepped over extracted assets) — the hook is free.
+  * numeric.CustomModelDataProperty bytecode: optional "index" (NON_NEGATIVE_INT, default 0), reads DataComponents.CUSTOM_MODEL_DATA (first float). select variant exposes the same index.
+  * atlases/items.json: directory source "item" scans ALL namespaces -> assets/<ns>/textures/item|block/** auto-atlased; NO atlas merge needed for v1.
+  * paper-api 26.3.build.226-stable javap: ItemMeta#getCustomModelDataComponent/setCustomModelDataComponent + CustomModelDataComponent.setFloats (full 26.3 component), ItemStack#editMeta, Player#setResourcePack family, PlayerResourcePackStatusEvent$Status (ACCEPTED/SUCCESSFULY_LOADED present).
+  * DESIGN DECISION (play-phase id question sidestepped): the vanilla pack push rides the CONFIG phase (resource_pack_push = config clientbound id 9, measured) via server.properties resource-pack/resource-pack-sha1 -> bot needs NO play-phase id; plugin dynamic push deferred to M5.3.
+- Implemented F2V pipeline v1 (paper-plugin):
+  * dev.cim.f2v.F2vPack — manifest-driven pack builder: model graph copy at original paths (modded parents recursed, vanilla stop), texture copy for modded ns (item|block dirs only; outside -> warning + skip, selftest CAUGHT this bug: copy-without-atlas shipped dead bytes), items/<host>.json range_dispatch with vanilla fallback, pack.mcmeta 97.1, deterministic zip (sorted entries + DOS-epoch timestamps + level 9), sha1 + build-report + resolved-manifest artifacts; --build and --selftest mains.
+  * dev.cim.f2v.PackHttp — loopback JDK httpserver serving a FIXED payload snapshot at /cim-f2v-pack.zip (integrity-first: the served bytes are the sha1 the properties cover).
+  * CimPlugin: f2vInit() on enable (reuse pre-boot build + rebuild-verify; graceful degrade on failure), PlayerResourcePackStatusEvent logging, runNetLeg leg 5 = giveVisualItem("cimbot", "cimtest:test_block") — host item + CustomModelDataComponent floats via callSync (main-thread rule), inventory-verified marker.
+- cimbot (cim-proto): config resource_pack_push now ACCEPTS (en_resource_pack_action: uuid + varint action; accepted=3 then successfully_loaded=0 — the vanilla-client walk; ordinals measured into ids.rs), report check "resource pack accepted (F2V)"; declined remains via the shared encoder; en_resource_pack_declined removed (dead code). 17/17 cim-proto tests.
+- CI wiring: integration.yml pre-boot step (build pack BEFORE boot — the config-phase push requires the final sha1 at JVM start; determinism contract = second build diff), server.properties += resource-pack/resource-pack-sha1 (fixed loopback port 25580), new "assert F2V visual pipeline (M5.2)" step (built/integrity/serving/ACCEPTED/SUCCESSFULY_LOADED/inventory-verified + zip content greps); ci.yml paper-plugin job gained the selftest step.
+- Local light checks (per owner policy — no server runs): mvn package OK (JDK 25, build 226), F2vPack --selftest ALL OK, real-cimtest build = 4 zip entries/0 warnings/sha1 stable across builds (18f6bb41...), cargo fmt/clippy clean, workspace tests 111/0.
+- Docs: runtime-analysis/f2v2-pack-synthesis-26-3.md (all measurements + scope boundaries), README index, ROADMAP M5.2 tick (v1 done; equipment/palettes/OBJ/postfx-chains stay M6; xvfb screenshot harness stays the M5 accept remainder).
+
+Stage Summary:
+- The stock-client visual channel is now measurable end-to-end: pack built deterministically from mod jars -> config-phase push (vanilla mechanism) -> bot walks the real accept state machine -> host item + CMD rides the vanilla container codec -> pack range_dispatch turns CMD into the modded model on any vanilla 26.3 client.
+- Postfx (M4 leg) + item CMD (M5.2) = the two measured vanilla channels the F2F vision rides; both proven on the live line once CI goes green.
+- Next: CI validation -> M5.3 (play-phase push id via census, xvfb real-client screenshot harness for pixel ground truth, postfx chain contributions from packs), then M6 broadening (equipment, palettes, OBJ, block world visuals).

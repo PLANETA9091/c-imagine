@@ -40,6 +40,10 @@ Local clones used for this analysis live in the agent workspace (`workspace/`):
 7. [`common-packet-drift-767-777.md`](common-packet-drift-767-777.md) — the common
    packet family 767 ↔ 777 (bytecode-proven tables) incl. the wire format of
    `ClientboundPostEffectsPacket`; the M4 translation policy rows.
+8. [`f2v2-pack-synthesis-26-3.md`](f2v2-pack-synthesis-26-3.md) — the M5.2 pack
+   synthesis surface: pack.mcmeta 97.1 schema, `items/` range_dispatch +
+   `custom_model_data` property bytecode, atlas auto-inclusion, config-phase
+   delivery path, determinism contract, v1 scope boundaries.
 
 ## Headline facts (TL;DR)
 

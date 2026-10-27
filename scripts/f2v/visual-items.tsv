@@ -1,0 +1,14 @@
+# c-imagine F2V 2.0 visual item manifest (v1, measured surface)
+#
+# Format (TSV): modded_item_id <TAB> host_vanilla_item <TAB> [custom_model_data float]
+#   - host must be a SIMPLE vanilla item (its 26.3 items/ def is a plain
+#     minecraft:model ref) — the generated pack wraps the host def in a
+#     range_dispatch with the vanilla look preserved as the fallback branch.
+#   - cmd blank => auto-assigned 1000 + index in sorted-id order.
+#     Auto-assignment is STABLE (sorted ids) across rebuilds.
+#   - only rows listed here enter the pack (manifest-driven, no auto sweep —
+#     real mod jars carry JEI-scale asset trees).
+#
+# The pack builder consumes this file (F2vPack --build) and the Paper plugin
+# reads the resolved rows back for the give-visual-item leg.
+cimtest:test_block	minecraft:paper

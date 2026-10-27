@@ -435,10 +435,13 @@ pub fn en_select_known_packs_empty() -> Vec<u8> {
     w.into_vec()
 }
 
-pub fn en_resource_pack_declined(id: uuid::Uuid) -> Vec<u8> {
+/// `ServerboundResourcePackPacket`: uuid + varint action (777 measured).
+/// The F2V visual contract sends ACCEPTED then SUCCESSFULLY_LOADED — the
+/// same state machine walk a vanilla client with server packs enabled does.
+pub fn en_resource_pack_action(id: uuid::Uuid, action: i32) -> Vec<u8> {
     let mut w = WriteBuf::new();
     w.write_uuid(id);
-    w.write_varint(crate::bot::ids::RESOURCE_PACK_DECLINED);
+    w.write_varint(action);
     w.into_vec()
 }
 
@@ -550,5 +553,21 @@ mod tests {
         #[allow(clippy::identity_op, clippy::erasing_op)]
         let local_check = ((100 & 15) << 8) | ((2 & 15) << 4) | (0 & 15);
         assert_eq!(local_check, 1056);
+    }
+
+    /// Resource pack answer: uuid BE + varint action. The F2V visual contract
+    /// sends ACCEPTED(3) then SUCCESSFULLY_LOADED(0) — the vanilla-client walk.
+    #[test]
+    fn resource_pack_action_encoding() {
+        let id = uuid::Uuid::from_bytes([7u8; 16]);
+        let acc = en_resource_pack_action(id, crate::bot::ids::RESOURCE_PACK_ACCEPTED);
+        assert_eq!(&acc[..16], &[7u8; 16]);
+        assert_eq!(acc[16], 3);
+        assert_eq!(acc.len(), 17);
+        let ok = en_resource_pack_action(id, crate::bot::ids::RESOURCE_PACK_SUCCESSFULLY_LOADED);
+        assert_eq!(ok[16], 0);
+        // declined stays available through the shared encoder (M4-era stub)
+        let dec = en_resource_pack_action(id, crate::bot::ids::RESOURCE_PACK_DECLINED);
+        assert_eq!(dec[16], 1);
     }
 }

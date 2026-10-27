@@ -83,6 +83,9 @@ jobs:
       - name: build
         working-directory: paper-plugin
         run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+      - name: f2v pack builder selftest (M5.2)
+        working-directory: paper-plugin
+        run: java -cp target/cim-paper-plugin.jar dev.cim.f2v.F2vPack --selftest
       - uses: actions/upload-artifact@v4
         with:
           name: cim-paper-plugin

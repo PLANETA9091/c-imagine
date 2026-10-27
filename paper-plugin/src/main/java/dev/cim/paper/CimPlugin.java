@@ -1,8 +1,13 @@
 package dev.cim.paper;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
@@ -11,6 +16,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.components.CustomModelDataComponent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -43,6 +50,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private NetWatch netWatch;
     /** M4 net leg state (single fire per boot). */
     private volatile boolean netLegStarted;
+    /** F2V 2.0 visual pipeline state (M5.2). */
+    private F2vState f2v;
 
     private Logger log() {
         return getLogger();
@@ -54,6 +63,94 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
         getServer().getPluginManager().registerEvents(this, this);
         netWatch = new NetWatch(this);
+        f2vInit();
+    }
+
+    // ---- F2V 2.0 visual pipeline (M5.2) ---------------------------------------
+
+    /** Immutable F2V state resolved at enable time. */
+    private record F2vState(List<dev.cim.f2v.F2vPack.VisualItem> items, String sha1) {
+    }
+
+    /**
+     * Resolve the visual pack: reuse a pre-boot build when present
+     * (integrity-first — the sha1 in server.properties must keep matching
+     * what is served), otherwise build from {@code mods/} + the local
+     * manifest. Then serve it on loopback for vanilla clients. Non-fatal:
+     * visual parity degrades, the server still boots.
+     */
+    private void f2vInit() {
+        try {
+            Path base = Path.of(System.getProperty("user.dir"), "c-imagine", "f2v");
+            Path packZip = base.resolve("pack.zip");
+            Path modsDir = Path.of(System.getProperty("user.dir"), "mods");
+            Path manifest = base.resolve("visual-items.tsv");
+            dev.cim.f2v.F2vPack.Result result;
+            if (Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
+                String preSha1 = Files.readString(base.resolve("pack.sha1")).trim();
+                result = rebuildForVerification(modsDir, base, manifest);
+                boolean match = result.sha1().equals(preSha1);
+                log().info(LOG_PREFIX + "f2v pack: built (" + result.items().size()
+                        + " item(s), sha1=" + result.sha1() + ") integrity="
+                        + (match ? "ok (matches pre-boot build)" : "MISMATCH — serving stored zip"));
+            } else {
+                List<dev.cim.f2v.F2vPack.VisualItem> rows = Files.isRegularFile(manifest)
+                        ? dev.cim.f2v.F2vPack.readManifest(manifest) : List.of();
+                result = dev.cim.f2v.F2vPack.build(modsDir, base, rows);
+                log().info(LOG_PREFIX + "f2v pack: built (" + result.items().size()
+                        + " item(s), sha1=" + result.sha1() + ")");
+            }
+            if (!result.warnings().isEmpty()) {
+                for (String w : result.warnings()) {
+                    log().warning(LOG_PREFIX + "f2v pack: warn " + w);
+                }
+            }
+            f2v = new F2vState(result.items(), result.sha1());
+            int port = Integer.getInteger("cim.f2v.port", 25580);
+            dev.cim.f2v.PackHttp http =
+                    dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
+            log().info(LOG_PREFIX + "f2v pack: serving " + http.url()
+                    + " sha1=" + result.sha1());
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v pack: init FAILED (visual parity degraded): " + t);
+        }
+    }
+
+    /**
+     * Rebuild into a scratch dir for sha1 verification WITHOUT touching the
+     * stored zip (integrity-first: serve what the properties hash covers).
+     */
+    private dev.cim.f2v.F2vPack.Result rebuildForVerification(Path modsDir, Path base,
+            Path manifest) throws IOException {
+        Path scratch = base.resolve("verify");
+        try {
+            List<dev.cim.f2v.F2vPack.VisualItem> rows = Files.isRegularFile(manifest)
+                    ? dev.cim.f2v.F2vPack.readManifest(manifest) : List.of();
+            return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows);
+        } finally {
+            // keep the tree small; the stored pack.zip is the served truth
+            try {
+                Files.deleteIfExists(scratch.resolve("pack.zip"));
+                Files.deleteIfExists(scratch.resolve("pack.sha1"));
+                Files.deleteIfExists(scratch.resolve("build-report.txt"));
+                Files.deleteIfExists(scratch.resolve("visual-items.resolved.tsv"));
+                Files.deleteIfExists(scratch);
+            } catch (IOException ignored) {
+                // scratch cleanup is best-effort
+            }
+        }
+    }
+
+    /**
+     * Client-side pack lifecycle — the vanilla download/apply state machine
+     * reported back by every real client (and by cimbot on the wire). The
+     * SUCCESSFULY_LOADED marker is the CI assertion anchor for the F2V pack
+     * contract.
+     */
+    @EventHandler
+    public void onResourcePackStatus(org.bukkit.event.player.PlayerResourcePackStatusEvent event) {
+        log().info(LOG_PREFIX + "f2v pack: status " + event.getPlayer().getName()
+                + "=" + event.getStatus());
     }
 
     // ---- M4: player lifecycle -> net watch ----------------------------------
@@ -403,6 +500,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().info(LOG_PREFIX + "f2v net: boat removed=" + removed);
             Thread.sleep(1500);
 
+            // 5) F2V 2.0 visual item: give the manifest-mapped item with its
+            //    custom_model_data component — a vanilla 26.3 client with the
+            //    generated pack renders it as the modded item model
+            //    (items/<host>.json range_dispatch). Verified server-side:
+            //    the inventory holds the host item carrying the exact CMD.
+            giveVisualItem("cimbot", "cimtest:test_block");
+
             log().info(LOG_PREFIX + "f2v net: leg complete boat=" + boatUuid
                     + " postfx=apply+clear block=iron_chain[axis=y] census="
                     + netWatch.census());
@@ -410,6 +514,80 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             Thread.currentThread().interrupt();
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v net leg FAILED: " + t);
+        }
+    }
+
+    /**
+     * Give one manifest-mapped visual item to a player (M5.2 item leg).
+     *
+     * <p>The F2F v1 mechanism on the 26.3 surface: the item handed out is
+     * the HOST vanilla item carrying a {@code custom_model_data} component;
+     * the generated pack's {@code items/<host>.json} range_dispatch turns
+     * that CMD into the modded item model, so a stock client shows exactly
+     * what a modded client would. paper-api 26.3 surface javap-verified
+     * (ItemMeta#getCustomModelDataComponent + CustomModelDataComponent
+     * floats). Logs the inventory-verified marker the CI asserts.
+     */
+    private void giveVisualItem(String playerName, String moddedItemId) {
+        try {
+            if (f2v == null) {
+                log().warning(LOG_PREFIX + "f2v item: give skipped (pipeline not ready)");
+                return;
+            }
+            dev.cim.f2v.F2vPack.VisualItem row = null;
+            for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                if (r.moddedId().equals(moddedItemId)) {
+                    row = r;
+                    break;
+                }
+            }
+            if (row == null) {
+                log().warning(LOG_PREFIX + "f2v item: no manifest row for "
+                        + moddedItemId + " (give skipped)");
+                return;
+            }
+            final dev.cim.f2v.F2vPack.VisualItem visual = row;
+            Player p = Bukkit.getPlayerExact(playerName);
+            if (p == null) {
+                log().warning(LOG_PREFIX + "f2v item: player not online: " + playerName);
+                return;
+            }
+            // inventory ops are main-thread-only (the net leg runs async)
+            String bare = visual.hostItem().substring(visual.hostItem().indexOf(':') + 1);
+            String verifiedLine = callSync(() -> {
+                Material material = Material.matchMaterial(bare);
+                if (material == null) {
+                    return "unknown host material " + visual.hostItem();
+                }
+                ItemStack stack = new ItemStack(material);
+                stack.editMeta(meta -> {
+                    CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                    cmd.setFloats(List.of(visual.cmd()));
+                    meta.setCustomModelDataComponent(cmd);
+                });
+                var leftover = p.getInventory().addItem(stack);
+                // verify: the inventory must hold the host item with the exact CMD
+                boolean verified = false;
+                for (ItemStack inv : p.getInventory().getContents()) {
+                    if (inv == null || inv.getType() != material || !inv.hasItemMeta()) {
+                        continue;
+                    }
+                    var meta = inv.getItemMeta();
+                    if (meta.hasCustomModelDataComponent()
+                            && meta.getCustomModelDataComponent().getFloats()
+                                    .contains(visual.cmd())) {
+                        verified = true;
+                        break;
+                    }
+                }
+                return (verified ? "verified" : "NOT verified")
+                        + (leftover.isEmpty() ? "" : ", leftover=" + leftover.size());
+            });
+            log().info(LOG_PREFIX + "f2v item: gave " + moddedItemId + " as "
+                    + row.hostItem() + " cmd=" + row.cmd()
+                    + " (inventory " + verifiedLine + ")");
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v item: give FAILED: " + t);
         }
     }
 

@@ -79,8 +79,12 @@ pub const CS_RESOURCE_PACK: i32 = 6;
 pub const CS_SELECT_KNOWN_PACKS: i32 = 7;
 pub const CS_ACCEPT_CODE_OF_CONDUCT: i32 = 9;
 
-/// `ServerboundResourcePackPacket.Action` enum ordinals (measured).
+/// `ServerboundResourcePackPacket.Action` enum ordinals (measured):
+/// successfully_loaded=0, declined=1, failed_download=2, accepted=3,
+/// downloaded=4, invalid_url=5, failed_reload=6, discarded=7.
+pub const RESOURCE_PACK_SUCCESSFULLY_LOADED: i32 = 0;
 pub const RESOURCE_PACK_DECLINED: i32 = 1;
+pub const RESOURCE_PACK_ACCEPTED: i32 = 3;
 
 /// Entity data serializer ids, 26.3 (25 serializers, `<clinit>` order).
 /// 1.21.1 (767) had 21: same 0..=12, then COMPOUND_TAG(13), VILLAGER_DATA(14),

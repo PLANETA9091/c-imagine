@@ -134,6 +134,36 @@ jobs:
           max-players=5
           PROPS
 
+      # M5.2: build the F2V 2.0 visual pack BEFORE boot — the vanilla client
+      # pack push rides the CONFIG phase (server.properties), so pack.zip +
+      # its sha1 must exist (and be final) before the JVM starts. The builder
+      # is a plain main() on the plugin jar (no server classes needed).
+      # Determinism contract: a second build must be byte-identical — the
+      # plugin's boot-time rebuild verifies the same sha1 at runtime.
+      - name: build F2V visual pack (pre-boot)
+        run: |
+          set -euo pipefail
+          mkdir -p srv/c-imagine/f2v
+          cp scripts/f2v/visual-items.tsv srv/c-imagine/f2v/visual-items.tsv
+          java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+            --build srv/mods srv/c-imagine/f2v
+          cat srv/c-imagine/f2v/build-report.txt
+          SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
+          # second build in a scratch dir must produce the identical sha1
+          mkdir -p /tmp/f2v-again
+          java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+            --build srv/mods /tmp/f2v-again --manifest srv/c-imagine/f2v/visual-items.tsv
+          diff /tmp/f2v-again/pack.sha1 srv/c-imagine/f2v/pack.sha1 \
+            || { echo "F2V pack is NOT byte-deterministic"; exit 1; }
+          # the vanilla config-phase pack push (measured 26.3: resource_pack_push
+          # = config id 9) carries the URL + sha1 the client enforces on download
+          cat >> srv/server.properties <<PROPS
+          resource-pack=http://127.0.0.1:25580/cim-f2v-pack.zip
+          resource-pack-sha1=$SHA1
+          PROPS
+          cat srv/server.properties
+          unzip -l srv/c-imagine/f2v/pack.zip
+
       # --- run --------------------------------------------------------------
       # M4 wire contract runs INSIDE the boot window: the protocol bot waits
       # for the Done marker, joins as "cimbot", the plugin's async net leg
@@ -204,7 +234,7 @@ jobs:
           checks = {c['name']: c['passed'] for c in r.get('checks', [])}
           for name in ('entity leg: add_entity', 'entity leg: set_entity_data',
                        'entity leg: remove_entities', 'post_effects apply',
-                       'post_effects clear'):
+                       'post_effects clear', 'resource pack accepted (F2V)'):
               assert checks.get(name) is True, \
                   f"bot check not passed: {name} (checks={checks})"
           print(f"cimbot wire contract: all {len(checks)} checks passed, "
@@ -230,6 +260,33 @@ jobs:
           grep -q "minecraft:iron_chain" srv/boot.log \
             || fail "translated iron_chain state never reached the wire"
           echo "M4 wire contract: bot legs + server net leg + netty watch verified"
+
+      - name: assert F2V visual pipeline (M5.2)
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          # pack lifecycle server-side: built + integrity + loopback serving
+          grep -q "f2v pack: built (" srv/boot.log \
+            || fail "plugin did not build the F2V pack"
+          grep -q "integrity=ok (matches pre-boot build)" srv/boot.log \
+            || fail "boot-time rebuild sha1 does not match the pre-boot pack (determinism broken)"
+          grep -q "f2v pack: serving http://127.0.0.1:25580/cim-f2v-pack.zip" srv/boot.log \
+            || fail "pack HTTP server not serving on the properties URL"
+          # client-side state machine walked by the bot (real ServerboundResourcePackPacket)
+          grep -q "f2v pack: status cimbot=ACCEPTED" srv/boot.log \
+            || fail "bot never ACCEPTED the pack (config-phase push missing?)"
+          grep -q "f2v pack: status cimbot=SUCCESSFULY_LOADED" srv/boot.log \
+            || fail "bot never reported the pack as successfully loaded"
+          # the visual item leg: host item + custom_model_data component
+          grep -q "f2v item: gave cimtest:test_block as minecraft:paper cmd=1000.0 (inventory verified)" \
+            srv/boot.log || fail "visual item give/verify leg missing"
+          # pack content sanity: the override def + modded model rode the zip
+          unzip -p srv/c-imagine/f2v/pack.zip assets/minecraft/items/paper.json \
+            | grep -q "minecraft:custom_model_data" \
+            || fail "paper.json override missing from the pack"
+          unzip -p srv/c-imagine/f2v/pack.zip assets/cimtest/models/item/test_block.json \
+            | grep -q "cimtest:block/test_block" \
+            || fail "modded item model missing from the pack"
+          echo "F2V visual pipeline: pack built + deterministic + served + accepted + loaded + visual item verified"
 
       # --- assertions --------------------------------------------------------
       - name: assert boot markers

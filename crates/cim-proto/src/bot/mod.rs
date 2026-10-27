@@ -115,6 +115,8 @@ struct BotState {
     block_update_seen: bool,
     block_state_seen: String,
     boat_removed: bool,
+    /// config-phase resource pack push answered with accepted+loaded (F2V).
+    pack_accepted: bool,
     unknown_ids: std::collections::HashMap<i32, u64>,
 }
 
@@ -212,6 +214,7 @@ pub fn run(
         block_update_seen: false,
         block_state_seen: String::new(),
         boat_removed: false,
+        pack_accepted: false,
         unknown_ids: std::collections::HashMap::new(),
         exp,
     };
@@ -377,15 +380,30 @@ fn handle_configuration(
             send(conn, wire::CS_PONG, pk::en_pong(id))
         }
         wire::CC_RESOURCE_PACK_PUSH => {
-            // uuid (16 bytes) then decline
+            // uuid (16 bytes) + url + hash + forced + prompt — only the uuid
+            // is needed to answer. The F2V 2.0 visual contract REQUIRES the
+            // pack: a vanilla client with server packs enabled walks
+            // ACCEPTED -> SUCCESSFULLY_LOADED (decline was the M4-era stub).
             let mut c = crate::ReadCursor::new(&frame.payload);
             let id = c.read_uuid().map_err(|e| e.to_string())?;
-            eprintln!("[cimbot] config: resource pack push -> declined");
+            eprintln!("[cimbot] config: resource pack push -> accepted (F2V visual pack)");
             send(
                 conn,
                 wire::CS_RESOURCE_PACK,
-                pk::en_resource_pack_declined(id),
-            )
+                pk::en_resource_pack_action(id, wire::RESOURCE_PACK_ACCEPTED),
+            )?;
+            send(
+                conn,
+                wire::CS_RESOURCE_PACK,
+                pk::en_resource_pack_action(id, wire::RESOURCE_PACK_SUCCESSFULLY_LOADED),
+            )?;
+            st.pack_accepted = true;
+            st.check(
+                "resource pack accepted (F2V)",
+                st.pack_accepted,
+                "config-phase push -> accepted+successfully_loaded".into(),
+            );
+            Ok(())
         }
         wire::CC_CODE_OF_CONDUCT => {
             eprintln!("[cimbot] config: code of conduct -> accepted");
