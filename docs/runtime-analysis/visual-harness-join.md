@@ -86,3 +86,37 @@ servers.dat { servers: [ { name: "c-imagine", ip: "127.0.0.1:25565",
    every ~90 s (run 6 lesson: no more blind 12-minute windows);
 3. on stall: `Shot shots/stall-state.png` into the artifact before failing —
    the screenshot that would have diagnosed run 6 in one dispatch.
+
+## 5. Run 7: the stall was NOT the pack prompt — the onboarding screen
+
+The seeded servers.dat was correct but IRRELEVANT: the stall screenshot
+(`shots/stall-state.png`, artifact 12763736824) shows the client sitting on
+the **first-run AccessibilityOnboardingScreen** ("Welcome to Minecraft! …
+Continue") for the entire window. The connect never started; run 6's pack
+prompt hypothesis was a downstream event that never fired. The screenshot
+also shows a HEALTHY render pipeline (panorama rendered by llvmpipe) — GL
+backend, assets, and fonts all work.
+
+Bytecode decision (`net.minecraft.client.gui.Gui.addInitialScreens`, 26.3
+renamed from `net.minecraft.client.Gui`):
+
+```
+if (options.onboardAccessibility || SharedConstants.DEBUG_FORCE_ONBOARDING_SCREEN)
+    initialScreens.add(AccessibilityOnboardingScreen);
+// ... multiplayerBan / profile screens ...
+// later: GameLoadCookie.quickPlayData().isEnabled()
+//        -> QuickPlay.connect -> joinMultiplayerWorld -> servers.dat read
+```
+
+- The options.txt key is `onboardAccessibility` (Options FieldAccess,
+  javap-proven). Seed `game/options.txt` with `onboardAccessibility:false`.
+- Bonus measurement from the same screenshot: the window rendered at
+  **854x480 inside a 1280x720 X root** — the manifest's `--width/--height`
+  sit behind the `has_custom_resolution` rules-gate, which the string-only
+  game-arg join drops. The launch line now passes `--width 1280 --height 720`
+  explicitly (fetch-visual-client.py).
+
+Harness contract after run 7 (three bytecode-proven pre-conditions):
+1. `options.txt` = `onboardAccessibility:false` (skip first-run onboarding);
+2. `servers.dat` = acceptTextures:1 (auto-accept the config-phase pack push);
+3. explicit `--width/--height` (rules-gated args are not in the string join).

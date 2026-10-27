@@ -152,6 +152,14 @@ jobs:
           # (Codec.BOOL optionalFieldOf) = true -> ENABLED -> ALLOWED ->
           # ServerPackManager auto-accepts the config-phase pack push.
           python3 scripts/visual/make_servers_dat.py visual-client/game
+          # MEASURED (run 7 stall-state.png — the harness screenshot paid off):
+          # the client sat on the FIRST-RUN AccessibilityOnboardingScreen
+          # ("Welcome to Minecraft! ... Continue") for the whole 12-minute
+          # window — the connect never started, the pack prompt never fired.
+          # The skip flag is bytecode-proven: Options FieldAccess key
+          # "onboardAccessibility" (javap) — false => onboarding skipped.
+          mkdir -p visual-client/game
+          echo "onboardAccessibility:false" > visual-client/game/options.txt
           # cwd must be the client dir (assets/game dir are resolved there);
           # the launch line carries ABSOLUTE classpaths (measured fix)
           ( cd visual-client && bash -c "$LAUNCH" > client.out 2>&1 ) &

@@ -186,6 +186,11 @@ def main() -> int:
     # (net.minecraft.client.PreferredGraphicsApi: default/vulkan/opengl).
     launch = (f"java {resolved_jvm} {vjson['mainClass']} {resolved_game} "
               f"--graphicsBackend opengl "
+              # MEASURED (run 7): --width/--height sit behind the
+              # has_custom_resolution rules-gate in the manifest — the
+              # string-only join drops them and the window comes up at the
+              # 854x480 default. Pass them explicitly.
+              f"--width 1280 --height 720 "
               f"--quickPlayMultiplayer 127.0.0.1:25565")
     (out / "launch.txt").write_text(launch + "\n")
 
