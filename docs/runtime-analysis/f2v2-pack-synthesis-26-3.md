@@ -140,10 +140,20 @@ The modded model chain (e.g. `cimtest:item/test_block` → parent
   from vanilla programs (`post/color_convolve` + `post/blit`, ColorConfig 3×
   vec3 + BlitConfig, targets swap → minecraft:main, exactly the measured
   vanilla chain grammar). The net leg requests `c-imagine:cimsepia` over the
-  post-effects channel; whether the client resolves pack-contributed chains
-  locally (resource-pack path) or needs them synced via registry_data is
-  decided by the live registry-name census (cimbot `registry_names`, added
-  M5.3) — measured answer lands in the next doc revision.
+  post-effects channel (live-proven: the bot parsed the id at 1383a66).
+- **MEASURED ANSWER (live registry-name census, integration@1383a66, 32
+  dynamic registries)**: `post_effect` is NOT server-synced — the streamed
+  set is worldgen/biome, chat_type, trim_pattern/material, the 10+ variant
+  families (wolf/pig/frog/cat/cow/chicken + sound variants), painting,
+  sulfur_cube_archetype, dimension_type, damage_type, banner_pattern,
+  enchantment, jukebox_song, instrument, test_environment/test_instance,
+  dialog, world_clock, timeline, decorated_pot_pattern, block_transformer,
+  worldgen/block_state_provider. NEITHER post_effect NOR item_definition/
+  model/texture/equipment are streamed — the client resolves ALL asset
+  registries locally from the resource layer. CONSEQUENCE: the pack
+  contribution path (chain json in the pack + server requests the id) is
+  the ONLY correct delivery — and it is exactly what v1 implements. The
+  remaining apply-side proof is the xvfb client render.
 - WHY pre-boot: the properties hash must be final before the JVM starts, so
   the CI builds pack.zip BEFORE boot (deterministic zip → second build is
   byte-identical → the plugin's boot-time rebuild verifies the same sha1;
