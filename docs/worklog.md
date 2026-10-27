@@ -542,3 +542,20 @@ Work Log:
 
 Stage Summary:
 - FIVE F2F channels are now pixel- or wire-proven on real stock 26.3 clients: items (range_dispatch), items (select), atmosphere (postfx chains), entities (display rigs), armor (equipment). Run 10 closes the M5 accept criterion.
+
+---
+Task ID: 10-i
+Agent: main
+Task: M5.3 CLOSED — harness double-green (runs 10+11), all five F2F channels proven on real stock 26.3 clients; integration full-green
+
+Work Log:
+- visual run 10 (5b26084) SUCCESS: nine-shot pixel contract — AE(vanilla,cmd)=182043 (modded cube in hand+hotbar), AE(cmd,postfx-on)=842107 (frame-wide cimsepia), AE(plain-brick,cmd-brick)=177483 (select wand — the generated magenta-gem texture clearly visible), AE(thirdperson,armor)=92187 (armor rendered; missing-texture fallback — texture path bug present in that build, measured from the shot).
+- Equipment texture path formula MEASURED from the client bytecode (EquipmentClientInfo$Layer bootstrap: "textures/entity/equipment/\u0001/\u0001.png" — layer-dir + texture PATH ONLY, namespace KEPT, no ns subdirectory): fixed the pack emission (4f7d5f9), selftest updated.
+- integration determinism chain fixed twice (both measured, not guessed): (a) the CI second-build scratch dir needs BOTH manifests (94e1e28), (b) the plugin boot-time verification rebuild reads both manifests from the REAL f2v dir (19ad1e3 -> 9884285 fix).
+- visual run 11 (19ad1e3) SUCCESS: AE(vanilla,cmd)=179956, AE(cmd,postfx-on)=842107, AE(plain-brick,cmd-brick)=176035, AE(thirdperson,armor)=86719 — and the armor shot shows the ACTUAL generated checker texture (magenta/orange/white/dark) on the player's head, not the fallback.
+- integration 9884285 SUCCESS: 11 bot checks + 9 observations — the full wire contract (items float + select strings + equippable helmet + item_display rig + postfx apply/chain/clear + pack accept walk) green together with the pixel contract.
+- ROADMAP M5.3 ticked (harness GREEN, measured gates); the M6 remainder: block-in-world leg + NeoForge ground-truth DIFF.
+
+Stage Summary:
+- M5 CLOSED for the five channels the parity matrix pulled forward: items (range_dispatch), items (select), atmosphere (post_effect chains), entities (item_display rigs), armor (equipment). A stock vanilla 26.3 client renders cimtest content exactly as designed — measured, not assumed.
+- Session totals: 11 visual dispatches (runs 1-11), each red fixed by bytecode/artifact measurement; the harness is now a reusable CI instrument (Shot/PixelDiff/Key tools + bytecode-proven join pre-conditions).
