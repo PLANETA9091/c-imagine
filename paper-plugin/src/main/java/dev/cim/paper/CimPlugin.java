@@ -465,6 +465,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             giveVisualItem("cimbot", "cimtest:test_block");
             Thread.sleep(1500); // inventory sync reaches the bot
 
+            // 0.2) the SELECT row (v2 surface): CMD strings ride the same
+            //    vanilla component codec — proves the second ItemsAdder/
+            //    Oraxen dispatch family on the wire
+            giveVisualItem("cimbot", "cimtest:test_wand");
+            Thread.sleep(1500);
+
             // 0.5) M5.4 groundwork: the parity matrix "entities" channel —
             //    item_display rig carrying the modded model's CMD stack. The
             //    bot observes add_entity(minecraft:item_display) on the wire;
@@ -573,6 +579,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             // inventory ops are main-thread-only (the net leg runs async)
             String bare = visual.hostItem().substring(visual.hostItem().indexOf(':') + 1);
+            boolean selectRow = !visual.isFloatDispatch();
             String verifiedLine = callSync(() -> {
                 Material material = Material.matchMaterial(bare);
                 if (material == null) {
@@ -581,7 +588,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 ItemStack stack = new ItemStack(material);
                 stack.editMeta(meta -> {
                     CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
-                    cmd.setFloats(List.of(visual.cmd()));
+                    if (selectRow) {
+                        cmd.setStrings(List.of(visual.selectValue()));
+                    } else {
+                        cmd.setFloats(List.of(visual.cmd()));
+                    }
                     meta.setCustomModelDataComponent(cmd);
                 });
                 var leftover = p.getInventory().addItem(stack);
@@ -592,9 +603,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         continue;
                     }
                     var meta = inv.getItemMeta();
-                    if (meta.hasCustomModelDataComponent()
-                            && meta.getCustomModelDataComponent().getFloats()
-                                    .contains(visual.cmd())) {
+                    if (!meta.hasCustomModelDataComponent()) {
+                        continue;
+                    }
+                    if (selectRow) {
+                        if (meta.getCustomModelDataComponent().getStrings()
+                                .contains(visual.selectValue())) {
+                            verified = true;
+                            break;
+                        }
+                    } else if (meta.getCustomModelDataComponent().getFloats()
+                            .contains(visual.cmd())) {
                         verified = true;
                         break;
                     }
@@ -603,7 +622,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + (leftover.isEmpty() ? "" : ", leftover=" + leftover.size());
             });
             log().info(LOG_PREFIX + "f2v item: gave " + moddedItemId + " as "
-                    + row.hostItem() + " cmd=" + row.cmd()
+                    + row.hostItem() + " "
+                    + (selectRow ? "strings=[" + row.selectValue() + "]" : "cmd=" + row.cmd())
                     + " (inventory " + verifiedLine + ")");
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v item: give FAILED: " + t);

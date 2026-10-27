@@ -494,3 +494,20 @@ Work Log:
 Stage Summary:
 - Join path is bytecode-proven fixed: seeded entry => ENABLED => ALLOWED => ServerPackManager auto-accepts the config-phase push. Expected run 7: join -> pack reload -> [CHAT] marker -> 3-screenshot pixel contract.
 - The parity matrix is now the contract for "identical to the modded client": items LIVE, atmosphere wire-proven, entities next (M5.4), armor=M6 pull-forward, HUD/dialog=M6, pipeline port=M6.
+
+---
+Task ID: 10-f
+Agent: main
+Task: M5.3 run 7 autopsy (stall screenshot!) + M5.4 groundwork green + pack v2 select-dispatch
+
+Work Log:
+- visual run 7 (3514bac): seeded servers.dat correct but IRRELEVANT — the stall-state.png screenshot (the run 6 lesson shipped) showed the client sitting on the FIRST-RUN AccessibilityOnboardingScreen the whole window; connect never started. Bytecode decision proven in Gui.addInitialScreens (26.3 renamed from net.minecraft.client.Gui): onboardAccessibility || DEBUG_FORCE_ONBOARDING_SCREEN gates the screen; QuickPlay.connect runs after. Bonus measured from the same screenshot: window rendered 854x480 inside the 1280x720 root — manifest --width/--height sit behind the has_custom_resolution rules-gate and the string-only game-arg join drops them.
+- Fixes: options.txt seed (onboardAccessibility:false) + explicit --width 1280 --height 720 in fetch-visual-client.py. All documented in visual-harness-join.md §5 (three bytecode-proven pre-conditions).
+- run 8 dispatched (d4c33e8) with all three pre-conditions.
+- integration f137768 (M5.4 display leg): SUCCESS — item_display rig spawn (plugin, paper-api javap-verified) + cimbot --expect-extra-entity add_entity(extra) check + both-side asserts. The parity matrix "entities" channel is wire-proven.
+- Pack v2 SELECT dispatch (second ItemsAdder/Oraxen family): manifest 4th column select:<string> -> items/<host>.json select def (javap-proven select.CustomModelDataProperty: index optional default 0, when=STRING, valueCodec STRING) riding custom_model_data.strings; host grouping split by dispatch kind (mixed hosts warned, v2 keeps kinds apart); cimtest test_wand asset (16x16 generated PNG + handheld model); plugin give leg sets strings + verifies via getStrings; NetWatch describeItemCmd logs strings= for the wire proof; integration asserts both the give and the wire.
+- Local light checks: mvn package OK, F2vPack --selftest ALL OK (3-row fake jar incl. wand), real-cimtest build 8 entries 0 warnings sha1 90455c03... (brick.json select + paper.json range_dispatch + wand model/texture in pack), cargo fmt/clippy/test clean.
+
+Stage Summary:
+- The item surface now covers BOTH 26.3 dispatch families (floats + strings); the entity channel is on the wire contract; the harness join path is fully bytecode-proven (onboarding + pack accept + resolution).
+- Next: run 8 result (expect join + pack reload + [CHAT] + 3-screenshot pixel contract) -> postfx tint pixel leg + visual wand leg -> M5 close.

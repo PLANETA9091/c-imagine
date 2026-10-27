@@ -67,7 +67,12 @@ import java.util.zip.ZipOutputStream;
 public final class F2vPack {
 
     /** One manifest row: modded item id -> host vanilla item + CMD float. */
-    public record VisualItem(String moddedId, String hostItem, float cmd) {
+    public record VisualItem(String moddedId, String hostItem, float cmd,
+                             String selectValue) {
+        /** Float-dispatch row (range_dispatch on custom_model_data.floats). */
+        public boolean isFloatDispatch() {
+            return selectValue == null || selectValue.isBlank();
+        }
     }
 
     /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
@@ -129,9 +134,13 @@ public final class F2vPack {
     // ---- manifest ------------------------------------------------------------
 
     /**
-     * Read {@code visual-items.tsv}: {@code moddedId<TAB>host<TAB>cmd} with
-     * cmd blank/-1 for auto-assignment (1000 + index, sorted-id order).
-     * {@code #} comments and blank lines are ignored.
+     * Read {@code visual-items.tsv}: {@code moddedId<TAB>host<TAB>cmd[
+     * <TAB>select:value]} — cmd blank/-1 for auto-assignment (1000 + index,
+     * sorted-id order); an optional 4th column {@code select:<string>}
+     * switches the row to the 26.3 select-dispatch surface (javap-proven
+     * {@code select.CustomModelDataProperty}: index optional, when = STRING)
+     * riding {@code custom_model_data.strings} instead of floats. {@code #}
+     * comments and blank lines are ignored.
      */
     public static List<VisualItem> readManifest(Path tsv) throws IOException {
         List<VisualItem> rows = new ArrayList<>();
@@ -152,7 +161,12 @@ public final class F2vPack {
                     cmd = -1f;
                 }
             }
-            rows.add(new VisualItem(parts[0].trim(), parts[1].trim(), cmd));
+            String select = null;
+            if (parts.length >= 4 && !parts[3].isBlank()) {
+                String v = parts[3].trim();
+                select = v.startsWith("select:") ? v.substring("select:".length()) : v;
+            }
+            rows.add(new VisualItem(parts[0].trim(), parts[1].trim(), cmd, select));
         }
         rows.sort(Comparator.comparing(VisualItem::moddedId));
         return rows;
@@ -162,10 +176,14 @@ public final class F2vPack {
     public static void writeResolvedManifest(Path tsv, List<VisualItem> rows)
             throws IOException {
         StringBuilder sb = new StringBuilder("# resolved by F2vPack — final "
-                + "custom_model_data floats (do not edit; regenerate instead)\n");
+                + "custom_model_data floats / select strings (do not edit; regenerate instead)\n");
         for (VisualItem r : rows) {
             sb.append(r.moddedId()).append('\t').append(r.hostItem())
-              .append('\t').append(r.cmd()).append('\n');
+              .append('\t').append(r.cmd());
+            if (!r.isFloatDispatch()) {
+                sb.append("\tselect:").append(r.selectValue());
+            }
+            sb.append('\n');
         }
         Files.createDirectories(tsv.getParent());
         Files.writeString(tsv, sb.toString(), StandardCharsets.UTF_8);
@@ -178,7 +196,7 @@ public final class F2vPack {
         for (VisualItem r : rows) {
             float cmd = r.cmd() >= 0f ? r.cmd() : CMD_BASE + next;
             next++;
-            out.add(new VisualItem(r.moddedId(), r.hostItem(), cmd));
+            out.add(new VisualItem(r.moddedId(), r.hostItem(), cmd, r.selectValue()));
         }
         return out;
     }
@@ -203,20 +221,26 @@ public final class F2vPack {
                     MODDED_CHAIN_JSON.getBytes(StandardCharsets.UTF_8));
         }
 
-        // group rows by host (one items/ def per host, entries sorted by cmd)
+        // group rows by host, SPLIT by dispatch kind (one items/ def per host;
+        // a mixed host would need a composite select-over-range tree — v2
+        // keeps the kinds apart and warns)
         Map<String, List<VisualItem>> byHost = new TreeMap<>();
         for (VisualItem r : rows) {
-            byHost.computeIfAbsent(r.hostItem(), k -> new ArrayList<>()).add(r);
+            String key = r.hostItem() + "\t" + (r.isFloatDispatch() ? "float" : "select");
+            byHost.computeIfAbsent(key, k -> new ArrayList<>()).add(r);
         }
 
         List<Path> jars = listJars(modsDir);
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
-            String hostItem = host.getKey();
+            String[] keyParts = host.getKey().split("\t");
+            String hostItem = keyParts[0];
+            boolean floatKind = "float".equals(keyParts[1]);
             if (!hostItem.startsWith("minecraft:")) {
                 warnings.add("host " + hostItem + " is not vanilla (minecraft:) — skipped");
                 continue;
             }
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
+            List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
                 String found = resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings);
                 if (found == null) {
@@ -224,13 +248,25 @@ public final class F2vPack {
                             + " in any mod jar — row dropped");
                     continue;
                 }
-                entriesForHost.add(Map.entry(row.cmd(), found));
+                if (floatKind) {
+                    entriesForHost.add(Map.entry(row.cmd(), found));
+                } else {
+                    casesForHost.add(Map.entry(row.selectValue(), found));
+                }
             }
-            entriesForHost.sort(Map.Entry.comparingByKey());
-            if (!entriesForHost.isEmpty()) {
-                String hostPath = hostItem.substring("minecraft:".length());
-                entries.put("assets/minecraft/items/" + hostPath + ".json",
-                        itemDef(hostPath, entriesForHost).getBytes(StandardCharsets.UTF_8));
+            String hostPath = hostItem.substring("minecraft:".length());
+            if (floatKind) {
+                entriesForHost.sort(Map.Entry.comparingByKey());
+                if (!entriesForHost.isEmpty()) {
+                    entries.put("assets/minecraft/items/" + hostPath + ".json",
+                            itemDef(hostPath, entriesForHost).getBytes(StandardCharsets.UTF_8));
+                }
+            } else {
+                casesForHost.sort(Map.Entry.comparingByKey());
+                if (!casesForHost.isEmpty()) {
+                    entries.put("assets/minecraft/items/" + hostPath + ".json",
+                            selectDef(hostPath, casesForHost).getBytes(StandardCharsets.UTF_8));
+                }
             }
         }
 
@@ -410,6 +446,35 @@ public final class F2vPack {
         return sb.toString();
     }
 
+    /**
+     * One {@code items/<host>.json} SELECT definition: the 26.3
+     * select-dispatch surface (javap-proven
+     * {@code renderer.item.properties.select.CustomModelDataProperty}: the
+     * property reads {@code custom_model_data.strings} at {@code index},
+     * default 0; {@code when} is a plain STRING). The vanilla look stays the
+     * fallback branch, exactly like the range_dispatch variant.
+     */
+    static String selectDef(String hostPath, List<Map.Entry<String, String>> cases) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n  \"model\": {\n")
+          .append("    \"type\": \"minecraft:select\",\n")
+          .append("    \"property\": \"minecraft:custom_model_data\",\n")
+          .append("    \"index\": 0,\n")
+          .append("    \"cases\": [\n");
+        for (int i = 0; i < cases.size(); i++) {
+            Map.Entry<String, String> e = cases.get(i);
+            sb.append("      {\"when\": \"").append(e.getKey())
+              .append("\", \"model\": {\"type\": \"minecraft:model\", \"model\": \"")
+              .append(e.getValue()).append("\"}}");
+            sb.append(i + 1 < cases.size() ? ",\n" : "\n");
+        }
+        sb.append("    ],\n")
+          .append("    \"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/")
+          .append(hostPath).append("\"}\n")
+          .append("  }\n}\n");
+        return sb.toString();
+    }
+
     // ---- deterministic zip ------------------------------------------------------
 
     /** Deterministic zip: sorted entries, fixed timestamps, fixed level. */
@@ -563,6 +628,8 @@ public final class F2vPack {
             "{\"parent\": \"minecraft:item/handheld\", \"textures\": {\"layer0\": \"fakemod:item/parent_tex\"}}";
     private static final String MODEL_DEEP =
             "{\"parent\": \"minecraft:item/handheld\", \"textures\": {\"layer0\": \"fakemod:deep/custom_tex\"}}";
+    private static final String MODEL_WAND =
+            "{\"parent\": \"minecraft:item/handheld\", \"textures\": {\"layer0\": \"fakemod:item/wand_tex\"}}";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -579,6 +646,9 @@ public final class F2vPack {
                     MODEL_PARENT.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/item/deep_thing.json",
                     MODEL_DEEP.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/item/wand_thing.json",
+                    MODEL_WAND.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/item/wand_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/cool_sword_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/deep/custom_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/parent_tex.png", testPng());
@@ -589,7 +659,8 @@ public final class F2vPack {
             Files.createDirectories(out);
             Files.writeString(out.resolve("visual-items.tsv"),
                     "fakemod:cool_sword\tminecraft:paper\n"
-                    + "fakemod:deep_thing\tminecraft:paper\t2000.0\n",
+                    + "fakemod:deep_thing\tminecraft:paper\t2000.0\n"
+                    + "fakemod:wand_thing\tminecraft:brick\t\tselect:wand\n",
                     StandardCharsets.UTF_8);
 
             // -- build twice, must be byte-identical ------------------------------
@@ -598,8 +669,8 @@ public final class F2vPack {
             if (!r1.sha1().equals(r2.sha1())) {
                 failures.add("sha1 not deterministic: " + r1.sha1() + " vs " + r2.sha1());
             }
-            if (r1.items().size() != 2) {
-                failures.add("expected 2 resolved rows, got " + r1.items().size());
+            if (r1.items().size() != 3) {
+                failures.add("expected 3 resolved rows, got " + r1.items().size());
             }
             // auto cmd must be CMD_BASE for the first sorted row
             if (r1.items().get(0).cmd() != CMD_BASE
@@ -650,6 +721,26 @@ public final class F2vPack {
             // both rows resolve at the item/ location and reach the host def
             expect(failures, paper.contains("fakemod:item/deep_thing"),
                     "second row model ref present");
+            // SELECT dispatch (v2): the brick host def dispatches on
+            // custom_model_data STRINGS with the vanilla look as fallback
+            String brick = str(entries, "assets/minecraft/items/brick.json");
+            expect(failures, brick.contains("\"minecraft:select\""),
+                    "brick def uses select");
+            expect(failures, brick.contains("\"property\": \"minecraft:custom_model_data\""),
+                    "brick def dispatches on custom_model_data");
+            expect(failures, brick.contains("\"when\": \"wand\""),
+                    "brick def case when=wand");
+            expect(failures, brick.contains("\"index\": 0"),
+                    "brick def strings index 0");
+            expect(failures, brick.contains("fakemod:item/wand_thing"),
+                    "brick def references the modded wand model");
+            expect(failures, brick.contains(
+                    "\"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/brick\"}"),
+                    "brick def fallback keeps the vanilla look");
+            expect(failures, r1.items().stream()
+                    .filter(i -> i.moddedId().equals("fakemod:wand_thing"))
+                    .allMatch(i -> !i.isFloatDispatch() && "wand".equals(i.selectValue())),
+                    "wand row resolved as select:wand");
             // the modded post-effect chain rides every non-empty pack
             String chain = str(entries, "assets/c-imagine/post_effect/cimsepia.json");
             expect(failures, chain.contains("\"minecraft:post/color_convolve\""),

@@ -286,6 +286,13 @@ jobs:
           # the visual item leg: host item + custom_model_data component
           grep -q "f2v item: gave cimtest:test_block as minecraft:paper cmd=1000.0 (inventory verified)" \
             srv/boot.log || fail "visual item give/verify leg missing"
+          # v2 SELECT row: CMD STRINGS ride the same vanilla codec
+          # (brick host + when:wand select def — the second ItemsAdder/
+          # Oraxen dispatch family from the parity matrix)
+          grep -q "f2v item: gave cimtest:test_wand as minecraft:brick strings=\[wand\] (inventory verified)" \
+            srv/boot.log || fail "visual wand give/verify leg missing"
+          grep -Eq "net watch: container (content|slot) -> cimbot .*strings=\[wand\]" srv/boot.log \
+            || fail "custom_model_data strings never rode the wire to the client"
           # wire-level: the CMD component must ride the vanilla container
           # codec to the client (netty outbound object proof, same policy as
           # the block leg — Paper-side object, not a bot parse)

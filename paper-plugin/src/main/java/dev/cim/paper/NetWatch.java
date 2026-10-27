@@ -254,7 +254,20 @@ public final class NetWatch {
                     break;
                 }
             }
-            return String.valueOf(item) + (cmd == null ? "" : " cmd=" + cmd);
+            // both dispatch families are logged: floats (range_dispatch rows)
+            // and strings (select rows — the v2 wand contract greps strings=)
+            String extra = "";
+            if (cmd != null) {
+                try {
+                    Object strings = cmd.getClass().getMethod("strings").invoke(cmd);
+                    if (strings instanceof java.util.Collection<?> s && !s.isEmpty()) {
+                        extra += " strings=" + s;
+                    }
+                } catch (Throwable ignored) {
+                    // older shape: floats-only component
+                }
+            }
+            return String.valueOf(item) + (cmd == null ? "" : " cmd=" + cmd + extra);
         } catch (Throwable t) {
             return "<unavailable: " + t.getClass().getSimpleName() + ">";
         }
