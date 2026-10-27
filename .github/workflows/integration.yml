@@ -150,7 +150,10 @@ jobs:
           cat srv/c-imagine/f2v/build-report.txt
           SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
           # second build in a scratch dir must produce the identical sha1
+          # (the scratch dir gets BOTH manifests — the equipment manifest is
+          # read from the outDir by default, measured 94e1e28)
           mkdir -p /tmp/f2v-again
+          cp srv/c-imagine/f2v/visual-items.tsv srv/c-imagine/f2v/visual-equipment.tsv /tmp/f2v-again/
           java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
             --build srv/mods /tmp/f2v-again --manifest srv/c-imagine/f2v/visual-items.tsv
           diff /tmp/f2v-again/pack.sha1 srv/c-imagine/f2v/pack.sha1 \
