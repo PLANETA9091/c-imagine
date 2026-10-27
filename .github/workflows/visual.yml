@@ -98,6 +98,11 @@ jobs:
           cat > srv/server.properties <<PROPS
           online-mode=false
           white-list=false
+          # MEASURED (run 8): a superflat slime killed cimviewer between the
+          # baseline and the item shots — the death screen covered every
+          # later frame and the contract asserted on a corpse. Peaceful
+          # removes hostile spawns entirely.
+          difficulty=peaceful
           level-type=minecraft:flat
           level-seed=42
           view-distance=4
@@ -207,6 +212,18 @@ jobs:
           echo "give cimviewer paper[minecraft:custom_model_data={floats:[1000.0]}] 1" > srv/console.in
           sleep 4
           java -cp vtools Shot shots/02-cmd-paper.png
+          # postfx leg (parity matrix "atmosphere"): the pack-contributed
+          # c-imagine:cimsepia chain, requested via the /cim postfx surface,
+          # must tint the whole frame on the stock client — the M4 wire leg
+          # proved the packet; THIS shot proves the client resolves the
+          # pack-contributed chain and renders it (failedPostEffects would
+          # leave the frame untouched and the assert below fails)
+          echo "cim postfx cimviewer c-imagine:cimsepia" > srv/console.in
+          sleep 5   # chain resolve + program compile under llvmpipe
+          java -cp vtools Shot shots/03-postfx-on.png
+          echo "cim postfx cimviewer clear" > srv/console.in
+          sleep 3
+          java -cp vtools Shot shots/04-postfx-clear.png
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -223,7 +240,12 @@ jobs:
           echo "AE(vanilla,cmd)=$AE12 AE(baseline,vanilla)=$AE10"
           [ "$AE10" != "0" ] || fail "the item never appeared in the hotbar"
           [ "$AE12" != "0" ] || fail "CMD paper renders IDENTICAL to vanilla paper — the pack override did not apply"
-          echo "M5.3 visual contract: pack applied + CMD item renders as the modded model"
+          # atmosphere channel: the modded chain must visibly tint the frame
+          # (same CMD item in both shots — only the postfx differs)
+          AEfx=$(java -cp vtools PixelDiff shots/02-cmd-paper.png shots/03-postfx-on.png)
+          echo "AE(cmd,postfx-on)=$AEfx"
+          [ "$AEfx" -gt "5000" ] || fail "cimsepia tint not visible (AE=$AEfx) — the client did not resolve the pack-contributed chain"
+          echo "M5.3 visual contract: pack applied + CMD item renders as the modded model + modded postfx chain tinted the frame"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

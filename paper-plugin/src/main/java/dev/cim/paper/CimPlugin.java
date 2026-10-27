@@ -724,10 +724,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        // /cim postfx <player> <id[,id...]|clear> — the M5 harness surface
+        // for the post-effect channel (parity matrix "atmosphere"): request
+        // pack-contributed chains for a viewer, or clear them all.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("postfx")) {
+            String player = args[1];
+            java.util.List<String> ids;
+            if (args[2].equalsIgnoreCase("clear")) {
+                ids = java.util.List.of();
+            } else {
+                ids = java.util.Arrays.asList(args[2].split(","));
+            }
+            String result = sendPostEffects(player, ids);
+            sender.sendMessage(LOG_PREFIX + "postfx " + player + " <- " + args[2]
+                    + " -> " + result);
+            return true;
+        }
         sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.3)");
         sender.sendMessage(LOG_PREFIX + "kernel: Paper 26.3 | layer: mini NeoForge 1.21.1");
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
         sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));
+        sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }
