@@ -224,6 +224,20 @@ jobs:
           echo "cim postfx cimviewer clear" > srv/console.in
           sleep 3
           java -cp vtools Shot shots/04-postfx-clear.png
+          # select-dispatch pixel leg (2nd ItemsAdder/Oraxen family): the
+          # brick host with CMD STRINGS must render the modded wand — the
+          # pack's items/brick.json select def (when:"wand") is what makes
+          # the LAST shot differ from the plain brick
+          echo "clear cimviewer" > srv/console.in
+          sleep 2
+          echo "give cimviewer brick 1" > srv/console.in
+          sleep 4
+          java -cp vtools Shot shots/05-plain-brick.png
+          echo "clear cimviewer" > srv/console.in
+          sleep 2
+          echo "give cimviewer brick[minecraft:custom_model_data={strings:[\"wand\"]}] 1" > srv/console.in
+          sleep 4
+          java -cp vtools Shot shots/06-cmd-brick.png
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -245,7 +259,11 @@ jobs:
           AEfx=$(java -cp vtools PixelDiff shots/02-cmd-paper.png shots/03-postfx-on.png)
           echo "AE(cmd,postfx-on)=$AEfx"
           [ "$AEfx" -gt "5000" ] || fail "cimsepia tint not visible (AE=$AEfx) — the client did not resolve the pack-contributed chain"
-          echo "M5.3 visual contract: pack applied + CMD item renders as the modded model + modded postfx chain tinted the frame"
+          # select family: plain brick vs CMD-strings brick must differ
+          AE56=$(java -cp vtools PixelDiff shots/05-plain-brick.png shots/06-cmd-brick.png)
+          echo "AE(plain-brick,cmd-brick)=$AE56"
+          [ "$AE56" != "0" ] || fail "CMD strings rendered IDENTICAL to plain brick — the select def did not apply"
+          echo "M5.3 visual contract: pack applied + range_dispatch + select + modded postfx chain all render on the stock client"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
