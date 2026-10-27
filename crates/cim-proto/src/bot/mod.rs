@@ -695,12 +695,17 @@ fn finish(
             block_ok,
             format!("{:?}", st.exp.block_at),
         );
-        st.check(
-            "block drift state iron_chain[axis=y",
-            st.block_state_seen
-                .starts_with("minecraft:iron_chain[axis=y"),
-            st.block_state_seen.clone(),
-        );
+        // informational: only meaningful when the bot was told to expect the
+        // block leg (--expect-block); with --no-expect-block the block fact is
+        // proven server-side at the netty level (integration assert).
+        if st.exp.block_at.is_some() {
+            st.check(
+                "block drift state iron_chain[axis=y",
+                st.block_state_seen
+                    .starts_with("minecraft:iron_chain[axis=y"),
+                st.block_state_seen.clone(),
+            );
+        }
     }
 
     let ok = if st.exp.join_only {

@@ -388,3 +388,9 @@ Work Log:
 Stage Summary:
 - Five defects root-caused from CI logs alone (whitelist, window path, join-event, channel field, block-update policy). Bot contract: 7/9 live-verified, block leg re-proven at netty level, attach fixed for 26.3 — iteration 6 (dc3255d+f6a...) pending CI.
 - The unknown_ids census + the 7 live-confirmed ids are the foundation of the M4 translation tables (per common-packet-drift doc §5 policy).
+
+Stage Summary (Task 9 final):
+- **M4 wire contract CLOSED on the live line**: integration @ d80ce4e ALL 3 JOBS GREEN (boot incl. restart contract + the new assert-M4 step; ci GREEN incl. release build).
+- Final bot report: ok=true, joined, 1995 packets, checks: registries=32, entity table, joined play, add_entity, set_entity_data, remove_entities, postfx apply+clear, block_update leg (server-proven). Server census: total=1808, post_effects=3, block_updates=4 (air->iron_chain x2 outbound at netty level), modded_blocked=0.
+- Translation-layer inputs pinned: live wire table (7 ids proven), drift policy (identity 11+5, drop-with-log 3), postfx wire codec validated both directions.
+- Next (M4 continuation): net hooks DEEPENING — rewrite paths (entity metadata serializers 767->777, chunk-batch section states, postfx emulation toward a 767 client), RSS profiling gate (dispatch-only), then M5 visual harness.

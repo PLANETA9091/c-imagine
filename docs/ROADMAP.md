@@ -106,8 +106,15 @@ state (second boot asserts restore markers).
 
 - Net hooks: outbound entity spawn/metadata/destroy, block update, chunk-batch
   rewriting modded ids → vanilla stand-ins; registry-driven mapping tables.
-- Vanilla client (protocol bot, `cim-proto` based) joins and observes cimtest entity
-  as a mapped vanilla type with correct metadata.
+- [x] **Protocol bot (cim-proto/cimbot) joins the live boot and observes the
+  contract — DONE 2026-10-27 (integration GREEN, all 3 jobs)**: full 777
+  login→config→play, projected oak_boat add_entity + glowing metadata +
+  remove_entities, post_effects apply `[minecraft:creeper]` + clear `[]`
+  (the F2V 2.0 channel proven end-to-end), drift block proven at netty level
+  (`BlockPos{x=0,y=100,z=2} minecraft:iron_chain` ×2 outbound), zero
+  modded-id leaks (`modded_blocked=0`), zero kicks across 1995+ packets.
+  Bot censuses unknown ids → live wire-table ground truth (7 ids confirmed
+  by live parse; see `runtime-analysis/protocol-767-777.md` §9-§10).
 - Owner directive (supplemented 2026-10-26, measured in
   `runtime-analysis/f2v2-client-capabilities.md`): 26.3 carries a native
   server→client post-effect channel (`ClientboundPostEffectsPacket` +
