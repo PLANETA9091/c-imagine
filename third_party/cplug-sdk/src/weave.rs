@@ -1046,9 +1046,7 @@ pub fn strip_invokestatic_prefix(
     // stay valid throughout. Position ties: deletes before overwrites at the
     // same offset is the only safe order; BTreeMap-free approach: stable sort
     // by (pos desc, kind order) with Del ranking first at equal pos.
-    edits.sort_by(|a, b| {
-        b.0.cmp(&a.0).then_with(|| a.1.is_del().cmp(&b.1.is_del()))
-    });
+    edits.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.is_del().cmp(&b.1.is_del())));
     for (pos, e) in edits {
         match e {
             Edit::Set1(v) => bytes[pos] = v,
@@ -1089,7 +1087,11 @@ fn plan_strip(
     let code_len = u32at(bytes, code_len_pos) as usize;
     let code_start = code_attr_body + 8;
     // N = 4 when the hook call is followed by the alignment nop, else 3.
-    let n = if bytes[code_start + 3] == 0x00 { 4usize } else { 3usize };
+    let n = if bytes[code_start + 3] == 0x00 {
+        4usize
+    } else {
+        3usize
+    };
 
     // The Code attribute length u4 sits at body - 4 (name_idx u2 + len u4
     // precede the body).
@@ -1210,7 +1212,11 @@ fn plan_smt_strip(
                 }
                 (u16at(bytes, pos + 1), size)
             }
-            _ => return Err(format!("StackMapTable frame #{k}: reserved frame_type {ft}")),
+            _ => {
+                return Err(format!(
+                    "StackMapTable frame #{k}: reserved frame_type {ft}"
+                ))
+            }
         };
         let abs = if k == 0 {
             i64::from(delta)
