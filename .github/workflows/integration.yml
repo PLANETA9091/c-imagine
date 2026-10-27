@@ -184,6 +184,7 @@ jobs:
             done
             ./target/release/cimbot --host 127.0.0.1 --port 25565 --name cimbot \
               --timeout 150 --no-expect-block \
+              --expect-extra-entity minecraft:item_display \
               --report cimbot-report.json > cimbot.log 2>&1
             echo $? > cimbot-exit
           ) &
@@ -292,6 +293,13 @@ jobs:
           # packets appear on window resync) — watch both classes
           grep -Eq "net watch: container (content|slot) -> cimbot .*cmd=" srv/boot.log \
             || fail "custom_model_data never rode the wire to the client"
+          # M5.4 display leg: the item_display rig carrying the CMD stack —
+          # the parity matrix "entities" channel (v1: display/Rig ItemDisplay
+          # per part) — spawn + wire observation, both sides asserted
+          grep -q "f2v net: display spawned uuid=" srv/boot.log \
+            || fail "display entity spawn leg missing"
+          grep -q "add_entity(extra)" cimbot-report.json \
+            || fail "bot never observed the item_display rig on the wire"
           # pack content sanity: the override def + modded model rode the zip
           unzip -p srv/c-imagine/f2v/pack.zip assets/minecraft/items/paper.json \
             | grep -q "minecraft:custom_model_data" \

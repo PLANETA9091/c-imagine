@@ -34,6 +34,7 @@ fn main() {
             "--timeout" => timeout = val(&mut i).parse().unwrap_or(timeout),
             "--report" => report = val(&mut i),
             "--expect-entity" => exp.entity_type = val(&mut i),
+            "--expect-extra-entity" => exp.entity_type_extra = Some(val(&mut i)),
             "--expect-block" => {
                 let v = val(&mut i);
                 let p: Vec<&str> = v.split(',').collect();

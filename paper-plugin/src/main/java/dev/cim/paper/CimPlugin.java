@@ -465,6 +465,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             giveVisualItem("cimbot", "cimtest:test_block");
             Thread.sleep(1500); // inventory sync reaches the bot
 
+            // 0.5) M5.4 groundwork: the parity matrix "entities" channel —
+            //    item_display rig carrying the modded model's CMD stack. The
+            //    bot observes add_entity(minecraft:item_display) on the wire;
+            //    the pixel proof is the M5 harness's job once the pack reload
+            //    works. Spawned here while the bot is live.
+            String dispUuid = spawnVisualDisplay(world, 5, 100, 0, "cimtest:test_block");
+            log().info(LOG_PREFIX + "f2v net: display leg uuid=" + dispUuid);
+            Thread.sleep(1500); // add_entity reaches the bot
+
             // 1) projected entity: 1.21.1 boat -> 26.3 oak_boat on the wire
             paperForceChunk(world, 3, 0, true);
             String boatUuid = paperSpawnEntity(world, 3, 100, 0, "minecraft:oak_boat");
@@ -599,6 +608,67 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v item: give FAILED: " + t);
         }
+    }
+
+    /**
+     * Spawn one visual display entity (M5.4 groundwork — the parity matrix
+     * "entities" channel): an {@code minecraft:item_display} whose item stack
+     * is the HOST item carrying the modded item's {@code custom_model_data}
+     * component. The pack's {@code items/<host>.json} range_dispatch renders
+     * that CMD as the modded model ON ANY STOCK CLIENT, exactly like F2F v1's
+     * ItemDisplay rigs (display/Rig: one display per part) — but packet-level:
+     * no mod classes, the stack rides the vanilla display-entity metadata.
+     *
+     * <p>paper-api 26.3 surface javap-verified (ItemDisplay#setItemStack,
+     * Display#setBillboard, Transformation over joml). Returns the uuid for
+     * later cleanup, or a diagnostic string on failure.
+     */
+    public String spawnVisualDisplay(String world, double x, double y, double z,
+                                     String moddedItemId) {
+        return callSync(() -> {
+            try {
+                if (f2v == null) {
+                    return "pipeline-not-ready";
+                }
+                dev.cim.f2v.F2vPack.VisualItem row = null;
+                for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                    if (r.moddedId().equals(moddedItemId)) {
+                        row = r;
+                        break;
+                    }
+                }
+                if (row == null) {
+                    return "no-manifest-row-for-" + moddedItemId;
+                }
+                final dev.cim.f2v.F2vPack.VisualItem visual = row;
+                String bare = visual.hostItem()
+                        .substring(visual.hostItem().indexOf(':') + 1);
+                Material material = Material.matchMaterial(bare);
+                if (material == null) {
+                    return "unknown-host-material-" + visual.hostItem();
+                }
+                ItemStack stack = new ItemStack(material);
+                stack.editMeta(meta -> {
+                    CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                    cmd.setFloats(List.of(visual.cmd()));
+                    meta.setCustomModelDataComponent(cmd);
+                });
+                org.bukkit.Location at =
+                        new org.bukkit.Location(world(world), x, y, z);
+                org.bukkit.entity.ItemDisplay display = world(world).spawn(
+                        at, org.bukkit.entity.ItemDisplay.class, e -> {
+                            e.setItemStack(stack);
+                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                        });
+                log().info(LOG_PREFIX + "f2v net: display spawned uuid="
+                        + display.getUniqueId() + " type=minecraft:item_display"
+                        + " item=" + visual.hostItem() + " cmd=" + visual.cmd());
+                return display.getUniqueId().toString();
+            } catch (Throwable t) {
+                log().warning(LOG_PREFIX + "f2v display spawn FAILED: " + t);
+                return null;
+            }
+        });
     }
 
     // ---- helpers -------------------------------------------------------------

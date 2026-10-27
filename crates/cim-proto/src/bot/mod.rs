@@ -77,6 +77,9 @@ pub struct Check {
 #[derive(Debug, Clone)]
 pub struct Expectations {
     pub entity_type: String, // e.g. "minecraft:oak_boat"
+    /// Second expected entity type (M5.4 display leg: the item_display rig).
+    /// None = leg disabled (older call sites unaffected).
+    pub entity_type_extra: Option<String>,
     pub block_at: Option<(i32, i32, i32)>,
     pub post_fx_effect: Option<String>, // e.g. "minecraft:creeper"
     /// Join-only mode: exit ok after `join_grace` seconds of stable play.
@@ -88,6 +91,7 @@ impl Default for Expectations {
     fn default() -> Self {
         Self {
             entity_type: "minecraft:oak_boat".into(),
+            entity_type_extra: None,
             block_at: Some((0, 100, 2)),
             post_fx_effect: Some("minecraft:creeper".into()),
             join_only: false,
@@ -114,6 +118,8 @@ struct BotState {
     // observation legs
     boat: Option<(i32, uuid::Uuid)>, // (wire id, uuid)
     boat_seen_metadata: bool,
+    /// extra entity leg (M5.4): wire id of the observed item_display rig.
+    extra_entity: Option<i32>,
     post_fx_seen: Vec<Vec<String>>,
     block_update_seen: bool,
     block_state_seen: String,
@@ -215,6 +221,7 @@ pub fn run(
         errors: Vec::new(),
         boat: None,
         boat_seen_metadata: false,
+        extra_entity: None,
         post_fx_seen: Vec::new(),
         block_update_seen: false,
         block_state_seen: String::new(),
@@ -523,6 +530,22 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
         wire::PC_ADD_ENTITY => {
             let a = pk::parse_add_entity(&frame.payload).map_err(|e| e.to_string())?;
             let ty = st.type_name(a.type_id);
+            if Some(&ty) == st.exp.entity_type_extra.as_ref() {
+                eprintln!(
+                    "[cimbot] ADD_ENTITY(extra) {} uuid={} type={ty} at ({:.1},{:.1},{:.1})",
+                    a.id, a.uuid, a.x, a.y, a.z
+                );
+                st.observe(
+                    "add_entity(extra)",
+                    format!(
+                        "id={} uuid={} type={ty} pos=({:.1},{:.1},{:.1})",
+                        a.id, a.uuid, a.x, a.y, a.z
+                    ),
+                );
+                if st.extra_entity.is_none() {
+                    st.extra_entity = Some(a.id);
+                }
+            }
             if ty == st.exp.entity_type {
                 eprintln!(
                     "[cimbot] ADD_ENTITY {} uuid={} type={ty} at ({:.1},{:.1},{:.1})",
@@ -702,6 +725,14 @@ fn finish(
             st.boat.is_some(),
             format!("{:?}", st.boat),
         );
+        // M5.4 display leg: asserted only when the caller expected the type
+        if st.exp.entity_type_extra.is_some() {
+            st.check(
+                "entity leg: add_entity(extra)",
+                st.extra_entity.is_some(),
+                format!("{:?}", st.extra_entity),
+            );
+        }
         st.check(
             "entity leg: set_entity_data",
             st.boat_seen_metadata,
