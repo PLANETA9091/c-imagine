@@ -153,6 +153,12 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
   palette-driven recolors still M6. Original F2V (jefthebuilder/F2V, 1.21.1-era,
   read-only reference) mapped to legacy `models/item` overrides — the 26.3
   registry surface is strictly cleaner.
+- **Owner directive 2026-10-28 ("identical to the modded client")** locked as the
+  channel-by-channel parity contract: `runtime-analysis/f2f2-parity-matrix.md`
+  (measured v1 surface incl. CMD interval scheme + display-entity rigs → 26.3
+  replacements → status → per-channel pixel proof). Harness join path fixed by
+  bytecode autopsy (`runtime-analysis/visual-harness-join.md`): quickPlay reads
+  servers.dat (sync, RAW NBT), `acceptTextures`=1 → ENABLED → pack auto-accept.
 
 **Accept:** visual.yml uploads diff report; cimtest block+entity within threshold
 (harness — pending); M5.2 wire/server contract asserted green in integration.yml.

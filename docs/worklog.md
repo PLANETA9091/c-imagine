@@ -471,3 +471,26 @@ Work Log:
 
 Stage Summary:
 - Harness iteration 3 dispatched-ready; expected: client boots, joins, downloads the pack, three screenshots, pixel contract asserts.
+
+---
+Task ID: 10-e
+Agent: main
+Task: M5.3 run 6 autopsy (join stall) + bytecode-proven fix; F2F 2.0 parity matrix (owner directive: vanilla client must see modded content IDENTICALLY)
+
+Work Log:
+- Run 6 (b884412) measured: client reached startup reload + 12 atlas lines at 16:56:43, then 12 min SILENCE — no connect logs, no [CHAT], no second reload.
+- javap autopsy over piston client.jar 26.3 (fresh sandbox, artifacts re-fetched):
+  * QuickPlay.joinMultiplayerWorld: ServerList.load() SYNCHRONOUS + ServerList.get(ip) EXACT match; entry not found => fresh ServerData with PROMPT pack status.
+  * ConnectScreen$1 -> DownloadedPackSource.configureForServerControl(conn, convertPackStatus(status)): ENABLED->ALLOWED / DISABLED->DECLINED / PROMPT->PENDING.
+  * ClientCommonPacketListenerImpl$PackConfirmScreen (ConfirmScreen subclass) is the config-phase pack prompt — PENDING waits for a click nobody can make under xvfb. ROOT CAUSE.
+  * ServerData$ServerPackStatus.FIELD_CODEC = Codec.BOOL.optionalFieldOf("acceptTextures") xmap true->ENABLED — the 1.7-era key survives.
+  * ServerList.load uses NbtIo.read(Path) = UNCOMPRESSED NBT in 26.3 (GZIP only in readCompressed) — format drift vs older versions, measured and respected.
+  * ChatComponent logs [CHAT] <msg> at INFO — the "joined the game" stdout marker is real; ReloadableResourceManager logs "Reloading ResourceManager: {}" — second occurrence = server pack applied.
+- Fix implemented: scripts/visual/make_servers_dat.py (78-byte RAW-NBT servers.dat seed, selftest asserts exact layout: servers[list] -> {name, ip=127.0.0.1:25565, acceptTextures=1}); visual.yml seeds it pre-launch; wait-loop gains ~90s progress tails (no more blind windows) + stall-state.png on timeout (the screenshot run 6 lacked).
+- docs/runtime-analysis/visual-harness-join.md: full autopsy + format drift + markers.
+- F2F 2.0 parity matrix (owner directive locked): docs/runtime-analysis/f2f2-parity-matrix.md — v1 measured from a fresh read-only clone: CMD interval scheme (ITEM 10k..100k ... ENTITY 4M..8M; measured v1 defect: FLUID_CMD_BASE=600_000 collides with ARMOR_ANIM 600k..650k), entities = ItemDisplay-per-part rigs (Rig 516; EntityModelBuilder 1920 + Gecko 2152), blocks = BlockDisplay + LOD budgets 4000/8000, armor = CMD humanoid rigs with head-scale(0,0,0) suppression, atmosphere = 30k-LOC scanner+sky-model family (replaced wholesale by the post_effect registry), HUD = openMenu+widgets (26.3 adds dialog registry), delivery = play-phase push + own HTTP(S) (v2: config-phase + PackHttp, live).
+- ROADMAP M5 + README index updated; run 7 dispatched (3514bac).
+
+Stage Summary:
+- Join path is bytecode-proven fixed: seeded entry => ENABLED => ALLOWED => ServerPackManager auto-accepts the config-phase push. Expected run 7: join -> pack reload -> [CHAT] marker -> 3-screenshot pixel contract.
+- The parity matrix is now the contract for "identical to the modded client": items LIVE, atmosphere wire-proven, entities next (M5.4), armor=M6 pull-forward, HUD/dialog=M6, pipeline port=M6.
