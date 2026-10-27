@@ -34,6 +34,12 @@ Local clones used for this analysis live in the agent workspace (`workspace/`):
    can rely on (display entities, item components, maps, packs), decompile plan.
 5. [`cross-version-gap.md`](cross-version-gap.md) — the 1.21.1 ↔ 26.3 delta, measured:
    protocol/DataVersion/pack formats, registry-by-registry diff, implications.
+6. [`f2v2-client-capabilities.md`](f2v2-client-capabilities.md) — the F2V 2.0 visual
+   surface measured in the 26.3 client (post-effect channel, item model
+   definitions, equipment/atlas/font registries) and what the pack builder emits.
+7. [`common-packet-drift-767-777.md`](common-packet-drift-767-777.md) — the common
+   packet family 767 ↔ 777 (bytecode-proven tables) incl. the wire format of
+   `ClientboundPostEffectsPacket`; the M4 translation policy rows.
 
 ## Headline facts (TL;DR)
 
