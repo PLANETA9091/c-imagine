@@ -90,7 +90,7 @@ jobs:
           # assets suffice (no layer, no module in this job)
           (cd test-mods/src/main/resources && zip -qr /tmp/cimtest-assets.jar assets)
           cp /tmp/cimtest-assets.jar srv/mods/cimtest-1.0.0.jar
-          cp scripts/f2v/visual-items.tsv srv/c-imagine/f2v/visual-items.tsv
+          cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv srv/c-imagine/f2v/
           java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
             --build srv/mods srv/c-imagine/f2v
           SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
@@ -134,9 +134,9 @@ jobs:
       - name: vanilla client joins under xvfb + visual contract
         run: |
           set -euo pipefail
-          # Java-only screenshot/diff tools (measured: runners ship IM7 with
-          # no `import`/`xwd`); Robot needs the X display
-          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java
+          # Java-only screenshot/diff/key tools (measured: runners ship IM7
+          # with no `import`/`xwd`); Robot needs the X display
+          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java scripts/visual/Key.java
           # MEASURED (run 4): GlDevice needs a matching GLX visual — install
           # the software GL/Vulkan stack explicitly and expose GLX on Xvfb
           sudo apt-get update -qq
@@ -238,6 +238,20 @@ jobs:
           echo "give cimviewer brick[minecraft:custom_model_data={strings:[\"wand\"]}] 1" > srv/console.in
           sleep 4
           java -cp vtools Shot shots/06-cmd-brick.png
+          # equipment pixel leg (M6 pull-forward, parity matrix "armor"):
+          # third-person view (F5 via Robot), the bare model, then the
+          # equippable helmet — the ONLY delta is the pack's armor layer on
+          # the player model. The component syntax is bytecode-proven
+          # (Equippable codec: slot required, asset_id optional identifier).
+          echo "clear cimviewer" > srv/console.in
+          sleep 2
+          java -cp vtools Key F5
+          sleep 2
+          java -cp vtools Shot shots/07-thirdperson.png
+          echo "item replace entity cimviewer armor.head with leather_helmet[minecraft:equippable={slot:\"head\",asset_id:\"cimtest:test_armor\"}]" > srv/console.in
+          sleep 4
+          java -cp vtools Shot shots/08-armor.png
+          java -cp vtools Key F5
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -263,7 +277,12 @@ jobs:
           AE56=$(java -cp vtools PixelDiff shots/05-plain-brick.png shots/06-cmd-brick.png)
           echo "AE(plain-brick,cmd-brick)=$AE56"
           [ "$AE56" != "0" ] || fail "CMD strings rendered IDENTICAL to plain brick — the select def did not apply"
-          echo "M5.3 visual contract: pack applied + range_dispatch + select + modded postfx chain all render on the stock client"
+          # armor channel: the worn equippable helmet must visibly change the
+          # third-person player model (pack equipment layer resolves)
+          AE78=$(java -cp vtools PixelDiff shots/07-thirdperson.png shots/08-armor.png)
+          echo "AE(thirdperson,armor)=$AE78"
+          [ "$AE78" -gt "1000" ] || fail "armor layer not visible on the model (AE=$AE78) — the equipment asset did not resolve"
+          echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment all render on the stock client"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -144,7 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p srv/c-imagine/f2v
-          cp scripts/f2v/visual-items.tsv srv/c-imagine/f2v/visual-items.tsv
+          cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv srv/c-imagine/f2v/
           java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
             --build srv/mods srv/c-imagine/f2v
           cat srv/c-imagine/f2v/build-report.txt
@@ -293,6 +293,15 @@ jobs:
             srv/boot.log || fail "visual wand give/verify leg missing"
           grep -Eq "net watch: container (content|slot) -> cimbot .*strings=\[wand\]" srv/boot.log \
             || fail "custom_model_data strings never rode the wire to the client"
+          # M6 pull-forward: the equippable helmet (asset_id -> the pack's
+          # equipment asset mapped from the legacy 1.21.1 armor textures)
+          grep -q "f2v armor: equipped cimtest:test_armor on cimbot (verified)" \
+            srv/boot.log || fail "equippable armor leg missing (server-side)"
+          grep -q "assets/cimtest/equipment/test_armor.json" srv/boot.log \
+            || true # equipment asset rides the pack (asserted on the zip below)
+          unzip -p srv/c-imagine/f2v/pack.zip assets/cimtest/equipment/test_armor.json \
+            | grep -q '"humanoid"' \
+            || fail "equipment asset missing from the pack"
           # wire-level: the CMD component must ride the vanilla container
           # codec to the client (netty outbound object proof, same policy as
           # the block leg — Paper-side object, not a bot parse)

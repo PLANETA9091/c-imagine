@@ -80,6 +80,26 @@ public final class F2vPack {
                          List<String> warnings) {
     }
 
+    /**
+     * One equipment-asset manifest row (M6 pull-forward — the armor channel
+     * of the parity matrix): a 1.21.1-style mod armor texture pair mapped to
+     * the 26.3 equipment surface.
+     *
+     * <p>Legacy locations (measured in the 1.21.1 client/NeoForge era):
+     * {@code assets/<ns>/textures/models/armor/<name>_layer_1.png} (helmet /
+     * chestplate / boots) and {@code ..._<name>_layer_2.png} (leggings).
+     * 26.3 surface (javap + vanilla asset schema):
+     * {@code assets/<ns>/equipment/<name>.json} with
+     * {@code layers.humanoid[].texture = <ns>:<name>} resolving to
+     * {@code textures/entity/equipment/humanoid/<ns>/<name>.png}, and
+     * {@code layers.humanoid_leggings} to {@code .../humanoid_leggings/...}.
+     * The item side points at the asset via the {@code equippable} component
+     * ({@code asset_id} / paper-api {@code EquippableComponent#setModel}).
+     */
+    public record EquipmentAsset(String assetId, String legacyLayer1,
+                                 String legacyLayer2) {
+    }
+
     /** Resource pack format for 26.3 (client version.json — measured). */
     public static final int PACK_FORMAT_MAJOR = 97;
     public static final int PACK_FORMAT_MINOR = 1;
@@ -211,6 +231,108 @@ public final class F2vPack {
      */
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows)
             throws IOException {
+        return build(modsDir, outDir, manifestRows,
+                readEquipmentManifest(outDir.resolve("visual-equipment.tsv")));
+    }
+
+    /**
+     * Read {@code visual-equipment.tsv}: {@code assetId<TAB>layer1Path[
+     * <TAB>layer2Path]} where the paths are relative to {@code assets/<ns>/}
+     * inside a mod jar (legacy 1.21.1 armor texture locations). Optional;
+     * missing file = no equipment assets.
+     */
+    public static List<EquipmentAsset> readEquipmentManifest(Path tsv) throws IOException {
+        List<EquipmentAsset> rows = new ArrayList<>();
+        if (!Files.isRegularFile(tsv)) {
+            return rows;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 2) {
+                continue;
+            }
+            rows.add(new EquipmentAsset(parts[0].trim(), parts[1].trim(),
+                    parts.length >= 3 && !parts[2].isBlank()
+                            ? parts[2].trim() : null));
+        }
+        rows.sort(Comparator.comparing(EquipmentAsset::assetId));
+        return rows;
+    }
+
+    /**
+     * Emit the 26.3 equipment surface for one legacy armor texture pair:
+     * the {@code equipment/<ns>/<name>.json} definition (humanoid +
+     * humanoid_leggings layers) plus the textures at the NEW canonical
+     * locations. Returns the entries added (also mutates {@code entries}).
+     */
+    static int emitEquipment(List<Path> jars, EquipmentAsset asset,
+                             TreeMap<String, byte[]> entries,
+                             List<String> warnings) throws IOException {
+        int colon = asset.assetId().indexOf(':');
+        if (colon <= 0) {
+            warnings.add("malformed equipment asset id: " + asset.assetId());
+            return 0;
+        }
+        String ns = asset.assetId().substring(0, colon);
+        String name = asset.assetId().substring(colon + 1);
+        int added = 0;
+        added += copyEquipmentTexture(jars, ns, asset.legacyLayer1(),
+                "assets/" + ns + "/textures/entity/equipment/humanoid/"
+                        + ns + "/" + name + ".png", entries, warnings);
+        if (asset.legacyLayer2() != null) {
+            added += copyEquipmentTexture(jars, ns, asset.legacyLayer2(),
+                    "assets/" + ns + "/textures/entity/equipment/humanoid_leggings/"
+                            + ns + "/" + name + ".png", entries, warnings);
+        }
+        if (added == 0) {
+            warnings.add("no armor textures found for " + asset.assetId()
+                    + " — equipment asset dropped");
+            return 0;
+        }
+        String json = "{\n"
+                + "  \"layers\": {\n"
+                + "    \"humanoid\": [\n"
+                + "      {\"texture\": \"" + ns + ":" + name + "\"}\n"
+                + "    ],\n"
+                + "    \"humanoid_leggings\": [\n"
+                + "      {\"texture\": \"" + ns + ":" + name + "\"}\n"
+                + "    ]\n"
+                + "  }\n"
+                + "}\n";
+        entries.put("assets/" + ns + "/equipment/" + name + ".json",
+                json.getBytes(StandardCharsets.UTF_8));
+        return added + 1;
+    }
+
+    /** Copy one legacy armor texture to a 26.3 equipment texture location. */
+    private static int copyEquipmentTexture(List<Path> jars, String ns,
+                                            String legacyRelPath, String targetPath,
+                                            TreeMap<String, byte[]> entries,
+                                            List<String> warnings) throws IOException {
+        String source = "assets/" + ns + "/" + legacyRelPath;
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                ZipEntry e = zf.getEntry(source);
+                if (e == null) {
+                    continue;
+                }
+                entries.putIfAbsent(targetPath,
+                        zf.getInputStream(e).readAllBytes());
+                return 1;
+            }
+        }
+        warnings.add("equipment texture missing: " + source);
+        return 0;
+    }
+
+    /** Full build with explicit equipment rows (selftest seam). */
+    public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
+                               List<EquipmentAsset> equipmentRows)
+            throws IOException {
         List<String> warnings = new ArrayList<>();
         List<VisualItem> rows = assignCmds(manifestRows);
         TreeMap<String, byte[]> entries = new TreeMap<>();
@@ -268,6 +390,13 @@ public final class F2vPack {
                             selectDef(hostPath, casesForHost).getBytes(StandardCharsets.UTF_8));
                 }
             }
+        }
+
+        // equipment assets (M6 pull-forward): legacy armor textures -> the
+        // 26.3 equipment surface, manifest-driven, zero vanilla overrides
+        List<Path> equipJars = jars.isEmpty() ? listJars(modsDir) : jars;
+        for (EquipmentAsset asset : equipmentRows) {
+            emitEquipment(equipJars, asset, entries, warnings);
         }
 
         byte[] zip = zip(entries);
@@ -649,6 +778,8 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/models/item/wand_thing.json",
                     MODEL_WAND.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/textures/item/wand_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/models/armor/shiny_layer_1.png", testPng());
+            jarEntries.put("assets/fakemod/textures/models/armor/shiny_layer_2.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/cool_sword_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/deep/custom_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/parent_tex.png", testPng());
@@ -664,8 +795,12 @@ public final class F2vPack {
                     StandardCharsets.UTF_8);
 
             // -- build twice, must be byte-identical ------------------------------
-            Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")));
-            Result r2 = build(mods, out, readManifest(out.resolve("visual-items.tsv")));
+            List<EquipmentAsset> equipment = List.of(new EquipmentAsset(
+                    "fakemod:shiny",
+                    "textures/models/armor/shiny_layer_1.png",
+                    "textures/models/armor/shiny_layer_2.png"));
+            Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")), equipment);
+            Result r2 = build(mods, out, readManifest(out.resolve("visual-items.tsv")), equipment);
             if (!r1.sha1().equals(r2.sha1())) {
                 failures.add("sha1 not deterministic: " + r1.sha1() + " vs " + r2.sha1());
             }
@@ -741,6 +876,19 @@ public final class F2vPack {
                     .filter(i -> i.moddedId().equals("fakemod:wand_thing"))
                     .allMatch(i -> !i.isFloatDispatch() && "wand".equals(i.selectValue())),
                     "wand row resolved as select:wand");
+            // EQUIPMENT surface (M6 pull-forward): legacy armor textures land
+            // at the 26.3 canonical locations + the asset json
+            String equipJson = str(entries, "assets/fakemod/equipment/shiny.json");
+            expect(failures, equipJson.contains("\"humanoid\": ["),
+                    "equipment json humanoid layer");
+            expect(failures, equipJson.contains("\"texture\": \"fakemod:shiny\""),
+                    "equipment json texture ref");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/textures/entity/equipment/humanoid/fakemod/shiny.png"),
+                    "layer_1 mapped to humanoid location");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/textures/entity/equipment/humanoid_leggings/fakemod/shiny.png"),
+                    "layer_2 mapped to humanoid_leggings location");
             // the modded post-effect chain rides every non-empty pack
             String chain = str(entries, "assets/c-imagine/post_effect/cimsepia.json");
             expect(failures, chain.contains("\"minecraft:post/color_convolve\""),

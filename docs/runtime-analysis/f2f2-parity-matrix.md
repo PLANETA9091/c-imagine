@@ -155,7 +155,7 @@ FakePlayerManager + skin URLs survive as-is (vanilla mechanism).
 | items | overrides+CMD carriers | items/ range_dispatch | **M5.2 LIVE** | visual run 7+ pixel diff |
 | entities | ItemDisplay rigs | same, packet-level | designed (M5.4) | spawn leg + screenshot |
 | blocks | BlockDisplay | same, packet-level | wire legs live (M4) | place leg + screenshot |
-| armor | CMD humanoid rigs | equipment/ defs | not started (M6) | wear + screenshot |
+| armor | CMD humanoid rigs | equipment/ defs | **M6 PULLED FORWARD: pack emit + give/wear leg live** (visual-equipment.tsv; EquippableComponent.setModel javap-proven; pixel leg staged: F5 third-person + item replace + AE gate) | wear + screenshot |
 | atmosphere | CMD sky models (30k LOC family) | **post_effect chains** | wire-proven (M4) + pack emit (M5.2) | tint pixel diff (run 7+) |
 | HUD | menus+widgets | menus + dialog registry | not started (M6) | menu screenshot |
 | particles | recreation + display sprites | sanitizer + rigs | partial (M4) | particle leg |

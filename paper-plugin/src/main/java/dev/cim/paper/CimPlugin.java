@@ -471,6 +471,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             giveVisualItem("cimbot", "cimtest:test_wand");
             Thread.sleep(1500);
 
+            // 0.3) the EQUIPMENT row (M6 pull-forward): an equippable helmet
+            //    whose asset_id points at the pack's cimtest:test_armor —
+            //    the legacy 1.21.1 armor textures mapped to the 26.3
+            //    equipment surface ride the vanilla component codec
+            equipVisualArmor("cimbot");
+            Thread.sleep(1500);
+
             // 0.5) M5.4 groundwork: the parity matrix "entities" channel —
             //    item_display rig carrying the modded model's CMD stack. The
             //    bot observes add_entity(minecraft:item_display) on the wire;
@@ -627,6 +634,55 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + " (inventory " + verifiedLine + ")");
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v item: give FAILED: " + t);
+        }
+    }
+
+    /**
+     * Wear one manifest-mapped armor asset on a player's head (M6
+     * pull-forward — the parity matrix "armor" channel). The helmet is the
+     * HOST armor item with its {@code equippable} component pointing at the
+     * pack's equipment asset (paper-api 26.3 javap-verified:
+     * {@code EquippableComponent#setModel(NamespacedKey)} — Bukkit's name
+     * for the codec's {@code asset_id}). The pack's equipment/<ns>/<name>.json
+     * (mapped from the legacy 1.21.1 armor textures) renders the layer on
+     * ANY stock client. Logs the armor marker the CI asserts.
+     */
+    private void equipVisualArmor(String playerName) {
+        try {
+            Player p = Bukkit.getPlayerExact(playerName);
+            if (p == null) {
+                log().warning(LOG_PREFIX + "f2v armor: player not online: " + playerName);
+                return;
+            }
+            String verified = callSync(() -> {
+                ItemStack helmet = new ItemStack(Material.LEATHER_HELMET);
+                try {
+                    var meta = helmet.getItemMeta();
+                    // javap-proven (paper-api 26.3): the equippable accessors
+                    // live on ItemMeta — getEquippable()/setEquippable()
+                    org.bukkit.inventory.meta.components.EquippableComponent eq =
+                            meta.getEquippable();
+                    eq.setModel(new org.bukkit.NamespacedKey("cimtest", "test_armor"));
+                    meta.setEquippable(eq);
+                    helmet.setItemMeta(meta);
+                } catch (Throwable t) {
+                    return "component-failed: " + t;
+                }
+                p.getInventory().setHelmet(helmet);
+                // verify: the worn helmet carries the asset
+                ItemStack worn = p.getInventory().getHelmet();
+                if (worn != null && worn.hasItemMeta()
+                        && worn.getItemMeta().hasEquippable()
+                        && "test_armor".equals(String.valueOf(
+                                worn.getItemMeta().getEquippable().getModel().getKey()))) {
+                    return "verified";
+                }
+                return "NOT verified";
+            });
+            log().info(LOG_PREFIX + "f2v armor: equipped cimtest:test_armor on "
+                    + playerName + " (" + verified + ")");
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v armor: equip FAILED: " + t);
         }
     }
 
