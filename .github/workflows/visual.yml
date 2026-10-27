@@ -257,10 +257,14 @@ jobs:
       - name: assert visual contract + upload evidence
         run: |
           fail() { echo "ASSERTION FAILED: $1"; exit 1; }
-          # the client actually applied the server pack (its log carries the
-          # pack flow; sha1 mismatch or decline would surface here)
-          grep -qi "pack" visual-client/game/logs/latest.log \
-            || fail "no pack activity in the client log"
+          # the client actually applied the server pack — measured run 9:
+          # latest.log lands in visual-client/logs/ (cwd-relative), and the
+          # ROBUST marker is the SECOND reload line in client.out (the
+          # pack's repository id rides it: "vanilla, vanilla, server/...")
+          grep -q "Reloading ResourceManager: vanilla, vanilla, server/" \
+            visual-client/client.out \
+            || { grep -qi "pack" visual-client/logs/latest.log 2>/dev/null \
+                 || fail "no pack activity in the client log"; }
           # pixel contract (Java-only diff): CMD item vs plain paper differ,
           # and the item differs from the empty baseline
           AE12=$(java -cp vtools PixelDiff shots/01-vanilla-paper.png shots/02-cmd-paper.png)
