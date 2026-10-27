@@ -250,7 +250,11 @@ jobs:
           grep -q "net watch attached: cimbot" srv/boot.log \
             || fail "netty net-watch was not attached to the bot channel"
           pc=$(grep -c "net watch: post_effects -> cimbot" srv/boot.log || true)
-          [ "${pc:-0}" -ge 2 ] || fail "postfx apply+clear not both seen server-side (count=$pc)"
+          [ "${pc:-0}" -ge 3 ] || fail "postfx apply+modded-chain+clear not all seen server-side (count=$pc)"
+          grep -q "f2v net: postfx modded chain c-imagine:cimsepia requested -> sent" srv/boot.log \
+            || fail "modded postfx chain never requested over the wire"
+          grep -q "c-imagine:cimsepia" srv/boot.log \
+            || fail "modded chain id never reached the wire descriptions"
           # block leg — server-side proof (Paper 26.3 does not emit clientbound
           # single block updates to late-joining bots; measured. The wire-level
           # fact is the netty outbound object: pos + translated state).
@@ -271,14 +275,21 @@ jobs:
             || fail "boot-time rebuild sha1 does not match the pre-boot pack (determinism broken)"
           grep -q "f2v pack: serving http://127.0.0.1:25580/cim-f2v-pack.zip" srv/boot.log \
             || fail "pack HTTP server not serving on the properties URL"
-          # client-side state machine walked by the bot (real ServerboundResourcePackPacket)
-          grep -q "f2v pack: status cimbot=ACCEPTED" srv/boot.log \
-            || fail "bot never ACCEPTED the pack (config-phase push missing?)"
-          grep -q "f2v pack: status cimbot=SUCCESSFULY_LOADED" srv/boot.log \
-            || fail "bot never reported the pack as successfully loaded"
+          # client-side state machine: the WIRE accept is proven bot-side
+          # ("resource pack accepted (F2V)" check, asserted in the python
+          # block above). MEASURED on 3cab5d8: the config-phase (properties)
+          # pack does NOT fire PlayerResourcePackStatusEvent server-side —
+          # paper-api 26.3 has exactly one pack status event and Paper fires
+          # it for play-phase pushes only. The status log lines stay as
+          # diagnostics; apply-side proof rides the M5 xvfb real client.
           # the visual item leg: host item + custom_model_data component
           grep -q "f2v item: gave cimtest:test_block as minecraft:paper cmd=1000.0 (inventory verified)" \
             srv/boot.log || fail "visual item give/verify leg missing"
+          # wire-level: the CMD component must ride the vanilla container
+          # codec to the client (netty outbound object proof, same policy as
+          # the block leg — Paper-side object, not a bot parse)
+          grep -Eq "net watch: container content -> cimbot .*cmd=" srv/boot.log \
+            || fail "custom_model_data never rode the wire to the client"
           # pack content sanity: the override def + modded model rode the zip
           unzip -p srv/c-imagine/f2v/pack.zip assets/minecraft/items/paper.json \
             | grep -q "minecraft:custom_model_data" \

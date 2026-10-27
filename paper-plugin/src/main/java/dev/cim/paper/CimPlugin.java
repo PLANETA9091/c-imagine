@@ -458,6 +458,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     System.getProperty("cim.netwatch.deep", "true"));
             netWatch.setDeep(deepScan);
 
+            // 0) F2V 2.0 visual item FIRST (measured on 3cab5d8: the bot exits
+            //    as soon as its own contract completes — later legs ran after
+            //    the bot was gone). The give + its container_set_content
+            //    wire proof ride the vanilla codec while the bot is live.
+            giveVisualItem("cimbot", "cimtest:test_block");
+            Thread.sleep(1500); // inventory sync reaches the bot
+
             // 1) projected entity: 1.21.1 boat -> 26.3 oak_boat on the wire
             paperForceChunk(world, 3, 0, true);
             String boatUuid = paperSpawnEntity(world, 3, 100, 0, "minecraft:oak_boat");
@@ -471,9 +478,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().info(LOG_PREFIX + "f2v net: boat glowing=" + glow);
             Thread.sleep(2500); // add_entity + set_entity_data reach the bot
 
-            // 2) post effects: apply the vanilla creeper chain, then clear
+            // 2) post effects: apply the vanilla creeper chain, then the
+            //    MODDED chain contributed by the F2V pack (c-imagine:cimsepia,
+            //    composed from vanilla programs), then clear. The bot parses
+            //    the ids on the wire; whether the client RESOLVES the modded
+            //    chain from the pack is measured by the M5 xvfb harness (the
+            //    registry_names census decides the delivery channel).
             String apply = sendPostEffects("cimbot", java.util.List.of("minecraft:creeper"));
             log().info(LOG_PREFIX + "f2v net: postfx apply -> " + apply);
+            Thread.sleep(1500);
+            String chain = sendPostEffects("cimbot",
+                    java.util.List.of(dev.cim.f2v.F2vPack.MODDED_CHAIN_ID));
+            log().info(LOG_PREFIX + "f2v net: postfx modded chain "
+                    + dev.cim.f2v.F2vPack.MODDED_CHAIN_ID + " requested -> " + chain);
             Thread.sleep(1500);
             String clear = sendPostEffects("cimbot", java.util.List.of());
             log().info(LOG_PREFIX + "f2v net: postfx clear -> " + clear);
@@ -499,13 +516,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             paperForceChunk(world, 3, 0, false);
             log().info(LOG_PREFIX + "f2v net: boat removed=" + removed);
             Thread.sleep(1500);
-
-            // 5) F2V 2.0 visual item: give the manifest-mapped item with its
-            //    custom_model_data component — a vanilla 26.3 client with the
-            //    generated pack renders it as the modded item model
-            //    (items/<host>.json range_dispatch). Verified server-side:
-            //    the inventory holds the host item carrying the exact CMD.
-            giveVisualItem("cimbot", "cimtest:test_block");
 
             log().info(LOG_PREFIX + "f2v net: leg complete boat=" + boatUuid
                     + " postfx=apply+clear block=iron_chain[axis=y] census="

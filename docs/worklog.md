@@ -422,3 +422,24 @@ Stage Summary:
 - The stock-client visual channel is now measurable end-to-end: pack built deterministically from mod jars -> config-phase push (vanilla mechanism) -> bot walks the real accept state machine -> host item + CMD rides the vanilla container codec -> pack range_dispatch turns CMD into the modded model on any vanilla 26.3 client.
 - Postfx (M4 leg) + item CMD (M5.2) = the two measured vanilla channels the F2F vision rides; both proven on the live line once CI goes green.
 - Next: CI validation -> M5.3 (play-phase push id via census, xvfb real-client screenshot harness for pixel ground truth, postfx chain contributions from packs), then M6 broadening (equipment, palettes, OBJ, block world visuals).
+
+---
+Task ID: 10-b
+Agent: main
+Task: M5.2 iteration 2 — red-run diagnosis + fixes + M5.3a groundwork (modded postfx chain, registry-name census)
+
+Work Log:
+- integration@3cab5d8 measured (from logs only, zero extra runs): pre-boot pack built TWICE byte-identical ON CI (sha1=18f6bb41... — SAME as the local sandbox build: cross-machine determinism PROVEN), plugin boot-time rebuild integrity=ok, PackHttp serving, bot ACCEPTED the properties pack push and completed its walk (check PASS), postfx census=3 (init-clear + creeper + clear), block legs intact.
+- TWO defects measured precisely:
+  1) "f2v item: player not online" — the give leg was LAST in the net leg; the bot exits as soon as its own contract completes (block legs took longer than the bot's patience). FIX: give moved to leg 0 (right after net-watch attach, before the boat).
+  2) "bot never ACCEPTED the pack (server-side)" — WRONG hypothesis in my assert: the bot DID accept (wire packets sent, check PASSED). What never happened is the SERVER-SIDE PlayerResourcePackStatusEvent — MEASURED: paper-api 26.3 has exactly ONE pack status event and Paper fires it for PLAY-phase pushes only; config-phase (properties) packs do not fire it. FIX: dropped the two unreachable status greps from the assert (bot-side wire accept IS the contract); event handler stays as play-phase diagnostics; apply-side proof explicitly deferred to the M5 xvfb real client. Documented in f2v2-pack-synthesis-26-3.md §6.
+- M5.3a groundwork implemented (measure-first):
+  * F2vPack now emits assets/c-imagine/post_effect/cimsepia.json on every non-empty pack — a sepia chain composed PURELY from vanilla programs (color_convolve ColorConfig 3x vec3 + blit BlitConfig, swap->minecraft:main, the measured vanilla grammar). Real pack: 5 entries, sha1 fb898ca3..., selftest extended (composition + main-terminus invariants).
+  * Net leg requests c-imagine:cimsepia between creeper apply and clear; assert: postfx census >= 3 + the request marker. Whether the CLIENT resolves pack-contributed chains is measured later by the xvfb harness.
+  * cimbot registry_names census added: every dynamic registry key streamed in config now lands in the report (ground truth for post_effect sync-vs-pack question — the M5.3 design fork).
+- NetWatch: container_set_content watcher (deep) — slot count + the first item carrying a custom_model_data component via DataComponents.CUSTOM_MODEL_DATA reflection; assert "net watch: container content -> cimbot .*cmd=" proves the CMD rides the vanilla container codec to the client.
+- Local: mvn OK, selftest ALL OK, cargo fmt/clippy/test clean (17/17 cim-proto).
+
+Stage Summary:
+- The whole give->wire->pack dispatch chain is instrumented; the single red assert was an unmeasured server-side event assumption, now measured and documented.
+- Next: CI green on iteration 2 -> registry_names census answers the postfx delivery question -> M5.3: xvfb real-client harness (download+apply+screenshot) for pixel ground truth.

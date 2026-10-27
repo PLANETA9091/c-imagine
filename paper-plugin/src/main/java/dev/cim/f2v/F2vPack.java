@@ -83,6 +83,46 @@ public final class F2vPack {
     /** DOS/zip epoch (1980-01-01) — the earliest representable zip time. */
     private static final long FIXED_EPOCH = 315532800000L;
 
+    /**
+     * The modded post-effect chain the pack contributes (F2V 2.0 "render
+     * through post effects"): a sepia tint composed PURELY from vanilla
+     * programs (color_convolve + blit) — zero shader files shipped, exactly
+     * the measured vanilla composition vocabulary (post-effect-schema-26-3.md
+     * §2 creeper/invert shapes). The client resolves
+     * {@code assets/<ns>/post_effect/<id>.json} from the pack when the server
+     * requests the id over ClientboundPostEffectsPacket.
+     */
+    public static final String MODDED_CHAIN_ID = "c-imagine:cimsepia";
+    static final String MODDED_CHAIN_JSON = "{\n"
+            + "  \"targets\": {\"swap\": {}},\n"
+            + "  \"passes\": [\n"
+            + "    {\n"
+            + "      \"vertex_shader\": \"minecraft:core/screenquad\",\n"
+            + "      \"fragment_shader\": \"minecraft:post/color_convolve\",\n"
+            + "      \"inputs\": [{\"sampler_name\": \"In\", \"target\": \"minecraft:main\"}],\n"
+            + "      \"output\": \"swap\",\n"
+            + "      \"uniforms\": {\n"
+            + "        \"ColorConfig\": [\n"
+            + "          {\"name\": \"RedMatrix\",   \"type\": \"vec3\", \"value\": [0.393, 0.769, 0.189]},\n"
+            + "          {\"name\": \"GreenMatrix\", \"type\": \"vec3\", \"value\": [0.349, 0.686, 0.168]},\n"
+            + "          {\"name\": \"BlueMatrix\",  \"type\": \"vec3\", \"value\": [0.272, 0.534, 0.131]}\n"
+            + "        ]\n"
+            + "      }\n"
+            + "    },\n"
+            + "    {\n"
+            + "      \"vertex_shader\": \"minecraft:core/screenquad\",\n"
+            + "      \"fragment_shader\": \"minecraft:post/blit\",\n"
+            + "      \"inputs\": [{\"sampler_name\": \"In\", \"target\": \"swap\"}],\n"
+            + "      \"output\": \"minecraft:main\",\n"
+            + "      \"uniforms\": {\n"
+            + "        \"BlitConfig\": [\n"
+            + "          {\"name\": \"ColorModulate\", \"type\": \"vec4\", \"value\": [1.0, 1.0, 1.0, 1.0]}\n"
+            + "        ]\n"
+            + "      }\n"
+            + "    }\n"
+            + "  ]\n"
+            + "}\n";
+
     private F2vPack() {
     }
 
@@ -157,6 +197,11 @@ public final class F2vPack {
         List<VisualItem> rows = assignCmds(manifestRows);
         TreeMap<String, byte[]> entries = new TreeMap<>();
         entries.put("pack.mcmeta", packMcmeta().getBytes(StandardCharsets.UTF_8));
+        if (!rows.isEmpty()) {
+            // the F2V 2.0 modded post-effect chain rides every non-empty pack
+            entries.put("assets/c-imagine/post_effect/cimsepia.json",
+                    MODDED_CHAIN_JSON.getBytes(StandardCharsets.UTF_8));
+        }
 
         // group rows by host (one items/ def per host, entries sorted by cmd)
         Map<String, List<VisualItem>> byHost = new TreeMap<>();
@@ -605,6 +650,14 @@ public final class F2vPack {
             // both rows resolve at the item/ location and reach the host def
             expect(failures, paper.contains("fakemod:item/deep_thing"),
                     "second row model ref present");
+            // the modded post-effect chain rides every non-empty pack
+            String chain = str(entries, "assets/c-imagine/post_effect/cimsepia.json");
+            expect(failures, chain.contains("\"minecraft:post/color_convolve\""),
+                    "modded chain composes a vanilla fragment program");
+            expect(failures, chain.contains("cimsepia") == false,
+                    "chain json needs no self-id (registry entry name is the path)");
+            expect(failures, chain.contains("\"output\": \"minecraft:main\""),
+                    "modded chain ends on minecraft:main (measured invariant)");
 
             // -- json scanning helpers ------------------------------------------
             expect(failures, extractStringField(MODEL_COOL_SWORD, "parent")

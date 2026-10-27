@@ -192,6 +192,13 @@ public final class NetWatch {
                     }
                 } else if (deep && cls.equals("ClientboundAddEntityPacket")) {
                     scanDeepEntity(player, msg);
+                } else if (deep && cls.equals("ClientboundContainerSetContentPacket")) {
+                    // F2V 2.0 item leg: the wire fact that the visual item's
+                    // custom_model_data component RIDES the vanilla container
+                    // codec to the client (the pack dispatches on it).
+                    plugin.getLogger().info(CimPlugin.LOG_PREFIX
+                            + "net watch: container content -> " + player
+                            + " (" + describeContainerContent(msg) + ")");
                 }
             } catch (Throwable t) {
                 // the watcher must NEVER break the pipeline
@@ -215,6 +222,54 @@ public final class NetWatch {
             Field f = connectionField(packet.getClass(), "postEffects");
             Object list = f.get(packet);
             return String.valueOf(list);
+        } catch (Throwable t) {
+            return "<unavailable: " + t.getClass().getSimpleName() + ">";
+        }
+    }
+
+    /**
+     * Best-effort slot/CMD summary for container content (reflection): slot
+     * count +, for the first item carrying one, the custom_model_data
+     * component (DataComponents.CUSTOM_MODEL_DATA via ItemStack.get —
+     * mojang-mapped 26.3 surface).
+     */
+    private static String describeContainerContent(Object packet) {
+        try {
+            Object items = null;
+            for (Method m : packet.getClass().getMethods()) {
+                if (m.getName().equals("getItems") && m.getParameterCount() == 0) {
+                    items = m.invoke(packet);
+                    break;
+                }
+            }
+            if (items == null) {
+                items = connectionField(packet.getClass(), "items").get(packet);
+            }
+            java.util.List<?> slots = (java.util.List<?>) items;
+            int n = slots.size();
+            StringBuilder sb = new StringBuilder(n + " slots");
+            Object cmdType = Class.forName("net.minecraft.core.component.DataComponents")
+                    .getField("CUSTOM_MODEL_DATA").get(null);
+            for (int i = 0; i < n; i++) {
+                Object item = slots.get(i);
+                if (item == null) {
+                    continue;
+                }
+                Object cmd = null;
+                for (Method m : item.getClass().getMethods()) {
+                    if (m.getName().equals("get") && m.getParameterCount() == 1
+                            && m.getParameterTypes()[0].isInstance(cmdType)) {
+                        cmd = m.invoke(item, cmdType);
+                        break;
+                    }
+                }
+                if (cmd != null) {
+                    sb.append(", slot").append(i).append('=')
+                      .append(String.valueOf(item)).append(" cmd=").append(cmd);
+                    break; // one wire-level CMD proof is enough per packet
+                }
+            }
+            return sb.toString();
         } catch (Throwable t) {
             return "<unavailable: " + t.getClass().getSimpleName() + ">";
         }

@@ -121,9 +121,29 @@ The modded model chain (e.g. `cimtest:item/test_block` → parent
   declined=1, failed_download=2, accepted=3, downloaded=4, invalid_url=5,
   failed_reload=6, discarded=7. cimbot walks ACCEPTED → SUCCESSFULLY_LOADED
   (the vanilla-client-with-packs-enabled walk; the M4-era decline was a stub).
+- MEASURED on 3cab5d8 (live CI boot): the properties pack push ARRIVES and the
+  bot's accept walk completes (server proceeds to play without a kick), but
+  **`PlayerResourcePackStatusEvent` does NOT fire for config-phase packs** —
+  paper-api 26.3 has exactly one pack status event class and Paper fires it
+  for play-phase pushes only. The WIRE accept contract is therefore proven
+  bot-side (ServerboundResourcePackPacket flow, asserted in the report
+  checks); the event handler stays as play-phase diagnostics (M5.3 dynamic
+  push will exercise it), and the apply-side proof rides the M5 xvfb real
+  client (a real client downloads + applies and its render is the ground
+  truth).
 - paper-api fires `PlayerResourcePackStatusEvent` with
   `Status.ACCEPTED` / `Status.SUCCESSFULY_LOADED` (Bukkit's historic typo)
-  — logged by the plugin; those lines are the CI assertion anchors.
+  for PLAY-phase pushes (see the measured config-phase caveat above); the
+  plugin logs every status as a diagnostic line.
+- M5.3a chain contribution: the pack also ships
+  `assets/c-imagine/post_effect/cimsepia.json` — a sepia tint composed ONLY
+  from vanilla programs (`post/color_convolve` + `post/blit`, ColorConfig 3×
+  vec3 + BlitConfig, targets swap → minecraft:main, exactly the measured
+  vanilla chain grammar). The net leg requests `c-imagine:cimsepia` over the
+  post-effects channel; whether the client resolves pack-contributed chains
+  locally (resource-pack path) or needs them synced via registry_data is
+  decided by the live registry-name census (cimbot `registry_names`, added
+  M5.3) — measured answer lands in the next doc revision.
 - WHY pre-boot: the properties hash must be final before the JVM starts, so
   the CI builds pack.zip BEFORE boot (deterministic zip → second build is
   byte-identical → the plugin's boot-time rebuild verifies the same sha1;

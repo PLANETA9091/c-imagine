@@ -57,6 +57,9 @@ pub struct BotReport {
     /// play-phase packet ids the bot frame-skipped (id -> count).
     /// Ground truth for the live wire table (M4 translation layer input).
     pub unknown_ids: std::collections::HashMap<i32, u64>,
+    /// every dynamic registry key streamed during configuration (live census,
+    /// M5.3 design input: which asset systems are server-synced vs pack-resolved).
+    pub registry_names: Vec<String>,
     pub ok: bool,
 }
 
@@ -117,6 +120,8 @@ struct BotState {
     boat_removed: bool,
     /// config-phase resource pack push answered with accepted+loaded (F2V).
     pack_accepted: bool,
+    /// every dynamic registry key streamed in the config phase (live census).
+    registry_names: Vec<String>,
     unknown_ids: std::collections::HashMap<i32, u64>,
 }
 
@@ -215,6 +220,7 @@ pub fn run(
         block_state_seen: String::new(),
         boat_removed: false,
         pack_accepted: false,
+        registry_names: Vec::new(),
         unknown_ids: std::collections::HashMap::new(),
         exp,
     };
@@ -360,6 +366,10 @@ fn handle_configuration(
             let data = pk::parse_registry_data(&frame.payload)
                 .map_err(|e| format!("registry_data: {e}"))?;
             st.registries += 1;
+            // Full dynamic-registry NAME census: ground truth for which asset
+            // systems (post_effect? item_definition? model?) are server-synced
+            // vs pack-resolved on the client (M5.3 design input, live measured).
+            st.registry_names.push(data.key.clone());
             if data.key == "minecraft:entity_type" {
                 for (i, name) in data.entry_ids.iter().enumerate() {
                     st.entity_types.insert(i as i32, name.clone());
@@ -745,6 +755,7 @@ fn finish(
         packets_read: 0,
         packets_written: 0,
         unknown_ids: st.unknown_ids,
+        registry_names: st.registry_names,
         ok,
     };
     if let Some(sink) = report_sink {
