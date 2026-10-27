@@ -125,6 +125,7 @@ jobs:
           echo "eula=true" > srv/eula.txt
           cat > srv/server.properties <<'PROPS'
           online-mode=false
+          white-list=false
           level-type=minecraft:flat
           level-seed=42
           view-distance=4
@@ -161,9 +162,10 @@ jobs:
           SRV_PID=$!
           # window: early end only when BOTH the bot contract finished AND
           # the bridge smoke printed ALL OK (the assert below needs that
-          # marker); hard cap 240 s otherwise.
+          # marker); hard cap 240 s otherwise. cwd here is srv/ — boot.log
+          # is local, cimbot-exit lives one level up (bot subshell cwd).
           for i in $(seq 1 120); do
-            [ -f ../cimbot-exit ] && grep -q "bridge smoke: ALL OK" srv/boot.log 2>/dev/null && { sleep 12; break; }
+            [ -f ../cimbot-exit ] && grep -q "bridge smoke: ALL OK" boot.log 2>/dev/null && { sleep 12; break; }
             kill -0 "$SRV_PID" 2>/dev/null || break
             sleep 2
           done
