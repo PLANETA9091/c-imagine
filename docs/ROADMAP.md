@@ -160,8 +160,33 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
   bytecode autopsy (`runtime-analysis/visual-harness-join.md`): quickPlay reads
   servers.dat (sync, RAW NBT), `acceptTextures`=1 → ENABLED → pack auto-accept.
 
-**Accept:** visual.yml uploads diff report; cimtest block+entity within threshold
-(harness — pending); M5.2 wire/server contract asserted green in integration.yml.
+- [x] **M5.3 harness GREEN — the stock client renders modded content
+      (visual run 10, 2026-10-28, all pixel gates measured)**: nine-shot
+      contract on a REAL vanilla 26.3 client under xvfb — join via
+      bytecode-proven pre-conditions (onboardAccessibility:false + servers.dat
+      acceptTextures:1 + explicit --width/--height), config-phase pack
+      auto-accept + download + apply (the SECOND reload line), and five
+      measured pixel gates: AE(baseline,item)=175834,
+      AE(vanilla-paper,cmd-paper)=182043 (range_dispatch cube IN HAND AND
+      HOTBAR), AE(cmd,postfx-on)=842107 (the pack-contributed cimsepia chain
+      tints the whole frame — the atmosphere channel resolves client-side),
+      AE(plain-brick,cmd-brick)=177483 (select dispatch on CMD strings — the
+      wand), AE(thirdperson,armor)=92187 (F5 third-person + equippable helmet
+      — equipment asset resolves). Harness docs:
+      `runtime-analysis/visual-harness-join.md`.
+- **M5.4 display-entity leg (entities channel)**: item_display rig with a CMD
+  stack — plugin spawn + cimbot `--expect-extra-entity` wire check, integration
+  GREEN (f137768).
+- **M6 pull-forward (armor channel)**: equipment/<ns>/<id>.json emitted from
+  LEGACY 1.21.1 armor texture locations (textures/models/armor/_layer_N.png ->
+  entity/equipment/humanoid[_leggings]/ — path-only formula measured in
+  `EquipmentClientInfo$Layer`), manifest `visual-equipment.tsv`, equippable
+  helmet legs (wire GREEN + pixel GREEN; texture-path fix 4f7d5f9 rides run 11).
+
+**Accept:** visual.yml pixel contract GREEN (done — run 10); cimtest
+block-in-world leg + the NeoForge 1.21.1 ground-truth DIFF (render the same
+content on a modded client and diff against c-imagine's view) stay the M6
+remainder; M5.2 wire/server contract asserted green in integration.yml.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 
