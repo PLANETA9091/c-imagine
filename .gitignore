@@ -38,3 +38,4 @@ Thumbs.db
 
 # Keep the embedded bootstrap placeholder tracked, but ignore real jars
 # dropped into embedded/ by local tooling (CI overwrites it deliberately).
+paper-plugin/target/
