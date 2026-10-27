@@ -54,6 +54,9 @@ pub struct BotReport {
     pub errors: Vec<String>,
     pub packets_read: u64,
     pub packets_written: u64,
+    /// play-phase packet ids the bot frame-skipped (id -> count).
+    /// Ground truth for the live wire table (M4 translation layer input).
+    pub unknown_ids: std::collections::HashMap<i32, u64>,
     pub ok: bool,
 }
 
@@ -112,6 +115,7 @@ struct BotState {
     block_update_seen: bool,
     block_state_seen: String,
     boat_removed: bool,
+    unknown_ids: std::collections::HashMap<i32, u64>,
 }
 
 enum Phase {
@@ -208,6 +212,7 @@ pub fn run(
         block_update_seen: false,
         block_state_seen: String::new(),
         boat_removed: false,
+        unknown_ids: std::collections::HashMap::new(),
         exp,
     };
 
@@ -570,7 +575,12 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
             }
             Ok(())
         }
-        _ => Ok(()), // frame-skipped: chunks, light, syncs, chat...
+        _ => {
+            // frame-skip: chunks, light, syncs, chat... — and CENSUS the id:
+            // the unknown-id histogram is the live wire-table measurement
+            *st.unknown_ids.entry(frame.id).or_insert(0) += 1;
+            Ok(())
+        }
     }
 }
 
@@ -674,6 +684,7 @@ fn finish(
         errors: st.errors,
         packets_read: 0,
         packets_written: 0,
+        unknown_ids: st.unknown_ids,
         ok,
     };
     if let Some(sink) = report_sink {

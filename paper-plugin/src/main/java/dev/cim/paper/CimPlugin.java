@@ -228,6 +228,28 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         });
     }
 
+    /**
+     * Toggle the glowing shared flag on an entity (M4 metadata leg):
+     * a data-flag change is what actually makes the server emit a
+     * ClientboundSetEntityDataPacket — spawning with default data does not.
+     * paper-api 26.3 surface verified by javap (Entity#setGlowing(boolean)).
+     */
+    public boolean paperSetEntityGlowing(String world, String uuid, boolean on) {
+        return callSync(() -> {
+            try {
+                org.bukkit.entity.Entity e =
+                        world(world).getEntity(java.util.UUID.fromString(uuid));
+                if (e == null) {
+                    return false;
+                }
+                e.setGlowing(on);
+                return true;
+            } catch (IllegalArgumentException badUuid) {
+                return false;
+            }
+        });
+    }
+
     // ---- M4: post-effect control surface + net leg (KernelBridge targets) ----
 
     /**
@@ -330,6 +352,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
             log().info(LOG_PREFIX + "f2v net: bot joined name=" + bot.getName());
+            // Attach the outbound net watch HERE, not via PlayerJoinEvent: the
+            // join event did not fire on the CI wire order (measured — census
+            // stayed empty), and a missed attach silently blinds the watch.
+            netWatch.attach(bot);
             String world = worldName();
             boolean deepScan = Boolean.parseBoolean(
                     System.getProperty("cim.netwatch.deep", "true"));
@@ -339,6 +365,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             paperForceChunk(world, 3, 0, true);
             String boatUuid = paperSpawnEntity(world, 3, 100, 0, "minecraft:oak_boat");
             log().info(LOG_PREFIX + "f2v net: boat spawned uuid=" + boatUuid);
+            // glowing flag change -> SynchedEntityData delta -> SetEntityData
+            // on the wire (a fresh boat with default data sends NO metadata —
+            // measured on CI: the metadata leg needs an actual change).
+            // paper-api 26.3 surface verified by javap (Entity#setGlowing).
+            boolean glow = boatUuid != null
+                    && paperSetEntityGlowing(world, boatUuid, true);
+            log().info(LOG_PREFIX + "f2v net: boat glowing=" + glow);
             Thread.sleep(2500); // add_entity + set_entity_data reach the bot
 
             // 2) post effects: apply the vanilla creeper chain, then clear
