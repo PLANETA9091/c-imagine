@@ -1,11 +1,13 @@
 package dev.cim.paper;
 
+import java.lang.reflect.Method;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
@@ -38,6 +40,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     public static final String LOG_PREFIX = "[c-imagine] ";
 
     private volatile boolean worldReady;
+    private NetWatch netWatch;
+    /** M4 net leg state (single fire per boot). */
+    private volatile boolean netLegStarted;
 
     private Logger log() {
         return getLogger();
@@ -48,6 +53,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         log().info(LOG_PREFIX + "paper plugin enabled (bridge lifecycle owner)");
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
         getServer().getPluginManager().registerEvents(this, this);
+        netWatch = new NetWatch(this);
+    }
+
+    // ---- M4: player lifecycle -> net watch ----------------------------------
+
+    @EventHandler
+    public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+        netWatch.attach(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        netWatch.detach(event.getPlayer());
     }
 
     @EventHandler
@@ -208,6 +226,151 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return false;
             }
         });
+    }
+
+    // ---- M4: post-effect control surface + net leg (KernelBridge targets) ----
+
+    /**
+     * Send a 26.3 post-effect request to one player by name:
+     * {@code sendPostEffects("cimbot", ["minecraft:creeper"])} applies the
+     * chain, an EMPTY list clears all. Reflective packet construction (the
+     * packet class is NMS, not paper-api). Returns a diagnostics string.
+     */
+    public String sendPostEffects(String playerName, java.util.List<String> effectIds) {
+        return callSync(() -> {
+            try {
+                Player p = org.bukkit.Bukkit.getPlayerExact(playerName);
+                if (p == null) {
+                    return "player-not-online";
+                }
+                Class<?> rl = Class.forName("net.minecraft.resources.Identifier");
+                java.util.List<Object> ids = new java.util.ArrayList<>();
+                for (String raw : effectIds) {
+                    ids.add(makeIdentifier(rl, raw));
+                }
+                Class<?> pkt = Class.forName(
+                        "net.minecraft.network.protocol.common.ClientboundPostEffectsPacket");
+                Object packet = pkt.getConstructor(java.util.List.class).newInstance(ids);
+                Object handle = p.getClass().getMethod("getHandle").invoke(p);
+                Object listener = NetWatch.connectionField(handle.getClass(), "connection").get(handle);
+                for (Method m : listener.getClass().getMethods()) {
+                    if (m.getName().equals("send") && m.getParameterCount() == 1
+                            && m.getParameterTypes()[0].isAssignableFrom(pkt)) {
+                        m.invoke(listener, packet);
+                        return "sent " + effectIds;
+                    }
+                }
+                return "no-send-method";
+            } catch (Throwable t) {
+                return "failed: " + t;
+            }
+        });
+    }
+
+    /** Identifier factory across the renamed factory surface. */
+    private static Object makeIdentifier(Class<?> rl, String raw) throws Exception {
+        String ns = raw.contains(":") ? raw.substring(0, raw.indexOf(':')) : "minecraft";
+        String path = raw.contains(":") ? raw.substring(raw.indexOf(':') + 1) : raw;
+        for (java.lang.reflect.Method m : rl.getMethods()) {
+            if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                continue;
+            }
+            Class<?>[] p = m.getParameterTypes();
+            if (m.getReturnType() != rl) {
+                continue;
+            }
+            if (p.length == 2 && p[0] == String.class && p[1] == String.class
+                    && (m.getName().equals("fromNamespaceAndPath") || m.getName().equals("of"))) {
+                return m.invoke(null, ns, path);
+            }
+            if (p.length == 1 && p[0] == String.class
+                    && (m.getName().equals("of") || m.getName().equals("parse")
+                        || m.getName().equals("withDefaultNamespace"))) {
+                return m.invoke(null, (Object) raw);
+            }
+        }
+        throw new NoSuchMethodException("no Identifier factory for " + raw);
+    }
+
+    /** Net watch census (KernelBridge leg diagnostics). */
+    public String netWatchCensus() {
+        return netWatch.census();
+    }
+
+    /**
+     * M4 net leg (async — must NOT block the boot smoke): wait for the
+     * protocol bot to join, then drive the full wire contract against it:
+     * spawn a projected boat, apply + clear a post effect, replay the drift
+     * block (block_update on the wire), remove the boat. Completion markers
+     * are asserted by the integration job AFTER the bot exits.
+     */
+    public String startNetLeg() {
+        if (netLegStarted) {
+            return "already-running";
+        }
+        netLegStarted = true;
+        Thread leg = new Thread(this::runNetLeg, "cim-m4-net-leg");
+        leg.setDaemon(true);
+        leg.start();
+        return "started";
+    }
+
+    private void runNetLeg() {
+        try {
+            log().info(LOG_PREFIX + "f2v net leg: armed (waiting for the protocol bot)");
+            Player bot = null;
+            for (int i = 0; i < 300 && bot == null; i++) {
+                bot = callSync(() -> org.bukkit.Bukkit.getPlayerExact("cimbot"));
+                if (bot == null) {
+                    Thread.sleep(500);
+                }
+            }
+            if (bot == null) {
+                log().info(LOG_PREFIX + "f2v net leg: no bot joined within 150s (skip)");
+                return;
+            }
+            log().info(LOG_PREFIX + "f2v net: bot joined name=" + bot.getName());
+            String world = worldName();
+            boolean deepScan = Boolean.parseBoolean(
+                    System.getProperty("cim.netwatch.deep", "true"));
+            netWatch.setDeep(deepScan);
+
+            // 1) projected entity: 1.21.1 boat -> 26.3 oak_boat on the wire
+            paperForceChunk(world, 3, 0, true);
+            String boatUuid = paperSpawnEntity(world, 3, 100, 0, "minecraft:oak_boat");
+            log().info(LOG_PREFIX + "f2v net: boat spawned uuid=" + boatUuid);
+            Thread.sleep(2500); // add_entity + set_entity_data reach the bot
+
+            // 2) post effects: apply the vanilla creeper chain, then clear
+            String apply = sendPostEffects("cimbot", java.util.List.of("minecraft:creeper"));
+            log().info(LOG_PREFIX + "f2v net: postfx apply -> " + apply);
+            Thread.sleep(1500);
+            String clear = sendPostEffects("cimbot", java.util.List.of());
+            log().info(LOG_PREFIX + "f2v net: postfx clear -> " + clear);
+            Thread.sleep(1000);
+
+            // 3) replay the M3.2 drift block — block_update on the wire must
+            //    carry the translated 26.3 state (chain -> iron_chain[axis=y])
+            paperSetAir(world, 0, 100, 2);
+            Thread.sleep(500);
+            boolean set = layerSetBlock(world, 0, 100, 2, "minecraft:iron_chain[axis=y]");
+            log().info(LOG_PREFIX + "f2v net: drift block replay set=" + set);
+            Thread.sleep(1500);
+
+            // 4) despawn through the facade -> remove_entities on the wire
+            boolean removed = boatUuid != null && paperRemoveEntity(world, boatUuid);
+            paperForceChunk(world, 3, 0, false);
+            log().info(LOG_PREFIX + "f2v net: boat removed=" + removed);
+            Thread.sleep(1500);
+
+            log().info(LOG_PREFIX + "f2v net: leg complete boat=" + boatUuid
+                    + " postfx=apply+clear block=iron_chain[axis=y] census="
+                    + netWatch.census());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v net leg FAILED: " + t);
+        }
     }
 
     // ---- helpers -------------------------------------------------------------

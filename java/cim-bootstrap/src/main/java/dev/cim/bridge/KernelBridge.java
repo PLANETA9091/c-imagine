@@ -279,11 +279,28 @@ public final class KernelBridge {
 
             boolean entityOk = boatOk && pigOk;
 
+            // 7) M4 net leg (async, non-blocking): arms the wire-level
+            //    contract — the plugin waits for the protocol bot to join,
+            //    then drives boat add_entity/metadata/remove + post-effects
+            //    apply/clear + drift block_update on the live 777 wire. The
+            //    integration job asserts the completion markers AFTER the
+            //    bot exits (the boot smoke itself never waits).
+            boolean netLegArmed = false;
+            try {
+                Method startNetLeg = pluginClass.getMethod("startNetLeg");
+                String state = String.valueOf(startNetLeg.invoke(plugin));
+                netLegArmed = "started".equals(state);
+                System.out.println(LOG + " f2v net leg: arm=" + state);
+            } catch (Throwable t) {
+                System.out.println(LOG + " f2v net leg: arm FAILED " + t);
+            }
+
             boolean allOk = setOk && vanilla.equals(paperSees) && moddedSet
                     && modded.equals(layerView)
                     && broke && "minecraft:air".equals(afterBreak)
                     && driftOk && noteOk
-                    && entityOk;
+                    && entityOk
+                    && netLegArmed;
             System.out.println(LOG + " bridge smoke: " + (allOk ? "ALL OK" : "FAILED"));
         } catch (Throwable t) {
             StringBuilder chain = new StringBuilder(String.valueOf(t));

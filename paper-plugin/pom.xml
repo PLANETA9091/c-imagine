@@ -35,6 +35,27 @@
             <version>${paper.version}</version>
             <scope>provided</scope>
         </dependency>
+        <!-- M4 NetWatch: the netty wire types, pinned to the EXACT version
+             Paper 26.3 bundles (verified against the extracted runtime
+             libraries). Provided scope — the server supplies them. -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-common</artifactId>
+            <version>4.2.16.Final</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-transport</artifactId>
+            <version>4.2.16.Final</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-handler</artifactId>
+            <version>4.2.16.Final</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>

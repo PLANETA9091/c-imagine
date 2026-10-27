@@ -10,6 +10,7 @@
 //! Everything here is allocation-conscious: hot paths return sized writes into
 //! caller-owned buffers, no hidden buffers per packet.
 
+pub mod bot;
 pub mod cursor;
 pub mod frame;
 pub mod varint;

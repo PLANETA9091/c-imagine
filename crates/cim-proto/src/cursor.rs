@@ -24,6 +24,16 @@ impl<'a> ReadCursor<'a> {
         self.buf.len() - self.pos
     }
 
+    /// The not-yet-consumed tail of the payload (sub-cursor walking).
+    pub fn remaining_slice(&self) -> &'a [u8] {
+        &self.buf[self.pos..]
+    }
+
+    /// Direct cursor position access for external sub-walkers (NBT skipper).
+    pub fn position_mut(&mut self) -> &mut usize {
+        &mut self.pos
+    }
+
     pub fn read_u8(&mut self) -> Result<u8, ProtoError> {
         let b = *self.buf.get(self.pos).ok_or(ProtoError::UnexpectedEnd {
             needed: 1,
@@ -148,10 +158,12 @@ impl WriteBuf {
         self.write_bytes(u.as_bytes());
     }
 
+    /// Block position packed into an i64: x 26 bits (shift 38), z 26 bits
+    /// (shift 12), y 12 bits (shift 0) — mirrors [`ReadCursor::read_position`].
     pub fn write_position(&mut self, x: i32, y: i32, z: i32) {
         let raw = ((i64::from(x) & 0x3FF_FFFF) << 38)
-            | ((i64::from(z) & 0xFFF) << 26)
-            | (i64::from(y) & 0xFFFF_FFFF);
+            | ((i64::from(z) & 0x3FF_FFFF) << 12)
+            | (i64::from(y) & 0xFFF);
         self.write_bytes(&raw.to_be_bytes());
     }
 }

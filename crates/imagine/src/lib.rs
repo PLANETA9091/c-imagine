@@ -55,6 +55,29 @@ pub unsafe extern "C" fn cplugin_init(
         eprintln!("{} class-load hook observed: {name}", cim_core::LOG_PREFIX);
     });
 
+    // M4 DIAGNOSTIC (temporary): dump the bytes our pipeline receives for the
+    // handshake listener — reveals whether the runtime's built-in net-hooks
+    // weave runs BEFORE our byte hooks (bytes arrive pre-woven and broken:
+    // tableswitch mis-alignment VerifyError) or AFTER (we see the original).
+    cplug_sdk::hooks::register_bytes(
+        "net/minecraft/server/network/ServerHandshakePacketListenerImpl",
+        |name, data| {
+            let dump = std::env::temp_dir().join("cim-handshake-incoming.class");
+            if let Err(e) = std::fs::write(&dump, data) {
+                eprintln!("{} netwatch dump write failed: {e}", cim_core::LOG_PREFIX);
+            } else {
+                eprintln!(
+                    "{} netwatch: dumped {} bytes of {} to {}",
+                    cim_core::LOG_PREFIX,
+                    data.len(),
+                    name,
+                    dump.display()
+                );
+            }
+            None
+        },
+    );
+
     let opts = options::parse_options(options);
 
     // Raw JavaVM* is process-global and thread-safe to attach from; wrap it in
