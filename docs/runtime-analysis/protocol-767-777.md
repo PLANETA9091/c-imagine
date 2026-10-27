@@ -228,3 +228,32 @@ Consequence: the first live cimbot join should not desync on any of the
 parsed paths. Remaining live-wire risks are the ones bytecode alone cannot
 prove: `registry_data` NBT shapes (fixture-tested), chunk section formats
 (frame-skipped by design), and Paper's config-phase ordering.
+
+## 10. LIVE wire-table vs static extraction: build drift measured
+
+Two independent sources for the play-phase table disagree — measured, not guessed:
+
+| source | clientbound / serverbound | login id | postfx id |
+|---|---|---|---|
+| `ids.rs` (measured live on CI Paper, 6 ids confirmed by live parsing) | **144 / 69** | 50 | 83 |
+| patched `GameProtocols` static init, local `versions/26.3/paper-26.3.jar` bundle (srv-m4) | 142 / 67 | 49 | 81 |
+| vanilla nested `server-26.3.jar` `GameProtocols` (template BEFORE common merge) | 128 play-only | 46 | absent |
+
+Interpretation:
+
+* 26.3 vanilla separates the play template from the common family; the final
+  protocol = template + common **merged and sorted** (the patched Paper class
+  shows addPacket calls in merged name-sorted order: `custom_payload` at 23
+  between `cooldown` and `damage_event`, `disconnect` at 31, `keep_alive` 44,
+  `post_effects` 81, `update_tags` 135, dialogs 140/141).
+* the CI Paper build carries TWO more packets than the srv-m4 bundle build
+  (+1 clientbound/serverbound each, inserted past the early ids — every id
+  ≤ 11 is unaffected since `chunk_batch_finished=11` parsed live) — a Paper
+  build drift, not a protocol ambiguity. Translation tables must therefore be
+  generated FROM THE RUNNING SERVER (the bot's `unknown_ids` census — added
+  this iteration), never from a static bundle.
+
+Live-confirmed id set so far (CI bot): add_entity=1, chunk_batch_finished=11,
+login=50, player_position=73, remove_entities=78, post_effects=83.
+The `unknown_ids` histogram in cimbot-report.json extends this to the full
+144-entry map without any extra runner time.
