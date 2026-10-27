@@ -383,11 +383,18 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             Thread.sleep(1000);
 
             // 3) replay the M3.2 drift block — block_update on the wire must
-            //    carry the translated 26.3 state (chain -> iron_chain[axis=y])
+            //    carry the translated 26.3 state (chain -> iron_chain[axis=y]).
+            //    TWICE: a change sent before the client finished chunk loading
+            //    can be dropped by the client-side tracker (measured on CI).
             paperSetAir(world, 0, 100, 2);
             Thread.sleep(500);
             boolean set = layerSetBlock(world, 0, 100, 2, "minecraft:iron_chain[axis=y]");
             log().info(LOG_PREFIX + "f2v net: drift block replay set=" + set);
+            Thread.sleep(1500);
+            layerSetBlock(world, 0, 100, 2, "minecraft:air");
+            Thread.sleep(500);
+            boolean set2 = layerSetBlock(world, 0, 100, 2, "minecraft:iron_chain[axis=y]");
+            log().info(LOG_PREFIX + "f2v net: drift block replay-2 set=" + set2);
             Thread.sleep(1500);
 
             // 4) despawn through the facade -> remove_entities on the wire

@@ -1,0 +1,130 @@
+{
+ "client_26_3": {
+  "jar": "/home/z/my-project/artifacts/clients/client-26.3.jar",
+  "asset_files_total": 11811,
+  "assets_top_dirs": {
+   "textures": 4371,
+   "models": 4195,
+   "items": 1659,
+   "blockstates": 1289,
+   "particles": 116,
+   "shaders": 93,
+   "equipment": 46,
+   "atlases": 13,
+   "font": 9,
+   "post_effect": 6,
+   "texts": 5,
+   "lang": 3,
+   "waypoint_style": 3,
+   "gpu_warnlist.json": 1,
+   "regional_compliancies.json": 1
+  },
+  "post_effect_chains": 5,
+  "items_defs": 1658,
+  "models": 4192,
+  "blockstates": 1288,
+  "equipment": 45,
+  "atlases": 12,
+  "fonts": 7,
+  "shaders_all": 0,
+  "legacy_post_chains": 0,
+  "legacy_programs": 0,
+  "waypoint_style": 2,
+  "palettes": 0,
+  "item_maker_histogram": {
+   "minecraft:model": 2253,
+   "minecraft:special": 91,
+   "minecraft:select": 71,
+   "minecraft:dye": 50,
+   "minecraft:composite": 34,
+   "minecraft:copper_golem_statue": 32,
+   "minecraft:condition": 26,
+   "minecraft:bundle/selected_item": 17,
+   "minecraft:shulker_box": 17,
+   "minecraft:banner": 16,
+   "minecraft:chest": 13,
+   "minecraft:constant": 11,
+   "minecraft:range_dispatch": 8,
+   "minecraft:grass": 6,
+   "minecraft:head": 6,
+   "minecraft:potion": 4,
+   "minecraft:shield": 2,
+   "minecraft:trident": 2,
+   "minecraft:conduit": 1,
+   "minecraft:decorated_pot": 1,
+   "minecraft:firework": 1,
+   "minecraft:player_head": 1
+  },
+  "shaders_tree": {
+   "core": 63,
+   "include": 17,
+   "post": 9
+  },
+  "post_effect_ids_referenced_by_code": [],
+  "legacy_post_ids_referenced_by_code": [],
+  "atlas_source_types": {
+   "minecraft:directory": 14,
+   "minecraft:single": 2,
+   "minecraft:paletted_permutations": 1
+  },
+  "font_providers": {
+   "reference": 7,
+   "bitmap": 5,
+   "space": 1
+  }
+ },
+ "client_1_21_1": {
+  "jar": "/home/z/my-project/artifacts/clients/client-1.21.1.jar",
+  "asset_files_total": 8447,
+  "assets_top_dirs": {
+   "models": 3891,
+   "textures": 3167,
+   "blockstates": 1062,
+   "shaders": 200,
+   "particles": 99,
+   "atlases": 14,
+   "font": 7,
+   "texts": 4,
+   "gpu_warnlist.json": 1,
+   "regional_compliancies.json": 1,
+   "lang": 1
+  },
+  "post_effect_chains": 0,
+  "items_defs": 0,
+  "models": 3891,
+  "blockstates": 1062,
+  "equipment": 0,
+  "atlases": 14,
+  "fonts": 7,
+  "shaders_all": 71,
+  "legacy_post_chains": 6,
+  "legacy_programs": 9,
+  "waypoint_style": 0,
+  "palettes": 0,
+  "shaders_tree": {
+   "core": 166,
+   "program": 24,
+   "post": 6,
+   "include": 4
+  },
+  "post_effect_ids_referenced_by_code": [],
+  "legacy_post_ids_referenced_by_code": [
+   "shaders/post/blur.json",
+   "shaders/post/creeper.json",
+   "shaders/post/entity_outline.json",
+   "shaders/post/invert.json",
+   "shaders/post/spider.json",
+   "shaders/post/transparency.json"
+  ],
+  "atlas_source_types": {
+   "directory": 15,
+   "single": 6,
+   "paletted_permutations": 2
+  },
+  "font_providers": {
+   "reference": 7,
+   "bitmap": 5,
+   "space": 1
+  }
+ }
+}

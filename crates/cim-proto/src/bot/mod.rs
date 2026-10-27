@@ -575,6 +575,43 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
             }
             Ok(())
         }
+        // Paper 26.3 build drift: SECTION_BLOCKS_UPDATE sits at 84..=86
+        // depending on the build (measured: 2557 pkts on id 85 live). The
+        // FORMAT is fixed (bytecode-proven), so try-parse and act only when
+        // the leg block is actually inside the section.
+        id @ 84..=86 => {
+            match pk::parse_section_blocks_update(&frame.payload) {
+                Ok(sec) => {
+                    let (sx, sy, sz) = pk::unpack_section_pos(sec.section_pos_long);
+                    if let Some((ex, ey, ez)) = st.exp.block_at {
+                        if (ex >> 4, ey >> 4, ez >> 4) == (sx, sy, sz) {
+                            let local = ((ey & 15) << 8) | ((ez & 15) << 4) | (ex & 15);
+                            for b in &sec.blocks {
+                                if (b.local_index as i32) == local {
+                                    let state = vanilla::block_state_string(b.state_id)
+                                        .unwrap_or_else(|| format!("<unknown#{}>", b.state_id));
+                                    eprintln!(
+                                        "[cimbot] SECTION_BLOCKS_UPDATE id={id} section=({sx},{sy},{sz}) block ({ex},{ey},{ez}) state={state} (leg observed)"
+                                    );
+                                    st.observe(
+                                        "section_blocks_update",
+                                        format!("id={id} section=({sx},{sy},{sz}) state={state}"),
+                                    );
+                                    st.block_update_seen = true;
+                                    st.block_state_seen = state;
+                                }
+                            }
+                        }
+                    }
+                    Ok(())
+                }
+                Err(_) => {
+                    // not a section packet on this id (build drift) — census it
+                    *st.unknown_ids.entry(id).or_insert(0) += 1;
+                    Ok(())
+                }
+            }
+        }
         _ => {
             // frame-skip: chunks, light, syncs, chat... — and CENSUS the id:
             // the unknown-id histogram is the live wire-table measurement

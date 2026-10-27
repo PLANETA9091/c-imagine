@@ -230,6 +230,77 @@ pub fn parse_remove_entities(payload: &[u8]) -> Result<Vec<i32>, ProtoError> {
     Ok(ids)
 }
 
+/// MC unsigned varlong (7 bits per byte, MSB = continuation, little-endian
+/// order of groups, up to 10 bytes for 64 bits).
+fn rd_varlong(c: &mut ReadCursor) -> Result<i64, ProtoError> {
+    let mut value: i64 = 0;
+    for i in 0..10 {
+        let b = c.read_u8()?;
+        value |= ((b & 0x7F) as i64) << (7 * i);
+        if b & 0x80 == 0 {
+            return Ok(value);
+        }
+    }
+    Err(ProtoError::InvalidFrame("varlong too long".into()))
+}
+
+/// One block change inside a section update (26.3 format, bytecode-proven:
+/// entries are varLong packed `stateId << 12 | localPos & 0xFFF`).
+#[derive(Debug, Clone)]
+pub struct SectionBlock {
+    pub state_id: i32,
+    /// local index in the section: `(y & 15) << 8 | (z & 15) << 4 | (x & 15)`.
+    pub local_index: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct SectionBlocksUpdate {
+    /// section coords packed as 26.3 SectionPos.asLong: `x << 42 | y | z << 20`
+    /// (22-bit x/z masks, 20-bit y mask — NEW packing vs 1.21.1).
+    pub section_pos_long: i64,
+    pub blocks: Vec<SectionBlock>,
+}
+
+/// ClientboundSectionBlocksUpdatePacket (26.3): SectionPos.LONG + varint count
+/// + count × varLong(state << 12 | local).
+pub fn parse_section_blocks_update(payload: &[u8]) -> Result<SectionBlocksUpdate, ProtoError> {
+    let mut c = ReadCursor::new(payload);
+    let section_pos_long = rd_i64(&mut c)?;
+    let n = c.read_varint()?;
+    let mut blocks = Vec::with_capacity(n.clamp(0, 4096) as usize);
+    for _ in 0..n.max(0) {
+        let packed = rd_varlong(&mut c)?;
+        blocks.push(SectionBlock {
+            state_id: ((packed >> 12) & 0x1F_FFFF) as i32,
+            local_index: (packed & 0xFFF) as u16,
+        });
+    }
+    Ok(SectionBlocksUpdate {
+        section_pos_long,
+        blocks,
+    })
+}
+
+/// Unpack a 26.3 SectionPos long into (x, y, z) section coords.
+pub fn unpack_section_pos(v: i64) -> (i32, i32, i32) {
+    let x = (v >> 42) as i32;
+    let y = (v & 0xF_FFFF) as i32;
+    let z = ((v >> 20) & 0x3F_FFFF) as i32;
+    // sign-extend the 22/20-bit fields
+    let x = if x & 0x20_0000 != 0 {
+        x | !0x3F_FFFF
+    } else {
+        x
+    };
+    let z = if z & 0x20_0000 != 0 {
+        z | !0x3F_FFFF
+    } else {
+        z
+    };
+    let y = if y & 0x8_0000 != 0 { y | !0xF_FFFF } else { y };
+    (x, y, z)
+}
+
 pub fn parse_post_effects(payload: &[u8]) -> Result<Vec<String>, ProtoError> {
     let mut c = ReadCursor::new(payload);
     let n = c.read_varint()?;
@@ -427,4 +498,52 @@ pub fn en_move_player_pos_rot(
 
 pub fn en_empty() -> Vec<u8> {
     Vec::new()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 26.3 SectionPos packing (bytecode-proven asLong): x<<42 | y | z<<20.
+    #[test]
+    fn section_pos_packing_matches_bytecode() {
+        // (x, y, z) = (0, 6, 0) — the section containing y=100
+        let packed = (0i64 << 42) | (6i64 & 0xF_FFFF) | (0i64 << 20);
+        assert_eq!(unpack_section_pos(packed), (0, 6, 0));
+        // negative section x: -1 << 42 with sign extension back
+        let packed = ((-1i64 & 0x3F_FFFF) << 42) | (0i64 & 0xF_FFFF) | ((0i64 & 0x3F_FFFF) << 20);
+        assert_eq!(unpack_section_pos(packed), (-1, 0, 0));
+    }
+
+    /// SectionBlocksUpdate round trip: long sectionPos + varint count +
+    /// varLong(state << 12 | local). Encoded by hand in the measured format.
+    #[test]
+    fn section_blocks_update_parse() {
+        let section_long = (0i64 << 42) | 6i64 | (0i64 << 20); // section (0,6,0)
+        let state: i64 = 900; // arbitrary state id
+        let local: u64 = ((4u64) << 8) | (2 << 4) | 0; // block (0,100,2)
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&section_long.to_be_bytes());
+        // varint count = 1
+        payload.push(1);
+        // varLong packed — 900 << 12 | 1056
+        let packed = (state << 12) | (local as i64);
+        let mut v = packed as u64;
+        loop {
+            if v < 0x80 {
+                payload.push(v as u8);
+                break;
+            }
+            payload.push((v as u8 & 0x7F) | 0x80);
+            v >>= 7;
+        }
+        let sec = parse_section_blocks_update(&payload).expect("parse");
+        assert_eq!(sec.section_pos_long, section_long);
+        assert_eq!(sec.blocks.len(), 1);
+        assert_eq!(sec.blocks[0].state_id, 900);
+        assert_eq!(sec.blocks[0].local_index, 1056);
+        // the block (0,100,2) maps to local 1056 in section (0,6,0)
+        let local_check = ((100 & 15) << 8) | ((2 & 15) << 4) | (0 & 15);
+        assert_eq!(local_check, 1056);
+    }
 }
