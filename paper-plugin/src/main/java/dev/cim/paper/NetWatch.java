@@ -122,7 +122,7 @@ public final class NetWatch {
         }
     }
 
-    private static Field connectionField(Class<?> cls, String name) throws NoSuchFieldException {
+    static Field connectionField(Class<?> cls, String name) throws NoSuchFieldException {
         for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(name);

@@ -56,20 +56,23 @@ fn skip_named(buf: &[u8], pos: &mut usize, ty: u8) -> Result<(), ProtoError> {
 
 fn skip_payload(buf: &[u8], pos: &mut usize, ty: u8) -> Result<(), ProtoError> {
     match ty {
-        0 => Ok(()),                              // end (payload-less)
-        1 => skip_fixed(buf, pos, 1),             // byte
-        2 => skip_fixed(buf, pos, 2),             // short
-        3 | 5 => skip_fixed(buf, pos, 4),         // int | float
-        4 | 6 => skip_fixed(buf, pos, 8),         // long | double
-        7 => {                                    // byte array
+        0 => Ok(()),                      // end (payload-less)
+        1 => skip_fixed(buf, pos, 1),     // byte
+        2 => skip_fixed(buf, pos, 2),     // short
+        3 | 5 => skip_fixed(buf, pos, 4), // int | float
+        4 | 6 => skip_fixed(buf, pos, 8), // long | double
+        7 => {
+            // byte array
             let n = read_i32(buf, pos)?;
             skip_fixed(buf, pos, n.max(0) as usize)
         }
-        8 => {                                    // string
+        8 => {
+            // string
             let n = read_u16(buf, pos)? as usize;
             skip_fixed(buf, pos, n)
         }
-        9 => {                                    // list
+        9 => {
+            // list
             let elem = read_u8(buf, pos)?;
             let n = read_i32(buf, pos)?;
             for _ in 0..n.max(0) {
@@ -77,7 +80,8 @@ fn skip_payload(buf: &[u8], pos: &mut usize, ty: u8) -> Result<(), ProtoError> {
             }
             Ok(())
         }
-        10 => {                                   // compound
+        10 => {
+            // compound
             loop {
                 let entry_ty = read_u8(buf, pos)?;
                 if entry_ty == 0 {
@@ -86,11 +90,13 @@ fn skip_payload(buf: &[u8], pos: &mut usize, ty: u8) -> Result<(), ProtoError> {
                 skip_named(buf, pos, entry_ty)?;
             }
         }
-        11 => {                                   // int array
+        11 => {
+            // int array
             let n = read_i32(buf, pos)?;
             skip_fixed(buf, pos, n.max(0) as usize * 4)
         }
-        12 => {                                   // long array
+        12 => {
+            // long array
             let n = read_i32(buf, pos)?;
             skip_fixed(buf, pos, n.max(0) as usize * 8)
         }

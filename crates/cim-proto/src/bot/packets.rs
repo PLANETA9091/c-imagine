@@ -57,8 +57,16 @@ pub fn skip_entity_data_value(c: &mut ReadCursor, serializer: i32) -> Result<boo
         BYTE | BOOLEAN => {
             c.read_u8()?;
         }
-        INT | BLOCK_STATE | DIRECTION | POSE | ARMADILLO_STATE | SNIFFER_STATE
-        | WEATHERING_COPPER_STATE | COPPER_GOLEM_STATE | HUMANOID_ARM | DYE_COLOR => {
+        INT
+        | BLOCK_STATE
+        | DIRECTION
+        | POSE
+        | ARMADILLO_STATE
+        | SNIFFER_STATE
+        | WEATHERING_COPPER_STATE
+        | COPPER_GOLEM_STATE
+        | HUMANOID_ARM
+        | DYE_COLOR => {
             c.read_varint()?;
         }
         LONG => {
@@ -153,7 +161,14 @@ pub fn parse_add_entity(payload: &[u8]) -> Result<AddEntity, ProtoError> {
     let _y_rot = c.read_u8()?;
     let _y_head = c.read_u8()?;
     let _data = c.read_varint()?;
-    Ok(AddEntity { id, uuid, type_id, x, y, z })
+    Ok(AddEntity {
+        id,
+        uuid,
+        type_id,
+        x,
+        y,
+        z,
+    })
 }
 
 pub struct PlayerPosition {
@@ -180,7 +195,15 @@ pub fn parse_player_position(payload: &[u8]) -> Result<PlayerPosition, ProtoErro
     let y_rot = rd_f32(&mut c)?;
     let x_rot = rd_f32(&mut c)?;
     let relatives = rd_i32(&mut c)?;
-    Ok(PlayerPosition { teleport_id, x, y, z, y_rot, x_rot, relatives })
+    Ok(PlayerPosition {
+        teleport_id,
+        x,
+        y,
+        z,
+        y_rot,
+        x_rot,
+        relatives,
+    })
 }
 
 pub struct BlockUpdate {
@@ -227,7 +250,11 @@ pub fn parse_registry_data(payload: &[u8]) -> Result<RegistryData, ProtoError> {
     if std::env::var_os("CIMBOT_DUMP").is_some() {
         let n: usize = payload.len().min(160);
         let hex: Vec<String> = payload[..n].iter().map(|b| format!("{b:02x}")).collect();
-        eprintln!("[cimbot-dump] registry_data len={} hex={}", payload.len(), hex.join(" "));
+        eprintln!(
+            "[cimbot-dump] registry_data len={} hex={}",
+            payload.len(),
+            hex.join(" ")
+        );
         let _ = std::fs::write("/tmp/regdata-last.bin", payload);
     }
     let mut c = ReadCursor::new(payload);
@@ -243,13 +270,11 @@ pub fn parse_registry_data(payload: &[u8]) -> Result<RegistryData, ProtoError> {
         entry_ids.push(name);
         // optional NBT tag (bool presence byte, then unnamed root)
         let before = c.position();
-        let present = c
-            .read_u8()
-            .map_err(|e| {
-                ProtoError::InvalidFrame(format!(
-                    "registry {key} entry[{i}] presence @off{before}: {e}"
-                ))
-            })?;
+        let present = c.read_u8().map_err(|e| {
+            ProtoError::InvalidFrame(format!(
+                "registry {key} entry[{i}] presence @off{before}: {e}"
+            ))
+        })?;
         if present != 0 {
             // skip within the REMAINING slice (relative coords!) then fold back
             let mut nbt_pos = 0usize;

@@ -23,7 +23,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let mut i = 1;
     while i < args.len() {
-        let mut val = |i: &mut usize| -> String {
+        let val = |i: &mut usize| -> String {
             *i += 1;
             args.get(*i).cloned().unwrap_or_default()
         };
@@ -83,7 +83,12 @@ fn main() {
 
     eprintln!("[cimbot] result: ok={} checks:", rep.ok);
     for c in &rep.checks {
-        eprintln!("[cimbot]   [{}] {} {}", if c.passed { "PASS" } else { "FAIL" }, c.name, c.detail);
+        eprintln!(
+            "[cimbot]   [{}] {} {}",
+            if c.passed { "PASS" } else { "FAIL" },
+            c.name,
+            c.detail
+        );
     }
     for e in &rep.errors {
         eprintln!("[cimbot]   error: {e}");

@@ -1042,7 +1042,11 @@ mod repair_tests {
                     let body = p + 6;
                     if a_name == "Code" && alen >= 8 {
                         let clen = u32at(c, body + 4) as usize;
-                        out.push((name.to_string(), desc.to_string(), c[body + 8..body + 8 + clen].to_vec()));
+                        out.push((
+                            name.to_string(),
+                            desc.to_string(),
+                            c[body + 8..body + 8 + clen].to_vec(),
+                        ));
                         // (name/desc already owned Strings)
                     }
                     p = body + alen;

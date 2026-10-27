@@ -5,6 +5,10 @@
 //! registration order of `addPacket`/`withBundlePacket` in the protocol
 //! builders — never guessed.
 
+// Wire-table catalog: constants are consumed incrementally as M4 packet
+// translation implements each leg; unused entries stay as measured ground truth.
+#![allow(dead_code)]
+
 /// SharedConstants.getProtocolVersion() == `sipush 777` (bytecode-measured).
 pub const PROTOCOL_VERSION: i32 = 777;
 

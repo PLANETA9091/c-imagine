@@ -57,6 +57,9 @@ pub struct BotReport {
     pub ok: bool,
 }
 
+/// One-shot report consumer (used by integration harnesses to forward results).
+pub type ReportSink = Box<dyn FnOnce(&BotReport)>;
+
 #[derive(Debug, serde::Serialize)]
 pub struct Check {
     pub name: String,
@@ -67,7 +70,7 @@ pub struct Check {
 /// What the bot must observe (integration contract).
 #[derive(Debug, Clone)]
 pub struct Expectations {
-    pub entity_type: String,            // e.g. "minecraft:oak_boat"
+    pub entity_type: String, // e.g. "minecraft:oak_boat"
     pub block_at: Option<(i32, i32, i32)>,
     pub post_fx_effect: Option<String>, // e.g. "minecraft:creeper"
     /// Join-only mode: exit ok after `join_grace` seconds of stable play.
@@ -182,7 +185,7 @@ pub fn run(
     name: &str,
     overall_timeout: Duration,
     exp: Expectations,
-    report_sink: Option<Box<dyn FnOnce(&BotReport)>>,
+    report_sink: Option<ReportSink>,
 ) -> BotReport {
     let start = Instant::now();
     let mut st = BotState {
@@ -229,7 +232,10 @@ pub fn run(
         st.errors.push(format!("hello: {e}"));
         return finish(st, host, port, name, report_sink);
     }
-    eprintln!("[cimbot] handshake sent (protocol {}, next=login)", wire::PROTOCOL_VERSION);
+    eprintln!(
+        "[cimbot] handshake sent (protocol {}, next=login)",
+        wire::PROTOCOL_VERSION
+    );
 
     let deadline = Instant::now() + overall_timeout;
     let mut last_tick = Instant::now();
@@ -245,7 +251,12 @@ pub fn run(
             let move_pkt = PacketFrame::new(
                 wire::PS_MOVE_PLAYER_POS_ROT,
                 pk::en_move_player_pos_rot(
-                    st.pos.0, st.pos.1, st.pos.2, st.rot.0, st.rot.1, st.on_ground,
+                    st.pos.0,
+                    st.pos.1,
+                    st.pos.2,
+                    st.rot.0,
+                    st.rot.1,
+                    st.on_ground,
                 ),
             );
             let tick_end = PacketFrame::new(wire::PS_CLIENT_TICK_END, pk::en_empty());
@@ -307,11 +318,16 @@ fn handle_login(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Resul
             eprintln!("[cimbot] login finished -> configuration");
             st.phase = Phase::Configuration;
             send(conn, wire::LS_LOGIN_ACKNOWLEDGED, pk::en_empty())?;
-            send(conn, wire::CS_CLIENT_INFORMATION, pk::en_client_information())
+            send(
+                conn,
+                wire::CS_CLIENT_INFORMATION,
+                pk::en_client_information(),
+            )
         }
-        wire::LC_DISCONNECT => {
-            Err(format!("kicked in login: {}", skimmable_text(&frame.payload)))
-        }
+        wire::LC_DISCONNECT => Err(format!(
+            "kicked in login: {}",
+            skimmable_text(&frame.payload)
+        )),
         wire::LC_HELLO => Err("server asked for encryption (expected offline mode)".into()),
         wire::LC_CUSTOM_QUERY => Err("custom query in login (unexpected)".into()),
         other => Err(format!("unexpected login packet {other}")),
@@ -326,7 +342,11 @@ fn handle_configuration(
     match frame.id {
         wire::CC_SELECT_KNOWN_PACKS => {
             eprintln!("[cimbot] config: select_known_packs -> empty reply");
-            send(conn, wire::CS_SELECT_KNOWN_PACKS, pk::en_select_known_packs_empty())
+            send(
+                conn,
+                wire::CS_SELECT_KNOWN_PACKS,
+                pk::en_select_known_packs_empty(),
+            )
         }
         wire::CC_REGISTRY_DATA => {
             let data = pk::parse_registry_data(&frame.payload)
@@ -356,7 +376,11 @@ fn handle_configuration(
             let mut c = crate::ReadCursor::new(&frame.payload);
             let id = c.read_uuid().map_err(|e| e.to_string())?;
             eprintln!("[cimbot] config: resource pack push -> declined");
-            send(conn, wire::CS_RESOURCE_PACK, pk::en_resource_pack_declined(id))
+            send(
+                conn,
+                wire::CS_RESOURCE_PACK,
+                pk::en_resource_pack_declined(id),
+            )
         }
         wire::CC_CODE_OF_CONDUCT => {
             eprintln!("[cimbot] config: code of conduct -> accepted");
@@ -364,12 +388,22 @@ fn handle_configuration(
         }
         wire::CC_FINISH_CONFIGURATION => {
             let types = st.entity_types.len();
-            eprintln!("[cimbot] config finished (registries={}, entity_types={types}) -> play", st.registries);
-            st.check("config dynamic registries parsed", st.registries >= 25, format!("{}", st.registries));
+            eprintln!(
+                "[cimbot] config finished (registries={}, entity_types={types}) -> play",
+                st.registries
+            );
+            st.check(
+                "config dynamic registries parsed",
+                st.registries >= 25,
+                format!("{}", st.registries),
+            );
             st.check(
                 "entity_type vanilla table loaded",
                 vanilla::entity_type_count() >= 161,
-                format!("{types} streamed (static table: {})", vanilla::entity_type_count()),
+                format!(
+                    "{types} streamed (static table: {})",
+                    vanilla::entity_type_count()
+                ),
             );
             st.phase = Phase::Play;
             send(conn, wire::CS_FINISH_CONFIGURATION, pk::en_empty())
@@ -402,7 +436,11 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
                 login.player_id, login.levels
             );
             st.observe("join", format!("player_id={}", login.player_id));
-            st.check("joined play", true, format!("player_id={}", login.player_id));
+            st.check(
+                "joined play",
+                true,
+                format!("player_id={}", login.player_id),
+            );
             Ok(())
         }
         wire::PC_PLAYER_POSITION => {
@@ -440,9 +478,11 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
             let id = pk::parse_ping(&frame.payload).map_err(|e| e.to_string())?;
             send(conn, wire::PS_PING_REQUEST, pk::en_ping_request(id))
         }
-        wire::PC_CHUNK_BATCH_FINISHED => {
-            send(conn, wire::PS_CHUNK_BATCH_RECEIVED, pk::en_chunk_batch_received(50.0))
-        }
+        wire::PC_CHUNK_BATCH_FINISHED => send(
+            conn,
+            wire::PS_CHUNK_BATCH_RECEIVED,
+            pk::en_chunk_batch_received(50.0),
+        ),
         wire::PC_DISCONNECT => Err(format!(
             "kicked in play: {}",
             skimmable_text(&frame.payload)
@@ -457,7 +497,10 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
                 );
                 st.observe(
                     "add_entity",
-                    format!("id={} uuid={} type={ty} pos=({:.1},{:.1},{:.1})", a.id, a.uuid, a.x, a.y, a.z),
+                    format!(
+                        "id={} uuid={} type={ty} pos=({:.1},{:.1},{:.1})",
+                        a.id, a.uuid, a.x, a.y, a.z
+                    ),
                 );
                 if st.boat.is_none() {
                     st.boat = Some((a.id, a.uuid));
@@ -471,16 +514,16 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
             if st.boat.map(|(bid, _)| bid == id).unwrap_or(false) {
                 match pk::parse_entity_data_entries(&mut c) {
                     Ok(entries) => {
-                        eprintln!(
-                            "[cimbot] SET_ENTITY_DATA id={id} entries={}",
-                            entries.len()
-                        );
+                        eprintln!("[cimbot] SET_ENTITY_DATA id={id} entries={}", entries.len());
                         st.boat_seen_metadata = true;
                         st.observe(
                             "set_entity_data",
                             format!(
                                 "id={id} entries={:?}",
-                                entries.iter().map(|e| (e.index, e.serializer)).collect::<Vec<_>>()
+                                entries
+                                    .iter()
+                                    .map(|e| (e.index, e.serializer))
+                                    .collect::<Vec<_>>()
                             ),
                         );
                     }
@@ -553,18 +596,14 @@ fn finish(
     host: &str,
     port: u16,
     name: &str,
-    report_sink: Option<Box<dyn FnOnce(&BotReport)>>,
+    report_sink: Option<ReportSink>,
 ) -> BotReport {
     // final check aggregation
     let fx_apply = st
         .exp
         .post_fx_effect
         .as_deref()
-        .map(|want| {
-            st.post_fx_seen
-                .iter()
-                .any(|l| l.len() == 1 && l[0] == want)
-        })
+        .map(|want| st.post_fx_seen.iter().any(|l| l.len() == 1 && l[0] == want))
         .unwrap_or(true);
     let fx_clear = st.post_fx_seen.iter().any(|l| l.is_empty());
     let block_ok = st
@@ -583,15 +622,36 @@ fn finish(
             format!("stable {:?} in play", st.exp.join_grace),
         );
     } else {
-        st.check("entity leg: add_entity", st.boat.is_some(), format!("{:?}", st.boat));
-        st.check("entity leg: set_entity_data", st.boat_seen_metadata, "".into());
+        st.check(
+            "entity leg: add_entity",
+            st.boat.is_some(),
+            format!("{:?}", st.boat),
+        );
+        st.check(
+            "entity leg: set_entity_data",
+            st.boat_seen_metadata,
+            "".into(),
+        );
         st.check("entity leg: remove_entities", st.boat_removed, "".into());
-        st.check("post_effects apply", fx_apply, format!("{:?}", st.post_fx_seen));
-        st.check("post_effects clear", fx_clear, format!("{:?}", st.post_fx_seen));
-        st.check("block_update leg", block_ok, format!("{:?}", st.exp.block_at));
+        st.check(
+            "post_effects apply",
+            fx_apply,
+            format!("{:?}", st.post_fx_seen),
+        );
+        st.check(
+            "post_effects clear",
+            fx_clear,
+            format!("{:?}", st.post_fx_seen),
+        );
+        st.check(
+            "block_update leg",
+            block_ok,
+            format!("{:?}", st.exp.block_at),
+        );
         st.check(
             "block drift state iron_chain[axis=y",
-            st.block_state_seen.starts_with("minecraft:iron_chain[axis=y"),
+            st.block_state_seen
+                .starts_with("minecraft:iron_chain[axis=y"),
             st.block_state_seen.clone(),
         );
     }

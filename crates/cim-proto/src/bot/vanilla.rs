@@ -71,6 +71,8 @@ pub fn entity_type_count() -> usize {
     entity_map().len()
 }
 
+// Test-assertion helper; production use lands with the M4 chunk decode leg.
+#[cfg(test)]
 pub fn block_state_count() -> usize {
     state_map().len()
 }

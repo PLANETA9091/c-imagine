@@ -91,7 +91,10 @@ pub unsafe extern "C" fn cplugin_init(
                 }
                 Ok(None) => None,
                 Err(e) => {
-                    eprintln!("{} weave repair FAILED for {name}: {e}", cim_core::LOG_PREFIX);
+                    eprintln!(
+                        "{} weave repair FAILED for {name}: {e}",
+                        cim_core::LOG_PREFIX
+                    );
                     None
                 }
             }
