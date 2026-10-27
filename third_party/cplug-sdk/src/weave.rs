@@ -938,3 +938,140 @@ mod tests {
         }
     }
 }
+
+/// Repair for a foreign injector that prepends a 3-byte
+/// `invokestatic <target_class>.*` to method code WITHOUT fixing up any
+/// offset-sensitive structure (branch targets, switch padding, stack map
+/// frames). Removing the prefix restores the original bytes exactly, so the
+/// repair is a pure splice: delete the 3 bytes from every method whose code
+/// starts with an `invokestatic` into `target_class`, and decrement the code
+/// length + attribute length by 3. Exception-table pcs and StackMapTable
+/// offsets were left untouched by the faulty injector, so after the splice
+/// they line up with the restored (original) instruction positions again.
+///
+/// Returns `Ok(None)` when no method matched (class untouched).
+pub fn strip_invokestatic_prefix(
+    mut bytes: Vec<u8>,
+    target_class: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let cp = Cp::parse(&bytes)?;
+    // Collect (code_len_pos, attr_len_pos) for every matching method, then
+    // splice in REVERSE file order so earlier positions stay valid.
+    let mut matches: Vec<(usize, usize)> = Vec::new();
+    let mut p = cp.end;
+    p += 6; // access, this, super
+    let ifaces = u16at(&bytes, p) as usize;
+    p += 2 + ifaces * 2;
+    p = skip_fields(&bytes, p)?;
+    let methods = u16at(&bytes, p) as usize;
+    p += 2;
+    for _ in 0..methods {
+        let attr_count = u16at(&bytes, p + 6) as usize;
+        p += 8;
+        for _ in 0..attr_count {
+            let attr_name_idx = u16at(&bytes, p);
+            let attr_len = u32at(&bytes, p + 2) as usize;
+            let attr_body = p + 6;
+            let a_name = cp.utf8(&bytes, attr_name_idx).unwrap_or_default();
+            if a_name == "Code" && attr_len >= 11 {
+                let code_len = u32at(&bytes, attr_body + 4) as usize;
+                if code_len >= 3 && bytes[attr_body + 8] == 0xb8 {
+                    let cp_idx = u16at(&bytes, attr_body + 9);
+                    if let Ok((cls, _, _)) = methodref_target(&bytes, &cp, cp_idx) {
+                        if cls == target_class {
+                            matches.push((attr_body + 4, p + 2));
+                        }
+                    }
+                }
+            }
+            p = attr_body + attr_len;
+        }
+    }
+    if matches.is_empty() {
+        return Ok(None);
+    }
+    for (code_len_pos, attr_len_pos) in matches.iter().rev() {
+        let code_len = u32at(&bytes, *code_len_pos) as usize;
+        let attr_len = u32at(&bytes, *attr_len_pos) as usize;
+        // splice out the 3-byte prefix (code bytes start at code_len_pos + 4)
+        let start = code_len_pos + 4;
+        bytes.drain(start..start + 3);
+        // code length u4 -= 3, attribute length u4 -= 3
+        let new_code = (code_len - 3) as u32;
+        let new_attr = (attr_len - 3) as u32;
+        bytes[*code_len_pos..*code_len_pos + 4].copy_from_slice(&new_code.to_be_bytes());
+        bytes[*attr_len_pos..*attr_len_pos + 4].copy_from_slice(&new_attr.to_be_bytes());
+    }
+    Ok(Some(bytes))
+}
+
+#[cfg(test)]
+mod repair_tests {
+    use super::*;
+
+    /// The runtime 0.2.0 NetHooks weave of ServerHandshakePacketListenerImpl:
+    /// strip must restore every method code array BYTE-FOR-BYTE. (The woven
+    /// file also carries ~15 dead constant-pool entries — legal and inert,
+    /// so whole-file equality is not expected.)
+    #[test]
+    fn strip_restores_pristine_handshake_class() {
+        let woven = include_bytes!("fixtures/woven-handshake.class");
+        let orig = include_bytes!("fixtures/orig-handshake.class");
+        let repaired = strip_invokestatic_prefix(woven.to_vec(), "dev/crussty/hooks/NetHooks")
+            .expect("strip failed")
+            .expect("no prefix matched — fixture stale");
+
+        let code_of = |c: &Vec<u8>| -> Vec<(String, String, Vec<u8>)> {
+            let cp = Cp::parse(c).expect("cp parse");
+            let mut out = Vec::new();
+            let mut p = cp.end;
+            p += 6;
+            let ifaces = u16at(c, p) as usize;
+            p += 2 + ifaces * 2;
+            p = skip_fields(c, p).expect("fields");
+            let methods = u16at(c, p) as usize;
+            p += 2;
+            for _ in 0..methods {
+                let name = cp.utf8(c, u16at(c, p + 2)).unwrap_or_default();
+                let desc = cp.utf8(c, u16at(c, p + 4)).unwrap_or_default();
+                let attr_count = u16at(c, p + 6) as usize;
+                p += 8;
+                for _ in 0..attr_count {
+                    let a_name = cp.utf8(c, u16at(c, p)).unwrap_or_default();
+                    let alen = u32at(c, p + 2) as usize;
+                    let body = p + 6;
+                    if a_name == "Code" && alen >= 8 {
+                        let clen = u32at(c, body + 4) as usize;
+                        out.push((name.to_string(), desc.to_string(), c[body + 8..body + 8 + clen].to_vec()));
+                        // (name/desc already owned Strings)
+                    }
+                    p = body + alen;
+                }
+            }
+            out
+        };
+        let r = code_of(&repaired);
+        let o = code_of(&orig.to_vec());
+        assert_eq!(r.len(), o.len(), "same method count");
+        for (a, b) in r.iter().zip(o.iter()) {
+            assert_eq!(a.0, b.0, "method name order");
+            assert_eq!(
+                a.2, b.2,
+                "code array of {}{} must be byte-identical after the repair",
+                a.0, a.1
+            );
+        }
+        // idempotent: a second pass matches nothing
+        let again = strip_invokestatic_prefix(repaired.clone(), "dev/crussty/hooks/NetHooks")
+            .expect("second strip failed");
+        assert!(again.is_none(), "repair must be idempotent");
+    }
+
+    #[test]
+    fn strip_is_noop_when_no_prefix() {
+        let orig = include_bytes!("fixtures/orig-handshake.class");
+        let r = strip_invokestatic_prefix(orig.to_vec(), "dev/crussty/hooks/NetHooks")
+            .expect("strip failed");
+        assert!(r.is_none(), "no method should match in the pristine class");
+    }
+}

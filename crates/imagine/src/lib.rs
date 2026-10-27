@@ -55,28 +55,48 @@ pub unsafe extern "C" fn cplugin_init(
         eprintln!("{} class-load hook observed: {name}", cim_core::LOG_PREFIX);
     });
 
-    // M4 DIAGNOSTIC (temporary): dump the bytes our pipeline receives for the
-    // handshake listener — reveals whether the runtime's built-in net-hooks
-    // weave runs BEFORE our byte hooks (bytes arrive pre-woven and broken:
-    // tableswitch mis-alignment VerifyError) or AFTER (we see the original).
-    cplug_sdk::hooks::register_bytes(
+    // M4 WEAVE REPAIR: the runtime 0.2.0 NetHooks brick prepends a 3-byte
+    // `invokestatic dev/crussty/hooks/NetHooks.*` to method code WITHOUT
+    // fixing branch offsets / switch padding / stack maps — any woven method
+    // containing a switch fails verification (`handleIntention` is the
+    // proven case: VerifyError on the FIRST client socket, dormant through
+    // M0-M3 because nothing connected). Our byte hook receives the woven
+    // bytes and strips the foreign prefix, restoring the pristine class
+    // (byte-for-byte method code — fixture-tested in cplug-sdk). The stripped
+    // hook events belong to the runtime's optional packet-events brick, which
+    // c-imagine does not consume (it has its own NetWatch).
+    // Measured weave targets (runtime 0.2.0): the handshake listener is the
+    // only ACTIVE NetHooks weave; the other rule classes verify fine today —
+    // the hook list below covers them defensively and is a no-op unless a
+    // foreign prefix is actually present.
+    for pattern in [
         "net/minecraft/server/network/ServerHandshakePacketListenerImpl",
-        |name, data| {
-            let dump = std::env::temp_dir().join("cim-handshake-incoming.class");
-            if let Err(e) = std::fs::write(&dump, data) {
-                eprintln!("{} netwatch dump write failed: {e}", cim_core::LOG_PREFIX);
-            } else {
-                eprintln!(
-                    "{} netwatch: dumped {} bytes of {} to {}",
-                    cim_core::LOG_PREFIX,
-                    data.len(),
-                    name,
-                    dump.display()
-                );
+        "net/minecraft/network/Connection",
+        "net/minecraft/network/PacketDecoder",
+        "net/minecraft/network/PacketEncoder",
+    ] {
+        cplug_sdk::hooks::register_bytes(pattern, move |name, data| {
+            match cplug_sdk::weave::strip_invokestatic_prefix(
+                data.to_vec(),
+                "dev/crussty/hooks/NetHooks",
+            ) {
+                Ok(Some(repaired)) => {
+                    eprintln!(
+                        "{} weave repair: stripped foreign NetHooks prefix from {name} ({} -> {} bytes)",
+                        cim_core::LOG_PREFIX,
+                        data.len(),
+                        repaired.len()
+                    );
+                    Some(repaired)
+                }
+                Ok(None) => None,
+                Err(e) => {
+                    eprintln!("{} weave repair FAILED for {name}: {e}", cim_core::LOG_PREFIX);
+                    None
+                }
             }
-            None
-        },
-    );
+        });
+    }
 
     let opts = options::parse_options(options);
 
