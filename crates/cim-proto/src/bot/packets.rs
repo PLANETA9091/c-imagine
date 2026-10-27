@@ -508,10 +508,12 @@ mod tests {
     #[test]
     fn section_pos_packing_matches_bytecode() {
         // (x, y, z) = (0, 6, 0) — the section containing y=100
+        #[allow(clippy::identity_op)]
         let packed = (0i64 << 42) | (6i64 & 0xF_FFFF) | (0i64 << 20);
         assert_eq!(unpack_section_pos(packed), (0, 6, 0));
         // negative section x: -1 << 42 with sign extension back
-        let packed = ((-1i64 & 0x3F_FFFF) << 42) | (0i64 & 0xF_FFFF) | ((0i64 & 0x3F_FFFF) << 20);
+        #[allow(clippy::identity_op, clippy::erasing_op)]
+        let packed = ((-1i64 & 0x3F_FFFF) << 42) | ((0i64 & 0x3F_FFFF) << 20);
         assert_eq!(unpack_section_pos(packed), (-1, 0, 0));
     }
 
@@ -519,8 +521,10 @@ mod tests {
     /// varLong(state << 12 | local). Encoded by hand in the measured format.
     #[test]
     fn section_blocks_update_parse() {
+        #[allow(clippy::identity_op, clippy::erasing_op)]
         let section_long = (0i64 << 42) | 6i64 | (0i64 << 20); // section (0,6,0)
         let state: i64 = 900; // arbitrary state id
+        #[allow(clippy::identity_op)]
         let local: u64 = ((4u64) << 8) | (2 << 4) | 0; // block (0,100,2)
         let mut payload = Vec::new();
         payload.extend_from_slice(&section_long.to_be_bytes());
@@ -543,6 +547,7 @@ mod tests {
         assert_eq!(sec.blocks[0].state_id, 900);
         assert_eq!(sec.blocks[0].local_index, 1056);
         // the block (0,100,2) maps to local 1056 in section (0,6,0)
+        #[allow(clippy::identity_op, clippy::erasing_op)]
         let local_check = ((100 & 15) << 8) | ((2 & 15) << 4) | (0 & 15);
         assert_eq!(local_check, 1056);
     }
