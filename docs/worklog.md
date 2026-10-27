@@ -443,3 +443,16 @@ Work Log:
 Stage Summary:
 - The whole give->wire->pack dispatch chain is instrumented; the single red assert was an unmeasured server-side event assumption, now measured and documented.
 - Next: CI green on iteration 2 -> registry_names census answers the postfx delivery question -> M5.3: xvfb real-client harness (download+apply+screenshot) for pixel ground truth.
+
+---
+Task ID: 10-c
+Agent: main
+Task: M5.2 iteration 3 — wire-CMD channel measured + fixed; M5.3 xvfb harness scaffolded
+
+Work Log:
+- integration@1a1a5ce measured: give leg PASS (marker present), modded chain c-imagine:cimsepia REACHED THE BOT on the wire (POST_EFFECTS: ["c-imagine:cimsepia"], checks PASS) — the M5.3a request leg is proven live. Single red: "container content" watcher saw nothing — census shows ClientboundContainerSetSlotPacket=3 and ZERO content packets: addItem syncs via the SLOT packet on 26.3. Watcher now covers both classes with a shared describeItemCmd helper (DataComponents.CUSTOM_MODEL_DATA reflection).
+- visual.yml M5.3 harness scaffolded (dispatch-only): scripts/fetch-visual-client.py resolves the piston runtime (dry-run verified: client 41.5 MB + 66 libs 83.4 MB + assets[34] 485 MB, java 25, mainClass net.minecraft.client.main.Main, classpath + launch line with --quickPlayMultiplayer); the job stages bare Paper (crussty init, NO module — the pack pipeline is plugin-only), builds the pack pre-boot, boots with a console FIFO, joins with the real client under Xvfb (software GL), and enforces the 3-screenshot pixel contract: baseline (empty) vs vanilla paper vs CMD paper — AE(cmd,vanilla) > 0 is the range_dispatch proof; evidence uploaded.
+
+Stage Summary:
+- The full visual chain is now instrumented end-to-end: pack -> config push -> bot accept (wire) -> give -> SLOT packet carries CMD (wire) -> pack range_dispatch (pixel proof pending the xvfb run).
+- Next: integration green -> dispatch visual.yml once -> fix harness first-run issues -> M5.3 done + registry_names census answers the postfx delivery fork.
