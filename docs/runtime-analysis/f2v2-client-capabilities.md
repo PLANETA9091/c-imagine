@@ -183,3 +183,26 @@ that simply did not exist in 1.21.1.
 4. Palette/dye paths rely on vanilla palette PNG format — verify exact schema at M6
    (sample: `textures/palettes` loader `Palette.class`).
 5. Everything above must ride pack format **97.1** (Paper 26.3 resourcepack version).
+
+## 10. Registry migration PROVEN by code triggers (census-visual-263.py)
+
+`scripts/census-visual-263.py` (in-repo, rebuilds `data/visual-inventory.json`)
+scans every class constant pool for resource-path literals:
+
+* 1.21.1 client code hardcodes all 6 legacy chains:
+  `shaders/post/{blur,creeper,entity_outline,invert,spider,transparency}.json`;
+* the 26.3 client code hardcodes **ZERO** `post_effect/...` path literals —
+  chain ids arrive through the registry/`ClientboundPostEffectsPacket` and
+  resolve via `FileToIdConverter` at runtime.
+
+That is the strongest possible proof of the migration claim in section 1:
+in 26.3 the chain surface is purely data-driven, so a resource pack (F2V 2.0)
+can add chains WITHOUT touching code, and the server can address any of them
+by id on the wire.
+
+Raw counts (26.3 / 1.21.1): post_effect chains 5 / 0 (legacy 6),
+items defs 1658 / 0 (legacy models/item 1309 kept as parents),
+equipment 45 / 0, atlases 12 / 8, fonts 7 / 5,
+shaders tree core 63 / 166 + program 24 / 0 + post 9 / 6 + include 17 / 4,
+asset files 11811 / 8447 (+40%). New top-level asset roots: `equipment`,
+`items`, `post_effect`, `waypoint_style`.
