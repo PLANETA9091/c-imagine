@@ -325,3 +325,24 @@ Stage Summary:
 - ci@bd01c2a GREEN (last code-bearing commit).
 - CI economy: docs/workflow-only pushes burn nothing (path filters); today's 6 integration runs were required matrix validation.
 - Next: M4 — F2V v2 packet translation v1 (net hooks, protocol bot; ClientboundPostEffects family mapping per the F2V 2.0 doc).
+
+---
+Task ID: 7
+Agent: main
+Task: sandbox rebirth recovery + M4 NetHooks weave ClassFormatError root-caused and fixed + common-packet drift 767<->777 measured
+
+Work Log:
+- Sandbox was reset again (all local artifacts lost; repo recovered from GitHub). Toolchain restored: rustup 1.99.1 + rustfmt/clippy, portable JDK 21 + JDK 25 (Adoptium), Maven 3.9.9 (archive).
+- CI red on f5f88e5 diagnosed from Actions logs (zero extra minutes): (1) cargo fmt diffs in 5 files, (2) 17 clippy -D warnings in new m4 bot code (dead-code catalog ids.rs, ReportSink type_complexity x2, cfg(test)-only helper), (3) paper-plugin: NetWatch.connectionField private access from CimPlugin:255.
+- Fixed all three; local-check.sh ALL OK (fmt/clippy/80 tests/release), mvn compile BUILD SUCCESS. Pushed 09e63a7+1ace381: ci green on all 5 non-boot jobs; boot job still red.
+- BOOT ROOT CAUSE (deep, measured): weave repair's strip_invokestatic_prefix removed 3 bytes but runtime 0.2.0 inserts 4 (invokestatic+nop; the nop keeps switch padding residue valid per CRUSSTY transform.rs:1401) AND shifts +4: exception pcs, LNT start_pc, LVT/LVTT start/length, ONE StackMapTable frame delta (first frame with abs>0). 3-byte splice -> LNT pc 13 >= code_len 11 -> "Invalid pc in LineNumberTable" on Connection (2 method-entry hooks: channelInactive, setupInboundProtocol).
+- Evidence pipeline: local CRUSSTY v2.9.0 stand (srv-m4) reproduced CI 1:1 (48836->48830 + same error); CIM_DUMP_WOVEN env added to capture woven bytes; pristine = nested META-INF/versions/26.3/server-26.3.jar class from the launcher-patched paper jar; diff-woven.py (scripts/, class-file parser cf_parse.py) measured the weave to the byte (+4 code_len/attr_len, LNT entries>0 +4, LVT len+4 when start==0, SMT frame0 41->45 with frame1 riding relatively).
+- strip_invokestatic_prefix REWRITTEN (cplug-sdk): plan/apply-reverse edit model; N=4 when code[3]==0x00 (nop) else 3 (legacy bare shape, old handshake fixture still green); full attribute mirror incl. SMT first-frame delta decode with extended(247/251)->inline re-encoding (attr shrink -2); Cp passed in, vti_len_at infallible walk. Bug found by the new tests themselves: attribute length u4 sits at body-4 (not body-6).
+- NEW fixtures: woven-connection.class + orig-connection.class (48KB each). Tests: 82/82 methods' Code attribute bodies byte-identical post-repair; javap accepts; idempotent; legacy handshake intact. cplug-sdk 14/14.
+- Local boot proof: full CRUSSTY v2.9.0 stack with module: "Done (15.455s)!", repair 48836->48828 (2x4), zero ClassFormatError. Pushed 7502ad5 (also dropped accidentally-tracked third_party/cplug-sdk/target binaries, 389 files).
+- F2V 2.0 measurements while CI ran: ClientboundPostEffectsPacket wire format bytecode-proven (STREAM_CODEC = Identifier.STREAM_CODEC.list() = varint + UTF strings; cimbot parse_post_effects matches exactly); packet type name "post_effects", common family (both config+play). Common-packet drift 767<->777 measured from official 1.21.1 client mappings + 26.3 bytecode: clientbound 767=11 -> 777=14 (+post_effects, +show_dialog, +clear_dialog); serverbound 767=5 -> 777=6 (+custom_click_action).
+
+Stage Summary:
+- M4 boot blocker REMOVED (pending CI integration green on 7502ad5).
+- Postfx wire format + common drift pinned for M4 translation tables.
+- Next: CI integration validation -> cimbot full contract on live boot -> M4 packet translation v1.
