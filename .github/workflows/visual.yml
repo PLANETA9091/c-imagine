@@ -147,18 +147,20 @@ jobs:
           # the launch line carries ABSOLUTE classpaths (measured fix)
           ( cd visual-client && bash -c "$LAUNCH" > client.out 2>&1 ) &
           CLIENT_PID=$!
-          # wait for the world join (client log); fail loud with the tail
+          # wait for the world join — client.out is the log4j stdout mirror
+          # (measured: latest.log may lag/land elsewhere under software GL);
+          # llvmpipe shader compilation is SLOW — 12 min budget
           JOINED=0
-          for i in $(seq 1 150); do
-            if grep -q "joined the game" visual-client/game/logs/latest.log 2>/dev/null; then JOINED=1; break; fi
-            sleep 2
+          for i in $(seq 1 240); do
+            if grep -q "joined the game" visual-client/client.out 2>/dev/null; then JOINED=1; break; fi
+            sleep 3
           done
           if [ "$JOINED" != "1" ]; then
-            echo "--- client.out tail ---"; tail -40 visual-client/client.out || true
-            echo "--- latest.log tail ---"; tail -40 visual-client/game/logs/latest.log || true
+            echo "--- client.out tail ---"; tail -60 visual-client/client.out || true
+            find visual-client -name "*.log" -o -name "latest.txt" | head
             exit 1
           fi
-          sleep 20   # world render settles
+          sleep 30   # world render settles (software GL)
           java -cp vtools Shot shots/00-baseline.png
           # hotbar contract: empty -> plain paper -> CMD paper (the pack's
           # range_dispatch must make the LAST two render differently)
