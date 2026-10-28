@@ -176,7 +176,28 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
       `runtime-analysis/visual-harness-join.md`.
 - **M5.4 display-entity leg (entities channel)**: item_display rig with a CMD
   stack — plugin spawn + cimbot `--expect-extra-entity` wire check, integration
-  GREEN (f137768).
+  GREEN (f137768). PIXEL leg added run 43/44: the rig parks in the sky
+  (feet+2.5 — measured: feet+0.4 is swallowed by the block silhouette) and
+  the gate subtracts cloud drift via a hold shot (rig-pixels =
+  AE(10,11) - AE(11,12) > 3000).
+- **Block channel (parity matrix "blocks") — run 43 GREEN first-dispatch**:
+  `docs/runtime-analysis/block-channel-26-3.md` (javap-measured):
+  structure_void/barrier are `RenderShape.INVISIBLE` in CODE (pack blockstate
+  overrides cannot make them render) — the measured stand-in is
+  `note_block[instrument=I,note=N]` (MODEL-rendered full cube, 27x25=1350
+  slots, `VariantSelector` partial keys are wildcards, graceful vanilla
+  degradation). F2vPack emits the merged `blockstates/note_block.json`
+  override; `/cim placeblock` places the stand-in 3 blocks ahead (paper-api
+  NoteBlock javap-proven). Run 43: AE(block-pre,block)=79211 (gate 3000) —
+  the modded iron cube renders in-world on the stock client.
+- **parity-diff (the "identical to the modded client" crown)**:
+  `parity-diff.yml` — job 1 boots a REAL NeoForge 21.1.265 server + the REAL
+  NeoForge 1.21.1 client (cimtest installed) under xvfb (the launch contract
+  decompiled from BootstrapLauncher: legacyClassPath, filename-startsWith
+  ignoreList -> resources jar named exactly client-extra.jar; measured
+  installer chain jarsplitter->AutoRenamingTool->binarypatcher); job 2
+  pixel-diffs the hotbar slot-0 icon crop (48x48 at scale 3) and the block
+  region against the c-imagine run — the identity datum.
 - **M6 pull-forward (armor channel)**: equipment/<ns>/<id>.json emitted from
   LEGACY 1.21.1 armor texture locations (textures/models/armor/_layer_N.png ->
   entity/equipment/humanoid[_leggings]/ — path-only formula measured in

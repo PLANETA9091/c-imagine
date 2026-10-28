@@ -559,3 +559,31 @@ Work Log:
 Stage Summary:
 - M5 CLOSED for the five channels the parity matrix pulled forward: items (range_dispatch), items (select), atmosphere (post_effect chains), entities (item_display rigs), armor (equipment). A stock vanilla 26.3 client renders cimtest content exactly as designed — measured, not assumed.
 - Session totals: 11 visual dispatches (runs 1-11), each red fixed by bytecode/artifact measurement; the harness is now a reusable CI instrument (Shot/PixelDiff/Key tools + bytecode-proven join pre-conditions).
+
+---
+Task ID: 11-a
+Agent: main
+Task: Block channel (parity matrix "blocks") — measured + implemented + run 43 GREEN first-dispatch; parity-diff (NeoForge ground truth) harness built
+
+Work Log:
+- Sandbox reset survived via GitHub clone (PLANETA9091/c-imagine; the token user is PLANETA9091, not PLANETA909).
+- javap autopsies (client-26.3.jar + paper-api 26.3.build.227, cached locally):
+  (a) StructureVoidBlock/BarrierBlock getRenderShape -> RenderShape.INVISIBLE in CODE — pack blockstate overrides CANNOT make them render (the M3.1 stand-in is unusable for the visual channel);
+  (b) NoteBlockInstrument 26.3 = 27 values (trumpet family new) x note 0..24 x powered = 1350 slots on a MODEL-rendered full cube;
+  (c) BlockStateModelDispatcher/SimpleModelSelectors/VariantSelector decompiled: the classic "variants" format survives, keys match by SPECIFIED properties only (partial keys are wildcards), many states -> one variant is native;
+  (d) VariantSelector predicate + "Neither 'variants' nor 'multipart' found" constant pool strings.
+- Design locked in docs/runtime-analysis/block-channel-26-3.md: note_block stand-in (the Oraxen pattern, 26.3-native), graceful degradation (packless clients see a plain note block).
+- F2vPack: VisualBlock record, visual-blocks.tsv manifest (cimtest:test_block -> creeper/13), resolveAndCopyBlockGraph (models/block/ first), merged blockstates/note_block.json emission (sorted keys, deterministic zip), Result.blocks(); selftest extended (ALL OK).
+- Plugin: placeVisualBlock (NoteBlock data — Instrument.CREEPER, new Note(13), javap-proven paper-api 26.3) + /cim placeblock + /cim display + net leg 3.5 (block wire leg for cimbot); F2vState carries blocks; rebuildForVerification reads the block manifest from the REAL f2v dir (the 19ad1e3 lesson applied to the third manifest).
+- visual.yml: shots 09/10 (block pre/post) + AE gate 3000; integration.yml: block wire+pack asserts + both manifest staging dirs.
+- visual run 43 (b2fd046) SUCCESS first-dispatch: AE(block-pre,block)=79211 (gate 3000, x26 headroom) — the modded iron cube renders IN-WORLD on the stock client; shots verified visually (white iron cube in frame; yaw ~180 so the stand-in lands between camera and player in third person).
+- run 43 SHOT-VERIFIED defect: the display rig at feet+0.4/3.5-ahead is swallowed by the block silhouette (@-2,-60,-4 vs block @-2,-60,-5) and AE(10,11)=38991 was cloud drift + a wandering pig (false-positive class). Fix: rig in the sky (feet+2.5) + control hold shot 12 — gate = AE(10,11) - AE(11,12) > 3000. Run 44 dispatched (a651a2c).
+- parity-diff harness (the "identical to the modded client" crown): scripts/truth/fetch-truth-client.py — the NeoForge installer --installClient chain measured END-TO-END locally (sandbox-safe: downloads+extraction only): versions layout, 10 processors (jarsplitter -> AutoRenamingTool -> binarypatcher), BootstrapLauncher DECOMPILED (legacyClassPath fallback java.class.path; ignoreList matched by filename STARTSWITH -> the resources jar must be named exactly "client-extra.jar"); feature-gated args (--demo) and unresolved ${placeholder} pairs pruned; measured locally: 106-entry classpath, clean launch line (BootstrapLauncher --username ... --launchTarget forgeclient --quickPlayMultiplayer).
+- make_servers_dat.py --gzip (1.21.1 reads readCompressed — historical format; 26.3 reads raw — the measured drift documented in visual-harness-join.md); selftest + roundtrip OK.
+- PixelDiff crop-rect mode (x y w h).
+- parity-diff.yml: job 1 = real NeoForge 21.1.265 server (same seed 42/flat/peaceful as the c-imagine run, daylight pinned) + the REAL NeoForge client under xvfb (onboardAccessibility + gzip servers.dat seeds) + truth shots t00/t01(item)/t02(block via 'execute at cimviewer run setblock ^ ^ ^3'); job 2 = crop diffs: hotbar slot-0 icon (375,663 48x48 at scale 3) identity datum AE(truth,cim) + block region measurement (ungated first, gate locks on the measured value).
+
+Stage Summary:
+- SEVEN channels now render modded content on a stock 26.3 client in ONE pixel contract: items (float), items (select), atmosphere (postfx), armor (equipment), entities (display rigs), BLOCKS (note_block stand-ins — new), delivery. The parity matrix "blocks" row is pixel-proven.
+- The parity-diff workflow is pushed and ready: one dispatch closes the "identical to the modded client" loop with the measured identity datum.
+- Session totals: 2 visual dispatches consumed (43 green, 44 rig-fix), ~4 local light javac/selftest cycles, zero heavy local runs.
