@@ -1271,3 +1271,35 @@ Stage Summary:
 - The Create construct chain is being walked gate by gate with
   evidence-per-run; each fix is a real layer-parity defect named
   exactly (root registry writable; client classes resolvable next).
+
+---
+Task ID: 12-n
+Agent: main
+Task: THE SHADOW INDEX MUST SERVE EXACTLY THE REAL SERVER'S GAME CLASSPATH
+
+Work Log:
+- The Renderable mystery RESOLVED with a classpath dump from a green
+  create-truth run (installed unix_args.txt + per-jar client-class scan):
+  * real game content = the srg jar (6148 classes, server-side binpatches
+    only) + the universal jar (the neoforge mod) + legacyClassPath
+    libraries; ProductionServerProvider serves srg+extra;
+  * the bundler (neoforge-<ver>-server.jar, 1613 classes) is NOT on the
+    real classpath and carries a PARTIAL client set (Screen=1
+    Renderable=0) — indexing it let Create's dist-guarded client probe
+    (AllBlocks <clinit> -> ... -> Screen) resolve Screen where the real
+    server cleanly fails it, then die on the missing Renderable;
+  * the SLIM jar (6148 UNPATCHED classes) sorts before the srg jar
+    alphabetically and its first-wins index entries were shadowing the
+    binpatched ones — excluding only the bundler regressed
+    MappedRegistry.unfreeze/TagKey.create (they resolved from slim).
+- Fix (4b32a6e): LAYER_EXCLUDES = unpacked/sources/javadoc/slim/server +
+  the vanilla server bundle. The layer's class source is now byte-for-byte
+  the real server's: srg + universal + libraries.
+- The wrong-name define failures (ForgeHighlight/LegacyXMLLayout/
+  QueueLogAppender from loader/logging jars) are pre-existing benign noise
+  (duplicate entries across jars; non-fatal — boots pass).
+
+Stage Summary:
+- Parity law refined: EVERY class source divergence between the shadow
+  index and the real server's classpath is a parity defect. The dump step
+  stays in create-truth as a permanent contract witness.
