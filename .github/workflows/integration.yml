@@ -238,7 +238,9 @@ jobs:
           checks = {c['name']: c['passed'] for c in r.get('checks', [])}
           for name in ('entity leg: add_entity', 'entity leg: set_entity_data',
                        'entity leg: remove_entities', 'post_effects apply',
-                       'post_effects clear', 'resource pack accepted (F2V)'):
+                       'post_effects clear', 'resource pack accepted (F2V)',
+                       'hud leg: show_dialog observed',
+                       'hud leg: custom_click answered'):
               assert checks.get(name) is True, \
                   f"bot check not passed: {name} (checks={checks})"
           print(f"cimbot wire contract: all {len(checks)} checks passed, "
@@ -259,6 +261,15 @@ jobs:
             || fail "modded postfx chain never requested over the wire"
           grep -q "c-imagine:cimsepia" srv/boot.log \
             || fail "modded chain id never reached the wire descriptions"
+          # HUD channel (parity matrix "hud", dialog-hud-26-3.md): the plugin
+          # showed a server-authored dialog (inlined Dialog.create), the bot
+          # observed show_dialog on the wire and answered with the serverbound
+          # custom_click, and Paper surfaced it as PlayerCustomClickEvent —
+          # the full response round-trip on one line each.
+          grep -q "\[cim-hud\] dialog shown to cimbot" srv/boot.log \
+            || fail "HUD dialog was never shown (Dialog.create/showDialog failed)"
+          grep -q "\[cim-hud\] custom click received" srv/boot.log \
+            || fail "HUD custom_click never surfaced as PlayerCustomClickEvent"
           # block leg — server-side proof (Paper 26.3 does not emit clientbound
           # single block updates to late-joining bots; measured. The wire-level
           # fact is the netty outbound object: pos + translated state).

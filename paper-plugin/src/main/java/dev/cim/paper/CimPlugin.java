@@ -47,6 +47,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     public static final String LOG_PREFIX = "[c-imagine] ";
 
+    /** The dialog custom-click id the HUD leg registers (namespaced, paper only allows plugin-owned ids). */
+    static final net.kyori.adventure.key.Key HUD_CLICK_ID =
+            net.kyori.adventure.key.Key.key("c-imagine", "hud_dialog_click");
+
     private volatile boolean worldReady;
     private NetWatch netWatch;
     /** M4 net leg state (single fire per boot). */
@@ -163,6 +167,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     public void onResourcePackStatus(org.bukkit.event.player.PlayerResourcePackStatusEvent event) {
         log().info(LOG_PREFIX + "f2v pack: status " + event.getPlayer().getName()
                 + "=" + event.getStatus());
+    }
+
+    /**
+     * The HUD channel response leg (dialog-hud-26-3.md §5): the vanilla
+     * client hit-tests its own dialog buttons and answers a
+     * {@code dynamic/custom} action with
+     * {@code ServerboundCustomClickActionPacket}; Paper funnels it into this
+     * event — the semantic, coordinate-free replacement for F2F v1's
+     * server-side cursor hit-testing. Only our namespaced id logs (the
+     * marker the CI asserts).
+     */
+    @EventHandler
+    public void onCustomClick(io.papermc.paper.event.player.PlayerCustomClickEvent event) {
+        if (HUD_CLICK_ID.equals(event.getIdentifier())) {
+            String payload = event.getTag() != null ? event.getTag().string() : "none";
+            log().info(LOG_PREFIX + "[cim-hud] custom click received id="
+                    + event.getIdentifier() + " payload=" + payload);
+        }
     }
 
     // ---- M4: player lifecycle -> net watch ----------------------------------
@@ -545,7 +567,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().info(LOG_PREFIX + "f2v net: drift block replay-2 set=" + set2);
             Thread.sleep(1500);
 
-            // 3.5) BLOCK channel (parity matrix "blocks",
+            // 3.6) BLOCK channel (parity matrix "blocks",
             //      block-channel-26-3.md): the note_block stand-in placed for
             //      the bot — the wire sees a block update carrying
             //      note_block[instrument=creeper,note=13]; the pack's merged
@@ -553,6 +575,20 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             //      stock clients (pixel proof = the visual harness 09/10 leg).
             placeVisualBlock("cimbot", "cimtest:test_block");
             Thread.sleep(1500);
+
+            // 3.7) HUD channel (parity matrix "hud", dialog-hud-26-3.md): a
+            //    server-authored screen through the 26.3 dialog registry —
+            //    Paper's Dialog.create() inlined builder (no data pack file),
+            //    Audience.showDialog (CraftPlayer override sends the
+            //    COMMON-phase ClientboundShowDialogPacket), ItemDialogBody
+            //    rendering the modded cube stack (the items-channel graphics
+            //    INLINE in a form), and a dynamic/custom action — the F2F v1
+            //    cursor-hit-testing replacement. The bot observes show_dialog
+            //    on the wire and answers with serverbound custom_click; the
+            //    plugin logs the PaperPlayerCustomClickEvent marker.
+            String dlg = showHudDialog("cimbot", "cimtest:test_block");
+            log().info(LOG_PREFIX + "f2v net: hud dialog requested -> " + dlg);
+            Thread.sleep(2000); // show_dialog + the bot's custom_click round-trip
 
             // 4) despawn through the facade -> remove_entities on the wire
             boolean removed = boatUuid != null && paperRemoveEntity(world, boatUuid);
@@ -567,6 +603,130 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             Thread.currentThread().interrupt();
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v net leg FAILED: " + t);
+        }
+    }
+
+    /**
+     * Show a server-authored HUD dialog to a player (the parity matrix "hud"
+     * channel — dialog-hud-26-3.md).
+     *
+     * <p>The 26.3 native replacement for F2F v1's ClientOnlyHudSimulator:
+     * the dialog registry is a data-driven, server-authored screen system with
+     * NATIVE widgets (inputs/bodies/buttons). Paper's {@code Dialog.create()}
+     * registers an INLINED entry (no data pack file needed) and
+     * {@code Audience.showDialog} (adventure 5.2.0 no-op overridden by
+     * CraftPlayer) sends the COMMON-phase {@code ClientboundShowDialogPacket}
+     * with the full dialog object inline ({@code ByteBufCodecs.holder(...,
+     * fromCodecWithRegistriesTrusted)}). The body renders the modded cube
+     * stack ({@code ItemDialogBody} — the items-channel graphics INSIDE a
+     * form), and the button carries a {@code dynamic/custom} action whose
+     * click comes back as {@code ServerboundCustomClickActionPacket} and
+     * surfaces as {@code PaperPlayerCustomClickEvent} — vanilla does the
+     * hit-testing, the server gets a semantic event (v1 did the opposite).
+     *
+     * <p>Main-thread ops are wrapped via the scheduler (the net leg runs
+     * async). Logs the [cim-hud] markers the CI asserts.
+     */
+    private String showHudDialog(String playerName, String moddedItemId) {
+        try {
+            Player p = Bukkit.getPlayerExact(playerName);
+            if (p == null) {
+                log().warning(LOG_PREFIX + "f2v hud: player not online: " + playerName);
+                return "player-offline";
+            }
+            final java.util.concurrent.CompletableFuture<String> done =
+                    new java.util.concurrent.CompletableFuture<>();
+            Bukkit.getScheduler().runTask(this, () -> {
+                try {
+                    final Player pl = Bukkit.getPlayerExact(playerName);
+                    if (pl == null) {
+                        done.complete("player-gone");
+                        return;
+                    }
+                    // the modded stack: the host paper item + the manifest CMD
+                    // floats (the SAME stack the items channel gives out —
+                    // identical pixels, now inside a native form)
+                    ItemStack stack = null;
+                    if (f2v != null) {
+                        for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                            if (r.moddedId().equals(moddedItemId)) {
+                                String host = r.hostItem();
+                                String bare = host.substring(host.indexOf(':') + 1);
+                                org.bukkit.Material m = org.bukkit.Material.matchMaterial(bare);
+                                if (m != null) {
+                                    stack = new ItemStack(m);
+                                    org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+                                    if (meta != null) {
+                                        meta.displayName(net.kyori.adventure.text.Component.text(
+                                                moddedItemId));
+                                        org.bukkit.inventory.meta.components.CustomModelDataComponent cmd =
+                                                meta.getCustomModelDataComponent();
+                                        cmd.setFloats(java.util.List.of(r.cmd()));
+                                        meta.setCustomModelDataComponent(cmd);
+                                        stack.setItemMeta(meta);
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (stack == null) {
+                        stack = new ItemStack(org.bukkit.Material.PAPER); // degraded but valid
+                    }
+                    final ItemStack bodyStack = stack;
+                    io.papermc.paper.dialog.Dialog dialog = io.papermc.paper.dialog.Dialog.create(b -> b.empty()
+                            .base(io.papermc.paper.registry.data.dialog.DialogBase.builder(
+                                            net.kyori.adventure.text.Component.text("c-imagine HUD"))
+                                    .canCloseWithEscape(true)
+                                    // HUD overlays must NOT pause: the pause+
+                                    // after_action validation rejects it
+                                    .pause(false)
+                                    .afterAction(io.papermc.paper.registry.data.dialog.DialogBase.DialogAfterAction.CLOSE)
+                                    .body(java.util.List.of(
+                                            io.papermc.paper.registry.data.dialog.body.DialogBody.plainMessage(
+                                                    net.kyori.adventure.text.Component.text(
+                                                            "The modded cube, rendered by the vanilla client inside a server-authored form:"),
+                                                    250),
+                                            io.papermc.paper.registry.data.dialog.body.DialogBody.item(
+                                                    bodyStack)
+                                                    .showDecorations(true)
+                                                    .showTooltip(false)
+                                                    .width(64)
+                                                    .height(64)
+                                                    .build()))
+                                    .inputs(java.util.List.of())
+                                    .build())
+                            .type(io.papermc.paper.registry.data.dialog.type.DialogType.multiAction(
+                                    java.util.List.of(
+                                            io.papermc.paper.registry.data.dialog.ActionButton.create(
+                                                    net.kyori.adventure.text.Component.text("Click me (custom)"),
+                                                    net.kyori.adventure.text.Component.text(
+                                                            "fires the serverbound custom_click — the v1 hit-testing replacement"),
+                                                    150,
+                                                    io.papermc.paper.registry.data.dialog.action.DialogAction.customClick(
+                                                            HUD_CLICK_ID,
+                                                            net.kyori.adventure.nbt.api.BinaryTagHolder.binaryTagHolder(
+                                                                    "{\"from\":\"c-imagine\",\"leg\":\"hud-dialog\"}"))),
+                                            io.papermc.paper.registry.data.dialog.ActionButton.create(
+                                                    net.kyori.adventure.text.Component.text("Close"),
+                                                    null,
+                                                    150,
+                                                    null)),
+                                    null,
+                                    2)));
+                    pl.showDialog(dialog);
+                    log().info(LOG_PREFIX + "[cim-hud] dialog shown to " + playerName
+                            + " click-id=" + HUD_CLICK_ID);
+                    done.complete("shown");
+                } catch (Throwable t) {
+                    log().warning(LOG_PREFIX + "[cim-hud] show FAILED: " + t);
+                    done.complete("show-failed: " + t);
+                }
+            });
+            return done.get(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v hud: FAILED: " + t);
+            return "failed: " + t;
         }
     }
 

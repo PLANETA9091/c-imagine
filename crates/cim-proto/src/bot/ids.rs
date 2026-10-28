@@ -31,6 +31,14 @@ pub const PC_SET_ENTITY_DATA: i32 = 101;
 pub const PC_SYSTEM_CHAT: i32 = 124;
 pub const PC_START_CONFIGURATION: i32 = 120;
 
+/// Common-phase dialog packets as embedded in the PLAY protocol.
+/// Bundle-227 static `GameProtocols` order: clear=141, show=142 (measured by
+/// counting addPacket); the live CI Paper carries ONE extra clientbound packet
+/// inserted past remove_entities (remove_entities 77->78, post_effects
+/// 82->83 — the documented +1 drift), so the live ids are 142/143.
+pub const PC_CLEAR_DIALOG: i32 = 142;
+pub const PC_SHOW_DIALOG: i32 = 143;
+
 // --- play serverbound (777) -------------------------------------------------
 pub const PS_ACCEPT_TELEPORTATION: i32 = 0;
 pub const PS_CHUNK_BATCH_RECEIVED: i32 = 11;
@@ -43,6 +51,12 @@ pub const PS_PING_REQUEST: i32 = 38;
 pub const PS_PLAYER_LOADED: i32 = 44;
 pub const PS_PONG: i32 = 45;
 pub const PS_CUSTOM_PAYLOAD: i32 = 22;
+
+/// Common-phase serverbound custom click (the dialog button click — the
+/// F2F v1 hit-testing replacement). Bundle-227: 69 serverbound play packets,
+/// custom_click is the LAST (id 68) — serverbound has NO Paper drift
+/// (keep_alive 28 / player_loaded 44 / pong 45 live-identical).
+pub const PS_CUSTOM_CLICK_ACTION: i32 = 68;
 
 // --- login clientbound (777) ------------------------------------------------
 pub const LC_DISCONNECT: i32 = 0;

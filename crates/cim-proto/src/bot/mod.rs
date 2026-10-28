@@ -15,6 +15,7 @@
 //! 4. frame-skip everything unknown — a bot that kicks on ANY packet fails.
 
 use crate::frame::PacketFrame;
+use crate::varint::write_varint;
 use crate::ProtoError;
 
 mod conn;
@@ -30,6 +31,9 @@ use packets as pk;
 use std::collections::HashMap;
 use std::io::Write as _;
 use std::time::{Duration, Instant};
+
+/// The HUD dialog custom-click id the plugin registers (CimPlugin.HUD_CLICK_ID).
+const HUD_CLICK_ID: &str = "c-imagine:hud_dialog_click";
 
 /// One observed protocol event (for the JSON report).
 #[derive(Debug, Clone, serde::Serialize)]
@@ -126,6 +130,10 @@ struct BotState {
     boat_removed: bool,
     /// config-phase resource pack push answered with accepted+loaded (F2V).
     pack_accepted: bool,
+    /// HUD leg (parity matrix "hud"): show_dialog observed -> custom_click
+    /// answered (the dialog response round-trip).
+    show_dialog_seen: bool,
+    custom_click_sent: bool,
     /// every dynamic registry key streamed in the config phase (live census).
     registry_names: Vec<String>,
     unknown_ids: std::collections::HashMap<i32, u64>,
@@ -227,6 +235,8 @@ pub fn run(
         block_state_seen: String::new(),
         boat_removed: false,
         pack_accepted: false,
+        show_dialog_seen: false,
+        custom_click_sent: false,
         registry_names: Vec::new(),
         unknown_ids: std::collections::HashMap::new(),
         exp,
@@ -606,6 +616,41 @@ fn handle_play(st: &mut BotState, conn: &mut Conn, frame: PacketFrame) -> Result
             st.post_fx_seen.push(list);
             Ok(())
         }
+        wire::PC_SHOW_DIALOG => {
+            // The HUD channel (parity matrix "hud", dialog-hud-26-3.md): the
+            // plugin showed a server-authored dialog. Payload = Holder<Dialog>
+            // (inline full-object wire form) — observed, not fully parsed.
+            eprintln!(
+                "[cimbot] SHOW_DIALOG id={} payload={}B (hud leg observed)",
+                frame.id,
+                frame.payload.len()
+            );
+            st.observe(
+                "show_dialog",
+                format!("payload_bytes={}", frame.payload.len()),
+            );
+            st.show_dialog_seen = true;
+            // Answer with the serverbound custom_click (the vanilla dialog
+            // button click): id + optional NBT payload. The NBT is ABSENT —
+            // writeNbt(null) = EndTag = single 0x00 byte; the packet wrapper
+            // adds the varint length prefix (1).
+            let mut pl = Vec::new();
+            write_varint(&mut pl, HUD_CLICK_ID.len() as i32);
+            pl.extend_from_slice(HUD_CLICK_ID.as_bytes());
+            write_varint(&mut pl, 1);
+            pl.push(0u8); // EndTag
+            send(conn, wire::PS_CUSTOM_CLICK_ACTION, pl)
+                .map_err(|e| format!("custom_click send: {e}"))?;
+            eprintln!("[cimbot] CUSTOM_CLICK sent id={HUD_CLICK_ID} (dialog response leg)");
+            st.observe("custom_click_sent", format!("id={HUD_CLICK_ID}"));
+            st.custom_click_sent = true;
+            Ok(())
+        }
+        wire::PC_CLEAR_DIALOG => {
+            eprintln!("[cimbot] CLEAR_DIALOG (hud leg observed)");
+            st.observe("clear_dialog", "".into());
+            Ok(())
+        }
         wire::PC_BLOCK_UPDATE => {
             let b = pk::parse_block_update(&frame.payload).map_err(|e| e.to_string())?;
             if let Some((ex, ey, ez)) = st.exp.block_at {
@@ -748,6 +793,19 @@ fn finish(
             "post_effects clear",
             fx_clear,
             format!("{:?}", st.post_fx_seen),
+        );
+        // HUD leg (parity matrix "hud"): the plugin showed the dialog and the
+        // bot answered with the serverbound custom_click. The SERVER-side
+        // proof (PaperPlayerCustomClickEvent) is the integration assert.
+        st.check(
+            "hud leg: show_dialog observed",
+            st.show_dialog_seen,
+            "".into(),
+        );
+        st.check(
+            "hud leg: custom_click answered",
+            st.custom_click_sent,
+            "".into(),
         );
         st.check(
             "block_update leg",
