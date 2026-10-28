@@ -141,7 +141,7 @@ public final class CimSceneMod {
                             BlockState state = Blocks.IRON_BLOCK.defaultBlockState();
                             boolean placed = level.setBlock(pos, state, 3);
                             LOGGER.info("[cimscene] selftest iron_block at {} placed={} executor={}",
-                                    pos.toShortString(), placed, src.getName());
+                                    pos.toShortString(), placed, src.getTextName());
                             src.sendSuccess(
                                     () -> Component.literal("[cimscene] selftest iron_block at " + pos.toShortString()),
                                     false);
