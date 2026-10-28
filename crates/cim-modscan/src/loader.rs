@@ -67,7 +67,12 @@ pub fn scan_dir_full(dir: &Path) -> (Vec<ScannedMod>, ScanStats) {
     }
 
     // Extract + scan nested jars (flat: one level; deeper nesting is skipped
-    // loudly).
+    // loudly). Entries WITH mod ids become mods of their own; entries WITHOUT
+    // mods.toml/@Mod (jarjar libraries such as Create's embedded Registrate)
+    // are extracted anyway and reported as manifest `classpath` entries —
+    // real FML keeps them on the mod-space classpath, and a mod whose
+    // constructor references them (create → com/tterrag/registrate/**) would
+    // otherwise die of NoClassDefFoundError inside the shadow space.
     let extract_dir = std::env::temp_dir().join("c-imagine-jarjar");
     let _ = std::fs::remove_dir_all(&extract_dir);
     let mut extracted: Vec<ScannedMod> = Vec::new();
@@ -80,17 +85,26 @@ pub fn scan_dir_full(dir: &Path) -> (Vec<ScannedMod>, ScanStats) {
                 );
                 continue;
             }
-            if nested.mod_ids().is_empty() {
-                continue;
-            }
             match extract_nested(&extract_dir, m, n, nested) {
-                Ok(Some(path)) => match scan_file(&path) {
-                    Ok(sm) => {
-                        stats.nested_extracted += 1;
-                        extracted.push(sm);
+                Ok(Some(path)) => {
+                    if nested.mod_ids().is_empty() {
+                        // jarjar library: classpath material, not a mod.
+                        eprintln!(
+                            "INFO: jarjar library (no mod ids): {} -> {}",
+                            nested.file_name,
+                            path.display()
+                        );
+                        stats.libraries.push(path.to_string_lossy().into_owned());
+                        continue;
                     }
-                    Err(e) => eprintln!("WARN: nested scan failed ({}): {e}", path.display()),
-                },
+                    match scan_file(&path) {
+                        Ok(sm) => {
+                            stats.nested_extracted += 1;
+                            extracted.push(sm);
+                        }
+                        Err(e) => eprintln!("WARN: nested scan failed ({}): {e}", path.display()),
+                    }
+                }
                 Ok(None) => {}
                 Err(e) => eprintln!("WARN: nested extract failed ({}): {e}", nested.file_name),
             }
@@ -139,6 +153,10 @@ pub struct ScanStats {
     pub mods: usize,
     /// Access transformer lines collected from mod jars.
     pub at_lines: Vec<String>,
+    /// Extracted jarjar entries with NO mod ids (libraries such as
+    /// Registrate): absolute paths to add to the shadow class index but NOT
+    /// to the FML mod list.
+    pub libraries: Vec<String>,
 }
 
 /// Extract one nested jar to `<extract_dir>/<outer-stem>_<n>_<basename>`.

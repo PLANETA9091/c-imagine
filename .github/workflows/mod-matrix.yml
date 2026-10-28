@@ -174,7 +174,7 @@ jobs:
           java -jar nf-srv-installer.jar --installServer layer-srv
 
       - name: fetch P0 Create (Modrinth ladder fetch)
-        run: bash scripts/cimscene/fetch-ladder.sh create create
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
 
       - name: prepare server directory
         run: |
@@ -278,7 +278,7 @@ jobs:
           java -jar nf-installer.jar --installServer layer1211
 
       - name: fetch P0 Create (Modrinth ladder fetch)
-        run: bash scripts/cimscene/fetch-ladder.sh create create
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
 
       - name: assemble mods dir
         run: |

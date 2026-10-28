@@ -88,6 +88,20 @@ public final class Bootstrap {
                         modJars.add(jar);
                     }
                 }
+                // jarjar libraries (manifest `classpath`): no mod ids, so they
+                // are NOT FML mod containers — but their classes must resolve
+                // (create's constructor instantiates the jarjar'd Registrate).
+                // Appended AFTER the mod jars so they land in the mod section
+                // of the shadow index (refs-only relocation, original names).
+                Object classpath = manifest.get("classpath");
+                if (classpath instanceof List<?> libs) {
+                    for (Object lib : libs) {
+                        String jar = String.valueOf(lib);
+                        if (!jar.isEmpty()) {
+                            modJars.add(jar);
+                        }
+                    }
+                }
                 if (!modJars.isEmpty()) {
                     ShadowClassLoader.addModJars(modJars);
                 }

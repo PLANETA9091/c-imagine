@@ -39,6 +39,13 @@ pub struct LayerManifest {
     /// applied by the relocation stage.
     #[serde(default)]
     pub at_entries: Vec<String>,
+    /// Extracted jarjar libraries (no mod ids — e.g. Registrate inside
+    /// create): absolute jar paths added to the shadow CLASS INDEX only,
+    /// never to the FML mod list. Real FML keeps such entries loadable on
+    /// the mod-space classpath; a mod whose constructor references them
+    /// (create → com/tterrag/registrate/**) needs the classes resolvable.
+    #[serde(default)]
+    pub classpath: Vec<String>,
 }
 
 /// One mod jar in the manifest.
@@ -202,6 +209,7 @@ pub fn build_layer_manifest(scanned: &[ScannedMod]) -> Result<LayerManifest, Sca
         load_order: order,
         mods,
         at_entries: Vec::new(),
+        classpath: Vec::new(),
     })
 }
 

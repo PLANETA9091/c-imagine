@@ -50,8 +50,10 @@ pub fn scan_and_build_manifest(dir: &Path) -> (Option<String>, usize) {
 
     match build_layer_manifest(&deduped) {
         Ok(mut manifest) => {
-            manifest.at_entries = stats.at_lines;
+            manifest.at_entries = stats.at_lines.clone();
             manifest.at_entries.extend(layer_at);
+            // jarjar libraries (no mod ids): shadow class index only.
+            manifest.classpath = stats.libraries.clone();
             if !manifest.at_entries.is_empty() {
                 eprintln!(
                     "{} access transformers: {} directive(s)",

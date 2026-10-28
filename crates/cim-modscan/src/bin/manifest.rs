@@ -32,8 +32,10 @@ fn main() {
 
     let manifest = match build_layer_manifest(&scanned) {
         Ok(mut m) => {
-            m.at_entries = stats.at_lines;
+            m.at_entries = stats.at_lines.clone();
             m.at_entries.extend(layer_at);
+            // jarjar libraries (no mod ids): shadow class index only.
+            m.classpath = stats.libraries.clone();
             m
         }
         Err(e) => {
