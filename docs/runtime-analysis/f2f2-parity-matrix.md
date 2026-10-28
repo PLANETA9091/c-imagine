@@ -105,14 +105,24 @@ received it on the wire (`POST_EFFECTS: ["c-imagine:cimsepia"]`).
   be requested when player X is in dimension Y" — a server-side decision
   riding a native packet.
 
-### 2.6 HUD — menus stay, dialogs are the new hook (M6)
+### 2.6 HUD — dialogs are the native hook (M6; measured contract `dialog-hud-26-3.md`)
 
-v1's ClientOnlyHudSimulator (openMenu + synthetic widgets) remains valid on
-26.3 (menus unchanged). NEW measured hooks: the `dialog` registry (3 vanilla
-defs: custom_options, quick_actions, server_links) — data-driven server-authored
-screens; font `reference`/`include` composition for glyph-page HUDs.
-- **Verification:** M6 visual leg (open menu → screenshot → compare vs
-  NeoForge HUD render).
+v1's ClientOnlyHudSimulator (openMenu + synthetic widgets) is replaced on 26.3
+by the **dialog registry** — data-driven server-authored screens with NATIVE
+widgets: inputs (text/boolean/single_option/number_range), bodies
+(plain_message + item — the item channel graphics inline), actions
+(dynamic/run_command template, dynamic/custom → `PaperPlayerCustomClickEvent`,
+static click events). All three packets are COMMON-phase (show_dialog /
+clear_dialog / serverbound custom_click) — server forms work even in the
+config phase. Paper surface measured end-to-end: `Dialog.create(...)` builder
+(no file needed) + `Audience.showDialog` (adventure 5.2.0 default no-op,
+CraftPlayer override sends the packet) + `DialogResponseView` payload getters.
+Static HUDs ride `data/minecraft/dialog/<ns>/<id>.json` through F2vPack (the
+M5.2 data-pack channel). v1's server-side cursor hit-testing dies: the vanilla
+client hit-tests its own buttons and the server receives a semantic event.
+- **Verification:** M6 leg — F2vPack dialog json + `/cim dialog` +
+  ItemDialogBody rendering the cimtest stack → xvfb screenshot + custom-click
+  response marker.
 
 ### 2.7 Particles — M4 sanitizer territory (partially live)
 
@@ -157,7 +167,7 @@ FakePlayerManager + skin URLs survive as-is (vanilla mechanism).
 | blocks | BlockDisplay | same, packet-level | wire legs live (M4) | place leg + screenshot |
 | armor | CMD humanoid rigs | equipment/ defs | **M6 PULLED FORWARD: pack emit + give/wear leg live** (visual-equipment.tsv; EquippableComponent.setModel javap-proven; pixel leg staged: F5 third-person + item replace + AE gate) | wear + screenshot |
 | atmosphere | CMD sky models (30k LOC family) | **post_effect chains** | wire-proven (M4) + pack emit (M5.2) | tint pixel diff (run 7+) |
-| HUD | menus+widgets | menus + dialog registry | not started (M6) | menu screenshot |
+| HUD | menus+widgets | menus + dialog registry | **M6 measured: `dialog-hud-26-3.md` (packet/codec/API surface decompiled; common-phase proven)** | dialog screenshot + custom-click marker |
 | particles | recreation + display sprites | sanitizer + rigs | partial (M4) | particle leg |
 | contraptions | display rigs | display rigs (packet) | not started (M6) | move leg + screenshots |
 | delivery | push+HTTP | config push + PackHttp | **M5.2 LIVE** | bot accept walk |
