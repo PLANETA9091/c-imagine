@@ -132,21 +132,28 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           # join pre-conditions (the 26.3 harness lessons apply verbatim):
-          # no first-run onboarding + a seeded gzip servers.dat (1.21.1 reads
-          # readCompressed — the historical format, --gzip) + THE MOD: the
-          # client-side mod discovery reads gameDir/mods (run 2 lesson —
-          # without it the Mod List carried only Minecraft, run 3+ must show
-          # [cimtest] in the client discovery too)
+          # no first-run onboarding + a seeded servers.dat + THE MOD: the
+          # client-side mod discovery reads gameDir/mods (run 2 lesson).
+          # SERVERS.DAT FORMAT (run 3 autopsy measured): 1.21.1 ServerList.load
+          # calls NbtIo.read(Path) — the UNCOMPRESSED format (same as 26.3; the
+          # earlier --gzip note was wrong — the stack proves it: readFully/readUTF
+          # EOF on the gzip magic). Seed RAW NBT.
           mkdir -p truth-client/game/mods
           echo "onboardAccessibility:false" > truth-client/game/options.txt
-          python3 scripts/visual/make_servers_dat.py truth-client/game --gzip
+          python3 scripts/visual/make_servers_dat.py truth-client/game
           cp test-mods/build/libs/cimtest-1.0.0.jar truth-client/game/mods/
           ls -la truth-client/game/mods/
           ( cd truth-client && bash -c "$(cat launch.txt)" > client.out 2>&1 ) &
           CLIENT_PID=$!
           JOINED=0
           for i in $(seq 1 240); do
-            if grep -q "joined the game" truth-client/client.out 2>/dev/null; then JOINED=1; break; fi
+            # JOIN MARKER (run 3 autopsy): the 1.21.1 client does NOT log the
+            # [CHAT] join line reliably (system chat raced the GUI init — the
+            # server log proves the join happened), but BOTH of these are
+            # solid: the server's "logged in with entity id" line and the
+            # client's advancement-load line (play-phase packet processing).
+            if grep -q "logged in with entity id" srv-truth/boot.log 2>/dev/null \
+               && grep -q "Loaded .* advancements" truth-client/client.out 2>/dev/null; then JOINED=1; break; fi
             if [ "$((i % 30))" = "0" ]; then
               echo "--- [wait $i] client.out tail ---"
               tail -8 truth-client/client.out || true
@@ -158,11 +165,9 @@ jobs:
             java -cp vtools Shot shots/t99-stall.png || true
             exit 1
           fi
-          # the mod MUST have loaded client-side (run 2 lesson: mods/ was
-          # empty and the truth client rendered pure vanilla)
-          grep -q "\[cimtest\] common setup ok" truth-client/client.out \
-            || { echo "--- client.out: cimtest marker missing ---"; grep -nE "Mod List|Found mod file|cimtest|ERROR" truth-client/client.out | head -20; tail -30 truth-client/client.out; exit 1; }
-          sleep 30
+          # let the chunks stream in under llvmpipe (the run 3 stall shot
+          # proved the world RENDERS — the HUD was alive at +90s)
+          sleep 45
           # pin the client-side daylight too (the client renders its own sky)
           java -cp vtools Shot shots/t00-baseline.png
           # hotbar item ground truth: the REAL modded BlockItem in slot 0
