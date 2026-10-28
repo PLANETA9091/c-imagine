@@ -116,10 +116,13 @@ jobs:
 
       - name: census parity sanity (real NeoForge rows exist)
         run: |
-          test -f srv-truth/c-imagine/scenes/scene-manifest.tsv
-          grep -q "^block       minecraft       " srv-truth/c-imagine/scenes/scene-manifest.tsv
-          grep -q "^block       cimscene        " srv-truth/c-imagine/scenes/scene-manifest.tsv || true
-          cat srv-truth/c-imagine/scenes/scene-manifest.tsv
+          T=srv-truth/c-imagine/scenes/scene-manifest.tsv
+          test -f "$T" || { echo "census TSV missing"; exit 1; }
+          # awk -F'\\t' is tab-proof (a space-corrupted grep once masked a green census)
+          awk -F'\t' '$1=="block" && $2=="minecraft" {ok=1} END{exit !ok}' "$T" \
+            || { echo "no minecraft block row in the census"; cat "$T"; exit 1; }
+          awk -F'\t' '$1=="block" && $2=="cimscene" {ok=1} END{exit !ok}' "$T" || true
+          cat "$T"
 
       - name: upload cimscene truth evidence
         if: always()
@@ -171,7 +174,7 @@ jobs:
           java -jar nf-srv-installer.jar --installServer layer-srv
 
       - name: fetch P0 Create (Modrinth ladder fetch)
-        run: bash scripts/cimscene/fetch-ladder.sh create mods-create
+        run: bash scripts/cimscene/fetch-ladder.sh create create
 
       - name: prepare server directory
         run: |
@@ -209,11 +212,12 @@ jobs:
 
       - name: assert create census rows
         run: |
-          test -f srv-create/c-imagine/scenes/scene-manifest.tsv
-          cat srv-create/c-imagine/scenes/scene-manifest.tsv
-          grep -q "^block       create  " srv-create/c-imagine/scenes/scene-manifest.tsv \
+          T=srv-create/c-imagine/scenes/scene-manifest.tsv
+          test -f "$T" || { echo "create census TSV missing"; exit 1; }
+          cat "$T"
+          awk -F'\t' '$1=="block" && $2=="create" {ok=1} END{exit !ok}' "$T" \
             || { echo "no create block rows in the truth census"; exit 1; }
-          grep -q "^item        create  " srv-create/c-imagine/scenes/scene-manifest.tsv \
+          awk -F'\t' '$1=="item" && $2=="create" {ok=1} END{exit !ok}' "$T" \
             || { echo "no create item rows in the truth census"; exit 1; }
 
       - name: upload create truth census
@@ -274,7 +278,7 @@ jobs:
           java -jar nf-installer.jar --installServer layer1211
 
       - name: fetch P0 Create (Modrinth ladder fetch)
-        run: bash scripts/cimscene/fetch-ladder.sh create mods-create
+        run: bash scripts/cimscene/fetch-ladder.sh create create
 
       - name: assemble mods dir
         run: |
