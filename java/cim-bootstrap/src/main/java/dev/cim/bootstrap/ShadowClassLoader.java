@@ -484,7 +484,21 @@ public final class ShadowClassLoader extends ClassLoader {
                 if (isJdkClass(name)) {
                     c = getPlatformClassLoader().loadClass(name);
                 } else {
-                    c = findClass(name); // no host fallback: hermetic by design
+                    try {
+                        c = findClass(name); // no host fallback: hermetic by design
+                    } catch (ClassNotFoundException cnfe) {
+                        // Autopsy telemetry: WHO requested the missing class?
+                        // The NCDFE at the trigger frame hides the requesting
+                        // method; name it here (3 frames past this loader).
+                        StackTraceElement[] st = new Throwable().getStackTrace();
+                        StringBuilder callers = new StringBuilder();
+                        for (int i = 2; i < Math.min(st.length, 6); i++) {
+                            callers.append(" | ").append(st[i]);
+                        }
+                        System.out.println("[c-imagine] shadow loader: CNFE " + name
+                                + " requested by" + callers);
+                        throw cnfe;
+                    }
                 }
             }
             if (resolve) {
