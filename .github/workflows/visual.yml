@@ -70,6 +70,20 @@ jobs:
           python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           ls visual-client | head
           wc -c visual-client/classpath.txt visual-client/launch.txt
+      - name: measure the 26.3 tint surface (vanilla items/ defs from the client jar)
+        run: |
+          set -euo pipefail
+          # the biome-tint channel (parity matrix 2.10b) needs the EXACT
+          # vanilla dyed_color model-tint shape: the vanilla defs live in the
+          # client jar — read them from the primary source, no decompile
+          echo "--- vanilla items/leather_helmet.json (dyed_color tint shape) ---"
+          unzip -p visual-client/client.jar assets/minecraft/items/leather_helmet.json \
+            || echo "MISSING leather_helmet def"
+          echo "--- classes carrying the dyed_color key (obf census) ---"
+          mkdir -p /tmp/tintc && cd /tmp/tintc
+          unzip -qo "$OLDPWD/visual-client/client.jar" 'net/minecraft/*' >/dev/null 2>&1 || true
+          grep -rl "dyed_color" net/ 2>/dev/null | head -8 || echo "no dyed_color classes found"
+          cd "$OLDPWD"
       - name: fetch Paper 26.3 (fill API v3, bare — no module)
         run: |
           set -euo pipefail
