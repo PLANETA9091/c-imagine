@@ -16,6 +16,7 @@ on:
   push:
     paths:
       - 'scene-mod/**'
+      - 'scripts/cimscene/**'
       - '.github/workflows/mod-matrix.yml'
 
 jobs:
@@ -116,8 +117,8 @@ jobs:
       - name: census parity sanity (real NeoForge rows exist)
         run: |
           test -f srv-truth/c-imagine/scenes/scene-manifest.tsv
-          grep -q "^block	minecraft	" srv-truth/c-imagine/scenes/scene-manifest.tsv
-          grep -q "^block	cimscene	" srv-truth/c-imagine/scenes/scene-manifest.tsv || true
+          grep -q "^block       minecraft       " srv-truth/c-imagine/scenes/scene-manifest.tsv
+          grep -q "^block       cimscene        " srv-truth/c-imagine/scenes/scene-manifest.tsv || true
           cat srv-truth/c-imagine/scenes/scene-manifest.tsv
 
       - name: upload cimscene truth evidence
@@ -128,3 +129,224 @@ jobs:
           path: |
             srv-truth/boot.log
             srv-truth/c-imagine/scenes/scene-manifest.tsv
+
+  # ---------------------------------------------------------------------
+  # P0 — CREATE (owner: 100% identical is the single top priority).
+  # First rung: REGISTRATION PARITY — the census with Create loaded on
+  # BOTH stacks (shadow-space layer harness vs real NeoForge server).
+  # RED rows here name exactly what the layer fails to register; every
+  # red row is fixed before the visual rungs move.
+  # ---------------------------------------------------------------------
+  create-truth:
+    name: P0 Create — truth leg (real NeoForge server census)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build cimtest + cimscene
+        run: |
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+
+      - name: restore NeoForge server layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+
+      - name: fetch P0 Create (Modrinth ladder fetch)
+        run: bash scripts/cimscene/fetch-ladder.sh create mods-create
+
+      - name: prepare server directory
+        run: |
+          cp -r layer-srv srv-create
+          mkdir -p srv-create/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv-create/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-create/mods/
+          cp mods-create/*.jar srv-create/mods/
+          echo "eula=true" > srv-create/eula.txt
+          cat > srv-create/server.properties <<'PROPS'
+          online-mode=false
+          difficulty=peaceful
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          PROPS
+
+      - name: boot real NeoForge + Create (console FIFO)
+        run: |
+          set -euo pipefail
+          cd srv-create
+          mkfifo console.in
+          tail -f console.in | ./run.sh > boot.log 2>&1 &
+          cd ..
+          for i in $(seq 1 150); do
+            grep -q "Done (" srv-create/boot.log 2>/dev/null && break
+            sleep 2
+          done
+          grep -q "Done (" srv-create/boot.log || { tail -60 srv-create/boot.log; exit 1; }
+          grep -q "\[cimscene\] census written scene-manifest.tsv" srv-create/boot.log \
+            || { tail -60 srv-create/boot.log; exit 1; }
+          echo "create-truth: server up + census written"
+
+      - name: assert create census rows
+        run: |
+          test -f srv-create/c-imagine/scenes/scene-manifest.tsv
+          cat srv-create/c-imagine/scenes/scene-manifest.tsv
+          grep -q "^block       create  " srv-create/c-imagine/scenes/scene-manifest.tsv \
+            || { echo "no create block rows in the truth census"; exit 1; }
+          grep -q "^item        create  " srv-create/c-imagine/scenes/scene-manifest.tsv \
+            || { echo "no create item rows in the truth census"; exit 1; }
+
+      - name: upload create truth census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-truth-census
+          path: srv-create/c-imagine/scenes/scene-manifest.tsv
+          if-no-files-found: ignore
+
+      - name: upload create truth boot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-truth-bootlog
+          path: srv-create/boot.log
+          if-no-files-found: ignore
+
+  create-layer:
+    name: P0 Create — layer leg (shadow-space harness census)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build rust (release)
+        run: cargo build --release --quiet
+
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+
+      - name: build cimtest + cimscene
+        run: |
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer1211
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-installer.jar --installServer layer1211
+
+      - name: fetch P0 Create (Modrinth ladder fetch)
+        run: bash scripts/cimscene/fetch-ladder.sh create mods-create
+
+      - name: assemble mods dir
+        run: |
+          mkdir -p mods
+          cp mods-create/*.jar mods/
+          cp test-mods/build/libs/cimtest-1.0.0.jar mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar mods/
+
+      - name: run shadow-space harness with Create
+        run: bash scripts/run-m2-harness.sh layer1211/libraries mods out-create
+
+      - name: assert create layer markers + census
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; exit 1; }
+          L=out-create/harness.log
+          grep -q "mod execution ok" $L || { tail -60 $L; fail "layer mod execution FAILED with Create"; }
+          grep -q "\[c-imagine\] mod create: constructed" $L || fail "create not constructed in the layer"
+          grep -q "\[cimscene\] census written scene-manifest.tsv" $L || fail "census missing in the layer (Create leg)"
+          test -f out-create/c-imagine/scenes/scene-manifest.tsv || fail "census file missing"
+          cat out-create/c-imagine/scenes/scene-manifest.tsv
+
+      - name: upload create layer census
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-layer-census
+          path: out-create/c-imagine/scenes/scene-manifest.tsv
+          if-no-files-found: ignore
+
+      - name: upload create layer harness log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-layer-harness-log
+          path: out-create/harness.log
+          if-no-files-found: ignore
+
+  create-census-diff:
+    name: P0 Create — census parity (layer vs real NeoForge)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [create-truth, create-layer]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: create-truth-census
+          path: truth
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: create-layer-census
+          path: layer
+
+      - name: diff the registries (Create registration parity)
+        run: |
+          T=$(find truth -name scene-manifest.tsv | head -1)
+          L=$(find layer -name scene-manifest.tsv | head -1)
+          test -n "$T" || { echo "truth census missing"; exit 1; }
+          test -n "$L" || { echo "layer census missing"; exit 1; }
+          echo "truth=$T layer=$L"
+          python3 scripts/cimscene/census-diff.py "$T" "$L" | tee create-census-diff.txt
+          grep -q "CENSUS PARITY: GREEN" create-census-diff.txt || {
+            echo "Create registration parity RED — rows above are the fix backlog"
+            exit 1
+          }
+
+      - name: upload create census diff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: create-census-diff-report
+          path: create-census-diff.txt
+          if-no-files-found: ignore

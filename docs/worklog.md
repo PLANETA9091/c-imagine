@@ -1129,3 +1129,33 @@ Stage Summary:
   mod set, two stacks, one diff job. Push supersedes the in-flight dc46299
   integration run; the returning run either proves census parity GREEN or
   hands the fix loop its first exact rows.
+
+---
+Task ID: 12-j
+Agent: main
+Task: P0 CREATE RUNG WIRED — registration parity jobs (truth leg / shadow-space layer leg / census diff) in mod-matrix.yml
+
+Work Log:
+- Create pinned: 6.0.10+mc1.21.1 (Modrinth, NeoForge 1.21.1, zero external
+  deps declared — jarJar bundles flywheel/ponder). Direct CDN URL verified
+  via the Modrinth API.
+- scripts/cimscene/fetch-ladder.sh: the Tier 0 ladder fetcher — unlike
+  fetch-real-mods.sh (WARN + continue), a ladder mod is MANDATORY: failed
+  fetch = hard error so a rung never silently runs empty.
+- mod-matrix.yml adds the P0 rung as THREE independent legs:
+  create-truth — real NeoForge 21.1.265 server + cimtest + cimscene +
+  create → census TSV + create-namespace row asserts + artifacts;
+  create-layer — the m2-real-mods shadow-space harness (no Paper) with the
+  same jar set → census TSV + "mod create: constructed" assert;
+  create-census-diff — joins the two censuses per (registry, namespace);
+  RED rows = the exact fix backlog, GREEN = Create registers identically
+  on both stacks (the first real-mod parity datum).
+- Sequencing: the baseline integration census (a409347, in flight) proves
+  the vanilla+small-mods set first; the Create rung runs in parallel —
+  its reds (if any) are Create-specific and must not mask the baseline.
+
+Stage Summary:
+- The ladder is no longer a plan: the P0 Create rung is CI-wired on both
+  stacks with the same ordinary-mod census emitter. The next integration
+  + mod-matrix runs return either GREEN datums or the first exact fix
+  backlog rows.
