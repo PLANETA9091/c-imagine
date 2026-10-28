@@ -664,3 +664,46 @@ Stage Summary:
   the modded server (run 2 server was already green: Done 1.225s + cimtest
   setup ok). Run 3 must capture t00/t01/t02 truth shots and produce the F2F
   identity datum (hotbar slot-0 crop diff vs the c-imagine visual run).
+
+---
+Task ID: 11-d
+Agent: main
+Task: parity-diff run 3 autopsy (THE TRUTH CLIENT RENDERS!) + HUD/dialog channel implemented (M6.1) + run 4 fixes
+
+Work Log:
+- Run 3 (bc67838) artifact measured END-TO-END: the truth client JOINED the
+  real NeoForge server — boot.log "logged in with entity id 1 at
+  (-0.5,-60.0,1.5)" + "cimviewer joined the game"; client.out "Connecting to
+  127.0.0.1,25565" -> "Loaded 2 advancements" (play-phase processing, cimtest
+  aboard — its advancements loaded); the t99-stall SCREENSHOT PROVES the
+  world renders: superflat terrain, full HUD (hearts/hunger/hotbar), the
+  "Move with WASD" toast, the player hand — llvmpipe at 1280x720.
+- Two residual defects fixed: (a) the wait-loop waited for the client-side
+  [CHAT] join line (never logged — system chat raced the GUI init); replaced
+  with the solid marker pair (server boot.log "logged in with entity id" +
+  client client.out "Loaded N advancements"); (b) servers.dat was seeded
+  gzip — the run 3 client.out EOFException stack PROVES 1.21.1
+  ServerList.load reads NbtIo.read(Path) = UNCOMPRESSED (the earlier
+  "1.21.1 reads readCompressed" note was wrong); raw NBT now.
+- HUD/dialog channel (M6.1) implemented on the measured contract
+  (dialog-hud-26-3.md): CimPlugin.showHudDialog builds an INLINED dialog via
+  Dialog.create (multi_action + ItemDialogBody rendering the modded cube
+  stack — the items-channel graphics INSIDE a native form — + dynamic/custom
+  click id c-imagine:hud_dialog_click), shows it via Audience.showDialog;
+  PlayerCustomClickEvent listener logs [cim-hud] markers; cimbot observes
+  show_dialog (play ids measured: bundle-227 static clear=141/show=142,
+  live CI +1 drift = 142/143) and ANSWERS with serverbound
+  custom_click_action (id 68 = the LAST of 69 serverbound packets; payload
+  = id string + absent NBT = single 0x00 EndTag, writeNbt(null) semantics);
+  the plugin logs the event -> the round-trip closes.
+- integration.yml asserts the four HUD markers (2 bot checks + 2 server
+  log lines). Local light checks: cargo fmt/clippy/test green (rustup
+  minimal installed into the fresh sandbox), mvn package green (Temurin 25
+  JDK fetched — Paper 26.3 needs Java 25).
+
+Stage Summary:
+- The parity-diff truth leg is ONE run from the identity datum: run 4 with
+  the fixed join markers + raw servers.dat must capture t00/t01/t02 and job
+  2 computes AE(icon identity: truth vs c-imagine).
+- The HUD channel is now wire-proven (run 4 parity-diff rides the same
+  commit) and joins the parity matrix as implemented.
