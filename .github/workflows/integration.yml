@@ -346,7 +346,7 @@ jobs:
             | grep -q '"instrument=creeper,note=13"' \
             || fail "note_block blockstate override missing from the pack"
           unzip -p srv/c-imagine/f2v/pack.zip assets/cimtest/models/block/test_block.json \
-            | grep -q "minecraft:block/iron_block" \
+            | grep -q "cimtest:block/test_block" \
             || fail "modded block model missing from the pack"
           echo "F2V visual pipeline: pack built + deterministic + served + accepted + loaded + visual item verified"
 

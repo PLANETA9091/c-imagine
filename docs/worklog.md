@@ -1073,3 +1073,26 @@ Stage Summary:
 - The parity program moved from paper to code: the harness mod exists and is
   CI-wired on the truth stack. WIP push; CI owns the verification (no local
   runs per owner directive).
+
+---
+Task ID: 12-h
+Agent: main
+Task: integration RED autopsy — stale block-model assert after 66689d3's self-textured test_block
+
+Work Log:
+- Integration failed on fa95363/5bc9dcc/66689d3 at "assert F2V visual
+  pipeline": "modded block model missing from the pack".
+- Autopsy: 66689d3 (parity run 5 forensics) legitimately changed
+  cimtest's block model to carry its own texture
+  (cube_all + cimtest:block/test_block instead of the iron_block
+  delegation) so the truth client and the stock client render the SAME
+  pixels; the integration assert still grepped the OLD
+  "minecraft:block/iron_block" reference.
+- Fix: the assert now greps "cimtest:block/test_block" (the self-texture
+  reference the packed model must carry). Product code untouched — the
+  regression was a stale CI expectation, not a layer bug.
+
+Stage Summary:
+- Matrix-red cause identified and fixed at the correct layer (CI contract
+  follows the measured rig change). Push re-runs integration; the run that
+  returns green also carries the cimscene mod-matrix truth leg verification.
