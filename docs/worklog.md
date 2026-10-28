@@ -863,3 +863,55 @@ Stage Summary:
   visual dispatch must produce the locked pre/shot pair WITH the block.
 - The palette channel is the NINTH render channel implemented on the
   stock-client surface; its pixel leg rides the same visual run.
+
+---
+Task ID: 12-c
+Agent: main
+Task: visual run 46 GREEN (all 10 legs) — camera-lock + palette first data; run 46/47 autopsies pin the vanilla pitch sign + randomized spawn
+
+Work Log:
+- Run 46 (7602d02) SUCCESS: EVERY legacy gate green (item 187410, postfx
+  842107, select 173984, armor 94330, block 84939, rig 170705) PLUS the
+  two new legs' first data:
+  * camera-lock: AE(locked-pre,locked)=9485 (>3000 gate GREEN) — plain
+    setblock WORKED ("Changed the block at 0, -60, 3" logged; run 45's
+    silent `execute` lesson confirmed); kill/fill plain feedback logged
+    ("Killed 11 entities" — mobs + display rig; "No blocks were filled");
+  * palette: AE(gem,gem-red)=2304 (>500 gate GREEN) — the
+    paletted_permutations atlas source resolved CLIENT-SIDE: the red
+    variant rendered through the generated variant model. THE NINTH
+    CHANNEL IS PIXEL-PROVEN ON THE STOCK CLIENT.
+- Run 46 shot autopsy (13/14 artifact frames) measured TWO more rig
+  lessons, now baked into both workflows + camera-lock-26-3.md §2.0:
+  * VANILLA PITCH SIGN IS +DOWN: "tp ... 0 -30" pointed the camera UP
+    (sky/clouds filled the frame; the block sat at the bottom edge). The
+    rig now locks pitch +30 — with the whole 70-degree FOV below the
+    horizon the region sees only ground (cloud drift structurally gone).
+  * PAPER RANDOMIZES THE JOIN SPAWN PER RUN: 45: (-6.5,-2.5) vs 46:
+    (5.5,7.5) — same jar, same seed. Earlier legs' blocks wander (run 46's
+    pre carried the old placeblock block @(5,-60,10) — outside the then-
+    sized sweep). fill enlarged to the whole spawn radius
+    (-12..12 x -12..16, Y from feet).
+  * Camera NOT touched between pre and shot: the ONLY pre→shot delta is
+    the setblock — the cleanest possible A/B pair (the intermediate
+    pitch-0 tp is gone).
+- visual.yml grew the 26.3 TINT SURFACE measurement (vanilla
+  items/leather_helmet.json + dyed_color class census straight from the
+  client jar — the primary-source check for the biome-tint channel, no
+  decompile needed since Mojang dropped official mappings for 26.x).
+- F2V v1 read-only analysis deepened (parity matrix 2.10b): ModTintScanner
+  verifies the tint family from the mods' OWN bytecode (foliage/grass/
+  constant), the RENDER CARRIER is leather_horse_armor + dyed_color =
+  BiomeTint.colorAt(...) (vanilla ItemColors multiplies grayscale, tint
+  index 0 only — the CmdCarrierShards lesson), ColorAtlas is a separate
+  65536-color voxel palette family (rides the OBJ port). v2 mapping:
+  palettes DONE for fixed recolors; biome families via dyed_color
+  component or the 26.3 model-node tints (primary-source shape arriving
+  via the new measurement step).
+
+Stage Summary:
+- The camera-lock rig is now three dispatches deep in REALITY: run 45
+  measured its own command-layer bugs, run 46 measured the pitch sign +
+  spawn randomization, run 47 must produce the CLEAN locked pre/shot pair
+  (pure ground background, the only delta = the block). The palette
+  channel closed with its first pixel datum (2304).

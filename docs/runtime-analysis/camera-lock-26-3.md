@@ -23,14 +23,12 @@ sequence after their existing legs:
 
 ```
 kill @e[type=!player]                                        # sweep mobs AND display rigs
-tp cimviewer 0.5 -60 0.5 0 -30                               # LOCK: cell + yaw 0 + pitch -30 (ABSOLUTE — both surfaces measured y=-60)
-fill -9 -60 1 4 -50 6 air                                    # sweep the scene in front
+tp cimviewer 0.5 -60 0.5 0 30                                # LOCK: cell + yaw 0 + pitch +30 (VANILLA SIGN: +pitch = DOWN — measured run 46)
+fill -12 -60 -12 12 -50 16 air                               # sweep the WHOLE spawn radius (Paper randomizes the join spawn per run)
 Key F5                                                       # cim side ONLY: front→first (run-45 F5-cycle lesson)
 Key F1                                                       # hideGui — no HUD, no hand
 Shot 13-locked-pre.png  (truth: t03-locked-pre.png)          # clean scene, locked camera
-tp cimviewer 0.5 -60 0.5 0 0                                 # pitch 0 for the caret-free absolute placement
-setblock 0 -60 3 <block>                                     # ABSOLUTE cell: floor, 3 south
-tp cimviewer 0.5 -60 0.5 0 -30                               # back to the locked pose
+setblock 0 -60 3 <block>                                     # ABSOLUTE cell: floor, 3 south — the ONLY pre→shot delta (camera untouched)
 Shot 14-locked.png      (truth: t04-block-locked.png)        # the identity shot
 Key F1                                                       # un-hide for any later leg
 ```
@@ -47,52 +45,56 @@ weather clear
 gamerule doMobSpawning false
 ```
 
-### 2.0 Run-45 autopsy (the first dispatch — four measured lessons)
+### 2.0 Runs 45+46 autopsies (the measured lessons baked into the rig)
 
 1. **Console `execute at <player> run ...` SILENTLY DOES NOTHING on the
-   Paper 26.3 console** — no feedback, no error, while plain commands log
-   theirs (the run-45 boot.log carries `Teleported...`, `Gave...`, but NOT
-   ONE word from the execute-wrapped fill/setblock/kill). Every rig command
-   is PLAIN + ABSOLUTE now: `setblock 0 -60 3 ...`, `fill -9 -60 1 4 -50 6
-   air`, `kill @e[type=!player]`. Both superflat surfaces are MEASURED at
+   Paper 26.3 console** (run 45) — no feedback, no error, while plain
+   commands log theirs. Every rig command is PLAIN + ABSOLUTE; run 46
+   confirmed plain setblock/fill/kill all work AND log feedback
+   ("Changed the block at 0, -60, 3", "No blocks were filled",
+   "Killed 11 entities"). Both superflat surfaces are MEASURED at
    y=-60 (cim: the tp feedback prints feet Y -60; truth: the run-3 spawn
    log) — the absolute Y is a pinned measurement, not a guess.
-2. **The armor leg's F5 cycle ends at THIRD-PERSON FRONT** (first→back @07,
+2. **The VANILLA pitch sign is +DOWN** (run 46): "tp ... 0 -30" pointed the
+   camera UP (the sky/clouds filled the frame, the block visible at the
+   bottom edge); positive pitch looks DOWN. The rig locks pitch +30.
+3. **The armor leg's F5 cycle ends at THIRD-PERSON FRONT** (first→back @07,
    →front @08; the post-armor press moved back→front, never to first).
    Run 45's locked shots were taken from the front camera, from which the
    locked block cell (0,-60,3) is BEHIND the camera — AE(13,14)=568 (pure
    pose noise). The locked leg presses F5 ONCE MORE (front→first,
    deterministic cycle position); legs 09-12 stay on the front view their
-   gates were calibrated on.
-3. **Peaceful mobs walk into the frame** (a pig photobombed run 45's locked
+   gates were calibrated on (run 46 confirmed: no player in the locked
+   frames = first person achieved).
+4. **Paper RANDOMIZES the join spawn per run** (45: (-6.5,-2.5), 46:
+   (5.5,7.5) — same jar, same seed, different cells): earlier legs' blocks
+   WANDER between runs, so the sweep fill is sized for the whole spawn
+   radius (-12..12 x -12..16 z). Run 46's pre frame still carried the old
+   placeblock block @(5,-60,10) — outside the run-46-sized sweep.
+5. **Peaceful mobs walk into the frame** (a pig photobombed run 45's locked
    pre/shot pair) — `doMobSpawning false` at boot + `kill @e[type=!player]`
-   before the pre shot.
-4. **The tp rotation lock WORKS**: run 45's shot 13 shows the pitch -30
-   camera (horizon pinned at the top of the frame) exactly as designed —
-   the server-authoritative rotation is reliable; only the placement
-   commands were broken.
+   (run 46: "Killed 11 entities" — mobs AND the display rig).
+6. **The tp rotation lock WORKS** (runs 45/46 both render the commanded
+   pitch) — the server-authoritative rotation is reliable.
 
 ### 2.1 Why each piece is load-bearing
 
-- **`tp <player> 0.5 -60 0.5 0 -30`** — the vanilla teleport with explicit
+- **`tp <player> 0.5 -60 0.5 0 30`** — the vanilla teleport with explicit
   rotation is SERVER-authoritative: the client MUST apply yaw/pitch exactly
-  (no UI path exists to override it under xvfb; MEASURED in run 45: the
-  pitch -30 camera renders). The ABSOLUTE Y=-60 is the measured superflat
-  surface shared by BOTH stacks (see 2.0-1) — the RELATIVE geometry
-  eye→floor→cube is bit-identical.
-- **pitch -30** — the camera looks DOWN enough that the whole vertical FOV
-  (70° default → ±35°) stays below the horizon: top frame ray = -30° + 35°
-  = +5° above the look-down axis... concretely the topmost region row
-  (y=110 px) sits at 24.3° above the view center = 5.7° BELOW the horizon
-  ⇒ the region sees only GROUND: no sky gradient, no clouds (clouds render
-  above the horizon; the earlier display-rig leg had to subtract cloud
-  drift — the locked rig eliminates it structurally).
-- **`fill -9 -60 1 4 -50 6 air`** — sweeps the previous legs' leftovers out
-  of the new camera's view (the t02/10 eye-level stand-in projects into
-  cells x∈[-9..0], z∈[3..4], y=-59..-60 for both measured spawn sets —
-  inside the sweep box; Y starts AT feet so the grass floor under the viewer
-  is never touched, and z starts at 1 so the player's own cell is
-  untouched).
+  (no UI path exists to override it under xvfb; MEASURED runs 45+46: the
+  commanded pitch renders, and the VANILLA SIGN is +DOWN). The ABSOLUTE
+  Y=-60 is the measured superflat surface shared by BOTH stacks (see
+  2.0-1) — the RELATIVE geometry eye→floor→cube is bit-identical.
+- **pitch +30 (down)** — the camera looks DOWN enough that the whole
+  vertical FOV (70° default → ±35°) stays below the horizon: the topmost
+  region row (y=110 px) sits 24.3° above the view center = 5.7° BELOW the
+  horizon ⇒ the region sees only GROUND: no sky gradient, no clouds (clouds
+  render above the horizon; the earlier display-rig leg had to subtract
+  cloud drift — the locked rig eliminates it structurally).
+- **`fill -12 -60 -12 12 -50 16 air`** — sweeps ALL previous legs'
+  leftovers out of the new camera's view across the whole randomized spawn
+  radius (2.0-4); Y starts AT feet so the grass floor under the viewer is
+  never touched.
 - **`setblock 0 -60 3 <block>`** — the ABSOLUTE floor cell 3 south of the
   locked pose (no caret semantics involved — run-45 lesson: plain commands
   only). Standing on the floor (not the run-4 eye cell) means the client

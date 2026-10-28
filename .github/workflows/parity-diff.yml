@@ -189,28 +189,22 @@ jobs:
           sleep 5
           java -cp vtools Shot shots/t02-block.png
           # CAMERA-LOCK BLOCK IDENTITY (the EXACT mirror of visual.yml's
-          # 13/14 leg — docs/runtime-analysis/camera-lock-26-3.md): the SAME
-          # server-locked camera on both parity sides is what makes the
-          # t04-vs-14 diff a true IDENTITY measurement. MEASURED (visual run
-          # 45): console `execute at <player> run ...` SILENTLY DOES NOTHING
-          # on the Paper console — PLAIN + ABSOLUTE commands everywhere, on
-          # BOTH stacks (both superflat surfaces measured at y=-60: the cim
-          # tp log prints feet Y -60, the truth spawn log run 3 the same).
+          # 13/14 leg — docs/runtime-analysis/camera-lock-26-3.md). MEASURED
+          # lessons baked in (runs 45/46): VANILLA pitch sign is +DOWN;
+          # Paper randomizes the join spawn per run — sweep fill covers the
+          # whole spawn radius; console `execute ...` can be silent — PLAIN
+          # + ABSOLUTE commands only (both stacks).
           echo "kill @e[type=!player]" > srv-truth/console.in
           sleep 2
-          echo "tp cimviewer 0.5 -60 0.5 0 -30" > srv-truth/console.in
+          echo "tp cimviewer 0.5 -60 0.5 0 30" > srv-truth/console.in
           sleep 2
-          echo "fill -9 -60 1 4 -50 6 air" > srv-truth/console.in
+          echo "fill -12 -60 -12 12 -50 16 air" > srv-truth/console.in
           sleep 2
           java -cp vtools Key F1
           sleep 1
           java -cp vtools Shot shots/t03-locked-pre.png
-          echo "tp cimviewer 0.5 -60 0.5 0 0" > srv-truth/console.in
-          sleep 2
           echo "setblock 0 -60 3 cimtest:test_block" > srv-truth/console.in
-          sleep 2
-          echo "tp cimviewer 0.5 -60 0.5 0 -30" > srv-truth/console.in
-          sleep 5   # teleport apply + block/light/section rebuild
+          sleep 5   # block/light/section rebuild (camera NOT touched)
           java -cp vtools Shot shots/t04-block-locked.png
           java -cp vtools Key F1
           # console-feedback gate (mirror of visual.yml): the truth block

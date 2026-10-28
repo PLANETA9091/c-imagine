@@ -306,48 +306,37 @@ jobs:
           # CAMERA-LOCK BLOCK IDENTITY leg (parity-diff side of the
           # "identical to the modded client" directive — the EXACT same rig
           # the NeoForge truth client walks in parity-diff.yml, see
-          # docs/runtime-analysis/camera-lock-26-3.md): the viewer is
-          # server-teleported to the fixed ABSOLUTE cell (0.5, -60, 0.5)
-          # with yaw 0 / pitch -30 (MEASURED run: both superflat stacks
-          # surface at y=-60 — the tp log prints the preserved feet Y), the
-          # scene in front is swept (fill + display-kill + the earlier
-          # eye-level stand-in swept too), F1 hides the HUD and the PRE shot
-          # is taken; then pitch 0 (caret semantics are facing-dependent),
-          # the ABSOLUTE cell (0, -60, 3) gets the note_block stand-in
-          # (floor level, 3 south; the stand-in state = visual-blocks.tsv
-          # row cimtest:test_block), back to -30, SHOT.
-          # MEASURED (this leg's first dispatch): console `execute at <player>
-          # run ...` SILENTLY DOES NOTHING on the Paper 26.3 console (no
-          # feedback, no error, while plain commands log feedback) — so every
-          # command here is PLAIN + ABSOLUTE.
+          # docs/runtime-analysis/camera-lock-26-3.md). MEASURED lessons
+          # baked in: (run 46) the VANILLA pitch sign is +DOWN — "0 -30"
+          # pointed the camera UP (sky/clouds filled the frame); (run 46)
+          # Paper RANDOMIZES the join spawn per run (45: (-6.5,-2.5), 46:
+          # (5.5,7.5)) so earlier legs' blocks wander — the sweep fill is
+          # sized for the whole spawn radius; (run 45) console `execute ...`
+          # is silent — PLAIN + ABSOLUTE commands only; (run 46) plain
+          # setblock/fill/kill all log feedback and work.
           echo "kill @e[type=!player]" > srv/console.in
           sleep 2
-          echo "tp cimviewer 0.5 -60 0.5 0 -30" > srv/console.in
+          echo "tp cimviewer 0.5 -60 0.5 0 30" > srv/console.in
           sleep 2
-          echo "fill -9 -60 1 4 -50 6 air" > srv/console.in
+          echo "fill -12 -60 -12 12 -50 16 air" > srv/console.in
           sleep 2
-          # PERSPECTIVE: first person. MEASURED (run 45 shot 13): the armor
-          # leg's F5 cycle ends at THIRD-PERSON FRONT (first→back @07, →front
-          # @08 — two presses, the post-armor press NEVER returned to
-          # first), and from the front camera the locked block cell (0,-60,3)
-          # sits BEHIND the camera — run 45's AE(13,14)=568. 09-12 keep
-          # shooting in the front view (their gates are calibrated on it);
+          # PERSPECTIVE: first person. MEASURED (run 45/46): the armor leg's
+          # F5 cycle ends at THIRD-PERSON FRONT (first→back @07, →front @08);
           # THIS leg returns to first person with ONE more press (front→
-          # first, deterministic cycle position).
+          # first, deterministic cycle position — run 46 frames show no
+          # player = first person achieved).
           java -cp vtools Key F5
           sleep 1
           java -cp vtools Key F1
           sleep 1
           java -cp vtools Shot shots/13-locked-pre.png
-          echo "tp cimviewer 0.5 -60 0.5 0 0" > srv/console.in
-          sleep 2
           # NOTE: instrument=creeper,note=13 mirrors visual-blocks.tsv
           # (cimtest:test_block) — keep the two in sync when the manifest
-          # grows (the manifest-driven F2vPack path is authoritative)
+          # grows (the manifest-driven F2vPack path is authoritative).
+          # The ONLY delta pre→shot is this block (the camera is NOT touched
+          # between the two shots).
           echo "setblock 0 -60 3 note_block[instrument=creeper,note=13]" > srv/console.in
-          sleep 2
-          echo "tp cimviewer 0.5 -60 0.5 0 -30" > srv/console.in
-          sleep 5   # teleport apply + block/light/section rebuild
+          sleep 5   # block/light/section rebuild
           java -cp vtools Shot shots/14-locked.png
           java -cp vtools Key F1
           # console-feedback gates (MEASURED: Paper console logs command
