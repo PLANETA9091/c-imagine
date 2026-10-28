@@ -15,6 +15,25 @@
 5. Nothing advances while the matrix is red. A bug found in any subsystem blocks all
    forward progress until fixed (project rule from the owner).
 
+## Real-mod parity law (owner directive 2026-10-29)
+
+- First-party rigs are scaffolding, **not proof**: a self-built rig can
+  unconsciously encode c-imagine-friendly assumptions that diverge on real
+  NeoForge. Features are proven on REAL mods — Tier 0 of `docs/MODPACK.md`:
+  Create first (**100% identical is the top priority**), then Biomes O' Plenty,
+  Dynamic Trees, Combat Roll, then the full Aged modpack. Every mod is supported
+  in the end state.
+- Every comparison is **dual-stack**: real NeoForge 1.21.1 client (screenshot +
+  profile everything) vs c-imagine on the vanilla 26.3 client (same scenes, same
+  captures). Judged by profile numbers **AND by eye** — both screenshot sets ship
+  in every run summary for the owner's review; a green gate is necessary but not
+  sufficient.
+- Per-mod coverage is **census-driven**: every block/item/entity/particle/sound
+  a mod registers gets an automated `cimscene` scene on both stacks; the
+  coverage artifact reports exercised vs registered per registry.
+- CI budget is not a constraint (owner, 2026-10-29) — runs are not rationed.
+  Still: a red matrix blocks all forward progress (law above).
+
 ## Performance law
 - The module must not charge Paper extra: measure (profiling.yml) before and after any
   change that touches hot paths (codec, registry, bridge ring, net hooks).

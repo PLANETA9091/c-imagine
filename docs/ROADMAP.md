@@ -231,6 +231,52 @@ block-in-world leg + the NeoForge 1.21.1 ground-truth DIFF (render the same
 content on a modded client and diff against c-imagine's view) stay the M6
 remainder; M5.2 wire/server contract asserted green in integration.yml.
 
+## M5.5 — Real-mod parity program (owner directive 2026-10-29 — pulled forward from M7)
+
+**The directive:** first-party rigs (cimtest) remain scaffolding but are no longer
+the proof surface — a self-built rig can unconsciously encode c-imagine-friendly
+assumptions that diverge on real NeoForge. Testing moves NOW to real mods, and
+every comparison is dual-stack with a REAL NeoForge client: boot the modded client
+(screenshot + profile everything), then run the same content through c-imagine on
+the vanilla client, and compare — by profile numbers AND by eye. Per mod, per
+block, per sound, per particle: everything a mod ships gets an automated scene on
+BOTH stacks. **Create mod 100% identical is the single top priority.** CI budget
+is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
+
+- **Priority ladder (Tier 0 in `MODPACK.md`):**
+  - **P0 — Create**: 100% identical target (kinetic network, contraptions,
+    fluids, particles, sounds, UIs) — the flagship gate.
+  - **P1 — Biomes O' Plenty** (block palette + biome-tint channels at scale),
+    **Dynamic Trees** (block entities + incremental growth ticks),
+    **Combat Roll** (client animation/sound surface — smallest full-ladder mod).
+  - **P2 — the full Aged modpack** (version pinned from its manifest when CI
+    wiring lands) — the "every mod supported" end-state check.
+- **Dual-stack comparison contract (extends `parity-diff.yml`)**: truth leg =
+  real NeoForge 21.1.265 server + real NeoForge 1.21.1 client (existing
+  truth-job pattern); ours leg = c-imagine Paper 26.3 + vanilla 26.3 client
+  (stock-client harness). Both legs run the SAME scene script from `cimscene`
+  and emit per-scene screenshots + per-scene profiler spans + `[cimscene]`
+  markers; the diff job joins truth vs ours per scene id: pixel datums
+  (PixelDiffNorm — the calibrated identity metric) + profile deltas, and BOTH
+  screenshot sets ship in the run summary for the owner's eye review —
+  "looks identical" is signed off by a human on every channel, not inferred
+  from gates alone. Design: `runtime-analysis/mod-parity-harness.md`.
+- **Scene harness `cimscene`** (first-party NeoForge 1.21.1 mod, deliberately an
+  ORDINARY mod — zero c-imagine APIs — so it loads identically on both stacks
+  and cannot absorb the blame): void world, pinned noon/clear, bot player locked
+  to the fixed camera cell + yaw/pitch (camera-lock rig), then a census-driven
+  sweep: enumerate the target mod's registries (blocks → items → entities →
+  particles → sounds → block entities) and emit one deterministic scene per
+  entry in front of the camera. Coverage artifact = registered vs exercised per
+  registry per mod. Sound is proven wire-level (cimbot
+  ClientboundSoundPacket census) since screenshots cannot hear.
+
+**Accept:** Create scene sweep green at the calibrated identity thresholds on the
+camera-locked rig on every Create channel (the 100%-identical target, measured by
+the documented cross-version metric); BOP / Dynamic Trees / Combat Roll sweeps
+green per-registry; Aged pack boots + first census + first sweep; every run ships
+both screenshot sets for eye comparison and per-scene debug bundles for reds.
+
 ## M6 — Resource pack synthesis (shapes, not cubes)
 
 - PackBuilder port: model/texture extraction from mod jars, OBJ support, server
@@ -248,7 +294,9 @@ remainder; M5.2 wire/server contract asserted green in integration.yml.
 - Capabilities/data components marshalling, network channels (mod↔mod), commands,
   configs (TomlFeed subset), JEI-style informational mods.
 - Modpack matrix (MODPACK.md) runs nightly against the real mods; failures become
-  targeted issues.
+  targeted issues. **Pulled forward 2026-10-29**: the Tier 0 parity ladder
+  (Create/BOP/Dynamic Trees/Combat Roll/Aged) is now M5.5 — real-mod parity is
+  the active program, not an M7 TODO.
 
 **Accept:** ≥ 5 real third-party mods load + run basic loops in CI.
 

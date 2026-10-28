@@ -1010,3 +1010,36 @@ Stage Summary:
   next in-world channel (entities, armor worn, contraptions).
 - Remaining M6: biome-tint (dyed/dye shape pinned), fonts (v1 was a tiny
   1-glyph Bedrock helper — deprioritized), contraptions, OBJ/voxelizer.
+
+---
+Task ID: 12-f
+Agent: main
+Task: OWNER DIRECTIVE 2026-10-29 — REAL-MOD PARITY PROGRAM (M5.5): real mods now, dual-stack compare always, Create 100% identical top priority
+
+Work Log:
+- Directive recorded across the four standing files: ROADMAP (new M5.5 section,
+  M7 note), AGENTS.md (real-mod parity law), MODPACK.md (Tier 0 ladder +
+  testing-loop law 6), and the new harness design contract
+  (runtime-analysis/mod-parity-harness.md).
+- The owner's reasoning is now law: first-party rigs can — accidentally —
+  encode c-imagine-friendly assumptions that diverge on real NeoForge, so real
+  mods are the proof surface effective immediately: Create (P0, 100% identical),
+  Biomes O' Plenty / Dynamic Trees / Combat Roll (P1), the full Aged modpack
+  (P2); every mod supported in the end state.
+- Comparison contract: real NeoForge client (screenshot + profile everything)
+  vs c-imagine on the vanilla client (same scenes, same captures) — judged by
+  profile numbers AND by eye; both screenshot sets ship in every run summary.
+- Per-mod coverage census-driven: every block/sound/particle/everything a mod
+  registers gets an automated cimscene scene on both stacks; the harness mod
+  is deliberately an ORDINARY mod (zero c-imagine APIs) so it cannot absorb
+  the blame for a divergence.
+- CI budget declared unlimited by the owner (2026-10-29) — rationing dropped.
+- Sandbox note: the workspace restarted with root-owned project dirs; the repo
+  was rebuilt from GitHub (the WIP-push discipline paid off — zero work lost).
+
+Stage Summary:
+- The parity program now has written law (AGENTS.md), a ladder (MODPACK.md
+  Tier 0), a roadmap milestone (M5.5) and a harness design contract
+  (mod-parity-harness.md). Next: implementation — cimscene mod skeleton
+  (ModDevGradle, census emitter, scene runner) → mod-matrix.yml CI wiring →
+  the Create P0 census + first scenes.

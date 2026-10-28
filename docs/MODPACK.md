@@ -21,7 +21,30 @@ Planned additions (each tiny, each one subsystem):
 Rules: server-side only (no client classes) until M5; deterministic logging with
 `[cimtest]` markers that CI greps; every marker pair (expect/actual) documented here.
 
-## Tier 2 — third-party (nightly matrix, M7)
+## Tier 0 — the parity ladder (owner directive 2026-10-29, pulled forward NOW)
+
+**Real mods are the proof surface, effective immediately** — first-party rigs
+(Tier 1) stay as fast scaffolding, but a rig we write ourselves can accidentally
+encode c-imagine-friendly assumptions that diverge on real NeoForge. Every
+comparison is dual-stack: real NeoForge 1.21.1 client (screenshot + profile
+everything) vs c-imagine on the vanilla 26.3 client (same scenes, same
+captures) — judged by profile numbers AND by eye. Harness design:
+`runtime-analysis/mod-parity-harness.md` (roadmap M5.5).
+
+| Priority | Mod | Why it is on the ladder | Gate |
+|---|---|---|---|
+| **P0** | **Create** | The flagship: kinetic network, contraptions, fluids, particles, sounds, UIs. **100% identical is the single top priority.** | calibrated identity datum on EVERY Create channel (camera-locked rig) |
+| P1 | Biomes O' Plenty | Block palette + biome-tint channels at scale (worldgen surface) | per-registry census sweep green on both stacks |
+| P1 | Dynamic Trees | Block entities + incremental growth ticks (BE bridge + event loop) | per-registry census sweep green on both stacks |
+| P1 | Combat Roll | Client animation/sound surface — smallest mod, first full ladder walk | animation + sound channels green on both stacks |
+| P2 | Aged modpack (full) | The "every mod supported" end-state check; version pinned from its manifest when CI wiring lands | boot + census + first sweep green; failures become targeted tasks |
+
+Per-mod, per-block, per-sound, per-particle coverage is automated via the
+census-driven `cimscene` harness: registered vs exercised per registry is a
+published artifact; a mod is green only when every registry entry has a scene
+row green on BOTH stacks.
+
+## Tier 2 — third-party (nightly matrix, M7; Tier 0 is the pulled-forward core)
 
 Pinned versions, downloaded by CI into `mods/` next to `cimtest`:
 
@@ -45,3 +68,7 @@ features function in the layer, visual diff within contract threshold.
 4. Every fix ships with the test that would have caught it.
 5. Visual parity: modded view on vanilla client vs NeoForge ground truth, screenshot
    diff (M5) — "looks right" is a CI assertion, not an opinion.
+6. Real-mod law (2026-10-29): first-party rigs are scaffolding, real mods are the
+   proof (Tier 0 first — Create top priority). Every check is dual-stack: NeoForge
+   client screenshot + profile vs c-imagine vanilla-client screenshot + profile,
+   judged by numbers AND by eye. CI budget is unrestricted (owner, 2026-10-29).
