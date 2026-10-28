@@ -133,10 +133,15 @@ jobs:
           export GALLIUM_DRIVER=llvmpipe
           # join pre-conditions (the 26.3 harness lessons apply verbatim):
           # no first-run onboarding + a seeded gzip servers.dat (1.21.1 reads
-          # readCompressed — the historical format, --gzip)
-          mkdir -p truth-client/game
+          # readCompressed — the historical format, --gzip) + THE MOD: the
+          # client-side mod discovery reads gameDir/mods (run 2 lesson —
+          # without it the Mod List carried only Minecraft, run 3+ must show
+          # [cimtest] in the client discovery too)
+          mkdir -p truth-client/game/mods
           echo "onboardAccessibility:false" > truth-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py truth-client/game --gzip
+          cp test-mods/build/libs/cimtest-1.0.0.jar truth-client/game/mods/
+          ls -la truth-client/game/mods/
           ( cd truth-client && bash -c "$(cat launch.txt)" > client.out 2>&1 ) &
           CLIENT_PID=$!
           JOINED=0
@@ -153,6 +158,10 @@ jobs:
             java -cp vtools Shot shots/t99-stall.png || true
             exit 1
           fi
+          # the mod MUST have loaded client-side (run 2 lesson: mods/ was
+          # empty and the truth client rendered pure vanilla)
+          grep -q "\[cimtest\] common setup ok" truth-client/client.out \
+            || { echo "--- client.out: cimtest marker missing ---"; grep -nE "Mod List|Found mod file|cimtest|ERROR" truth-client/client.out | head -20; tail -30 truth-client/client.out; exit 1; }
           sleep 30
           # pin the client-side daylight too (the client renders its own sky)
           java -cp vtools Shot shots/t00-baseline.png

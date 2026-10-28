@@ -7,7 +7,7 @@ prepares a REAL NeoForge 21.1.265 client with the cimtest mod installed, to be
 launched under xvfb against a real NeoForge server. The screenshots it
 produces are the pixel ground truth the c-imagine visual run is diffed against.
 
-Measured launch contract (all javap/decompile-grounded, 2026-10-28):
+Measured launch contract (all javap/decompile-grounded; runs 1-3 autopsy):
 
   - installer --installClient produces:
       versions/1.21.1/1.21.1.json                       (vanilla profile)
@@ -18,12 +18,19 @@ Measured launch contract (all javap/decompile-grounded, 2026-10-28):
           client-...-srg.jar     (SRG-renamed classes, processor intermediate)
       libraries/net/neoforged/neoforge/21.1.265/
           neoforge-21.1.265-client.jar     (binary-patched game classes)
-          neoforge-21.1.265-universal.jar  (FML core)
+          neoforge-21.1.265-universal.jar  (FML system mod, mods.toml modId=neoforge)
   - mainClass = cpw.mods.bootstraplauncher.BootstrapLauncher
     (decompiled contract: -DlegacyClassPath (fallback java.class.path) is
     split into module candidates; -DignoreList entries are matched by
-    filename STARTSWITH and kept OUT of the module layer — so the resources
-    jar must be named exactly "client-extra.jar");
+    filename STARTSWITH and kept OUT of the module layer);
+  - OFFICIAL COMPOSITION (the run 2 lesson): the cp carries ONLY the
+    version-json libraries. The game jars and universal ride EXCLUSIVELY
+    the -DlibraryDirectory MavenCoordinates — FML builds the module
+    "minecraft" (ProductionClientProvider: srg+extra+client) and the system
+    mod "neoforge" (PathBasedLocator: universal) from them. Putting
+    universal on the cp shadows the GAME layer's "neoforge" with a BOOT
+    automatic module (parent-wins) and blows up in
+    DisplayWindow.updateModuleReads (run 2's NoClassDefFoundError);
   - jvm args from the neoforge profile resolve ${library_directory},
     ${classpath_separator}, ${version_name}; the vanilla profile contributes
     the natives/launcher properties and the trailing `-cp ${classpath}`;
@@ -58,6 +65,7 @@ RESOURCES = "https://resources.download.minecraft.net"
 NFC_VERSION = "21.1.265"
 NFC_ID = f"neoforge-{NFC_VERSION}"
 MC_ID = "1.21.1"
+MCP_TS = "20240808.144430"  # the NeoForm timestamp in the maven paths (measured)
 NFC_MAVEN = ("https://maven.neoforged.net/releases/net/neoforged/neoforge/"
              f"{NFC_VERSION}/neoforge-{NFC_VERSION}-installer.jar")
 
@@ -178,36 +186,34 @@ def main() -> int:
         fetch_to(client_url, vanilla_jar)
 
     # --- 3. libraries: neoforge (installed) + vanilla (artifact+natives) ------
-    cp = []
-    # 3a. the GAME jar under the EXACT version-name (measured parity-diff run 1:
-    # shipping the installer's '-client.jar' name put the game classes INTO the
-    # module layer and JPMS split-package-collided with the universal's
-    # directed export ('Module minecraft contains package
-    # net.minecraft.gametest.framework, module neoforge exports ... to
-    # minecraft'). The official-launcher layout is: the version jar NAMED
-    # <version_name>.jar rides the plain classpath and BootstrapLauncher's
-    # ignoreList (filename.startsWith) keeps it OUT of the module layer.
+    # OFFICIAL-LAUNCHER COMPOSITION (parity-diff run 2 autopsy, 2026-10-28):
+    # the production cp carries ONLY the version-json libraries. The GAME jars
+    # (srg + extra + neoforge-<v>-client) and the neoforge-<v>-universal.jar
+    # are NOT on the cp — FML finds them itself through -DlibraryDirectory
+    # (NeoForgeClientLaunchHandler: ProductionClientProvider builds the module
+    # "minecraft" from srg+extra+client MavenCoordinates under the libdir, and
+    # PathBasedLocator registers universal as the system mod "neoforge").
+    # Shipping universal on the cp made it a BOOT-layer automatic module named
+    # "neoforge" (maven-dir naming: <artifact>/<version>/<artifact>-<version>*) —
+    # and JPMS then resolved the GAME layer's "neoforge" root FROM THE PARENT
+    # (parent-wins rule). That module's packages are absent from the game
+    # ModuleClassLoader's packageLookup (only JarModuleReference roots are
+    # indexed), so DisplayWindow.updateModuleReads' Class.forName loaded
+    # NeoForgeLoadingOverlay through the BOOT loader and its superclass
+    # LoadingOverlay vanished (NoClassDefFoundError — run 2's exact stack).
     neo_dir = nfc / "libraries" / "net" / "neoforged" / "neoforge" / NFC_VERSION
-    version_jar = neo_dir / f"{NFC_ID}.jar"
-    shutil.copyfile(neo_dir / f"{NFC_ID}-client.jar", version_jar)
-    cp.append(str(version_jar))
-    universal = neo_dir / f"{NFC_ID}-universal.jar"
-    if not universal.exists():
-        print(f"ERROR: missing installer artifact {universal}", file=sys.stderr)
-        return 1
-    cp.append(str(universal))
-    # 3b. the resources jar under the EXACT ignoreList name (decompiled
-    # BootstrapLauncher: filename.startsWith(filter) — "client-extra")
-    mc_dir = nfc / "libraries" / "net" / "minecraft" / "client" / f"{MC_ID}-20240808.144430"
-    extra_src = next(mc_dir.glob("client-*-extra.jar"), None)
-    if extra_src is None:
-        print(f"ERROR: no client extra jar under {mc_dir}", file=sys.stderr)
-        return 1
-    client_extra = out / "client-extra.jar"
-    client_extra.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(extra_src, client_extra)
-    cp.append(str(client_extra))
-
+    mc_dir = nfc / "libraries" / "net" / "minecraft" / "client" / f"{MC_ID}-{MCP_TS}"
+    required = {
+        "patched client (game classes)": neo_dir / f"{NFC_ID}-client.jar",
+        "universal (FML system mod)": neo_dir / f"{NFC_ID}-universal.jar",
+        "srg client": mc_dir / f"client-{MC_ID}-{MCP_TS}-srg.jar",
+        "extra client (resources)": mc_dir / f"client-{MC_ID}-{MCP_TS}-extra.jar",
+    }
+    for label, p in required.items():
+        if not p.exists():
+            print(f"ERROR: missing installer artifact ({label}): {p}", file=sys.stderr)
+            return 1
+    cp = []
     lib_bytes = 0
     n_dl = 0
     # 3c. neoforge json libraries (already downloaded by the installer)

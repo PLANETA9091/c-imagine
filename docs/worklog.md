@@ -600,3 +600,67 @@ Work Log:
 
 Stage Summary:
 - All parity-matrix channels pulled forward are pixel-proven on the stock client. The identity loop (modded client vs c-imagine) is in flight.
+
+---
+Task ID: 11-c
+Agent: main
+Task: parity-diff run 2 autopsy — THE OFFICIAL-LAUNCHER COMPOSITION (JPMS parent-wins shadowing) + client mods/ fix; local earlydisplay-path verification
+
+Work Log:
+- Run 2 (8904471) artifact measured: the client died BEFORE join —
+  NoClassDefFoundError: net/minecraft/client/gui/screens/LoadingOverlay at
+  DisplayWindow.updateModuleReads (the earlydisplay acceptGameLayer hook),
+  and the client Mod List carried ONLY Minecraft (mods/ was never copied to
+  the truth-client game dir — two defects in one run).
+- Full decompile chain (vineflower on JRE, no javap needed): BootstrapLauncher
+  2.0.2 (run(): ignoreList filename-STARTSWITH filter -> everything else from
+  java.class.path becomes BOOT-layer module candidates, one MC-BOOTSTRAP
+  ModuleClassLoader), fml_loader 4.0.45 (ProductionClientProvider builds the
+  module "minecraft" from MavenCoordinates UNDER -DlibraryDirectory:
+  srg + extra + neoforge-<v>-client; NeoForgeClientLaunchHandler ALSO registers
+  PathBasedLocator("neoforge", universal under libdir)), modlauncher 11.0.5
+  (ModuleLayerHandler.buildLayer: one ModuleClassLoader per layer,
+  resolveAndBind(finder, parents, of(), targets)), securejarhandler 3.0.8
+  (ModuleClassLoader: packageLookup indexes ONLY JarModuleReference roots —
+  modules resolved from a PARENT layer are absent; parentLoaders binds
+  automatic-module packages to the PARENT's loader).
+- THE ROOT CAUSE (measured from install_profile.json + version.json):
+  official 21.1.265 client libraries list = 47 entries and contains NEITHER
+  universal NOR the client classifier. Our script (3a) appended both to the
+  cp. universal.jar on the cp -> BOOT automatic module named "neoforge"
+  (JarMetadata maven-dir naming: <artifact>/<ver>/<artifact>-<ver>* -> name
+  = artifact dir) -> JPMS parent-wins: the GAME layer's "neoforge" root
+  resolved FROM THE BOOT PARENT instead of the finder's PathBasedLocator jar
+  -> its packages are not in the game loader's packageLookup ->
+  Class.forName(fm=neoforge, NeoForgeLoadingOverlay) loaded the class through
+  the BOOT loader (universal jar via parentLoaders) and its SUPERCLASS
+  LoadingOverlay (module minecraft — absent on the boot loader) threw exactly
+  run 2's NoClassDefFoundError. Run 1's split-package collision was the same
+  mechanism hitting neoforge-21.1.265-client.jar (game classes) instead.
+- Fix: fetch-truth-client.py 3a now ships NOTHING extra — the cp carries only
+  the version-json libraries; srg/extra/client/universal are sanity-checked
+  to exist in the libdir (FML finds them itself). MCP_TS constant extracted;
+  docstring documents the official composition + the parent-wins mechanism.
+- Client mods/ fix (defect 2): parity-diff.yml copies cimtest into
+  truth-client/game/mods/ pre-launch AND asserts "[cimtest] common setup ok"
+  in client.out right after the join marker (a modless truth client renders
+  pure vanilla — worthless as ground truth).
+- LOCAL VERIFICATION (lightweight, downloads+JVM-bootstrap only): installer
+  --installClient re-run in the sandbox (no game server/client marathon);
+  sandbox lesson: Xvfb dies between bash commands — keep Xvfb+client in ONE
+  command. With the OLD composition (crash-test4): dummy-provider path reached
+  net.minecraft.client.main.Main (game layer OK) but earlydisplay path was
+  unreachable locally (glfwInit fail). With the NEW composition (verify2):
+  Xvfb + earlydisplay path GREEN — "GL info: llvmpipe GL 4.5" logged (the run
+  2 crash point passed silently), the client ran its main loop until the
+  40 s timeout (icons, SoundEngine, missing-assets errors only). The parity
+  composition now matches the official launcher exactly.
+- CI budget guard: parity-diff run 3 to be dispatched on this commit with
+  visual_run_id = 40650027335 (visual run 44, the seven-channel green).
+
+Stage Summary:
+- The "identical to the modded client" truth leg is unblocked at the launch
+  contract level: official-composition client + cimtest in gameDir/mods +
+  the modded server (run 2 server was already green: Done 1.225s + cimtest
+  setup ok). Run 3 must capture t00/t01/t02 truth shots and produce the F2F
+  identity datum (hotbar slot-0 crop diff vs the c-imagine visual run).
