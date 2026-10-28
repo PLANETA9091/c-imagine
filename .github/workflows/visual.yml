@@ -266,10 +266,16 @@ jobs:
           java -cp vtools Shot shots/10-block.png
           # ENTITY pixel leg (parity matrix "entities"): the item_display rig
           # spawned in the viewer's view carrying the CMD stack — the same
-          # modded cube model through the pack's range_dispatch.
+          # modded cube model through the pack's range_dispatch. MEASURED
+          # (run 43): the rig parks in the sky 2.5 above feet (feet+0.4 was
+          # swallowed by the block silhouette) and CLOUD DRIFT pollutes the
+          # full-frame AE — shot 12 (hold, rig static, clouds moving)
+          # measures the drift for the subtraction gate below.
           echo "cim display cimviewer cimtest:test_block" > srv/console.in
           sleep 5   # add_entity + render under llvmpipe
           java -cp vtools Shot shots/11-display.png
+          sleep 4
+          java -cp vtools Shot shots/12-display-hold.png
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -309,11 +315,14 @@ jobs:
           AE910=$(java -cp vtools PixelDiff shots/09-block-pre.png shots/10-block.png)
           echo "AE(block-pre,block)=$AE910"
           [ "$AE910" -gt "3000" ] || fail "placed stand-in block not visible (AE=$AE910) — the blockstate override did not resolve"
-          # entity channel: the item_display rig must appear on top of the
-          # block shot (the only delta between 10 and 11)
+          # entity channel: the rig must appear ON TOP of the cloud drift —
+          # AE(11,12) is the pure drift control (rig static, world moving);
+          # the rig's own pixels are the difference
           AE1011=$(java -cp vtools PixelDiff shots/10-block.png shots/11-display.png)
-          echo "AE(block,display)=$AE1011"
-          [ "$AE1011" -gt "800" ] || fail "item_display rig not visible (AE=$AE1011) — the display entity did not render"
+          AE1112=$(java -cp vtools PixelDiff shots/11-display.png shots/12-display-hold.png)
+          RIG=$((AE1011 - AE1112))
+          echo "AE(block,display)=$AE1011 AE(display,hold)=$AE1112 rig-pixels=$RIG"
+          [ "$RIG" -gt "3000" ] || fail "item_display rig not visible above cloud drift (rig-pixels=$RIG) — the display entity did not render"
           echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment + block-in-world + display-rig all render on the stock client"
       - uses: actions/upload-artifact@v4
         if: always()

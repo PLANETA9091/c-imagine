@@ -868,7 +868,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             dir.normalize();
             org.bukkit.Location at = eye.clone().add(dir.multiply(3.5));
-            at.setY(eye.getY() + 0.4); // chest height in a level camera view
+            // MEASURED (visual run 43): at feet+0.4 the rig is visually lost
+            // INSIDE the placed block's silhouette (both live 3 blocks ahead
+            // on the same column); and the full-frame AE picks up CLOUD DRIFT
+            // (~tens of k pixels between shots). Park the rig in the SKY 2.5
+            // above feet — unmistakably in frame, clear of the block; the
+            // cloud drift is then subtracted via the hold shot (12).
+            at.setY(eye.getY() + 2.5);
             String uuid = spawnVisualDisplay(worldName(), at.getX(),
                     at.getY(), at.getZ(), moddedItemId);
             log().info(LOG_PREFIX + "f2v display: rig for " + playerName
