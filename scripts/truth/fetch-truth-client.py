@@ -179,14 +179,23 @@ def main() -> int:
 
     # --- 3. libraries: neoforge (installed) + vanilla (artifact+natives) ------
     cp = []
-    # 3a. the game jars FIRST (order is stable, not load-bearing for modules)
+    # 3a. the GAME jar under the EXACT version-name (measured parity-diff run 1:
+    # shipping the installer's '-client.jar' name put the game classes INTO the
+    # module layer and JPMS split-package-collided with the universal's
+    # directed export ('Module minecraft contains package
+    # net.minecraft.gametest.framework, module neoforge exports ... to
+    # minecraft'). The official-launcher layout is: the version jar NAMED
+    # <version_name>.jar rides the plain classpath and BootstrapLauncher's
+    # ignoreList (filename.startsWith) keeps it OUT of the module layer.
     neo_dir = nfc / "libraries" / "net" / "neoforged" / "neoforge" / NFC_VERSION
-    for name in (f"{NFC_ID}-client.jar", f"{NFC_ID}-universal.jar"):
-        p = neo_dir / name
-        if not p.exists():
-            print(f"ERROR: missing installer artifact {p}", file=sys.stderr)
-            return 1
-        cp.append(str(p))
+    version_jar = neo_dir / f"{NFC_ID}.jar"
+    shutil.copyfile(neo_dir / f"{NFC_ID}-client.jar", version_jar)
+    cp.append(str(version_jar))
+    universal = neo_dir / f"{NFC_ID}-universal.jar"
+    if not universal.exists():
+        print(f"ERROR: missing installer artifact {universal}", file=sys.stderr)
+        return 1
+    cp.append(str(universal))
     # 3b. the resources jar under the EXACT ignoreList name (decompiled
     # BootstrapLauncher: filename.startsWith(filter) — "client-extra")
     mc_dir = nfc / "libraries" / "net" / "minecraft" / "client" / f"{MC_ID}-20240808.144430"
