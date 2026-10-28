@@ -61,12 +61,16 @@ public final class PixelDiffNorm {
         for (int y = y0; y < y0 + h; y++) {
             for (int x = x0; x < x0 + w; x++) {
                 int ca = a.getRGB(x, y), cb = b.getRGB(x, y);
-                double ar = ((ca >> 16) & 0xFF) * ratio;
-                double ag = ((ca >> 8) & 0xFF) * ratio;
-                double ab = (ca & 0xFF) * ratio;
-                double br = ((cb >> 16) & 0xFF);
-                double bg = ((cb >> 8) & 0xFF);
-                double bb = (cb & 0xFF);
+                // scale B (the 26.3 side, brighter by the measured factor)
+                // DOWN to A's luminance: b*ratio ~= a when the renders are
+                // structurally identical (scaling the darker side UP would
+                // over-penalize dark pixels — measured 21682 vs 1531)
+                double br = ((cb >> 16) & 0xFF) * ratio;
+                double bg = ((cb >> 8) & 0xFF) * ratio;
+                double bb = (cb & 0xFF) * ratio;
+                double ar = ((ca >> 16) & 0xFF);
+                double ag = ((ca >> 8) & 0xFF);
+                double ab = (ca & 0xFF);
                 if (Math.abs(ar - br) > tol || Math.abs(ag - bg) > tol
                         || Math.abs(ab - bb) > tol) {
                     diff++;
