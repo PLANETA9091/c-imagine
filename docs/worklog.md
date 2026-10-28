@@ -1237,3 +1237,37 @@ Stage Summary:
 - The baseline registration-parity datum is now an EXACT set identity, not
   a count approximation. Create layer leg: jarjar/Registrate gate passed;
   the root-registry gate is the current fix under CI verification.
+
+---
+Task ID: 12-m
+Agent: main
+Task: Create construct ladder — root-registry gate GREEN, client-class gate RED, probes deployed
+
+Work Log:
+- Root-registry fix VERIFIED (10a1678): "root registry unfrozen for mod
+  construction" marker fired; Create's 11 custom registries registered
+  into the root during <clinit>; the previous failure
+  (arm_interaction_point_type) is gone. Baseline integration stayed GREEN
+  (no regression from the root unfreeze).
+- Next gate RED: AllBlocks.<clinit>:1408 →
+  NoClassDefFoundError cim/shadow/mc1211/net/minecraft/client/
+  gui/components/Renderable — a CLIENT class missing from the shadow
+  index. Paradox under autopsy: the truth leg (REAL server, SAME
+  installer output) constructs Create through the SAME deterministic
+  <clinit> — so the real server's classpath RESOLVES that class; the
+  installer data even carries client.lzma (client binpatches) for the
+  server install, i.e. the merged srg jar ships client classes.
+- Bytecode spelunking bounded: AllBlocks references only
+  BlockColor/RenderType/BakedModel client classes directly; the failing
+  definition's class name is invisible in the NCDFE stack (surfaces at
+  the triggering frame).
+- Telemetry deployed (fa21bbc + 9eb0a88): findClass logs the requested
+  class + source jar on define failure; FmlHost probes Renderable
+  (original-name index lookup vs relocated load) before mod
+  construction; the full shadow-loader jar set is logged. One run now
+  discriminates jar-content vs walk-miss vs index/relocation causes.
+
+Stage Summary:
+- The Create construct chain is being walked gate by gate with
+  evidence-per-run; each fix is a real layer-parity defect named
+  exactly (root registry writable; client classes resolvable next).
