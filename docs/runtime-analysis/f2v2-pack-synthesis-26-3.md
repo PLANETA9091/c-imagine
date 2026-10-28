@@ -176,3 +176,29 @@ TWICE (pre-boot step) and diffs the sha1; the plugin logs
 | merged atlas overrides for non-item|block textures | riskier pack surgery; warning path exists | M6 |
 | real-client screenshot diff (xvfb harness) | the wire + server contract is proven by cimbot; pixel ground truth needs the client harness | M5 visual.yml (dispatch-only) |
 | OBJ/multipart models, equipment assets, paletted_permutations, post_effect chain contributions | measured surface exists (f2v2-client-capabilities.md §3-§5) | M6 |
+
+## §12. Paletted permutations — 26.3 shape (measured 2026-10-28, M6 palette channel)
+
+26.3 CHANGED the file format: the 1.19.4-era standalone `paletted_permutations/*.json`
+files are GONE — the mechanism is now an ATLAS SOURCE (decompiled
+`net.minecraft.client.renderer.texture.atlas.sources.PalettedPermutations` from the
+obf 26.3 client + vanilla `atlases/items.json` uses it for trims):
+
+```json
+{ "type": "minecraft:paletted_permutations",
+  "textures": ["minecraft:item/<base>", ...],        // list
+  "palette_key": "minecraft:trim_base",              // palette PNG (textures/palettes/)
+  "permutations": { "<suffix>": "minecraft:trim/<color>", ... },
+  "separator": "_" }                                  // optional, default "_"
+```
+
+Output sprite per permutation: `<texture><separator><suffix>` (e.g.
+`minecraft:item/armor_1_iron`). Palette semantics: per-pixel color match
+against the palette-key PNG (exact ARGB), remapped through the permutation
+PNG's colors — the 26.3-native replacement for F2F v1's ModTintScanner /
+ColorAtlas family (recolor = two small PNGs + one source entry, no code).
+
+c-imagine M6 plan: `visual-palettes.tsv` manifest (base texture, palette key,
+permutations) -> F2vPack merges `atlases/items.json` sources (the SAME merge
+discipline as `blockstates/note_block.json`), copies palette PNGs under
+`textures/palettes/`. Pixel leg: recolored cimtest cube variant in hotbar.
