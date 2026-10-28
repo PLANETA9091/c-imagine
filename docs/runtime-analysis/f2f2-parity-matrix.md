@@ -186,12 +186,15 @@ v2 mapping (26.3):
   (a) the v1 carrier trick survives verbatim: a grayscale item model +
       `dyed_color` data component on the display/item stack (the component
       codec is vanilla, M4 wire-proven family);
-  (b) cleaner: the 26.3 items/ model node `tints` list
-      (`{"type": "minecraft:dyed_color", "default": ...}` — the vanilla
-      leather defs' shape) — NEEDS the 26.3 javap check
-      (ItemModel tints / DyedTintSource) before implementation, then a
-      pixel leg: same modded leaves block, two dyed_color stacks, two
-      hotbar crops.
+  (b) cleaner: the 26.3 items/ model node `tints` list — MEASURED FROM THE
+      CLIENT JAR PRIMARY SOURCE (visual run 47's measurement step,
+      unzip -p client.jar assets/minecraft/items/leather_helmet.json): the
+      26.3 shape is `{"model": {"type": "minecraft:model", "model": ...,
+      "tints": [{"type": "minecraft:dye", "default": -6265536}]}}` — the
+      tint TYPE is `minecraft:dye` (renamed from the 1.21.4
+      `dyed_color`), the value rides the stack's dye/dyed_color component.
+      Pixel leg: same modded leaves block, two dyed stacks, two hotbar
+      crops.
 
 ### 2.11 Skins — unchanged (M7)
 
