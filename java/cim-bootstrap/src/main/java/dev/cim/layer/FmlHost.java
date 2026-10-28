@@ -264,6 +264,30 @@ public final class FmlHost {
                 }
             }
 
+            // 5a) P0 Create: custom registry CREATION during mod construction.
+            // Registrate-driven mods (create) instantiate their own registries
+            // and register them into the ROOT registry inside <clinit>
+            // (CreateBuiltInRegistries.register → BuiltInRegistries.REGISTRY
+            // .register(...)). On real NeoForge the construct phase runs with
+            // the ROOT registry WRITABLE — GameData.freezeData() later freezes
+            // only the CONTENT registries, never the root. Replicate that
+            // here: unfreeze the root registry itself before constructing
+            // mods. Content registries stay in their post-bootstrap state;
+            // GameData.unfreezeData() below still runs at the real NeoForge
+            // position (after NewRegistryEvent).
+            try {
+                Object rootRegistry = getStatic(
+                        Class.forName(BUILT_IN_REGISTRIES), "REGISTRY");
+                rootRegistry.getClass()
+                        .getMethod("unfreeze")
+                        .invoke(rootRegistry);
+                System.out.println(LOG
+                        + " root registry unfrozen for mod construction (real-NeoForge construct-phase contract)");
+            } catch (NoSuchMethodException e) {
+                System.out.println(LOG
+                        + " root registry has no unfreeze() — root state unchanged: " + e);
+            }
+
             // 5b) construct mods in order (real FML: constructMod + ConstructMod
             // event per container, AFTER ModList is fully populated), then run
             // the shared work queue.

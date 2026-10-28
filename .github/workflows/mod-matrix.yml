@@ -17,6 +17,8 @@ on:
     paths:
       - 'scene-mod/**'
       - 'scripts/cimscene/**'
+      - 'crates/**'
+      - 'java/**'
       - '.github/workflows/mod-matrix.yml'
 
 jobs:
