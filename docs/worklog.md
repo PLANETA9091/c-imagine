@@ -587,3 +587,16 @@ Stage Summary:
 - SEVEN channels now render modded content on a stock 26.3 client in ONE pixel contract: items (float), items (select), atmosphere (postfx), armor (equipment), entities (display rigs), BLOCKS (note_block stand-ins — new), delivery. The parity matrix "blocks" row is pixel-proven.
 - The parity-diff workflow is pushed and ready: one dispatch closes the "identical to the modded client" loop with the measured identity datum.
 - Session totals: 2 visual dispatches consumed (43 green, 44 rig-fix), ~4 local light javac/selftest cycles, zero heavy local runs.
+
+---
+Task ID: 11-b
+Agent: main
+Task: visual run 44 — rig leg GREEN (rig-pixels=123322); parity-diff dispatched
+
+Work Log:
+- visual run 44 (a651a2c) SUCCESS: AE(10,11)=149103, AE(11,12)=25781 (pure cloud-drift control) -> rig-pixels = 123322 (gate 3000). Shot verified: the iron cube rig hovers unmistakably in the sky above the player (measured position: rig z-4 vs camera behind at 3rd person).
+- Full seven-channel pixel contract green on ONE stock client: items(float)=124329, items(select), postfx=842107, armor=89146, block-in-world=81232 (run 44), display-rig=123322 net, delivery.
+- parity-diff.yml dispatched (run id 40650027335 as the c-imagine side) — the modded-truth job boots the REAL NeoForge 21.1.265 server + the REAL NeoForge 1.21.1 client with cimtest under xvfb.
+
+Stage Summary:
+- All parity-matrix channels pulled forward are pixel-proven on the stock client. The identity loop (modded client vs c-imagine) is in flight.
