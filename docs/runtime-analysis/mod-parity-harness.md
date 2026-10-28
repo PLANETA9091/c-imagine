@@ -75,7 +75,14 @@ On boot, cimscene reads the server-side registry census of every loaded mod
 (`ForgeRegistries` / built-in registries: blocks, items, entity types, particle
 types, sound events, block entity types, menus) and emits:
 
-- `scene-manifest.tsv` — registry, entry id, scene id, channel, leg, result;
+- `scene-manifest.tsv` — per-registry per-namespace COUNTS
+  (`registry\tnamespace\tcount`), the coarse join shape;
+- `scene-manifest-entries.tsv` — the FULL id listing
+  (`registry\tnamespace\tid`): per-namespace counts can match while the
+  underlying sets differ (one block missing, one extra sound) — the exact
+  set join in census-diff.py is the "every block, every sound, every
+  particle" gate (baseline datum 2026-10-29: 3316 ids, exact set identity
+  across stacks);
 - one scene per entry for the visual registries (blocks; items via the
   display-entity rig; entities; particles), grouped scenes per family for
   sounds (play N events at a pinned position, census the wire);
