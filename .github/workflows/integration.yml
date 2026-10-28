@@ -60,6 +60,10 @@ jobs:
         working-directory: test-mods
         run: gradle build --no-daemon
 
+      - name: build cimscene harness mod (NeoForge 1.21.1)
+        working-directory: scene-mod
+        run: gradle build --no-daemon
+
       - name: build java bootstrap
         run: bash scripts/build-bootstrap.sh
 
@@ -116,6 +120,9 @@ jobs:
           cp paper-plugin/target/cim-paper-plugin.jar srv/plugins/
           mkdir -p srv/mods
           cp test-mods/build/libs/cimtest-1.0.0.jar srv/mods/
+          # M5.5: the census harness rides in the SAME mods/ dir — an ordinary
+          # mod on both stacks, the registration-parity gate emitter
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv/mods/
           # M2: real NeoForge 1.21.1 mods ride along the first-party test mod
           bash scripts/fetch-real-mods.sh srv/realmods
           cp srv/realmods/*.jar srv/mods/
@@ -360,6 +367,16 @@ jobs:
           grep -q "\[c-imagine\] class-load hook observed: dev/cim/bootstrap/Bootstrap" srv/boot.log || fail "class hook pipeline marker missing"
           grep -q "\[c-imagine\] kernel ready (Paper class space online)" srv/boot.log || fail "kernel-ready marker missing"
           grep -qE "\[c-imagine\] mods \([0-9]+\): .*cimtest" srv/boot.log || fail "cimtest not discovered in mods/"
+          grep -qE "\[c-imagine\] mods \([0-9]+\): .*cimscene" srv/boot.log || fail "cimscene not discovered in mods/"
+          # M5.5 census harness lifecycle in the layer (mod-parity-harness.md §4:
+          # registration parity is the FIRST gate — common setup fires on both
+          # stacks, so the census must exist in the layer boot too)
+          grep -q "\[cimscene\] mod constructed" srv/boot.log \
+            || fail "cimscene not constructed in the layer"
+          grep -q "\[cimscene\] common setup ok" srv/boot.log \
+            || fail "cimscene common setup missing in the layer"
+          grep -q "\[cimscene\] census written scene-manifest.tsv" srv/boot.log \
+            || fail "cimscene census missing in the layer"
           # The ready marker is the combined nested status JSON
           # {"init":{...,"layer":{...}},"mods":{...}} — parse it properly.
           python3 - <<'PY'
@@ -503,6 +520,14 @@ jobs:
             srv/logs/
           if-no-files-found: ignore
 
+      - name: upload layer census (cimscene)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: layer-census
+          path: srv/c-imagine/scenes/scene-manifest.tsv
+          if-no-files-found: ignore
+
   # ---------------------------------------------------------------------
   # M2: real-FML mod execution over REAL NeoForge 1.21.1 mods (Modrinth)
   # in the shadow space via the local harness (no Paper, no CRUSSTY).
@@ -628,6 +653,10 @@ jobs:
         working-directory: test-mods
         run: gradle build --no-daemon
 
+      - name: build cimscene harness mod (NeoForge 1.21.1)
+        working-directory: scene-mod
+        run: gradle build --no-daemon
+
       - name: restore NeoForge 21.1.265 server (cache)
         id: layer-cache
         uses: actions/cache@v4
@@ -647,6 +676,7 @@ jobs:
           cp -r layer1211 srv-parity
           mkdir -p srv-parity/mods
           cp test-mods/build/libs/cimtest-1.0.0.jar srv-parity/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-parity/mods/
           bash scripts/fetch-real-mods.sh realmods
           cp realmods/*.jar srv-parity/mods/
           echo "eula=true" > srv-parity/eula.txt
@@ -679,6 +709,14 @@ jobs:
             || fail "cimtest constructed marker missing on real server"
           grep -q "\[cimtest\] common setup ok (block=cimtest:test_block" $L \
             || fail "cimtest common setup marker missing on real server"
+          grep -q "\[cimscene\] mod constructed" $L \
+            || fail "cimscene constructed marker missing on real server"
+          grep -q "\[cimscene\] common setup ok" $L \
+            || fail "cimscene common setup marker missing on real server"
+          grep -q "\[cimscene\] census written scene-manifest.tsv" $L \
+            || fail "cimscene census marker missing on real server"
+          grep -q "\[cimscene\] commands registered" $L \
+            || fail "cimscene commands marker missing on real server"
           echo "real NeoForge 21.1.265 parity markers: all present"
 
       - name: report + upload logs
@@ -689,4 +727,55 @@ jobs:
           path: |
             srv-parity/boot.log
             srv-parity/logs/
+          if-no-files-found: ignore
+
+      - name: upload truth census (cimscene)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: truth-census
+          path: srv-parity/c-imagine/scenes/scene-manifest.tsv
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------
+  # M5.5: the FIRST cross-stack registration-parity diff — the census
+  # cimscene emitted inside the c-imagine layer vs the SAME-mod-set real
+  # NeoForge boot (mod-parity-harness.md §4: census parity gates every
+  # later channel; pixels are meaningless if the stacks do not even
+  # register the same sets).
+  # ---------------------------------------------------------------------
+  census-diff:
+    name: census parity — layer vs real NeoForge (same mod set)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [boot, parity-real-neoforge]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: layer-census
+          path: layer
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: truth-census
+          path: truth
+
+      - name: diff the registries (registration parity)
+        run: |
+          T=$(find truth -name scene-manifest.tsv | head -1)
+          L=$(find layer -name scene-manifest.tsv | head -1)
+          test -n "$T" || { echo "truth census missing"; exit 1; }
+          test -n "$L" || { echo "layer census missing"; exit 1; }
+          echo "truth=$T layer=$L"
+          python3 scripts/cimscene/census-diff.py "$T" "$L" | tee census-diff.txt
+          grep -q "CENSUS PARITY: GREEN" census-diff.txt
+
+      - name: upload census diff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: census-diff-report
+          path: census-diff.txt
           if-no-files-found: ignore

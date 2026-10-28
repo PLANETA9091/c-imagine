@@ -73,6 +73,12 @@ public final class CimSceneMod {
 
     private void commonSetup(FMLCommonSetupEvent event) {
         LOGGER.info("[cimscene] common setup ok");
+        // Census at common setup: the registration stage is a barrier BEFORE
+        // common setup on both stacks (real FML staging), so the registries
+        // are complete here even in the layer, where ServerStartedEvent is
+        // not (yet) proven to fire. serverStarted re-emits the same file —
+        // last-wins, identical content.
+        writeCensus("scene-manifest.tsv");
     }
 
     private void serverStarted(ServerStartedEvent event) {

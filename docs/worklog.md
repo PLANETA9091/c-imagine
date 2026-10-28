@@ -1096,3 +1096,36 @@ Stage Summary:
 - Matrix-red cause identified and fixed at the correct layer (CI contract
   follows the measured rig change). Push re-runs integration; the run that
   returns green also carries the cimscene mod-matrix truth leg verification.
+
+---
+Task ID: 12-i
+Agent: main
+Task: FIRST CROSS-STACK CENSUS PARITY WIRING — cimscene rides BOTH integration legs, census-diff job joins the registries
+
+Work Log:
+- mod-matrix @ ea52fea GREEN: the harness mod builds + boots on a real
+  NeoForge 21.1.265 server; truth census measured: 7 registries, 4312
+  entries (block=1060 — matches the M3.2 drift-table census exactly),
+  ServerStartedEvent fires on the real server (census written twice:
+  server-started + the /cimscene census console run).
+- cimscene now emits the census at FMLCommonSetupEvent TOO (same file,
+  last-wins): registration is a barrier BEFORE common setup on both stacks,
+  so the layer-side census exists even if the layer never fires
+  ServerStartedEvent (unproven in the shadow space — the marker's presence
+  in the layer boot log becomes a free datum on the next run).
+- integration.yml: cimscene built + copied into BOTH legs' mods/ dirs
+  (boot = c-imagine layer; parity-real-neoforge = real server, same mod
+  set via fetch-real-mods.sh); layer asserts: discovery + constructed +
+  common setup + census written; truth asserts: + commands registered.
+- NEW job census-diff (needs boot + parity-real-neoforge): downloads both
+  census artifacts, joins per-(registry, namespace) counts via
+  scripts/cimscene/census-diff.py — RED table names the exact rows
+  (MISSING-IN-LAYER / MISSING-IN-TRUTH / DELTA), GREEN asserts identical
+  sets. This is the FIRST cross-stack parity gate: pixels are meaningless
+  if the stacks do not register the same sets.
+
+Stage Summary:
+- The registration-parity gate is wired end to end: same harness jar, same
+  mod set, two stacks, one diff job. Push supersedes the in-flight dc46299
+  integration run; the returning run either proves census parity GREEN or
+  hands the fix loop its first exact rows.
