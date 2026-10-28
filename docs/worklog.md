@@ -804,3 +804,62 @@ Stage Summary:
   client's pack-rendered stand-in — same cell, same sun, no HUD). The rig
   is reusable as-is for the next in-world identity rows (armor worn,
   contraptions).
+
+---
+Task ID: 12-b
+Agent: main
+Task: visual run 45 autopsy — the camera-lock rig's OWN failure modes measured and fixed; palette channel implemented (M6)
+
+Work Log:
+- Run 45 (d3a7481) FAILED exactly one gate: AE(locked-pre,locked)=568 —
+  every legacy gate green (item 182826, postfx 842107, select 170201,
+  armor 90501, block 79673, rig 126750). Autopsy from the artifact shots
+  + boot.log (camera-lock-26-3.md §2.0):
+  (1) console `execute at <player> run ...` SILENTLY DOES NOTHING on the
+  Paper 26.3 console — the boot.log carries Teleported/Gave/Removed
+  feedback but NOT ONE word from the execute-wrapped fill/setblock/kill:
+  the stand-in block was never placed. All rig commands now PLAIN +
+  ABSOLUTE (setblock 0 -60 3, fill -9 -60 1 4 -50 6 air, kill
+  @e[type=!player]); both superflat surfaces MEASURED y=-60 (cim tp
+  feedback prints feet Y -60; truth run-3 spawn log the same).
+  (2) THE ARMOR LEG'S F5 CYCLE ENDS AT THIRD-PERSON FRONT: run 45's locked
+  shots show the player's FACE (first→back @07, →front @08 — the
+  post-armor press never returned to first); from the front camera the
+  locked cell (0,-60,3) sits BEHIND the camera. The locked leg presses F5
+  once more (front→first, deterministic); legs 09-12 stay on the front
+  view their gates are calibrated on.
+  (3) a peaceful pig photobombed the locked frame — doMobSpawning false +
+  kill @e[type=!player] on both stacks.
+  (4) the tp rotation lock WORKS: shot 13 renders the pitch -30 camera
+  (horizon pinned at the frame top) exactly as designed.
+  Console-feedback greps added ("Changed the block at 0, -60, 3" — fatal
+  on the truth side, reported on the cim side).
+- PALETTE channel implemented (M6, the 26.3-native ModTintScanner/
+  ColorAtlas replacement — two small PNGs + ONE atlas source, zero code):
+  F2vPack grew PaletteRow + readPaletteManifest (visual-palettes.tsv:
+  moddedItem, baseSprite, paletteKeyPng, separator, suffix=permPng...) +
+  synthetic variant rows (ns:path@suffix riding the base host's
+  range_dispatch at cmd base+1+i, collision-checked, rows with any problem
+  dropped WHOLE so a half-emitted source can't poison the atlas) +
+  retintModelJson (quoted-value-exact texture re-point to the permutated
+  sprite) + emitPaletteAtlas (assets/minecraft/atlases/items.json carries
+  ONLY our sources — measured SpriteSourceList.load APPENDS pack files to
+  the vanilla stack) + copyResourcePng (palette PNGs at original
+  textures/palettes/ paths). Selftest extended: gem fixture (model +
+  texture + palette PNGs), variant row resolved (gem@red cmd 3001 on
+  paper), atlas json shape, retinted variant model, both thresholds in
+  the host def. cimtest grew the gem assets (scripts/f2v/gen-gem-assets.py:
+  deterministic stdlib PNG writer — 16x16 3-color gem sprite + 3x1
+  palette key/red pair + item model). visual.yml: palette pixel leg
+  (give CMD 1100 base vs 1101 red in hotbar slot 0, AE gate >500) +
+  visual-palettes.tsv staging; visual-items.tsv grew the gem row (host
+  amethyst_shard, cmd 1100 explicit — the pinned cmds never shift).
+  Light checks only: YAML parse, PNG byte-level verification, Java read
+  review (no javac in the sandbox — CI compiles).
+
+Stage Summary:
+- The camera-lock rig survived its first contact with reality: four
+  measured lessons, all fixed, feedback gates in place. The second
+  visual dispatch must produce the locked pre/shot pair WITH the block.
+- The palette channel is the NINTH render channel implemented on the
+  stock-client surface; its pixel leg rides the same visual run.

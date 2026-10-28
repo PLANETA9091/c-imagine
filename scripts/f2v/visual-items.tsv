@@ -14,3 +14,4 @@
 #     real mod jars carry JEI-scale asset trees).
 cimtest:test_block	minecraft:paper
 cimtest:test_wand	minecraft:brick		select:wand
+cimtest:test_gem	minecraft:amethyst_shard	1100

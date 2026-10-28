@@ -120,6 +120,9 @@ jobs:
           echo "time set noon" > srv-truth/console.in
           echo "gamerule doWeatherCycle false" > srv-truth/console.in
           echo "weather clear" > srv-truth/console.in
+          # camera-lock: NO ambient mobs (mirror of visual.yml — a wandering
+          # peaceful mob would pollute the locked pre/shot pair)
+          echo "gamerule doMobSpawning false" > srv-truth/console.in
           echo "server up"
 
       # --- the modded client under xvfb ---
@@ -188,29 +191,33 @@ jobs:
           # CAMERA-LOCK BLOCK IDENTITY (the EXACT mirror of visual.yml's
           # 13/14 leg — docs/runtime-analysis/camera-lock-26-3.md): the SAME
           # server-locked camera on both parity sides is what makes the
-          # t04-vs-14 diff a true IDENTITY measurement: tp to the fixed
-          # cell (0.5, ~, 0.5) yaw 0 / pitch -30 (superflat is flat — ~
-          # keeps each side's own surface height, the RELATIVE eye->block
-          # geometry is identical), sweep the scene in front (the t02
-          # eye-level block included), F1 hides the HUD, PRE shot; then
-          # pitch 0 (caret semantics are facing-dependent), the ABSOLUTE
-          # cell ^-1 ^ ^3 gets the REAL modded block (floor level, 3
-          # south), back to -30, SHOT.
-          echo "tp cimviewer 0.5 ~ 0.5 0 -30" > srv-truth/console.in
+          # t04-vs-14 diff a true IDENTITY measurement. MEASURED (visual run
+          # 45): console `execute at <player> run ...` SILENTLY DOES NOTHING
+          # on the Paper console — PLAIN + ABSOLUTE commands everywhere, on
+          # BOTH stacks (both superflat surfaces measured at y=-60: the cim
+          # tp log prints feet Y -60, the truth spawn log run 3 the same).
+          echo "kill @e[type=!player]" > srv-truth/console.in
           sleep 2
-          echo "execute at cimviewer run fill -4 ~ 1 4 ~10 6 air" > srv-truth/console.in
+          echo "tp cimviewer 0.5 -60 0.5 0 -30" > srv-truth/console.in
+          sleep 2
+          echo "fill -9 -60 1 4 -50 6 air" > srv-truth/console.in
           sleep 2
           java -cp vtools Key F1
           sleep 1
           java -cp vtools Shot shots/t03-locked-pre.png
-          echo "tp cimviewer 0.5 ~ 0.5 0 0" > srv-truth/console.in
+          echo "tp cimviewer 0.5 -60 0.5 0 0" > srv-truth/console.in
           sleep 2
-          echo "execute at cimviewer run setblock ^-1 ^ ^3 cimtest:test_block" > srv-truth/console.in
+          echo "setblock 0 -60 3 cimtest:test_block" > srv-truth/console.in
           sleep 2
-          echo "tp cimviewer 0.5 ~ 0.5 0 -30" > srv-truth/console.in
+          echo "tp cimviewer 0.5 -60 0.5 0 -30" > srv-truth/console.in
           sleep 5   # teleport apply + block/light/section rebuild
           java -cp vtools Shot shots/t04-block-locked.png
           java -cp vtools Key F1
+          # console-feedback gate (mirror of visual.yml): the truth block
+          # MUST have been placed — a silent setblock would make the diff
+          # job's identity datum meaningless
+          grep -q "Changed the block at 0, -60, 3" srv-truth/boot.log \
+            || { echo "truth setblock feedback MISSING — block never placed"; tail -20 srv-truth/boot.log; exit 1; }
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
 

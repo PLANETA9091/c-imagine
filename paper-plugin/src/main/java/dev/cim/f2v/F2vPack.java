@@ -114,6 +114,36 @@ public final class F2vPack {
     public record VisualBlock(String moddedBlockId, String instrument, int note) {
     }
 
+    /**
+     * One palette-manifest row (M6 palette channel — the 26.3-native
+     * replacement for F2F v1's ModTintScanner/ColorAtlas family): recolor =
+     * two small PNGs + one atlas source, ZERO code. Measured 26.3 shape
+     * (f2v2-pack-synthesis-26-3.md §12): {@code paletted_permutations} is an
+     * ATLAS SOURCE now (the standalone file format is gone) — pack
+     * {@code atlases/items.json} files APPEND their sources to the vanilla
+     * stack ({@code SpriteSourceList.load} = getResourceStack + addAll), so
+     * the pack carries ONLY its own sources and vanilla trims keep working.
+     *
+     * <p>Semantics: every pixel of the base sprite matching a palette-key
+     * color (exact ARGB) is remapped through the permutation PNG's colors;
+     * the output sprite id is {@code <baseSprite><separator><suffix>} and a
+     * generated variant item model references exactly that sprite.
+     *
+     * @param moddedItem the base manifest item id ({@code ns:path}) whose
+     *                   variant rows ({@code ns:path@<suffix>}) ride the same
+     *                   host's range_dispatch
+     * @param baseSprite the TEXTURE sprite id the permutations recolor
+     *                   ({@code ns:item/test_gem})
+     * @param paletteKey full jar resource path of the palette-key PNG
+     *                   ({@code ns:textures/palettes/gem_key.png})
+     * @param separator  permutation sprite-name separator (vanilla default "_")
+     * @param variants   suffix -&gt; permutation PNG jar path (sorted —
+     *                   deterministic emit order)
+     */
+    public record PaletteRow(String moddedItem, String baseSprite, String paletteKey,
+                             String separator, Map<String, String> variants) {
+    }
+
     /** Resource pack format for 26.3 (client version.json — measured). */
     public static final int PACK_FORMAT_MAJOR = 97;
     public static final int PACK_FORMAT_MINOR = 1;
@@ -316,6 +346,47 @@ public final class F2vPack {
     }
 
     /**
+     * Read {@code visual-palettes.tsv}: {@code moddedItem<TAB>baseSprite<TAB>
+     * paletteKeyPng<TAB>separator<TAB>variants} where {@code variants} is
+     * {@code suffix=permPng[;suffix2=permPng2]}. Optional; missing file = no
+     * palette recolors. The PNG paths are FULL jar resource paths
+     * ({@code ns:textures/palettes/<name>.png}); in the atlas json they are
+     * emitted as sprite-space ids ({@code ns:palettes/<name>}).
+     */
+    public static List<PaletteRow> readPaletteManifest(Path tsv) throws IOException {
+        List<PaletteRow> rows = new ArrayList<>();
+        if (!Files.isRegularFile(tsv)) {
+            return rows;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 5 || parts[3].isBlank()) {
+                continue;
+            }
+            Map<String, String> variants = new TreeMap<>();
+            for (String v : parts[4].split(";", -1)) {
+                int eq = v.indexOf('=');
+                if (eq <= 0) {
+                    continue;
+                }
+                variants.put(v.substring(0, eq).trim(), v.substring(eq + 1).trim());
+            }
+            if (variants.isEmpty()) {
+                continue;
+            }
+            rows.add(new PaletteRow(parts[0].trim(), parts[1].trim(), parts[2].trim(),
+                    parts[3].trim(), variants));
+        }
+        rows.sort(Comparator.comparing(PaletteRow::moddedItem)
+                .thenComparing(PaletteRow::paletteKey));
+        return rows;
+    }
+
+    /**
      * Emit the 26.3 equipment surface for one legacy armor texture pair:
      * the {@code equipment/<ns>/<name>.json} definition (humanoid +
      * humanoid_leggings layers) plus the textures at the NEW canonical
@@ -400,8 +471,68 @@ public final class F2vPack {
                                List<EquipmentAsset> equipmentRows,
                                List<VisualBlock> blockRows)
             throws IOException {
+        return build(modsDir, outDir, manifestRows, equipmentRows, blockRows,
+                readPaletteManifest(outDir.resolve("visual-palettes.tsv")));
+    }
+
+    /** Full build with explicit equipment + block + palette rows (selftest seam). */
+    public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
+                               List<EquipmentAsset> equipmentRows,
+                               List<VisualBlock> blockRows,
+                               List<PaletteRow> paletteRows)
+            throws IOException {
         List<String> warnings = new ArrayList<>();
-        List<VisualItem> rows = assignCmds(manifestRows);
+        List<VisualItem> baseResolved = assignCmds(manifestRows);
+
+        // PALETTE variant rows (M6 palette channel): one synthetic VisualItem
+        // per suffix, riding the BASE row's host in the SAME range_dispatch.
+        // Variant cmd = base cmd + 1 + sorted-suffix index (deterministic,
+        // collision-checked — the icon legs' pinned cmds never shift). A row
+        // with a missing base or ANY cmd collision is dropped WHOLE (a
+        // half-emitted palette source would poison the client atlas).
+        Map<String, PaletteRow> paletteByVariantId = new HashMap<>();
+        List<VisualItem> rows = new ArrayList<>(baseResolved);
+        List<Float> usedCmds = new ArrayList<>();
+        for (VisualItem r : baseResolved) {
+            usedCmds.add(r.cmd());
+        }
+        List<PaletteRow> validPalettes = new ArrayList<>();
+        for (PaletteRow pr : paletteRows) {
+            VisualItem base = null;
+            for (VisualItem r : baseResolved) {
+                if (r.moddedId().equals(pr.moddedItem())) {
+                    base = r;
+                    break;
+                }
+            }
+            if (base == null) {
+                warnings.add("palette row base item missing in items manifest: "
+                        + pr.moddedItem());
+                continue;
+            }
+            int vi = 0;
+            List<VisualItem> variantRows = new ArrayList<>();
+            boolean clean = true;
+            for (Map.Entry<String, String> v : pr.variants().entrySet()) {
+                float vcmd = base.cmd() + 1f + vi;
+                vi++;
+                if (usedCmds.contains(vcmd)) {
+                    warnings.add("palette variant cmd collision " + vcmd
+                            + " — palette row dropped: " + pr.moddedItem());
+                    clean = false;
+                    break;
+                }
+                usedCmds.add(vcmd);
+                String vid = pr.moddedItem() + "@" + v.getKey();
+                paletteByVariantId.put(vid, pr);
+                variantRows.add(new VisualItem(vid, base.hostItem(), vcmd, null));
+            }
+            if (clean) {
+                rows.addAll(variantRows);
+                validPalettes.add(pr);
+            }
+        }
+
         TreeMap<String, byte[]> entries = new TreeMap<>();
         entries.put("pack.mcmeta", packMcmeta().getBytes(StandardCharsets.UTF_8));
         if (!rows.isEmpty()) {
@@ -431,7 +562,8 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
-                String found = resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings);
+                String found = resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings,
+                        paletteByVariantId);
                 if (found == null) {
                     warnings.add("no item model found for " + row.moddedId()
                             + " in any mod jar — row dropped");
@@ -488,6 +620,14 @@ public final class F2vPack {
                     blockStateDef(blockVariants).getBytes(StandardCharsets.UTF_8));
         }
 
+        // palette channel (M6): the paletted_permutations ATLAS SOURCE + the
+        // palette PNGs — the 26.3-native recolor surface (zero code, two
+        // small PNGs per permutation; ModTintScanner/ColorAtlas family
+        // replaced). The pack's atlases/items.json APPENDS its sources to the
+        // vanilla stack (measured: SpriteSourceList.load = getResourceStack
+        // + addAll) — only OUR sources live here, vanilla trims keep working.
+        emitPaletteAtlas(jars, validPalettes, entries, warnings);
+
         byte[] zip = zip(entries);
         String sha1 = sha1Hex(zip);
         Files.createDirectories(outDir);
@@ -530,7 +670,24 @@ public final class F2vPack {
      */
     private static String resolveAndCopyModelGraph(List<Path> jars, String moddedId,
                                                    TreeMap<String, byte[]> entries,
-                                                   List<String> warnings) throws IOException {
+                                                   List<String> warnings,
+                                                   Map<String, PaletteRow> paletteByVariantId) throws IOException {
+        // palette variant id form: "ns:path@<suffix>" — the base model is
+        // resolved/copied normally, then a VARIANT model is emitted next to
+        // it whose texture values that match the palette row's baseSprite
+        // point at the permutated sprite (<sprite><separator><suffix>)
+        PaletteRow paletteRow = null;
+        String paletteSuffix = null;
+        int at = moddedId.indexOf('@');
+        if (at > 0) {
+            paletteRow = paletteByVariantId.get(moddedId);
+            if (paletteRow == null) {
+                warnings.add("palette variant without a manifest row: " + moddedId);
+                return null;
+            }
+            paletteSuffix = moddedId.substring(at + 1);
+            moddedId = moddedId.substring(0, at);
+        }
         int colon = moddedId.indexOf(':');
         if (colon <= 0) {
             warnings.add("malformed modded id: " + moddedId);
@@ -553,10 +710,24 @@ public final class F2vPack {
                     entries.putIfAbsent(cand, modelBytes);
                     copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
                     // the model ref matches the found location
+                    String baseRef;
                     if (cand.startsWith("assets/" + ns + "/models/item/")) {
-                        return ns + ":item/" + path;
+                        baseRef = ns + ":item/" + path;
+                    } else {
+                        baseRef = ns + ":" + path;
                     }
-                    return ns + ":" + path;
+                    if (paletteRow != null) {
+                        // variant model next to the base, textures retinted to
+                        // the permutated sprite ids
+                        String variantFile = cand.substring(0, cand.length() - ".json".length())
+                                + paletteRow.separator() + paletteSuffix + ".json";
+                        String variantJson = retintModelJson(
+                                new String(modelBytes, StandardCharsets.UTF_8),
+                                paletteRow.baseSprite(), paletteRow.separator(), paletteSuffix);
+                        entries.put(variantFile, variantJson.getBytes(StandardCharsets.UTF_8));
+                        return baseRef + paletteRow.separator() + paletteSuffix;
+                    }
+                    return baseRef;
                 }
             }
         }
@@ -622,6 +793,103 @@ public final class F2vPack {
         }
         sb.append("  }\n}\n");
         return sb.toString();
+    }
+
+    /**
+     * The M6 palette channel atlas emit: ONE
+     * {@code assets/minecraft/atlases/items.json} carrying every palette
+     * row's {@code paletted_permutations} source (the pack file APPENDS to
+     * the vanilla source stack — measured), plus the palette-key and
+     * permutation PNGs copied from the mod jars at their original
+     * {@code textures/palettes/} paths.
+     */
+    private static void emitPaletteAtlas(List<Path> jars, List<PaletteRow> paletteRows,
+                                         TreeMap<String, byte[]> entries,
+                                         List<String> warnings) throws IOException {
+        if (paletteRows.isEmpty()) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n  \"sources\": [\n");
+        for (int i = 0; i < paletteRows.size(); i++) {
+            PaletteRow pr = paletteRows.get(i);
+            copyResourcePng(jars, pr.paletteKey(), entries, warnings);
+            for (String perm : pr.variants().values()) {
+                copyResourcePng(jars, perm, entries, warnings);
+            }
+            sb.append("    {\"type\": \"minecraft:paletted_permutations\", ")
+              .append("\"textures\": [\"").append(pr.baseSprite()).append("\"], ")
+              .append("\"palette_key\": \"").append(spritePath(pr.paletteKey())).append("\", ")
+              .append("\"permutations\": {");
+            boolean first = true;
+            for (Map.Entry<String, String> v : pr.variants().entrySet()) {
+                if (!first) {
+                    sb.append(", ");
+                }
+                first = false;
+                sb.append("\"").append(v.getKey()).append("\": \"")
+                  .append(spritePath(v.getValue())).append("\"");
+            }
+            sb.append("}, \"separator\": \"").append(pr.separator()).append("\"}");
+            sb.append(i + 1 < paletteRows.size() ? ",\n" : "\n");
+        }
+        sb.append("  ]\n}\n");
+        entries.put("assets/minecraft/atlases/items.json",
+                sb.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Full jar resource path ({@code ns:textures/palettes/x.png}) -> sprite id. */
+    static String spritePath(String fullResourcePath) {
+        int c = fullResourcePath.indexOf(':');
+        if (c <= 0) {
+            return fullResourcePath;
+        }
+        String rest = fullResourcePath.substring(c + 1);
+        if (rest.startsWith("textures/")) {
+            rest = rest.substring("textures/".length());
+        }
+        if (rest.endsWith(".png")) {
+            rest = rest.substring(0, rest.length() - ".png".length());
+        }
+        return fullResourcePath.substring(0, c) + ":" + rest;
+    }
+
+    /** Copy one raw PNG resource (full {@code ns:textures/...} path) from the jars. */
+    private static void copyResourcePng(List<Path> jars, String resource,
+                                        TreeMap<String, byte[]> entries,
+                                        List<String> warnings) throws IOException {
+        int c = resource.indexOf(':');
+        if (c <= 0) {
+            warnings.add("malformed palette resource path: " + resource);
+            return;
+        }
+        String file = "assets/" + resource.substring(0, c) + "/" + resource.substring(c + 1);
+        if (entries.containsKey(file)) {
+            return;
+        }
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                ZipEntry e = zf.getEntry(file);
+                if (e != null) {
+                    entries.put(file, zf.getInputStream(e).readAllBytes());
+                    return;
+                }
+            }
+        }
+        warnings.add("palette resource missing in jars: " + resource);
+    }
+
+    /**
+     * Variant model json: the base model with every texture value EQUAL to
+     * {@code baseSprite} re-pointed at the permutated sprite
+     * ({@code <baseSprite><separator><suffix>}); quoted-value-exact
+     * replacement keeps #refs and vanilla textures untouched.
+     */
+    static String retintModelJson(String baseJson, String baseSprite,
+                                  String separator, String suffix) {
+        String from = "\"" + baseSprite + "\"";
+        String to = "\"" + baseSprite + separator + suffix + "\"";
+        return baseJson.replace(from, to);
     }
 
     /** Depth-limited parent walk within the SAME jar as the entry model. */
@@ -911,6 +1179,8 @@ public final class F2vPack {
             "{\"parent\": \"minecraft:item/handheld\", \"textures\": {\"layer0\": \"fakemod:item/wand_tex\"}}";
     private static final String MODEL_BLOCK =
             "{\"parent\": \"minecraft:block/cube_all\", \"textures\": {\"all\": \"fakemod:block/rock_tex\"}}";
+    private static final String MODEL_GEM =
+            "{\"parent\": \"minecraft:item/generated\", \"textures\": {\"layer0\": \"fakemod:item/gem_tex\"}}";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -929,9 +1199,14 @@ public final class F2vPack {
                     MODEL_DEEP.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/item/wand_thing.json",
                     MODEL_WAND.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/item/gem.json",
+                    MODEL_GEM.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/rock.json",
                     MODEL_BLOCK.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/textures/item/wand_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/item/gem_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/palettes/gem_key.png", testPng());
+            jarEntries.put("assets/fakemod/textures/palettes/gem_red.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/rock_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/models/armor/shiny_layer_1.png", testPng());
             jarEntries.put("assets/fakemod/textures/models/armor/shiny_layer_2.png", testPng());
@@ -946,10 +1221,15 @@ public final class F2vPack {
             Files.writeString(out.resolve("visual-items.tsv"),
                     "fakemod:cool_sword\tminecraft:paper\n"
                     + "fakemod:deep_thing\tminecraft:paper\t2000.0\n"
+                    + "fakemod:gem\tminecraft:paper\t3000.0\n"
                     + "fakemod:wand_thing\tminecraft:brick\t\tselect:wand\n",
                     StandardCharsets.UTF_8);
             Files.writeString(out.resolve("visual-blocks.tsv"),
                     "fakemod:rock\tcreeper\t13\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(out.resolve("visual-palettes.tsv"),
+                    "fakemod:gem\tfakemod:item/gem_tex\tfakemod:textures/palettes/gem_key.png\t_"
+                    + "\tred=fakemod:textures/palettes/gem_red.png\n",
                     StandardCharsets.UTF_8);
 
             // -- build twice, must be byte-identical ------------------------------
@@ -962,8 +1242,9 @@ public final class F2vPack {
             if (!r1.sha1().equals(r2.sha1())) {
                 failures.add("sha1 not deterministic: " + r1.sha1() + " vs " + r2.sha1());
             }
-            if (r1.items().size() != 3) {
-                failures.add("expected 3 resolved rows, got " + r1.items().size());
+            if (r1.items().size() != 5) {
+                failures.add("expected 5 resolved rows (4 manifest + 1 palette variant), got "
+                        + r1.items().size() + ": " + r1.items());
             }
             if (r1.blocks().size() != 1
                     || !"fakemod:rock".equals(r1.blocks().get(0).moddedBlockId())
@@ -976,6 +1257,13 @@ public final class F2vPack {
                     || r1.items().get(1).cmd() != 2000.0f) {
                 failures.add("cmd assignment wrong: " + r1.items());
             }
+            // PALETTE channel (M6): the variant row rides the base host at
+            // cmd = base + 1 (zip-content asserts live below, after readZip)
+            expect(failures, r1.items().stream()
+                    .anyMatch(i -> i.moddedId().equals("fakemod:gem@red")
+                            && i.cmd() == 3001.0f
+                            && i.hostItem().equals("minecraft:paper")),
+                    "palette variant row resolved (gem@red cmd 3001 on paper)");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
@@ -998,6 +1286,35 @@ public final class F2vPack {
             expect(failures, paper.contains(
                     "\"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/paper\"}"),
                     "paper def fallback keeps the vanilla look");
+            // PALETTE channel zip contents: atlas source + palette PNGs + the
+            // retinted variant model + both thresholds in the host def
+            String atlas = str(entries, "assets/minecraft/atlases/items.json");
+            expect(failures, atlas.contains("\"minecraft:paletted_permutations\""),
+                    "atlas carries the paletted_permutations source");
+            expect(failures, atlas.contains("\"textures\": [\"fakemod:item/gem_tex\"]"),
+                    "atlas source recolors the base sprite");
+            expect(failures, atlas.contains("\"palette_key\": \"fakemod:palettes/gem_key\""),
+                    "atlas source palette_key in sprite space");
+            expect(failures, atlas.contains("\"red\": \"fakemod:palettes/gem_red\""),
+                    "atlas source permutation entry");
+            expect(failures, atlas.contains("\"separator\": \"_\""),
+                    "atlas source separator");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/textures/palettes/gem_key.png"), "palette key png copied");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/textures/palettes/gem_red.png"), "permutation png copied");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/models/item/gem.json"), "base gem model copied");
+            String gemRed = str(entries, "assets/fakemod/models/item/gem_red.json");
+            Map<String, String> gemRedTex = extractTextures(gemRed);
+            expect(failures, "fakemod:item/gem_tex_red".equals(gemRedTex.get("layer0")),
+                    "variant model retinted to the permutated sprite");
+            expect(failures, gemRed.contains("minecraft:item/generated"),
+                    "variant model keeps the base parent");
+            expect(failures, paper.contains("\"threshold\": 3001.0"),
+                    "paper def third threshold = the variant cmd");
+            expect(failures, paper.contains("\"model\": \"fakemod:item/gem_red\""),
+                    "paper def references the retinted variant model");
             // model graph copied at original paths
             expect(failures, entries.containsKey(
                     "assets/fakemod/models/item/cool_sword.json"), "entry model copied");
