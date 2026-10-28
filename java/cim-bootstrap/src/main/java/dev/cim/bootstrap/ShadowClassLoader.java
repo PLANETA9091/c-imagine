@@ -121,6 +121,10 @@ public final class ShadowClassLoader extends ClassLoader {
                 }
                 ordered.addAll(remaining);
                 ordered.forEach(p -> urls.add(toUrl(p)));
+                // Autopsy telemetry: the exact jar set the shadow index is
+                // built from. CI logs are unrestricted — never guess which
+                // jars the walk saw.
+                ordered.forEach(p -> System.out.println("[c-imagine] shadow loader jar: " + p));
             }
         } catch (Exception e) {
             throw new IllegalStateException("shadow loader urls: " + e, e);
