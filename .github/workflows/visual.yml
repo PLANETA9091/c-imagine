@@ -130,6 +130,15 @@ jobs:
           done
           grep -q "Done (" srv/boot.log || { tail -30 srv/boot.log; exit 1; }
           grep -q "f2v pack: serving" srv/boot.log || { tail -30 srv/boot.log; exit 1; }
+          # CAMERA-LOCK PARITY PIN (docs/runtime-analysis/camera-lock-26-3.md):
+          # the NeoForge truth side (parity-diff.yml) pins the SAME sun angle
+          # and kills weather — both worlds must shoot under identical sky
+          # light, and rain/sky drift between shots is poison for the pixel
+          # gates below
+          echo "gamerule doDaylightCycle false" > console.in
+          echo "time set noon" > console.in
+          echo "gamerule doWeatherCycle false" > console.in
+          echo "weather clear" > console.in
           echo "server up + pack serving"
       - name: vanilla client joins under xvfb + visual contract
         run: |
@@ -276,6 +285,40 @@ jobs:
           java -cp vtools Shot shots/11-display.png
           sleep 4
           java -cp vtools Shot shots/12-display-hold.png
+          # CAMERA-LOCK BLOCK IDENTITY leg (parity-diff side of the
+          # "identical to the modded client" directive — the EXACT same rig
+          # the NeoForge truth client walks in parity-diff.yml, see
+          # docs/runtime-analysis/camera-lock-26-3.md): the viewer is
+          # server-teleported to the fixed cell (0.5, ~, 0.5) with yaw 0 /
+          # pitch -30, the scene in front is swept (fill + display-kill +
+          # the earlier eye-level stand-in swept too), F1 hides the HUD and
+          # the PRE shot is taken; then pitch 0 (caret semantics are
+          # facing-dependent), the ABSOLUTE cell ^-1 ^ ^3 gets the
+          # note_block stand-in (floor level, 3 south; the stand-in state
+          # = visual-blocks.tsv row cimtest:test_block), back to -30, SHOT.
+          # Pre/shot share the identical locked camera => AE(13,14) is the
+          # block's own footprint; parity-diff diffs 14 vs the truth t04
+          # under the same camera = THE BLOCK IDENTITY DATUM.
+          echo "kill @e[type=item_display]" > srv/console.in
+          sleep 2
+          echo "tp cimviewer 0.5 ~ 0.5 0 -30" > srv/console.in
+          sleep 2
+          echo "execute at cimviewer run fill -4 ~ 1 4 ~10 6 air" > srv/console.in
+          sleep 2
+          java -cp vtools Key F1
+          sleep 1
+          java -cp vtools Shot shots/13-locked-pre.png
+          echo "tp cimviewer 0.5 ~ 0.5 0 0" > srv/console.in
+          sleep 2
+          # NOTE: instrument=creeper,note=13 mirrors visual-blocks.tsv
+          # (cimtest:test_block) — keep the two in sync when the manifest
+          # grows (the manifest-driven F2vPack path is authoritative)
+          echo "execute at cimviewer run setblock ^-1 ^ ^3 note_block[instrument=creeper,note=13]" > srv/console.in
+          sleep 2
+          echo "tp cimviewer 0.5 ~ 0.5 0 -30" > srv/console.in
+          sleep 5   # teleport apply + block/light/section rebuild
+          java -cp vtools Shot shots/14-locked.png
+          java -cp vtools Key F1
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -323,7 +366,14 @@ jobs:
           RIG=$((AE1011 - AE1112))
           echo "AE(block,display)=$AE1011 AE(display,hold)=$AE1112 rig-pixels=$RIG"
           [ "$RIG" -gt "3000" ] || fail "item_display rig not visible above cloud drift (rig-pixels=$RIG) — the display entity did not render"
-          echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment + block-in-world + display-rig all render on the stock client"
+          # camera-lock leg: the stand-in cube must appear on the floor grid
+          # in front of the LOCKED camera (pre/shot share the identical
+          # camera — the AE is the block's own footprint; region per
+          # camera-lock-26-3.md: block center ~(640,262), ~195 px wide)
+          AE1314=$(java -cp vtools PixelDiff shots/13-locked-pre.png shots/14-locked.png 460 110 360 320)
+          echo "AE(locked-pre,locked)=$AE1314"
+          [ "$AE1314" -gt "3000" ] || fail "locked stand-in block not visible (AE=$AE1314) — the camera-lock leg did not place the block"
+          echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment + block-in-world + display-rig + camera-lock all render on the stock client"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -3,16 +3,19 @@ import java.awt.event.KeyEvent;
 
 /**
  * Tiny X11 key-press tool for the visual harness (Robot-based — measured:
- * runners ship no ImageMagick xdotool). Usage: java -cp vtools Key F5
- * Presses and releases the named key on the focused window.
+ * runners ship no ImageMagick xdotool). Usage: java -cp vtools Key F1
+ * Presses and releases the named key on the focused window. F1 hides the
+ * vanilla HUD (hideGui) — the camera-lock identity leg shoots the world
+ * without GUI chrome on BOTH parity sides.
  */
 public class Key {
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            System.err.println("usage: Key <F5|ESC|SPACE|ENTER>");
+            System.err.println("usage: Key <F1|F5|ESC|SPACE|ENTER>");
             System.exit(2);
         }
         int code = switch (args[0].toUpperCase()) {
+            case "F1" -> KeyEvent.VK_F1;
             case "F5" -> KeyEvent.VK_F5;
             case "ESC", "ESCAPE" -> KeyEvent.VK_ESCAPE;
             case "SPACE" -> KeyEvent.VK_SPACE;

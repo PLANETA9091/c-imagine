@@ -218,6 +218,13 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
   entity/equipment/humanoid[_leggings]/ — path-only formula measured in
   `EquipmentClientInfo$Layer`), manifest `visual-equipment.tsv`, equippable
   helmet legs (wire GREEN + pixel GREEN; texture-path fix 4f7d5f9 rides run 11).
+- **Camera-lock block identity rig (2026-10-29, the "identical" frontier)**:
+  run 4's ungated block region (50281) was camera-pose-polluted; the measured
+  rig (`runtime-analysis/camera-lock-26-3.md`) kills all three pollutants —
+  server `tp` with explicit yaw/pitch into a FIXED cell, absolute `^-1 ^ ^3`
+  floor cell, scene sweep, F1 (hideGui), noon/clear pins on BOTH stacks.
+  visual.yml legs 13/14 + parity-diff.yml t03/t04: appearance gates live,
+  THE BLOCK IDENTITY DATUM ungated until the first locked run calibrates it.
 
 **Accept:** visual.yml pixel contract GREEN (done — run 10); cimtest
 block-in-world leg + the NeoForge 1.21.1 ground-truth DIFF (render the same

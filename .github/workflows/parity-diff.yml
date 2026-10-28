@@ -113,9 +113,13 @@ jobs:
           grep -q "Done (" srv-truth/boot.log || { tail -40 srv-truth/boot.log; exit 1; }
           grep -q "\[cimtest\] common setup ok" srv-truth/boot.log \
             || { tail -40 srv-truth/boot.log; exit 1; }
-          # pin the daylight so both sides' sky matches the c-imagine shots
+          # pin the daylight so both sides' sky matches the c-imagine shots;
+          # weather OFF too — camera-lock-26-3.md: rain/sky drift between the
+          # parity sides is poison for the pixel identity measurements
           echo "gamerule doDaylightCycle false" > srv-truth/console.in
           echo "time set noon" > srv-truth/console.in
+          echo "gamerule doWeatherCycle false" > srv-truth/console.in
+          echo "weather clear" > srv-truth/console.in
           echo "server up"
 
       # --- the modded client under xvfb ---
@@ -181,6 +185,32 @@ jobs:
           echo "execute at cimviewer run setblock ^ ^ ^3 cimtest:test_block" > srv-truth/console.in
           sleep 5
           java -cp vtools Shot shots/t02-block.png
+          # CAMERA-LOCK BLOCK IDENTITY (the EXACT mirror of visual.yml's
+          # 13/14 leg — docs/runtime-analysis/camera-lock-26-3.md): the SAME
+          # server-locked camera on both parity sides is what makes the
+          # t04-vs-14 diff a true IDENTITY measurement: tp to the fixed
+          # cell (0.5, ~, 0.5) yaw 0 / pitch -30 (superflat is flat — ~
+          # keeps each side's own surface height, the RELATIVE eye->block
+          # geometry is identical), sweep the scene in front (the t02
+          # eye-level block included), F1 hides the HUD, PRE shot; then
+          # pitch 0 (caret semantics are facing-dependent), the ABSOLUTE
+          # cell ^-1 ^ ^3 gets the REAL modded block (floor level, 3
+          # south), back to -30, SHOT.
+          echo "tp cimviewer 0.5 ~ 0.5 0 -30" > srv-truth/console.in
+          sleep 2
+          echo "execute at cimviewer run fill -4 ~ 1 4 ~10 6 air" > srv-truth/console.in
+          sleep 2
+          java -cp vtools Key F1
+          sleep 1
+          java -cp vtools Shot shots/t03-locked-pre.png
+          echo "tp cimviewer 0.5 ~ 0.5 0 0" > srv-truth/console.in
+          sleep 2
+          echo "execute at cimviewer run setblock ^-1 ^ ^3 cimtest:test_block" > srv-truth/console.in
+          sleep 2
+          echo "tp cimviewer 0.5 ~ 0.5 0 -30" > srv-truth/console.in
+          sleep 5   # teleport apply + block/light/section rebuild
+          java -cp vtools Shot shots/t04-block-locked.png
+          java -cp vtools Key F1
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
 
@@ -250,4 +280,18 @@ jobs:
           # REPORT for now, the gate locks after the first measurement
           AE_block=$(java -cp vtools PixelDiff truth/shots/t02-block.png cim/shots/10-block.png 500 460 280 220)
           echo "AE(block region: truth vs c-imagine) = $AE_block  <-- measurement (ungated)"
+          # CAMERA-LOCK legs (the real identity rig — camera-lock-26-3.md):
+          # first both sides must show the block appearing on the SAME locked
+          # camera (appearance gates), then THE BLOCK IDENTITY DATUM: the
+          # truth client's REAL modded block vs the c-imagine stock client's
+          # pack-rendered stand-in — same camera, same cell, same sun, F1
+          # (no HUD) on both sides.
+          AE_truth_locked=$(java -cp vtools PixelDiff truth/shots/t03-locked-pre.png truth/shots/t04-block-locked.png 460 110 360 320)
+          AE_cim_locked=$(java -cp vtools PixelDiff cim/shots/13-locked-pre.png cim/shots/14-locked.png 460 110 360 320)
+          echo "AE(block appearance: truth locked) = $AE_truth_locked"
+          echo "AE(block appearance: c-imagine locked) = $AE_cim_locked"
+          [ "$AE_truth_locked" -gt "3000" ] || { echo "truth locked block did not appear (camera-lock leg broken)"; exit 1; }
+          [ "$AE_cim_locked" -gt "3000" ] || { echo "c-imagine locked block did not appear (camera-lock leg broken)"; exit 1; }
+          AE_block_ident=$(java -cp vtools PixelDiff truth/shots/t04-block-locked.png cim/shots/14-locked.png 460 110 360 320)
+          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident  <-- THE BLOCK IDENTITY DATUM (ungated; the gate locks to the measured value after calibration)"
           echo "F2F parity diff: identity datum recorded"

@@ -69,16 +69,23 @@ What changes: everything becomes packet-level (no mod classes):
 - **Verification:** visual leg spawns cimtest:test_entity via the translation
   layer; screenshot diff vs NeoForge render of the same entity.
 
-### 2.3 Blocks — wire legs live (M4), visual leg pending
+### 2.3 Blocks — wire legs live (M4), pixel leg live, IDENTITY rig locked (camera-lock-26-3.md)
 
 - v1 BlockDisplay budget (4000/8000) translates to a packet-level display
   budget; collision proxies stay Paper-API-side (M3 layer already owns block
   placement).
 - crack overlays: keep as 10-stage CMD models on the block_display stack
   (26.3 has no native virtual-block break overlay).
-- **Verification:** the M4 drift block (iron_chain stand-in) becomes a
-  cimtest:test_block visual: place via layer → client screenshot shows the
-  modded cube (pixel diff vs NeoForge).
+- **Identity (2026-10-29):** run 4's ungated block region (50281) was
+  camera-pose-polluted (relative placements + no daylight pin on the c-imagine
+  side + GUI rows inside the region). The camera-lock rig
+  (`camera-lock-26-3.md`) removes all three pollutants: server `tp` with
+  explicit yaw/pitch into a fixed cell, absolute `^-1 ^ ^3` floor cell for
+  the block, scene sweep + F1 + noon/clear pins — mirrored on BOTH stacks.
+  visual.yml legs 13/14 (stand-in via pack note_block override) vs
+  parity-diff.yml t03/t04 (REAL cimtest:test_block): appearance gates live
+  (>3000 each side), THE BLOCK IDENTITY DATUM prints ungated until the
+  first locked run calibrates the gate.
 
 ### 2.4 Armor — 26.3 FIRST-CLASS replacement (M6, pull-forward candidate)
 
@@ -163,8 +170,8 @@ FakePlayerManager + skin URLs survive as-is (vanilla mechanism).
 | channel | v1 | v2 method | c-imagine status | proof leg |
 |---|---|---|---|---|
 | items | overrides+CMD carriers | items/ range_dispatch | **M5.2 LIVE** | visual run 7+ pixel diff |
-| entities | ItemDisplay rigs | same, packet-level | designed (M5.4) | spawn leg + screenshot |
-| blocks | BlockDisplay | same, packet-level | wire legs live (M4) | place leg + screenshot |
+| entities | ItemDisplay rigs | same, packet-level | **M5.4 LIVE**: wire GREEN + pixel leg GREEN (run 43/44 rig-pixels 123322, cloud-drift subtraction) | spawn leg + screenshot |
+| blocks | BlockDisplay | same, packet-level | pixel leg live (run 43) + **camera-lock identity rig implemented both sides** (gate after the first locked run) | locked pre/shot + identity datum |
 | armor | CMD humanoid rigs | equipment/ defs | **M6 PULLED FORWARD: pack emit + give/wear leg live** (visual-equipment.tsv; EquippableComponent.setModel javap-proven; pixel leg staged: F5 third-person + item replace + AE gate) | wear + screenshot |
 | atmosphere | CMD sky models (30k LOC family) | **post_effect chains** | wire-proven (M4) + pack emit (M5.2) | tint pixel diff (run 7+) |
 | HUD | menus+widgets | menus + dialog registry | **M6 measured: `dialog-hud-26-3.md` (packet/codec/API surface decompiled; common-phase proven)** | dialog screenshot + custom-click marker |
@@ -174,16 +181,17 @@ FakePlayerManager + skin URLs survive as-is (vanilla mechanism).
 | asset pipeline | Java voxelizer/OBJ/Gecko | Rust pack synthesis | pack v1 live; M6 port | per-channel |
 | skins | fake players | same | not started (M7) | skin leg |
 
-## 4. Implementation order (locked after visual run 7 goes green)
+## 4. Implementation order (status 2026-10-29 — 1–5 DONE, the identity rig is the frontier)
 
-1. **M5.4 entity visual leg**: cimtest:test_entity → item_display rig with CMD
-   stack through the translation layer (reuses M3.2 remap + M4 hooks) — first
-   NON-item channel on the pixel contract.
-2. **Multi-item pack v2**: visual-items.tsv grows (select-dispatch string
-   variant + second model) — cheap, exercises the full items/ def surface.
-3. **Postfx pixel proof**: assert the cimsepia tint appears in the xvfb
-   screenshots (frame-level pixel diff) — the atmosphere channel closes.
-4. **Equipment pull-forward** (if run 7 green): one cimtest armor def.
-5. Block visual leg: place-via-layer → client screenshot shows modded cube.
-6. Then M6 asset-pipeline port (OBJ → voxelizer → palettes → fonts), each
+1. **M5.4 entity visual leg** — DONE (runs 43/44: rig-pixels 123322 over the
+   cloud-drift control).
+2. **Multi-item pack v2** — DONE (select-dispatch brick/wand, run 7+).
+3. **Postfx pixel proof** — DONE (run 7+: AE(cmd,postfx-on)=842107).
+4. **Equipment pull-forward** — DONE (run 10/11 wire+pixel green).
+5. **Block visual leg** — DONE (run 43 first-dispatch 79211).
+6. **Camera-lock identity rig** — IN FLIGHT (camera-lock-26-3.md): both
+   sides implemented, first locked run calibrates THE BLOCK IDENTITY DATUM,
+   then the gate locks. Every future in-world channel (entities, armor
+   worn-in-world, contraptions) reuses this rig for its identity datum.
+7. Then M6 asset-pipeline port (palettes → fonts → OBJ → voxelizer), each
    behind a pixel contract.

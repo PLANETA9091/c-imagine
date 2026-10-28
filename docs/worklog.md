@@ -748,3 +748,59 @@ Stage Summary:
   atmosphere(postfx), armor(equipment), entities(display rigs), blocks
   (note_block), delivery(config push), HUD(dialogs). Remaining M6: palette
   (measured, not implemented), fonts, contraptions, OBJ/voxelizer port.
+
+---
+Task ID: 12-a
+Agent: main
+Task: CAMERA-LOCK BLOCK IDENTITY rig implemented on both parity stacks (the "identical" frontier moves from icon to in-world)
+
+Work Log:
+- Autopsy of run 4's ungated block region (AE 50281): THREE pollutants
+  identified — (1) camera pose uncontrolled on both sides (relative
+  placements: truth `^ ^ ^3` vs cim Bukkit eye+3*dir at the eye cell, and
+  the servers pick different spawn cells — truth measured (-0.5,-60,1.5));
+  (2) sky/sun/weather uncontrolled on the cim side (no daylight pin — the
+  world ticked from time 0 across the whole llvmpipe join) and no weather
+  pin anywhere; (3) GUI rows (hotbar/crosshair/hand) inside the generous
+  region. Written up as the rig contract:
+  `runtime-analysis/camera-lock-26-3.md` (region math: pitch -30 keeps the
+  whole 70-degree vertical FOV below the horizon — top region row sits
+  5.7 deg under the horizon, so no sky/clouds/fog band in the rect; cube
+  center projects to ~(640,262) at ~195 px).
+- The rig (mirrored EXACTLY on both stacks): `tp <viewer> 0.5 ~ 0.5 0 -30`
+  (server-authoritative rotation lock; `~` keeps each side's own surface —
+  superflat is flat, the RELATIVE eye->floor->cube geometry is identical
+  even if the 26.3 flat preset drifted in absolute Y) -> scene sweep
+  `execute at <viewer> run fill -4 ~ 1 4 ~10 6 air` (kills the earlier
+  eye-level stand-ins too; Y starts AT feet so the grass floor and the
+  player's cell are never touched) -> `Key F1` (hideGui — no HUD, no hand;
+  Key.java grew F1) -> PRE shot -> pitch 0 (caret semantics are
+  facing-dependent) -> `execute at <viewer> run setblock ^-1 ^ ^3 <block>`
+  (ABSOLUTE floor cell 3 south, contact shadow included) -> back to -30 ->
+  SHOT. Boot-time pins on BOTH servers: doDaylightCycle false + noon +
+  doWeatherCycle false + weather clear (visual.yml gained the pair it
+  lacked).
+- Wiring: visual.yml legs 13/14 (note_block[instrument=creeper,note=13]
+  stand-in per visual-blocks.tsv — the pack override renders the modded
+  model) + assert AE(13,14) > 3000 (pre/shot share the identical locked
+  camera => the AE is the block's own footprint); parity-diff.yml t03/t04
+  (the REAL cimtest:test_block) + diff job: appearance gates > 3000 both
+  sides, then `AE(block identity: truth vs c-imagine)` printed UNGATED —
+  the gate locks to the measured value after the first locked run
+  (measure-first protocol, same as the icon datum was locked).
+- Light checks only (sandbox discipline): workflow YAML parse OK both
+  files; Key.java reviewed (one switch case + javadoc). No local server/
+  client runs.
+- parity-matrix refreshed: 2.3 blocks status + rollup rows (entities row
+  corrected to its actual M5.4 GREEN state) + implementation order
+  rewritten (items 1-5 DONE, camera-lock rig = item 6 IN FLIGHT, M6 asset
+  pipeline port = item 7).
+
+Stage Summary:
+- The identity harness now has its SECOND channel wired: the block channel
+  shoots pre/shot pairs under a server-locked camera on BOTH stacks; the
+  first locked parity-diff run must produce THE BLOCK IDENTITY DATUM
+  (truth NeoForge 1.21.1 client's real cimtest block vs the stock 26.3
+  client's pack-rendered stand-in — same cell, same sun, no HUD). The rig
+  is reusable as-is for the next in-world identity rows (armor worn,
+  contraptions).
