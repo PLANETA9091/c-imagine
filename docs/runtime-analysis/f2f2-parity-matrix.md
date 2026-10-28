@@ -156,10 +156,42 @@ play-phase ids needed — bot walks the real accept state machine) +
 
 Port order by need (measured v1 sizes): ObjParser+ExactObjBaker (1837 — OBJ
 is a 26.3 client feature, `Model.CubeFactory`?... measured: OBJ still parsed
-by the 26.3 client), voxelizer family for entity/block bakes, ModTintScanner →
-replaced by the palette system (`paletted_permutations` + `textures/palettes`),
-MapRasterFontAssets → font composition, AnimationBake → per-tick CMD switches
+by the 26.3 client), voxelizer family for entity/block bakes, MapRasterFontAssets → font composition, AnimationBake → per-tick CMD switches
 or the new timeline/world_clock registries for dimension-time anims.
+
+### 2.10b Biome tint — the v1 dyeable-carrier family (measured 2026-10-29, read-only F2V @ HEAD)
+
+v1 mechanism measured end-to-end (`ModTintScanner` 278 + `ColorAtlas` 220 +
+`CmdCarrierShards` + `TintTable` 61):
+- **The tint verdict comes from the mods' own bytecode**: ModTintScanner
+  reads the mods' `register(BlockColor, ...)` lambda calls (foliage/grass
+  resolvers, hue functions, constants) + Dynamic Trees' primitive_leaves
+  data; blocks with no verdict are EXPLICITLY untinted (never painted).
+- **The render carrier is v1's dyeable trick**: the runtime sends tinted
+  blocks as leather_horse_armor stacks with
+  `dyed_color = BiomeTint.colorAt(...)` — vanilla ItemColors multiplies the
+  grayscale texture (tint index 0 ONLY: "vanilla answers -1 for every other
+  index on a dyeable carrier" — the CmdCarrierShards lesson). Per-position
+  colors come from the server re-evaluating the biome at the block.
+- **ColorAtlas is a SEPARATE palette family** (dense exact ARGB atlas for
+  colored voxel cubes/OBJ, 65536-color budget + a fixed quantization
+  ladder) — NOT the biome tint; it rides the OBJ/voxelizer port.
+
+v2 mapping (26.3):
+- **Fixed recolors** → `paletted_permutations` atlas source — DONE
+  (f2v2-pack-synthesis-26-3.md §12, the palette channel).
+- **Biome families** → two candidate 26.3 surfaces, both keeping the
+  server-side color computation (the layer can read the biome through
+  Paper-api and recompute on change):
+  (a) the v1 carrier trick survives verbatim: a grayscale item model +
+      `dyed_color` data component on the display/item stack (the component
+      codec is vanilla, M4 wire-proven family);
+  (b) cleaner: the 26.3 items/ model node `tints` list
+      (`{"type": "minecraft:dyed_color", "default": ...}` — the vanilla
+      leather defs' shape) — NEEDS the 26.3 javap check
+      (ItemModel tints / DyedTintSource) before implementation, then a
+      pixel leg: same modded leaves block, two dyed_color stacks, two
+      hotbar crops.
 
 ### 2.11 Skins — unchanged (M7)
 

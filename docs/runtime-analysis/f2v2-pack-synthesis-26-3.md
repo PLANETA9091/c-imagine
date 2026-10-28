@@ -175,7 +175,7 @@ TWICE (pre-boot step) and diffs the sha1; the plugin logs
 | auto-assign sweep over all mod items | JEI-scale asset trees; manifest-driven rows keep the pack minimal | M6 |
 | merged atlas overrides for non-item|block textures | riskier pack surgery; warning path exists | M6 |
 | real-client screenshot diff (xvfb harness) | the wire + server contract is proven by cimbot; pixel ground truth needs the client harness | M5 visual.yml (dispatch-only) |
-| OBJ/multipart models, equipment assets, paletted_permutations, post_effect chain contributions | measured surface exists (f2v2-client-capabilities.md §3-§5) | M6 |
+| OBJ/multipart models, post_effect chain contributions (equipment assets + paletted_permutations DELIVERED 2026-10-29) | measured surface exists (f2v2-client-capabilities.md §3-§5) | M6 |
 
 ## §12. Paletted permutations — 26.3 shape (measured 2026-10-28, M6 palette channel)
 
@@ -198,7 +198,21 @@ against the palette-key PNG (exact ARGB), remapped through the permutation
 PNG's colors — the 26.3-native replacement for F2F v1's ModTintScanner /
 ColorAtlas family (recolor = two small PNGs + one source entry, no code).
 
-c-imagine M6 plan: `visual-palettes.tsv` manifest (base texture, palette key,
-permutations) -> F2vPack merges `atlases/items.json` sources (the SAME merge
-discipline as `blockstates/note_block.json`), copies palette PNGs under
-`textures/palettes/`. Pixel leg: recolored cimtest cube variant in hotbar.
+c-imagine M6 IMPLEMENTATION (2026-10-29, the palette channel is LIVE):
+`visual-palettes.tsv` manifest (moddedItem, baseSprite, paletteKeyPng,
+separator, suffix=permPng...) -> F2vPack:
+- synthetic variant rows `ns:path@<suffix>` ride the BASE row's host
+  range_dispatch at cmd = base+1+i (deterministic, collision-checked; a
+  row with a missing base or any cmd collision is dropped WHOLE);
+- variant item model = the base model with texture values equal to
+  baseSprite re-pointed at `<baseSprite><separator><suffix>` (quoted-value
+  exact replacement);
+- `assets/minecraft/atlases/items.json` carries ONLY the pack's
+  paletted_permutations sources (the pack file APPENDS to the vanilla
+  source stack);
+- palette key/permutation PNGs copied from the mod jars at their original
+  `textures/palettes/` paths (read by the client directly, not atlas
+  sprites);
+- selftest fixtures + the cimtest gem (scripts/f2v/gen-gem-assets.py:
+  deterministic stdlib PNGs — 16x16 3-color sprite, 3x1 key/red pair) +
+  the visual.yml pixel leg (CMD 1100 base vs 1101 red in hotbar slot 0).
