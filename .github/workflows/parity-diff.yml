@@ -263,7 +263,7 @@ jobs:
       - name: crop + diff (identity measurements)
         run: |
           set -euo pipefail
-          javac -d vtools scripts/visual/PixelDiff.java
+          javac -d vtools scripts/visual/PixelDiff.java scripts/visual/PixelDiffTol.java
           # sanity: both sides must actually show the item in slot 0
           AE_truth=$(java -cp vtools PixelDiff truth/shots/t00-baseline.png truth/shots/t01-item.png 375 663 48 48)
           AE_cim=$(java -cp vtools PixelDiff cim/shots/00-baseline.png cim/shots/02-cmd-paper.png 375 663 48 48)
