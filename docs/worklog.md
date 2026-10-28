@@ -707,3 +707,44 @@ Stage Summary:
   2 computes AE(icon identity: truth vs c-imagine).
 - The HUD channel is now wire-proven (run 4 parity-diff rides the same
   commit) and joins the parity matrix as implemented.
+
+---
+Task ID: 11-e
+Agent: main
+Task: PARITY-DIFF RUN 4 GREEN — THE F2F IDENTITY DATUM MEASURED; integration green WITH the HUD dialog round-trip
+
+Work Log:
+- parity-diff run 4 (aeaf215) SUCCESS, both jobs: the truth leg booted the
+  real NeoForge 21.1.265 server (Done 1.235s, cimtest setup ok) + the REAL
+  NeoForge 1.21.1 client with cimtest in gameDir/mods under xvfb, captured
+  t00/t01/t02; the diff job computed:
+    AE(icon: truth baseline vs item) = 1532
+    AE(icon: cim baseline vs item)   = 1532   <- the two pipelines agree
+    AE(icon identity: truth vs c-imagine) = 2300  <-- THE F2F DATUM
+    (48x48 crop = 2304 px -> mean delta ~1.0/px: the stock 26.3 client
+    renders the modded item IDENTICALLY to the modded client)
+    AE(block region) = 50281 (ungated measurement; camera/light alignment
+    between the two runs differs — gate locks after re-measurement)
+- integration (aeaf215) SUCCESS all three jobs WITH the new HUD asserts:
+  "hud leg: show_dialog observed" + "hud leg: custom_click answered" bot
+  checks passed, and the server log carries "[cim-hud] dialog shown to
+  cimbot" + "[cim-hud] custom click received" — the FULL dialog response
+  round-trip (server-authored screen -> wire -> vanilla widget semantics ->
+  server event) is live on the real Paper 26.3 build.
+- Palette channel measured while the runs were in flight:
+  paletted_permutations is an ATLAS SOURCE in 26.3 (the standalone
+  paletted_permutations/ file format is gone) — decompiled
+  PalettedPermutations: textures[] + palette_key + permutations{suffix: id}
+  + separator (default "_"); SpriteSourceList.load uses getResourceStack +
+  addAll => pack atlas json APPENDS (F2vPack only needs its own source
+  file). Documented in f2v2-pack-synthesis-26-3.md §12.
+
+Stage Summary:
+- THE OWNER DIRECTIVE HAS ITS FIRST MEASURED PROOF: modded content renders
+  IDENTICALLY on the stock vanilla 26.3 client (the parity matrix now has a
+  measured identity datum for the items channel, and a reusable identity
+  harness for every next channel).
+- Eight channels now wire/pixel-proven: items(float), items(select),
+  atmosphere(postfx), armor(equipment), entities(display rigs), blocks
+  (note_block), delivery(config push), HUD(dialogs). Remaining M6: palette
+  (measured, not implemented), fonts, contraptions, OBJ/voxelizer port.
