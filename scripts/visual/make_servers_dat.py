@@ -36,8 +36,14 @@ So the file we write is:
     ]
   }
 
-Usage: make_servers_dat.py <gameDir> [host:port]
+Usage: make_servers_dat.py <gameDir> [host:port] [--gzip] [--selftest]
 Writes <gameDir>/servers.dat; --selftest asserts the exact byte layout.
+
+Format drift (MEASURED, visual-harness-join.md):
+  26.3 client:  NbtIo.read(Path) = UNCOMPRESSED NBT (raw).
+  1.21.1 client: NbtIo.readCompressed = GZIP-wrapped NBT (the historical
+  format every pre-26.3 toolchain reads/writes) — pass --gzip for the
+  NeoForge 1.21.1 ground-truth client.
 """
 import pathlib
 import struct
@@ -119,13 +125,19 @@ def selftest() -> int:
 def main(argv: list[str]) -> int:
     if "--selftest" in argv:
         return selftest()
+    gzip_mode = "--gzip" in argv
+    argv = [a for a in argv if a != "--gzip"]
     game_dir = pathlib.Path(argv[1])
     host_port = argv[2] if len(argv) > 2 else "127.0.0.1:25565"
     blob = build_servers_dat(host_port)
+    if gzip_mode:
+        import gzip
+        blob = gzip.compress(bytes(blob), mtime=0)
     game_dir.mkdir(parents=True, exist_ok=True)
     target = game_dir / "servers.dat"
     target.write_bytes(blob)
-    print(f"servers.dat: {target} ({len(blob)} bytes, ip={host_port}, acceptTextures=1)")
+    print(f"servers.dat: {target} ({len(blob)} bytes, ip={host_port}, "
+          f"acceptTextures=1, gzip={gzip_mode})")
     return 0
 
 

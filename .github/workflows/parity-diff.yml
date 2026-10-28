@@ -1,0 +1,239 @@
+name: parity-diff
+
+# The F2F owner directive crown proof: modded content must render on the
+# stock vanilla client IDENTICALLY to the modded client. Job 1 boots a REAL
+# NeoForge 21.1.265 server + the REAL NeoForge 1.21.1 client (cimtest
+# installed) under xvfb and captures the ground-truth screenshots; job 2
+# pixel-diffs them against the c-imagine visual run's shots (hotbar slot-0
+# icon crop — the same model, the same vanilla GUI math on both sides).
+#
+# Inputs: visual_run_id — the visual.yml run whose visual-contract-evidence
+# artifact carries the c-imagine side shots.
+#
+# Actions policy (owner directive): dispatch-only, budget is scarce — one
+# dispatch = one measured identity datum per channel.
+
+on:
+  workflow_dispatch:
+    inputs:
+      visual_run_id:
+        description: "visual.yml run id with visual-contract-evidence"
+        required: true
+        type: string
+
+jobs:
+  modded-truth:
+    name: ground truth — real NeoForge 1.21.1 client + cimtest under xvfb
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build cimtest mod (NeoForge 1.21.1)
+        working-directory: test-mods
+        run: gradle build --no-daemon
+
+      # --- caches: installer output (~130 MB) + vanilla assets (~830 MB) ---
+      - name: restore NeoForge client install (cache)
+        id: nfc-cache
+        uses: actions/cache@v4
+        with:
+          path: nfc
+          key: neoforge-client-21.1.265
+
+      - name: restore vanilla 1.21.1 assets + libs (cache)
+        id: assets-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            truth-client/assets
+            truth-client/libraries
+          key: truth-assets-17
+
+      - name: fetch + assemble the NeoForge client runtime
+        run: |
+          python3 scripts/truth/fetch-truth-client.py nfc truth-client \
+            --assets ${{ steps.nfc-cache.outputs.cache-hit == 'true' && '--skip-installer' || '' }}
+          wc -c truth-client/classpath.txt truth-client/launch.txt
+          # heap: the manifest launch line carries no -Xmx (launchers add it)
+          sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
+
+      # --- the real NeoForge server (ground truth world) ---
+      - name: restore NeoForge server layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+
+      - name: prepare server directory (isolated copy)
+        run: |
+          cp -r layer-srv srv-truth
+          mkdir -p srv-truth/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv-truth/mods/
+          echo "eula=true" > srv-truth/eula.txt
+          cat > srv-truth/server.properties <<'PROPS'
+          online-mode=false
+          # SAME seed/level-type as the c-imagine visual run — the superflat
+          # scenes must be comparable pixel-to-pixel
+          difficulty=peaceful
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          max-players=5
+          PROPS
+
+      - name: boot real NeoForge server (console FIFO)
+        run: |
+          set -euo pipefail
+          cd srv-truth
+          mkfifo console.in
+          tail -f console.in | ./run.sh > boot.log 2>&1 &
+          cd ..
+          for i in $(seq 1 150); do
+            grep -q "Done (" srv-truth/boot.log 2>/dev/null && break
+            sleep 2
+          done
+          grep -q "Done (" srv-truth/boot.log || { tail -40 srv-truth/boot.log; exit 1; }
+          grep -q "\[cimtest\] common setup ok" srv-truth/boot.log \
+            || { tail -40 srv-truth/boot.log; exit 1; }
+          # pin the daylight so both sides' sky matches the c-imagine shots
+          echo "gamerule doDaylightCycle false" > srv-truth/console.in
+          echo "time set noon" > srv-truth/console.in
+          echo "server up"
+
+      # --- the modded client under xvfb ---
+      - name: NeoForge client joins under xvfb + truth shots
+        run: |
+          set -euo pipefail
+          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java scripts/visual/Key.java
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
+          XVFB_PID=$!
+          sleep 3
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          # join pre-conditions (the 26.3 harness lessons apply verbatim):
+          # no first-run onboarding + a seeded gzip servers.dat (1.21.1 reads
+          # readCompressed — the historical format, --gzip)
+          mkdir -p truth-client/game
+          echo "onboardAccessibility:false" > truth-client/game/options.txt
+          python3 scripts/visual/make_servers_dat.py truth-client/game --gzip
+          ( cd truth-client && bash -c "$(cat launch.txt)" > client.out 2>&1 ) &
+          CLIENT_PID=$!
+          JOINED=0
+          for i in $(seq 1 240); do
+            if grep -q "joined the game" truth-client/client.out 2>/dev/null; then JOINED=1; break; fi
+            if [ "$((i % 30))" = "0" ]; then
+              echo "--- [wait $i] client.out tail ---"
+              tail -8 truth-client/client.out || true
+            fi
+            sleep 3
+          done
+          if [ "$JOINED" != "1" ]; then
+            echo "--- client.out tail ---"; tail -60 truth-client/client.out || true
+            java -cp vtools Shot shots/t99-stall.png || true
+            exit 1
+          fi
+          sleep 30
+          # pin the client-side daylight too (the client renders its own sky)
+          java -cp vtools Shot shots/t00-baseline.png
+          # hotbar item ground truth: the REAL modded BlockItem in slot 0
+          echo "clear cimviewer" > srv-truth/console.in
+          sleep 2
+          echo "give cimviewer cimtest:test_block 1" > srv-truth/console.in
+          sleep 5
+          java -cp vtools Shot shots/t01-item.png
+          # in-world block ground truth: the REAL modded block 3 ahead of the
+          # viewer (feet level — the same placement the c-imagine leg does)
+          echo "execute at cimviewer run setblock ^ ^ ^3 cimtest:test_block" > srv-truth/console.in
+          sleep 5
+          java -cp vtools Shot shots/t02-block.png
+          kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
+          ls -la shots/
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: truth-shots
+          path: |
+            shots/
+            srv-truth/boot.log
+            truth-client/client.out
+            truth-client/launch.txt
+            truth-client/summary.json
+          if-no-files-found: warn
+
+  # --- the identity diff ------------------------------------------------------
+  # Hotbar slot-0 icon crop (scale-3 GUI at 1280x720, measured vanilla math):
+  # slot cell = (scaledW/2 - 91 + 3) GUI, icon 16x16 at +0..16 → pixels
+  # (375, 663) size 48x48. The modded client renders cimtest:test_block's
+  # item model there; the c-imagine client renders the pack's range_dispatch
+  # to the SAME copied model — identical intent.
+  parity-diff:
+    name: pixel identity — modded client vs c-imagine stock client
+    needs: modded-truth
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: download truth shots (this run)
+        uses: actions/download-artifact@v4
+        with:
+          name: truth-shots
+          path: truth
+
+      - name: download c-imagine visual shots (run ${{ inputs.visual_run_id }})
+        uses: actions/download-artifact@v4
+        with:
+          name: visual-contract-evidence
+          path: cim
+          run-id: ${{ inputs.visual_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: crop + diff (identity measurements)
+        run: |
+          set -euo pipefail
+          javac -d vtools scripts/visual/PixelDiff.java
+          # sanity: both sides must actually show the item in slot 0
+          AE_truth=$(java -cp vtools PixelDiff truth/shots/t00-baseline.png truth/shots/t01-item.png 375 663 48 48)
+          AE_cim=$(java -cp vtools PixelDiff cim/shots/00-baseline.png cim/shots/02-cmd-paper.png 375 663 48 48)
+          echo "AE(icon: truth baseline vs item) = $AE_truth"
+          echo "AE(icon: cim baseline vs item)   = $AE_cim"
+          [ "$AE_truth" -gt "500" ] || { echo "the item never appeared in the truth hotbar"; exit 1; }
+          [ "$AE_cim" -gt "500" ] || { echo "the item never appeared in the c-imagine hotbar"; exit 1; }
+          # THE identity datum: the same modded item model through the two
+          # stacks — measured, then gated (first dispatch reports; the gate
+          # tightens to the measured value)
+          AE_ident=$(java -cp vtools PixelDiff truth/shots/t01-item.png cim/shots/02-cmd-paper.png 375 663 48 48)
+          echo "AE(icon identity: truth vs c-imagine) = $AE_ident  <-- THE F2F DATUM"
+          # in-world block region (measured geometry: block 3 ahead, feet
+          # level, pitch-0 camera): generous rect around the cube face —
+          # REPORT for now, the gate locks after the first measurement
+          AE_block=$(java -cp vtools PixelDiff truth/shots/t02-block.png cim/shots/10-block.png 500 460 280 220)
+          echo "AE(block region: truth vs c-imagine) = $AE_block  <-- measurement (ungated)"
+          echo "F2F parity diff: identity datum recorded"

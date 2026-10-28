@@ -777,7 +777,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * variant surface. paper-api 26.3 javap-proven:
      * {@code NoteBlock#setInstrument(org.bukkit.Instrument)} +
      * {@code NoteBlock#setNote(org.bukkit.Note)}, {@code Instrument.CREEPER},
-     * {@code new Note(int)} public. Placement: 2.5 blocks along the
+     * {@code new Note(int)} public. Placement: 3 blocks along the
      * player's HORIZONTAL look direction at feet level — a full cube filling
      * the frame center of a level (pitch 0) join camera. Logs the verified
      * marker the CI asserts.
@@ -825,7 +825,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 dir.normalize();
                 org.bukkit.Location at = eye.clone()
-                        .add(dir.multiply(2.5));
+                        .add(dir.multiply(3.0));
                 at.setY(eye.getBlockY());
                 Block b = at.getBlock();
                 b.setBlockData(data);
