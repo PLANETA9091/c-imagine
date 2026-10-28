@@ -1043,3 +1043,33 @@ Stage Summary:
   (mod-parity-harness.md). Next: implementation — cimscene mod skeleton
   (ModDevGradle, census emitter, scene runner) → mod-matrix.yml CI wiring →
   the Create P0 census + first scenes.
+
+---
+Task ID: 12-g
+Agent: main
+Task: cimscene SKELETON (M5.5 implementation start) — the ordinary-mod parity harness + mod-matrix.yml truth leg
+
+Work Log:
+- scene-mod/ — a separate Gradle project (test-mods paths in CI untouched):
+  cimscene is an ORDINARY NeoForge 1.21.1 mod (ModDevGradle 2.0.148, same
+  toolchain as cimtest), zero c-imagine APIs by design — the anti-bias
+  property from mod-parity-harness.md §1.
+- Implemented: registry census emitter (7 registries — block/item/entity/
+  particle/sound/block_entity/menu — per-namespace TSV at
+  c-imagine/scenes/scene-manifest.tsv; per-namespace rows are the shape the
+  diff job joins across stacks = the registration-parity FIRST gate),
+  /cimscene census + /cimscene selftest (camera-lock "floor cell 3 ahead"
+  primitive from camera-lock-26-3.md), lifecycle markers mirroring the
+  cimtest contract ([cimscene] mod constructed / common setup ok / census
+  written / commands registered / selftest).
+- mod-matrix.yml: the Tier 0 ladder's home workflow. Skeleton job
+  cimscene-truth: build → jar assert → real NeoForge 21.1.265 server boot
+  (layer cache) → marker gates → console-driven census + selftest →
+  census-parity sanity → evidence artifact. CI budget unrestricted (owner).
+- Next: c-imagine leg of the census (cimscene inside the layer → the FIRST
+  cross-stack census diff) → then the Create P0 ladder row.
+
+Stage Summary:
+- The parity program moved from paper to code: the harness mod exists and is
+  CI-wired on the truth stack. WIP push; CI owns the verification (no local
+  runs per owner directive).

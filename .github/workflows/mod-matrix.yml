@@ -1,0 +1,130 @@
+name: mod-matrix
+
+# M5.5 real-mod parity program (owner directive 2026-10-29) — MODPACK.md
+# Tier 0. This workflow hosts the ladder: P0 Create, P1 BOP / Dynamic Trees /
+# Combat Roll, P2 the Aged modpack. Each ladder row = the SAME cimscene
+# harness run on BOTH stacks; this file's jobs are the truth legs and the
+# diff jobs join them against the c-imagine legs.
+#
+# Skeleton stage (12-g): cimscene itself (the ordinary-mod harness) builds
+# and boots on a REAL NeoForge 21.1.265 server — the anti-bias baseline:
+# the harness must behave identically on real NeoForge and inside c-imagine
+# before any target mod is added. Census parity is the FIRST gate.
+
+on:
+  workflow_dispatch: {}
+  push:
+    paths:
+      - 'scene-mod/**'
+      - '.github/workflows/mod-matrix.yml'
+
+jobs:
+  cimscene-truth:
+    name: cimscene on real NeoForge 21.1.265 server
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build cimscene mod (NeoForge 1.21.1)
+        working-directory: scene-mod
+        run: gradle build --no-daemon
+
+      - name: assert jar
+        run: |
+          test -f scene-mod/build/libs/cimscene-1.0.0.jar
+          unzip -l scene-mod/build/libs/cimscene-1.0.0.jar | grep -q "dev/cim/scenemod/CimSceneMod.class"
+          unzip -p scene-mod/build/libs/cimscene-1.0.0.jar META-INF/neoforge.mods.toml | grep -q 'modId = "cimscene"'
+
+      - name: restore NeoForge server layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+
+      - name: prepare server directory (isolated copy)
+        run: |
+          cp -r layer-srv srv-truth
+          mkdir -p srv-truth/mods
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-truth/mods/
+          echo "eula=true" > srv-truth/eula.txt
+          cat > srv-truth/server.properties <<'PROPS'
+          online-mode=false
+          difficulty=peaceful
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          PROPS
+
+      - name: boot real NeoForge server (console FIFO) + census gates
+        run: |
+          set -euo pipefail
+          cd srv-truth
+          mkfifo console.in
+          tail -f console.in | ./run.sh > boot.log 2>&1 &
+          cd ..
+          for i in $(seq 1 150); do
+            grep -q "Done (" srv-truth/boot.log 2>/dev/null && break
+            sleep 2
+          done
+          grep -q "Done (" srv-truth/boot.log || { tail -40 srv-truth/boot.log; exit 1; }
+          # the harness's own lifecycle markers (the ordinary-mod contract)
+          grep -q "\[cimscene\] mod constructed" srv-truth/boot.log \
+            || { tail -40 srv-truth/boot.log; exit 1; }
+          grep -q "\[cimscene\] common setup ok" srv-truth/boot.log \
+            || { tail -40 srv-truth/boot.log; exit 1; }
+          grep -q "\[cimscene\] census written scene-manifest.tsv" srv-truth/boot.log \
+            || { tail -40 srv-truth/boot.log; exit 1; }
+          grep -q "\[cimscene\] commands registered" srv-truth/boot.log \
+            || { tail -40 srv-truth/boot.log; exit 1; }
+          # the control command through the REAL server console (permission 4)
+          echo "cimscene census" > srv-truth/console.in
+          for i in $(seq 1 10); do
+            grep -q "census totals" srv-truth/boot.log 2>/dev/null && break
+            sleep 1
+          done
+          grep -q "census totals" srv-truth/boot.log || { tail -20 srv-truth/boot.log; exit 1; }
+          # vanilla selftest scene: the vanilla-iron cube lands where the
+          # camera math says (the console executor has no rotation; the
+          # marker proves the scene primitive end to end)
+          echo "execute in minecraft:overworld run cimscene selftest" > srv-truth/console.in
+          for i in $(seq 1 10); do
+            grep -q "\[cimscene\] selftest iron_block" srv-truth/boot.log 2>/dev/null && break
+            sleep 1
+          done
+          grep -q "\[cimscene\] selftest iron_block" srv-truth/boot.log \
+            || { tail -20 srv-truth/boot.log; exit 1; }
+          echo "cimscene-truth: ALL OK"
+
+      - name: census parity sanity (real NeoForge rows exist)
+        run: |
+          test -f srv-truth/c-imagine/scenes/scene-manifest.tsv
+          grep -q "^block	minecraft	" srv-truth/c-imagine/scenes/scene-manifest.tsv
+          grep -q "^block	cimscene	" srv-truth/c-imagine/scenes/scene-manifest.tsv || true
+          cat srv-truth/c-imagine/scenes/scene-manifest.tsv
+
+      - name: upload cimscene truth evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cimscene-truth-evidence
+          path: |
+            srv-truth/boot.log
+            srv-truth/c-imagine/scenes/scene-manifest.tsv
