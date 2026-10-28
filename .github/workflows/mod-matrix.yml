@@ -132,6 +132,7 @@ jobs:
           path: |
             srv-truth/boot.log
             srv-truth/c-imagine/scenes/scene-manifest.tsv
+            srv-truth/c-imagine/scenes/scene-manifest-entries.tsv
 
   # ---------------------------------------------------------------------
   # P0 — CREATE (owner: 100% identical is the single top priority).
@@ -225,7 +226,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: create-truth-census
-          path: srv-create/c-imagine/scenes/scene-manifest.tsv
+          path: |
+            srv-create/c-imagine/scenes/scene-manifest.tsv
+            srv-create/c-imagine/scenes/scene-manifest-entries.tsv
           if-no-files-found: ignore
 
       - name: upload create truth boot log
@@ -305,7 +308,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: create-layer-census
-          path: out-create/c-imagine/scenes/scene-manifest.tsv
+          path: |
+            out-create/c-imagine/scenes/scene-manifest.tsv
+            out-create/c-imagine/scenes/scene-manifest-entries.tsv
           if-no-files-found: ignore
 
       - name: upload create layer harness log
@@ -338,10 +343,19 @@ jobs:
         run: |
           T=$(find truth -name scene-manifest.tsv | head -1)
           L=$(find layer -name scene-manifest.tsv | head -1)
+          TE=$(find truth -name scene-manifest-entries.tsv | head -1)
+          LE=$(find layer -name scene-manifest-entries.tsv | head -1)
           test -n "$T" || { echo "truth census missing"; exit 1; }
           test -n "$L" || { echo "layer census missing"; exit 1; }
           echo "truth=$T layer=$L"
-          python3 scripts/cimscene/census-diff.py "$T" "$L" | tee create-census-diff.txt
+          # counts first; when both entry listings exist, the join goes to
+          # EXACT set equality per registry (counts can match, sets can't lie)
+          if test -n "$TE" && test -n "$LE"; then
+            python3 scripts/cimscene/census-diff.py "$T" "$L" "$TE" "$LE" | tee create-census-diff.txt
+          else
+            echo "(entry listings missing — counts-only diff)"
+            python3 scripts/cimscene/census-diff.py "$T" "$L" | tee create-census-diff.txt
+          fi
           grep -q "CENSUS PARITY: GREEN" create-census-diff.txt || {
             echo "Create registration parity RED — rows above are the fix backlog"
             exit 1

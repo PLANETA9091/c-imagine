@@ -92,14 +92,25 @@ public final class CimSceneMod {
      * Counts registry entries per namespace and emits the TSV. The per-namespace
      * split is the shape the diff job joins across stacks: real NeoForge vs the
      * c-imagine layer must produce IDENTICAL rows (registration parity gate).
+     *
+     * <p>Alongside the counts, the FULL entry listing
+     * ({@code scene-manifest-entries.tsv}: registry/namespace/id per row) is
+     * emitted — per-namespace COUNTS can match while the underlying sets differ
+     * (one block missing, one extra sound). The exact set join in
+     * census-diff.py is the "every block, every sound, every particle" gate
+     * the parity program is built on.
      */
     private static void writeCensus(String fileName) {
         Map<String, Map<String, Integer>> perRegistry = new TreeMap<>();
+        StringBuilder entries = new StringBuilder("registry\tnamespace\tid\n");
         int total = 0;
         for (Map.Entry<String, Registry<?>> e : CENSUSED.entrySet()) {
             for (ResourceLocation id : e.getValue().keySet()) {
                 perRegistry.computeIfAbsent(e.getKey(), k -> new TreeMap<>())
                         .merge(id.getNamespace(), 1, Integer::sum);
+                entries.append(e.getKey()).append('\t')
+                        .append(id.getNamespace()).append('\t')
+                        .append(id.getPath()).append('\n');
                 total++;
             }
         }
@@ -111,14 +122,14 @@ public final class CimSceneMod {
                         .append(ns.getValue()).append('\n');
             }
         }
+        String entriesName = fileName.replaceAll("\\.tsv$", "-entries.tsv");
         try {
-            Path out = Path.of("c-imagine", "scenes", fileName);
-            Path parent = out.getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            Files.writeString(out, tsv.toString(), StandardCharsets.UTF_8);
-            LOGGER.info("[cimscene] census written {} registries={} entries={}", fileName, perRegistry.size(), total);
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(fileName), tsv.toString(), StandardCharsets.UTF_8);
+            Files.writeString(parent.resolve(entriesName), entries.toString(), StandardCharsets.UTF_8);
+            LOGGER.info("[cimscene] census written {} + {} registries={} entries={}",
+                    fileName, entriesName, perRegistry.size(), total);
             LOGGER.info("[cimscene] census totals: {}", perRegistry.entrySet().stream()
                     .map(e -> e.getKey() + "=" + e.getValue().values().stream().mapToInt(Integer::intValue).sum())
                     .collect(Collectors.joining(",")));

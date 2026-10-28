@@ -525,7 +525,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: layer-census
-          path: srv/c-imagine/scenes/scene-manifest.tsv
+          path: |
+            srv/c-imagine/scenes/scene-manifest.tsv
+            srv/c-imagine/scenes/scene-manifest-entries.tsv
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------
@@ -734,7 +736,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: truth-census
-          path: srv-parity/c-imagine/scenes/scene-manifest.tsv
+          path: |
+            srv-parity/c-imagine/scenes/scene-manifest.tsv
+            srv-parity/c-imagine/scenes/scene-manifest-entries.tsv
           if-no-files-found: ignore
 
   # ---------------------------------------------------------------------
@@ -766,10 +770,19 @@ jobs:
         run: |
           T=$(find truth -name scene-manifest.tsv | head -1)
           L=$(find layer -name scene-manifest.tsv | head -1)
+          TE=$(find truth -name scene-manifest-entries.tsv | head -1)
+          LE=$(find layer -name scene-manifest-entries.tsv | head -1)
           test -n "$T" || { echo "truth census missing"; exit 1; }
           test -n "$L" || { echo "layer census missing"; exit 1; }
           echo "truth=$T layer=$L"
-          python3 scripts/cimscene/census-diff.py "$T" "$L" | tee census-diff.txt
+          # counts first; when both entry listings exist, the join goes to
+          # EXACT set equality per registry (counts can match, sets can't lie)
+          if test -n "$TE" && test -n "$LE"; then
+            python3 scripts/cimscene/census-diff.py "$T" "$L" "$TE" "$LE" | tee census-diff.txt
+          else
+            echo "(entry listings missing — counts-only diff)"
+            python3 scripts/cimscene/census-diff.py "$T" "$L" | tee census-diff.txt
+          fi
           grep -q "CENSUS PARITY: GREEN" census-diff.txt
 
       - name: upload census diff report
