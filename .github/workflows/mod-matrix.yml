@@ -223,6 +223,25 @@ jobs:
           awk -F'\t' '$1=="item" && $2=="create" {ok=1} END{exit !ok}' "$T" \
             || { echo "no create item rows in the truth census"; exit 1; }
 
+      - name: dump the REAL classpath contract (autopsy telemetry)
+        run: |
+          echo "=== installed unix_args.txt (the real server's launch contract) ==="
+          cat srv-create/libraries/net/neoforged/neoforge/21.1.265/unix_args.txt
+          echo "=== jars at the server ROOT (outside libraries/) ==="
+          ls -la srv-create/ | head -30
+          echo "=== game jar contents: client-class presence ==="
+          for j in srv-create/libraries/net/minecraft/server/*/server-*.jar \
+                   srv-create/libraries/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-*.jar \
+                   srv-create/*.jar; do
+            test -f "$j" || continue
+            n=$(unzip -l "$j" 2>/dev/null | grep -c "\.class$" || true)
+            r=$(unzip -l "$j" 2>/dev/null | grep -c "client/gui/components/Renderable.class" || true)
+            s=$(unzip -l "$j" 2>/dev/null | grep -c "client/gui/screens/Screen.class" || true)
+            echo "$j classes=$n renderable=$r screen=$s"
+          done
+          echo "=== does the boot log name any other class source? ==="
+          grep -iE "Found mod file|libraries.list|versions.list|modules.list" srv-create/boot.log | head -20
+
       - name: upload create truth census
         if: always()
         uses: actions/upload-artifact@v4
