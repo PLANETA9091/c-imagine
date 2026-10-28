@@ -44,6 +44,15 @@ public final class ShadowClassLoader extends ClassLoader {
      * the final {@code -srg.jar} (Mojmap, binpatched) may serve classes. */
     private static final String[] LAYER_EXCLUDES = {
         "-unpacked.jar", "-sources.jar", "-javadoc.jar", "server-1.21.1.jar",
+        // The NeoForge SERVER BUNDLER (neoforge-<ver>-server.jar): a LAUNCH
+        // artifact. The real dedicated server never puts it on the classpath
+        // (run.sh -> unix_args.txt -> BootstrapLauncher; ProductionServerProvider
+        // serves the srg/extra game jars instead). It physically carries a
+        // PARTIAL client-class set (e.g. Screen but not Renderable) — indexing
+        // it made dist-guarded client probes (Class.forName) succeed where the
+        // real server cleanly fails them, then die deeper on the missing
+        // remainder (Create <clinit> -> Screen -> Renderable NCDFE).
+        "-server.jar",
     };
 
     private final AtomicLong defined = new AtomicLong();
