@@ -1199,3 +1199,41 @@ Stage Summary:
   artifacts/log same-session, fixed, and re-pushed without waiting.
 - Next verdicts: mod-matrix @ c39b84f = Create truth census + layer census;
   RED rows there are the exact Create registration fix backlog.
+
+---
+Task ID: 12-l
+Agent: main
+Task: BASELINE EXACT PARITY + the Create custom-registry gate (root registry)
+
+Work Log:
+- Entries-level census gate went GREEN on the baseline (integration
+  @ b182384): EXACT set equality between real NeoForge 21.1.265 and the
+  shadow-space layer over 7 registries — block 1061, block_entity 45,
+  entity 131, item 1334, menu 25, particle 109, sound 1611 ids (3316
+  entries total). Counts can lie; sets don't.
+- Create truth census captured (create-truth @ c39b84f GREEN): the real
+  NeoForge 21.1.265 + Create 6.0.10 reference — block=643, item=699,
+  block_entity=114, entity=9, menu=14, particle=13, sound=79 in the create
+  namespace, PLUS 2 vanilla-namespace sounds Create adds (minecraft sound
+  1611 -> 1613). This is the exact target the layer must reproduce.
+- Create layer leg autopsy (first RED row): construct dies in
+  AllMountedStorageTypes.<clinit> → CreateBuiltInRegistries.register →
+  BuiltInRegistries.REGISTRY.register(...) — "Registry is already frozen".
+  Create 6 creates 11 custom registries EAGERLY during <clinit> (NeoForge
+  RegistryBuilder.create() + a root-registry write). Real NeoForge keeps
+  the ROOT registry writable through mod construction (its
+  freezeData()/unfreezeData() touch content registries only) — verified
+  against NeoForge 1.21.1 sources (CommonModLoader, GameData,
+  MappedRegistry patch, RegistryBuilder).
+- Fix (10a1678): FmlHost step 5a — unfreeze the root registry before the
+  construct loop; GameData.unfreezeData/postRegisterEvents/freezeData stay
+  at the real NeoForge positions. mod-matrix paths now include crates/** +
+  java/** (layer changes must rerun the ladder).
+- P1 recon (Modrinth API): BOP 21.1.0.14 needs glitchcore + terrablender;
+  Dynamic Trees 1.7.2 zero deps; Combat Roll 2.0.6 needs cloth-config +
+  playeranimator. Wiring follows once the P0 gate is green.
+
+Stage Summary:
+- The baseline registration-parity datum is now an EXACT set identity, not
+  a count approximation. Create layer leg: jarjar/Registrate gate passed;
+  the root-registry gate is the current fix under CI verification.
