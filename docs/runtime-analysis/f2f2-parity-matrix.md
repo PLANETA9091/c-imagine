@@ -76,16 +76,20 @@ What changes: everything becomes packet-level (no mod classes):
   placement).
 - crack overlays: keep as 10-stage CMD models on the block_display stack
   (26.3 has no native virtual-block break overlay).
-- **Identity (2026-10-29):** run 4's ungated block region (50281) was
-  camera-pose-polluted (relative placements + no daylight pin on the c-imagine
-  side + GUI rows inside the region). The camera-lock rig
-  (`camera-lock-26-3.md`) removes all three pollutants: server `tp` with
-  explicit yaw/pitch into a fixed cell, absolute `^-1 ^ ^3` floor cell for
-  the block, scene sweep + F1 + noon/clear pins — mirrored on BOTH stacks.
-  visual.yml legs 13/14 (stand-in via pack note_block override) vs
-  parity-diff.yml t03/t04 (REAL cimtest:test_block): appearance gates live
-  (>3000 each side), THE BLOCK IDENTITY DATUM prints ungated until the
-  first locked run calibrates the gate.
+- **Identity (2026-10-29, CALIBRATED AND GATED — parity runs 5-9):** run 4's
+  ungated block region (50281) was camera-pose-polluted. The camera-lock rig
+  (`camera-lock-26-3.md`) removes every pollutant; the runs then measured
+  THREE cross-version drift classes and the rig absorbed all of them:
+  (1) 26.3 renders block faces a CONSTANT 1.0703x brighter (the texture
+  bytes are identical — the drift is the version light/tonemap) → the datum
+  is LUMINANCE-NORMALIZED (PixelDiffNorm, ratio printed per run: 0.93432);
+  (2) the lightmap drifts ±2/255 between the clients → per-channel
+  tolerance 4 (PixelDiffTol); (3) the mod now CARRIES its texture
+  (cimtest:block/test_block — never delegate a modded render to a
+  version-drifting vanilla texture).
+  **THE BLOCK IDENTITY DATUM: AE = 1531 / 21850 (93.0% pixels identical,
+  tol 4, ratio 0.93432) — GATED <= 2500.** The appearance footprints match
+  EXACTLY across the stacks (20802 == 20802, three runs).
 
 ### 2.4 Armor — 26.3 FIRST-CLASS replacement (M6, pull-forward candidate)
 

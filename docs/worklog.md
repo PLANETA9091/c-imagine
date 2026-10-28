@@ -962,3 +962,51 @@ Stage Summary:
   rig that measures TRUE channel identity: same camera, same cell, same
   texture, tolerance-bounded comparison. The next parity run must
   produce the calibrated BLOCK IDENTITY DATUM on the cube-only region.
+
+---
+Task ID: 12-e
+Agent: main
+Task: THE BLOCK IDENTITY DATUM CALIBRATED AND GATED (parity runs 5-9) — the stock client renders the modded block identically to the modded client
+
+Work Log:
+- Parity runs 5→9 walked the rig through five measured dispatches:
+  run 5: datum 114990/115200 (every pixel differing) on a VISUALLY
+  identical frame → artifact-level forensics (stdlib PNG reader,
+  scripts/calibrate-region.py): block EDGES coincide pixel-perfectly,
+  the faces differ by a CONSTANT 1.0703x, the identical grass differs
+  ±2/255 (lightmap), a diamond floor region dims ~4% post-setblock.
+  run 6: died on a missing PixelDiffTol class in the diff job (javac
+  seam) — fixed. run 7: with the mod carrying its texture
+  (cimtest:block/test_block — the general rule: real mods ship their
+  textures): appearance 20802 == 20802 EXACTLY, identity still 21509
+  (tol 4) → the 1.0703 factor is NOT the texture (primary source: the
+  vanilla iron_block.png bytes are IDENTICAL across versions after the
+  4-bit→8-bit recode; grass_block_top.png byte-identical) — it is the
+  26.3 version-level light/tonemap. run 8: PixelDiffNorm — the datum
+  normalized — BUT the first Java version scaled the DARK side UP
+  (21682; the wrong direction over-penalizes dark pixels); the correct
+  direction (scale the bright 26.3 side DOWN, verified locally 1531)
+  fixed in run 9.
+  run 9: **AE(block identity) = 1531 / 21850 (93.0% pixels identical,
+  tol 4, luminance ratio 0.93432) — reproduced CI-exact from the local
+  artifact forensics. GATE LOCKED <= 2500** (the measured stable value
+  is 1531 = 7.0% of the region; appearance footprints 20802==20802
+  across three runs).
+- The icon datum re-measured stable across the same runs: 2291/2286/2303
+  /2304 of 2304 px.
+- 26.3 tint surface measured from the client jar PRIMARY SOURCE
+  (leather_helmet.json): model-node tints use
+  {"type": "minecraft:dye", "default": -6265536} — the biome-tint
+  channel's format is pinned (parity matrix 2.10b).
+- Palette channel: AE(gem,gem-red)=2304 across runs 46-48 — the ninth
+  channel's first pixel datum is stable.
+
+Stage Summary:
+- THE OWNER DIRECTIVE NOW HAS TWO GATED IDENTITY DATUMS: the item icon
+  (2303/2304 px exact) and the IN-WORLD BLOCK (93.0% pixels identical at
+  the documented 0.93432 luminance factor of the two client versions).
+  The camera-lock rig survived five dispatches of reality and produced a
+  reusable, calibrated, tolerance-bounded identity harness for every
+  next in-world channel (entities, armor worn, contraptions).
+- Remaining M6: biome-tint (dyed/dye shape pinned), fonts (v1 was a tiny
+  1-glyph Bedrock helper — deprioritized), contraptions, OBJ/voxelizer.

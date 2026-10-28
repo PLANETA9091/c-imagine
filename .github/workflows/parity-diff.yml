@@ -305,5 +305,12 @@ jobs:
           # measured across runs 5-7; same texture pixels, same face ratios,
           # same edges) — the datum is "structurally identical at tol 4".
           read AE_block_ident BLOCK_LUM_RATIO <<< "$(java -cp vtools PixelDiffNorm truth/shots/t04-block-locked.png cim/shots/14-locked.png 545 170 190 115 4)"
-          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident (luminance ratio $BLOCK_LUM_RATIO)  <-- THE BLOCK IDENTITY DATUM (normalized, tol 4, cube-only; the gate locks to the calibrated value)"
+          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident (luminance ratio $BLOCK_LUM_RATIO)  <-- THE BLOCK IDENTITY DATUM (normalized, tol 4, cube-only)"
+          # GATE LOCKED (runs 5-9 calibration: 1531 reproduced locally AND in
+          # CI on identical artifacts; appearance 20802==20802 across three
+          # runs): the stock 26.3 client must render the modded block
+          # structurally identical to the modded 1.21.1 client at the
+          # documented 0.9343 luminance factor — 2500 is ~7.5% of the region
+          # (the measured stable value is 1531 = 7.0%)
+          [ "$AE_block_ident" -le "2500" ] || { echo "BLOCK IDENTITY GATE FAILED: $AE_block_ident > 2500 — the stock client no longer renders the modded block identically"; exit 1; }
           echo "F2F parity diff: identity datum recorded"
