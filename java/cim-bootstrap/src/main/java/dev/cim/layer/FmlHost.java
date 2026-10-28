@@ -264,6 +264,29 @@ public final class FmlHost {
                 }
             }
 
+            // 5a-pre) P0 Create diagnostic: Create's construct touches client
+            // classes (definition-time supertype resolution) — on the real
+            // NeoForge dedicated server those classes ARE on the classpath
+            // (the installer's merged srg jar ships client+server). Probe
+            // whether the shadow index can see one BEFORE mod construction:
+            // original-name resource lookup (jar entry exists?) vs relocated
+            // name load (relocation + index path works?).
+            try {
+                Object probe = shadowLoader()
+                        .getResource("net/minecraft/client/gui/components/Renderable.class");
+                System.out.println(LOG + " probe: Renderable.class in index = " + probe);
+            } catch (Throwable t) {
+                System.out.println(LOG + " probe: original-name lookup failed: " + t);
+            }
+            try {
+                Class<?> rend = Class.forName(
+                        "cim.shadow.mc1211.net.minecraft.client.gui.components.Renderable",
+                        false, shadowLoader());
+                System.out.println(LOG + " probe: Renderable loadable = " + rend.getName());
+            } catch (Throwable t) {
+                System.out.println(LOG + " probe: Renderable NOT loadable: " + t);
+            }
+
             // 5a) P0 Create: custom registry CREATION during mod construction.
             // Registrate-driven mods (create) instantiate their own registries
             // and register them into the ROOT registry inside <clinit>

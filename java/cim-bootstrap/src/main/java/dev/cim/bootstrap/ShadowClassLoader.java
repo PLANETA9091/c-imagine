@@ -300,7 +300,19 @@ public final class ShadowClassLoader extends ClassLoader {
         } catch (Throwable t) {
             throw new ClassNotFoundException(name + " (relocation failed: " + t + ")", t);
         }
-        Class<?> c = defineClass(name, relocated, 0, relocated.length);
+        Class<?> c;
+        try {
+            c = defineClass(name, relocated, 0, relocated.length);
+        } catch (Throwable t) {
+            // The supertype chain that failed to resolve is invisible in the
+            // caller's stack (the NCDFE surfaces at the TRIGGERING frame) —
+            // log the class whose definition actually failed so autopsies
+            // don't need bytecode archaeology.
+            System.out.println("[c-imagine] shadow loader: define FAILED for "
+                    + name + " (from " + source.internalName() + " in jar #"
+                    + source.jarIdx() + "): " + t);
+            throw t;
+        }
         defined.incrementAndGet();
         return c;
     }
