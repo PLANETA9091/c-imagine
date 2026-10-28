@@ -39,17 +39,21 @@ public final class ShadowClassLoader extends ClassLoader {
         "org.xml.sax.", "org.ietf.jgss.",
     };
 
-    /** Jar name fragments excluded from the layer walk. The NeoForge install
-     * ships multiple MC jar variants (bundler, unpacked intermediates); only
-     * the final {@code -srg.jar} (Mojmap, binpatched) may serve classes. */
+    /** Jar name fragments excluded from the layer walk. The REAL dedicated
+     * server's game classpath (dumped from a green create-truth run) is:
+     * legacyClassPath libraries + the srg jar (ProductionServerProvider, as
+     * game content) + the universal jar (the neoforge mod). Everything else
+     * the installer leaves in libraries/ is a build/launch intermediate and
+     * must NOT serve classes — in particular the SLIM jar (unpatched vanilla
+     * classes) sorts before the SRG jar alphabetically and its first-wins
+     * index entries were shadowing the binpatched ones, and the server
+     * BUNDLER is not on the real classpath at all (it carries a partial
+     * client-class set — Screen without Renderable — that made dist-guarded
+     * client probes succeed where the real server cleanly fails them). */
     private static final String[] LAYER_EXCLUDES = {
         "-unpacked.jar", "-sources.jar", "-javadoc.jar", "server-1.21.1.jar",
-        // NOTE: the bundler jar (neoforge-<ver>-server.jar under libraries/)
-        // STAYS INDEXED — excluding it regressed the whole mod pipeline
-        // (MappedRegistry.unfreeze / TagKey.create vanished: the srg jar
-        // carries only SERVER-side binpatches, the bundler carries the full
-        // patched class set). The bundler-vs-client-classes question is under
-        // active autopsy (create-truth classpath dump).
+        "-slim.jar",
+        "-server.jar",
     };
 
     private final AtomicLong defined = new AtomicLong();
