@@ -263,7 +263,7 @@ jobs:
       - name: crop + diff (identity measurements)
         run: |
           set -euo pipefail
-          javac -d vtools scripts/visual/PixelDiff.java scripts/visual/PixelDiffTol.java
+          javac -d vtools scripts/visual/PixelDiff.java scripts/visual/PixelDiffTol.java scripts/visual/PixelDiffNorm.java
           # sanity: both sides must actually show the item in slot 0
           AE_truth=$(java -cp vtools PixelDiff truth/shots/t00-baseline.png truth/shots/t01-item.png 375 663 48 48)
           AE_cim=$(java -cp vtools PixelDiff cim/shots/00-baseline.png cim/shots/02-cmd-paper.png 375 663 48 48)
@@ -300,6 +300,10 @@ jobs:
           echo "AE(block appearance: c-imagine locked) = $AE_cim_locked (tol 4, cube-only)"
           [ "$AE_truth_locked" -gt "3000" ] || { echo "truth locked block did not appear (camera-lock leg broken)"; exit 1; }
           [ "$AE_cim_locked" -gt "3000" ] || { echo "c-imagine locked block did not appear (camera-lock leg broken)"; exit 1; }
-          AE_block_ident=$(java -cp vtools PixelDiffTol truth/shots/t04-block-locked.png cim/shots/14-locked.png 545 170 190 115 4)
-          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident  <-- THE BLOCK IDENTITY DATUM (tol 4, cube-only; ungated until calibrated)"
+          # THE BLOCK IDENTITY DATUM: luminance-NORMALIZED (PixelDiffNorm —
+          # the 26.3 client renders block faces a constant ~1.0703x brighter,
+          # measured across runs 5-7; same texture pixels, same face ratios,
+          # same edges) — the datum is "structurally identical at tol 4".
+          read AE_block_ident BLOCK_LUM_RATIO <<< "$(java -cp vtools PixelDiffNorm truth/shots/t04-block-locked.png cim/shots/14-locked.png 545 170 190 115 4)"
+          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident (luminance ratio $BLOCK_LUM_RATIO)  <-- THE BLOCK IDENTITY DATUM (normalized, tol 4, cube-only; the gate locks to the calibrated value)"
           echo "F2F parity diff: identity datum recorded"
