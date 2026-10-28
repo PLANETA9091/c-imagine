@@ -90,7 +90,7 @@ jobs:
           # assets suffice (no layer, no module in this job)
           (cd test-mods/src/main/resources && zip -qr /tmp/cimtest-assets.jar assets)
           cp /tmp/cimtest-assets.jar srv/mods/cimtest-1.0.0.jar
-          cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv srv/c-imagine/f2v/
+          cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv srv/c-imagine/f2v/
           java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
             --build srv/mods srv/c-imagine/f2v
           SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
@@ -252,6 +252,24 @@ jobs:
           sleep 4
           java -cp vtools Shot shots/08-armor.png
           java -cp vtools Key F5
+          # BLOCK pixel leg (parity matrix "blocks", block-channel-26-3.md):
+          # the note_block stand-in placed in FRONT of the viewer (2.5 blocks
+          # along the look direction, feet level) — the pack's merged
+          # blockstates/note_block.json override is what turns that vanilla
+          # note block into the modded cube on the stock client. The pre-shot
+          # is the same view WITHOUT the block.
+          echo "clear cimviewer" > srv/console.in
+          sleep 2
+          java -cp vtools Shot shots/09-block-pre.png
+          echo "cim placeblock cimviewer cimtest:test_block" > srv/console.in
+          sleep 5   # block update + section rebuild under llvmpipe
+          java -cp vtools Shot shots/10-block.png
+          # ENTITY pixel leg (parity matrix "entities"): the item_display rig
+          # spawned in the viewer's view carrying the CMD stack — the same
+          # modded cube model through the pack's range_dispatch.
+          echo "cim display cimviewer cimtest:test_block" > srv/console.in
+          sleep 5   # add_entity + render under llvmpipe
+          java -cp vtools Shot shots/11-display.png
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -286,7 +304,17 @@ jobs:
           AE78=$(java -cp vtools PixelDiff shots/07-thirdperson.png shots/08-armor.png)
           echo "AE(thirdperson,armor)=$AE78"
           [ "$AE78" -gt "1000" ] || fail "armor layer not visible on the model (AE=$AE78) — the equipment asset did not resolve"
-          echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment all render on the stock client"
+          # block channel: the stand-in cube must appear in the view (the
+          # pack's note_block override rendered the modded model client-side)
+          AE910=$(java -cp vtools PixelDiff shots/09-block-pre.png shots/10-block.png)
+          echo "AE(block-pre,block)=$AE910"
+          [ "$AE910" -gt "3000" ] || fail "placed stand-in block not visible (AE=$AE910) — the blockstate override did not resolve"
+          # entity channel: the item_display rig must appear on top of the
+          # block shot (the only delta between 10 and 11)
+          AE1011=$(java -cp vtools PixelDiff shots/10-block.png shots/11-display.png)
+          echo "AE(block,display)=$AE1011"
+          [ "$AE1011" -gt "800" ] || fail "item_display rig not visible (AE=$AE1011) — the display entity did not render"
+          echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment + block-in-world + display-rig all render on the stock client"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

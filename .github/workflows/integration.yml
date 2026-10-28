@@ -144,7 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p srv/c-imagine/f2v
-          cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv srv/c-imagine/f2v/
+          cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv srv/c-imagine/f2v/
           java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
             --build srv/mods srv/c-imagine/f2v
           cat srv/c-imagine/f2v/build-report.txt
@@ -153,7 +153,7 @@ jobs:
           # (the scratch dir gets BOTH manifests — the equipment manifest is
           # read from the outDir by default, measured 94e1e28)
           mkdir -p /tmp/f2v-again
-          cp srv/c-imagine/f2v/visual-items.tsv srv/c-imagine/f2v/visual-equipment.tsv /tmp/f2v-again/
+          cp srv/c-imagine/f2v/visual-items.tsv srv/c-imagine/f2v/visual-equipment.tsv srv/c-imagine/f2v/visual-blocks.tsv /tmp/f2v-again/
           java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
             --build srv/mods /tmp/f2v-again --manifest srv/c-imagine/f2v/visual-items.tsv
           diff /tmp/f2v-again/pack.sha1 srv/c-imagine/f2v/pack.sha1 \
@@ -326,6 +326,17 @@ jobs:
           unzip -p srv/c-imagine/f2v/pack.zip assets/cimtest/models/item/test_block.json \
             | grep -q "cimtest:block/test_block" \
             || fail "modded item model missing from the pack"
+          # BLOCK channel (parity matrix "blocks", block-channel-26-3.md):
+          # the note_block stand-in leg — placed for the bot (wire sees the
+          # block update) and the merged blockstates override in the pack
+          grep -q "f2v block: placed cimtest:test_block as note_block\[instrument=creeper,note=13\] for cimbot (verified @" \
+            srv/boot.log || fail "note_block stand-in place leg missing"
+          unzip -p srv/c-imagine/f2v/pack.zip assets/minecraft/blockstates/note_block.json \
+            | grep -q '"instrument=creeper,note=13"' \
+            || fail "note_block blockstate override missing from the pack"
+          unzip -p srv/c-imagine/f2v/pack.zip assets/cimtest/models/block/test_block.json \
+            | grep -q "minecraft:block/iron_block" \
+            || fail "modded block model missing from the pack"
           echo "F2V visual pipeline: pack built + deterministic + served + accepted + loaded + visual item verified"
 
       # --- assertions --------------------------------------------------------

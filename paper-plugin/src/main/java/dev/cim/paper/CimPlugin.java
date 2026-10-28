@@ -5,6 +5,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -69,7 +70,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     // ---- F2V 2.0 visual pipeline (M5.2) ---------------------------------------
 
     /** Immutable F2V state resolved at enable time. */
-    private record F2vState(List<dev.cim.f2v.F2vPack.VisualItem> items, String sha1) {
+    private record F2vState(List<dev.cim.f2v.F2vPack.VisualItem> items,
+                            List<dev.cim.f2v.F2vPack.VisualBlock> blocks,
+                            String sha1) {
     }
 
     /**
@@ -105,7 +108,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().warning(LOG_PREFIX + "f2v pack: warn " + w);
                 }
             }
-            f2v = new F2vState(result.items(), result.sha1());
+            f2v = new F2vState(result.items(), result.blocks(), result.sha1());
             int port = Integer.getInteger("cim.f2v.port", 25580);
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
@@ -132,7 +135,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             List<dev.cim.f2v.F2vPack.EquipmentAsset> equipment =
                     dev.cim.f2v.F2vPack.readEquipmentManifest(
                             base.resolve("visual-equipment.tsv"));
-            return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows, equipment);
+            List<dev.cim.f2v.F2vPack.VisualBlock> blocks =
+                    dev.cim.f2v.F2vPack.readBlockManifest(
+                            base.resolve("visual-blocks.tsv"));
+            return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows, equipment, blocks);
         } finally {
             // keep the tree small; the stored pack.zip is the served truth
             try {
@@ -539,6 +545,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().info(LOG_PREFIX + "f2v net: drift block replay-2 set=" + set2);
             Thread.sleep(1500);
 
+            // 3.5) BLOCK channel (parity matrix "blocks",
+            //      block-channel-26-3.md): the note_block stand-in placed for
+            //      the bot — the wire sees a block update carrying
+            //      note_block[instrument=creeper,note=13]; the pack's merged
+            //      blockstates override renders it as the modded cube on
+            //      stock clients (pixel proof = the visual harness 09/10 leg).
+            placeVisualBlock("cimbot", "cimtest:test_block");
+            Thread.sleep(1500);
+
             // 4) despawn through the facade -> remove_entities on the wire
             boolean removed = boatUuid != null && paperRemoveEntity(world, boatUuid);
             paperForceChunk(world, 3, 0, false);
@@ -753,6 +768,117 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         });
     }
 
+    /**
+     * Place one manifest-mapped visual BLOCK stand-in in front of a player
+     * (the parity matrix "blocks" channel — block-channel-26-3.md): a
+     * {@code note_block[instrument=<I>, note=<N>]} whose pack blockstate
+     * override renders the MODDED model on ANY stock client, exactly the
+     * Oraxen custom-block pattern expressed through the measured 26.3
+     * variant surface. paper-api 26.3 javap-proven:
+     * {@code NoteBlock#setInstrument(org.bukkit.Instrument)} +
+     * {@code NoteBlock#setNote(org.bukkit.Note)}, {@code Instrument.CREEPER},
+     * {@code new Note(int)} public. Placement: 2.5 blocks along the
+     * player's HORIZONTAL look direction at feet level — a full cube filling
+     * the frame center of a level (pitch 0) join camera. Logs the verified
+     * marker the CI asserts.
+     */
+    private void placeVisualBlock(String playerName, String moddedBlockId) {
+        try {
+            if (f2v == null || f2v.blocks().isEmpty()) {
+                log().warning(LOG_PREFIX + "f2v block: place skipped (no block manifest rows)");
+                return;
+            }
+            dev.cim.f2v.F2vPack.VisualBlock row = null;
+            for (dev.cim.f2v.F2vPack.VisualBlock r : f2v.blocks()) {
+                if (r.moddedBlockId().equals(moddedBlockId)) {
+                    row = r;
+                    break;
+                }
+            }
+            if (row == null) {
+                log().warning(LOG_PREFIX + "f2v block: no manifest row for "
+                        + moddedBlockId + " (place skipped)");
+                return;
+            }
+            final dev.cim.f2v.F2vPack.VisualBlock visual = row;
+            Player p = Bukkit.getPlayerExact(playerName);
+            if (p == null) {
+                log().warning(LOG_PREFIX + "f2v block: player not online: " + playerName);
+                return;
+            }
+            String verified = callSync(() -> {
+                org.bukkit.block.data.type.NoteBlock data;
+                try {
+                    data = (org.bukkit.block.data.type.NoteBlock)
+                            Material.NOTE_BLOCK.createBlockData();
+                    data.setInstrument(org.bukkit.Instrument.valueOf(
+                            visual.instrument().toUpperCase(Locale.ROOT)));
+                    data.setNote(new org.bukkit.Note(visual.note()));
+                } catch (Throwable t) {
+                    return "component-failed: " + t;
+                }
+                org.bukkit.Location eye = p.getLocation();
+                org.bukkit.util.Vector dir = eye.getDirection();
+                dir = new org.bukkit.util.Vector(dir.getX(), 0, dir.getZ());
+                if (dir.lengthSquared() < 1.0E-4) {
+                    dir = new org.bukkit.util.Vector(0, 0, 1); // level look fallback (+Z)
+                }
+                dir.normalize();
+                org.bukkit.Location at = eye.clone()
+                        .add(dir.multiply(2.5));
+                at.setY(eye.getBlockY());
+                Block b = at.getBlock();
+                b.setBlockData(data);
+                // verify: the world must now hold exactly that state
+                if (b.getBlockData() instanceof org.bukkit.block.data.type.NoteBlock nb
+                        && nb.getInstrument() == org.bukkit.Instrument.valueOf(
+                                visual.instrument().toUpperCase(Locale.ROOT))
+                        && nb.getNote().getId() == visual.note()) {
+                    return "verified @" + b.getX() + "," + b.getY() + "," + b.getZ();
+                }
+                return "NOT verified @" + b.getX() + "," + b.getY() + "," + b.getZ();
+            });
+            log().info(LOG_PREFIX + "f2v block: placed " + moddedBlockId
+                    + " as note_block[instrument=" + visual.instrument()
+                    + ",note=" + visual.note() + "] for " + playerName
+                    + " (" + verified + ")");
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v block: place FAILED: " + t);
+        }
+    }
+
+    /**
+     * Spawn the item_display rig IN VIEW of a player (the entity pixel leg —
+     * parity matrix "entities"): the packet-level v1 Rig. Stack = the HOST
+     * item carrying the modded model's CMD component; the pack's
+     * items/&lt;host&gt;.json renders the modded model on the stock client.
+     */
+    private void spawnDisplayFor(String playerName, String moddedItemId) {
+        try {
+            Player p = Bukkit.getPlayerExact(playerName);
+            if (p == null) {
+                log().warning(LOG_PREFIX + "f2v display: player not online: " + playerName);
+                return;
+            }
+            org.bukkit.Location eye = p.getLocation();
+            org.bukkit.util.Vector dir = eye.getDirection();
+            dir = new org.bukkit.util.Vector(dir.getX(), 0, dir.getZ());
+            if (dir.lengthSquared() < 1.0E-4) {
+                dir = new org.bukkit.util.Vector(0, 0, 1);
+            }
+            dir.normalize();
+            org.bukkit.Location at = eye.clone().add(dir.multiply(3.5));
+            at.setY(eye.getY() + 0.4); // chest height in a level camera view
+            String uuid = spawnVisualDisplay(worldName(), at.getX(),
+                    at.getY(), at.getZ(), moddedItemId);
+            log().info(LOG_PREFIX + "f2v display: rig for " + playerName
+                    + " @" + at.getBlockX() + "," + at.getBlockY() + ","
+                    + at.getBlockZ() + " -> " + uuid);
+        } catch (Throwable t) {
+            log().warning(LOG_PREFIX + "f2v display: spawn FAILED: " + t);
+        }
+    }
+
     // ---- helpers -------------------------------------------------------------
 
     private World world(String name) {
@@ -802,11 +928,28 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + " -> " + result);
             return true;
         }
+        // /cim placeblock <player> [moddedId] — the parity matrix "blocks"
+        // pixel-leg surface: the note_block stand-in placed in the viewer's
+        // front (block-channel-26-3.md).
+        if (args.length >= 2 && args[0].equalsIgnoreCase("placeblock")) {
+            String modded = args.length >= 3 ? args[2] : "cimtest:test_block";
+            placeVisualBlock(args[1], modded);
+            return true;
+        }
+        // /cim display <player> [moddedItemId] — the entity pixel-leg surface:
+        // the item_display rig spawned in the viewer's view.
+        if (args.length >= 2 && args[0].equalsIgnoreCase("display")) {
+            String modded = args.length >= 3 ? args[2] : "cimtest:test_block";
+            spawnDisplayFor(args[1], modded);
+            return true;
+        }
         sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.3)");
         sender.sendMessage(LOG_PREFIX + "kernel: Paper 26.3 | layer: mini NeoForge 1.21.1");
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
         sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));
         sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
+        sender.sendMessage(LOG_PREFIX + "blocks: /cim placeblock <player> [moddedId]");
+        sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

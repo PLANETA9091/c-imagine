@@ -76,8 +76,8 @@ public final class F2vPack {
     }
 
     /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
-    public record Result(List<VisualItem> items, String sha1, int entryCount,
-                         List<String> warnings) {
+    public record Result(List<VisualItem> items, List<VisualBlock> blocks,
+                         String sha1, int entryCount, List<String> warnings) {
     }
 
     /**
@@ -98,6 +98,20 @@ public final class F2vPack {
      */
     public record EquipmentAsset(String assetId, String legacyLayer1,
                                  String legacyLayer2) {
+    }
+
+    /**
+     * One block-standin manifest row (the parity matrix "blocks" channel):
+     * a modded block id -> the note_block slot its IN-WORLD form renders
+     * through on a stock client. Measured surface:
+     * docs/runtime-analysis/block-channel-26-3.md (structure_void/barrier
+     * are RenderShape.INVISIBLE in CODE — note_block is the measured
+     * stand-in: MODEL-rendered full cube, 27-instrument x 25-note slot
+     * space, partial variant keys are wildcards, graceful vanilla
+     * degradation). The slot rides vanilla blockstate ids — no CMD, no
+     * component codec, nothing per-instance.
+     */
+    public record VisualBlock(String moddedBlockId, String instrument, int note) {
     }
 
     /** Resource pack format for 26.3 (client version.json — measured). */
@@ -232,7 +246,45 @@ public final class F2vPack {
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows)
             throws IOException {
         return build(modsDir, outDir, manifestRows,
-                readEquipmentManifest(outDir.resolve("visual-equipment.tsv")));
+                readEquipmentManifest(outDir.resolve("visual-equipment.tsv")),
+                readBlockManifest(outDir.resolve("visual-blocks.tsv")));
+    }
+
+    /**
+     * Read {@code visual-blocks.tsv}: {@code moddedBlockId<TAB>instrument[
+     * <TAB>note]} — one note_block stand-in slot per row (measured surface:
+     * block-channel-26-3.md). Optional; missing file = no block overrides.
+     * Note defaults to 13 (a deliberate non-default pick so a vanilla
+     * note=0 note block elsewhere can never collide with the slot).
+     */
+    public static List<VisualBlock> readBlockManifest(Path tsv) throws IOException {
+        List<VisualBlock> rows = new ArrayList<>();
+        if (!Files.isRegularFile(tsv)) {
+            return rows;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 2) {
+                continue;
+            }
+            int note = 13;
+            if (parts.length >= 3 && !parts[2].isBlank()) {
+                try {
+                    note = Integer.parseInt(parts[2].trim());
+                } catch (NumberFormatException e) {
+                    continue; // malformed note — row dropped
+                }
+            }
+            rows.add(new VisualBlock(parts[0].trim(), parts[1].trim(), note));
+        }
+        rows.sort(Comparator.comparing(VisualBlock::moddedBlockId)
+                .thenComparing(VisualBlock::instrument)
+                .thenComparingInt(VisualBlock::note));
+        return rows;
     }
 
     /**
@@ -339,6 +391,15 @@ public final class F2vPack {
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
                                List<EquipmentAsset> equipmentRows)
             throws IOException {
+        return build(modsDir, outDir, manifestRows, equipmentRows,
+                readBlockManifest(outDir.resolve("visual-blocks.tsv")));
+    }
+
+    /** Full build with explicit equipment + block rows (selftest seam). */
+    public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
+                               List<EquipmentAsset> equipmentRows,
+                               List<VisualBlock> blockRows)
+            throws IOException {
         List<String> warnings = new ArrayList<>();
         List<VisualItem> rows = assignCmds(manifestRows);
         TreeMap<String, byte[]> entries = new TreeMap<>();
@@ -405,6 +466,28 @@ public final class F2vPack {
             emitEquipment(equipJars, asset, entries, warnings);
         }
 
+        // block channel (parity matrix "blocks", block-channel-26-3.md):
+        // note_block stand-in slots -> the modded block models, ONE merged
+        // blockstates override, manifest-driven slot allocation
+        List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
+        for (VisualBlock block : blockRows) {
+            String ref = resolveAndCopyBlockGraph(jars, block.moddedBlockId(),
+                    entries, warnings);
+            if (ref != null) {
+                blockVariants.add(Map.entry(
+                        "instrument=" + block.instrument() + ",note=" + block.note(),
+                        ref));
+            } else {
+                warnings.add("no block model found for " + block.moddedBlockId()
+                        + " in any mod jar — block row dropped");
+            }
+        }
+        blockVariants.sort(Map.Entry.comparingByKey());
+        if (!blockVariants.isEmpty()) {
+            entries.put("assets/minecraft/blockstates/note_block.json",
+                    blockStateDef(blockVariants).getBytes(StandardCharsets.UTF_8));
+        }
+
         byte[] zip = zip(entries);
         String sha1 = sha1Hex(zip);
         Files.createDirectories(outDir);
@@ -421,7 +504,7 @@ public final class F2vPack {
         }
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
-        return new Result(rows, sha1, entries.size(), warnings);
+        return new Result(rows, blockRows, sha1, entries.size(), warnings);
     }
 
     private static List<Path> listJars(Path modsDir) throws IOException {
@@ -478,6 +561,67 @@ public final class F2vPack {
             }
         }
         return null;
+    }
+
+    /**
+     * Resolve the BLOCK model for {@code moddedId} (ns:path) inside the mod
+     * jars and copy its whole parent graph + textures into the pack.
+     * Candidates: models/block/&lt;path&gt;.json (block model location),
+     * then models/&lt;path&gt;.json (bare model). Returns the model
+     * reference the blockstate variant must point at ("ns:block/path" or
+     * "ns:path"), or null when nothing was found.
+     */
+    private static String resolveAndCopyBlockGraph(List<Path> jars, String moddedId,
+                                                   TreeMap<String, byte[]> entries,
+                                                   List<String> warnings) throws IOException {
+        int colon = moddedId.indexOf(':');
+        if (colon <= 0) {
+            warnings.add("malformed modded id: " + moddedId);
+            return null;
+        }
+        String ns = moddedId.substring(0, colon);
+        String path = moddedId.substring(colon + 1);
+        String[] candidates = {"assets/" + ns + "/models/block/" + path + ".json",
+                "assets/" + ns + "/models/" + path + ".json"};
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                for (String cand : candidates) {
+                    ZipEntry e = zf.getEntry(cand);
+                    if (e == null) {
+                        continue;
+                    }
+                    byte[] modelBytes = zf.getInputStream(e).readAllBytes();
+                    entries.putIfAbsent(cand, modelBytes);
+                    copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
+                    if (cand.startsWith("assets/" + ns + "/models/block/")) {
+                        return ns + ":block/" + path;
+                    }
+                    return ns + ":" + path;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The merged {@code assets/minecraft/blockstates/note_block.json}
+     * override: one variant per manifest row, keys sorted (deterministic
+     * zip). Partial selector keys are wildcards for unspecified properties
+     * (VariantSelector measured, block-channel-26-3.md §3) — the note
+     * property pins the slot, powered stays unspecified.
+     */
+    static String blockStateDef(List<Map.Entry<String, String>> variants) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n  \"variants\": {\n");
+        for (int i = 0; i < variants.size(); i++) {
+            Map.Entry<String, String> e = variants.get(i);
+            sb.append("    \"").append(e.getKey())
+              .append("\": {\"model\": \"").append(e.getValue())
+              .append("\"}");
+            sb.append(i + 1 < variants.size() ? ",\n" : "\n");
+        }
+        sb.append("  }\n}\n");
+        return sb.toString();
     }
 
     /** Depth-limited parent walk within the SAME jar as the entry model. */
@@ -765,6 +909,8 @@ public final class F2vPack {
             "{\"parent\": \"minecraft:item/handheld\", \"textures\": {\"layer0\": \"fakemod:deep/custom_tex\"}}";
     private static final String MODEL_WAND =
             "{\"parent\": \"minecraft:item/handheld\", \"textures\": {\"layer0\": \"fakemod:item/wand_tex\"}}";
+    private static final String MODEL_BLOCK =
+            "{\"parent\": \"minecraft:block/cube_all\", \"textures\": {\"all\": \"fakemod:block/rock_tex\"}}";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -783,7 +929,10 @@ public final class F2vPack {
                     MODEL_DEEP.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/item/wand_thing.json",
                     MODEL_WAND.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/rock.json",
+                    MODEL_BLOCK.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/textures/item/wand_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/block/rock_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/models/armor/shiny_layer_1.png", testPng());
             jarEntries.put("assets/fakemod/textures/models/armor/shiny_layer_2.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/cool_sword_tex.png", testPng());
@@ -799,6 +948,9 @@ public final class F2vPack {
                     + "fakemod:deep_thing\tminecraft:paper\t2000.0\n"
                     + "fakemod:wand_thing\tminecraft:brick\t\tselect:wand\n",
                     StandardCharsets.UTF_8);
+            Files.writeString(out.resolve("visual-blocks.tsv"),
+                    "fakemod:rock\tcreeper\t13\n",
+                    StandardCharsets.UTF_8);
 
             // -- build twice, must be byte-identical ------------------------------
             List<EquipmentAsset> equipment = List.of(new EquipmentAsset(
@@ -812,6 +964,12 @@ public final class F2vPack {
             }
             if (r1.items().size() != 3) {
                 failures.add("expected 3 resolved rows, got " + r1.items().size());
+            }
+            if (r1.blocks().size() != 1
+                    || !"fakemod:rock".equals(r1.blocks().get(0).moddedBlockId())
+                    || !"creeper".equals(r1.blocks().get(0).instrument())
+                    || r1.blocks().get(0).note() != 13) {
+                failures.add("block row not resolved: " + r1.blocks());
             }
             // auto cmd must be CMD_BASE for the first sorted row
             if (r1.items().get(0).cmd() != CMD_BASE
@@ -882,6 +1040,23 @@ public final class F2vPack {
                     .filter(i -> i.moddedId().equals("fakemod:wand_thing"))
                     .allMatch(i -> !i.isFloatDispatch() && "wand".equals(i.selectValue())),
                     "wand row resolved as select:wand");
+            // BLOCK channel (parity matrix "blocks"): the note_block
+            // blockstate override maps the stand-in slot to the modded model
+            String nb = str(entries, "assets/minecraft/blockstates/note_block.json");
+            expect(failures, nb.contains("\"instrument=creeper,note=13\""),
+                    "note_block variant key instrument=creeper,note=13");
+            expect(failures, nb.contains("\"model\": \"fakemod:block/rock\""),
+                    "note_block variant points at the modded block model");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/models/block/rock.json"), "block model copied");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/textures/block/rock_tex.png"),
+                    "block texture copied (block/ is auto-atlased)");
+            // determinism with the block channel active
+            if (!r1.sha1().equals(r2.sha1())) {
+                failures.add("sha1 not deterministic with blocks: "
+                        + r1.sha1() + " vs " + r2.sha1());
+            }
             // EQUIPMENT surface (M6 pull-forward): legacy armor textures land
             // at the 26.3 canonical locations + the asset json
             String equipJson = str(entries, "assets/fakemod/equipment/shiny.json");

@@ -1,0 +1,16 @@
+# c-imagine F2V 2.0 visual block manifest (the parity matrix "blocks" channel)
+#
+# Format (TSV): modded_block_id <TAB> instrument [<TAB> note]
+#   - the stand-in slot is minecraft:note_block[instrument=<instr>,
+#     note=<note>] — the pack's merged blockstates/note_block.json override
+#     renders the MODDED block model through that slot on any stock client
+#     (measured surface: docs/runtime-analysis/block-channel-26-3.md;
+#     structure_void/barrier are RenderShape.INVISIBLE in CODE and unusable).
+#   - instrument: one of the 27 NoteBlockInstrument serialized names
+#     (26.3: harp..custom_head incl. the trumpet family).
+#   - note: 0..24, default 13 (non-default pick — a vanilla note=0 note
+#     block elsewhere can never collide with the slot).
+#   - graceful degradation: clients WITHOUT the pack see a normal note
+#     block (all instruments share one vanilla model).
+#   - only rows listed here enter the pack (manifest-driven allocation).
+cimtest:test_block	creeper	13
