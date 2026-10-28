@@ -190,14 +190,29 @@ unknown ids; profiling budget tightened (RSS ≤ modpack×1.15 gate enabled).
   override; `/cim placeblock` places the stand-in 3 blocks ahead (paper-api
   NoteBlock javap-proven). Run 43: AE(block-pre,block)=79211 (gate 3000) —
   the modded iron cube renders in-world on the stock client.
-- **parity-diff (the "identical to the modded client" crown)**:
-  `parity-diff.yml` — job 1 boots a REAL NeoForge 21.1.265 server + the REAL
-  NeoForge 1.21.1 client (cimtest installed) under xvfb (the launch contract
-  decompiled from BootstrapLauncher: legacyClassPath, filename-startsWith
-  ignoreList -> resources jar named exactly client-extra.jar; measured
-  installer chain jarsplitter->AutoRenamingTool->binarypatcher); job 2
-  pixel-diffs the hotbar slot-0 icon crop (48x48 at scale 3) and the block
-  region against the c-imagine run — the identity datum.
+- **parity-diff (the "identical to the modded client" crown) — RUN 4 GREEN,
+  identity datum measured (2026-10-28)**: `parity-diff.yml` — job 1 boots a
+  REAL NeoForge 21.1.265 server + the REAL NeoForge 1.21.1 client (cimtest
+  installed in gameDir/mods) under xvfb (launch contract decompiled from
+  BootstrapLauncher; the OFFICIAL-LAUNCHER COMPOSITION lesson: universal/client
+  jars ride ONLY libraryDirectory — cp carries just the version-json
+  libraries); job 2 pixel-diffs the hotbar slot-0 icon crop (48x48 at scale 3)
+  and the block region against the c-imagine run. Run 4 measured:
+  AE(icon identity: truth vs c-imagine) = **2300** (48x48 = 2304 px — the
+  stock client renders the modded item identically), with symmetric
+  appearance deltas (AE 1532 both sides); block region 50281 (ungated,
+  camera-alignment sensitive).
+- **M6.1 HUD/dialog channel — wire-proven (integration green)**: the 26.3
+  dialog registry as the native replacement for v1's ClientOnlyHudSimulator
+  (contract: `runtime-analysis/dialog-hud-26-3.md`): CimPlugin builds an
+  inlined `Dialog.create` (multi_action + ItemDialogBody rendering the modded
+  cube stack + dynamic/custom click id), `Audience.showDialog` sends the
+  COMMON-phase `ClientboundShowDialogPacket`; cimbot observes show_dialog
+  (live play ids 142/143 — the documented +1 clientbound drift) and answers
+  serverbound custom_click (id 68; absent NBT = single 0x00 EndTag); the
+  plugin's `PlayerCustomClickEvent` closes the round-trip. Palette channel
+  measured (`paletted_permutations` = atlas source in 26.3, standalone file
+  format removed — f2v2-pack-synthesis-26-3.md §12).
 - **M6 pull-forward (armor channel)**: equipment/<ns>/<id>.json emitted from
   LEGACY 1.21.1 armor texture locations (textures/models/armor/_layer_N.png ->
   entity/equipment/humanoid[_leggings]/ — path-only formula measured in
