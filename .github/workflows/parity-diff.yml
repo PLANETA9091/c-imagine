@@ -129,7 +129,7 @@ jobs:
       - name: NeoForge client joins under xvfb + truth shots
         run: |
           set -euo pipefail
-          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java scripts/visual/Key.java
+          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java scripts/visual/PixelDiffTol.java scripts/visual/Key.java
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
@@ -282,17 +282,24 @@ jobs:
           AE_block=$(java -cp vtools PixelDiff truth/shots/t02-block.png cim/shots/10-block.png 500 460 280 220)
           echo "AE(block region: truth vs c-imagine) = $AE_block  <-- measurement (ungated)"
           # CAMERA-LOCK legs (the real identity rig — camera-lock-26-3.md):
-          # first both sides must show the block appearing on the SAME locked
-          # camera (appearance gates), then THE BLOCK IDENTITY DATUM: the
-          # truth client's REAL modded block vs the c-imagine stock client's
-          # pack-rendered stand-in — same camera, same cell, same sun, F1
-          # (no HUD) on both sides.
-          AE_truth_locked=$(java -cp vtools PixelDiff truth/shots/t03-locked-pre.png truth/shots/t04-block-locked.png 460 110 360 320)
-          AE_cim_locked=$(java -cp vtools PixelDiff cim/shots/13-locked-pre.png cim/shots/14-locked.png 460 110 360 320)
-          echo "AE(block appearance: truth locked) = $AE_truth_locked"
-          echo "AE(block appearance: c-imagine locked) = $AE_cim_locked"
+          # CUBE-ONLY region (545,170,190,115 — the projected cube, measured
+          # run 47; floor outside it carries the cross-version grass/lightmap
+          # drift) + PixelDiffTol tolerance 4 (the ±2/255 lightmap drift
+          # between the 1.21.1 and 26.3 clients; the exact-match AE would
+          # otherwise count EVERY pixel differing — measured run 5: 114990
+          # on a VISUALLY identical frame). Both sides must show the block
+          # appearing on the SAME locked camera (appearance gates), then THE
+          # BLOCK IDENTITY DATUM: the truth client's REAL modded block vs
+          # the c-imagine stock client's pack-rendered stand-in — same
+          # camera, same cell, same sun, same TEXTURE (the mod carries its
+          # own — the 26.3 vanilla iron_block.png was redrawn, SHA differs),
+          # F1 (no HUD) on both sides.
+          AE_truth_locked=$(java -cp vtools PixelDiffTol truth/shots/t03-locked-pre.png truth/shots/t04-block-locked.png 545 170 190 115 4)
+          AE_cim_locked=$(java -cp vtools PixelDiffTol cim/shots/13-locked-pre.png cim/shots/14-locked.png 545 170 190 115 4)
+          echo "AE(block appearance: truth locked) = $AE_truth_locked (tol 4, cube-only)"
+          echo "AE(block appearance: c-imagine locked) = $AE_cim_locked (tol 4, cube-only)"
           [ "$AE_truth_locked" -gt "3000" ] || { echo "truth locked block did not appear (camera-lock leg broken)"; exit 1; }
           [ "$AE_cim_locked" -gt "3000" ] || { echo "c-imagine locked block did not appear (camera-lock leg broken)"; exit 1; }
-          AE_block_ident=$(java -cp vtools PixelDiff truth/shots/t04-block-locked.png cim/shots/14-locked.png 460 110 360 320)
-          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident  <-- THE BLOCK IDENTITY DATUM (ungated; the gate locks to the measured value after calibration)"
+          AE_block_ident=$(java -cp vtools PixelDiffTol truth/shots/t04-block-locked.png cim/shots/14-locked.png 545 170 190 115 4)
+          echo "AE(block identity: truth vs c-imagine) = $AE_block_ident  <-- THE BLOCK IDENTITY DATUM (tol 4, cube-only; ungated until calibrated)"
           echo "F2F parity diff: identity datum recorded"

@@ -163,7 +163,7 @@ jobs:
           set -euo pipefail
           # Java-only screenshot/diff/key tools (measured: runners ship IM7
           # with no `import`/`xwd`); Robot needs the X display
-          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java scripts/visual/Key.java
+          javac -d vtools scripts/visual/Shot.java scripts/visual/PixelDiff.java scripts/visual/PixelDiffTol.java scripts/visual/Key.java
           # MEASURED (run 4): GlDevice needs a matching GLX visual — install
           # the software GL/Vulkan stack explicitly and expose GLX on Xvfb
           sudo apt-get update -qq
@@ -413,11 +413,14 @@ jobs:
           echo "AE(block,display)=$AE1011 AE(display,hold)=$AE1112 rig-pixels=$RIG"
           [ "$RIG" -gt "3000" ] || fail "item_display rig not visible above cloud drift (rig-pixels=$RIG) — the display entity did not render"
           # camera-lock leg: the stand-in cube must appear on the floor grid
-          # in front of the LOCKED camera (pre/shot share the identical
-          # camera — the AE is the block's own footprint; region per
-          # camera-lock-26-3.md: block center ~(640,262), ~195 px wide)
-          AE1314=$(java -cp vtools PixelDiff shots/13-locked-pre.png shots/14-locked.png 460 110 360 320)
-          echo "AE(locked-pre,locked)=$AE1314"
+          # in front of the LOCKED camera. Region = CUBE-ONLY (545,170,190,115
+          # — the projected cube, measured run 47; the floor below it carries
+          # a light-map mystery region — camera-lock-26-3.md §3) with
+          # PixelDiffTol tolerance 4 (the ±2/255 lightmap drift between the
+          # two client versions would otherwise count EVERY pixel differing
+          # — camera-lock-26-3.md)
+          AE1314=$(java -cp vtools PixelDiffTol shots/13-locked-pre.png shots/14-locked.png 545 170 190 115 4)
+          echo "AE(locked-pre,locked)=$AE1314 (tol 4, cube-only region)"
           [ "$AE1314" -gt "3000" ] || fail "locked stand-in block not visible (AE=$AE1314) — the camera-lock leg did not place the block"
           # palette channel: the recolored variant must visibly differ from
           # the base gem in the hotbar slot-0 crop — the paletted_permutations

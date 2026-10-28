@@ -915,3 +915,50 @@ Stage Summary:
   spawn randomization, run 47 must produce the CLEAN locked pre/shot pair
   (pure ground background, the only delta = the block). The palette
   channel closed with its first pixel datum (2304).
+
+---
+Task ID: 12-d
+Agent: main
+Task: PARITY RUN 5 datum measured — cross-version texture + lightmap drift diagnosed from the artifacts; the rig gets its final form (own texture + tolerance)
+
+Work Log:
+- PARITY RUN 5 SUCCESS: both jobs green, ALL gates passed, the datums:
+  icon identity 2291 (repro of run 4's 2300 — stable), block appearance
+  truth 74287 vs cim 74300 (a 13-pixel difference — the footprints are
+  nearly identical!), block identity (big region) 114990/115200 — EVERY
+  pixel differing on a frame that is VISUALLY IDENTICAL (both artifact
+  frames inspected by eye: the same iron cube centered on bare ground).
+- Artifact-level pixel forensics (scripts/calibrate-region.py, stdlib PNG
+  reader): (1) the block EDGES coincide pixel-perfectly across the stacks
+  (the camera lock is exact — the column profile transitions land on the
+  same rows); (2) the BLOCK pixels differ by a CONSTANT FACTOR ~1.07 on
+  every face; (3) primary-source check: 26.3 REDREW vanilla
+  iron_block.png (SHA c972a8f33dc8 1.21.1 vs 9b069395bdc1 26.3) while
+  grass_block_top.png is byte-identical — the mod delegated its texture
+  to minecraft:block/iron_block and the two clients resolved DIFFERENT
+  textures; (4) the identical grass still differs ±2/255 per channel —
+  the LIGHTMAP drift between the clients — which the strict exact-match
+  AE counts as differing everywhere; (5) a diamond-shaped floor region
+  in front of the block dims ~4% after the setblock (unexplained, OUT of
+  the cube region — logged as the §3 mystery).
+- Fixes, all three baked in:
+  * cimtest now CARRIES its texture (textures/block/test_block.png =
+    the 1.21.1 iron copy, SHA c972a8f33dc8) — the model points at
+    cimtest:block/test_block; BOTH stacks now render the SAME texture
+    (the pack copies the modded texture; the truth client renders the
+    mod's own asset). This is the GENERAL rule, not a hack: real mods
+    ship their textures — the pack delivers them.
+  * scripts/visual/PixelDiffTol.java: per-channel tolerance (a pixel is
+    equal when |dR|,|dG|,|dB| all <= tol) — the ±2 lightmap drift stops
+    poisoning the count; tol 4 everywhere on the locked legs.
+  * region tightened to the projected CUBE ONLY (545,170,190,115 —
+    measured run 47 footprint), keeping the floor-mystery region out.
+- Light checks: YAML parse, texture SHA verification, artifact
+  forensics. No local game runs.
+
+Stage Summary:
+- The identity harness survived its first REAL cross-version collision
+  (a redrawn vanilla texture + a drifting lightmap) and came out with a
+  rig that measures TRUE channel identity: same camera, same cell, same
+  texture, tolerance-bounded comparison. The next parity run must
+  produce the calibrated BLOCK IDENTITY DATUM on the cube-only region.
