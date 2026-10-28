@@ -1159,3 +1159,43 @@ Stage Summary:
   stacks with the same ordinary-mod census emitter. The next integration
   + mod-matrix runs return either GREEN datums or the first exact fix
   backlog rows.
+
+---
+Task ID: 12-k
+Agent: main
+Task: CONTINUOUS TEST->FIX LOOP (owner directive) — Create rung autopsies, jarjar-library gate
+
+Work Log:
+- a409347 GREEN on both workflows: the FIRST cross-stack census parity
+  datum (vanilla + cimtest + cimscene on real NeoForge 21.1.265 vs the
+  shadow-space layer) — registration parity infrastructure proven.
+- 7f25aa5 RED autopsy (artifacts, not guesses):
+  * cimscene-truth: the census TSV EXISTED all along (175 bytes,
+    block=1060 item=1333 sound=1611 ...); the "sanity" greps had SPACES
+    where the TSV has TABs. Asserts rebuilt tab-proof with awk -F'\t'.
+  * fetch-ladder slug 'mods-create' -> 404; Modrinth slug is 'create'
+    (6.0.10 = create-1.21.1-6.0.10.jar, 19123767 bytes, zero deps).
+  * f333913 RED: slug fixed, output-dir arg order wasn't — jar landed in
+    create/, jobs copy from mods-create/. Usage is
+    fetch-ladder.sh <output-dir> <slug>; now 'mods-create create'.
+- Static autopsy of Create 6.0.10 (bytecode + jarjar metadata, no run):
+  javafml; @Mod class = com.simibubi.create.Create with (IEventBus,
+  ModContainer) ctor injection; REGISTRATE framework
+  (com.tterrag.registrate.AbstractRegistrate) drives registration;
+  ModLoadingContext, StackWalker caller guard, NeoForgeMod.enableMilkFluid,
+  FMLCommonSetupEvent.enqueueWork (DeferredWorkQueue — the layer runs it);
+  jarjar: flywheel 1.0.6 + ponder 1.0.82 (mods) + Registrate MC1.21-1.3.0+67
+  (NO mods.toml = library).
+- PREDICTED CONSTRUCTION FAILURE FIXED PREEMPTIVELY (c39b84f): jarjar
+  entries without mod ids were skipped by the scanner -> Registrate absent
+  from the shadow class index -> create ctor NoClassDefFoundError. Now
+  extracted + manifest 'classpath' + same addModJars call (mod section:
+  refs-only relocation, original names; automatic modules read the unnamed
+  module). FML mod list and relocation table stay untouched — exact mirror
+  of real FML's jarjar library behavior.
+
+Stage Summary:
+- The loop is running per the owner directive: every red is autopsied from
+  artifacts/log same-session, fixed, and re-pushed without waiting.
+- Next verdicts: mod-matrix @ c39b84f = Create truth census + layer census;
+  RED rows there are the exact Create registration fix backlog.
