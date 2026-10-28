@@ -241,6 +241,27 @@ jobs:
           done
           echo "=== does the boot log name any other class source? ==="
           grep -iE "Found mod file|libraries.list|versions.list|modules.list" srv-create/boot.log | head -20
+          echo "=== the BUNDLER anatomy (nested game jars = the real class source) ==="
+          B=srv-create/libraries/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-server.jar
+          unzip -l "$B" | grep -vE "\.class$" | head -30
+          echo "--- bundler lists ---"
+          for L in versions.list libraries.list modules.list; do
+            echo "[$L]"; unzip -p "$B" "META-INF/$L" 2>/dev/null | head -12
+          done
+          echo "--- nested jar class counts (Renderable/Screen/BakedModel presence) ---"
+          python3 - <<'PY'
+          import zipfile, io
+          z = zipfile.ZipFile("srv-create/libraries/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-server.jar")
+          for n in z.namelist():
+              if n.endswith(".jar"):
+                  data = z.read(n)
+                  nz = zipfile.ZipFile(io.BytesIO(data))
+                  names = nz.namelist()
+                  print(n, "entries=", len(names),
+                        "renderable=", sum(1 for x in names if "client/gui/components/Renderable" in x),
+                        "screen=", sum(1 for x in names if "client/gui/screens/Screen" in x),
+                        "bakedmodel=", sum(1 for x in names if "client/resources/model/BakedModel" in x))
+          PY
 
       - name: upload create truth census
         if: always()
