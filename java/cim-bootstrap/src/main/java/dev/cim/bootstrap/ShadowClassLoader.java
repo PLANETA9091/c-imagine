@@ -39,21 +39,20 @@ public final class ShadowClassLoader extends ClassLoader {
         "org.xml.sax.", "org.ietf.jgss.",
     };
 
-    /** Jar name fragments excluded from the layer walk. The REAL dedicated
-     * server's game classpath (dumped from a green create-truth run) is:
-     * legacyClassPath libraries + the srg jar (ProductionServerProvider, as
-     * game content) + the universal jar (the neoforge mod). Everything else
-     * the installer leaves in libraries/ is a build/launch intermediate and
-     * must NOT serve classes — in particular the SLIM jar (unpatched vanilla
-     * classes) sorts before the SRG jar alphabetically and its first-wins
-     * index entries were shadowing the binpatched ones, and the server
-     * BUNDLER is not on the real classpath at all (it carries a partial
-     * client-class set — Screen without Renderable — that made dist-guarded
-     * client probes succeed where the real server cleanly fails them). */
+    /** Jar name fragments excluded from the layer walk: build/launch
+     * intermediates the real server never serves classes from.
+     *
+     * The server BUNDLER (neoforge-&lt;ver&gt;-server.jar) stays INDEXED —
+     * every green run's class resolution went through it and through the slim
+     * jar — but its entries under {@code net/minecraft/client/**} are
+     * filtered at index time (see buildIndex): on the real dedicated server
+     * those client classes do not exist, and Create's dist-guarded client
+     * probes must FAIL cleanly exactly like they do there (the bundler
+     * carries Screen WITHOUT Renderable — an indexed Screen made the probe
+     * succeed and then die on the missing remainder). */
     private static final String[] LAYER_EXCLUDES = {
         "-unpacked.jar", "-sources.jar", "-javadoc.jar", "server-1.21.1.jar",
         "-slim.jar",
-        "-server.jar",
     };
 
     private final AtomicLong defined = new AtomicLong();
@@ -365,11 +364,21 @@ public final class ShadowClassLoader extends ClassLoader {
     private Map<String, IndexEntry> buildIndex() {
         Map<String, IndexEntry> map = new HashMap<>(1 << 18);
         for (int i = 0; i < jars.size(); i++) {
+            // The server BUNDLER jar (neoforge-<ver>-server.jar) ships a
+            // partial PATCHED vanilla set — INCLUDING client classes the real
+            // dedicated server never has (Screen yes, Renderable no). Its
+            // net/minecraft/client/** entries must not resolve: Create's
+            // dist-guarded client probes have to fail CLEANLY, exactly like
+            // they do on the real server.
+            boolean bundler = jars.get(i).getName().endsWith("-server.jar");
             var entries = jars.get(i).entries();
             while (entries.hasMoreElements()) {
                 JarEntry e = entries.nextElement();
                 String name = e.getName();
                 if (name.endsWith("/") || name.endsWith("module-info.class")) {
+                    continue;
+                }
+                if (bundler && name.startsWith("net/minecraft/client/")) {
                     continue;
                 }
                 if (name.endsWith(".class")) {
