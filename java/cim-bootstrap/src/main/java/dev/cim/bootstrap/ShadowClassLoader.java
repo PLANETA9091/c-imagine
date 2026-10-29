@@ -314,9 +314,7 @@ public final class ShadowClassLoader extends ClassLoader {
         // checker forbids them. The rejection text names the ORIGINAL class
         // like the real server does.
         if (source.internalName().startsWith("net/minecraft/client/")) {
-            String origDots = source.internalName()
-                    .substring(0, source.internalName().length() - ".class".length())
-                    .replace('/', '.');
+            String origDots = source.internalName().replace('/', '.');
             throw new RuntimeException("Attempted to load class " + origDots
                     + " for invalid dist DEDICATED_SERVER");
         }

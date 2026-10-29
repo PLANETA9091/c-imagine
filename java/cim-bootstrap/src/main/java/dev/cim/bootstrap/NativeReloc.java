@@ -114,8 +114,16 @@ public final class NativeReloc {
      *  before mod construction; the CI gate asserts it is non-zero so the
      *  dist-strip parity can never silently stop firing (12-q). */
     public static long clientMembersStripped() {
-        ensureLoaded();
-        return clientMembersStripped0();
+        // NOTE: the shadow space carries its own copy of this class whose
+        // libPath was never setup() (Bootstrap arms the APP-loader copy), so
+        // ensureLoaded() here would wrongly report "path not set" even though
+        // the native library is loaded process-wide and the JNI symbol binds.
+        // Resolve directly; -1 means the library genuinely is not loaded.
+        try {
+            return clientMembersStripped0();
+        } catch (UnsatisfiedLinkError e) {
+            return -1;
+        }
     }
 
     private static native void registerMods0(String manifestJson);

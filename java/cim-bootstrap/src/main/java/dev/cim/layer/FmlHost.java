@@ -304,8 +304,9 @@ public final class FmlHost {
             // stage mirrors that. Log the count so the CI gate can assert
             // the strip actually fired.
             try {
-                System.out.println(LOG + " client members stripped: "
-                        + dev.cim.bootstrap.NativeReloc.clientMembersStripped());
+                long n = dev.cim.bootstrap.NativeReloc.clientMembersStripped();
+                System.out.println(LOG + " client members stripped: " + n
+                        + (n < 0 ? " (native library not loaded)" : ""));
             } catch (Throwable t) {
                 System.out.println(LOG + " client members stripped: unavailable: " + t);
             }

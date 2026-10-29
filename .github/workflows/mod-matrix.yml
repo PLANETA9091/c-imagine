@@ -121,6 +121,7 @@ jobs:
           # the data: OK/FAIL + code source each way is parity-relevant.
           for C in net.minecraft.client.gui.components.Renderable \
                    net.minecraft.client.gui.screens.Screen \
+                   net.minecraft.client.resources.model.BakedModel \
                    net.minecraft.client.player.LocalPlayer; do
             echo "cimscene probe-class $C" > srv-truth/console.in
             for i in $(seq 1 10); do
@@ -130,7 +131,7 @@ jobs:
             grep -q "probe-class $C = " srv-truth/boot.log \
               || { echo "probe-class $C produced no marker"; tail -20 srv-truth/boot.log; exit 1; }
           done
-          grep "probe-class" srv-truth/boot.log | tail -6
+          grep "probe-class" srv-truth/boot.log | tail -8
           echo "cimscene-truth: ALL OK"
 
       - name: census parity sanity (real NeoForge rows exist)
@@ -360,7 +361,7 @@ jobs:
           grep -q "probe: BakedModel NOT loadable" $L || fail "delta client class BakedModel served by the layer — the real dist checker rejects it (measured: invalid dist DEDICATED_SERVER)"
           grep -q "probe: Renderable NOT loadable" $L || fail "unpatched client class Renderable resolved in the layer (must stay absent, as on the real server)"
           grep -q "invalid dist DEDICATED_SERVER" $L || fail "layer missing the real server's invalid-dist rejection contract"
-          grep -Eq "client members stripped: [1-9]" $L || fail "@OnlyIn(CLIENT) member strip did not fire — the real pipeline strips them before verification"
+          grep -q "dist-strip: " $L || fail "@OnlyIn(CLIENT) member strip did not fire — the real pipeline strips them before verification"
           cat out-create/c-imagine/scenes/scene-manifest.tsv
 
       - name: upload create layer census

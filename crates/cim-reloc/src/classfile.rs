@@ -561,6 +561,9 @@ impl ClassFile {
         let stripped = (before_f - body.fields.len() + before_m - body.methods.len()) as u64;
         stats.client_members_stripped += stripped;
         crate::add_client_members_stripped(stripped);
+        if stripped > 0 {
+            eprintln!("[cim-reloc] dist-strip: {original_name} removed {stripped} @OnlyIn(CLIENT) member(s)");
+        }
         // Access transformers (M2): widen class + member access exactly like
         // a real AT-patched runtime. Lookups use the ORIGINAL names — the
         // pool is untouched at this point.

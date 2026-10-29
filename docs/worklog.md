@@ -1433,3 +1433,49 @@ Stage Summary:
   delta union classpath + member strip + class-load rejection. Next
   verdict either constructs Create in the shadow space or names the next
   gate on the chain.
+
+---
+Task ID: 12-r
+Agent: main
+Task: Autopsy III — the strip ran but a constraint survived; telemetry hardened
+
+Work Log:
+- Run 973dff5 verdict: the dist-guard FIRED on the construct chain
+  (Create.<clinit>:91 → BakedModel → rejected "invalid dist") — the layer
+  now FAILS the load the same way the real server would IF it resolved
+  that class there. But the truth leg constructs Create, so on the real
+  server the resolution NEVER happens — the verifier constraint that our
+  layer records still exists, i.e. the @OnlyIn(CLIENT) strip missed (or
+  was not applied to) the class whose bytecode carries the BakedModel
+  reference. Create.class and AllBlocks.class carry ZERO BakedModel
+  constants (raw byte proof) — the constraint holder is a class loaded
+  during :91's CreateRegistrate init chain.
+- The patch-annotation finding REVERSES the earlier assumption:
+  BakedModel.java.patch ADDS @OnlyIn(Dist.CLIENT) (patch line 5) while
+  Screen.java.patch adds none — the delta's client classes carry
+  NeoForge-injected annotations, and the real dist checker keys on the
+  class annotation (BakedModel → rejected on the real server too — the
+  probe-class answer for it joins the truth-leg probe list this commit).
+- Fixes shipped:
+  * per-class strip telemetry from the relocator ("[cim-reloc] dist-strip:
+    <class> removed N @OnlyIn(CLIENT) member(s)") — the next run names
+    exactly what got stripped and what did not;
+  * the dist-guard rejection text now carries the full class name (the
+    relocated index keys carry no ".class" suffix — the substring hack
+    truncated "BakedModel" to "Bake");
+  * the strip counter reads the process-global JNI symbol directly (the
+    shadow-space copy of NativeReloc has no libPath — Bootstrap arms the
+    APP-loader copy — ensureLoaded() wrongly refused there);
+  * the truth leg probes BakedModel in addition to Renderable/Screen/
+    LocalPlayer; the layer gate greps the dist-strip telemetry instead of
+    the fragile counter line.
+- Verification done statically: ElevatorContactBlock.displayScreen's
+  @OnlyIn(CLIENT) sits exactly where the walker looks (member attrs →
+  RuntimeVisibleAnnotations → OnlyIn → enum Dist.CLIENT), so the strip
+  WILL catch it; the surviving constraint is a different holder, named by
+  the next run's telemetry.
+
+Stage Summary:
+- The loop is closing: guard contract verified live, strip verified
+  structurally, telemetry per class deployed. The next verdict either
+  constructs Create or names the exact class the strip misses.
