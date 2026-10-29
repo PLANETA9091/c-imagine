@@ -16,7 +16,7 @@ on:
   push:
     paths:
       - 'scene-mod/**'
-      - 'scripts/cimscene/**'
+      - 'scripts/**'
       - 'crates/**'
       - 'java/**'
       - '.github/workflows/mod-matrix.yml'
