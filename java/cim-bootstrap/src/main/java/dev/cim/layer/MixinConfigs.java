@@ -104,13 +104,17 @@ final class MixinConfigs {
                     if (e.getValue() instanceof Map<?, ?> targets) {
                         @SuppressWarnings("unchecked")
                         Map<String, Object> tm = (Map<String, Object>) targets;
+                        // Re-key in a copy: remove+put while iterating
+                        // entrySet() throws ConcurrentModificationException
+                        // the moment any target actually maps, and the
+                        // swallowed exception upstream then silently serves
+                        // the UNTRANSLATED config (mixins stop applying).
+                        java.util.LinkedHashMap<String, Object> re = new java.util.LinkedHashMap<>();
                         for (Map.Entry<String, Object> t : tm.entrySet()) {
-                            String mapped = mapDotted(t.getKey());
-                            if (!mapped.equals(t.getKey())) {
-                                Object v = tm.remove(t.getKey());
-                                tm.put(mapped, v);
-                            }
+                            re.put(mapDotted(t.getKey()), t.getValue());
                         }
+                        tm.clear();
+                        tm.putAll(re);
                     }
                 }
                 default -> {

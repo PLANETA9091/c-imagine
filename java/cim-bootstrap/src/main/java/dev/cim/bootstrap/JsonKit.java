@@ -33,12 +33,32 @@ final class JsonKit {
             char c = json.charAt(i);
             if (c == '\\' && i + 1 < json.length()) {
                 char n = json.charAt(++i);
-                out.append(switch (n) {
-                    case 'n' -> '\n';
-                    case 't' -> '\t';
-                    case 'r' -> '\r';
-                    default -> n;
-                });
+                switch (n) {
+                    case 'n' -> out.append('\n');
+                    case 't' -> out.append('\t');
+                    case 'r' -> out.append('\r');
+                    case 'b' -> out.append('\b');
+                    case 'f' -> out.append('\f');
+                    case '"' -> out.append('"');
+                    case '\\' -> out.append('\\');
+                    case '/' -> out.append('/');
+                    case 'u' -> {
+                        // unicode escape: four hex digits, per RFC 8259. Previously
+                        // this decoded as the literal 'u' + digits, silently
+                        // corrupting any escaped value.
+                        if (i + 4 < json.length()) {
+                            try {
+                                out.append((char) Integer.parseInt(json.substring(i + 1, i + 5), 16));
+                                i += 4;
+                            } catch (NumberFormatException e) {
+                                out.append(n); // keep the raw escape on bad input
+                            }
+                        } else {
+                            out.append(n);
+                        }
+                    }
+                    default -> out.append(n);
+                }
                 continue;
             }
             if (c == '"') {

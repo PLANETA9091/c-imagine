@@ -55,11 +55,24 @@ public final class SidecarStore {
 
     /** Shared process-wide store at {@code <cwd>/c-imagine/sidecar.tsv}. */
     public static SidecarStore shared() {
-        Path file = Path.of(System.getProperty("user.dir"), DIR_NAME, FILE_NAME);
-        SidecarStore store = new SidecarStore(file);
-        store.load();
+        // Memoize: a fresh instance per call meant divergent in-memory maps
+        // between holders, and a full file re-read on every access.
+        SidecarStore store = SHARED;
+        if (store == null) {
+            synchronized (SidecarStore.class) {
+                store = SHARED;
+                if (store == null) {
+                    Path file = Path.of(System.getProperty("user.dir"), DIR_NAME, FILE_NAME);
+                    store = new SidecarStore(file);
+                    store.load();
+                    SHARED = store;
+                }
+            }
+        }
         return store;
     }
+
+    private static volatile SidecarStore SHARED;
 
     /** Test-visible constructor. */
     static SidecarStore at(Path file) {

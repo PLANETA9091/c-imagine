@@ -57,6 +57,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private volatile boolean netLegStarted;
     /** F2V 2.0 visual pipeline state (M5.2). */
     private F2vState f2v;
+    private volatile dev.cim.f2v.PackHttp packHttp;
 
     private Logger log() {
         return getLogger();
@@ -116,6 +117,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             int port = Integer.getInteger("cim.f2v.port", 25580);
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
+            packHttp = http;
             log().info(LOG_PREFIX + "f2v pack: serving " + http.url()
                     + " sha1=" + result.sha1());
         } catch (Throwable t) {
@@ -208,6 +210,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        // Release the pack HTTP server: without this the bound port and its
+        // executor thread pool leaked on every plugin reload.
+        dev.cim.f2v.PackHttp http = packHttp;
+        packHttp = null;
+        if (http != null) {
+            try {
+                http.stop();
+            } catch (Throwable t) {
+                log().warning(LOG_PREFIX + "pack http stop failed: " + t);
+            }
+        }
         log().info(LOG_PREFIX + "paper plugin disabled");
     }
 

@@ -17,7 +17,7 @@ public final class Shot {
         int w = args.length >= 4 ? Integer.parseInt(args[1]) : 1280;
         int h = args.length >= 4 ? Integer.parseInt(args[2]) : 720;
         int x = args.length >= 4 ? Integer.parseInt(args[3]) : 0;
-        int y = args.length >= 4 ? Integer.parseInt(args[4]) : 0;
+        int y = args.length >= 5 ? Integer.parseInt(args[4]) : 0;
         Rectangle box = new Rectangle(x, y, w, h);
         BufferedImage img = new Robot().createScreenCapture(box);
         File out = new File(args[0]);

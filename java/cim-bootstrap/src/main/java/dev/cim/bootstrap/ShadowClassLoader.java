@@ -32,6 +32,15 @@ import java.util.stream.Stream;
  */
 public final class ShadowClassLoader extends ClassLoader {
 
+    static {
+        // Parallel-capable: per-classname load locks instead of one monitor
+        // for the whole loader. Without this every class load across all
+        // threads serialized on a single lock, and the classic
+        // cross-loader deadlock setup (shadow lock held while the platform
+        // loader defines a JDK class, and vice versa) was live.
+        ClassLoader.registerAsParallelCapable();
+    }
+
     private static volatile ShadowClassLoader instance;
 
     private static final String[] JDK_PREFIXES = {
@@ -269,6 +278,7 @@ public final class ShadowClassLoader extends ClassLoader {
         if (loader == null) {
             throw new IllegalStateException("ShadowClassLoader not prepared");
         }
+        int added = 0;
         for (String p : jarPaths) {
             if (p == null || p.isEmpty()) {
                 continue;
@@ -279,12 +289,17 @@ public final class ShadowClassLoader extends ClassLoader {
                 loader.jars.add(jar);
                 loader.jarManifests.add(jar.getManifest());
                 loader.jarUrls.add(Path.of(p).toUri().toURL());
+                added++;
             } catch (Exception e) {
                 throw new IllegalStateException("mod jar open: " + p + ": " + e, e);
             }
         }
         if (loader.modJarStart == Integer.MAX_VALUE) {
-            loader.modJarStart = loader.jars.size() - jarPaths.size();
+            // Base the boundary on the jars ACTUALLY added, not on the
+            // requested path list: skipped (null/empty) paths previously
+            // shifted the boundary into layer-jar territory and misclassified
+            // a layer jar under mod-relocation semantics.
+            loader.modJarStart = loader.jars.size() - added;
         }
         loader.index = null; // rebuilt lazily over the extended set
         System.out.println("[c-imagine] shadow loader: +" + jarPaths.size()

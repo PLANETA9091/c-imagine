@@ -304,7 +304,11 @@ public final class KernelBridge {
             System.out.println(LOG + " bridge smoke: " + (allOk ? "ALL OK" : "FAILED"));
         } catch (Throwable t) {
             StringBuilder chain = new StringBuilder(String.valueOf(t));
-            for (Throwable c = t.getCause(); c != null; c = c.getCause()) {
+            // Identity-set guard: a self-referential cause chain (A <- B <- A)
+            // would otherwise loop forever.
+            java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            seen.add(t);
+            for (Throwable c = t.getCause(); c != null && seen.add(c); c = c.getCause()) {
                 chain.append(" <- ").append(c);
             }
             System.out.println(LOG + " bridge smoke FAILED: " + chain);
@@ -350,8 +354,11 @@ public final class KernelBridge {
      * drift tables (renames, property-set and value-set drift).
      */
     public static String layerWrite(String world, int x, int y, int z, String layerState) {
-        String s = layerState.toLowerCase(Locale.ROOT);
-        if (s.startsWith("minecraft:") || s.startsWith("air")) {
+        // Case-INSENSITIVE prefix check on the ORIGINAL string: lowercasing
+        // the whole state corrupted case-sensitive modded ids
+        // ("Create:Gear" -> "create:gear") before sidecar routing.
+        String lower = layerState.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("minecraft:") || lower.startsWith("air")) {
             SIDECAR.erase(world, x, y, z);
             return StateMapper.get().layerToKernelState(layerState);
         }
