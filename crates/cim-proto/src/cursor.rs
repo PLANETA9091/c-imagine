@@ -78,16 +78,15 @@ impl<'a> ReadCursor<'a> {
         Ok(uuid::Uuid::from_bytes(bytes.try_into().expect("16 bytes")))
     }
 
-    /// Block position packed into an i64 (26/12/38 bit split used since 1.14).
+    /// Block position packed into an i64 (26/26/12 bit split used since 1.14):
+    /// x 26 bits at shift 38, z 26 bits at shift 12, y 12 bits at shift 0 —
+    /// mirrors [`WriteBuf::write_position`].
     pub fn read_position(&mut self) -> Result<(i32, i32, i32), ProtoError> {
         let bytes = self.read_bytes(8)?;
         let raw = u64::from_be_bytes(bytes.try_into().expect("8 bytes"));
-        let x = 26;
-        let z = 12;
-        let y = 38;
-        let px = sign_extend(raw >> (z + y), x);
-        let pz = sign_extend(raw >> y, z);
-        let py = sign_extend(raw, y);
+        let px = sign_extend(raw >> 38, 26);
+        let pz = sign_extend(raw >> 12, 26);
+        let py = sign_extend(raw, 12);
         Ok((px as i32, py as i32, pz as i32))
     }
 
@@ -169,4 +168,90 @@ impl WriteBuf {
 }
 
 // uuid is used by read_uuid/write_uuid; keep it a light, well-vetted dep.
-use uuid;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The 1.14+ block position layout: x(26)@38, z(26)@12, y(12)@0.
+    /// Regression guard for the read/write layout mismatch.
+    #[test]
+    fn position_roundtrip_matches_vanilla_layout() {
+        let cases = [
+            (0, 100, 2),
+            (1, -60, 3),
+            (-1, 319, -1),
+            (-33_554_432, -2048, 33_554_431),
+            (33_554_431, 2031, -33_554_432),
+            (123_456, 0, -98_765),
+        ];
+        for (x, y, z) in cases {
+            let mut w = WriteBuf::new();
+            w.write_position(x, y, z);
+            let raw = w.into_vec();
+            assert_eq!(raw.len(), 8, "packed position must be exactly 8 bytes");
+            let mut r = ReadCursor::new(&raw);
+            let (rx, ry, rz) = r.read_position().expect("decode packed position");
+            assert_eq!(
+                (rx, ry, rz),
+                (x, y, z),
+                "position roundtrip diverged for ({x},{y},{z})"
+            );
+        }
+    }
+
+    /// Byte-level check against the canonical vanilla encoding of a known
+    /// coordinate, independent of our own writer (guards both directions).
+    #[test]
+    fn position_decode_known_bytes() {
+        // encode(0, 100, 2) by hand: x<<38 | z<<12 | y
+        #[allow(clippy::identity_op)] // keep the x<<38 | z<<12 | y shape explicit
+        let raw: u64 = ((0i64 << 38) | (2i64 << 12) | 100i64) as u64;
+        let raw_bytes = raw.to_be_bytes();
+        let mut r = ReadCursor::new(&raw_bytes);
+        assert_eq!(
+            r.read_position().unwrap(),
+            (0, 100, 2),
+            "y must come from the low 12 bits, z from bits 12..38"
+        );
+    }
+
+    #[test]
+    fn position_read_rejects_short_buffer() {
+        let mut r = ReadCursor::new(&[0u8; 7]);
+        assert!(r.read_position().is_err(), "7 bytes must not decode");
+    }
+
+    #[test]
+    fn uuid_roundtrip() {
+        let u = uuid::Uuid::from_u128(0x0123_4567_89ab_cdef_feed_face_dead_beef);
+        let mut w = WriteBuf::new();
+        w.write_uuid(u);
+        let raw = w.into_vec();
+        let mut r = ReadCursor::new(&raw);
+        assert_eq!(r.read_uuid().unwrap(), u);
+    }
+
+    #[test]
+    fn read_string_rejects_negative_and_oversized_lengths() {
+        // negative length prefix
+        let mut r = ReadCursor::new(&[0xFF, 0xFF, 0xFF, 0xFF, 0x0F, b'a']);
+        assert!(r.read_string(16).is_err());
+        // length over the limit
+        let mut w = WriteBuf::new();
+        w.write_varint(32);
+        w.write_bytes(&[b'x'; 32]);
+        let raw = w.into_vec();
+        let mut r = ReadCursor::new(&raw);
+        assert!(r.read_string(16).is_err());
+        // exactly at the limit is fine
+        let mut r = ReadCursor::new(&raw);
+        assert_eq!(r.read_string(32).unwrap().len(), 32);
+    }
+
+    #[test]
+    fn read_u8_rejects_eof() {
+        let mut r = ReadCursor::new(&[]);
+        assert!(r.read_u8().is_err());
+    }
+}
