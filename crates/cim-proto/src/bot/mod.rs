@@ -19,7 +19,7 @@ use crate::varint::write_varint;
 use crate::ProtoError;
 
 mod conn;
-mod ids;
+pub mod ids;
 mod nbt;
 mod packets;
 mod vanilla;
