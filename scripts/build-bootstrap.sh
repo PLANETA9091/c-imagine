@@ -18,19 +18,28 @@ MIXIN_VERSION="0.16.4+mixin.0.8.7"
 ASM_VERSION="9.10.1"
 CP=""
 
-fetch() { # fetch <url> <dest>
-  if [ ! -f "$2" ]; then
-    echo "fetching compile-only $(basename "$2")"
-    curl -sfL --max-time 300 -o "$2" "$1"
-  fi
+fetch() { # fetch <dest> <url> [fallback-url...]
+  local dest="$1"; shift
+  if [ -f "$dest" ]; then return 0; fi
+  echo "fetching compile-only $(basename "$dest")"
+  local url
+  for url in "$@"; do
+    if curl -sfL --max-time 300 -o "$dest" "$url"; then
+      return 0
+    fi
+    rm -f "$dest"
+  done
+  echo "ERROR: all mirrors failed for $(basename "$dest")" >&2
+  return 1
 }
+
+mkdir -p "$OUT"
 
 if [ -n "${MIXIN_COMPILE_JAR:-}" ]; then
   cp "$MIXIN_COMPILE_JAR" "$OUT/sponge-mixin.jar"
 else
-  mkdir -p "$OUT"
-  fetch "https://maven.neoforged.net/releases/net/fabricmc/sponge-mixin/$MIXIN_VERSION/sponge-mixin-$MIXIN_VERSION.jar" \
-    "$OUT/sponge-mixin.jar"
+  fetch "$OUT/sponge-mixin.jar" \
+    "https://maven.neoforged.net/releases/net/fabricmc/sponge-mixin/$MIXIN_VERSION/sponge-mixin-$MIXIN_VERSION.jar"
 fi
 CP="$OUT/sponge-mixin.jar"
 
@@ -38,8 +47,11 @@ for art in asm asm-tree; do
   if [ -n "${ASM_COMPILE_DIR:-}" ] && [ -f "$ASM_COMPILE_DIR/$art-$ASM_VERSION.jar" ]; then
     cp "$ASM_COMPILE_DIR/$art-$ASM_VERSION.jar" "$OUT/$art.jar"
   else
-    fetch "https://repo1.maven.org/maven2/org/ow2/asm/$art/$ASM_VERSION/$art-$ASM_VERSION.jar" \
-      "$OUT/$art.jar"
+    # maven.neoforged.net mirrors ASM and is the host this CI already
+    # downloads from (the installer run); repo1.maven.org as fallback.
+    fetch "$OUT/$art.jar" \
+      "https://maven.neoforged.net/releases/org/ow2/asm/$art/$ASM_VERSION/$art-$ASM_VERSION.jar" \
+      "https://repo1.maven.org/maven2/org/ow2/asm/$art/$ASM_VERSION/$art-$ASM_VERSION.jar"
   fi
   CP="$CP:$OUT/$art.jar"
 done
