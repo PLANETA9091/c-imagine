@@ -48,6 +48,40 @@ Both legs pin, in this order, before any scene runs:
   mod's own assets on truth — they must RESOLVE to the same pixels, which is
   exactly what the datums measure).
 
+### 2.1 The real server's game classpath — the DELTA UNION law
+
+The installer profile (`install_profile.json` inside
+`neoforge-<ver>-installer.jar`) defines what a real dedicated server serves as
+game classes. Measured statically (12-o, 2026-10-29):
+
+1. `jarsplitter` splits the vanilla server jar into `slim` (classes) + `extra`
+   (resources); `AutoRenamingTool` renames slim obf→srg → `server-…-srg.jar`
+   (6148 classes, ZERO client classes);
+2. `binarypatcher --clean srg --apply server.lzma` produces
+   `neoforge-<ver>-server.jar` — the **PATCHED DELTA** (~1613 classes whose
+   bytes NeoForge's binpatches change). It is NOT a nested bundler (verified:
+   zero nested jars, zero META-INF lists) and it is NOT optional;
+3. the binpatches are cut against the MERGED client∪server jar, so the delta
+   legitimately carries **exactly the client classes NeoForge patches** —
+   Screen, BakedModel, ClientLevel (each has a `.java.patch` in the NeoForge
+   tree) — and NOTHING else from `net/minecraft/client/**` (Renderable has no
+   patch and is absent on the real server).
+
+Consequences for the layer:
+
+- the shadow index must serve `srg base ∪ patched delta ∪ universal ∪
+  libraries`, with the delta WINNING overlaps (patched bytes). The
+  relocated-key index is last-wins and the walk orders the base before the
+  delta — that mirrors BootstrapLauncher's union filesystem;
+- dist-guard parity is a CONSEQUENCE, not a filter: classes outside the delta
+  stay absent from our index exactly as they are absent on the real server.
+  Never "fix" a client-class CNFE by excluding or filtering jar entries —
+  first check whether the class has a NeoForge `.java.patch`;
+- the permanent witness is the truth leg's "PATCHED DELTA anatomy" dump
+  (client count + per-probe presence), and the layer leg gates on BOTH probe
+  lines: `BakedModel loadable` (positive) and `Renderable NOT loadable`
+  (negative).
+
 ## 3. Scene model — "empty world, the player looks forward"
 
 A SCENE is one deterministic server-side arrangement plus one synchronized
