@@ -348,7 +348,23 @@ jobs:
           cp scene-mod/build/libs/cimscene-1.0.0.jar mods/
 
       - name: run shadow-space harness with Create
+        env:
+          CIM_DUMP_RELOC: '1'
         run: bash scripts/run-m2-harness.sh layer1211/libraries mods out-create
+
+      - name: autopsy relocated-class dumps (on failure)
+        if: failure()
+        run: |
+          D=/tmp/cim-dump
+          test -d "$D" || { echo "no relocated-class dumps"; exit 0; }
+          echo "dumped classes: $(ls "$D" | wc -l)"
+          echo "=== dumps carrying net/minecraft/client refs ==="
+          for f in "$D"/*.class; do
+            if grep -q "net/minecraft/client/" "$f" 2>/dev/null; then
+              echo "--- $f"
+              grep -oaE "net/minecraft/client/[a-zA-Z0-9/_$]*" "$f" | sort -u | head -8
+            fi
+          done | head -80
 
       - name: assert create layer markers + census
         run: |

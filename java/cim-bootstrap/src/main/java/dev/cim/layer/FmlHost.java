@@ -299,17 +299,13 @@ public final class FmlHost {
                 System.out.println(LOG + " probe: BakedModel NOT loadable: " + t);
             }
 
-            // Dist-strip counter (12-q): the real dedicated server strips
-            // @OnlyIn(CLIENT) members before verification; the relocation
-            // stage mirrors that. Log the count so the CI gate can assert
-            // the strip actually fired.
-            try {
-                long n = dev.cim.bootstrap.NativeReloc.clientMembersStripped();
-                System.out.println(LOG + " client members stripped: " + n
-                        + (n < 0 ? " (native library not loaded)" : ""));
-            } catch (Throwable t) {
-                System.out.println(LOG + " client members stripped: unavailable: " + t);
-            }
+            // Dist-strip telemetry: the relocator prints one
+            // "[cim-reloc] dist-strip: <class> removed N ..." line per
+            // affected class (native side — visible in this log); the CI
+            // gate greps those. (A counter read from HERE would bind the
+            // shadow-space copy of NativeReloc, whose classloader has no
+            // native library registered — JNI library lists are
+            // per-loader — so the per-class lines are the contract.)
 
             // 5a) P0 Create: custom registry CREATION during mod construction.
             // Registrate-driven mods (create) instantiate their own registries
