@@ -80,9 +80,20 @@ docs/runtime-analysis/  deep upstream analysis: vanilla MC 26.3 (+client), Paper
 
 ## Quick start (module authors / server admins)
 
+Prerequisites: **Java 25** (Paper 26.3 host), the [CRUSSTY](https://github.com/PLANETA9091/CRUSSTY)
+runtime (`npm i -g crussty`), and a Paper 26.3 server initialized via
+`crussty init --platform paper`. The embedded 1.21.1 layer is installed into
+the server's `layer1211/libraries` (see `.github/workflows/integration.yml`
+for the exact working sequence, including the `crus/c-imagine.json`
+`layerDir` config and the paper-plugin jar in `plugins/`).
+
 ```bash
-# CI produces module-imagine.zip — drop it into the server:
-unzip module-imagine.zip -d <server>/modules/imagine
+# CI builds module-imagine.zip inside the integration/profiling runs —
+# reproduce it locally with ./scripts/package-module.sh (it is not yet
+# uploaded as a release artifact):
+./scripts/package-module.sh
+# the zip contains a top-level imagine/ dir — unpack over the server root:
+unzip module-imagine.zip -d <server>/modules/
 # put NeoForge 1.21.1 mods in the usual place:
 cp mymod-1.21.1.jar <server>/mods/
 # start (CRUSSTY launcher boots Paper + runtime + module):
@@ -122,4 +133,5 @@ M1 — embedded 1.21.1 layer boots: `cim-reloc` (shadow-namespace relocation of 
 real MC 1.21.1 + NeoForge 21.1.265 stack), shadow classloader, layer boot inside
 Paper JVM with vanilla registry snapshot; ground-truth CI jobs. ✅ (matrix green)
 M2 — mod execution: real FML discovery pipeline + mod relocation, `cimtest`
-registration through the layer. ⏳ next
+registration through the layer. ✅ (see docs/ROADMAP.md for M3–M5 status —
+this README tracks only the coarse milestones; the ROADMAP is authoritative)

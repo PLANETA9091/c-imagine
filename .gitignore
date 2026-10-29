@@ -46,3 +46,12 @@ third_party/*/target/
 artifacts-srvcheck/
 artifacts-loc/
 scripts/truth/__pycache__/
+
+# --- audit batch 1 additions ---
+# bytecode caches leaked into git before (only scripts/truth/ was covered)
+__pycache__/
+*.pyc
+# generated probe output (diverged copies already shipped once)
+scripts/probe-out/
+# accidental duplicate tree committed once
+scripts/test-mods/
