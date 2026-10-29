@@ -1537,3 +1537,73 @@ Stage Summary:
 - The hardest registration-era gate of the P0 Create ladder is green.
   The mixin subsystem is the next named gate on the road to the layer
   census with Create — the first Create census-parity diff.
+
+---
+Task ID: 12-u
+Agent: main
+Task: MILESTONE — the mixin gate (§8) GREEN end to end; FIRST Create census-parity diff
+
+Work Log:
+- The b0960b9 verdict named the gate (Create's mixins never applied — the
+  shadow loader serves raw relocated bytes, bypassing the transformer
+  chain); fa9f67a fixed the design; 8ad7bb0 implemented it universally
+  (no mod named anywhere on the path). The 9ffc137 CI run (mod-matrix)
+  is GREEN across all four jobs, including the FIRST
+  "CENSUS PARITY: GREEN — registration parity across stacks" for Create.
+- CimMixinService: a thin IMixinService over the shadow loader, selected
+  via mixin.service (sponge-mixin instantiates it directly — no
+  ServiceLoader ambiguity against the LaunchWrapper/ModLauncher services
+  shipped in the jar; the modlauncher service was rejected per §8's open
+  question — its plumbing assumes the modlauncher environment). Its
+  bytecode provider IS the loader's classBytesFor pipeline, so the
+  @Mixin targets the processor reads match the arriving names exactly.
+- MixinGate two-stage boot resolved the ordering law discovered on the
+  way: init (bootstrap + configs + transformer) → defineLayerEarly (mod
+  module packages claimed) → activate (phase advance + hook wiring).
+  Three constraints interlock: the processor promotes its configs only
+  on an environment CHANGE (a frozen PREINIT left it INERT — 4500+
+  transform calls, zero applies); the promotion resolves every mixin
+  class (must land in its module, not the unnamed one); the boot classes
+  (BlockBehaviour) must be transformed when the registries bootstrap.
+- MixinConfigs: config package/plugin/targets translated through the one
+  relocation table at serve time (§8 point 4); Create 6.0.10 confirmed
+  refmap-less (mojmap-native, as predicted).
+- cim-reloc: annotation STRING constants follow the relocation now —
+  mixin method/target values embed ORIGINAL descriptors
+  (@Inject method="triggerItemUseEffects(Lnet/minecraft/...;I)V" found
+  no target until the embedded segments followed the table). The
+  neoforge universal jar's annotation strings point DIRECTLY at
+  CONSTANT_Utf8 (non-standard) — both element forms are preserved.
+- cim-modscan: the layer universal jar's nested jarjar libraries are
+  extracted to the manifest classpath — mixinextras-neoforge lives
+  there, and every modern mod's @WrapOperation dies on the missing
+  Operation class without it. Library bootstrap configs
+  (mixinextras.init.mixins.json — the canonical case) are discovered
+  across the mod-space jars and registered like any mod config; their
+  plugins register the MixinExtras extensions into the active
+  transformer (transformer BEFORE configs — the extension registration
+  targets the active transformer).
+- ShadowClassLoader: jar manifests carried into definePackage (the real
+  server's SecureJarHandler exposes Implementation-Version through the
+  package metadata; sponge-mixin's ASM version detection reads it —
+  without it every JAVA_21 config failed its ASM>=9.5 check); and the
+  single-definition contract: dev.cim.bootstrap.** delegates to the
+  host loader (the shadow copies' forked statics — NativeReloc.libPath,
+  ShadowClassLoader.instance — broke the gate; dev.cim.layer.** stays
+  shadow-defined, the hook crosses via the ClassBytecodeHook interface).
+- The scaffold extras: CimMixinBootstrap suppresses the foreign boot
+  services; CimMixinPropertyService replaces both unusable blackboards;
+  the console logger wires mixin DEBUG lines to stdout under
+  cim.debug.mixins; build-bootstrap.sh fetches the compile-only
+  classpath (sponge-mixin + ASM from maven.neoforged.net, repo1 as
+  fallback — repo1 fast-failed on the runner).
+
+Stage Summary:
+- The layer now runs the real pipeline's mixin subsystem end to end:
+  accessors, injectors, MixinExtras sugars (@WrapOperation/@Local), dist
+  guards, delta-union classpath, member strip. The §8 acceptance chain
+  is fully green: construct passes the accessor casts, the register-phase
+  injectors apply, and the census-parity job produced the FIRST Create
+  census diff — GREEN across stacks on the first run. Next named work:
+  grow the P0 ladder (Biomes O' Plenty next per MODPACK.md Tier 0), and
+  the §8 refmap question stays open until a leg carries one.
