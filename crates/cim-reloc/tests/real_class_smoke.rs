@@ -47,7 +47,7 @@ fn relocates_real_minecraft_classes() {
             panic!("{entry} not found in {jar}");
         };
         assert!(bytes.len() > 100, "{entry} suspiciously small");
-        let name = entry.trim_end_matches(".class");
+        let name = entry.strip_suffix(".class").unwrap_or(entry);
         let out = relocate_class(&table, name, &bytes)
             .unwrap_or_else(|e| panic!("relocate {entry}: {e}"));
         assert_ne!(out, bytes, "{entry} must be rewritten");

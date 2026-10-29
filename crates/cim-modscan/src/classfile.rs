@@ -320,9 +320,14 @@ pub fn parse_class(bytes: &[u8]) -> Result<ClassInfo, ScannerError> {
     skip_members(&mut r)?;
 
     // Methods: parse names + RuntimeVisibleAnnotations (@SubscribeEvent).
+    // The reader must stay in sync for EVERY method: the cap only limits
+    // annotation parsing, never member walking — abandoning the rest of the
+    // method table mid-struct would desync the reader into the class
+    // attributes and fail the whole class.
     let method_count = r.u2()? as usize;
     let mut method_annotations = Vec::new();
-    for _ in 0..method_count.min(MAX_METHODS_PARSED) {
+    for method_index in 0..method_count {
+        let parse_annos = method_index < MAX_METHODS_PARSED;
         let _access = r.u2()?;
         let name_idx = r.u2()?;
         let desc_idx = r.u2()?;
@@ -331,7 +336,7 @@ pub fn parse_class(bytes: &[u8]) -> Result<ClassInfo, ScannerError> {
             let attr_name_idx = r.u2()?;
             let len = r.u4()? as usize;
             let data = r.take(len)?;
-            if pool.str_at(attr_name_idx)? == "RuntimeVisibleAnnotations" {
+            if parse_annos && pool.str_at(attr_name_idx)? == "RuntimeVisibleAnnotations" {
                 let mut ar = Reader { buf: data, pos: 0 };
                 let count = ar.u2()? as usize;
                 if count > MAX_ANNOTATIONS {
@@ -410,6 +415,13 @@ fn parse_element_value(
     pool: &Pool,
     depth: usize,
 ) -> Result<ElementValue, ScannerError> {
+    if depth > MAX_ANNOTATION_DEPTH {
+        // Arrays are element values too: without this guard a hostile
+        // `[[[[…` nesting overflows the stack of the parsing thread.
+        return Err(ScannerError::ClassFile(
+            "annotation nesting too deep".into(),
+        ));
+    }
     let tag = r.u1()?;
     Ok(match tag {
         b'Z' => ElementValue::Bool(pool_int(r, pool)? != 0),
@@ -473,7 +485,7 @@ fn parse_element_value(
                 descriptor: pool.str_at(idx)?.to_string(),
             }
         }
-        b'@' => ElementValue::Annotation(parse_annotation(r, pool, depth)?),
+        b'@' => ElementValue::Annotation(parse_annotation(r, pool, depth + 1)?),
         b'[' => {
             let count = r.u2()? as usize;
             if count > MAX_ANNOTATIONS {
@@ -483,7 +495,7 @@ fn parse_element_value(
             }
             let mut items = Vec::with_capacity(count.min(256));
             for _ in 0..count {
-                items.push(parse_element_value(r, pool, depth)?);
+                items.push(parse_element_value(r, pool, depth + 1)?);
             }
             ElementValue::Array(items)
         }

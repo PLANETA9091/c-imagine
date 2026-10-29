@@ -345,6 +345,15 @@ pub fn build_relocation_table(manifest: &LayerManifest) -> RelocationTable {
     let mut owner: HashMap<&str, &str> = HashMap::new();
 
     for mod_id in &manifest.load_order {
+        // A modId flows verbatim into shadow-namespace rule targets below.
+        // An id with `/`, `:` or whitespace (or an empty one) could escape or
+        // collide with layer namespaces, so refuse to build rules for it.
+        if cim_core::validate_mod_id(mod_id).is_err() {
+            eprintln!(
+                "[c-imagine] manifest: skipping relocation rules for invalid mod id {mod_id:?}"
+            );
+            continue;
+        }
         let Some(entry) = manifest.mods.iter().find(|m| &m.id == mod_id) else {
             continue;
         };

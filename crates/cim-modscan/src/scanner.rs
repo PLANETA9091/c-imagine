@@ -190,7 +190,7 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
         if classes_scanned >= MAX_CLASSES_SCANNED {
             continue;
         }
-        let internal = name.trim_end_matches(".class").to_string();
+        let internal = name.strip_suffix(".class").unwrap_or(name).to_string();
         out.classes.push(internal.clone());
         let mut entry = match archive.by_name(name) {
             Ok(e) => e,
