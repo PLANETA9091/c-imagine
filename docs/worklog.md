@@ -1479,3 +1479,35 @@ Stage Summary:
 - The loop is closing: guard contract verified live, strip verified
   structurally, telemetry per class deployed. The next verdict either
   constructs Create or names the exact class the strip misses.
+
+---
+Task ID: 12-s
+Agent: main
+Task: The lambda-host strip WORKS — construct advanced past every client wall
+
+Work Log:
+- The synthetic-lambda strip (dc356fe) did EXACTLY what the mechanism
+  predicted: CreateRegistrate now strips 5 members (was 4 — the orphaned
+  lambda$registerCTBehviour$25 with the (…BakedModel)BakedModel descriptor
+  is gone), and Create's <clinit> runs PAST the entire client-class wall —
+  AllBlocks reached line 1610 (TrackMaterial) with ZERO client-class
+  resolutions. The dist-guard + strip pair reproduces the real server's
+  construct-phase dist mechanics.
+- New gate (the NEXT one in the chain, as expected): CatnipServices.<clinit>
+  → ServiceLoader.load(PlatformHelper) → EMPTY → NPE "Failed to load
+  service". Ground truth: catnip is SHADED inside the ponder jarjar (279
+  entries + the META-INF/services files incl. PlatformHelper →
+  NeoForgePlatformHelper). CatnipServices uses the ONE-ARG ServiceLoader.load
+  (TCCL-based); real FML runs construct with the TCCL at its aggregating
+  GAME classloader. Our per-mod MODULE loaders isolate resources, so the
+  provider was invisible.
+- Fix: FmlHost's construct loop pins the TCCL to the shadow loader (our
+  aggregating loader — it carries every mod jar and enumerates them in
+  getResources) for the duration of each construct, restoring afterwards.
+- Diagnostics now permanent in the harness: -Xlog:class+resolve=debug (the
+  JVM's own resolution log) + the relocated-class dump autopsy step.
+
+Stage Summary:
+- The construct chain advanced from Create.<clinit>:91 through AllBlocks:1610
+  in one fix. The loop law holds: every red names exactly one gate, every
+  gate gets an evidence-backed fix. Next verdict: the service gate.

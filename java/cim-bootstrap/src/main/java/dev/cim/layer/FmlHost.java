@@ -343,6 +343,20 @@ public final class FmlHost {
             for (int i = 0; i < containerMods.size(); i++) {
                 ModSpec mod = containerMods.get(i);
                 Object container = containers.get(i);
+                // TCCL = the aggregating shadow loader for the construct phase.
+                // Real FML runs construct with the TCCL pointed at its GAME
+                // classloader (which aggregates every mod jar's resources);
+                // mod code that does ServiceLoader.load(Class) — the TCCL
+                // variant (catnip's CatnipServices does exactly that for
+                // PlatformHelper) — then resolves the providers through it.
+                // Our per-mod MODULE loaders isolate resources, so without
+                // this the service file inside the ponder jar (which shades
+                // catnip) is invisible and construct dies on a missing
+                // provider. The shadow loader carries every mod jar in its
+                // jar set and enumerates them in getResources.
+                Thread tcclThread = Thread.currentThread();
+                ClassLoader oldTccl = tcclThread.getContextClassLoader();
+                tcclThread.setContextClassLoader(shadowLoader());
                 try {
                     construct.invoke(container);
                     System.out.println(LOG + " mod " + mod.id()
@@ -350,6 +364,8 @@ public final class FmlHost {
                 } catch (InvocationTargetException e) {
                     Throwable cause = e.getCause() == null ? e : e.getCause();
                     throw new RuntimeException("construct " + mod.id() + ": " + cause, cause);
+                } finally {
+                    tcclThread.setContextClassLoader(oldTccl);
                 }
                 Object event = constructModEventCls
                         .getConstructor(Class.forName(MOD_CONTAINER), Class.forName(DEFERRED_QUEUE))
