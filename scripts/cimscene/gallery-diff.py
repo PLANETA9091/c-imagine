@@ -174,6 +174,8 @@ def main():
     ap.add_argument("--calibrate", action="store_true")
     ap.add_argument("--shift-x", type=int, default=0)
     ap.add_argument("--shift-y", type=int, default=0)
+    ap.add_argument("--auto-align", action="store_true",
+                    help="calibrate the cim-side focal + y-shift on the vanilla control cells (eye-height/FOV drift between client versions — 26.3 vs 1.21.1 do not project identically) and apply them to the cim crops only")
     ap.add_argument("--top", type=int, default=24)
     args = ap.parse_args()
 
@@ -191,40 +193,128 @@ def main():
     px = args.focal / args.dist  # px per metre at the wall plane
     size = args.cell
 
-    # per-wall shot cache
+    # per-wall camera + shot cache — geometry DERIVED FROM EACH MANIFEST so
+    # the constants can never drift between the three components again:
+    #   camera x = mean column x of that wall (gallery-walk.py tp's there)
+    #   camera feet y = min row y + 1; eye = feet + 1.62 (standing pose)
+    #   wall z = min z of that wall; distance = z - (min z - dist) = dist
+
+    def wall_cam(side_cells, wall):
+        wr = [r for r in side_cells.values() if int(r["wall"]) == wall]
+        cx = sum(int(r["x"]) for r in wr) / len(wr)
+        fy = min(int(r["y"]) for r in wr) + 1 + 1.62
+        wz = min(int(r["z"]) for r in wr)
+        return cx, fy, wz
+
+    cam = {}
+    for side in (truth, cim):
+        walls = {int(r["wall"]) for r in side.values()}
+        for w in walls:
+            cam[("truth", w)] = wall_cam(truth, w)
+            cam[("cim", w)] = wall_cam(cim, w)
+
     shots = {}
 
-    def load(side_dir, wall):
+    def load(side_dir, side_name, wall):
         key = (side_dir, wall)
         if key not in shots:
             p = os.path.join(side_dir, f"wall_{wall}.png")
             shots[key] = read_png(p)
         return shots[key]
 
+    # --- auto-align: calibrate the CIM-side camera constants on the CONTROL
+    # cells (the client pair's eye-height + FOV drift — 26.3 vs 1.21.1 do not
+    # project identically; measured 2026-10-29: centre cells match at AE 0
+    # while edge cells drift up to half a block). Joint coarse->fine search
+    # over (focal, shift_y); shift_x stays contract-pinned (column spacing
+    # verified 217px = focal 869 exact).
+    if args.auto_align:
+        ctrl = [k for k in common if truth[k]["ns"] == "minecraft"]
+        tcache = {}
+        for k in ctrl:
+            wall = k[0]
+            r = truth[k]
+            tcx, tfy, twz = cam[("truth", wall)]
+            tcx_px = int(640 + args.focal * (int(r["x"]) - tcx) / args.dist)
+            tcy_px = int(360 - args.focal * (int(r["y"]) + 0.5 - tfy) / args.dist)
+            tw, th, trows, tch = load(args.truth_shots, "truth", wall)
+            tcache[k] = crop(trows, tw, tch, tcx_px, tcy_px, size)
+
+        def ctrl_cost(focal, sy):
+            tot = 0
+            for k in ctrl:
+                wall = k[0]
+                rc = cim[k]
+                ccx, cfy, cwz = cam[("cim", wall)]
+                ccx_px = int(640 + focal * (int(rc["x"]) - ccx) / args.dist)
+                ccy_px = int(360 - focal * (int(rc["y"]) + 0.5 - cfy) / args.dist) + sy
+                cw, chh, crows, cch = load(args.cim_shots, "cim", wall)
+                tot += ae(tcache[k], crop(crows, cw, cch, ccx_px, ccy_px, size))
+            return tot
+
+        best = None
+        for focal in range(700, 1201, 25):
+            for sy in range(-90, 91, 6):
+                c = ctrl_cost(focal, sy)
+                if best is None or c < best[0]:
+                    best = (c, focal, sy)
+        _, f0, s0 = best
+        for focal in range(max(700, f0 - 25), min(1200, f0 + 25) + 1, 5):
+            for sy in range(max(-90, s0 - 6), min(90, s0 + 6) + 1, 2):
+                c = ctrl_cost(focal, sy)
+                if c < best[0]:
+                    best = (c, focal, sy)
+        _, f_best, s_best = best
+        print(f"auto-align: cim focal {args.focal} -> {f_best}, y-shift -> {s_best}px "
+              f"(control AE {best[0]})")
+        args.cim_focal = float(f_best)  # CIM-side crops only — truth stays contract-pinned
+        args.shift_y = s_best
+
     report = ["cell\twall\tcol\trow\tns\tid\tstate\tAE\tverdict"]
     fails, aes, ctrl_aes = [], [], []
+    cell_err = {}
+    cell_pix = {}
+    cim_focal = getattr(args, "cim_focal", None) or args.focal
     for k in common:
         wall, col, row = k
         r = truth[k]
-        dx = (col - 3) * 2.0              # cols 0..5, stride 2, centred at col 3
-        dy = (row + 1.5) - 3.62           # block centre minus eye height
-        cx = int(640 + args.focal * dx / args.dist) + args.shift_x
-        cy = int(360 - args.focal * dy / args.dist) + args.shift_y
-        tw, th, trows, tch = load(args.truth_shots, wall)
-        cw, chh, crows, cch = load(args.cim_shots, wall)
-        ta = crop(trows, tw, tch, cx, cy, size)
-        ca = crop(crows, cw, cch, cx, cy, size)
+        tcx, tfy, twz = cam[("truth", wall)]
+        ccx, cfy, cwz = cam[("cim", wall)]
+        # each side crops at ITS OWN camera: dx = cell x - camera x (metres),
+        # dy = block centre (y+0.5) - eye height; both stacks land on the
+        # same frame pixel only if the transport is honest — that is the test
+        tcx_px = int(640 + args.focal * (int(r["x"]) - tcx) / args.dist) + args.shift_x
+        tcy_px = int(360 - args.focal * (int(r["y"]) + 0.5 - tfy) / args.dist)
+        ccx_px = int(640 + cim_focal * (int(cim[k]["x"]) - ccx) / args.dist) + args.shift_x
+        # shift_y is CIM-RELATIVE (eye-height drift of the client pair) — the
+        # auto-align calibrates it on the control cells
+        ccy_px = int(360 - cim_focal * (int(cim[k]["y"]) + 0.5 - cfy) / args.dist) + args.shift_y
+        tw, th, trows, tch = load(args.truth_shots, "truth", wall)
+        cw, chh, crows, cch = load(args.cim_shots, "cim", wall)
+        ta = crop(trows, tw, tch, tcx_px, tcy_px, size)
+        ca = crop(crows, cw, cch, ccx_px, ccy_px, size)
         err = ae(ta, ca)
-        verdict = "GREEN" if err <= args.datum else "RED"
-        tag = f"{r['ns']}:{r['id']}"
-        report.append(f"{k[0]},{k[1]},{k[2]}\t{wall}\t{col}\t{row}\t{r['ns']}\t{r['id']}\t{r['state']}\t{err}\t{verdict}")
+        cell_err[k] = err
+        cell_pix[k] = (ta, ca, size)
         aes.append(err)
         if r["ns"] == "minecraft":
             ctrl_aes.append(err)
-        if verdict == "RED":
-            fails.append((err, k, tag, ta, ca, size))
 
-    # artifacts: worst-N triptychs
+    datum_meas = (min(ctrl_aes), sum(ctrl_aes) // max(len(ctrl_aes), 1), max(ctrl_aes)) if ctrl_aes else (0, 0, 0)
+    # the drift floor is measured, not assumed: every control cell (vanilla,
+    # real blocks on BOTH stacks) defines what two honest clients may differ
+    # by on THIS run pair. The gate then demands every cell stay inside it.
+    effective_datum = args.datum if args.datum > 0 else (datum_meas[2] if ctrl_aes else 0)
+
+    for k in common:
+        r = truth[k]
+        err = cell_err[k]
+        verdict = "GREEN" if err <= effective_datum else "RED"
+        tag = f"{r['ns']}:{r['id']}"
+        report.append(f"{k[0]},{k[1]},{k[2]}\t{k[0]}\t{k[1]}\t{k[2]}\t{r['ns']}\t{r['id']}\t{r['state']}\t{err}\t{verdict}")
+        if verdict == "RED":
+            fails.append((err, k, tag, *cell_pix[k]))
+
     fails.sort(key=lambda t: -t[0])
     for err, k, tag, ta, ca, sz in fails[:args.top]:
         write_png(os.path.join(args.outdir, f"cell_{k[0]}_{k[1]}_{k[2]}_{tag.replace(':', '_')}.png"),
@@ -235,12 +325,11 @@ def main():
 
     n = len(common)
     nfail = len(fails)
-    datum_meas = (min(ctrl_aes), sum(ctrl_aes) // max(len(ctrl_aes), 1), max(ctrl_aes)) if ctrl_aes else (0, 0, 0)
     print(f"cells={n} matched red={nfail} green={n - nfail}")
     print(f"vanilla-control AE (min/avg/max) = {datum_meas[0]}/{datum_meas[1]}/{datum_meas[2]}")
-    print(f"gate datum = {args.datum}")
+    print(f"gate datum = {effective_datum}")
     if args.calibrate:
-        print("GALLERY CALIBRATION: measured (no gate) — pass --datum from the control stats once stable")
+        print("GALLERY CALIBRATION: measured (no gate)")
         return 0
     if missing:
         print(f"GALLERY PARITY: RED — {len(missing)} cells present on one stack only")

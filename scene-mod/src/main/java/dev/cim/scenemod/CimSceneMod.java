@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
@@ -95,12 +96,12 @@ public final class CimSceneMod {
             "minecraft:oak_planks", "minecraft:crafting_table", "minecraft:furnace");
 
     /** Gallery geometry (px math lives in scripts/cimscene/gallery-diff.py). */
-    private static final int GALLERY_COLS = 12;
+    private static final int GALLERY_COLS = 6;   // MUST equal cim-gallery-walk.py COLS — 6 cols = the fov-45 frame fits the wall exactly (gallery-diff.py)
     private static final int GALLERY_ROWS = 6;
     private static final int GALLERY_CELL_STRIDE = 2;
-    private static final int GALLERY_WALL_STRIDE = 9;
+    private static final int GALLERY_WALL_STRIDE = 12;  // == corridor depth (VANTAGE_DIST+3+1): adjacent corridors tile exactly — no gap for straying fluids, no overlap plowing the previous wall  // > corridor depth (VANTAGE_DIST+3): a shallower stride let wall N+1 plow wall N — measured 2026-10-29
     private static final int GALLERY_WALL1_Z = 8;
-    private static final int GALLERY_VANTAGE_DIST = 4;
+    private static final int GALLERY_VANTAGE_DIST = 8; // MUST equal gallery-walk.py VANTAGE_DIST
 
     public CimSceneMod(IEventBus modBus) {
         modBus.addListener(this::commonSetup);
@@ -275,21 +276,29 @@ public final class CimSceneMod {
         for (String controlId : GALLERY_VANILLA_CONTROLS) {
             Block b = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(controlId));
             for (BlockState st : b.getStateDefinition().getPossibleStates()) {
+                if (!st.getFluidState().isEmpty()) continue; // waterlogged control states flood the corridor (measured)
                 cells.add(new Cell(st, "minecraft", controlId, st.toString()));
             }
         }
         List<Map.Entry<ResourceLocation, Block>> modded = new ArrayList<>();
-        for (Map.Entry<ResourceLocation, Block> e : BuiltInRegistries.BLOCK.entrySet()) {
-            String key = e.getKey().getNamespace() + ":" + e.getKey().getPath();
+        for (Map.Entry<ResourceKey<Block>, Block> e : BuiltInRegistries.BLOCK.entrySet()) {
+            ResourceLocation rl = e.getKey().location();
+            String key = rl.getNamespace() + ":" + rl.getPath();
             if (GALLERY_BLACKLIST.contains(key)) continue;
-            if (e.getKey().getNamespace().equals("minecraft")) continue;
-            modded.add(e);
+            if (rl.getNamespace().equals("minecraft")) continue;
+            modded.add(Map.entry(rl, e.getValue()));
         }
         modded.sort(Comparator.comparing(e -> e.getKey().toString()));
         for (Map.Entry<ResourceLocation, Block> e : modded) {
             List<BlockState> states = new ArrayList<>(e.getValue().getStateDefinition().getPossibleStates());
             if (maxStates > 0 && states.size() > maxStates) states = states.subList(0, maxStates);
             for (BlockState st : states) {
+                // fluid-bearing states (waterlogged leaves/slabs/...) release
+                // their water into the corridor and flood the pixel gate —
+                // measured 2026-10-29: oak_leaves[waterlogged=true] turned the
+                // platform into an ocean. Skipped on the truth side; the cim
+                // side mirrors the truth manifest, so parity stays exact.
+                if (!st.getFluidState().isEmpty()) continue;
                 cells.add(new Cell(st, e.getKey().getNamespace(), e.getKey().getPath(), st.toString()));
             }
         }
@@ -304,9 +313,12 @@ public final class CimSceneMod {
             int minX = base.getX() - (GALLERY_COLS / 2) * GALLERY_CELL_STRIDE;
             int maxX = base.getX() + (GALLERY_COLS / 2) * GALLERY_CELL_STRIDE;
             // platform (double layer) + air sweep — uniform ground/light on
-            // every cell, no terrain interference, same on both stacks
+            // every cell AND over the whole camera corridor (vantage strip
+            // included: a stray water/lake block between camera and wall
+            // would leak into the pixels asymmetrically — measured 2026-10-29),
+            // no terrain interference, same on both stacks
             for (int x = minX - 2; x <= maxX + 2; x++) {
-                for (int z = wallZ - 2; z <= wallZ + 1; z++) {
+                for (int z = wallZ - GALLERY_VANTAGE_DIST - 2; z <= wallZ + 1; z++) {
                     level.setBlock(new BlockPos(x, base.getY(), z), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
                     level.setBlock(new BlockPos(x, base.getY() - 1, z), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
                     for (int y = base.getY() + 1; y <= base.getY() + GALLERY_ROWS + 3; y++) {

@@ -1,50 +1,47 @@
 #!/usr/bin/env python3
-"""c-imagine leg of the universal gallery — pack-carrier cells.
+"""c-imagine leg of the universal gallery — MIRROR of the truth manifest.
 
-Owner directive 2026-10-30: the gallery is THE gate and it must run on BOTH
-stacks. The c-imagine stack is a vanilla 26.3 world — modded blocks cannot
-be placed as real blocks. Every modded cell is therefore rendered the F2V v1
-way: a VIRTUAL block — a block_display entity carrying the manifest's
-note_block[instrument,note] carrier (the pack overrides its model to the
-modded one), brightness PINNED to (15,15) so world light never drifts into
-the pixel gate. Vanilla control cells are REAL vanilla blocks on both sides
-(setblock) — they measure pure transport/camera drift and calibrate the
-datum.
+Owner directive 2026-10-30: the gallery is THE gate and both stacks must run
+the SAME cell sequence. The truth side (real NeoForge) enumerates registries
+and writes gallery.tsv (wall/col/row -> x/y/z + ns/id/state, vanilla controls
+with ALL their states first, then every modded block state). This tool takes
+that manifest as THE cell contract and generates the console command stream
+that places the SAME cells in the c-imagine world (Paper 26.3):
 
-The output manifest has the EXACT same schema as /cimscene gallery on the
-truth side (wall/col/row/x/y/z/ns/id/state) so gallery-diff.py joins by
-cell index. Modded ids WITHOUT a manifest row are not summoned — the join
-reports them as RED missing cells: that is the f2v port's fix backlog,
-which is the honest state the gate exists to expose.
+  vanilla cells  -> real setblock with the EXACT state parsed from the truth
+                    state string ("Block{minecraft:oak_log}[axis=x]" ->
+                    setblock ... minecraft:oak_log[axis=x])
+  modded cells   -> F2V v1 style VIRTUAL block: a block_display entity
+                    carrying the manifest's note_block[instrument,note]
+                    carrier (the pack overrides its model to the modded one),
+                    brightness PINNED (15,15) so world light never drifts
+                    into the pixel gate; carriers come from visual-blocks.tsv
+                    (block ns:id -> instrument note). A modded cell whose
+                    block has NO carrier row is placed as a RED barrier
+                    marker: gallery-diff joins it and reports RED — that is
+                    the honest fix backlog of the f2v port.
 
-Usage: cim-gallery-walk.py <visual-blocks.tsv> <out-gallery.tsv> [floorY]
-  stdout = the console commands (summon + setblock) to run BEFORE walking.
+Usage: cim-gallery-walk.py <truth-gallery.tsv> <visual-blocks.tsv> <out.tsv> [floorY]
+  stdout = console commands (fills + setblock + summon) to run BEFORE walking.
 """
 
-import csv
+import re
 import sys
 
 # MUST match CimSceneMod gallery geometry (scene-mod, owner directive rig)
 COLS, ROWS = 6, 6
-STRIDE, WALL_STRIDE, WALL1 = 2, 9, 8
-CONTROLS = ["minecraft:stone", "minecraft:iron_block", "minecraft:gold_block",
-            "minecraft:diamond_block", "minecraft:oak_log", "minecraft:oak_leaves",
-            "minecraft:glass", "minecraft:bricks", "minecraft:red_wool",
-            "minecraft:oak_planks", "minecraft:crafting_table", "minecraft:furnace"]
-DEFAULT_NOTE = 13
-STATE_INSTRUMENTS = {"creeper", "basedrum", "snare", "hat", "bass", "flute",
-                     "bell", "chime", "xylophone", "iron_xylophone", "cow_bell",
-                     "didgeridoo", "bit", "banjo", "pling", "zombie", "skeleton",
-                     "creeper", "dragon", "wither_skull", "piglin", "elder_guardian"}
+STRIDE, WALL_STRIDE, WALL1 = 2, 12, 8  # WALL_STRIDE must exceed the 11-block corridor (vantage 8 + margin)
+STATE_RE = re.compile(r"^Block\{(?P<id>[^}]+)\}(?:\[(?P<props>.*)\])?$")
 
 
 def main():
-    if len(sys.argv) < 3:
-        raise SystemExit("usage: cim-gallery-walk.py <visual-blocks.tsv> <out.tsv> [floorY]")
-    blocks_tsv, out_tsv = sys.argv[1], sys.argv[2]
-    floor_y = int(sys.argv[3]) if len(sys.argv) > 3 else -60  # flat seed 42 ground top
+    if len(sys.argv) < 4:
+        raise SystemExit(
+            "usage: cim-gallery-walk.py <truth-gallery.tsv> <visual-blocks.tsv> <out.tsv> [floorY]")
+    truth_tsv, blocks_tsv, out_tsv = sys.argv[1], sys.argv[2], sys.argv[3]
+    floor_y = int(sys.argv[4]) if len(sys.argv) > 4 else -60  # flat seed 42 surface stand height
 
-    carriers = []
+    carriers = {}
     with open(blocks_tsv, encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n")
@@ -53,53 +50,78 @@ def main():
             parts = line.split("\t")
             bid = parts[0].strip()
             instrument = parts[1].strip().lower() if len(parts) > 1 else "creeper"
-            note = int(parts[2]) if len(parts) > 2 else DEFAULT_NOTE
-            carriers.append((bid, instrument, note))
+            note = int(parts[2]) if len(parts) > 2 else 13
+            carriers[bid] = (instrument, note)
 
-    # cell plan: 12 vanilla controls first, then every carrier (same order on
-    # both sides by construction — truth sorts modded by id, carriers follow
-    # the manifest; the manifest IS the cim-side ordering contract)
     cells = []
-    for cid in CONTROLS:
-        cells.append(("minecraft", cid.split(":", 1)[1], cid, None))
-    for bid, instrument, note in carriers:
-        ns, idd = bid.split(":", 1)
-        cells.append((ns, idd, bid, (instrument, note)))
+    with open(truth_tsv, encoding="utf-8") as f:
+        head = f.readline().rstrip("\n").split("\t")
+        for line in f:
+            vals = line.rstrip("\n").split("\t")
+            if len(vals) < len(head):
+                continue
+            cells.append(dict(zip(head, vals)))
+    if not cells:
+        raise SystemExit("truth manifest has no cells")
 
-    per_wall = COLS * ROWS
-    walls = (len(cells) + per_wall - 1) // per_wall
-
-    cmds = ["kill @e[type=minecraft:block_display]"]
-    manifest = ["wall\tcol\trow\tx\ty\tz\tns\tid\tstate"]
-    for w in range(walls):
+    walls = max(int(c["wall"]) for c in cells) + 1
+    cmds = [
+        # corridor hygiene — SAME rectangle CimSceneMod builds on the truth
+        # side (platform z from wallZ-VANTAGE_DIST-2 to wallZ+1): any world
+        # quirk (spawn lake water measured 2026-10-29) would otherwise leak
+        # asymmetric pixels into the gate
+        f"fill -8 {floor_y} -2 8 {floor_y} 9 minecraft:smooth_stone",
+        f"fill -8 {floor_y + 1} -2 8 {floor_y + 10} 9 minecraft:air",
+        "kill @e[type=minecraft:block_display]",
+    ]
+    for w in range(1, walls):
         wz = WALL1 + w * WALL_STRIDE
-        for row in range(ROWS):
-            for col in range(COLS):
-                idx = w * per_wall + row * COLS + col
-                if idx >= len(cells):
-                    break
-                ns, idd, bid, carrier = cells[idx]
-                x = -(COLS // 2) * STRIDE + col * STRIDE
-                y = floor_y + 1 + row
-                state = ""
-                if carrier is None:
-                    cmds.append(f"setblock {x} {y} {wz} {bid}")
-                    state = f"Block{{#{bid}}}"
-                else:
-                    instrument, note = carrier
-                    props = f'instrument:"{instrument}",note:"{note}"'
-                    nbt = ('{Tags:["cimgallery"],brightness:{sky:15b,block:15b},'
-                           'block_state:{Name:"minecraft:note_block",Properties:{'
-                           + props + '}}}')
-                    cmds.append(f'summon minecraft:block_display {x} {y} {wz} {nbt}')
-                    state = f"Block{{minecraft:note_block}}[{props}]"
-                manifest.append(f"{w}\t{col}\t{row}\t{x}\t{y}\t{wz}\t{ns}\t{idd}\t{state}")
+        cmds.append(f"fill -8 {floor_y} {wz - 10} 8 {floor_y} {wz + 1} minecraft:smooth_stone")
+        cmds.append(f"fill -8 {floor_y + 1} {wz - 10} 8 {floor_y + 10} {wz + 1} minecraft:air")
 
+    manifest = ["wall\tcol\trow\tx\ty\tz\tns\tid\tstate\tcarrier"]
+    red_cells = []
+    for c in cells:
+        wall, col, row = int(c["wall"]), int(c["col"]), int(c["row"])
+        wz = WALL1 + wall * WALL_STRIDE
+        x = -(COLS // 2) * STRIDE + col * STRIDE
+        y = floor_y + 1 + row
+        ns, idd = c["ns"], c["id"]
+        # the truth manifest's id column is ALREADY namespaced (measured:
+        # "minecraft:stone"); double-prefixing produced minecraft:minecraft:*
+        # and "Invalid ID" on Paper
+        bid = idd if ":" in idd else f"{ns}:{idd}"
+        m = STATE_RE.match(c["state"])
+        state_props = (m.group("props") or "") if m else ""
+        if ns == "minecraft" or bid.startswith("minecraft:"):
+            props = f"[{state_props}]" if state_props else ""
+            cmds.append(f"setblock {x} {y} {wz} {bid}{props}")
+            out_state = f"Block{{{bid}}}{props}"
+            carrier = ""
+        else:
+            if bid in carriers:
+                instrument, note = carriers[bid]
+                props = f'instrument:"{instrument}",note:"{note}"'
+                nbt = ('{Tags:["cimgallery"],brightness:{sky:15b,block:15b},'
+                       f'block_state:{{Name:"minecraft:note_block",Properties:{{{props}}}}}}}')
+                cmds.append(f"summon minecraft:block_display {x} {y} {wz} {nbt}")
+                out_state = f"Block{{minecraft:note_block}}[{props}]"
+                carrier = f"{instrument}/{note}"
+            else:
+                # NO CARRIER = honest RED: a visible marker the diff reports
+                cmds.append(f"setblock {x} {y} {wz} minecraft:red_concrete")
+                out_state = "Block{minecraft:red_concrete}"
+                carrier = "MISSING"
+                red_cells.append((wall, col, row, bid))
+        manifest.append(f"{wall}\t{col}\t{row}\t{x}\t{y}\t{wz}\t{ns}\t{idd}\t{out_state}\t{carrier}")
     with open(out_tsv, "w", encoding="utf-8") as f:
         f.write("\n".join(manifest) + "\n")
     for c in cmds:
         print(c)
-    print(f"# cim gallery: {len(cells)} cells, {walls} walls -> {out_tsv}", file=sys.stderr)
+    print(f"# cim gallery mirror: {len(cells)} cells, {walls} walls, "
+          f"{len(red_cells)} missing carriers -> {out_tsv}", file=sys.stderr)
+    for rc in red_cells[:40]:
+        print(f"# MISSING-CARRIER\t{rc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

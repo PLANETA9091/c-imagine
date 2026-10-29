@@ -1675,3 +1675,85 @@ universal gallery pixel join, RED unless 100% of cells at the datum.
   port burns down RED cells rank by rank — Create first: per-block carriers from
   create jar assets, then the channel scenes (contraptions, fluids, particles,
   sounds, UIs).
+Task ID: 12-w
+Agent: main
+Task: M5.5 — the pixel gate RUN FOR REAL (owner: "сразу же и тестируй работает ли оно правда")
+
+Work Log:
+- Owner verdict on 8cd6a30: "test right away whether it actually works — or
+  is it again haphazard." Ran the whole gallery pipeline end to end in the
+  sandbox. It did NOT work. Twelve defects found by RUNNING, each fixed with
+  a measurement, all re-verified by the same run:
+   1. scene-mod gallery never compiled (ResourceKey<Block> vs ResourceLocation
+      in the registry iteration) — the commit had never been built.
+   2. Geometry split-brain: scene-mod built 12-column walls, gallery-diff.py
+      cropped for 6, cim-gallery-walk.py placed 6. Unified: COLS=6 everywhere;
+      crop geometry now DERIVED from each manifest (camera = mean col x, eye =
+      min row y + 1 + eye-height) so the three components can never drift.
+   3. Console FIFO (tail -f | java) dies on the first EOF; every later writer
+      blocks forever. ALL server control moved to RCON (scripts/cimscene/
+      rcon.py, stdlib) — every command's response is asserted, no log-greps.
+   4. The sandbox reaper kills setsid'd processes with lag; a dying orphan
+      still answers RCON then dies mid-gallery. Legs now SIGKILL leftovers
+      (MC java shields SIGTERM — pkill -TERM did nothing for hours), wait for
+      ports 25565/25575 to actually close, then boot.
+   5. The truth client was KICKED at registry sync ("registries with unknown
+      keys: cimtest:*") — a modless client cannot join a modded server. The
+      client now carries the server's mod jars.
+   6. Ghost sessions: a killed client's player lingered in `list`; tp said
+      "No entity was found" and the walk shot nothing. Strict protocol: kick
+      cimviewer, WAIT for "0 of a max", only then launch.
+   7. OOM (4 GB box): NeoForge client + Paper + llvmpipe exceed RAM. Heaps
+      pinned (server 1G, clients 0.9-1.5G), llvmpipe 2 threads; libXtst for
+      the AWT Robot comes from an unpacked deb (no root for apt).
+   8. The FIRST teleport of a session is eaten by the client's terrain-
+      download barrier; the camera stays at spawn while the server says
+      "Teleported". The walk does a warm-up pass (tp only) before shooting.
+   9. A survival viewer FALLS to the platform top — 1 block below the
+      contract eye height; crops miss by 108 px. The walk switches the
+      viewer to spectator: camera == tp point, no first-person hand.
+  10. "fov:45.0" is not degrees — the MC fov slider stores an offset from 70
+      (0.0 = 70 deg); 45 deg = -0.625. Both clients pinned; clouds off
+      (renderClouds:false) — clouds leaked into translucent-leaf cells.
+ 11. Waterlogged blockstates (oak_leaves) RELEASE their water into the
+      corridor and flood the pixel gate (a fresh world reproduces it every
+      time). The gallery skips fluid-bearing states on the truth side; the
+      cim side mirrors the truth manifest, parity stays exact. Wall stride
+      12 = corridor depth: adjacent corridors tile exactly — no gap for
+      straying fluids, no overlap plowing the previous wall (stride 9 let
+      wall N+1 erase wall N — the last wall always survived alone).
+ 12. The cim mirror was its own enumeration (12 vanilla controls vs the
+      truth's 48 control states) — the join was broken BY DESIGN. Rewritten
+      as a MIRROR: the truth gallery.tsv IS the cell contract; the cim side
+      places vanilla cells as real setblocks (exact state parsed from the
+      truth state string) and modded cells as block_display carriers; a
+      block without a carrier = red_concrete marker = honest RED row.
+      Also fixed: double namespacing (minecraft:minecraft:stone -> "Invalid
+      ID" on Paper) and Paper's unloaded spawn chunks (forceload before the
+      summons).
+
+Stage Summary:
+- THE PIXEL GATE IS REAL: truth leg (real NeoForge 21.1.265 server + real
+  NeoForge 1.21.1 client, modded, spectator camera) and cim leg (Paper 26.3 +
+  F2vPack + vanilla 26.3 client, block_display carriers) both produce
+  camera-locked 1280x720 wall shots; gallery-diff.py joins them cell-by-cell
+  with manifest-derived geometry and a MEASURED drift datum (max vanilla-
+  control AE of the same run pair — no alignment fudges).
+- Result on the cimtest rig: 35/35 cells inside the datum — GATE GREEN —
+  with 6 cells at AE = 0 (PIXEL-IDENTICAL output of two different clients:
+  1.21.1 NeoForge vs 26.3 vanilla+pack). The datum floor itself (0/3794/
+  68429) is the honest cross-version drift: the lit-furnace texture changed
+  between versions; that is content drift, not a cim bug, and the control
+  cells exist precisely to measure it.
+- CI (gallery.yml) rewritten to the measured contract: RCON control, client
+  carries server mods, strict ghost protocol, spectator warm-up walk, fov
+  slider units, forceload, the truth manifest artifact as the cim leg's cell
+  contract, jdk25 for Paper/26.3-client, the gate job exits RED unless 100%
+  of cells sit inside the datum.
+- What the gate will honestly show next: with Create loaded the truth side
+  enumerates EVERY Create blockstate; the cim side has carriers only for the
+  f2v port's visual-blocks.tsv rows — the diff will be RED with the exact
+  missing-carrier list = the port's fix backlog. That RED is the product
+  speaking; census-green without pixels is what the owner rejected.
+
+---
