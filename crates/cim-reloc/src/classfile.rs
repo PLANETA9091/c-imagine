@@ -556,8 +556,56 @@ impl ClassFile {
         // Mirror that here for BOTH layer and mod classes.
         let before_f = body.fields.len();
         let before_m = body.methods.len();
-        body.fields.retain(|m| !self.member_is_client_only(m));
-        body.methods.retain(|m| !self.member_is_client_only(m));
+        // The names REMOVED by the annotation pass (the lambda-host hunt
+        // needs the REMOVED hosts, not the survivors).
+        let mut removed_names: Vec<String> = Vec::new();
+        body.fields.retain(|m| {
+            let drop = self.member_is_client_only(m);
+            if drop {
+                if let Some(n) = self.utf8(m.name).and_then(|b| String::from_utf8(b.to_vec()).ok()) {
+                    removed_names.push(n);
+                }
+            }
+            !drop
+        });
+        body.methods.retain(|m| {
+            let drop = self.member_is_client_only(m);
+            if drop {
+                if let Some(n) = self.utf8(m.name).and_then(|b| String::from_utf8(b.to_vec()).ok()) {
+                    removed_names.push(n);
+                }
+            }
+            !drop
+        });
+        // Synthetic lambda hosts (12-s): javac does NOT copy @OnlyIn onto the
+        // `lambda$<hostName>$<n>` synthetic methods, so a stripped client-only
+        // host leaves its lambda body behind — with client-typed descriptors
+        // (CreateRegistrate.lambda$registerCTBehviour$25 carries
+        // (…BakedModel)BakedModel) that make the verifier resolve client
+        // classes during class loading. The real pipeline removes them by the
+        // naming convention; mirror that, iterating to a fixpoint because a
+        // stripped lambda may host further lambdas.
+        loop {
+            let before = body.methods.len();
+            body.methods.retain(|m| {
+                let keep = match self.utf8(m.name).and_then(|b| std::str::from_utf8(b).ok()) {
+                    Some(name) => match lambda_host(name) {
+                        Some(host) => !removed_names.iter().any(|s| s == host),
+                        None => true,
+                    },
+                    None => true,
+                };
+                if !keep {
+                    if let Some(n) = self.utf8(m.name).and_then(|b| String::from_utf8(b.to_vec()).ok()) {
+                        removed_names.push(n);
+                    }
+                }
+                keep
+            });
+            if body.methods.len() == before {
+                break;
+            }
+        }
         let stripped = (before_f - body.fields.len() + before_m - body.methods.len()) as u64;
         stats.client_members_stripped += stripped;
         crate::add_client_members_stripped(stripped);
@@ -847,6 +895,20 @@ fn read_u16_at(bytes: &[u8], off: usize) -> Option<u16> {
         return None;
     }
     Some(u16::from_be_bytes([bytes[off], bytes[off + 1]]))
+}
+
+/// `lambda$<hostName>$<n>` -> Some(hostName); anything else -> None.
+/// javac names synthetic lambda implementations after their host method; the
+/// host name may itself contain '$' (nested classes use different naming),
+/// so the host part is everything between the leading `lambda$` and the
+/// LAST `$`.
+fn lambda_host(name: &str) -> Option<&str> {
+    let rest = name.strip_prefix("lambda$")?;
+    let idx = rest.rfind('$')?;
+    if idx == 0 {
+        return None;
+    }
+    Some(&rest[..idx])
 }
 
 fn read_u32(bytes: &[u8], pos: &mut usize) -> Option<u32> {
@@ -1170,5 +1232,24 @@ impl<'a> ByteCursor<'a> {
 
     fn rest(&self) -> &[u8] {
         &self.buf[self.pos.min(self.buf.len())..]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lambda_host;
+
+    #[test]
+    fn lambda_host_names_parse_like_javac() {
+        // javac: lambda$<hostMethod>$<counter> — the counter is the LAST $.
+        assert_eq!(lambda_host("lambda$registerCTBehviour$25"), Some("registerCTBehviour"));
+        assert_eq!(lambda_host("lambda$accept$0"), Some("accept"));
+        // a lambda hosted by ANOTHER lambda (fixpoint chain)
+        assert_eq!(lambda_host("lambda$lambda$connectedTextures$24$3"), Some("lambda$connectedTextures$24"));
+        // non-lambda members are untouched
+        assert_eq!(lambda_host("create"), None);
+        assert_eq!(lambda_host("lambda$"), None);
+        // nested-class style names keep their host part
+        assert_eq!(lambda_host("lambda$new$2"), Some("new"));
     }
 }
