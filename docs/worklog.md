@@ -1511,3 +1511,29 @@ Stage Summary:
 - The construct chain advanced from Create.<clinit>:91 through AllBlocks:1610
   in one fix. The loop law holds: every red names exactly one gate, every
   gate gets an evidence-backed fix. Next verdict: the service gate.
+
+---
+Task ID: 12-t
+Agent: main
+Task: MILESTONE — Create CONSTRUCTS in the shadow space (v6.0.10)
+
+Work Log:
+- b0960b9 verdict: "mod create: constructed (v6.0.10)" — the construct
+  chain that has been the P0 flagship gate (Create.<clinit> → client-class
+  walls → dist guards → service loading) is GREEN end to end in the shadow
+  space. Gates closed this stage: delta-union classpath, invalid-dist
+  guard, @OnlyIn(CLIENT) member strip + synthetic lambda-body strip, TCCL
+  = aggregating loader for services.
+- Next gate (named by the same run): ClassCastException —
+  LeverBlock cannot be cast to Create's mixin accessor
+  BlockBehaviourAccessor. Create's mixins (accessors + injectors) are not
+  applied: our shadow loader serves raw (relocated) game bytes, bypassing
+  the modlauncher transformer chain that runs sponge-mixin on the real
+  server. The next subsystem: run the mixin transformer over the layer's
+  game classes (Create's foundation mixins + NeoForge core mixins),
+  or route the layer's game class loading through the transformer chain.
+
+Stage Summary:
+- The hardest registration-era gate of the P0 Create ladder is green.
+  The mixin subsystem is the next named gate on the road to the layer
+  census with Create — the first Create census-parity diff.
