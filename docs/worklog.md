@@ -1348,3 +1348,46 @@ Stage Summary:
 - The shadow index now serves byte-exactly what the real server's game
   classpath serves: srg base + patched delta (client entries included) +
   universal + libraries. Next verdict decides the Create construct chain.
+
+---
+Task ID: 12-p
+Agent: main
+Task: Create construct autopsy II — the Screen/Renderable resolution chain
+
+Work Log:
+- d08b2c1 verdict: BakedModel probe GREEN (delta-union model CONFIRMED —
+  the patched delta's client classes resolve), census parity job GREEN,
+  death moved: AllBlocks.<clinit>:1408 requests Screen (delta has it), the
+  DEFINE of Screen resolves its superinterface Renderable → CNFE. Renderable
+  has no .java.patch → absent from srg/delta/universal → contradiction with
+  the truth leg, which constructs Create through the SAME deterministic
+  <clinit>.
+- Bytecode ground truth (static, local): AllBlocks.class references ZERO
+  Screen/Renderable constants (raw byte grep + constant-pool parse). The
+  only mod class in the chain that mentions Screen at all is
+  ElevatorContactBlock (1 mention: its @OnlyIn(CLIENT) displayScreen body —
+  `new ElevatorContactScreen` → Screen hierarchy), and ELEVATOR_CONTACT is
+  registered exactly at AllBlocks:1408 (`ElevatorContactBlock::new`).
+- The real-server escape hatch candidate: PONDER (create's jarjar library)
+  bundles its own copy of net/minecraft/client/gui/components/Renderable —
+  verified by scanning META-INF/jarjar/ponder-neoforge-1.0.82 jar (1 hit).
+  On the real server that copy may serve the resolution; on our layer the
+  mod jars keep ORIGINAL binary names, so the RELOCATED
+  cim.shadow.mc1211.…Renderable request cannot see it.
+- Telemetry/probes deployed (one run discriminates):
+  * shadow loader CNFE logs the FULL requesting stack (30 frames) — names
+    the exact Screen requester chain;
+  * cimscene gains `/cimscene probe-class <fqn>`: resolves through the GAME
+    classloader context (Block.class.getClassLoader()) and logs OK/FAIL +
+    CodeSource — replicates Screen's define-time delegation on BOTH stacks;
+  * the truth leg runs probe-class for Renderable / Screen / LocalPlayer
+    through the real server console and dumps the answers.
+- Next decision table: truth leg OK(with code source=ponder) → the layer
+  must serve mod-shipped game-namespace classes under RELOCATED keys;
+  truth leg FAIL → the real server never resolves Screen during construct
+  and OUR resolution is eager — diff the relocated bytecode path.
+
+Stage Summary:
+- The construct chain is now fully named (Create.<clinit> → AllBlocks:1408 →
+  ElevatorContactBlock → Screen → Renderable) with a per-branch probe plan;
+  the probes turn the next run into the deciding evidence.

@@ -1,5 +1,6 @@
 package dev.cim.scenemod;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -164,8 +165,35 @@ public final class CimSceneMod {
                                     false);
                             return placed ? 1 : 0;
                         }))
+                        .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
+                                .executes(ctx -> {
+                                    String fqn = StringArgumentType.getString(ctx, "fqn");
+                                    CommandSourceStack src = ctx.getSource();
+                                    try {
+                                        // Resolve through the GAME classloader context
+                                        // (a vanilla class's defining loader) — this
+                                        // replicates exactly the delegation a game class
+                                        // like Screen experiences when the JVM resolves
+                                        // its superinterface chain at define time.
+                                        ClassLoader gameLoader = Block.class.getClassLoader();
+                                        Class<?> c = Class.forName(fqn, false, gameLoader);
+                                        Object cs = null;
+                                        try {
+                                            cs = c.getProtectionDomain().getCodeSource().getLocation();
+                                        } catch (Throwable ignored) {
+                                            // some loaders refuse PD access; the name alone
+                                            // already answers the question
+                                        }
+                                        LOGGER.info("[cimscene] probe-class {} = OK loader={} code={}",
+                                                fqn, c.getClassLoader(), cs);
+                                    } catch (Throwable t) {
+                                        LOGGER.info("[cimscene] probe-class {} = FAIL {}", fqn, t.toString());
+                                    }
+                                    src.sendSuccess(() -> Component.literal("[cimscene] probe-class " + fqn + " logged"), false);
+                                    return 1;
+                                })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|probe-class)");
     }
 
     /**

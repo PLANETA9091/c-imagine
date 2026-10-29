@@ -505,10 +505,14 @@ public final class ShadowClassLoader extends ClassLoader {
                     } catch (ClassNotFoundException cnfe) {
                         // Autopsy telemetry: WHO requested the missing class?
                         // The NCDFE at the trigger frame hides the requesting
-                        // method; name it here (3 frames past this loader).
+                        // chain; name the FULL chain here (loading call stacks
+                        // through define-time supertype resolution are deep —
+                        // e.g. Screen's Renderable superinterface fires from
+                        // inside defineClass1 with only its caller visible
+                        // one frame up). CI logs are unrestricted.
                         StackTraceElement[] st = new Throwable().getStackTrace();
                         StringBuilder callers = new StringBuilder();
-                        for (int i = 2; i < Math.min(st.length, 6); i++) {
+                        for (int i = 2; i < Math.min(st.length, 30); i++) {
                             callers.append(" | ").append(st[i]);
                         }
                         System.out.println("[c-imagine] shadow loader: CNFE " + name

@@ -114,6 +114,23 @@ jobs:
           done
           grep -q "\[cimscene\] selftest iron_block" srv-truth/boot.log \
             || { tail -20 srv-truth/boot.log; exit 1; }
+          # GAME-classloader probes: WHERE does the real server resolve the
+          # client classes the Create construct chain touches? The probe uses
+          # a vanilla class's defining loader — the exact delegation context
+          # a game class (Screen) experiences at define time. The ANSWER is
+          # the data: OK/FAIL + code source each way is parity-relevant.
+          for C in net.minecraft.client.gui.components.Renderable \
+                   net.minecraft.client.gui.screens.Screen \
+                   net.minecraft.client.player.LocalPlayer; do
+            echo "cimscene probe-class $C" > srv-truth/console.in
+            for i in $(seq 1 10); do
+              grep -q "probe-class $C = " srv-truth/boot.log 2>/dev/null && break
+              sleep 1
+            done
+            grep -q "probe-class $C = " srv-truth/boot.log \
+              || { echo "probe-class $C produced no marker"; tail -20 srv-truth/boot.log; exit 1; }
+          done
+          grep "probe-class" srv-truth/boot.log | tail -6
           echo "cimscene-truth: ALL OK"
 
       - name: census parity sanity (real NeoForge rows exist)
