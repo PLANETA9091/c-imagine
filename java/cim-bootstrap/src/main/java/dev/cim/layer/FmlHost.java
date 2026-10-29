@@ -264,13 +264,16 @@ public final class FmlHost {
                 }
             }
 
-            // 5a-pre) P0 Create diagnostic: Create's construct touches client
-            // classes (definition-time supertype resolution) — on the real
-            // NeoForge dedicated server those classes ARE on the classpath
-            // (the installer's merged srg jar ships client+server). Probe
-            // whether the shadow index can see one BEFORE mod construction:
-            // original-name resource lookup (jar entry exists?) vs relocated
-            // name load (relocation + index path works?).
+            // 5a-pre) P0 Create contract witness: the game classpath is a
+            // DELTA UNION (srg base + neoforge-<ver>-server.jar patched
+            // delta). The binpatches were cut against the merged client∪server
+            // jar, so the delta carries exactly the client classes NeoForge
+            // patches. Probe BOTH sides of that contract BEFORE mod
+            // construction:
+            //   POSITIVE: BakedModel (patched → in the delta → must load —
+            //     Create.<clinit> touches it on the real server);
+            //   NEGATIVE: Renderable (unpatched → absent on the real server →
+            //     must stay unresolvable here).
             try {
                 Object probe = shadowLoader()
                         .getResource("net/minecraft/client/gui/components/Renderable.class");
@@ -285,6 +288,14 @@ public final class FmlHost {
                 System.out.println(LOG + " probe: Renderable loadable = " + rend.getName());
             } catch (Throwable t) {
                 System.out.println(LOG + " probe: Renderable NOT loadable: " + t);
+            }
+            try {
+                Class<?> baked = Class.forName(
+                        "cim.shadow.mc1211.net.minecraft.client.resources.model.BakedModel",
+                        false, shadowLoader());
+                System.out.println(LOG + " probe: BakedModel loadable = " + baked.getName());
+            } catch (Throwable t) {
+                System.out.println(LOG + " probe: BakedModel NOT loadable: " + t);
             }
 
             // 5a) P0 Create: custom registry CREATION during mod construction.

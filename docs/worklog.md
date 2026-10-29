@@ -1303,3 +1303,48 @@ Stage Summary:
 - Parity law refined: EVERY class source divergence between the shadow
   index and the real server's classpath is a parity defect. The dump step
   stays in create-truth as a permanent contract witness.
+
+---
+Task ID: 12-o
+Agent: main
+Task: THE GAME CLASSPATH IS A DELTA UNION — bundler client filter was the wrong model
+
+Work Log:
+- The bundler-anatomy diag (76d37e5) DISPROVED the nested-jar hypothesis:
+  the installed neoforge-21.1.265-server.jar has ZERO nested jars and ZERO
+  META-INF lists — it is a FLAT 1613-class jar (screen=1, renderable=0).
+- Ground truth from the installer profile itself (install_profile.json,
+  parsed locally — static analysis only): the server pipeline is
+  jarsplitter (unpacked -> slim + extra) -> AutoRenamingTool (slim -> srg)
+  -> binarypatcher `--clean {MC_SRG} --output {PATCHED} --apply {BINPATCH}`
+  with DATA PATCHED = [net.neoforged:neoforge:21.1.265:server]. So
+  neoforge-<ver>-server.jar IS the PATCHED DELTA — the set of classes whose
+  bytes NeoForge's binpatches change — and the real server's game classpath
+  is the UNION of srg base (6148, zero client) + patched delta (1613,
+  including client) + universal + libraries, served through
+  BootstrapLauncher's union filesystem.
+- WHY the delta carries client classes: the binpatches are cut against the
+  MERGED client∪server jar, so every patched client class ships to the
+  server too. Witnesses: patches/net/minecraft/client/gui/screens/Screen
+  .java.patch and .../client/resources/model/BakedModel.java.patch EXIST on
+  the NeoForge 1.21.x/1.21.1 trees; Renderable.java.patch does NOT. That is
+  exactly the observed Screen=1/Renderable=0 split.
+- Consequence: the real server RESOLVES BakedModel (truth leg constructs
+  Create through Create.<clinit>:91 = the REGISTRATE static init) and
+  cleanly fails every OTHER client class. Our b252d10 client-entry filter
+  diverged from the truth leg BY CONSTRUCTION.
+- Fix: index the patched delta in FULL (no client filter). Dist-guard parity
+  is preserved because unpatched client classes (Renderable) are not in the
+  delta and stay absent. Relocated-key index is last-wins and the walk
+  orders srg before the delta, so patched bytes win overlaps — matching the
+  real union filesystem. Slim/unpacked/server-1.21.1.jar stay excluded.
+- Contract hardened in code + CI: FmlHost 5a-pre now probes BOTH sides
+  (BakedModel loadable = POSITIVE, Renderable NOT loadable = NEGATIVE) and
+  the layer leg gates on both lines; the truth leg dump step now prints the
+  delta anatomy (client count + Screen/BakedModel/Renderable/RenderType/
+  ClientLevel presence) as the permanent classpath witness.
+
+Stage Summary:
+- The shadow index now serves byte-exactly what the real server's game
+  classpath serves: srg base + patched delta (client entries included) +
+  universal + libraries. Next verdict decides the Create construct chain.

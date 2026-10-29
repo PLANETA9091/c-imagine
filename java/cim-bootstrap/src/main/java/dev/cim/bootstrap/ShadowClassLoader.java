@@ -39,17 +39,34 @@ public final class ShadowClassLoader extends ClassLoader {
         "org.xml.sax.", "org.ietf.jgss.",
     };
 
-    /** Jar name fragments excluded from the layer walk: build/launch
-     * intermediates the real server never serves classes from.
+    /** Jar name fragments excluded from the layer walk: launch intermediates
+     * the real server's game classpath never serves classes from.
      *
-     * The server BUNDLER (neoforge-&lt;ver&gt;-server.jar) stays INDEXED —
-     * every green run's class resolution went through it and through the slim
-     * jar — but its entries under {@code net/minecraft/client/**} are
-     * filtered at index time (see buildIndex): on the real dedicated server
-     * those client classes do not exist, and Create's dist-guarded client
-     * probes must FAIL cleanly exactly like they do there (the bundler
-     * carries Screen WITHOUT Renderable — an indexed Screen made the probe
-     * succeed and then die on the missing remainder). */
+     * THE GAME CLASSPATH MODEL (verified against the installer profile + a
+     * green create-truth run, 2026-10-29): the installer produces the game
+     * content as a DELTA UNION —
+     * <ul>
+     *   <li>{@code server-…-srg.jar} = the vanilla base (6148 classes, obf→srg
+     *       renamed, ZERO client classes), and</li>
+     *   <li>{@code neoforge-&lt;ver&gt;-server.jar} = the PATCHED DELTA
+     *       (binarypatcher {@code --clean srg --apply server.lzma}), ~1613
+     *       classes whose bytes NeoForge's binpatches change.</li>
+     * </ul>
+     * The binpatches are generated against the MERGED client∪server jar, so
+     * the delta legitimately carries exactly the client classes NeoForge
+     * patches (Screen, BakedModel, ClientLevel, … — witness:
+     * {@code patches/net/minecraft/client/…/Screen.java.patch} exists,
+     * {@code Renderable.java.patch} does not). The real dedicated server
+     * resolves those delta client classes (Create's {@code <clinit>} touches
+     * BakedModel there and constructs fine) and cleanly fails every OTHER
+     * client class — our index must reproduce BOTH properties. The delta must
+     * also WIN over the base for overlapping entries: the relocated-key index
+     * is last-wins and the walk orders the base before the delta, which
+     * mirrors the real union filesystem (patched bytes served).
+     *
+     * Excluded here: the unpatched SLIM jar (would shadow the patched bytes),
+     * the unpacked jar, the vanilla {@code server-1.21.1.jar} launcher stub
+     * and build-time {@code -sources/-javadoc} artifacts. */
     private static final String[] LAYER_EXCLUDES = {
         "-unpacked.jar", "-sources.jar", "-javadoc.jar", "server-1.21.1.jar",
         "-slim.jar",
@@ -364,21 +381,20 @@ public final class ShadowClassLoader extends ClassLoader {
     private Map<String, IndexEntry> buildIndex() {
         Map<String, IndexEntry> map = new HashMap<>(1 << 18);
         for (int i = 0; i < jars.size(); i++) {
-            // The server BUNDLER jar (neoforge-<ver>-server.jar) ships a
-            // partial PATCHED vanilla set — INCLUDING client classes the real
-            // dedicated server never has (Screen yes, Renderable no). Its
-            // net/minecraft/client/** entries must not resolve: Create's
-            // dist-guarded client probes have to fail CLEANLY, exactly like
-            // they do on the real server.
-            boolean bundler = jars.get(i).getName().endsWith("-server.jar");
+            // The neoforge-<ver>-server.jar PATCHED DELTA is indexed in FULL,
+            // client entries included: the binpatches it applies were cut
+            // against the merged client∪server jar, so its client classes
+            // (Screen, BakedModel, …) exist on the real dedicated server too.
+            // Filtering them here diverged from the truth leg — Create.<clinit>
+            // resolved BakedModel there and died on our side (CNFE at
+            // Create.java:91, run 76d37e5). Dist-guard parity is preserved by
+            // construction: classes NOT in the delta (Renderable) stay absent
+            // from this index exactly as they are absent on the real server.
             var entries = jars.get(i).entries();
             while (entries.hasMoreElements()) {
                 JarEntry e = entries.nextElement();
                 String name = e.getName();
                 if (name.endsWith("/") || name.endsWith("module-info.class")) {
-                    continue;
-                }
-                if (bundler && name.startsWith("net/minecraft/client/")) {
                     continue;
                 }
                 if (name.endsWith(".class")) {
