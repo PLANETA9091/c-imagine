@@ -276,8 +276,7 @@ pub struct RewriteStats {
 /// rewrite so far. The layer's boot log reports it before mod construction
 /// (the CI gate asserts it is non-zero — the real dedicated server's
 /// transform strips these members before verification, 12-q).
-static CLIENT_MEMBERS_STRIPPED: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+static CLIENT_MEMBERS_STRIPPED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// Read the process-wide dist-strip counter.
 pub fn client_members_stripped_total() -> u64 {

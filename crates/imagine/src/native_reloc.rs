@@ -257,9 +257,7 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_relocate0<'loca
 /// # Safety
 /// Standard JNI contract.
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_clientMembersStripped0<
-    'local,
->(
+pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_clientMembersStripped0<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> i64 {
