@@ -218,6 +218,183 @@ impl ClassFile {
         self.utf8(idx)
     }
 
+    /// True when the member carries `@OnlyIn(Dist.CLIENT)`.
+    ///
+    /// The real dedicated server's class transform removes these members
+    /// before verification (12-q: the ElevatorContactBlock.displayScreen
+    /// chain proves the verifier never sees them there — otherwise Screen
+    /// would resolve and its Renderable superinterface would NCDFE the
+    /// construct). The annotation is checked under its ORIGINAL name — this
+    /// runs before any pool rewrite, and the check must be identical for
+    /// layer classes and refs-only mod classes.
+    fn member_is_client_only(&self, m: &Member) -> bool {
+        // m.attrs: (attribute_count u2) { attribute_name_index u2,
+        //            attribute_length u4, info[length] }
+        let b = &m.attrs;
+        if b.len() < 2 {
+            return false;
+        }
+        let Some(count) = read_u16_at(b, 0) else {
+            return false;
+        };
+        let mut off = 2usize;
+        for _ in 0..count {
+            if off + 6 > b.len() {
+                return false;
+            }
+            let Some(name_idx) = read_u16_at(b, off) else {
+                return false;
+            };
+            let len = u32::from_be_bytes([b[off + 2], b[off + 3], b[off + 4], b[off + 5]]) as usize;
+            let info_start = off + 6;
+            if info_start + len > b.len() {
+                return false;
+            }
+            let is_rva = self
+                .utf8(name_idx)
+                .map(|n| n == b"RuntimeVisibleAnnotations")
+                .unwrap_or(false);
+            if is_rva && self.annos_contain_client_only(&b[info_start..info_start + len]) {
+                return true;
+            }
+            off = info_start + len;
+        }
+        false
+    }
+
+    /// Parse a `RuntimeVisibleAnnotations` payload (annotations_count u2,
+    /// then `annotation` structures) and report whether ANY annotation is
+    /// `@OnlyIn` with element value `Dist.CLIENT` (enum tag 'e').
+    fn annos_contain_client_only(&self, payload: &[u8]) -> bool {
+        if payload.len() < 2 {
+            return false;
+        }
+        let Some(count) = read_u16_at(payload, 0) else {
+            return false;
+        };
+        let mut off = 2usize;
+        for _ in 0..count {
+            // type_index u2
+            if off + 2 > payload.len() {
+                return false;
+            }
+            let Some(type_idx) = read_u16_at(payload, off) else {
+                return false;
+            };
+            let is_only_in = self
+                .utf8(type_idx)
+                .map(|t| t == b"Lnet/neoforged/api/distmarker/OnlyIn;")
+                .unwrap_or(false);
+            off += 2;
+            if off + 2 > payload.len() {
+                return false;
+            }
+            let Some(pairs) = read_u16_at(payload, off) else {
+                return false;
+            };
+            off += 2;
+            for _ in 0..pairs {
+                // element_name_index u2, then element_value
+                if off + 2 > payload.len() {
+                    return false;
+                }
+                let Some(_elem_name) = read_u16_at(payload, off) else {
+                    return false;
+                };
+                off += 2;
+                if off >= payload.len() {
+                    return false;
+                }
+                let tag = payload[off];
+                off += 1;
+                match tag {
+                    // enum constant: type_name_index u2 + const_name_index u2
+                    b'e' => {
+                        if off + 4 > payload.len() {
+                            return false;
+                        }
+                        let tn = read_u16_at(payload, off).unwrap_or(0);
+                        let cn = read_u16_at(payload, off + 2).unwrap_or(0);
+                        off += 4;
+                        if is_only_in
+                            && self
+                                .utf8(tn)
+                                .map(|t| t == b"Lnet/neoforged/api/distmarker/Dist;")
+                                .unwrap_or(false)
+                            && self.utf8(cn).map(|c| c == b"CLIENT").unwrap_or(false)
+                        {
+                            return true;
+                        }
+                    }
+                    // primitive/String: one u2
+                    b'Z' | b'B' | b'C' | b'S' | b'I' | b'F' | b'J' | b'D' | b's' => off += 2,
+                    // class: one u2
+                    b'c' => off += 2,
+                    // nested annotation: parse structurally (rare; keep the
+                    // walker total so a malformed member cannot loop us)
+                    b'@' => {
+                        // treat like a fresh annotation header: type + pairs
+                        if off + 2 > payload.len() {
+                            return false;
+                        }
+                        off += 2;
+                        if off + 2 > payload.len() {
+                            return false;
+                        }
+                        let np = read_u16_at(payload, off).unwrap_or(0);
+                        off += 2;
+                        // conservatively skip nested pairs as name+u2 slots
+                        for _ in 0..np {
+                            off += 2; // element name
+                            if off >= payload.len() {
+                                return false;
+                            }
+                            let inner = payload[off];
+                            off += 1;
+                            match inner {
+                                b'e' => off += 4,
+                                b'Z' | b'B' | b'C' | b'S' | b'I' | b'F' | b'J' | b'D' | b's'
+                                | b'c' => off += 2,
+                                b'[' => {
+                                    if off + 2 > payload.len() {
+                                        return false;
+                                    }
+                                    let n = read_u16_at(payload, off).unwrap_or(0);
+                                    off += 2 + 2 * n as usize; // shallow: array of scalars
+                                }
+                                b'@' => return false, // deeper nesting: bail, keep total
+                                _ => return false,
+                            }
+                        }
+                    }
+                    // array of element values
+                    b'[' => {
+                        if off + 2 > payload.len() {
+                            return false;
+                        }
+                        let n = read_u16_at(payload, off).unwrap_or(0);
+                        off += 2;
+                        for _ in 0..n {
+                            if off >= payload.len() {
+                                return false;
+                            }
+                            let itag = payload[off];
+                            off += 1;
+                            match itag {
+                                b'e' => off += 4,
+                                b'Z' | b'B' | b'C' | b'S' | b'I' | b'F' | b'J' | b'D' | b's'
+                                | b'c' => off += 2,
+                                _ => return false, // nested annotation inside array: bail
+                            }
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+        }
+        false
+    }
+
     /// Rebuild the class file with relocation applied.
     ///
     /// Returns the new bytes plus rewrite statistics. Never mutates the
@@ -371,6 +548,19 @@ impl ClassFile {
 
         // Member declaration descriptors (field_info / method_info).
         let mut body = self.body.clone();
+        // Dist parity (12-q): the real dedicated server's class transform
+        // STRIPS members carrying @OnlyIn(Dist.CLIENT) before verification,
+        // so client-only references (e.g. ElevatorContactBlock.displayScreen
+        // -> new ElevatorContactScreen -> Screen) never reach the verifier
+        // and client classes are never resolved from server-executed paths.
+        // Mirror that here for BOTH layer and mod classes.
+        let before_f = body.fields.len();
+        let before_m = body.methods.len();
+        body.fields.retain(|m| !self.member_is_client_only(m));
+        body.methods.retain(|m| !self.member_is_client_only(m));
+        let stripped = (before_f - body.fields.len() + before_m - body.methods.len()) as u64;
+        stats.client_members_stripped += stripped;
+        crate::add_client_members_stripped(stripped);
         // Access transformers (M2): widen class + member access exactly like
         // a real AT-patched runtime. Lookups use the ORIGINAL names — the
         // pool is untouched at this point.
@@ -646,6 +836,14 @@ fn read_u16(bytes: &[u8], pos: &mut usize) -> Option<u16> {
     let v = u16::from_be_bytes([bytes[*pos], bytes[*pos + 1]]);
     *pos += 2;
     Some(v)
+}
+
+/// Non-advancing variant used by the annotation walker.
+fn read_u16_at(bytes: &[u8], off: usize) -> Option<u16> {
+    if off + 2 > bytes.len() {
+        return None;
+    }
+    Some(u16::from_be_bytes([bytes[off], bytes[off + 1]]))
 }
 
 fn read_u32(bytes: &[u8], pos: &mut usize) -> Option<u32> {

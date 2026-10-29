@@ -267,6 +267,25 @@ pub struct RewriteStats {
     pub classes_renamed: usize,
     pub descriptors_rewritten: usize,
     pub utf8_added: usize,
+    /// Fields/methods carrying `@OnlyIn(Dist.CLIENT)` removed during the
+    /// rewrite — the dedicated-server dist-strip parity counter (12-q).
+    pub client_members_stripped: u64,
+}
+
+/// Process-wide total of `@OnlyIn(Dist.CLIENT)` members stripped by every
+/// rewrite so far. The layer's boot log reports it before mod construction
+/// (the CI gate asserts it is non-zero — the real dedicated server's
+/// transform strips these members before verification, 12-q).
+static CLIENT_MEMBERS_STRIPPED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// Read the process-wide dist-strip counter.
+pub fn client_members_stripped_total() -> u64 {
+    CLIENT_MEMBERS_STRIPPED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+fn add_client_members_stripped(n: u64) {
+    CLIENT_MEMBERS_STRIPPED.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Relocate one class file.

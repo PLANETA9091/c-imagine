@@ -1391,3 +1391,45 @@ Stage Summary:
 - The construct chain is now fully named (Create.<clinit> → AllBlocks:1408 →
   ElevatorContactBlock → Screen → Renderable) with a per-branch probe plan;
   the probes turn the next run into the deciding evidence.
+
+---
+Task ID: 12-q
+Agent: main
+Task: Dist parity implemented — @OnlyIn(CLIENT) strip + the invalid-dist class guard
+
+Work Log:
+- The probe-class answers (run 49c1013, truth leg GREEN) NAME the real
+  contract: Renderable → ClassNotFoundException (not even in the delta);
+  Screen → RuntimeException "Attempted to load class ... for invalid dist
+  DEDICATED_SERVER". The real server therefore (a) runs a dist checker in
+  the classload path for game client classes and (b) strips
+  @OnlyIn(CLIENT)-annotated members during the class transform — that is
+  WHY its verifier never records the ElevatorContactBlock.displayScreen →
+  ElevatorContactScreen → Screen constraint and Create constructs there
+  while our layer died with CNFE(Renderable).
+- Implemented both halves:
+  * cim-reloc: the class rewrite now STRIPS fields/methods carrying
+    @OnlyIn(Dist.CLIENT) (annotation parsed from RuntimeVisibleAnnotations,
+    enum element value == Dist.CLIENT) on BOTH the layer and the refs-only
+    mod paths, before verification can ever see them; a process-wide
+    counter (client_members_stripped_total) surfaces through JNI and the
+    boot log ("client members stripped: N").
+  * ShadowClassLoader: classes whose ORIGINAL name lives under
+    net/minecraft/client/** are REFUSED at findClass with the real
+    server's exact rejection text ("Attempted to load class <orig> for
+    invalid dist DEDICATED_SERVER"). The index still carries the delta's
+    client entries — serving is what is forbidden, exactly like the real
+    dist checker on top of the union filesystem.
+- Contract gates hardened in the layer leg: BakedModel NOT loadable (dist
+  rejection), Renderable NOT loadable, the invalid-dist text present, and
+  the strip counter non-zero.
+- Known boundary (documented, fix on evidence): mod classes annotated
+  @OnlyIn(CLIENT) are not yet refused at load (the real pipeline removes
+  them at jar-scan time); member stripping keeps executing paths from
+  referencing them, so the divergence is only visible to direct probes.
+
+Stage Summary:
+- The layer now reproduces the real server's dist mechanics end to end:
+  delta union classpath + member strip + class-load rejection. Next
+  verdict either constructs Create in the shadow space or names the next
+  gate on the chain.

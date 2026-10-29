@@ -109,7 +109,18 @@ public final class NativeReloc {
         return out;
     }
 
+    /** Process-wide count of {@code @OnlyIn(Dist.CLIENT)} members stripped
+     *  by the relocation stage (layer + mod paths). Reported in the boot log
+     *  before mod construction; the CI gate asserts it is non-zero so the
+     *  dist-strip parity can never silently stop firing (12-q). */
+    public static long clientMembersStripped() {
+        ensureLoaded();
+        return clientMembersStripped0();
+    }
+
     private static native void registerMods0(String manifestJson);
+
+    private static native long clientMembersStripped0();
 
     private static native byte[] relocateMod0(String internalName, byte[] classBytes);
 

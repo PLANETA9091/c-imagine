@@ -246,3 +246,22 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_relocate0<'loca
         }
     }
 }
+
+/// `private static native long clientMembersStripped0();`
+///
+/// Process-wide count of `@OnlyIn(Dist.CLIENT)` members the relocation stage
+/// has stripped so far (both the layer and the mod refs-only paths report
+/// into it). The layer's boot log surfaces it; the CI gate asserts non-zero
+/// so the dist-strip parity can never silently stop firing (12-q).
+///
+/// # Safety
+/// Standard JNI contract.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_clientMembersStripped0<
+    'local,
+>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> i64 {
+    cim_reloc::client_members_stripped_total() as i64
+}

@@ -301,6 +301,25 @@ public final class ShadowClassLoader extends ClassLoader {
         if (source == null) {
             throw new ClassNotFoundException(name);
         }
+        // Dist parity (12-q): the real dedicated server's classloader REJECTS
+        // game client classes outright — the cimscene probe-class on the
+        // truth leg measured the exact contract:
+        //   Class.forName("net.minecraft.client.gui.screens.Screen") on the
+        //   REAL server → RuntimeException "Attempted to load class
+        //   net/minecraft/client/gui/screens/Screen for invalid dist
+        //   DEDICATED_SERVER", while Renderable (no patch → not even in the
+        //   delta) → plain ClassNotFoundException.
+        // The index still carries the delta's client entries (the union
+        // model), but serving them is forbidden exactly as the real dist
+        // checker forbids them. The rejection text names the ORIGINAL class
+        // like the real server does.
+        if (source.internalName().startsWith("net/minecraft/client/")) {
+            String origDots = source.internalName()
+                    .substring(0, source.internalName().length() - ".class".length())
+                    .replace('/', '.');
+            throw new RuntimeException("Attempted to load class " + origDots
+                    + " for invalid dist DEDICATED_SERVER");
+        }
         if (DEBUG_ORIG) {
             System.out.println("[c-imagine][dbg] findClass: " + name);
             if (name.startsWith("net.minecraft.") || name.startsWith("com.mojang.")

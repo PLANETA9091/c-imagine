@@ -357,8 +357,10 @@ jobs:
           grep -q "\[c-imagine\] mod create: constructed" $L || fail "create not constructed in the layer"
           grep -q "\[cimscene\] census written scene-manifest.tsv" $L || fail "census missing in the layer (Create leg)"
           test -f out-create/c-imagine/scenes/scene-manifest.tsv || fail "census file missing"
-          grep -q "probe: BakedModel loadable" $L || fail "delta client class BakedModel not resolvable in the layer (must match the real server)"
+          grep -q "probe: BakedModel NOT loadable" $L || fail "delta client class BakedModel served by the layer — the real dist checker rejects it (measured: invalid dist DEDICATED_SERVER)"
           grep -q "probe: Renderable NOT loadable" $L || fail "unpatched client class Renderable resolved in the layer (must stay absent, as on the real server)"
+          grep -q "invalid dist DEDICATED_SERVER" $L || fail "layer missing the real server's invalid-dist rejection contract"
+          grep -Eq "client members stripped: [1-9]" $L || fail "@OnlyIn(CLIENT) member strip did not fire — the real pipeline strips them before verification"
           cat out-create/c-imagine/scenes/scene-manifest.tsv
 
       - name: upload create layer census

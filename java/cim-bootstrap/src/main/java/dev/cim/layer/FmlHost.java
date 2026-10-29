@@ -264,16 +264,17 @@ public final class FmlHost {
                 }
             }
 
-            // 5a-pre) P0 Create contract witness: the game classpath is a
-            // DELTA UNION (srg base + neoforge-<ver>-server.jar patched
-            // delta). The binpatches were cut against the merged client∪server
-            // jar, so the delta carries exactly the client classes NeoForge
-            // patches. Probe BOTH sides of that contract BEFORE mod
-            // construction:
-            //   POSITIVE: BakedModel (patched → in the delta → must load —
-            //     Create.<clinit> touches it on the real server);
-            //   NEGATIVE: Renderable (unpatched → absent on the real server →
-            //     must stay unresolvable here).
+            // 5a-pre) P0 Create contract witness — the REAL server's measured
+            // contract (cimscene probe-class on the truth leg, run 49c1013):
+            //   Renderable  → ClassNotFoundException (no .java.patch → not
+            //                 even in the patched delta);
+            //   Screen      → RuntimeException "Attempted to load class ...
+            //                 for invalid dist DEDICATED_SERVER" (patched → in
+            //                 the delta, but the dist checker refuses it);
+            //   BakedModel  → same invalid-dist rejection (client package).
+            // The layer must reproduce all three, and the @OnlyIn(CLIENT)
+            // member strip in the relocator must keep Create's construct from
+            // ever reaching these resolutions.
             try {
                 Object probe = shadowLoader()
                         .getResource("net/minecraft/client/gui/components/Renderable.class");
@@ -296,6 +297,17 @@ public final class FmlHost {
                 System.out.println(LOG + " probe: BakedModel loadable = " + baked.getName());
             } catch (Throwable t) {
                 System.out.println(LOG + " probe: BakedModel NOT loadable: " + t);
+            }
+
+            // Dist-strip counter (12-q): the real dedicated server strips
+            // @OnlyIn(CLIENT) members before verification; the relocation
+            // stage mirrors that. Log the count so the CI gate can assert
+            // the strip actually fired.
+            try {
+                System.out.println(LOG + " client members stripped: "
+                        + dev.cim.bootstrap.NativeReloc.clientMembersStripped());
+            } catch (Throwable t) {
+                System.out.println(LOG + " client members stripped: unavailable: " + t);
             }
 
             // 5a) P0 Create: custom registry CREATION during mod construction.
