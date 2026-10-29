@@ -51,6 +51,6 @@ cd "$OUT"
 # construct autopsy needs the exact requester of the client-class resolution
 # that the real server never performs (12-r/12-s loop).
 java -cp "$JAR" -Dcim.gamedir="$OUT/game" \
-  -Xlog:class+resolve=info \
+  -Xlog:class+resolve=debug \
   dev.cim.bootstrap.LocalHarness "$LIB" "$LAYER" "$MODS" "$MANIFEST" \
   2>&1 | tee "$OUT/harness.log"
