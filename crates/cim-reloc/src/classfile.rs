@@ -481,7 +481,7 @@ impl ClassFile {
                                  intern: &mut Utf8Intern,
                                  next_index: &mut u16|
          -> Result<u16, ParseError> {
-            let idx = intern.intern(content.as_bytes(), next_index);
+            let idx = intern.intern(content.as_bytes(), next_index)?;
             stats.descriptors_rewritten += 1;
             Ok(idx)
         };
@@ -514,7 +514,7 @@ impl ClassFile {
                         }
                     };
                     if mapped != name {
-                        let idx = intern.intern(mapped.as_bytes(), &mut next_index);
+                        let idx = intern.intern(mapped.as_bytes(), &mut next_index)?;
                         rewritten.insert(
                             slot as u16,
                             RawEntry {
@@ -769,8 +769,13 @@ impl ClassFile {
         for entry in &intern.appended {
             match entry {
                 AppendedEntry::Utf8(content) => {
+                    // A mapped descriptor longer than 65,535 bytes would wrap
+                    // the u16 length prefix and emit a corrupt class: reject
+                    // instead of silently truncating.
+                    let len = u16::try_from(content.len())
+                        .map_err(|_| ParseError::Truncated("appended utf8 exceeds 65535 bytes"))?;
                     pool.push(TAG_UTF8);
-                    pool.extend_from_slice(&(content.len() as u16).to_be_bytes());
+                    pool.extend_from_slice(&len.to_be_bytes());
                     pool.extend_from_slice(content);
                 }
                 AppendedEntry::String(utf8_idx) => {
@@ -1043,7 +1048,7 @@ fn rewrite_attr_block(
             let new_idx = if mapped == orig {
                 sig_idx
             } else {
-                let idx = intern.intern(mapped.as_bytes(), next_index);
+                let idx = intern.intern(mapped.as_bytes(), next_index)?;
                 stats.descriptors_rewritten += 1;
                 idx
             };
@@ -1054,7 +1059,7 @@ fn rewrite_attr_block(
             // AnnotationDefault: a bare element_value (no leading count).
             let mut r = ByteCursor::new(content);
             let mut o: Vec<u8> = Vec::with_capacity(content.len());
-            rewrite_element_value(cf, table, intern, next_index, stats, &mut r, &mut o)?;
+            rewrite_element_value(cf, table, intern, next_index, stats, &mut r, &mut o, 0)?;
             o.extend_from_slice(r.rest());
             new_block.extend_from_slice(&name_idx.to_be_bytes());
             new_block.extend_from_slice(&(o.len() as u32).to_be_bytes());
@@ -1072,7 +1077,9 @@ fn rewrite_attr_block(
                     let num = r.u2().ok_or(ParseError::Truncated("param anno count"))?;
                     o.extend_from_slice(&num.to_be_bytes());
                     for _ in 0..num {
-                        rewrite_annotation(cf, table, intern, next_index, stats, &mut r, &mut o)?;
+                        rewrite_annotation(
+                            cf, table, intern, next_index, stats, &mut r, &mut o, 0,
+                        )?;
                     }
                 }
                 o.extend_from_slice(r.rest());
@@ -1093,6 +1100,11 @@ fn rewrite_attr_block(
 
 /// Re-emit one Runtime*Annotations payload with relocated annotation type
 /// descriptors (and enum/class element descriptors).
+/// Hard cap on annotation/element-value nesting during rewriting. Hostile
+/// class bytes with unbounded `@`/`[` nesting would otherwise overflow the
+/// stack of the JVM thread running the class transform.
+const MAX_REWRITE_ANNOTATION_DEPTH: usize = 64;
+
 fn rewrite_annotation_payload(
     cf: &ClassFile,
     table: &RelocationTable,
@@ -1106,12 +1118,13 @@ fn rewrite_annotation_payload(
     let num = r.u2().ok_or(ParseError::Truncated("anno count"))?;
     out.extend_from_slice(&num.to_be_bytes());
     for _ in 0..num {
-        rewrite_annotation(cf, table, intern, next_index, stats, &mut r, &mut out)?;
+        rewrite_annotation(cf, table, intern, next_index, stats, &mut r, &mut out, 0)?;
     }
     out.extend_from_slice(r.rest());
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rewrite_annotation(
     cf: &ClassFile,
     table: &RelocationTable,
@@ -1120,7 +1133,11 @@ fn rewrite_annotation(
     stats: &mut RewriteStats,
     r: &mut ByteCursor<'_>,
     out: &mut Vec<u8>,
+    depth: usize,
 ) -> Result<(), ParseError> {
+    if depth > MAX_REWRITE_ANNOTATION_DEPTH {
+        return Err(ParseError::Truncated("annotation nesting too deep"));
+    }
     let type_idx = r.u2().ok_or(ParseError::Truncated("anno type idx"))?;
     out.extend_from_slice(
         &rewrite_utf8_desc(cf, table, intern, next_index, stats, type_idx)?.to_be_bytes(),
@@ -1130,11 +1147,12 @@ fn rewrite_annotation(
     for _ in 0..num_pairs {
         let name_idx = r.u2().ok_or(ParseError::Truncated("anno pair name"))?;
         out.extend_from_slice(&name_idx.to_be_bytes());
-        rewrite_element_value(cf, table, intern, next_index, stats, r, out)?;
+        rewrite_element_value(cf, table, intern, next_index, stats, r, out, depth + 1)?;
     }
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn rewrite_element_value(
     cf: &ClassFile,
     table: &RelocationTable,
@@ -1143,7 +1161,11 @@ fn rewrite_element_value(
     stats: &mut RewriteStats,
     r: &mut ByteCursor<'_>,
     out: &mut Vec<u8>,
+    depth: usize,
 ) -> Result<(), ParseError> {
+    if depth > MAX_REWRITE_ANNOTATION_DEPTH {
+        return Err(ParseError::Truncated("annotation nesting too deep"));
+    }
     let tag = r.u1().ok_or(ParseError::Truncated("element tag"))?;
     out.push(tag);
     match tag {
@@ -1175,13 +1197,13 @@ fn rewrite_element_value(
             out.extend_from_slice(&new_idx.to_be_bytes());
         }
         b'@' => {
-            rewrite_annotation(cf, table, intern, next_index, stats, r, out)?;
+            rewrite_annotation(cf, table, intern, next_index, stats, r, out, depth + 1)?;
         }
         b'[' => {
             let num = r.u2().ok_or(ParseError::Truncated("array element"))?;
             out.extend_from_slice(&num.to_be_bytes());
             for _ in 0..num {
-                rewrite_element_value(cf, table, intern, next_index, stats, r, out)?;
+                rewrite_element_value(cf, table, intern, next_index, stats, r, out, depth + 1)?;
             }
         }
         _ => {
@@ -1213,7 +1235,7 @@ fn rewrite_utf8_desc(
     if mapped == orig {
         return Ok(idx);
     }
-    let new_idx = intern.intern(mapped.as_bytes(), next_index);
+    let new_idx = intern.intern(mapped.as_bytes(), next_index)?;
     stats.descriptors_rewritten += 1;
     Ok(new_idx)
 }
@@ -1270,12 +1292,12 @@ fn rewrite_annotation_string(
     let Some(mapped) = map_string_descriptors(content, table) else {
         return Ok(str_idx); // nothing relocatable inside — keep the original
     };
-    let new_utf8 = intern.intern(&mapped, next_index);
+    let new_utf8 = intern.intern(&mapped, next_index)?;
     // Preserve the element form: the standard CONSTANT_String indirection
     // gets a fresh String entry; the direct-UTF8 form (neoforge universal
     // jar) re-points at the interned UTF-8 itself.
     let new_idx = if is_string_const {
-        intern.intern_string(new_utf8, next_index)
+        intern.intern_string(new_utf8, next_index)?
     } else {
         new_utf8
     };

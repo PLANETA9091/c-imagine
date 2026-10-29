@@ -36,6 +36,7 @@
 //! attribute-referenced strings stay valid by construction.
 
 use cim_core::CimError;
+use classfile::ParseError;
 use std::collections::HashMap;
 
 pub mod at;
@@ -384,35 +385,34 @@ impl Utf8Intern {
     }
 
     /// Intern `content`, returning the future pool index for it. New entries
-    /// get indices after the original pool (`next_index` onward).
-    fn intern(&mut self, content: &[u8], next_index: &mut u16) -> u16 {
+    /// get indices after the original pool (`next_index` onward). Errors with
+    /// [`ParseError::PoolOverflow`] instead of panicking: the entry-count
+    /// check in the rebuild path runs too late to protect mid-rewrite
+    /// interning against a near-full pool.
+    fn intern(&mut self, content: &[u8], next_index: &mut u16) -> Result<u16, ParseError> {
         if let Some(&idx) = self.map.get(content) {
-            return idx;
+            return Ok(idx);
         }
         let idx = *next_index;
-        *next_index = next_index
-            .checked_add(1)
-            .expect("constant pool index overflow is rejected by the caller");
+        *next_index = next_index.checked_add(1).ok_or(ParseError::PoolOverflow)?;
         self.map.insert(content.to_vec(), idx);
         self.appended.push(AppendedEntry::Utf8(content.to_vec()));
-        idx
+        Ok(idx)
     }
 
     /// Intern a CONSTANT_String entry pointing at `utf8_idx` (annotation
     /// string elements carry relocated descriptors — mixin `method`/
     /// `target` strings name ORIGINAL classes and must follow the
     /// relocation, 12-u).
-    fn intern_string(&mut self, utf8_idx: u16, next_index: &mut u16) -> u16 {
+    fn intern_string(&mut self, utf8_idx: u16, next_index: &mut u16) -> Result<u16, ParseError> {
         if let Some(&idx) = self.strings.get(&utf8_idx) {
-            return idx;
+            return Ok(idx);
         }
         let idx = *next_index;
-        *next_index = next_index
-            .checked_add(1)
-            .expect("constant pool index overflow is rejected by the caller");
+        *next_index = next_index.checked_add(1).ok_or(ParseError::PoolOverflow)?;
         self.strings.insert(utf8_idx, idx);
         self.appended.push(AppendedEntry::String(utf8_idx));
-        idx
+        Ok(idx)
     }
 
     fn len(&self) -> usize {
