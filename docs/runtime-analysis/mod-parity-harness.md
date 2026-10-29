@@ -197,3 +197,42 @@ Channel proofs (each reuses already-measured machinery):
   measured footprint) with per-entry rows joined from one capture — the grid
   geometry must stay inside the calibrated region; measured region bounds come
   first.
+
+## 8. The mixin gate (next stage, design fixed 2026-10-29)
+
+Measured state: Create constructs (12-t) but its mixins never apply — the
+shadow loader serves raw relocated bytes, bypassing the modlauncher
+transformer chain that runs sponge-mixin on the real server. First symptom:
+`LeverBlock` fails the `BlockBehaviourAccessor` accessor cast.
+
+Design for the layer's mixin subsystem:
+
+1. sponge-mixin (libraries/net/fabricmc/sponge-mixin, 0.16.4) lives OUTSIDE
+   the relocation namespaces — its classes pass through byte-identical and
+   it can run in its own package. FML's own `FMLMixinService`
+   (cim.shadow.neoforge.net.neoforged.fml.loading.mixin) implements the
+   service SPI and ships in the loader jar's META-INF/services.
+2. Bootstrap order: shadow loader + mod jars registered → initialize
+   sponge-mixin with a service whose `getClassLoader()` returns the SHADOW
+   loader (mixin must instrument OUR classes, not a module layer).
+3. The hook: `ShadowClassLoader` consults the mixin transformer before
+   defining every LAYER (game) class — the same point where the real
+   modlauncher chain applies transformations.
+4. Relocation of mixin metadata: mod mixin configs (already collected by
+   cim-modscan into the manifest as `mixin_configs`) name their targets in
+   ORIGINAL mojmap names. At config-load time the targets (and the refmap
+   keys, where present) must be translated to the relocated names
+   (`cim.shadow.mc1211.net.minecraft.*`) BEFORE registration; the mixin
+   CLASS bytes themselves are mod classes and are already refs-only
+   relocated.
+5. Acceptance: Create's construct passes the accessor casts (BlockBehaviour
+   carries BlockBehaviourAccessor), then the register-phase mixin injectors
+   apply; the census-parity job then produces the FIRST Create census diff
+   (block=643, item=699, block_entity=114, entity=9, menu=14, particle=13,
+   sound=79 in the create namespace per the truth census, 12-l).
+
+Open questions: FMLMixinService's modlauncher expectations (its transformer
+plumbing assumes the modlauncher pipeline — may need a thin service of our
+own instead of FML's); refmap direction for mods compiled against SRG-era
+toolchains (Create 6.0.10 for NeoForge 1.21.1 is mojmap-native — refmaps
+likely absent or no-op).
