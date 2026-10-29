@@ -47,6 +47,10 @@ cp "$ROOT/scripts/log4j2-layer.xml" "$OUT/"
 # pipefail-safe tee: the harness exit code propagates
 set -o pipefail
 cd "$OUT"
+# -Xlog:class+resolve: the JVM names every CP resolution site — the Create
+# construct autopsy needs the exact requester of the client-class resolution
+# that the real server never performs (12-r/12-s loop).
 java -cp "$JAR" -Dcim.gamedir="$OUT/game" \
+  -Xlog:class+resolve=info \
   dev.cim.bootstrap.LocalHarness "$LIB" "$LAYER" "$MODS" "$MANIFEST" \
   2>&1 | tee "$OUT/harness.log"
