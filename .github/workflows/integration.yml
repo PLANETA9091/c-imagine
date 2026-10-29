@@ -8,6 +8,14 @@ name: integration
 # (paths filter below), on manual dispatch, and once a week as a scheduled
 # regression net. Docs-only pushes run nothing. The local loop
 # (scripts/local-check.sh + scripts/run-m2-harness.sh) stays for iteration.
+permissions:
+  contents: read
+
+concurrency:
+  # Same-name runs queue instead of stacking (minutes economy).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   push:
     branches: [main]
@@ -778,9 +786,11 @@ jobs:
           # counts first; when both entry listings exist, the join goes to
           # EXACT set equality per registry (counts can match, sets can't lie)
           if test -n "$TE" && test -n "$LE"; then
+            set -o pipefail  # census-diff exits RED; don't let tee mask it
             python3 scripts/cimscene/census-diff.py "$T" "$L" "$TE" "$LE" | tee census-diff.txt
           else
             echo "(entry listings missing — counts-only diff)"
+            set -o pipefail  # census-diff exits RED; don't let tee mask it
             python3 scripts/cimscene/census-diff.py "$T" "$L" | tee census-diff.txt
           fi
           grep -q "CENSUS PARITY: GREEN" census-diff.txt

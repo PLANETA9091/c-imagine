@@ -10,6 +10,14 @@ name: ground-truth
 # of folklore. Nothing here is committed to the repo (artifact-only, per
 # AGENTS.md).
 
+permissions:
+  contents: read
+
+concurrency:
+  # Same-name runs queue instead of stacking (minutes economy).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch: # economy mode (owner directive 2026-10-26): dispatch only
 

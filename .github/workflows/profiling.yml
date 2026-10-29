@@ -3,6 +3,14 @@ name: profiling
 # Performance law enforcement (docs/ARCHITECTURE.md §4.6):
 #  - criterion benchmarks with cached baselines (>=10% regression fails)
 #  - bare Paper vs Paper+c-imagine boot time + RSS budget gate
+permissions:
+  contents: read
+
+concurrency:
+  # Same-name runs queue instead of stacking (minutes economy).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch: # economy mode (owner directive 2026-10-26): no nightly cron
 
@@ -13,6 +21,7 @@ jobs:
   bench:
     name: criterion benches (+ baseline cache)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -101,9 +110,16 @@ jobs:
 
       - name: compare budgets
         run: |
-          boot_time() { grep -m1 -oE "Done \(([0-9.]+)s\)" "$1" | grep -oE "[0-9.]+" || echo "999"; }
+          # NO sentinel fallback: a missing boot marker used to report 999 for
+          # BOTH servers, making 999/999 = 1.00 a "passing" ratio and hiding
+          # total boot failure behind a green gate.
+          boot_time() { grep -m1 -oE "Done \(([0-9.]+)s\)" "$1" | grep -oE "[0-9.]+" || echo ""; }
           peak_rss_kb() { sort -n "$1" | tail -1 || echo 0; }
           A_T=$(boot_time bare/boot.log); B_T=$(boot_time modded/boot.log)
+          if [ -z "$A_T" ] || [ -z "$B_T" ]; then
+            echo "FAIL: boot marker missing (bare=${A_T:-none} modded=${B_T:-none}) — the budget gate cannot observe a server that never booted" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           A_R=$(peak_rss_kb bare/rss.log); B_R=$(peak_rss_kb modded/rss.log)
           echo "| metric | bare | c-imagine | delta |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"

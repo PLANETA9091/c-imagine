@@ -13,6 +13,14 @@ name: parity-diff
 # Actions policy (owner directive): dispatch-only, budget is scarce — one
 # dispatch = one measured identity datum per channel.
 
+permissions:
+  contents: read
+
+concurrency:
+  # Same-name runs queue instead of stacking (minutes economy).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:

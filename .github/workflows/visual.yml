@@ -6,6 +6,14 @@ name: visual
 # against NeoForge-rendered ground truth.
 # Actions policy (owner directive, updated 2026-10-26): minutes nearly
 # exhausted — dispatch-only.
+permissions:
+  contents: read
+
+concurrency:
+  # Same-name runs queue instead of stacking (minutes economy).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
 
@@ -344,7 +352,7 @@ jobs:
           # be plain; if even the plain setblock is silent, report HERE,
           # not only at the pixel gate):
           grep -q "Changed the block at 0, -60, 3" srv/boot.log \
-            || { echo "setblock feedback MISSING — the locked leg's block was never placed"; tail -20 srv/boot.log; }
+            || { echo "setblock feedback MISSING — the locked leg's block was never placed"; tail -20 srv/boot.log; exit 1; }
           grep -E "Filled|No blocks were filled" srv/boot.log \
             || echo "fill feedback not found (non-fatal — pre/shot pair decides)"
           # PALETTE pixel leg (M6 palette channel — the ModTintScanner/

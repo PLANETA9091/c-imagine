@@ -11,6 +11,14 @@ name: mod-matrix
 # the harness must behave identically on real NeoForge and inside c-imagine
 # before any target mod is added. Census parity is the FIRST gate.
 
+permissions:
+  contents: read
+
+concurrency:
+  # Same-name runs queue instead of stacking (minutes economy).
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch: {}
   push:
@@ -431,9 +439,11 @@ jobs:
           # counts first; when both entry listings exist, the join goes to
           # EXACT set equality per registry (counts can match, sets can't lie)
           if test -n "$TE" && test -n "$LE"; then
+            set -o pipefail  # census-diff exits RED; don't let tee mask it
             python3 scripts/cimscene/census-diff.py "$T" "$L" "$TE" "$LE" | tee create-census-diff.txt
           else
             echo "(entry listings missing — counts-only diff)"
+            set -o pipefail  # census-diff exits RED; don't let tee mask it
             python3 scripts/cimscene/census-diff.py "$T" "$L" | tee create-census-diff.txt
           fi
           grep -q "CENSUS PARITY: GREEN" create-census-diff.txt || {
