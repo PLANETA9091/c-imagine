@@ -18,6 +18,10 @@ fn main() {
 
     match env::var("CIM_BOOTSTRAP_JAR") {
         Ok(src) => {
+            // Track the jar file itself: replacing the jar at the SAME path
+            // must rebuild the crate, otherwise a stale bootstrap gets
+            // silently embedded into the module binary.
+            println!("cargo:rerun-if-changed={src}");
             fs::copy(&src, &dest).unwrap_or_else(|e| panic!("copy CIM_BOOTSTRAP_JAR ({src}): {e}"));
         }
         Err(_) => {

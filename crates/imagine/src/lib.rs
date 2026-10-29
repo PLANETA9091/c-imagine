@@ -44,6 +44,37 @@ pub unsafe extern "C" fn cplugin_init(
     vm: JavaVmPtr,
     options: *const c_char,
 ) -> i32 {
+    // Panic firewall: a Rust panic unwinding out of `extern "C"` aborts the
+    // whole host JVM. Catch at the boundary, log, and report failure through
+    // the return code instead.
+    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        cplugin_init_impl(api, vm, options)
+    }));
+    match res {
+        Ok(code) => code,
+        Err(p) => {
+            eprintln!(
+                "{} PANIC in cplugin_init: {} (host JVM protected)",
+                cim_core::LOG_PREFIX,
+                panic_message(&p)
+            );
+            1
+        }
+    }
+}
+
+/// Extract a human-readable message from a boxed panic payload.
+fn panic_message(p: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
+unsafe fn cplugin_init_impl(api: *const CPluginApi, vm: JavaVmPtr, options: *const c_char) -> i32 {
     eprintln!("{} module init (native, pre-kernel)", cim_core::LOG_PREFIX);
 
     // SDK pipeline first — everything below rides on it.
@@ -119,10 +150,17 @@ pub unsafe extern "C" fn cplugin_init(
     let vm_ptr = SendVmPtr(vm);
 
     // Loader thread: deploy + drive the Java bootstrap, then scan mods.
-    std::thread::Builder::new()
+    if std::thread::Builder::new()
         .name("cim-loader".into())
         .spawn(move || loader_thread(vm_ptr, opts))
-        .expect("spawn cim-loader thread");
+        .is_err()
+    {
+        eprintln!(
+            "{} ERROR: failed to spawn cim-loader thread",
+            cim_core::LOG_PREFIX
+        );
+        return 1;
+    }
 
     // Kernel lifecycle marker (M1+ continues the boot sequence here).
     cplug_sdk::on_kernel_ready("org.bukkit.Bukkit", || {
@@ -219,10 +257,17 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
 }
 
 fn deploy_bootstrap() -> Result<PathBuf, String> {
-    let dir = std::env::temp_dir().join("c-imagine");
+    // Per-process private dir: a shared, predictable `/tmp/c-imagine/...`
+    // path let two concurrently booting servers overwrite each other's jar
+    // (and exposed a symlink-follow write). TempDir is unique + 0700.
+    let dir = std::env::temp_dir().join(format!("c-imagine-{}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join("cim-bootstrap.jar");
-    std::fs::write(&path, BOOTSTRAP_JAR).map_err(|e| e.to_string())?;
+    // Write to a temp name and rename: readers on this machine can never
+    // observe a partially written jar.
+    let tmp = dir.join(".cim-bootstrap.jar.tmp");
+    std::fs::write(&tmp, BOOTSTRAP_JAR).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(path)
 }
 

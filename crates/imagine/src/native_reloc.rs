@@ -30,6 +30,17 @@ use jni::JNIEnv;
 
 use cim_reloc::RelocationTable;
 
+/// Extract a human-readable message from a boxed panic payload.
+fn panic_message(p: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown panic".to_string()
+    }
+}
+
 /// The relocation table (the M1 layer prefixes). Mod-space rewrites reuse the
 /// same table in refs-only mode: mod references into `net.minecraft` /
 /// `com.mojang` / `net.neoforged` must land on the relocated layer exactly
@@ -69,7 +80,7 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_registerMods0<'
     _class: JClass<'local>,
     manifest_json: JString<'local>,
 ) {
-    let run = (|| -> Result<String, String> {
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<String, String> {
         let json: String = env
             .get_string(&manifest_json)
             .map_err(|e| format!("get_string: {e}"))?
@@ -86,7 +97,8 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_registerMods0<'
         );
         *AT_TABLE.write().map_err(|e| format!("at lock: {e}"))? = Some(at);
         Ok(msg)
-    })();
+    }))
+    .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(&p))));
     match run {
         Ok(msg) => eprintln!("{} {msg}", cim_core::LOG_PREFIX),
         Err(e) => eprintln!("{} ERROR: registerMods: {e}", cim_core::LOG_PREFIX),
@@ -109,47 +121,50 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_relocateMod0<'l
     name: JString<'local>,
     input: JByteArray<'local>,
 ) -> JByteArray<'local> {
-    let run = (|| -> Result<JByteArray<'local>, String> {
-        let jname: String = env
-            .get_string(&name)
-            .map_err(|e| format!("get_string: {e}"))?
-            .to_string_lossy()
-            .into_owned();
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<JByteArray<'local>, String> {
+            let jname: String = env
+                .get_string(&name)
+                .map_err(|e| format!("get_string: {e}"))?
+                .to_string_lossy()
+                .into_owned();
 
-        let len = env
-            .get_array_length(&input)
-            .map_err(|e| format!("get_array_length: {e}"))? as usize;
-        let mut signed = vec![0i8; len];
-        env.get_byte_array_region(&input, 0, &mut signed)
-            .map_err(|e| format!("get_byte_array_region: {e}"))?;
-        let bytes: Vec<u8> = signed.into_iter().map(|b| b as u8).collect();
+            let len = env
+                .get_array_length(&input)
+                .map_err(|e| format!("get_array_length: {e}"))? as usize;
+            let mut signed = vec![0i8; len];
+            env.get_byte_array_region(&input, 0, &mut signed)
+                .map_err(|e| format!("get_byte_array_region: {e}"))?;
+            let bytes: Vec<u8> = signed.into_iter().map(|b| b as u8).collect();
 
-        let relocated =
-            cim_reloc::relocate_class_refs_only_at(&table(), &at_table(), &jname, &bytes)
-                .map_err(|e| e.to_string())?;
+            let relocated =
+                cim_reloc::relocate_class_refs_only_at(&table(), &at_table(), &jname, &bytes)
+                    .map_err(|e| e.to_string())?;
 
-        if std::env::var("CIM_DUMP_RELOC")
-            .map(|v| v == "1")
-            .unwrap_or(false)
-        {
-            let path = std::env::temp_dir()
-                .join("cim-dump")
-                .join(format!("{}.class", jname.replace('/', "_")));
-            let _ = std::fs::create_dir_all(path.parent().unwrap());
-            let _ = std::fs::write(&path, &relocated);
-        }
+            if std::env::var("CIM_DUMP_RELOC")
+                .map(|v| v == "1")
+                .unwrap_or(false)
+            {
+                let path = std::env::temp_dir()
+                    .join("cim-dump")
+                    .join(format!("{}.class", jname.replace('/', "_")));
+                let _ = std::fs::create_dir_all(path.parent().unwrap());
+                let _ = std::fs::write(&path, &relocated);
+            }
 
-        if relocated == bytes {
-            return Ok(input);
-        }
-        let arr = env
-            .new_byte_array(relocated.len() as i32)
-            .map_err(|e| format!("new_byte_array: {e}"))?;
-        let signed_out: Vec<i8> = relocated.iter().map(|&b| b as i8).collect();
-        env.set_byte_array_region(&arr, 0, &signed_out)
-            .map_err(|e| format!("set_byte_array_region: {e}"))?;
-        Ok(arr)
-    })();
+            if relocated == bytes {
+                return Ok(input);
+            }
+            let arr = env
+                .new_byte_array(relocated.len() as i32)
+                .map_err(|e| format!("new_byte_array: {e}"))?;
+            let signed_out: Vec<i8> = relocated.iter().map(|&b| b as i8).collect();
+            env.set_byte_array_region(&arr, 0, &signed_out)
+                .map_err(|e| format!("set_byte_array_region: {e}"))?;
+            Ok(arr)
+        },
+    ))
+    .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(&p))));
 
     match run {
         Ok(arr) => arr,
@@ -175,14 +190,17 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_mapInternal0<'l
     _class: JClass<'local>,
     name: JString<'local>,
 ) -> JString<'local> {
-    let run = (|| -> Result<Option<String>, String> {
-        let jname: String = env
-            .get_string(&name)
-            .map_err(|e| format!("get_string: {e}"))?
-            .to_string_lossy()
-            .into_owned();
-        Ok(table().map_internal(&jname))
-    })();
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<Option<String>, String> {
+            let jname: String = env
+                .get_string(&name)
+                .map_err(|e| format!("get_string: {e}"))?
+                .to_string_lossy()
+                .into_owned();
+            Ok(table().map_internal(&jname))
+        },
+    ))
+    .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(&p))));
     match run {
         Ok(Some(mapped)) => match env.new_string(mapped) {
             Ok(s) => s,
@@ -206,36 +224,39 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_relocate0<'loca
     name: JString<'local>,
     input: JByteArray<'local>,
 ) -> JByteArray<'local> {
-    let run = (|| -> Result<JByteArray<'local>, String> {
-        let jname: String = env
-            .get_string(&name)
-            .map_err(|e| format!("get_string: {e}"))?
-            .to_string_lossy()
-            .into_owned();
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+        || -> Result<JByteArray<'local>, String> {
+            let jname: String = env
+                .get_string(&name)
+                .map_err(|e| format!("get_string: {e}"))?
+                .to_string_lossy()
+                .into_owned();
 
-        // Passthrough fast path: hand the caller's array back untouched.
-        if !table().needs_relocation(&jname) {
-            return Ok(input);
-        }
+            // Passthrough fast path: hand the caller's array back untouched.
+            if !table().needs_relocation(&jname) {
+                return Ok(input);
+            }
 
-        let len = env
-            .get_array_length(&input)
-            .map_err(|e| format!("get_array_length: {e}"))? as usize;
-        let mut signed = vec![0i8; len];
-        env.get_byte_array_region(&input, 0, &mut signed)
-            .map_err(|e| format!("get_byte_array_region: {e}"))?;
-        let bytes: Vec<u8> = signed.into_iter().map(|b| b as u8).collect();
+            let len = env
+                .get_array_length(&input)
+                .map_err(|e| format!("get_array_length: {e}"))? as usize;
+            let mut signed = vec![0i8; len];
+            env.get_byte_array_region(&input, 0, &mut signed)
+                .map_err(|e| format!("get_byte_array_region: {e}"))?;
+            let bytes: Vec<u8> = signed.into_iter().map(|b| b as u8).collect();
 
-        let relocated = cim_reloc::relocate_class_at(&table(), &at_table(), &jname, &bytes)
-            .map_err(|e| e.to_string())?;
-        let arr = env
-            .new_byte_array(relocated.len() as i32)
-            .map_err(|e| format!("new_byte_array: {e}"))?;
-        let signed_out: Vec<i8> = relocated.iter().map(|&b| b as i8).collect();
-        env.set_byte_array_region(&arr, 0, &signed_out)
-            .map_err(|e| format!("set_byte_array_region: {e}"))?;
-        Ok(arr)
-    })();
+            let relocated = cim_reloc::relocate_class_at(&table(), &at_table(), &jname, &bytes)
+                .map_err(|e| e.to_string())?;
+            let arr = env
+                .new_byte_array(relocated.len() as i32)
+                .map_err(|e| format!("new_byte_array: {e}"))?;
+            let signed_out: Vec<i8> = relocated.iter().map(|&b| b as i8).collect();
+            env.set_byte_array_region(&arr, 0, &signed_out)
+                .map_err(|e| format!("set_byte_array_region: {e}"))?;
+            Ok(arr)
+        },
+    ))
+    .unwrap_or_else(|p| Err(format!("panic: {}", panic_message(&p))));
 
     match run {
         Ok(arr) => arr,
@@ -261,5 +282,5 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_clientMembersSt
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> i64 {
-    cim_reloc::client_members_stripped_total() as i64
+    std::panic::catch_unwind(|| cim_reloc::client_members_stripped_total() as i64).unwrap_or(0)
 }
