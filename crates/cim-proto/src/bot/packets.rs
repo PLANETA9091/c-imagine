@@ -223,7 +223,7 @@ pub fn parse_block_update(payload: &[u8]) -> Result<BlockUpdate, ProtoError> {
 pub fn parse_remove_entities(payload: &[u8]) -> Result<Vec<i32>, ProtoError> {
     let mut c = ReadCursor::new(payload);
     let n = c.read_varint()?;
-    let mut ids = Vec::with_capacity(n.max(0) as usize);
+    let mut ids = Vec::with_capacity(n.clamp(0, 4096) as usize);
     for _ in 0..n {
         ids.push(c.read_varint()?);
     }
@@ -304,7 +304,7 @@ pub fn unpack_section_pos(v: i64) -> (i32, i32, i32) {
 pub fn parse_post_effects(payload: &[u8]) -> Result<Vec<String>, ProtoError> {
     let mut c = ReadCursor::new(payload);
     let n = c.read_varint()?;
-    let mut ids = Vec::with_capacity(n.max(0) as usize);
+    let mut ids = Vec::with_capacity(n.clamp(0, 4096) as usize);
     for _ in 0..n {
         ids.push(c.read_string(1024)?);
     }
@@ -331,7 +331,7 @@ pub fn parse_registry_data(payload: &[u8]) -> Result<RegistryData, ProtoError> {
     let mut c = ReadCursor::new(payload);
     let key = c.read_string(256)?;
     let n = c.read_varint()?;
-    let mut entry_ids = Vec::with_capacity(n.max(0) as usize);
+    let mut entry_ids = Vec::with_capacity(n.clamp(0, 4096) as usize);
     for i in 0..n {
         let before = c.position();
         let name = c.read_string(1024).map_err(|e| {
