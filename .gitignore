@@ -46,3 +46,4 @@ third_party/*/target/
 artifacts-srvcheck/
 artifacts-loc/
 scripts/truth/__pycache__/
+__pycache__/
