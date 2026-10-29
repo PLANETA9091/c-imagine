@@ -25,10 +25,15 @@ pub enum RingError {
     Full,
     Empty,
     TooLarge,
+    /// Semantically invalid operation (e.g. a zero-length user frame, which
+    /// would collide with the ring's skip-record encoding).
+    Invalid,
 }
 
-/// Cache-line padding so producer/consumer indices never share a line.
-#[repr(align(64))]
+/// Cache-line padding so producer/consumer indices never share a line (or an
+/// adjacent pair of lines: Intel's adjacent-line prefetcher pulls 128-byte
+/// pairs, so 128B is the safe stride for false-parameter elimination).
+#[repr(align(128))]
 struct Padded(AtomicUsize);
 
 /// The ring. Single producer, single consumer; both may run concurrently.
@@ -47,8 +52,15 @@ const MIN_CAPACITY: usize = 64;
 const LEN_PREFIX: usize = 4;
 
 impl SpscRing {
+    /// Upper bound on ring capacity (1 TiB): anything larger is treated as
+    /// invalid input rather than allowed to overflow `next_power_of_two`.
+    const MAX_CAPACITY: usize = 1 << 40;
+
     /// Create with `capacity` bytes (rounded up to a power of two, min 64).
     pub fn new(capacity: usize) -> Result<Self, RingError> {
+        if capacity > Self::MAX_CAPACITY {
+            return Err(RingError::TooLarge);
+        }
         let cap = capacity.max(MIN_CAPACITY).next_power_of_two();
         let buf = vec![0u8; cap].into_boxed_slice();
         Ok(Self {
@@ -72,6 +84,11 @@ impl SpscRing {
     /// Write one frame. `Full` means "cannot fit right now"; the caller may
     /// spin or drop (the net pipeline decides per frame class).
     pub fn write_frame(&self, payload: &[u8]) -> Result<(), RingError> {
+        if payload.is_empty() {
+            // len == 0 is the SKIP record: writing it as a user frame would
+            // make the reader release the whole rest of the lap.
+            return Err(RingError::Invalid);
+        }
         if payload.len() > self.max_frame() {
             return Err(RingError::TooLarge);
         }
@@ -166,6 +183,38 @@ impl SpscRing {
             first[..len].copy_from_slice(&buf[payload_at..payload_at + len]);
             self.tail.0.store(tail + total, Ordering::Release);
             return Ok(&first[..len]);
+        }
+    }
+
+    /// Length of the next user frame WITHOUT consuming it. Skip records and
+    /// lap padding are released (they are not user frames), so calling this
+    /// repeatedly makes progress. `Empty` when no frame is available.
+    ///
+    /// Used by the FFI layer to honor the "-2 = frame left intact" contract:
+    /// the consumer can check `len` against its buffer before taking.
+    pub fn next_frame_len(&self) -> Result<usize, RingError> {
+        let cap = self.capacity();
+        let head = self.head.0.load(Ordering::Acquire);
+        let mut tail = self.tail.0.load(Ordering::Relaxed);
+        let buf = unsafe { &*self.buf.get() };
+        loop {
+            if head == tail {
+                self.tail.0.store(tail, Ordering::Release);
+                return Err(RingError::Empty);
+            }
+            let at = tail & (cap - 1);
+            if at + LEN_PREFIX > cap {
+                tail = (tail / cap + 1) * cap;
+                self.tail.0.store(tail, Ordering::Release);
+                continue;
+            }
+            let len = u32::from_be_bytes(buf[at..at + LEN_PREFIX].try_into().expect("4")) as usize;
+            if len == 0 {
+                tail = (tail / cap + 1) * cap;
+                self.tail.0.store(tail, Ordering::Release);
+                continue;
+            }
+            return Ok(len);
         }
     }
 
@@ -270,6 +319,44 @@ mod tests {
         assert_eq!(written, drained);
         // Ring is usable again after a full drain (space fully released).
         ring.write_frame(&[1u8; 10]).unwrap();
+    }
+
+    #[test]
+    fn zero_length_write_is_invalid() {
+        let ring = SpscRing::new(64).unwrap();
+        assert!(matches!(ring.write_frame(&[]), Err(RingError::Invalid)));
+    }
+
+    #[test]
+    fn next_frame_len_peeks_without_consuming() {
+        let ring = SpscRing::new(256).unwrap();
+        assert!(matches!(ring.next_frame_len(), Err(RingError::Empty)));
+        ring.write_frame(&[1, 2, 3]).unwrap();
+        ring.write_frame(&[4, 5]).unwrap();
+        for _ in 0..3 {
+            assert_eq!(ring.next_frame_len().unwrap(), 3, "peek must not consume");
+        }
+        let mut first = [0u8; 8];
+        let mut spill = Vec::new();
+        assert_eq!(
+            ring.read_frame_into(&mut first, &mut spill).unwrap(),
+            &[1, 2, 3]
+        );
+        assert_eq!(ring.next_frame_len().unwrap(), 2);
+        assert_eq!(
+            ring.read_frame_into(&mut first, &mut spill).unwrap(),
+            &[4, 5]
+        );
+        assert!(matches!(ring.next_frame_len(), Err(RingError::Empty)));
+    }
+
+    #[test]
+    fn new_rejects_absurd_capacity() {
+        assert!(matches!(
+            SpscRing::new(usize::MAX),
+            Err(RingError::TooLarge)
+        ));
+        assert!(matches!(SpscRing::new(1 << 41), Err(RingError::TooLarge)));
     }
 
     #[test]
