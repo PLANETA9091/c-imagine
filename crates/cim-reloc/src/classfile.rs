@@ -562,7 +562,10 @@ impl ClassFile {
         body.fields.retain(|m| {
             let drop = self.member_is_client_only(m);
             if drop {
-                if let Some(n) = self.utf8(m.name).and_then(|b| String::from_utf8(b.to_vec()).ok()) {
+                if let Some(n) = self
+                    .utf8(m.name)
+                    .and_then(|b| String::from_utf8(b.to_vec()).ok())
+                {
                     removed_names.push(n);
                 }
             }
@@ -571,7 +574,10 @@ impl ClassFile {
         body.methods.retain(|m| {
             let drop = self.member_is_client_only(m);
             if drop {
-                if let Some(n) = self.utf8(m.name).and_then(|b| String::from_utf8(b.to_vec()).ok()) {
+                if let Some(n) = self
+                    .utf8(m.name)
+                    .and_then(|b| String::from_utf8(b.to_vec()).ok())
+                {
                     removed_names.push(n);
                 }
             }
@@ -596,7 +602,10 @@ impl ClassFile {
                     None => true,
                 };
                 if !keep {
-                    if let Some(n) = self.utf8(m.name).and_then(|b| String::from_utf8(b.to_vec()).ok()) {
+                    if let Some(n) = self
+                        .utf8(m.name)
+                        .and_then(|b| String::from_utf8(b.to_vec()).ok())
+                    {
                         removed_names.push(n);
                     }
                 }
@@ -1242,10 +1251,16 @@ mod tests {
     #[test]
     fn lambda_host_names_parse_like_javac() {
         // javac: lambda$<hostMethod>$<counter> — the counter is the LAST $.
-        assert_eq!(lambda_host("lambda$registerCTBehviour$25"), Some("registerCTBehviour"));
+        assert_eq!(
+            lambda_host("lambda$registerCTBehviour$25"),
+            Some("registerCTBehviour")
+        );
         assert_eq!(lambda_host("lambda$accept$0"), Some("accept"));
         // a lambda hosted by ANOTHER lambda (fixpoint chain)
-        assert_eq!(lambda_host("lambda$lambda$connectedTextures$24$3"), Some("lambda$connectedTextures$24"));
+        assert_eq!(
+            lambda_host("lambda$lambda$connectedTextures$24$3"),
+            Some("lambda$connectedTextures$24")
+        );
         // non-lambda members are untouched
         assert_eq!(lambda_host("create"), None);
         assert_eq!(lambda_host("lambda$"), None);
