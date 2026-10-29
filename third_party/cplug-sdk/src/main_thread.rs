@@ -179,7 +179,11 @@ unsafe extern "system" fn sdk_run_trampoline(env_raw: *mut jni::JNIEnv, _obj: jn
     let env = JniEnv::from_raw(env_raw);
     let job = QUEUE.lock().unwrap().pop_front();
     if let Some(job) = job {
-        job(&env);
+        // A panicking job runs on the JVM MAIN thread: letting it unwind out
+        // of `extern "system"` aborts the whole server. Contain it.
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(&env))).is_err() {
+            eprintln!("[cplug-sdk] PANIC suppressed in main-thread job");
+        }
     }
 }
 

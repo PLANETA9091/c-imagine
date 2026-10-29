@@ -137,7 +137,13 @@ pub fn on_kernel_ready(class_name: &str, cb: impl FnOnce() + Send + 'static) {
             waited += POLL_MS;
         };
         if !found {
-            eprintln!("[cplug-sdk] kernel-ready wait timed out for {class_name}");
+            // The kernel class never loaded: firing the callback would lie
+            // about "kernel ready" for a boot that never happened. Report
+            // and leave the callback pending instead.
+            eprintln!(
+                "[cplug-sdk] kernel-ready wait timed out for {class_name}; callback NOT fired"
+            );
+            return;
         }
         let f = slot.lock().unwrap().take();
         if let Some(f) = f {

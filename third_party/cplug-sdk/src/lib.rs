@@ -134,12 +134,34 @@ unsafe extern "C" fn sdk_dispatch_hook(
 ) -> i32 {
     let nm = jni_util::cstr(name);
     if let Some(nm) = &nm {
-        hooks::dispatch(nm);
+        // This hook fires for EVERY class load in the JVM: a panic in a user
+        // hook unwinding out of `extern "C"` would abort the whole server.
+        // Contain it and keep the load going.
+        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| hooks::dispatch(nm))).is_err() {
+            eprintln!("[cplug-sdk] PANIC suppressed in name hook for {nm}");
+        }
         if !class_data.is_null() && !out_data.is_null() && !out_len.is_null() {
             let data = unsafe { std::slice::from_raw_parts(class_data, class_data_len) };
             let alloc_addr = ALLOC.load(Ordering::Relaxed);
             if alloc_addr != 0 {
-                if let Some(patched) = hooks::dispatch_bytes(nm, data) {
+                let patched = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    hooks::dispatch_bytes(nm, data)
+                }));
+                let patched = match patched {
+                    Ok(p) => p,
+                    Err(payload) => {
+                        let msg = if let Some(m) = payload.downcast_ref::<&str>() {
+                            (*m).to_string()
+                        } else if let Some(m) = payload.downcast_ref::<String>() {
+                            m.clone()
+                        } else {
+                            "unknown panic".to_string()
+                        };
+                        eprintln!("[cplug-sdk] PANIC suppressed in byte hook for {nm}: {msg}");
+                        None
+                    }
+                };
+                if let Some(patched) = patched {
                     let alloc: unsafe extern "C" fn(usize) -> *mut u8 =
                         unsafe { std::mem::transmute(alloc_addr) };
                     let ptr = alloc(patched.len());
