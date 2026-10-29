@@ -73,6 +73,19 @@ public final class ShadowClassLoader extends ClassLoader {
     };
 
     private final AtomicLong defined = new AtomicLong();
+    /** The mixin-gate hook (wired by MixinGate.init — never referenced by
+     *  class here: this class is host-defined and dev.cim.layer.** stays
+     *  shadow-defined, so a static reference would NCDFE on the host). */
+    private static volatile ClassBytecodeHook bytecodeHook;
+    /** Per-jar manifests: package implementation metadata carried into
+     *  definePackage (the real server's SecureJarHandler exposes each jar's
+     *  Implementation-Version through the package of every class it defines;
+     *  sponge-mixin's ASM version detection READS it —
+     *  {@code Opcodes.class.getPackage().getImplementationVersion()} — and
+     *  without it the JAVA_21 compatibility level fails its
+     *  {@code ASM.isAtLeastVersion(9,5)} check, killing every JAVA_21
+     *  mixin config). */
+    private final List<java.util.jar.Manifest> jarManifests = new ArrayList<>();
     /** Index (into {@link #jars}) of the first mod jar — earlier jars are the
      * 1.21.1 layer set and keep M1 full-relocation semantics. */
     private volatile int modJarStart = Integer.MAX_VALUE;
@@ -98,8 +111,10 @@ public final class ShadowClassLoader extends ClassLoader {
                 // (log4j-api's Java-9+ StackLocator lives under
                 // META-INF/versions/9 — without the version flag the base
                 // Java-7 class loads and caller lookup breaks on modern JVMs).
-                jars.add(new JarFile(new java.io.File(url.toURI()), true,
-                        java.util.zip.ZipFile.OPEN_READ, Runtime.version()));
+                JarFile jar = new JarFile(new java.io.File(url.toURI()), true,
+                        java.util.zip.ZipFile.OPEN_READ, Runtime.version());
+                jars.add(jar);
+                jarManifests.add(jar.getManifest());
                 jarUrls.add(url);
             } catch (Exception e) {
                 throw new IllegalStateException("layer jar open: " + url + ": " + e, e);
@@ -259,8 +274,10 @@ public final class ShadowClassLoader extends ClassLoader {
                 continue;
             }
             try {
-                loader.jars.add(new JarFile(new java.io.File(p), true,
-                        java.util.zip.ZipFile.OPEN_READ, Runtime.version()));
+                JarFile jar = new JarFile(new java.io.File(p), true,
+                        java.util.zip.ZipFile.OPEN_READ, Runtime.version());
+                loader.jars.add(jar);
+                loader.jarManifests.add(jar.getManifest());
                 loader.jarUrls.add(Path.of(p).toUri().toURL());
             } catch (Exception e) {
                 throw new IllegalStateException("mod jar open: " + p + ": " + e, e);
@@ -282,10 +299,63 @@ public final class ShadowClassLoader extends ClassLoader {
         return l;
     }
 
+    /** Wire the mixin-gate hook (MixinGate.init — shadow side). */
+    public static void setBytecodeHook(ClassBytecodeHook hook) {
+        bytecodeHook = hook;
+    }
+
+    /**
+     * Root {@code *.mixins.json} resource names across the MOD-SPACE jars
+     * (mods + jarjar classpath libraries, {@code jarIdx >= modJarStart}).
+     * Library bootstrap configs — mixinextras' {@code mixinextras.init.mixins.json}
+     * is the canonical case — never reach the manifest (the scanner reports
+     * library jars as classpath entries only), and their plugin classes are
+     * the de-facto extension bootstrap (the real platform loads them exactly
+     * the same way). Universal: whatever the mod space carries, boots.
+     */
+    public static List<String> modSpaceRootMixinConfigs() {
+        ShadowClassLoader loader = instance;
+        if (loader == null) {
+            throw new IllegalStateException("ShadowClassLoader not prepared");
+        }
+        List<String> out = new ArrayList<>();
+        for (int i = Math.max(0, loader.modJarStart); i < loader.jars.size(); i++) {
+            var entries = loader.jars.get(i).entries();
+            while (entries.hasMoreElements()) {
+                String name = entries.nextElement().getName();
+                if (name.endsWith(".mixins.json") && !name.contains("/")) {
+                    out.add(name);
+                }
+            }
+        }
+        return out;
+    }
+
     /** Number of classes defined inside the shadow space so far. */
     public static int loadedClassCount() {
         ShadowClassLoader l = instance;
         return l == null ? 0 : (int) l.defined.get();
+    }
+
+    /**
+     * Whether this name is already defined by THIS loader instance (mixin
+     * class tracker). Instance method on purpose: the shadow copy's statics
+     * are separate from the APP copy (see MixinGate.shadowLoader).
+     */
+    public boolean isLoadedHere(String name) {
+        synchronized (getClassLoadingLock(name)) {
+            return findLoadedClass(name) != null;
+        }
+    }
+
+    /**
+     * Public window into the relocation table for resource-space translation
+     * (mixin configs, §8 point 4). Takes an internal (slash) name; returns
+     * the relocated name or null when the name is outside the relocation
+     * space.
+     */
+    public static String mapInternalName(String internalName) {
+        return NativeReloc.mapInternal(internalName);
     }
 
     /** Number of jars under management (diagnostics). */
@@ -296,6 +366,31 @@ public final class ShadowClassLoader extends ClassLoader {
 
     @Override
     protected Class<?> findClass(String name) throws ClassNotFoundException {
+        byte[] relocated = classBytesFor(name);
+        definePackageWithMetadata(name);
+        Class<?> c;
+        try {
+            c = defineClass(name, relocated, 0, relocated.length);
+        } catch (Throwable t) {
+            // The supertype chain that failed to resolve is invisible in the
+            // caller's stack (the NCDFE surfaces at the TRIGGERING frame) —
+            // log the class whose definition actually failed so autopsies
+            // don't need bytecode archaeology.
+            System.out.println("[c-imagine] shadow loader: define FAILED for "
+                    + name + ": " + t);
+            throw t;
+        }
+        defined.incrementAndGet();
+        return c;
+    }
+
+    /**
+     * Full class-bytes pipeline for one binary name: index → dist guard →
+     * raw read → relocation → mixin gate. This is the byte stream the loader
+     * would define for {@code name}; the mixin subsystem's bytecode provider
+     * consumes the same path (§8: provider bytes = defined bytes).
+     */
+    public byte[] classBytesFor(String name) throws ClassNotFoundException {
         String path = name.replace('.', '/') + ".class";
         IndexEntry source = locate(path);
         if (source == null) {
@@ -339,7 +434,9 @@ public final class ShadowClassLoader extends ClassLoader {
         try {
             if (source.jarIdx() >= modJarStart) {
                 // M2 mod class: keep the original binary name; rewrite only
-                // the references into the layer namespaces.
+                // the references into the layer namespaces. Mixin never
+                // transforms mod classes here (their @Mixin targets are
+                // layer classes and arrive through the branch below).
                 relocated = NativeReloc.relocateMod(source.internalName(), bytes);
             } else {
                 relocated = NativeReloc.relocate(source.internalName(), bytes);
@@ -347,21 +444,60 @@ public final class ShadowClassLoader extends ClassLoader {
         } catch (Throwable t) {
             throw new ClassNotFoundException(name + " (relocation failed: " + t + ")", t);
         }
-        Class<?> c;
-        try {
-            c = defineClass(name, relocated, 0, relocated.length);
-        } catch (Throwable t) {
-            // The supertype chain that failed to resolve is invisible in the
-            // caller's stack (the NCDFE surfaces at the TRIGGERING frame) —
-            // log the class whose definition actually failed so autopsies
-            // don't need bytecode archaeology.
-            System.out.println("[c-imagine] shadow loader: define FAILED for "
-                    + name + " (from " + source.internalName() + " in jar #"
-                    + source.jarIdx() + "): " + t);
-            throw t;
+        if (source.jarIdx() < modJarStart) {
+            // §8 point 3: the mixin transformer sees every LAYER (game)
+            // class before definition — the same point where the real
+            // modlauncher chain applies transformations. The processor was
+            // initialized before the first game class load (Bootstrap.init
+            // order), and its config targets were translated through the
+            // SAME relocation table, so names match.
+            ClassBytecodeHook hook = bytecodeHook;
+            if (hook != null) {
+                relocated = hook.transform(name, relocated);
+            }
         }
-        defined.incrementAndGet();
-        return c;
+        return relocated;
+    }
+
+    /**
+     * Mirror the real server's package metadata: the SecureJarHandler defines
+     * every package WITH its jar's manifest attributes, so
+     * {@code Class.getPackage().getImplementationVersion()} works there.
+     * Our plain {@code defineClass} would create an EMPTY package — and the
+     * first consumer of implementation versions in the shadow space is the
+     * mixin subsystem's ASM version check (JAVA_21 configs).
+     */
+    private void definePackageWithMetadata(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot <= 0) {
+            return;
+        }
+        String pkg = name.substring(0, dot);
+        if (getDefinedPackage(pkg) != null) {
+            return;
+        }
+        // Manifest lookup needs the SOURCE jar (the index entry the bytes
+        // came from) — re-locate; the index is built and hot.
+        IndexEntry source;
+        try {
+            source = locate(name.replace('.', '/') + ".class");
+        } catch (ClassNotFoundException e) {
+            return;
+        }
+        java.util.jar.Manifest mf = source != null ? jarManifests.get(source.jarIdx()) : null;
+        java.util.jar.Attributes main = mf == null ? null : mf.getMainAttributes();
+        try {
+            definePackage(pkg,
+                    main == null ? null : main.getValue(java.util.jar.Attributes.Name.SPECIFICATION_TITLE),
+                    main == null ? null : main.getValue(java.util.jar.Attributes.Name.SPECIFICATION_VERSION),
+                    main == null ? null : main.getValue(java.util.jar.Attributes.Name.SPECIFICATION_VENDOR),
+                    main == null ? null : main.getValue(java.util.jar.Attributes.Name.IMPLEMENTATION_TITLE),
+                    main == null ? null : main.getValue(java.util.jar.Attributes.Name.IMPLEMENTATION_VERSION),
+                    main == null ? null : main.getValue(java.util.jar.Attributes.Name.IMPLEMENTATION_VENDOR),
+                    null);
+        } catch (IllegalArgumentException raced) {
+            // another thread defined the package first — fine
+        }
     }
 
     private IndexEntry locate(String entryPath) throws ClassNotFoundException {
@@ -503,7 +639,9 @@ public final class ShadowClassLoader extends ClassLoader {
     @Override
     protected Class<?> findClass(String moduleName, String name) {
         try {
-            return findClass(name);
+            // Route through loadClass: dev.cim.** must hit the host-delegation
+            // branch, not a fresh definition through the index.
+            return loadClass(name, false);
         } catch (ClassNotFoundException e) {
             return null;
         }
@@ -511,6 +649,21 @@ public final class ShadowClassLoader extends ClassLoader {
 
     @Override
     protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+        // Single-definition contract for the bootstrap classes: the bootstrap
+        // jar rides BOTH the host classpath and this loader's jar set, and
+        // defining it twice forks every static — the shadow copies of
+        // NativeReloc (libPath never armed) and ShadowClassLoader (instance
+        // never prepared) broke the mixin gate on exactly that (12-u).
+        // dev.cim.bootstrap.** is the same jar on both sides by construction
+        // — no version conflict is possible — so it delegates to the host
+        // loader and every space shares one set of statics. dev.cim.layer.**
+        // STAYS shadow-defined (the mixin classes bind the shadow space's
+        // sponge-mixin types — a host definition would NCDFE there), and the
+        // LAYER namespaces (relocated game/neoforge classes) stay hermetic
+        // as designed.
+        if (name.startsWith("dev.cim.bootstrap.")) {
+            return HOST_LOADER.loadClass(name);
+        }
         synchronized (getClassLoadingLock(name)) {
             Class<?> c = findLoadedClass(name);
             if (c == null) {
@@ -544,6 +697,13 @@ public final class ShadowClassLoader extends ClassLoader {
             return c;
         }
     }
+
+    /**
+     * The host (bootstrap classpath) loader — dev.cim.** classes delegate
+     * here (see loadClass). Referenced through whatever copy of THIS class
+     * is in scope; both copies resolve it to the same host loader.
+     */
+    private static final ClassLoader HOST_LOADER = ShadowClassLoader.class.getClassLoader();
 
     private static boolean isJdkClass(String name) {
         for (String p : JDK_PREFIXES) {

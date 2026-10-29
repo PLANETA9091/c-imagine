@@ -365,6 +365,8 @@ jobs:
           grep -q "probe: Renderable NOT loadable" $L || fail "unpatched client class Renderable resolved in the layer (must stay absent, as on the real server)"
           grep -q "invalid dist DEDICATED_SERVER" $L || fail "layer missing the real server's invalid-dist rejection contract"
           grep -q "dist-strip: " $L || fail "@OnlyIn(CLIENT) member strip did not fire — the real pipeline strips them before verification"
+          grep -q "mixin gate: activated" $L || fail "mixin gate did not activate (harness contract §8 — sponge-mixin in the shadow space)"
+          grep -q "probe: BlockBehaviour accessor APPLIED" $L || fail "accessor mixin not applied to BlockBehaviour (§8 acceptance — the LeverBlock→BlockBehaviourAccessor cast contract, run b0960b9)"
           cat out-create/c-imagine/scenes/scene-manifest.tsv
 
       - name: autopsy relocated-class dumps (on failure)

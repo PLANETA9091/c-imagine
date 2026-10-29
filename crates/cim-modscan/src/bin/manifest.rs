@@ -25,8 +25,8 @@ fn main() {
     let want_reloc = args.iter().any(|a| a == "--reloc");
 
     let scan_started = Instant::now();
-    let (mut scanned, stats) = scan_dir_full(dir); // ScannedMod entries drive the bench below
-    let layer_at = cim_modscan::loader::prepend_layer_neoforge(&mut scanned);
+    let (mut scanned, mut stats) = scan_dir_full(dir); // ScannedMod entries drive the bench below
+    let layer_at = cim_modscan::loader::prepend_layer_neoforge(&mut scanned, &mut stats);
     let failed = stats.failed;
     let scan_elapsed = scan_started.elapsed();
 

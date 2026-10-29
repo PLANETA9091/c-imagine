@@ -267,6 +267,9 @@ pub struct RewriteStats {
     pub classes_renamed: usize,
     pub descriptors_rewritten: usize,
     pub utf8_added: usize,
+    /// Annotation STRING constants whose embedded descriptors were rewritten
+    /// (mixin `method`/`target` values — 12-u).
+    pub strings_rewritten: usize,
     /// Fields/methods carrying `@OnlyIn(Dist.CLIENT)` removed during the
     /// rewrite — the dedicated-server dist-strip parity counter (12-q).
     pub client_members_stripped: u64,
@@ -357,11 +360,22 @@ pub fn relocate_class_refs_only_at(
     Ok(out)
 }
 
-/// Intern pool for new UTF-8 entries appended during a rewrite.
+/// Intern pool for new entries appended during a rewrite.
 #[derive(Debug, Default)]
 struct Utf8Intern {
     map: HashMap<Vec<u8>, u16>,
-    appended: Vec<Vec<u8>>,
+    /// String-const dedupe: utf8 slot → pool slot of the new CONSTANT_String.
+    strings: HashMap<u16, u16>,
+    /// Appended entries in index order (each takes exactly one slot).
+    appended: Vec<AppendedEntry>,
+}
+
+/// One appended constant-pool entry (single slot).
+#[derive(Debug)]
+enum AppendedEntry {
+    Utf8(Vec<u8>),
+    /// CONSTANT_String pointing at a UTF-8 slot (appended or original).
+    String(u16),
 }
 
 impl Utf8Intern {
@@ -380,7 +394,24 @@ impl Utf8Intern {
             .checked_add(1)
             .expect("constant pool index overflow is rejected by the caller");
         self.map.insert(content.to_vec(), idx);
-        self.appended.push(content.to_vec());
+        self.appended.push(AppendedEntry::Utf8(content.to_vec()));
+        idx
+    }
+
+    /// Intern a CONSTANT_String entry pointing at `utf8_idx` (annotation
+    /// string elements carry relocated descriptors — mixin `method`/
+    /// `target` strings name ORIGINAL classes and must follow the
+    /// relocation, 12-u).
+    fn intern_string(&mut self, utf8_idx: u16, next_index: &mut u16) -> u16 {
+        if let Some(&idx) = self.strings.get(&utf8_idx) {
+            return idx;
+        }
+        let idx = *next_index;
+        *next_index = next_index
+            .checked_add(1)
+            .expect("constant pool index overflow is rejected by the caller");
+        self.strings.insert(utf8_idx, idx);
+        self.appended.push(AppendedEntry::String(utf8_idx));
         idx
     }
 

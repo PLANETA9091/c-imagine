@@ -27,8 +27,8 @@ use std::path::Path;
 /// nothing usable was found (empty dir / missing dir / total failure) — the
 /// Java side then skips mod loading entirely (M0 behavior).
 pub fn scan_and_build_manifest(dir: &Path) -> (Option<String>, usize) {
-    let (mut deduped, stats) = cim_modscan::scan_dir_full(dir);
-    let layer_at = cim_modscan::loader::prepend_layer_neoforge(&mut deduped);
+    let (mut deduped, mut stats) = cim_modscan::scan_dir_full(dir);
+    let layer_at = cim_modscan::loader::prepend_layer_neoforge(&mut deduped, &mut stats);
     if stats.jars == 0 {
         eprintln!(
             "{} mods (0): (no jars in {})",
