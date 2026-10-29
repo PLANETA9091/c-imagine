@@ -1607,3 +1607,71 @@ Stage Summary:
   census diff — GREEN across stacks on the first run. Next named work:
   grow the P0 ladder (Biomes O' Plenty next per MODPACK.md Tier 0), and
   the §8 refmap question stays open until a leg carries one.
+
+## Task 12-v — THE GATE IS PIXELS: the universal gallery replaces every fake green (2026-10-30)
+
+Owner verdict, quoted: "f2v v1 сейчас работает лучше чем у нас ... визуально я сам
+протестировал и это ужасно" + "ci зеленый потому что мы проверяем не понятно что".
+The 12-u summary said "mixin gate green end to end; first Create census parity" —
+that was REGISTRATION parity (registry counts/sets), not the product. The P0 Create
+rank is REOPENED; the roadmap (M5.5 "THE GATE IS PIXELS") and MODPACK.md gates are
+rewritten: census/construct/mixin are diagnostics, the ONLY rank gate is the
+universal gallery pixel join, RED unless 100% of cells at the datum.
+
+- BOP leg (frozen mid-rank, findings kept): local m2 harness ran the BOP set
+  (21.1.0.14 + GlitchCore 2.1.0.2 + TerraBlender 4.1.0.8). The gate armed 8 configs
+  UNIVERSALLY (modscan-driven, zero mod naming); declared-but-absent refmaps
+  (biomesoplenty/glitchcore/terrablender .refmap.json keys with no file) are WARN
+  non-fatal — the §8 refmap leg's first real case is the ABSENT-refmap variant.
+  REAL DEFECT FOUND: BOP construct dies with UnsupportedOperationException from
+  glitchcore.util.Environment.getConfigPath — a stub class whose implementation is
+  a SELF-MIXIN (glitchcore.neoforge.mixin.impl.MixinEnvironment, @Mixin
+  target=glitchcore/util/Environment, remap=false, @Overwrite statics). The mixin
+  never applied; measured cause: "Class version 65 required is higher than the
+  class version supported by the current version of Mixin (JAVA_17 supports class
+  version 61)" — the configs declare JAVA_17, the environment level follows the
+  configs, and 1.21.1-era mod classes are compiled at class version 65. The check
+  source is org/spongepowered/asm/mixin/transformer/MixinConfig.class. The
+  picture is NOT a flat class-version block: Create's BlockBehaviourAccessor is
+  ALSO major 65 and its apply is GREEN on the same engine, and glitchcore's
+  MixinServerPlayer got a "Mixing" line under the same WARN. The candidates:
+  (a) the environment CompatibilityLevel must be raised to the JVM class version
+  in MixinGate (universal fix, removes the whole class of warns), and (b) the
+  self-mixin target class loads from the MOD module (glitchcore's own), not the
+  shadow game module — the promotion/apply path may resolve mod-module targets
+  differently from game-module ones. Both recorded; the exact autopsy + fix is
+  the next layer task before BOP unblocks.
+- The universal gallery rig landed (the owner's test design, verbatim):
+  `/cimscene gallery` (scene-mod) enumerates EVERY registered block from every
+  loaded mod + ALL its states + a fixed vanilla control group, and builds a
+  corridor of walls of REAL blocks in the empty flat world (deterministic: ids
+  sorted, definition state order, manifest gallery.tsv wall/col/row -> x/y/z +
+  exact state string). The client walks the corridor at camera-locked vantages
+  (fov 45 pinned, yaw 0 pitch 0, noon/clear/mob-free) and shoots one frame per
+  wall (scripts/cimscene/gallery-walk.py, proven Robot/Shot path).
+- The c-imagine leg renders the pack-carrier channel that exists TODAY:
+  scripts/cimscene/cim-gallery-walk.py maps the block manifest to VIRTUAL blocks —
+  block_display entities carrying note_block[instrument,note] with brightness
+  PINNED (15,15) — plus REAL vanilla control cells via setblock; cells without a
+  carrier are RED missing rows, which is the honest f2v-port backlog.
+- The pixel join: scripts/cimscene/gallery-diff.py (stdlib-only PNG codec) crops
+  per-cell by index from both stacks' frames (focal 869 px / 108.6 px-per-block at
+  the pinned camera), vanilla controls = the drift datum, artifacts = triptychs
+  (truth | ours | heat) for the worst cells + TSV report; GREEN ⇔ 100% of cells
+  within the datum AND zero missing cells. Smoke-tested: identical frames -> AE 0
+  GREEN, missing cell -> RED exit 1.
+- CI: .github/workflows/gallery.yml — truth leg (real NeoForge server + client,
+  the fetch-truth-client contract), cim leg (Paper 26.3 + F2vPack + vanilla
+  client, the visual.yml contract), diff leg (the gate). First runs are
+  CALIBRATION: --datum comes from the measured vanilla-control AE before the gate
+  locks.
+- The note_block REAL-BLOCK stand-in is dead (owner: "работать на нотных блоках
+  это пиздец; f2v v1 делает иначе"): placeVisualBlock now spawns a BlockDisplay
+  with pinned brightness; the carrier blockstate stays until per-block carriers
+  grow from the ItemDisplay+CMD surface (run 43/44) toward the F2V v1
+  BlockDisplayManager model.
+- Next named work: (1) gallery calibration runs -> lock the datum; (2) the
+  self-mixin/class-version autopsy + fix in the layer (unblocks BOP); (3) the f2v
+  port burns down RED cells rank by rank — Create first: per-block carriers from
+  create jar assets, then the channel scenes (contraptions, fluids, particles,
+  sounds, UIs).

@@ -233,17 +233,48 @@ remainder; M5.2 wire/server contract asserted green in integration.yml.
 
 ## M5.5 — Real-mod parity program (owner directive 2026-10-29 — pulled forward from M7)
 
-**The directive:** first-party rigs (cimtest) remain scaffolding but are no longer
-the proof surface — a self-built rig can unconsciously encode c-imagine-friendly
-assumptions that diverge on real NeoForge. Testing moves NOW to real mods, and
-every comparison is dual-stack with a REAL NeoForge client: boot the modded client
-(screenshot + profile everything), then run the same content through c-imagine on
-the vanilla client, and compare — by profile numbers AND by eye. Per mod, per
-block, per sound, per particle: everything a mod ships gets an automated scene on
-BOTH stacks. **Create mod 100% identical is the single top priority.** CI budget
-is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
+### THE GATE IS PIXELS — owner directive 2026-10-30 (replaces every "green" below)
 
-- **Priority ladder (Tier 0 in `MODPACK.md`):**
+The program had a credibility bug: CI asserted census counts, construct markers and
+mixin applies, and the summaries read "Create green" — while the owner's own visual
+test showed the Create view on the vanilla client is NOT even close to F2V v1.
+Registration parity was mistaken for the product. From now on the ONLY rank gate is
+the **universal gallery run**, and every other marker is a diagnostic:
+
+- **The gallery (universal, zero mod naming)**: `/cimscene gallery` enumerates
+  EVERYTHING registered on the stack — every block from every loaded mod, ALL its
+  states (capped per run by args), plus a fixed vanilla control group — and builds
+  a corridor of walls of REAL blocks in an empty flat world in front of the test
+  player. The manifest (`gallery.tsv`: wall/col/row → x/y/z + block id + exact
+  state string) is the contract between the stacks. The client walks the corridor
+  at camera-locked vantages (pinned yaw/pitch/fov, noon/clear/mob-free) and shoots
+  one full frame per wall.
+- **Dual-stack, in parallel, in CI** (`gallery.yml`): truth leg = real NeoForge
+  21.1.265 server + real NeoForge 1.21.1 client under xvfb; ours leg = c-imagine
+  (Paper 26.3 + layer + f2v pack) + vanilla 26.3 client under xvfb. SAME command,
+  SAME manifest format, per-wall screenshots on both.
+- **Pixel join** (`scripts/cimscene/gallery-diff.py`): per-cell crops from both
+  stacks' wall frames by cell INDEX, per-cell absolute pixel error, vanilla
+  control cells = the drift datum. **GALLERY PARITY: GREEN ⇔ 100% of cells within
+  the datum and zero missing cells. Not "most". 100%.** RED cells ship as triptych
+  artifacts (truth | ours | heat) + TSV report = the fix backlog, in the run
+  summary for the owner's eye, on every run.
+- **Demoted to diagnostics (never a rank gate)**: census parity (registration
+  counts), construct/boot markers, mixin gate applies, wire probes. They explain
+  a red gallery; they never green a rank.
+- **The note_block real-block stand-in is DEPRECATED** (owner: "working on note
+  blocks is shit"; F2V v1 confirms — it renders virtual blocks via display
+  entities, it does not pollute the world). `placeVisualBlock` now spawns a
+  BlockDisplay entity with pinned brightness; the gallery pack synthesis grows
+  per-block carriers from the measured ItemDisplay+CMD surface (run 43/44) toward
+  the F2V v1 BlockDisplayManager model.
+- **Create is REOPENED**: the census-parity-green of 2026-10-29 did NOT close the
+  P0 rank. P0 closes when the full-Create gallery run is pixel-GREEN at the
+  calibrated datum AND the channel scenes (contraptions, fluids, particles, sounds,
+  UIs) pass their per-channel proofs. The gallery is RED right now — that is the
+  honest state and the fix backlog.
+
+**Priority ladder (Tier 0 in `MODPACK.md`):**
   - **P0 — Create**: 100% identical target (kinetic network, contraptions,
     fluids, particles, sounds, UIs) — the flagship gate.
   - **P1 — Biomes O' Plenty** (block palette + biome-tint channels at scale),
@@ -271,11 +302,11 @@ is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
   registry per mod. Sound is proven wire-level (cimbot
   ClientboundSoundPacket census) since screenshots cannot hear.
 
-**Accept:** Create scene sweep green at the calibrated identity thresholds on the
-camera-locked rig on every Create channel (the 100%-identical target, measured by
-the documented cross-version metric); BOP / Dynamic Trees / Combat Roll sweeps
-green per-registry; Aged pack boots + first census + first sweep; every run ships
-both screenshot sets for eye comparison and per-scene debug bundles for reds.
+**Accept:** every rank closes ONLY on GALLERY PARITY: GREEN (100% of cells at the
+calibrated datum) plus the per-channel proofs; census/construct/mixin stay green
+as preconditions. Both screenshot sets ship in every run summary for the owner's
+eye review — "looks identical" is signed off by a human on every channel, not
+inferred from gates alone. Design: `runtime-analysis/mod-parity-harness.md`.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 

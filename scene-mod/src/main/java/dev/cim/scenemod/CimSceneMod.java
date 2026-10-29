@@ -1,5 +1,6 @@
 package dev.cim.scenemod;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -27,7 +28,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -65,6 +69,38 @@ public final class CimSceneMod {
         CENSUSED.put("block_entity", BuiltInRegistries.BLOCK_ENTITY_TYPE);
         CENSUSED.put("menu", BuiltInRegistries.MENU);
     }
+
+    /**
+     * Blocks that cannot carry the pixel gallery (measured:
+     * docs/runtime-analysis/block-channel-26-3.md — barrier/structure_void
+     * are RenderShape.INVISIBLE in CODE, air family has no model,
+     * moving_piston/light are technical). Skipping them is NOT a fudge:
+     * they are skipped on BOTH stacks, so parity is still exact.
+     */
+    private static final java.util.Set<String> GALLERY_BLACKLIST = java.util.Set.of(
+            "minecraft:air", "minecraft:cave_air", "minecraft:void_air",
+            "minecraft:barrier", "minecraft:structure_void", "minecraft:light",
+            "minecraft:moving_piston");
+
+    /**
+     * Vanilla control cells: the drift datum group. These render identically
+     * on both clients when the transport is honest — their AE defines the
+     * cross-version camera/lighting drift floor the gate is calibrated on
+     * (MODPACK.md "calibrated identity datum").
+     */
+    private static final List<String> GALLERY_VANILLA_CONTROLS = List.of(
+            "minecraft:stone", "minecraft:iron_block", "minecraft:gold_block",
+            "minecraft:diamond_block", "minecraft:oak_log", "minecraft:oak_leaves",
+            "minecraft:glass", "minecraft:bricks", "minecraft:red_wool",
+            "minecraft:oak_planks", "minecraft:crafting_table", "minecraft:furnace");
+
+    /** Gallery geometry (px math lives in scripts/cimscene/gallery-diff.py). */
+    private static final int GALLERY_COLS = 12;
+    private static final int GALLERY_ROWS = 6;
+    private static final int GALLERY_CELL_STRIDE = 2;
+    private static final int GALLERY_WALL_STRIDE = 9;
+    private static final int GALLERY_WALL1_Z = 8;
+    private static final int GALLERY_VANTAGE_DIST = 4;
 
     public CimSceneMod(IEventBus modBus) {
         modBus.addListener(this::commonSetup);
@@ -166,6 +202,15 @@ public final class CimSceneMod {
                                     false);
                             return placed ? 1 : 0;
                         }))
+                        .then(Commands.literal("gallery").executes(ctx ->
+                                buildGallery(ctx.getSource(), 8, 1440, false))
+                            .then(Commands.argument("maxStates", IntegerArgumentType.integer(0))
+                                .executes(ctx -> buildGallery(ctx.getSource(),
+                                        IntegerArgumentType.getInteger(ctx, "maxStates"), 1440, false))
+                                .then(Commands.argument("limit", IntegerArgumentType.integer(1))
+                                    .executes(ctx -> buildGallery(ctx.getSource(),
+                                            IntegerArgumentType.getInteger(ctx, "maxStates"),
+                                            IntegerArgumentType.getInteger(ctx, "limit"), false)))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
@@ -194,7 +239,115 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery|probe-class)");
+    }
+
+    // --- gallery ------------------------------------------------------------
+
+    /**
+     * The UNIVERSAL block-state gallery (owner directive 2026-10-30): every
+     * registered block from every loaded mod (namespace != minecraft) plus a
+     * fixed vanilla control group, ALL of its states, placed as real blocks
+     * in a corridor of walls in front of the executor. No mod is named on
+     * the path — whatever is registered at command time IS the gallery, so
+     * the same command serves cimtest calibration and the full Create/BOP
+     * runs on both stacks.
+     *
+     * <p>Determinism: blocks sorted by registry id, states in the block's
+     * own definition order, absolute coordinates derived from the executor
+     * position (the CI console executor sits at world spawn of a pinned
+     * flat seed). The manifest {@code c-imagine/scenes/gallery.tsv} records
+     * wall/col/row, absolute x/y/z, block id and the exact state string —
+     * gallery-diff.py crops per-cell from the wall screenshots using the
+     * SAME manifest from each stack, so coordinates never need to match
+     * across stacks, only cell indices do.
+     *
+     * @param maxStates states per block (0 = all)
+     * @param limit     hard cell cap (walls stop mid-block, manifest says so)
+     */
+    private static int buildGallery(CommandSourceStack src, int maxStates, int limit, boolean includeVanilla) {
+        ServerLevel level = src.getLevel();
+        BlockPos base = BlockPos.containing(src.getPosition());
+
+        // --- enumerate: vanilla controls first, then every modded block sorted
+        record Cell(BlockState st, String ns, String id, String stateStr) {}
+        List<Cell> cells = new ArrayList<>();
+        for (String controlId : GALLERY_VANILLA_CONTROLS) {
+            Block b = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(controlId));
+            for (BlockState st : b.getStateDefinition().getPossibleStates()) {
+                cells.add(new Cell(st, "minecraft", controlId, st.toString()));
+            }
+        }
+        List<Map.Entry<ResourceLocation, Block>> modded = new ArrayList<>();
+        for (Map.Entry<ResourceLocation, Block> e : BuiltInRegistries.BLOCK.entrySet()) {
+            String key = e.getKey().getNamespace() + ":" + e.getKey().getPath();
+            if (GALLERY_BLACKLIST.contains(key)) continue;
+            if (e.getKey().getNamespace().equals("minecraft")) continue;
+            modded.add(e);
+        }
+        modded.sort(Comparator.comparing(e -> e.getKey().toString()));
+        for (Map.Entry<ResourceLocation, Block> e : modded) {
+            List<BlockState> states = new ArrayList<>(e.getValue().getStateDefinition().getPossibleStates());
+            if (maxStates > 0 && states.size() > maxStates) states = states.subList(0, maxStates);
+            for (BlockState st : states) {
+                cells.add(new Cell(st, e.getKey().getNamespace(), e.getKey().getPath(), st.toString()));
+            }
+        }
+        if (cells.size() > limit) cells = cells.subList(0, limit);
+
+        int walls = (cells.size() + GALLERY_COLS * GALLERY_ROWS - 1) / (GALLERY_COLS * GALLERY_ROWS);
+        StringBuilder tsv = new StringBuilder("wall\tcol\trow\tx\ty\tz\tns\tid\tstate\n");
+        int placed = 0;
+        int placedBlocks = 0;
+        for (int wall = 0; wall < walls; wall++) {
+            int wallZ = base.getZ() + GALLERY_WALL1_Z + wall * GALLERY_WALL_STRIDE;
+            int minX = base.getX() - (GALLERY_COLS / 2) * GALLERY_CELL_STRIDE;
+            int maxX = base.getX() + (GALLERY_COLS / 2) * GALLERY_CELL_STRIDE;
+            // platform (double layer) + air sweep — uniform ground/light on
+            // every cell, no terrain interference, same on both stacks
+            for (int x = minX - 2; x <= maxX + 2; x++) {
+                for (int z = wallZ - 2; z <= wallZ + 1; z++) {
+                    level.setBlock(new BlockPos(x, base.getY(), z), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+                    level.setBlock(new BlockPos(x, base.getY() - 1, z), Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+                    for (int y = base.getY() + 1; y <= base.getY() + GALLERY_ROWS + 3; y++) {
+                        level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
+                    }
+                }
+            }
+            for (int row = 0; row < GALLERY_ROWS; row++) {
+                for (int col = 0; col < GALLERY_COLS; col++) {
+                    int idx = wall * GALLERY_COLS * GALLERY_ROWS + row * GALLERY_COLS + col;
+                    if (idx >= cells.size()) break;
+                    Cell c = cells.get(idx);
+                    BlockPos pos = new BlockPos(
+                            base.getX() - (GALLERY_COLS / 2) * GALLERY_CELL_STRIDE + col * GALLERY_CELL_STRIDE,
+                            base.getY() + 1 + row,
+                            wallZ);
+                    if (level.setBlock(pos, c.st(), 3)) placed++;
+                    tsv.append(wall).append('\t').append(col).append('\t').append(row).append('\t')
+                            .append(pos.getX()).append('\t').append(pos.getY()).append('\t').append(pos.getZ()).append('\t')
+                            .append(c.ns()).append('\t').append(c.id()).append('\t').append(c.stateStr()).append('\n');
+                    placedBlocks++;
+                }
+            }
+            LOGGER.info("[cimscene] gallery wall {} built at z={} (vantage z={}) cells={}",
+                    wall, wallZ, wallZ - GALLERY_VANTAGE_DIST, Math.min(cells.size() - wall * GALLERY_COLS * GALLERY_ROWS, GALLERY_COLS * GALLERY_ROWS));
+        }
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve("gallery.tsv"), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery manifest write failed: {}", ioe.toString());
+            return 0;
+        }
+        final int fPlaced = placed;
+        final int fWalls = walls;
+        final int fCells = cells.size();
+        LOGGER.info("[cimscene] gallery built cells={} placed={} walls={} blocks={} base={},{},{} manifest=c-imagine/scenes/gallery.tsv",
+                fCells, fPlaced, fWalls, placedBlocks, base.getX(), base.getY(), base.getZ());
+        src.sendSuccess(() -> Component.literal("[cimscene] gallery built cells=" + fCells + " walls=" + fWalls), false);
+        return 1;
     }
 
     /**
