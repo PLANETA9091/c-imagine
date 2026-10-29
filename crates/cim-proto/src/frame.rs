@@ -226,6 +226,65 @@ mod tests {
         let mut tampered = wire.clone();
         let last = tampered.len() - 1;
         tampered[last] ^= 0xFF;
-        assert!(decode_frame(&tampered, Some(1)).is_err() || decode_frame(&wire, Some(1)).is_ok());
+        assert!(
+            decode_frame(&tampered, Some(1)).is_err(),
+            "flipping a byte inside a compressed frame must be rejected"
+        );
+        assert!(
+            decode_frame(&wire, Some(1)).is_ok(),
+            "the untampered control frame must still decode"
+        );
+    }
+
+    #[test]
+    fn oversized_uncompressed_len_is_rejected() {
+        // uncompressed_len just over MAX_PAYLOAD → FrameTooLarge, regardless
+        // of what the (tiny) zlib stream actually contains.
+        let wire = compressed_frame_with_declared_len(MAX_PAYLOAD + 1, b"tiny");
+        let err = decode_frame(&wire, Some(1)).unwrap_err();
+        assert!(matches!(err, ProtoError::FrameTooLarge(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn decompression_bomb_cannot_materialize() {
+        // Declares 64 MiB - 1 (under the cap, so the FrameTooLarge guard does
+        // not fire) but the stream only holds a few bytes → the decoder must
+        // fail on the length mismatch instead of fabricating data.
+        let wire = compressed_frame_with_declared_len(MAX_PAYLOAD - 1, b"tiny");
+        let err = decode_frame(&wire, Some(1)).unwrap_err();
+        assert!(
+            matches!(err, ProtoError::DecompressFailed { .. }),
+            "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn negative_uncompressed_len_is_rejected() {
+        let mut body = Vec::new();
+        write_varint(&mut body, -1);
+        body.extend_from_slice(&[0x78, 0x9C, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01]); // zlib header
+        let mut wire = Vec::new();
+        write_varint(&mut wire, body.len() as i32);
+        wire.extend_from_slice(&body);
+        let err = decode_frame(&wire, Some(1)).unwrap_err();
+        assert!(
+            matches!(&err, ProtoError::InvalidFrame(m) if m.contains("negative uncompressed")),
+            "got {err:?}"
+        );
+    }
+
+    /// Hand-build a compressed frame declaring `declared` uncompressed bytes
+    /// while the zlib stream only holds `actual`.
+    fn compressed_frame_with_declared_len(declared: usize, actual: &[u8]) -> Vec<u8> {
+        let mut inner = WriteBuf::new();
+        inner.write_varint(i32::try_from(declared).unwrap_or(i32::MAX));
+        let mut body = inner.into_vec();
+        let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+        enc.write_all(actual).unwrap();
+        body.extend_from_slice(&enc.finish().unwrap());
+        let mut wire = Vec::new();
+        write_varint(&mut wire, body.len() as i32);
+        wire.extend_from_slice(&body);
+        wire
     }
 }
