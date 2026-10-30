@@ -19,7 +19,7 @@
 //! generic `Signature` attributes, runtime annotation descriptors,
 //! `CONSTANT_String` literals. Everything else is preserved byte-identical.
 
-use super::{RelocationTable, RewriteStats, Utf8Intern};
+use super::{AppendedEntry, RelocationTable, RewriteStats, Utf8Intern};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ParseError {
@@ -205,6 +205,21 @@ impl ClassFile {
             return None;
         }
         Some(&e.data)
+    }
+
+    /// Annotation string element → its backing UTF-8 slot + form. The JVMS
+    /// form is a CONSTANT_String indirection; the neoforge universal jar's
+    /// annotation strings point DIRECTLY at CONSTANT_Utf8 entries (both
+    /// must be preserved on rewrite, 12-u).
+    fn annotation_string_utf8(&self, idx: u16) -> Option<(bool, u16)> {
+        let e = self.entries.get(idx as usize)?.as_ref()?;
+        match e.tag {
+            TAG_STRING if e.data.len() == 2 => {
+                Some((true, u16::from_be_bytes([e.data[0], e.data[1]])))
+            }
+            TAG_UTF8 => Some((false, idx)),
+            _ => None,
+        }
     }
 
     /// Number of pool slots (including the invalid slot 0 and the trailing
@@ -748,12 +763,21 @@ impl ClassFile {
             rewrite_annos,
         )?;
 
-        // Emit the appended UTF-8s (member descriptors AND annotation
-        // descriptors, both interned while building the body).
-        for content in &intern.appended {
-            pool.push(TAG_UTF8);
-            pool.extend_from_slice(&(content.len() as u16).to_be_bytes());
-            pool.extend_from_slice(content);
+        // Emit the appended entries (member descriptors AND annotation
+        // descriptors and annotation string constants — all interned while
+        // building the body; each takes exactly one slot in index order).
+        for entry in &intern.appended {
+            match entry {
+                AppendedEntry::Utf8(content) => {
+                    pool.push(TAG_UTF8);
+                    pool.extend_from_slice(&(content.len() as u16).to_be_bytes());
+                    pool.extend_from_slice(content);
+                }
+                AppendedEntry::String(utf8_idx) => {
+                    pool.push(TAG_STRING);
+                    pool.extend_from_slice(&utf8_idx.to_be_bytes());
+                }
+            }
         }
 
         // Final pool count: member descriptors AND annotation descriptors
@@ -1139,6 +1163,17 @@ fn rewrite_element_value(
                 &rewrite_utf8_desc(cf, table, intern, next_index, stats, idx)?.to_be_bytes(),
             );
         }
+        b's' => {
+            // string element: mixin `method`/`target` values embed ORIGINAL
+            // descriptors (`triggerItemUseEffects(Lnet/minecraft/...;I)V`)
+            // — on the real server names match natively; under relocation
+            // the embedded segments must follow the table or the injection
+            // finds no target (12-u verdict: "No refMap loaded ... could
+            // not find any targets matching").
+            let str_idx = r.u2().ok_or(ParseError::Truncated("string element"))?;
+            let new_idx = rewrite_annotation_string(cf, table, intern, next_index, stats, str_idx)?;
+            out.extend_from_slice(&new_idx.to_be_bytes());
+        }
         b'@' => {
             rewrite_annotation(cf, table, intern, next_index, stats, r, out)?;
         }
@@ -1180,6 +1215,71 @@ fn rewrite_utf8_desc(
     }
     let new_idx = intern.intern(mapped.as_bytes(), next_index);
     stats.descriptors_rewritten += 1;
+    Ok(new_idx)
+}
+
+/// Rewrite every `L<name>;` segment inside an annotation STRING value
+/// through the relocation table. Returns None when nothing changed.
+fn map_string_descriptors(content: &[u8], table: &RelocationTable) -> Option<Vec<u8>> {
+    let mut result: Vec<u8> = Vec::with_capacity(content.len());
+    let mut changed = false;
+    let mut rest = content;
+    while let Some(pos) = rest.iter().position(|&b| b == b'L') {
+        let Some(end_rel) = rest[pos + 1..].iter().position(|&b| b == b';') else {
+            break; // unterminated segment — copy the tail verbatim
+        };
+        let end = pos + 1 + end_rel;
+        match std::str::from_utf8(&rest[pos + 1..end])
+            .ok()
+            .and_then(|name| table.map_internal(name).map(|m| (name, m)))
+        {
+            Some((_, mapped)) => {
+                result.extend_from_slice(&rest[..pos]);
+                result.push(b'L');
+                result.extend_from_slice(mapped.as_bytes());
+                result.push(b';');
+                rest = &rest[end + 1..];
+                changed = true;
+            }
+            None => {
+                result.extend_from_slice(&rest[..=pos]);
+                rest = &rest[pos + 1..];
+            }
+        }
+    }
+    result.extend_from_slice(rest);
+    changed.then_some(result)
+}
+
+/// Rewrite one annotation string element: resolve its UTF-8, translate any
+/// embedded descriptors, and intern a fresh UTF-8 + CONSTANT_String pair.
+fn rewrite_annotation_string(
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    str_idx: u16,
+) -> Result<u16, ParseError> {
+    let (is_string_const, utf8_idx) = cf
+        .annotation_string_utf8(str_idx)
+        .ok_or(ParseError::Truncated("string element utf8"))?;
+    let content = cf
+        .utf8(utf8_idx)
+        .ok_or(ParseError::Truncated("string utf8"))?;
+    let Some(mapped) = map_string_descriptors(content, table) else {
+        return Ok(str_idx); // nothing relocatable inside — keep the original
+    };
+    let new_utf8 = intern.intern(&mapped, next_index);
+    // Preserve the element form: the standard CONSTANT_String indirection
+    // gets a fresh String entry; the direct-UTF8 form (neoforge universal
+    // jar) re-points at the interned UTF-8 itself.
+    let new_idx = if is_string_const {
+        intern.intern_string(new_utf8, next_index)
+    } else {
+        new_utf8
+    };
+    stats.strings_rewritten += 1;
     Ok(new_idx)
 }
 

@@ -33,16 +33,18 @@ captures) — judged by profile numbers AND by eye. Harness design:
 
 | Priority | Mod | Why it is on the ladder | Gate |
 |---|---|---|---|
-| **P0** | **Create** | The flagship: kinetic network, contraptions, fluids, particles, sounds, UIs. **100% identical is the single top priority.** | calibrated identity datum on EVERY Create channel (camera-locked rig) |
-| P1 | Biomes O' Plenty | Block palette + biome-tint channels at scale (worldgen surface) | per-registry census sweep green on both stacks |
-| P1 | Dynamic Trees | Block entities + incremental growth ticks (BE bridge + event loop) | per-registry census sweep green on both stacks |
-| P1 | Combat Roll | Client animation/sound surface — smallest mod, first full ladder walk | animation + sound channels green on both stacks |
-| P2 | Aged modpack (full) | The "every mod supported" end-state check; version pinned from its manifest when CI wiring lands | boot + census + first sweep green; failures become targeted tasks |
+| **P0** | **Create** | The flagship: kinetic network, contraptions, fluids, particles, sounds, UIs. **100% identical is the single top priority.** | **GALLERY PIXEL PARITY** (`gallery.yml`, owner directive 2026-10-30): every Create block/state pixel-GREEN at the datum — RED on anything less — plus calibrated identity datum on EVERY Create channel |
+| P1 | Biomes O' Plenty | Block palette + biome-tint channels at scale (worldgen surface) | GALLERY PIXEL PARITY on the BOP registry set (100% of cells at the datum, both stacks) + biome-tint channel proof |
+| P1 | Dynamic Trees | Block entities + incremental growth ticks (BE bridge + event loop) | GALLERY PIXEL PARITY on the DT registry set + BE bridge channel proof |
+| P1 | Combat Roll | Client animation/sound surface — smallest mod, first full ladder walk | animation + sound channels green on both stacks + registry gallery green |
+| P2 | Aged modpack (full) | The "every mod supported" end-state check; version pinned from its manifest when CI wiring lands | full gallery boots + RED-cells-bounded cleanup to 100% |
 
-Per-mod, per-block, per-sound, per-particle coverage is automated via the
-census-driven `cimscene` harness: registered vs exercised per registry is a
-published artifact; a mod is green only when every registry entry has a scene
-row green on BOTH stacks.
+Per-mod, per-block, per-state coverage is the universal gallery (`/cimscene gallery`):
+EVERY registered block from every loaded mod + ALL its states + a vanilla control
+group, placed as real blocks in front of the test player on BOTH stacks in one CI
+run; the pixel join is red unless 100% of cells match at the calibrated datum and
+the red cells ship as triptych artifacts. Census counts, construct and mixin
+markers are DIAGNOSTICS — they never green a rank (owner directive 2026-10-30).
 
 ## Tier 2 — third-party (nightly matrix, M7; Tier 0 is the pulled-forward core)
 

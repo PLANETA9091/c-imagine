@@ -1,6 +1,7 @@
 package dev.cim.layer;
 
 import dev.cim.bootstrap.MiniJson;
+import dev.cim.bootstrap.ShadowClassLoader;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -299,13 +300,24 @@ public final class FmlHost {
                 System.out.println(LOG + " probe: BakedModel NOT loadable: " + t);
             }
 
+            // §8 point 5 acceptance: the accessor mixin applied to the target.
+            // BlockBehaviour loaded during the vanilla boot (after the mixin
+            // gate initialized, before this point) — the interface it now
+            // carries is the gate's verdict. This is the exact cast site the
+            // run b0960b9 CCE named (LeverBlock → BlockBehaviourAccessor);
+            // the probe is shape-universal (any target/accessor pair).
+            boolean accessorOk = MixinGate.accessorApplied(
+                    "cim.shadow.mc1211.net.minecraft.world.level.block.state.BlockBehaviour",
+                    "com.simibubi.create.foundation.mixin.accessor.BlockBehaviourAccessor");
+            System.out.println(LOG + " probe: BlockBehaviour accessor "
+                    + (accessorOk ? "APPLIED (mixin gate §8 acceptance)" : "NOT APPLIED (mixin gate failed)"));
+
             // Dist-strip telemetry: the relocator prints one
             // "[cim-reloc] dist-strip: <class> removed N ..." line per
             // affected class (native side — visible in this log); the CI
-            // gate greps those. (A counter read from HERE would bind the
-            // shadow-space copy of NativeReloc, whose classloader has no
-            // native library registered — JNI library lists are
-            // per-loader — so the per-class lines are the contract.)
+            // gate greps those. The process-global counter read is available
+            // too under the single-definition contract, but the per-class
+            // lines remain the gate contract (they name the classes).)
 
             // 5a) P0 Create: custom registry CREATION during mod construction.
             // Registrate-driven mods (create) instantiate their own registries
@@ -554,16 +566,13 @@ public final class FmlHost {
     }
 
     private static ClassLoader shadowLoader() {
-        // FmlHost itself is defined by the shadow loader, so its defining
-        // loader IS the shadow space — no reflection needed. (Calling the
-        // shadow COPY of ShadowClassLoader.get() would read the wrong
-        // statics: the bootstrap jar exists in both the host loader and the
-        // shadow space as separate classes.)
-        ClassLoader cl = FmlHost.class.getClassLoader();
-        if (cl == null) {
-            throw new IllegalStateException("shadow loader is the bootstrap loader?!");
-        }
-        return cl;
+        // Single-definition contract (12-u): the bootstrap classes are
+        // defined ONCE on the host loader (ShadowClassLoader delegates
+        // dev.cim.** to it), so FmlHost.class.getClassLoader() would be the
+        // HOST — which cannot see the relocated cim.shadow.** classes. The
+        // shadow loader instance (its statics armed by Bootstrap.prepare)
+        // is the one authority for the layer/mod class space.
+        return ShadowClassLoader.get();
     }
 
     // ---- ModFile / scan data -----------------------------------------------------

@@ -942,18 +942,20 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
-     * Place one manifest-mapped visual BLOCK stand-in in front of a player
-     * (the parity matrix "blocks" channel — block-channel-26-3.md): a
-     * {@code note_block[instrument=<I>, note=<N>]} whose pack blockstate
-     * override renders the MODDED model on ANY stock client, exactly the
-     * Oraxen custom-block pattern expressed through the measured 26.3
-     * variant surface. paper-api 26.3 javap-proven:
-     * {@code NoteBlock#setInstrument(org.bukkit.Instrument)} +
-     * {@code NoteBlock#setNote(org.bukkit.Note)}, {@code Instrument.CREEPER},
-     * {@code new Note(int)} public. Placement: 3 blocks along the
-     * player's HORIZONTAL look direction at feet level — a full cube filling
-     * the frame center of a level (pitch 0) join camera. Logs the verified
-     * marker the CI asserts.
+     * Show one manifest-mapped visual BLOCK in front of a player (the parity
+     * matrix "blocks" channel) — OWNER DIRECTIVE 2026-10-30: the real-block
+     * note_block stand-in is DEPRECATED ("working on note blocks is shit";
+     * F2V v1 confirms — its BlockDisplayManager renders virtual blocks, it
+     * does not pollute the world). The carrier blockstate is still
+     * {@code note_block[instrument=<I>, note=<N>]} (the measured pack
+     * override surface, block-channel-26-3.md) but it is rendered by a
+     * {@code BlockDisplay} ENTITY: no world block, no collision, no
+     * neighbor-shape side effects — and the display's brightness is PINNED
+     * to (15,15) so the pixel gate never sees world-light drift.
+     * paper-api 26.3 surface: {@code RegionAccessor#spawn(Class, Consumer)},
+     * {@code BlockDisplay#setBlock(BlockData)},
+     * {@code Display#setBrightness(Brightness)}. Logs the verified marker
+     * the CI asserts.
      */
     private void placeVisualBlock(String playerName, String moddedBlockId) {
         try {
@@ -997,22 +999,28 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     dir = new org.bukkit.util.Vector(0, 0, 1); // level look fallback (+Z)
                 }
                 dir.normalize();
-                org.bukkit.Location at = eye.clone()
-                        .add(dir.multiply(3.0));
+                org.bukkit.Location at = eye.clone().add(dir.multiply(3.0));
                 at.setY(eye.getBlockY());
-                Block b = at.getBlock();
-                b.setBlockData(data);
-                // verify: the world must now hold exactly that state
-                if (b.getBlockData() instanceof org.bukkit.block.data.type.NoteBlock nb
+                final org.bukkit.block.data.BlockData carrier = data;
+                org.bukkit.entity.BlockDisplay disp = at.getWorld().spawn(at,
+                        org.bukkit.entity.BlockDisplay.class, d -> {
+                            d.setBlock(carrier);
+                            // PIN the light: (block, sky) = (15, 15) fullbright —
+                            // the pixel gate must never see world-light drift
+                            d.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
+                        });
+                // verify: the entity exists and carries exactly that state
+                if (disp.isValid() && disp.getBlock() instanceof org.bukkit.block.data.type.NoteBlock nb
                         && nb.getInstrument() == org.bukkit.Instrument.valueOf(
                                 visual.instrument().toUpperCase(Locale.ROOT))
                         && nb.getNote().getId() == visual.note()) {
-                    return "verified @" + b.getX() + "," + b.getY() + "," + b.getZ();
+                    org.bukkit.Location l = disp.getLocation();
+                    return "verified @" + l.getBlockX() + "," + l.getBlockY() + "," + l.getBlockZ();
                 }
-                return "NOT verified @" + b.getX() + "," + b.getY() + "," + b.getZ();
+                return "NOT verified @" + at.getBlockX() + "," + at.getBlockY() + "," + at.getBlockZ();
             });
             log().info(LOG_PREFIX + "f2v block: placed " + moddedBlockId
-                    + " as note_block[instrument=" + visual.instrument()
+                    + " as block_display[note_block instrument=" + visual.instrument()
                     + ",note=" + visual.note() + "] for " + playerName
                     + " (" + verified + ")");
         } catch (Throwable t) {

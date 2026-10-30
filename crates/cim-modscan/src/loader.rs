@@ -208,7 +208,7 @@ fn extract_nested(
 /// The layer dir comes from the `CIM_LAYER_DIR` env contract (set by the
 /// module's loader thread); missing/absent → no neoforge entry (mod execution
 /// then fails loudly at registration, which is the correct signal).
-pub fn prepend_layer_neoforge(mods: &mut Vec<ScannedMod>) -> Vec<String> {
+pub fn prepend_layer_neoforge(mods: &mut Vec<ScannedMod>, stats: &mut ScanStats) -> Vec<String> {
     let Some(layer_dir) = std::env::var("CIM_LAYER_DIR")
         .ok()
         .filter(|v| !v.is_empty())
@@ -249,6 +249,42 @@ pub fn prepend_layer_neoforge(mods: &mut Vec<ScannedMod>) -> Vec<String> {
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default();
                     let at = read_at_entries(universal);
+                    // Extract the universal jar's nested jarjar libraries —
+                    // mixinextras-neoforge lives here and Create's (and every
+                    // modern mod's) mixins reference it (@WrapOperation →
+                    // com/llamalad7/mixinextras/**). Real FML keeps jarjar
+                    // entries on the parent container's classpath; the mods-
+                    // dir extraction loop ran BEFORE this function, so the
+                    // layer-flavoured entries need their own pass (12-u:
+                    // BuiltInRegistriesMixin attach died on the missing
+                    // Operation class without this).
+                    let extract_dir = std::env::temp_dir().join("c-imagine-jarjar");
+                    for (n, nested) in sm.nested.iter().enumerate() {
+                        if !nested.nested.is_empty() {
+                            eprintln!(
+                                "WARN: deeply nested layer jar skipped: {} in {}",
+                                nested.file_name, sm.file_name
+                            );
+                            continue;
+                        }
+                        match extract_nested(&extract_dir, &sm, n, nested) {
+                            Ok(Some(path)) => {
+                                eprintln!(
+                                    "INFO: layer jarjar library: {} -> {}",
+                                    nested.file_name,
+                                    path.display()
+                                );
+                                stats.libraries.push(path.to_string_lossy().into_owned());
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                eprintln!(
+                                    "WARN: nested layer extract failed ({}): {e}",
+                                    nested.file_name
+                                )
+                            }
+                        }
+                    }
                     mods.insert(0, sm);
                     eprintln!(
                         "neoforge layer mod: {} ({} AT lines)",

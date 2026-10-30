@@ -114,11 +114,9 @@ public final class NativeReloc {
      *  before mod construction; the CI gate asserts it is non-zero so the
      *  dist-strip parity can never silently stop firing (12-q). */
     public static long clientMembersStripped() {
-        // NOTE: the shadow space carries its own copy of this class whose
-        // libPath was never setup() (Bootstrap arms the APP-loader copy), so
-        // ensureLoaded() here would wrongly report "path not set" even though
-        // the native library is loaded process-wide and the JNI symbol binds.
-        // Resolve directly; -1 means the library genuinely is not loaded.
+        // 12-u single-definition contract: dev.cim.** is defined once (the
+        // host loader), so this static IS the armed one. Kept tolerant of a
+        // missing library for M0-style boots (-1 = not loaded).
         try {
             return clientMembersStripped0();
         } catch (UnsatisfiedLinkError e) {

@@ -1539,6 +1539,142 @@ Stage Summary:
   census with Create — the first Create census-parity diff.
 
 ---
+Task ID: 12-u
+Agent: main
+Task: MILESTONE — the mixin gate (§8) GREEN end to end; FIRST Create census-parity diff
+
+Work Log:
+- The b0960b9 verdict named the gate (Create's mixins never applied — the
+  shadow loader serves raw relocated bytes, bypassing the transformer
+  chain); fa9f67a fixed the design; 8ad7bb0 implemented it universally
+  (no mod named anywhere on the path). The 9ffc137 CI run (mod-matrix)
+  is GREEN across all four jobs, including the FIRST
+  "CENSUS PARITY: GREEN — registration parity across stacks" for Create.
+- CimMixinService: a thin IMixinService over the shadow loader, selected
+  via mixin.service (sponge-mixin instantiates it directly — no
+  ServiceLoader ambiguity against the LaunchWrapper/ModLauncher services
+  shipped in the jar; the modlauncher service was rejected per §8's open
+  question — its plumbing assumes the modlauncher environment). Its
+  bytecode provider IS the loader's classBytesFor pipeline, so the
+  @Mixin targets the processor reads match the arriving names exactly.
+- MixinGate two-stage boot resolved the ordering law discovered on the
+  way: init (bootstrap + configs + transformer) → defineLayerEarly (mod
+  module packages claimed) → activate (phase advance + hook wiring).
+  Three constraints interlock: the processor promotes its configs only
+  on an environment CHANGE (a frozen PREINIT left it INERT — 4500+
+  transform calls, zero applies); the promotion resolves every mixin
+  class (must land in its module, not the unnamed one); the boot classes
+  (BlockBehaviour) must be transformed when the registries bootstrap.
+- MixinConfigs: config package/plugin/targets translated through the one
+  relocation table at serve time (§8 point 4); Create 6.0.10 confirmed
+  refmap-less (mojmap-native, as predicted).
+- cim-reloc: annotation STRING constants follow the relocation now —
+  mixin method/target values embed ORIGINAL descriptors
+  (@Inject method="triggerItemUseEffects(Lnet/minecraft/...;I)V" found
+  no target until the embedded segments followed the table). The
+  neoforge universal jar's annotation strings point DIRECTLY at
+  CONSTANT_Utf8 (non-standard) — both element forms are preserved.
+- cim-modscan: the layer universal jar's nested jarjar libraries are
+  extracted to the manifest classpath — mixinextras-neoforge lives
+  there, and every modern mod's @WrapOperation dies on the missing
+  Operation class without it. Library bootstrap configs
+  (mixinextras.init.mixins.json — the canonical case) are discovered
+  across the mod-space jars and registered like any mod config; their
+  plugins register the MixinExtras extensions into the active
+  transformer (transformer BEFORE configs — the extension registration
+  targets the active transformer).
+- ShadowClassLoader: jar manifests carried into definePackage (the real
+  server's SecureJarHandler exposes Implementation-Version through the
+  package metadata; sponge-mixin's ASM version detection reads it —
+  without it every JAVA_21 config failed its ASM>=9.5 check); and the
+  single-definition contract: dev.cim.bootstrap.** delegates to the
+  host loader (the shadow copies' forked statics — NativeReloc.libPath,
+  ShadowClassLoader.instance — broke the gate; dev.cim.layer.** stays
+  shadow-defined, the hook crosses via the ClassBytecodeHook interface).
+- The scaffold extras: CimMixinBootstrap suppresses the foreign boot
+  services; CimMixinPropertyService replaces both unusable blackboards;
+  the console logger wires mixin DEBUG lines to stdout under
+  cim.debug.mixins; build-bootstrap.sh fetches the compile-only
+  classpath (sponge-mixin + ASM from maven.neoforged.net, repo1 as
+  fallback — repo1 fast-failed on the runner).
+
+Stage Summary:
+- The layer now runs the real pipeline's mixin subsystem end to end:
+  accessors, injectors, MixinExtras sugars (@WrapOperation/@Local), dist
+  guards, delta-union classpath, member strip. The §8 acceptance chain
+  is fully green: construct passes the accessor casts, the register-phase
+  injectors apply, and the census-parity job produced the FIRST Create
+  census diff — GREEN across stacks on the first run. Next named work:
+  grow the P0 ladder (Biomes O' Plenty next per MODPACK.md Tier 0), and
+  the §8 refmap question stays open until a leg carries one.
+
+## Task 12-v — THE GATE IS PIXELS: the universal gallery replaces every fake green (2026-10-30)
+
+Owner verdict, quoted: "f2v v1 сейчас работает лучше чем у нас ... визуально я сам
+протестировал и это ужасно" + "ci зеленый потому что мы проверяем не понятно что".
+The 12-u summary said "mixin gate green end to end; first Create census parity" —
+that was REGISTRATION parity (registry counts/sets), not the product. The P0 Create
+rank is REOPENED; the roadmap (M5.5 "THE GATE IS PIXELS") and MODPACK.md gates are
+rewritten: census/construct/mixin are diagnostics, the ONLY rank gate is the
+universal gallery pixel join, RED unless 100% of cells at the datum.
+
+- BOP leg (frozen mid-rank, findings kept): local m2 harness ran the BOP set
+  (21.1.0.14 + GlitchCore 2.1.0.2 + TerraBlender 4.1.0.8). The gate armed 8 configs
+  UNIVERSALLY (modscan-driven, zero mod naming); declared-but-absent refmaps
+  (biomesoplenty/glitchcore/terrablender .refmap.json keys with no file) are WARN
+  non-fatal — the §8 refmap leg's first real case is the ABSENT-refmap variant.
+  REAL DEFECT FOUND: BOP construct dies with UnsupportedOperationException from
+  glitchcore.util.Environment.getConfigPath — a stub class whose implementation is
+  a SELF-MIXIN (glitchcore.neoforge.mixin.impl.MixinEnvironment, @Mixin
+  target=glitchcore/util/Environment, remap=false, @Overwrite statics). The mixin
+  never applied; measured cause: "Class version 65 required is higher than the
+  class version supported by the current version of Mixin (JAVA_17 supports class
+  version 61)" — the configs declare JAVA_17, the environment level follows the
+  configs, and 1.21.1-era mod classes are compiled at class version 65. The check
+  source is org/spongepowered/asm/mixin/transformer/MixinConfig.class. The
+  picture is NOT a flat class-version block: Create's BlockBehaviourAccessor is
+  ALSO major 65 and its apply is GREEN on the same engine, and glitchcore's
+  MixinServerPlayer got a "Mixing" line under the same WARN. The candidates:
+  (a) the environment CompatibilityLevel must be raised to the JVM class version
+  in MixinGate (universal fix, removes the whole class of warns), and (b) the
+  self-mixin target class loads from the MOD module (glitchcore's own), not the
+  shadow game module — the promotion/apply path may resolve mod-module targets
+  differently from game-module ones. Both recorded; the exact autopsy + fix is
+  the next layer task before BOP unblocks.
+- The universal gallery rig landed (the owner's test design, verbatim):
+  `/cimscene gallery` (scene-mod) enumerates EVERY registered block from every
+  loaded mod + ALL its states + a fixed vanilla control group, and builds a
+  corridor of walls of REAL blocks in the empty flat world (deterministic: ids
+  sorted, definition state order, manifest gallery.tsv wall/col/row -> x/y/z +
+  exact state string). The client walks the corridor at camera-locked vantages
+  (fov 45 pinned, yaw 0 pitch 0, noon/clear/mob-free) and shoots one frame per
+  wall (scripts/cimscene/gallery-walk.py, proven Robot/Shot path).
+- The c-imagine leg renders the pack-carrier channel that exists TODAY:
+  scripts/cimscene/cim-gallery-walk.py maps the block manifest to VIRTUAL blocks —
+  block_display entities carrying note_block[instrument,note] with brightness
+  PINNED (15,15) — plus REAL vanilla control cells via setblock; cells without a
+  carrier are RED missing rows, which is the honest f2v-port backlog.
+- The pixel join: scripts/cimscene/gallery-diff.py (stdlib-only PNG codec) crops
+  per-cell by index from both stacks' frames (focal 869 px / 108.6 px-per-block at
+  the pinned camera), vanilla controls = the drift datum, artifacts = triptychs
+  (truth | ours | heat) for the worst cells + TSV report; GREEN ⇔ 100% of cells
+  within the datum AND zero missing cells. Smoke-tested: identical frames -> AE 0
+  GREEN, missing cell -> RED exit 1.
+- CI: .github/workflows/gallery.yml — truth leg (real NeoForge server + client,
+  the fetch-truth-client contract), cim leg (Paper 26.3 + F2vPack + vanilla
+  client, the visual.yml contract), diff leg (the gate). First runs are
+  CALIBRATION: --datum comes from the measured vanilla-control AE before the gate
+  locks.
+- The note_block REAL-BLOCK stand-in is dead (owner: "работать на нотных блоках
+  это пиздец; f2v v1 делает иначе"): placeVisualBlock now spawns a BlockDisplay
+  with pinned brightness; the carrier blockstate stays until per-block carriers
+  grow from the ItemDisplay+CMD surface (run 43/44) toward the F2V v1
+  BlockDisplayManager model.
+- Next named work: (1) gallery calibration runs -> lock the datum; (2) the
+  self-mixin/class-version autopsy + fix in the layer (unblocks BOP); (3) the f2v
+  port burns down RED cells rank by rank — Create first: per-block carriers from
+  create jar assets, then the channel scenes (contraptions, fluids, particles,
+  sounds, UIs).
 Task ID: 12-v
 Agent: main
 Task: THE GALLERY — the main pixel gate, truth leg PROVEN on real NeoForge + Create
@@ -1594,7 +1730,89 @@ Stage Summary:
 ---
 Task ID: 12-w
 Agent: main
-Task: OURS LEG LIVE — the gallery pixel gate runs end to end; the dyn class
+Task: M5.5 — the pixel gate RUN FOR REAL (owner: "сразу же и тестируй работает ли оно правда")
+
+Work Log:
+- Owner verdict on 8cd6a30: "test right away whether it actually works — or
+  is it again haphazard." Ran the whole gallery pipeline end to end in the
+  sandbox. It did NOT work. Twelve defects found by RUNNING, each fixed with
+  a measurement, all re-verified by the same run:
+   1. scene-mod gallery never compiled (ResourceKey<Block> vs ResourceLocation
+      in the registry iteration) — the commit had never been built.
+   2. Geometry split-brain: scene-mod built 12-column walls, gallery-diff.py
+      cropped for 6, cim-gallery-walk.py placed 6. Unified: COLS=6 everywhere;
+      crop geometry now DERIVED from each manifest (camera = mean col x, eye =
+      min row y + 1 + eye-height) so the three components can never drift.
+   3. Console FIFO (tail -f | java) dies on the first EOF; every later writer
+      blocks forever. ALL server control moved to RCON (scripts/cimscene/
+      rcon.py, stdlib) — every command's response is asserted, no log-greps.
+   4. The sandbox reaper kills setsid'd processes with lag; a dying orphan
+      still answers RCON then dies mid-gallery. Legs now SIGKILL leftovers
+      (MC java shields SIGTERM — pkill -TERM did nothing for hours), wait for
+      ports 25565/25575 to actually close, then boot.
+   5. The truth client was KICKED at registry sync ("registries with unknown
+      keys: cimtest:*") — a modless client cannot join a modded server. The
+      client now carries the server's mod jars.
+   6. Ghost sessions: a killed client's player lingered in `list`; tp said
+      "No entity was found" and the walk shot nothing. Strict protocol: kick
+      cimviewer, WAIT for "0 of a max", only then launch.
+   7. OOM (4 GB box): NeoForge client + Paper + llvmpipe exceed RAM. Heaps
+      pinned (server 1G, clients 0.9-1.5G), llvmpipe 2 threads; libXtst for
+      the AWT Robot comes from an unpacked deb (no root for apt).
+   8. The FIRST teleport of a session is eaten by the client's terrain-
+      download barrier; the camera stays at spawn while the server says
+      "Teleported". The walk does a warm-up pass (tp only) before shooting.
+   9. A survival viewer FALLS to the platform top — 1 block below the
+      contract eye height; crops miss by 108 px. The walk switches the
+      viewer to spectator: camera == tp point, no first-person hand.
+  10. "fov:45.0" is not degrees — the MC fov slider stores an offset from 70
+      (0.0 = 70 deg); 45 deg = -0.625. Both clients pinned; clouds off
+      (renderClouds:false) — clouds leaked into translucent-leaf cells.
+ 11. Waterlogged blockstates (oak_leaves) RELEASE their water into the
+      corridor and flood the pixel gate (a fresh world reproduces it every
+      time). The gallery skips fluid-bearing states on the truth side; the
+      cim side mirrors the truth manifest, parity stays exact. Wall stride
+      12 = corridor depth: adjacent corridors tile exactly — no gap for
+      straying fluids, no overlap plowing the previous wall (stride 9 let
+      wall N+1 erase wall N — the last wall always survived alone).
+ 12. The cim mirror was its own enumeration (12 vanilla controls vs the
+      truth's 48 control states) — the join was broken BY DESIGN. Rewritten
+      as a MIRROR: the truth gallery.tsv IS the cell contract; the cim side
+      places vanilla cells as real setblocks (exact state parsed from the
+      truth state string) and modded cells as block_display carriers; a
+      block without a carrier = red_concrete marker = honest RED row.
+      Also fixed: double namespacing (minecraft:minecraft:stone -> "Invalid
+      ID" on Paper) and Paper's unloaded spawn chunks (forceload before the
+      summons).
+
+Stage Summary:
+- THE PIXEL GATE IS REAL: truth leg (real NeoForge 21.1.265 server + real
+  NeoForge 1.21.1 client, modded, spectator camera) and cim leg (Paper 26.3 +
+  F2vPack + vanilla 26.3 client, block_display carriers) both produce
+  camera-locked 1280x720 wall shots; gallery-diff.py joins them cell-by-cell
+  with manifest-derived geometry and a MEASURED drift datum (max vanilla-
+  control AE of the same run pair — no alignment fudges).
+- Result on the cimtest rig: 35/35 cells inside the datum — GATE GREEN —
+  with 6 cells at AE = 0 (PIXEL-IDENTICAL output of two different clients:
+  1.21.1 NeoForge vs 26.3 vanilla+pack). The datum floor itself (0/3794/
+  68429) is the honest cross-version drift: the lit-furnace texture changed
+  between versions; that is content drift, not a cim bug, and the control
+  cells exist precisely to measure it.
+- CI (gallery.yml) rewritten to the measured contract: RCON control, client
+  carries server mods, strict ghost protocol, spectator warm-up walk, fov
+  slider units, forceload, the truth manifest artifact as the cim leg's cell
+  contract, jdk25 for Paper/26.3-client, the gate job exits RED unless 100%
+  of cells sit inside the datum.
+- What the gate will honestly show next: with Create loaded the truth side
+  enumerates EVERY Create blockstate; the cim side has carriers only for the
+  f2v port's visual-blocks.tsv rows — the diff will be RED with the exact
+  missing-carrier list = the port's fix backlog. That RED is the product
+  speaking; census-green without pixels is what the owner rejected.
+
+---
+Task ID: 12-x
+Agent: main
+Task: OURS LEG LIVE on the wall-grid line — the gallery pixel gate runs end to end; the dyn class (merges the corridor line's 12-w below)
 
 Work Log:
 - GalleryPack + the plugin's ItemDisplay replay are LIVE: visual-gallery.tsv

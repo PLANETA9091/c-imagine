@@ -105,10 +105,29 @@ public final class Bootstrap {
                 if (!modJars.isEmpty()) {
                     ShadowClassLoader.addModJars(modJars);
                 }
+                // §8 mixin gate: sponge-mixin initializes AFTER the shadow
+                // loader + mod jars exist and BEFORE the first game class
+                // loads (LayerMain.boot below) — every game class then passes
+                // the transformer before definition, exactly like the real
+                // server's transforming loader. Configs come from the
+                // manifest (mods[].mixin_configs — universal, any mod) plus
+                // the layer's own neoforge.mixins.json.
+                Class<?> mixinGate = Class.forName("dev.cim.layer.MixinGate", true,
+                        ShadowClassLoader.get());
+                mixinGate.getMethod("init", String.class).invoke(null, manifestJson);
                 Class<?> fmlHost = Class.forName("dev.cim.layer.FmlHost", true,
                         ShadowClassLoader.get());
                 fmlHost.getMethod("defineLayerEarly", Map.class)
                         .invoke(null, manifest);
+                // §8 mixin gate stage 2: the mod module packages are claimed
+                // (defineLayerEarly above) and the game classes have not
+                // loaded yet (LayerMain.boot below) — the only window where
+                // the mixin phase may advance: the processor's config
+                // promotion resolves every mixin class (must land in its
+                // module, not the unnamed one) and the hook then transforms
+                // every boot class (BlockBehaviour must carry its accessors
+                // when the registries bootstrap).
+                mixinGate.getMethod("activate").invoke(null);
             }
 
             // 3) M1: boot the relocated vanilla stack (registries bootstrap)
