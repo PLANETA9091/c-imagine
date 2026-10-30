@@ -2393,3 +2393,26 @@ Stage Summary:
   non-overlapping, non-animating subjects, sparse enough that physics
   cannot rearrange the picture. The next run's verdict — whatever it
   names — is a RENDER delta, finally.
+
+Task ID: 12-am
+Agent: main
+Task: the sparse grid verdict — the gate finally measures RENDER deltas; the shot-copy glob regression fixed
+
+Work Log:
+- f9d9e8a: the sparse entity grid DELIVERED — alignment shifts collapsed
+  to [0,0] (the scramble is gone), 4+4 mob cells GREEN, and the named
+  reds are REAL per-mob render deltas for the first time: allay, axolotl,
+  bat, bogged, breeze, cat (ae 1.47M!), chicken, cow, dolphin, donkey
+  (1.39M), elder_guardian, endermite — one mob, one named red, one
+  triptych each. The large/dyn diagnostics carried their own cells
+  (large: 1 red on p1/p2; dyn: all green).
+- Coverage gap: pages 2-4 of the mob walk were shot but the diff job's
+  copy step only picked e0/e1 — the 12-am explicit copy list I wrote when
+  reverting a glob was the regression. Fixed with a single-digit glob
+  (gal-e[0-9].png) + the dyn/large families kept separate.
+- The block wall reds unchanged (the three pack-channel families).
+
+Stage Summary:
+- The mob gate now names real render work per subject. The next run gives
+  the FULL named backlog (pages 0-4) plus the isolated pane+casing bisect
+  reading.

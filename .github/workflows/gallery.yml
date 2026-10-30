@@ -663,12 +663,10 @@ jobs:
           pip install -q numpy pillow
           mkdir -p truth-shots ours-shots gallery-report
           find truth -name 'gal-p*.png'      -exec cp {} truth-shots/ \;
-          find truth -name 'gal-e0.png'       -exec cp {} truth-shots/ \;
-          find truth -name 'gal-e1.png'       -exec cp {} truth-shots/ \;
+          find truth -name 'gal-e[0-9].png'       -exec cp {} truth-shots/ \;
           find truth -name 'gal-e0-again.png' -exec cp {} truth-shots/ \;
           find ours  -name 'ours-gal-p*.png' -exec cp {} ours-shots/ \;
-          find ours  -name 'ours-gal-e0.png'  -exec cp {} ours-shots/ \;
-          find ours  -name 'ours-gal-e1.png'  -exec cp {} ours-shots/ \;
+          find ours  -name 'ours-gal-e[0-9].png'  -exec cp {} ours-shots/ \;
           find ours  -name 'ours-gal-e0-again.png' -exec cp {} ours-shots/ \;
           find truth -name 'gal-edyn*.png'    -exec cp {} truth-shots/ \;
           find truth -name 'gal-elarge*.png'  -exec cp {} truth-shots/ \;
