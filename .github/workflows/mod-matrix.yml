@@ -241,6 +241,45 @@ jobs:
           awk -F'\t' '$1=="item" && $2=="create" {ok=1} END{exit !ok}' "$T" \
             || { echo "no create item rows in the truth census"; exit 1; }
 
+      # -------------------------------------------------------------------
+      # THE GALLERY sweep (roadmap M5.5 main gate, truth leg): every Create
+      # blockstate on the deterministic wall, one manifest per page. The
+      # camera-lock environment pins ride here so the screenshots the parity
+      # job takes against THIS wall are comparable across legs.
+      # -------------------------------------------------------------------
+      - name: gallery sweep (truth leg — every Create blockstate)
+        run: |
+          set -euo pipefail
+          echo "gamerule doDaylightCycle false" > srv-create/console.in
+          echo "time set noon" > srv-create/console.in
+          echo "gamerule doWeatherCycle false" > srv-create/console.in
+          echo "weather clear" > srv-create/console.in
+          echo "gamerule doMobSpawning false" > srv-create/console.in
+          sleep 2
+          PAGES=0
+          for p in $(seq 0 59); do
+            echo "cimscene gallery page create $p" > srv-create/console.in
+            ok=0
+            for i in $(seq 1 30); do
+              grep -q "gallery done ns=create page=$p " srv-create/boot.log 2>/dev/null && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "gallery page $p produced no done marker"; tail -20 srv-create/boot.log; exit 1; }
+            line=$(grep "gallery done ns=create page=$p " srv-create/boot.log | tail -1)
+            echo "$line"
+            echo "$line" | grep -q "cells=0" && { echo "gallery exhausted at page $p (content pages: $PAGES)"; break; }
+            PAGES=$((PAGES+1))
+            test -f "srv-create/c-imagine/scenes/gallery-create-p$p.tsv" \
+              || { echo "gallery manifest p$p missing"; exit 1; }
+          done
+          [ "$PAGES" -gt 0 ] || { echo "no gallery pages were placed"; exit 1; }
+          # wall existence probe (version-independent: first cell must not be air)
+          echo "execute unless block -5 -60 9 minecraft:air run say GALLERY_CELL_00_PRESENT" > srv-create/console.in
+          sleep 2
+          grep -q "GALLERY_CELL_00_PRESENT" srv-create/boot.log \
+            || { echo "gallery wall first cell is air — the wall does not exist"; exit 1; }
+          echo "create-truth gallery: PAGES=$PAGES ALL OK"
+
       - name: dump the REAL classpath contract (autopsy telemetry)
         run: |
           echo "=== installed unix_args.txt (the real server's launch contract) ==="
@@ -286,6 +325,7 @@ jobs:
           path: |
             srv-create/c-imagine/scenes/scene-manifest.tsv
             srv-create/c-imagine/scenes/scene-manifest-entries.tsv
+            srv-create/c-imagine/scenes/gallery-create-*.tsv
           if-no-files-found: ignore
 
       - name: upload create truth boot log

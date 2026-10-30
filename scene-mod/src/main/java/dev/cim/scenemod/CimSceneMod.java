@@ -1,5 +1,6 @@
 package dev.cim.scenemod;
 
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -11,7 +12,9 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
@@ -27,7 +30,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -166,6 +172,16 @@ public final class CimSceneMod {
                                     false);
                             return placed ? 1 : 0;
                         }))
+                        .then(Commands.literal("gallery")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .executes(ctx -> gallery(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "namespace"), 0)))
+                                .then(Commands.literal("page")
+                                        .then(Commands.argument("namespace", StringArgumentType.word())
+                                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> gallery(ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "namespace"),
+                                                                IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
@@ -194,7 +210,145 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery|probe-class)");
+    }
+
+    // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
+
+    /** Gallery wall geometry (camera-lock-26-3.md rig: camera feet y=-60,
+     *  eyes -58.38, yaw 0 / pitch 0; superflat floor top face y=-60). The
+     *  wall stands ON the floor 9 blocks ahead, 11 columns x 7 rows = 77
+     *  cells; at the 1280x720 default FOV 70 every cell is fully inside the
+     *  frame (checked against the measured vertical half-angle 35 deg:
+     *  top face atan(5.38/8.5)=32.3, bottom atan(1.62/8.5)=10.8). */
+    static final int GALLERY_COLS = 11;
+    static final int GALLERY_ROWS = 7;
+    static final int GALLERY_CELLS = GALLERY_COLS * GALLERY_ROWS; // 77
+    static final int GALLERY_X0 = -5;
+    static final int GALLERY_Y0 = -60;   // bottom row sits on the floor
+    static final int GALLERY_Z = 9;
+
+    /**
+     * The universal content gallery: EVERY block (and then EVERY blockstate
+     * of every block) registered by the namespace, placed on a deterministic
+     * absolute wall grid in front of the locked camera — zero per-mod code.
+     * Page 0 = the first {@value #GALLERY_CELLS} states in
+     * (sorted-id, getPossibleStates) order; page N continues; an empty page
+     * marker closes the sweep. Skips are honest and identical on both parity
+     * stacks: fluid states would flow (time-varying pixels), RenderShape.
+     * INVISIBLE states render nothing on ANY client (barrier, structure_void,
+     * air) — both are recorded in the page manifest, not silently dropped.
+     *
+     * <p>Manifest per page: {@code c-imagine/scenes/gallery-<ns>-p<p>.tsv}
+     * rows {@code cell|x|y|z|state} ({@code cell} = col,row on the wall) plus
+     * {@code skip|...|state} rows for skipped states — the diff job joins
+     * per-cell crops from the two legs' screenshots through these
+     * coordinates, so one bad block names itself.
+     */
+    private static int gallery(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+
+        // Deterministic entry list: sorted ids of the namespace, each block's
+        // states in getPossibleStates() order.
+        List<BlockState> entries = new ArrayList<>();
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.BLOCK.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        for (ResourceLocation id : ids) {
+            if (!id.getNamespace().equals(namespace)) continue;
+            entries.addAll(BuiltInRegistries.BLOCK.get(id).getStateDefinition().getPossibleStates());
+        }
+
+        LOGGER.info("[cimscene] gallery begin ns={} page={} states={} cellsPerPage={}",
+                namespace, page, entries.size(), GALLERY_CELLS);
+
+        int from = page * GALLERY_CELLS;
+        if (from >= entries.size()) {
+            LOGGER.info("[cimscene] gallery done ns={} page={} cells=0 skipped_fluid=0 "
+                    + "skipped_invisible=0 exhausted=1", namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + GALLERY_CELLS, entries.size());
+        List<BlockState> slice = entries.subList(from, to);
+
+        // sweep the wall region (starts AT GALLERY_Y0: the superflat floor
+        // top block lives at y=-61 (measured: feet rest at y=-60) — filling
+        // one lower would punch a hole in the floor; the wall's own bottom
+        // row y=-60 is still cleared, the floor under it stays intact)
+        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
+            for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
+                for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
+                    level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+
+        // place + manifest
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\n");
+        int placed = 0, skipFluid = 0, skipInvisible = 0;
+        for (int i = 0; i < slice.size(); i++) {
+            BlockState st = slice.get(i);
+            ResourceLocation bid = BuiltInRegistries.BLOCK.getKey(st.getBlock());
+            String stateStr = stateString(st, bid);
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            if (!st.getFluidState().isEmpty()) {
+                skipFluid++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(stateStr).append('\n');
+                LOGGER.info("[cimscene] gallery skip ns={} page={} index={} reason=fluid state={}",
+                        namespace, page, from + i, stateStr);
+                continue;
+            }
+            if (st.getRenderShape() == RenderShape.INVISIBLE) {
+                skipInvisible++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(stateStr).append('\n');
+                LOGGER.info("[cimscene] gallery skip ns={} page={} index={} reason=invisible state={}",
+                        namespace, page, from + i, stateStr);
+                continue;
+            }
+            BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+            level.setBlock(pos, st, 3);
+            placed++;
+            tsv.append("cell\t").append(GALLERY_X0 + col).append('\t')
+                    .append(GALLERY_Y0 + row).append('\t').append(GALLERY_Z).append('\t')
+                    .append(stateStr).append('\n');
+        }
+
+        String manifest = "gallery-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery manifest write failed {}: {}", manifest, ioe.toString());
+        }
+
+        LOGGER.info("[cimscene] gallery done ns={} page={} cells={} skipped_fluid={} "
+                        + "skipped_invisible={} first={} last={}",
+                namespace, page, placed, skipFluid, skipInvisible,
+                stateString(slice.get(0), BuiltInRegistries.BLOCK.getKey(slice.get(0).getBlock())),
+                stateString(slice.get(slice.size() - 1),
+                        BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
+        return placed;
+    }
+
+    /** Canonical state string {@code ns:path[k=v,...]} (properties in
+     *  declaration order — deterministic on both stacks, same code). */
+    private static String stateString(BlockState st, ResourceLocation id) {
+        StringBuilder sb = new StringBuilder(id.getNamespace()).append(':').append(id.getPath());
+        if (!st.getProperties().isEmpty()) {
+            sb.append('[');
+            boolean first = true;
+            for (Property<?> p : st.getProperties()) {
+                if (!first) sb.append(',');
+                first = false;
+                sb.append(p.getName()).append('=').append(valueOf(st, p));
+            }
+            sb.append(']');
+        }
+        return sb.toString();
+    }
+
+    private static <T extends Comparable<T>> String valueOf(BlockState st, Property<T> p) {
+        return st.getValue(p).toString();
     }
 
     /**

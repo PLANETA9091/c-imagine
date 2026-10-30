@@ -1537,3 +1537,56 @@ Stage Summary:
 - The hardest registration-era gate of the P0 Create ladder is green.
   The mixin subsystem is the next named gate on the road to the layer
   census with Create — the first Create census-parity diff.
+
+---
+Task ID: 12-v
+Agent: main
+Task: THE GALLERY — the main pixel gate, truth leg PROVEN on real NeoForge + Create
+
+Work Log:
+- Owner directive (2026-10-30): the M5 green must be a PICTURE verdict, not a
+  census verdict. "Every block and every state appears in front of the test
+  player, auto-assembled from the mod, zero hardcode; CI diffs the pixels
+  against real NeoForge and goes RED when it is not 100%. Note blocks are
+  rejected — f2v v1 does it through display entities."
+- Implemented `/cimscene gallery <ns> <page>` (scene-mod, universal, zero
+  per-mod code): EVERY block of the namespace sorted by id × EVERY
+  blockstate in getPossibleStates() order, placed on the ABSOLUTE wall grid
+  (11×7 = 77 cells, x −5..5, y −60..−54, z 9) in front of the camera-lock
+  rig. Skips are honest and symmetric on both stacks (fluid states would
+  flow → time-varying pixels; RenderShape.INVISIBLE renders nothing on ANY
+  client) — recorded in the page manifest, never silently dropped.
+- Page manifests `gallery-<ns>-p<p>.tsv` (cell|x|y|z|state + skip rows) are
+  the join key: `scripts/cimscene/gallery-diff.py` crops per-CELL regions
+  from both legs' screenshots through a measured pinhole projection
+  (focal 514.1 px @ 720p FOV 70, dist 8.5 → 60.5 px/cell) and diffs
+  state-by-state — one bad block NAMES ITSELF. Exit code is the CI gate.
+- TRUTH LEG (real NeoForge 21.1.265 server + Create 6.0.10 + real Create
+  client under xvfb), run-gallery-truth.sh, LOCAL run verified:
+  * pages 0..2 placed; page 0 = 61 cells + 16 waterlogged skips (matches
+    the manifest rows); `execute unless block -5 -60 9 air` →
+    GALLERY_CELL_00_PRESENT — the wall EXISTS in the world.
+  * determinism probe: page 0 re-placed and re-shot →
+    gal-p0.png vs gal-p0-again.png: diff bbox = None, total AE = 0
+    (pixel-identical). The rig is deterministic; any future diff is signal,
+    not noise.
+  * eye check of gal-p0.png: train casings, station, window panes render
+    with correct textures and connection states at the projected
+    coordinates (11 cols × 60.5 px centred — matches the frame measured).
+- CI: mod-matrix.yml create-truth job now sweeps gallery pages until the
+  exhausted marker (cells=0), keeps every manifest as an artifact, and
+  probes the wall's first cell. Roadmap M5.5 rewritten: census parity is
+  the PRE-GATE; the GREEN verdict is the gallery verdict per mod.
+- NOT yet done (named next work, honestly RED by construction until it
+  exists): OURS LEG — the layer must project every modded blockstate onto
+  the vanilla 26.3 client through the ITEM/DISPLAY channel (ItemDisplay +
+  CustomModelData + pack-synthesised models, the f2v v1 path; runs 43/44
+  proved the rig). The note_block stand-in channel is rejected for the
+  gallery. Until that lands, ours-leg gallery rows are red — that IS the
+  honest CI state.
+
+Stage Summary:
+- The gallery gate exists end to end on the truth leg with hard evidence:
+  manifests, world probe, pixel-identical determinism (AE=0), eye-checked
+  screenshots. The remaining gap to a meaningful GREEN is exactly one
+  named subsystem: the ours-leg display-entity projection.

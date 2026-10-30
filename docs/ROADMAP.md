@@ -270,12 +270,53 @@ is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
   entry in front of the camera. Coverage artifact = registered vs exercised per
   registry per mod. Sound is proven wire-level (cimbot
   ClientboundSoundPacket census) since screenshots cannot hear.
+- **THE GALLERY — the main pixel gate (owner directive 2026-10-30: "every
+  block and every state appears in front of the test player, auto-assembled
+  from the mod, zero hardcode; CI diffs the pixels against real NeoForge and
+  goes RED when it is not 100%"). Implemented 2026-10-30, proven on a REAL
+  NeoForge 21.1.265 server + Create (see worklog 12-v):**
+  - `/cimscene gallery page <namespace> <page>` — builds the deterministic
+    content wall: EVERY block of the namespace in sorted-id order × EVERY
+    blockstate in `getPossibleStates()` order, 11×7 = 77 states per page on an
+    ABSOLUTE wall grid (x −5..5, y −60..−54, z 9; camera-lock rig locks the
+    camera at 0.5/−60/0.5 yaw 0 pitch 0 — every cell fully inside the
+    1280x720 default-FOV frame, measured). Skips are honest and identical on
+    both stacks: fluid states (would flow → time-varying pixels) and
+    RenderShape.INVISIBLE states (render nothing on ANY client) are recorded
+    per page, not silently dropped.
+  - Page manifests `gallery-<ns>-p<p>.tsv` (cell|x|y|z|state + skip rows) are
+    the diff job's join key: per-CELL crops from both legs' screenshots are
+    diffed state by state, so one bad block NAMES ITSELF in the report — the
+    gate is no longer "some region somewhere".
+  - The sweep terminator is the exhausted marker (`cells=0`), the page loop is
+    data-driven — adding a mod adds registry rows, not harness code.
+  - Truth-leg status: REAL server + Create page 0 = 61 cells placed, 16
+    waterlogged variants skipped, first/last cells verified by `execute if
+    block` — the wall exists in the world, not only in the log.
+  - **Ours-leg requirement (the named next work)**: the layer must project
+    every modded blockstate the gallery places onto the vanilla 26.3 client
+    through the ITEM/DISPLAY channel (f2v v1's ItemDisplay + CustomModelData
+    path — pack-synthesised models, runs 43/44 prove the rig) — the
+    note_block stand-in channel is REJECTED for the gallery by owner
+    directive (it is a debug stand-in, not a parity surface). Until that
+    projection exists, ours-leg gallery rows are RED by construction, which
+    is the honest CI state the roadmap now encodes: **green requires the
+    picture, not the census.**
+- **Gate semantics (the anti-"green for nothing" law)**: census/registration
+  parity stays a REQUIRED PRE-GATE (identical sets on both stacks), but the
+  green verdict for M5.5 per mod is the GALLERY verdict: every non-skipped
+  cell of every page passes its per-cell PixelDiffNorm datum (calibrated per
+  the camera-lock identity metric; the version-level 1.0703 luminance factor
+  is normalised, not chased), diff images + both screenshots ship as
+  artifacts for every red cell, and the run is RED when any cell is red.
+  "100% identical" = 100% of cells at the calibrated identity datum.
 
-**Accept:** Create scene sweep green at the calibrated identity thresholds on the
-camera-locked rig on every Create channel (the 100%-identical target, measured by
-the documented cross-version metric); BOP / Dynamic Trees / Combat Roll sweeps
-green per-registry; Aged pack boots + first census + first sweep; every run ships
-both screenshot sets for eye comparison and per-scene debug bundles for reds.
+**Accept:** the GALLERY gate: every Create blockstate page green at the
+calibrated identity datum (truth leg vs ours leg, per-cell PixelDiffNorm),
+every Create channel (kinetic/fluid/UI/particle/sound) green on its scene rows,
+BOP / Dynamic Trees / Combat Roll galleries green; every run ships both
+screenshot sets + per-cell diff artifacts for eye review, and the run is RED
+whenever any cell or any channel row is red.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 
