@@ -345,10 +345,12 @@ jobs:
             | grep -q "cimtest:block/test_block" \
             || fail "modded item model missing from the pack"
           # BLOCK channel (parity matrix "blocks", block-channel-26-3.md):
-          # the note_block stand-in leg — placed for the bot (wire sees the
-          # block update) and the merged blockstates override in the pack
-          grep -q "f2v block: placed cimtest:test_block as note_block\[instrument=creeper,note=13\] for cimbot (verified @" \
-            srv/boot.log || fail "note_block stand-in place leg missing"
+          # the note_block carrier state rides a BlockDisplay ENTITY (owner
+          # directive 2026-10-30: the real-block stand-in is deprecated — no
+          # world block, no collision, brightness pinned 15/15), placed for
+          # the bot, plus the merged blockstates override in the pack
+          grep -q "f2v block: placed cimtest:test_block as block_display\[note_block instrument=creeper,note=13\] for cimbot (verified @" \
+            srv/boot.log || fail "note_block carrier place leg missing"
           unzip -p srv/c-imagine/f2v/pack.zip assets/minecraft/blockstates/note_block.json \
             | grep -q '"instrument=creeper,note=13"' \
             || fail "note_block blockstate override missing from the pack"

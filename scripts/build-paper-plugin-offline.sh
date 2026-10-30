@@ -35,7 +35,10 @@ mkdir -p "$BUILD"
 
 CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA"
 echo "=== javac cim-paper-plugin (offline) ==="
-javac --release 21 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
+# --release 25: paper-api 26.3 builds are class-file v69 (Java 25) — the SAME
+# target the maven CI path compiles (maven.compiler.release=25). A JDK 25
+# javac is required (JAVA_HOME=jdk25).
+javac --release 25 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
 
 echo "=== jar ==="
 mkdir -p "$(dirname "$OUT_JAR")"

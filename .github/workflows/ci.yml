@@ -85,7 +85,14 @@ jobs:
         run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
       - name: f2v pack builder selftest (M5.2)
         working-directory: paper-plugin
-        run: java -cp target/cim-paper-plugin.jar dev.cim.f2v.F2vPack --selftest
+        # gson is needed outside the server (F2vPack parses model JSON; on a
+        # live Paper the server supplies it — measured contract of
+        # scripts/build-paper-plugin-offline.sh). dependency:build-classpath
+        # rebuilds the exact classpath the compiler saw (paper-api's
+        # transitive provided deps).
+        run: |
+          mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt
+          java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
       - uses: actions/upload-artifact@v4
         with:
           name: cim-paper-plugin

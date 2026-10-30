@@ -257,7 +257,10 @@ jobs:
           echo "gamerule doMobSpawning false" > srv-create/console.in
           sleep 2
           PAGES=0
-          for p in $(seq 0 59); do
+          # No artificial page cap: the break below fires on the scene's own
+          # exhausted=1 marker, so the sweep covers EVERY Create blockstate
+          # (the old cap 60 silently dropped pages 60+ — Create has more).
+          for p in $(seq 0 999); do
             echo "cimscene gallery page create $p" > srv-create/console.in
             ok=0
             for i in $(seq 1 30); do
@@ -273,12 +276,35 @@ jobs:
               || { echo "gallery manifest p$p missing"; exit 1; }
           done
           [ "$PAGES" -gt 0 ] || { echo "no gallery pages were placed"; exit 1; }
-          # wall existence probe (version-independent: first cell must not be air)
-          echo "execute unless block -5 -60 9 minecraft:air run say GALLERY_CELL_00_PRESENT" > srv-create/console.in
-          sleep 2
-          grep -q "GALLERY_CELL_00_PRESENT" srv-create/boot.log \
-            || { echo "gallery wall first cell is air — the wall does not exist"; exit 1; }
-          echo "create-truth gallery: PAGES=$PAGES ALL OK"
+          # -----------------------------------------------------------------
+          # Wall existence probe — MANIFEST-DRIVEN (measured, not guessed).
+          # Every page rebuilds the SAME wall region, so after the sweep the
+          # wall holds exactly the LAST built page; and cells whose state was
+          # skipped (fluid/invisible) are legitimately AIR. The stale probe
+          # "first cell of page 0 must not be air" failed exactly there
+          # (page 59's index-0 state was a waterlogged stairs -> skipped ->
+          # air). The truth manifest knows which cells are placed: probe
+          # EVERY placed cell of the last page with `execute unless block`.
+          # -----------------------------------------------------------------
+          LAST=$((PAGES-1))
+          MAN="srv-create/c-imagine/scenes/gallery-create-p$LAST.tsv"
+          N=0
+          while IFS=$'\t' read -r kind x y z state rest; do
+            [ "$kind" = "cell" ] || continue
+            case "$x" in ''|*[!0-9-]*) continue;; esac   # header row guard
+            [ "$x" != "-1" ] || continue
+            bid="${state%%\[*}"
+            echo "execute unless block $x $y $z $bid run say WALLCHECK_MISSING $x $y $z" > srv-create/console.in
+            N=$((N+1))
+          done < "$MAN"
+          [ "$N" -gt 0 ] || { echo "last page manifest has no placed cells"; exit 1; }
+          sleep 4
+          if grep -q "WALLCHECK_MISSING" srv-create/boot.log; then
+            echo "gallery wall probe: cells the world does NOT have:"
+            grep "WALLCHECK_MISSING" srv-create/boot.log | tail -20
+            exit 1
+          fi
+          echo "create-truth gallery: PAGES=$PAGES placed=$N wall probe ALL OK"
 
       - name: dump the REAL classpath contract (autopsy telemetry)
         run: |

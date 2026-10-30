@@ -230,8 +230,12 @@ jobs:
 
       - name: build plugin (maven, proven contract)
         working-directory: paper-plugin
-        run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
-          && test -f target/cim-paper-plugin.jar
+        run: |
+          mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+          # gson rides the classpath for any F2vPack CLI run outside the
+          # server (measured contract, scripts/build-paper-plugin-offline.sh)
+          mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt
+          test -f target/cim-paper-plugin.jar
         env:
           JAVA_HOME: ${{ steps.jdk25.outputs.path }}
 
@@ -247,10 +251,10 @@ jobs:
           sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
 
       - uses: actions/setup-java@v4
-        id: jdk25
+        id: jdk25b
         with:
           distribution: temurin
-          java-version: 25    # the 26.3 client is class 69
+          java-version: 25    # the 26.3 client is class 69 (id unique per job)
 
       - name: fetch Paper 26.3 (fill API v3, bare)
         run: |
@@ -271,8 +275,9 @@ jobs:
           cp /tmp/cimtest-assets.jar srv-cim/mods/cimtest-1.0.0.jar
           cp mods-create/*.jar srv-cim/mods/
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv srv-cim/c-imagine/f2v/
-          JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
-            java -cp srv-cim/plugins/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+          FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
+          JAVA_HOME=${{ steps.jdk25b.outputs.path }} PATH=${{ steps.jdk25b.outputs.path }}/bin:$PATH \
+            java -cp "srv-cim/plugins/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-cim/mods srv-cim/c-imagine/f2v
           test -f srv-cim/c-imagine/f2v/pack.sha1
 
@@ -356,7 +361,7 @@ jobs:
           python3 scripts/visual/make_servers_dat.py visual-client/game
           LAUNCH=$(cat visual-client/launch.txt)
           ARGS="${LAUNCH#java }"
-          CLIENT_JAVA="${{ steps.jdk25.outputs.path }}/bin/java"
+          CLIENT_JAVA="${{ steps.jdk25b.outputs.path }}/bin/java"
           setsid bash -c "cd visual-client && $CLIENT_JAVA $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
 
       - name: wait join + pack reload markers
