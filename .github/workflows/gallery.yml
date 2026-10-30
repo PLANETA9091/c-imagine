@@ -368,8 +368,13 @@ jobs:
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv srv-wall/c-imagine/f2v/
           # the truth manifests ARE the cell contract the plugin replays
           # (download-artifact nests them under truth/srv-wall/... — the LCA
-          # of the upload paths; find, not a fixed path)
+          # of the upload paths; find, not a fixed path). BOTH manifest
+          # families stage: the block pages AND the entity pages (measured
+          # run 41135456681: entity manifests missing -> the ours replay
+          # spawned nothing, placed=0 on every page)
           find truth -name 'gallery-create-p*.tsv' \
+            -exec cp {} srv-wall/c-imagine/scenes/ \;
+          find truth -name 'gallery-entity-*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
           ls srv-wall/c-imagine/scenes/
           # the pack's gallery channel rows: EVERY distinct state of the
@@ -604,7 +609,9 @@ jobs:
           pip install -q numpy pillow
           mkdir -p truth-shots ours-shots gallery-report
           find truth -name 'gal-p*.png'      -exec cp {} truth-shots/ \;
+          find truth -name 'gal-e*.png'      -exec cp {} truth-shots/ \;
           find ours  -name 'ours-gal-p*.png' -exec cp {} ours-shots/ \;
+          find ours  -name 'ours-gal-e*.png' -exec cp {} ours-shots/ \;
           ls truth-shots/ ours-shots/
           GATE=0
           for p in $(seq 0 $((PAGES-1))); do

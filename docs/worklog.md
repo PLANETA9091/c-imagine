@@ -2217,3 +2217,33 @@ Stage Summary:
   synthesizes every Create family that run 41126658261 named, and the
   vanilla-parent class — the biggest shape family in real mods — is
   covered by the same client that renders it.
+
+Task ID: 12-ag
+Agent: main
+Task: run 41135456681 autopsy — the entity wall WORKS on the truth leg, two CI plumbing gaps kept it from a verdict
+
+Work Log:
+- The first gallery run with entity pages (eb687d8) measured the TRUTH
+  leg end-to-end: page 0 cells=72 dyn=31 dissolved=5 (allay..parrot),
+  page 1 cells=52 dyn=12 skipped_no_instance=1 (minecraft:player — the
+  only unspawnable type in the namespace), determinism probe shot. The
+  freeze + settle + manifest machinery works exactly as specified.
+- GAP 1 (stage): the ours-leg stage step copied ONLY gallery-create-p*.tsv
+  — the entity manifests never reached the plugin, so the replay answered
+  manifest-missing with placed=0 on every page (the plugin's warning rode
+  boot.log, visible in the artifact). Fix: stage gallery-entity-*.tsv too.
+- GAP 2 (diff): the pixel join's screenshot collection copied only
+  gal-p*.png / ours-gal-p*.png — the gal-e*.png / ours-gal-e*.png entity
+  shots stayed in the artifact dirs and the join reported "missing truth
+  entity shot". Fix: copy both families.
+- Scene-noise observation (recorded, not acted on): the superflat spawn
+  village breeds villagers/golems between pages (the ours kill counts
+  grew 22->90->220); the kill-before-page pattern absorbs it — any
+  photobomb inside the frame would surface as a named red + a probe
+  self-diff, distinguishable from content deltas.
+
+Stage Summary:
+- The next gallery run is the first complete entity verdict: truth side
+  proven, replay manifests staged, screenshots collected, the pack now
+  synthesizes the vanilla-parent class (12-af). The remaining verdicts
+  belong to the pixels.

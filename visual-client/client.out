@@ -1,0 +1,568 @@
+[22:10:07] [Datafixer Bootstrap #0/INFO]: 307 Datafixer optimizations took 531 milliseconds
+[22:10:11] [Render thread/INFO]: Environment: Environment[discoveryUrl=https://discovery.minecraftservices.com/minecraft/client, name=PROD]
+[22:10:11] [Render thread/INFO]: Setting user: cimviewer
+[22:10:11] [Render thread/INFO]: Backend library: LWJGL version 3.4.3+4
+[22:10:11] [Render thread/INFO]: SDL [SYSTEM]: App name: Minecraft
+[22:10:11] [Render thread/INFO]: SDL [SYSTEM]: App version: 26.3
+[22:10:11] [Render thread/INFO]: SDL [SYSTEM]: App ID: com.mojang.minecraft
+[22:10:11] [Render thread/INFO]: SDL [SYSTEM]: SDL revision: SDL-3.4.14--128-NOTFOUND
+[22:10:11] [Download-2/ERROR]: Failed to fetch user properties
+com.mojang.authlib.exceptions.InvalidCredentialsException: Status: 401
+	at com.mojang.authlib.exceptions.MinecraftClientHttpException.toAuthenticationException(MinecraftClientHttpException.java:70)
+	at com.mojang.authlib.services.MinecraftServicesUserApiService.fetchProperties(MinecraftServicesUserApiService.java:168)
+	at net.minecraft.client.Minecraft.lambda$new$1(Minecraft.java:451)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1789)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+Caused by: MinecraftClientHttpException[type=HTTP_ERROR, status=401, response=ErrorResponse[path=/player/attributes, error=null, errorMessage=null, details=null]]
+	at com.mojang.authlib.minecraft.client.MinecraftClient.buildHttpException(MinecraftClient.java:170)
+	at com.mojang.authlib.minecraft.client.MinecraftClient.readServiceResponse(MinecraftClient.java:147)
+	at com.mojang.authlib.minecraft.client.MinecraftClient.getWithEtag(MinecraftClient.java:81)
+	at com.mojang.authlib.minecraft.client.MinecraftClient.get(MinecraftClient.java:65)
+	at com.mojang.authlib.services.MinecraftServicesUserApiService.fetchProperties(MinecraftServicesUserApiService.java:118)
+	... 5 more
+[22:10:12] [Render thread/WARN]: Graphics backend forced to opengl by launch argument, in-game preferred graphics backend setting is ignored
+[22:10:12] [Render thread/ERROR]: Failed to create backend OpenGL
+com.mojang.renderpearl.api.device.BackendCreationException: Failed to create window for OpenGL context: Couldn't find matching GLX visual
+	at com.mojang.renderpearl.backend.opengl.GlDevice.<init>(GlDevice.java:83)
+	at com.mojang.renderpearl.backend.opengl.GlBackend.createDevice(GlBackend.java:68)
+	at net.minecraft.client.Minecraft.<init>(Minecraft.java:533)
+	at net.minecraft.client.main.Main.main(Main.java:278)
+[22:10:12] [Render thread/INFO]: Optional FeatureSet [AMD Buffer Marker] not supported
+[22:10:12] [Render thread/INFO]: Optional FeatureSet [NV Diagnostic Checkpoint] not supported
+[22:10:12] [Render thread/INFO]: Enabling optional FeatureSet [Wireframe]
+[22:10:12] [Render thread/INFO]: Enabling optional FeatureSet [Calibrated Timestamps]
+[22:10:12] [Render thread/INFO]: Enabling optional FeatureSet [EXT MultiDraw]
+[22:10:12] [Render thread/INFO]: Using graphics backend Vulkan, using drivers: 1.4.318 llvmpipe Mesa 25.2.8-0ubuntu0.24.04.4 (LLVM 20.1.2)
+[22:10:12] [Render thread/INFO]: Using graphics device: llvmpipe (LLVM 20.1.2, 256 bits) (0x10005)
+[22:10:12] [Render thread/INFO]: Using graphics device extensions: VK_EXT_calibrated_timestamps (D), VK_KHR_synchronization2 (D), VK_EXT_multi_draw (D), VK_EXT_vertex_attribute_divisor (D), VK_KHR_swapchain (D), VK_KHR_surface (I), VK_KHR_push_descriptor (D), VK_KHR_xlib_surface (I), VK_EXT_debug_utils (I), VK_KHR_dynamic_rendering (D)
+[22:10:12] [Render thread/INFO]: Created window using SDL video driver: x11
+[22:10:13] [Download-1/INFO]: Could not authorize you against Realms server: java.lang.RuntimeException: Failed to parse into SignedJWT: 0
+[22:10:13] [Download-1/ERROR]: Failed to fetch Realms feature flags
+com.mojang.realmsclient.exception.RealmsServiceException: Realms authentication error with message 'java.lang.RuntimeException: Failed to parse into SignedJWT: 0'
+	at com.mojang.realmsclient.client.RealmsClient.execute(RealmsClient.java:625)
+	at com.mojang.realmsclient.client.RealmsClient.fetchFeatureFlags(RealmsClient.java:204)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1789)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1090)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:614)
+	at java.base/java.lang.Thread.run(Thread.java:1474)
+[22:10:13] [Render thread/ERROR]: Error while loading the narrator
+com.mojang.text2speech.Narrator$InitializeException: Failed to load library flite
+	at com.mojang.text2speech.NarratorLinux$FliteLibrary.loadNative(NarratorLinux.java:82)
+	at com.mojang.text2speech.NarratorLinux.<init>(NarratorLinux.java:19)
+	at com.mojang.text2speech.Narrator.getNarrator(Narrator.java:41)
+	at net.minecraft.client.GameNarrator.<init>(GameNarrator.java:20)
+	at net.minecraft.client.Minecraft.<init>(Minecraft.java:740)
+	at net.minecraft.client.main.Main.main(Main.java:278)
+Caused by: java.lang.UnsatisfiedLinkError: Unable to load library 'flite':
+libflite.so: cannot open shared object file: No such file or directory
+libflite.so: cannot open shared object file: No such file or directory
+Native library (linux-x86-64/libflite.so) not found in resource path (/home/runner/work/c-imagine/c-imagine/visual-client/client.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/at/yawk/lz4/lz4-java/1.10.1/lz4-java-1.10.1.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/azure/azure-json/1.4.0/azure-json-1.4.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/github/oshi/oshi-core/6.9.0/oshi-core-6.9.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/ibm/icu/icu4j/78.3/icu4j-78.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/microsoft/azure/msal4j/1.24.1/msal4j-1.24.1.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/authlib/10.0.77/authlib-10.0.77.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/blocklist/1.0.10/blocklist-1.0.10.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/brigadier/1.3.11/brigadier-1.3.11.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/datafixerupper/10.0.21/datafixerupper-10.0.21.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/jtracy/1.14.38/jtracy-1.14.38.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/jtracy/1.14.38/jtracy-1.14.38-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/logging/1.7.12/logging-1.7.12.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/patchy/2.2.10/patchy-2.2.10.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/text2speech/1.19.12/text2speech-1.19.12.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/commons-codec/commons-codec/1.22.0/commons-codec-1.22.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/commons-io/commons-io/2.20.0/commons-io-2.20.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-buffer/4.2.16.Final/netty-buffer-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-codec-base/4.2.16.Final/netty-codec-base-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-codec-compression/4.2.16.Final/netty-codec-compression-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-codec-http/4.2.16.Final/netty-codec-http-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-common/4.2.16.Final/netty-common-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-handler/4.2.16.Final/netty-handler-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-resolver/4.2.16.Final/netty-resolver-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-classes-epoll/4.2.16.Final/netty-transport-classes-epoll-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-classes-kqueue/4.2.16.Final/netty-transport-classes-kqueue-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-native-epoll/4.2.16.Final/netty-transport-native-epoll-4.2.16.Final-linux-aarch_64.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-native-epoll/4.2.16.Final/netty-transport-native-epoll-4.2.16.Final-linux-x86_64.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-native-unix-common/4.2.16.Final/netty-transport-native-unix-common-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport/4.2.16.Final/netty-transport-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/it/unimi/dsi/fastutil/8.5.18/fastutil-8.5.18.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/net/java/dev/jna/jna-platform/5.17.0/jna-platform-5.17.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/net/sf/jopt-simple/jopt-simple/5.0.4/jopt-simple-5.0.4.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/logging/log4j/log4j-api/2.26.0/log4j-api-2.26.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/logging/log4j/log4j-core/2.26.0/log4j-core-2.26.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/logging/log4j/log4j-slf4j2-impl/2.26.0/log4j-slf4j2-impl-2.26.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/jcraft/jorbis/0.0.17/jorbis-0.0.17.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/joml/joml/1.10.9/joml-1.10.9.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-freetype/3.4.3/lwjgl-freetype-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-freetype/3.4.3/lwjgl-freetype-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-jemalloc/3.4.3/lwjgl-jemalloc-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-jemalloc/3.4.3/lwjgl-jemalloc-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-opengl/3.4.3/lwjgl-opengl-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-opengl/3.4.3/lwjgl-opengl-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-sdl/3.4.3/lwjgl-sdl-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-sdl/3.4.3/lwjgl-sdl-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-spvc/3.4.3/lwjgl-spvc-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-spvc/3.4.3/lwjgl-spvc-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-stb/3.4.3/lwjgl-stb-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-stb/3.4.3/lwjgl-stb-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-vma/3.4.3/lwjgl-vma-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-vma/3.4.3/lwjgl-vma-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-vulkan/3.4.3/lwjgl-vulkan-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar)
+	at com.sun.jna.NativeLibrary.loadLibrary(NativeLibrary.java:325)
+	at com.sun.jna.NativeLibrary.getInstance(NativeLibrary.java:481)
+	at com.sun.jna.NativeLibrary.getInstance(NativeLibrary.java:423)
+	at com.mojang.text2speech.NarratorLinux$FliteLibrary.loadNative(NarratorLinux.java:80)
+	... 5 more
+	Suppressed: java.lang.UnsatisfiedLinkError: libflite.so: cannot open shared object file: No such file or directory
+		at com.sun.jna.Native.open(Native Method)
+		at com.sun.jna.NativeLibrary.loadLibrary(NativeLibrary.java:213)
+		... 8 more
+	Suppressed: java.lang.UnsatisfiedLinkError: libflite.so: cannot open shared object file: No such file or directory
+		at com.sun.jna.Native.open(Native Method)
+		at com.sun.jna.NativeLibrary.loadLibrary(NativeLibrary.java:226)
+		... 8 more
+	Suppressed: java.io.IOException: Native library (linux-x86-64/libflite.so) not found in resource path (/home/runner/work/c-imagine/c-imagine/visual-client/client.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/at/yawk/lz4/lz4-java/1.10.1/lz4-java-1.10.1.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/azure/azure-json/1.4.0/azure-json-1.4.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/github/oshi/oshi-core/6.9.0/oshi-core-6.9.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/google/code/gson/gson/2.14.0/gson-2.14.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/ibm/icu/icu4j/78.3/icu4j-78.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/microsoft/azure/msal4j/1.24.1/msal4j-1.24.1.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/authlib/10.0.77/authlib-10.0.77.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/blocklist/1.0.10/blocklist-1.0.10.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/brigadier/1.3.11/brigadier-1.3.11.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/datafixerupper/10.0.21/datafixerupper-10.0.21.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/jtracy/1.14.38/jtracy-1.14.38.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/jtracy/1.14.38/jtracy-1.14.38-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/logging/1.7.12/logging-1.7.12.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/patchy/2.2.10/patchy-2.2.10.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/com/mojang/text2speech/1.19.12/text2speech-1.19.12.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/commons-codec/commons-codec/1.22.0/commons-codec-1.22.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/commons-io/commons-io/2.20.0/commons-io-2.20.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-buffer/4.2.16.Final/netty-buffer-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-codec-base/4.2.16.Final/netty-codec-base-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-codec-compression/4.2.16.Final/netty-codec-compression-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-codec-http/4.2.16.Final/netty-codec-http-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-common/4.2.16.Final/netty-common-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-handler/4.2.16.Final/netty-handler-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-resolver/4.2.16.Final/netty-resolver-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-classes-epoll/4.2.16.Final/netty-transport-classes-epoll-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-classes-kqueue/4.2.16.Final/netty-transport-classes-kqueue-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-native-epoll/4.2.16.Final/netty-transport-native-epoll-4.2.16.Final-linux-aarch_64.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-native-epoll/4.2.16.Final/netty-transport-native-epoll-4.2.16.Final-linux-x86_64.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport-native-unix-common/4.2.16.Final/netty-transport-native-unix-common-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/io/netty/netty-transport/4.2.16.Final/netty-transport-4.2.16.Final.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/it/unimi/dsi/fastutil/8.5.18/fastutil-8.5.18.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/net/java/dev/jna/jna-platform/5.17.0/jna-platform-5.17.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/net/java/dev/jna/jna/5.17.0/jna-5.17.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/net/sf/jopt-simple/jopt-simple/5.0.4/jopt-simple-5.0.4.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/logging/log4j/log4j-api/2.26.0/log4j-api-2.26.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/logging/log4j/log4j-core/2.26.0/log4j-core-2.26.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/apache/logging/log4j/log4j-slf4j2-impl/2.26.0/log4j-slf4j2-impl-2.26.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/jcraft/jorbis/0.0.17/jorbis-0.0.17.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/joml/joml/1.10.9/joml-1.10.9.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-freetype/3.4.3/lwjgl-freetype-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-freetype/3.4.3/lwjgl-freetype-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-jemalloc/3.4.3/lwjgl-jemalloc-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-jemalloc/3.4.3/lwjgl-jemalloc-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-openal/3.4.3/lwjgl-openal-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-opengl/3.4.3/lwjgl-opengl-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-opengl/3.4.3/lwjgl-opengl-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-sdl/3.4.3/lwjgl-sdl-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-sdl/3.4.3/lwjgl-sdl-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-spvc/3.4.3/lwjgl-spvc-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-spvc/3.4.3/lwjgl-spvc-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-stb/3.4.3/lwjgl-stb-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-stb/3.4.3/lwjgl-stb-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-vma/3.4.3/lwjgl-vma-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-vma/3.4.3/lwjgl-vma-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl-vulkan/3.4.3/lwjgl-vulkan-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/lwjgl/lwjgl/3.4.3/lwjgl-3.4.3-natives-linux.jar:/home/runner/work/c-imagine/c-imagine/visual-client/libraries/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar)
+		at com.sun.jna.Native.extractFromResourcePath(Native.java:1141)
+		at com.sun.jna.NativeLibrary.loadLibrary(NativeLibrary.java:297)
+		... 8 more
+[22:10:13] [Render thread/INFO]: Reloading ResourceManager: vanilla, vanilla
+[22:10:13] [Worker-Main-1/INFO]: Found unifont_all_no_pua-17.0.01.hex, loading
+[22:10:13] [Worker-Main-3/INFO]: Found unifont_pua-17.0.01.hex, loading
+[22:10:14] [Worker-Main-1/INFO]: Found unifont_jp_patch-17.0.01.hex, loading
+ALSA lib confmisc.c:855:(parse_card) cannot find card '0'
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_card_inum returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default
+ALSA lib confmisc.c:855:(parse_card) cannot find card '0'
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_card_inum returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default
+[22:10:16] [Render thread/ERROR]: Error starting SoundSystem. Turning off sounds & music
+java.lang.IllegalStateException: Failed to open OpenAL device
+	at com.mojang.blaze3d.audio.Library.openDeviceOrFallback(Library.java:274)
+	at com.mojang.blaze3d.audio.Library.init(Library.java:149)
+	at net.minecraft.client.sounds.SoundEngine.loadLibrary(SoundEngine.java:121)
+	at net.minecraft.client.sounds.SoundEngine.reload(SoundEngine.java:110)
+	at net.minecraft.client.sounds.SoundManager.apply(SoundManager.java:122)
+	at net.minecraft.client.sounds.SoundManager.apply(SoundManager.java:41)
+	at net.minecraft.server.packs.resources.SimplePreparableReloadListener.lambda$reload$1(SimplePreparableReloadListener.java:15)
+	at java.base/java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:739)
+	at java.base/java.util.concurrent.CompletableFuture$Completion.run(CompletableFuture.java:503)
+	at net.minecraft.server.packs.resources.SimpleReloadInstance.lambda$prepareTasks$3(SimpleReloadInstance.java:59)
+	at net.minecraft.util.thread.BlockableEventLoop.doRunTask(BlockableEventLoop.java:173)
+	at net.minecraft.util.thread.ReentrantBlockableEventLoop.doRunTask(ReentrantBlockableEventLoop.java:23)
+	at net.minecraft.util.thread.BlockableEventLoop.pollTask(BlockableEventLoop.java:147)
+	at net.minecraft.util.thread.BlockableEventLoop.runAllTasks(BlockableEventLoop.java:127)
+	at net.minecraft.client.Minecraft.runTick(Minecraft.java:1240)
+	at net.minecraft.client.Minecraft.run(Minecraft.java:967)
+	at net.minecraft.client.main.Main.main(Main.java:292)
+[22:10:16] [Render thread/INFO]: Created: 512x256x0 minecraft:textures/atlas/particles.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 256x128x0 minecraft:textures/atlas/celestials.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 128x128x0 minecraft:textures/atlas/decorated_pot.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 512x256x0 minecraft:textures/atlas/paintings.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 1024x512x0 minecraft:textures/atlas/shield_patterns.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 1024x512x0 minecraft:textures/atlas/banner_patterns.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 2048x2048x4 minecraft:textures/atlas/blocks.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 1024x512x0 minecraft:textures/atlas/items.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 1024x1024x0 minecraft:textures/atlas/gui.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 128x64x0 minecraft:textures/atlas/map_decorations.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 512x512x0 minecraft:textures/atlas/chest.png-atlas
+[22:10:16] [Render thread/INFO]: Created: 512x512x0 minecraft:textures/atlas/shulker_boxes.png-atlas
+[22:10:17] [Render thread/INFO]: Connecting to 127.0.0.1, 25565
+[22:10:18] [Download-1/WARN]: Existing file /home/runner/work/c-imagine/c-imagine/visual-client/game/downloads/6c0e3195-75a3-3b08-9ae6-e0a5b055c464/86e163b64e25062d8e552d8b884791bc57cf09a5 not found or had mismatched hash
+[22:10:20] [Render thread/INFO]: Reloading ResourceManager: vanilla, vanilla, server/00000000/6c0e3195-75a3-3b08-9ae6-e0a5b055c464
+[22:10:20] [Worker-Main-2/ERROR]: Failed to load palette image cimtest:palettes/gem_key
+[22:10:20] [Worker-Main-2/ERROR]: unable to apply palette to cimtest:item/test_gem_red
+java.lang.IllegalArgumentException
+	at net.minecraft.client.renderer.texture.atlas.sources.PalettedPermutations.loadPaletteEntryFromImage(PalettedPermutations.java:74)
+	at net.minecraft.client.renderer.texture.atlas.sources.PalettedPermutations.lambda$run$0(PalettedPermutations.java:50)
+	at com.google.common.base.Suppliers$NonSerializableMemoizingSupplier.get(Suppliers.java:194)
+	at net.minecraft.client.renderer.texture.atlas.sources.PalettedPermutations.lambda$run$2(PalettedPermutations.java:53)
+	at com.google.common.base.Suppliers$NonSerializableMemoizingSupplier.get(Suppliers.java:194)
+	at net.minecraft.client.renderer.texture.atlas.sources.PalettedPermutations$PalettedSpriteSupplier.get(PalettedPermutations.java:93)
+	at net.minecraft.client.renderer.texture.SpriteLoader.lambda$runSpriteSuppliers$1(SpriteLoader.java:106)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1789)
+	at net.minecraft.server.packs.resources.SimpleReloadInstance.lambda$prepareTasks$1(SimpleReloadInstance.java:51)
+	at java.base/java.util.concurrent.ForkJoinTask$RunnableExecuteAction.compute(ForkJoinTask.java:1753)
+	at java.base/java.util.concurrent.ForkJoinTask$RunnableExecuteAction.compute(ForkJoinTask.java:1745)
+	at java.base/java.util.concurrent.ForkJoinTask$InterruptibleTask.exec(ForkJoinTask.java:1662)
+	at java.base/java.util.concurrent.ForkJoinTask.doExec(ForkJoinTask.java:511)
+	at java.base/java.util.concurrent.ForkJoinPool$WorkQueue.topLevelExec(ForkJoinPool.java:1450)
+	at java.base/java.util.concurrent.ForkJoinPool.runWorker(ForkJoinPool.java:2019)
+	at java.base/java.util.concurrent.ForkJoinWorkerThread.run(ForkJoinWorkerThread.java:187)
+[22:10:20] [Worker-Main-1/INFO]: Found unifont_all_no_pua-17.0.01.hex, loading
+[22:10:20] [Worker-Main-2/INFO]: Found unifont_pua-17.0.01.hex, loading
+[22:10:20] [Worker-Main-1/INFO]: Found unifont_jp_patch-17.0.01.hex, loading
+[22:10:22] [Worker-Main-3/WARN]: Missing textures in model cimtest:item/test_gem_red:
+    cimtest:item/test_gem_red
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g8:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g71:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g9:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g72:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g70:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g4:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g5:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g6:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g7:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g0:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g79:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g1:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g2:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g77:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g3:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g78:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g75:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g76:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g73:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g74:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g149:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g147:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g148:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g141:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g142:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g140:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g145:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g146:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g143:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g144:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g60:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g61:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g68:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g69:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g66:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g67:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g64:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g65:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g62:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g63:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g158:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g159:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g59:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g152:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g153:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g150:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g151:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g156:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g157:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g154:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g155:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g93:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g94:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g91:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g92:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g90:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g160:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g13:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g14:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g11:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g99:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g12:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g97:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g10:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g98:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g95:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g96:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g169:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g163:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g164:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g161:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g162:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g167:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g168:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g165:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g166:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g82:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g83:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g80:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g81:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g170:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g171:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g88:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g89:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g86:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g87:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g84:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g85:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g172:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g173:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g35:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g36:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g33:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g34:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g31:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g32:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g30:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g105:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g106:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g103:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g104:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g28:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g109:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g29:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g26:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g107:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g27:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g108:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g101:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g102:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g100:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g24:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g25:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g22:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g23:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g20:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g21:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g116:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g117:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g19:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g114:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g115:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g17:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g18:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g15:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g118:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g16:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g119:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g112:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g113:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g110:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g111:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g50:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g57:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g58:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g55:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g56:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g53:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g54:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g51:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g52:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g127:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g128:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g125:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g126:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g48:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g129:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g49:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g120:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g123:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g124:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g121:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g122:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g46:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g47:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g44:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g45:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g42:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g43:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g40:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g41:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g138:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g139:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g136:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g137:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g39:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g37:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g38:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g130:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g131:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g134:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g135:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g132:
+    particle
+[22:10:22] [Worker-Main-3/WARN]: Missing texture references in model c-imagine:gallery/g133:
+    particle
+ALSA lib confmisc.c:855:(parse_card) cannot find card '0'
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_card_inum returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default
+ALSA lib confmisc.c:855:(parse_card) cannot find card '0'
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_card_inum returned error: No such file or directory
+ALSA lib confmisc.c:422:(snd_func_concat) error evaluating strings
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_concat returned error: No such file or directory
+ALSA lib confmisc.c:1342:(snd_func_refer) error evaluating name
+ALSA lib conf.c:5208:(_snd_config_evaluate) function snd_func_refer returned error: No such file or directory
+ALSA lib conf.c:5731:(snd_config_expand) Evaluate error: No such file or directory
+ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default
+[22:10:22] [Render thread/ERROR]: Error starting SoundSystem. Turning off sounds & music
+java.lang.IllegalStateException: Failed to open OpenAL device
+	at com.mojang.blaze3d.audio.Library.openDeviceOrFallback(Library.java:274)
+	at com.mojang.blaze3d.audio.Library.init(Library.java:149)
+	at net.minecraft.client.sounds.SoundEngine.loadLibrary(SoundEngine.java:121)
+	at net.minecraft.client.sounds.SoundEngine.reload(SoundEngine.java:110)
+	at net.minecraft.client.sounds.SoundManager.apply(SoundManager.java:122)
+	at net.minecraft.client.sounds.SoundManager.apply(SoundManager.java:41)
+	at net.minecraft.server.packs.resources.SimplePreparableReloadListener.lambda$reload$1(SimplePreparableReloadListener.java:15)
+	at java.base/java.util.concurrent.CompletableFuture$UniAccept.tryFire(CompletableFuture.java:739)
+	at java.base/java.util.concurrent.CompletableFuture$Completion.run(CompletableFuture.java:503)
+	at net.minecraft.server.packs.resources.SimpleReloadInstance.lambda$prepareTasks$3(SimpleReloadInstance.java:59)
+	at net.minecraft.util.thread.BlockableEventLoop.doRunTask(BlockableEventLoop.java:173)
+	at net.minecraft.util.thread.ReentrantBlockableEventLoop.doRunTask(ReentrantBlockableEventLoop.java:23)
+	at net.minecraft.util.thread.BlockableEventLoop.pollTask(BlockableEventLoop.java:147)
+	at net.minecraft.util.thread.BlockableEventLoop.runAllTasks(BlockableEventLoop.java:127)
+	at net.minecraft.client.Minecraft.runTick(Minecraft.java:1240)
+	at net.minecraft.client.Minecraft.run(Minecraft.java:967)
+	at net.minecraft.client.main.Main.main(Main.java:292)
+[22:10:22] [Render thread/INFO]: Created: 512x256x0 minecraft:textures/atlas/particles.png-atlas
+[22:10:22] [Render thread/INFO]: Created: 256x128x0 minecraft:textures/atlas/celestials.png-atlas
+[22:10:22] [Render thread/INFO]: Created: 128x128x0 minecraft:textures/atlas/decorated_pot.png-atlas
+[22:10:22] [Render thread/INFO]: Created: 512x256x0 minecraft:textures/atlas/paintings.png-atlas
+[22:10:22] [Render thread/INFO]: Created: 1024x512x0 minecraft:textures/atlas/shield_patterns.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 1024x512x0 minecraft:textures/atlas/banner_patterns.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 2048x2048x4 minecraft:textures/atlas/blocks.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 1024x512x0 minecraft:textures/atlas/items.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 1024x1024x0 minecraft:textures/atlas/gui.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 128x64x0 minecraft:textures/atlas/map_decorations.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 512x512x0 minecraft:textures/atlas/chest.png-atlas
+[22:10:23] [Render thread/INFO]: Created: 512x512x0 minecraft:textures/atlas/shulker_boxes.png-atlas
+[22:10:25] [Render thread/INFO]: [System] [CHAT] cimviewer joined the game
+[22:10:25] [Render thread/INFO]: Loaded 2 advancements
+[22:10:25] [Render thread/WARN]: Requested post effect does not exist: minecraft:end_of_frame
+[22:10:25] [Render thread/INFO]: Resizing Dynamic Transforms UBO, capacity limit of 2 reached during a single frame. New capacity will be 4.
+[22:10:25] [Render thread/INFO]: Resizing Dynamic Transforms UBO, capacity limit of 4 reached during a single frame. New capacity will be 8.
+[22:10:26] [Render thread/INFO]: Resizing Chunk Sections Command Buffer, capacity limit of 2 reached during a single frame. New capacity will be 4.
+[22:10:26] [Render thread/INFO]: Resizing Chunk Sections Instanced, capacity limit of 2 reached during a single frame. New capacity will be 4.
+[22:10:26] [Render thread/INFO]: Resizing Chunk Sections Command Buffer, capacity limit of 4 reached during a single frame. New capacity will be 8.
+[22:10:26] [Render thread/INFO]: Resizing Chunk Sections Instanced, capacity limit of 4 reached during a single frame. New capacity will be 8.
+[22:10:27] [Render thread/INFO]: Resizing Chunk Sections Command Buffer, capacity limit of 8 reached during a single frame. New capacity will be 16.
+[22:10:27] [Render thread/INFO]: Resizing Chunk Sections Instanced, capacity limit of 8 reached during a single frame. New capacity will be 16.
+[22:10:27] [Render thread/INFO]: Resizing Chunk Sections Command Buffer, capacity limit of 16 reached during a single frame. New capacity will be 32.
+[22:10:27] [Render thread/INFO]: Resizing Chunk Sections Instanced, capacity limit of 16 reached during a single frame. New capacity will be 32.
+[22:10:27] [Render thread/INFO]: Resizing Chunk Sections Command Buffer, capacity limit of 32 reached during a single frame. New capacity will be 64.
+[22:10:27] [Render thread/INFO]: Resizing Chunk Sections Instanced, capacity limit of 32 reached during a single frame. New capacity will be 64.
+[22:10:28] [Render thread/INFO]: Resizing Chunk Sections Command Buffer, capacity limit of 64 reached during a single frame. New capacity will be 128.
+[22:10:28] [Render thread/INFO]: Resizing Chunk Sections Instanced, capacity limit of 64 reached during a single frame. New capacity will be 128.
