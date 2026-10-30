@@ -144,35 +144,28 @@ public final class GalleryPack {
                     warnings.add("gallery: no matching model for " + state + " — row dropped");
                     continue;
                 }
-                if (parts.size() == 1 && parts.get(0).xRot == 0 && parts.get(0).yRot == 0) {
-                    // DIRECT row: the model rides at its original path, the
-                    // client resolves the parent chain (incl. display
-                    // transforms) — zero synthesis error
-                    if (parts.get(0).modelRef == null) {
-                        warnings.add("gallery: model missing for " + state + " — row dropped");
-                        continue;
-                    }
-                    out.add(new Resolved(state, cmd, parts.get(0).modelRef, 0, 0, false));
-                } else if (parts.size() == 1) {
-                    // single part WITH rotation: still direct — the rotation
-                    // rides the spawning entity's transformation
-                    if (parts.get(0).modelRef == null) {
-                        warnings.add("gallery: model missing for " + state + " — row dropped");
-                        continue;
-                    }
-                    out.add(new Resolved(state, cmd, parts.get(0).modelRef,
-                            parts.get(0).xRot, parts.get(0).yRot, false));
-                } else {
-                    // MULTIPART: composite model with baked part rotations
-                    String ref = synthesizeComposite(jars, state, parts,
-                            compositeIdx, entries, warnings);
-                    if (ref == null) {
-                        warnings.add("gallery: composite failed for " + state + " — row dropped");
-                        continue;
-                    }
-                    compositeIdx++;
-                    out.add(new Resolved(state, cmd, ref, 0, 0, true));
+                // EVERY row emits a SELF-CONTAINED model (explicit elements +
+                // resolved textures, parent minecraft:block/block). The old
+                // direct path (the model riding at its original path, the
+                // client resolving the parent chain) renders INVISIBLE on
+                // the 26.3 item-model surface whenever the elements come
+                // from a parent outside the pack — measured run
+                // 41126658261: create:block/andesite_casing (parent
+                // minecraft:block/cube_all, no own elements) spawned as a
+                // display and drew NOTHING while the door models (own
+                // elements) rendered fine. The composite emit path is the
+                // proven renderer — single-part rows ride it too (their
+                // blockstate rotation bakes into the elements, exactly the
+                // measured composite behaviour; the spawning entity carries
+                // 0/0).
+                String ref = synthesizeComposite(jars, state, parts,
+                        compositeIdx, entries, warnings);
+                if (ref == null) {
+                    warnings.add("gallery: composite failed for " + state + " — row dropped");
+                    continue;
                 }
+                compositeIdx++;
+                out.add(new Resolved(state, cmd, ref, 0, 0, true));
                 cmd += 1.0f;
             } catch (Exception e) {
                 warnings.add("gallery: " + state + " resolution failed: " + e);
@@ -438,7 +431,8 @@ public final class GalleryPack {
             }
             JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot());
             for (JsonElement el : baked) {
-                mergedElements.add(renameTextureRefs(el.getAsJsonObject(), prefix));
+                mergedElements.add(renameTextureRefs(
+                        inflateDegenerate(el.getAsJsonObject()), prefix));
             }
             partNo++;
         }
@@ -457,6 +451,43 @@ public final class GalleryPack {
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
         return WRAPPER_REF_PREFIX + idx;
+    }
+
+    /**
+     * Expand DEGENERATE (zero-thickness) element boxes to a sub-pixel
+     * thickness. Create's bars/cap models draw their posts as FLAT PLANES
+     * (from.x == to.x = 8); the chunk renderer draws them fine, but the 26.3
+     * item-model surface bakes the degenerate box into a fat block (measured
+     * run 41126658261: the all-false andesite_bars post rendered as a full
+     * cube). A 0.04-unit inflation (0.25% of a block, ~0.15 px on the wall)
+     * gives the baker a real box while staying visually identical.
+     */
+    private static JsonObject inflateDegenerate(JsonObject element) {
+        if (!element.has("from") || !element.has("to")) {
+            return element;
+        }
+        JsonArray from = element.getAsJsonArray("from").deepCopy();
+        JsonArray to = element.getAsJsonArray("to").deepCopy();
+        if (from.size() != 3 || to.size() != 3) {
+            return element;
+        }
+        boolean changed = false;
+        for (int i = 0; i < 3; i++) {
+            double a = from.get(i).getAsDouble();
+            double b = to.get(i).getAsDouble();
+            if (a == b) {
+                from.set(i, new com.google.gson.JsonPrimitive(a - 0.02));
+                to.set(i, new com.google.gson.JsonPrimitive(b + 0.02));
+                changed = true;
+            }
+        }
+        if (!changed) {
+            return element;
+        }
+        JsonObject out = element.deepCopy();
+        out.add("from", from);
+        out.add("to", to);
+        return out;
     }
 
     /** Rewrite element face texture refs {@code #key} -> {@code #prefix_key}. */

@@ -49,3 +49,8 @@ scripts/truth/__pycache__/
 scripts/**/__pycache__/
 __pycache__/
 /paper-plugin/build/
+
+# Generated gallery/pack model dumps must never live in the plugin's source
+# resources (the offline build jars the whole folder); the pack emits into
+# its own zip at runtime.
+paper-plugin/src/main/resources/assets/

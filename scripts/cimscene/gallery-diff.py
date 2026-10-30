@@ -200,6 +200,14 @@ def main():
             # static model surface is the signal) but carries no red verdict:
             # its gate is the real-client leg (roadmap M5.6).
             dyn = len(parts) > 5 and parts[5].strip() == "1"
+            # settled-air cells (scene-mod 12-ac settle pass): the block
+            # popped on placement (funnels without a belt...) — the cell's
+            # own surface is SKY on both legs, but the crop catches the
+            # spill of neighbouring DYNAMIC geometry (Create's funnel
+            # nozzle leaves the block bounds; the BEW draws what the
+            # static pack channel cannot). Same verdict class as dyn:
+            # reported, never silently green — the gate is M5.6's.
+            air = state == "minecraft:air"
             if kind == "skip":
                 skipped += 1
                 rows.append({"page": page, "state": state, "verdict": "skipped"})
@@ -213,13 +221,13 @@ def main():
             v, dx, dy = aligned_ae(ct, co)
             cells += 1
             verdict = "GREEN" if v <= args.gate else "RED"
-            if dyn:
+            if dyn or air:
                 dynamic += 1
                 if verdict == "RED":
-                    verdict = "DYNAMIC"
+                    verdict = "DYNAMIC" if dyn else "AIR"
             elif verdict == "RED":
                 red += 1
-            if verdict in ("RED", "DYNAMIC") and args.diff_dir:
+            if verdict in ("RED", "DYNAMIC", "AIR") and args.diff_dir:
                 dd = pathlib.Path(args.diff_dir)
                 dd.mkdir(parents=True, exist_ok=True)
                 name = f"{page}_c{col}_r{row}.png"
