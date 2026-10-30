@@ -345,6 +345,14 @@ sounds; particles next).
     evoker fangs...) become recorded `skip` rows (dissolved), never
     compared as content. The 12-ac law (manifest = the settled world)
     applies to entities unchanged.
+  - SERIES SPLIT (measured 283ad61: the first mixed wall went red on every
+    gateable cell from ASYMMETRIC spill — non-Mobs have no NoAI, so boats
+    slide, the dragon flies, orbs drift, and their pictures pollute the
+    gateable cells' crops): `gallery entity mobs` spawns ONLY Mob
+    instances (frozen, so even a huge frozen neighbour's spill is
+    deterministic and diffable) — THE GATE; `gallery entity dyn` owns the
+    non-Mob types on the same wall and its join is a diagnostic, never
+    the gate. Both series stage and replay on both legs.
   - Ours leg: the plugin replays the manifest as REAL frozen entities
     through the stock registry (same freeze contract, the shared
     `cimgallery` tag). For the `minecraft` namespace this is full native

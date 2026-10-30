@@ -2294,3 +2294,33 @@ Work Log:
   render path reads the client jar) — the pack content is correct, so
   the casing invisibility is a client-side bake/atlas question; the
   pane+casing isolated bisect in this run answers it.
+
+Task ID: 12-aj
+Agent: main
+Task: the first complete entity verdict measured — 79/79 gateable cells red from ASYMMETRIC dyn spill; the series split
+
+Work Log:
+- Run 283ad61 produced the first full entity join: 72+52 cells, 39+40 RED,
+  and the red list is the SMOKING GUN — every Mob type red exactly once,
+  zero dyn reds. The named reds are not mob-render deltas: the cell crops
+  show the wall cross-contaminated by the DYN class (non-Mobs have no
+  NoAI — boats slide across cells, the ender_dragon flies its own route
+  over the wall, orbs drift) so nearly every gateable crop catches a
+  different piece of dyn motion on the two legs.
+- THE SERIES SPLIT: `gallery entity mobs <ns> <p>` spawns ONLY Mob
+  instances (the gate; frozen subjects' spill is deterministic and
+  diffable); `gallery entity dyn <ns> <p>` owns the non-Mob types (the
+  manifest gallery-entitydyn-<ns>-p<p>.tsv, the join diag-dyn-*.json is
+  tolerant and never gated). The plugin's /cim gallerypage-entity grew a
+  `dyn` tail; CI walks EPAGES mob pages + EDPAGES dyn pages on both legs.
+- Bukkit landmine (de1679d): EntityType.UNKNOWN is declared FIRST and
+  getKey() THROWS on it — the replay died on the first row until the scan
+  learned to skip keyless entries.
+- Verified locally: scene-mod + plugin compile, yaml parses. The next
+  gallery run is the first CLEAN mob verdict (only frozen subjects on the
+  wall) plus the pane+casing isolated bisect.
+
+Stage Summary:
+- The gate now measures exactly what it claims: frozen mob vs frozen mob.
+  The dyn class keeps its honest diagnostic channel without poisoning the
+  verdicts. The mob-render question is finally asked in a clean room.

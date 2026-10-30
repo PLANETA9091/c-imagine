@@ -36,8 +36,10 @@ on:
 env:
   PAGES: "3"   # gate scope: pages 0..PAGES-1 (77 states per page); the
                # census sweep in mod-matrix.yml walks to exhaustion
-  EPAGES: "2"  # entity gate scope: pages 0..EPAGES-1 (77 entity types per
-               # page; 1.21.1 ships ~90 minecraft:* types -> 2 pages)
+  EPAGES: "2"  # entity gate scope: MOB pages 0..EPAGES-1 (77 cells per page;
+               # ~80 Mob types in 1.21.1 -> 2 pages). The dyn (non-Mob) series
+               # walks EDPAGES and is a diagnostic, never the gate
+  EDPAGES: "2"
 
 jobs:
   wall-truth:
@@ -247,7 +249,7 @@ jobs:
           echo "shot page 0 again"
           ls -la truth-shots/
 
-      - name: entity walk — frozen vanilla EntityType pages + determinism probe
+      - name: entity walk — MOB pages (gate) + dyn pages (diagnostic)
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -260,32 +262,51 @@ jobs:
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
+          # MOB series (the gate): frozen NoAI subjects on the wall. The
+          # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq 0 $((EPAGES-1))); do
-            # the done marker is emitted by the SETTLE PASS (40 ticks after
-            # the command) — waiting for its count growth means the manifest
-            # is complete before the shot
             BEFORE=$(grep -c "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log || true)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "cimscene gallery entity minecraft $p"
+              "cimscene gallery entity mobs minecraft $p"
             ok=0
             for i in $(seq 1 30); do
               C=$(grep -c "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log || true)
               [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
               sleep 1
             done
-            [ "$ok" = "1" ] || { echo "entity page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            [ "$ok" = "1" ] || { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1
             sleep 4   # section rebuild (wall -> air) + entity render under llvmpipe
             java -cp vtools Shot "truth-shots/gal-e$p.png"
-            echo "shot entity page $p"
+            echo "shot mob page $p"
           done
-          # determinism probe: re-place page 0, shoot again (diagnostic)
+          # DYN series (diagnostic, never gated): non-Mobs (boats, minecarts,
+          # the dragon, projectiles) on the SAME wall — their pixels are
+          # time-varying by nature, and they ASYMMETRICALLY spill into
+          # gateable cells (measured 283ad61), hence the separate series
+          for p in $(seq 0 $((EDPAGES-1))); do
+            BEFORE=$(grep -c "gallery-entitydyn done ns=minecraft page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery entity dyn minecraft $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-entitydyn done ns=minecraft page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "dyn page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            grep "gallery-entitydyn done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+            sleep 4
+            java -cp vtools Shot "truth-shots/gal-ed$p.png"
+            echo "shot dyn page $p"
+          done
+          # determinism probe: re-place mob page 0, shoot again (diagnostic)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" \
-            "cimscene gallery entity minecraft 0"
+            "cimscene gallery entity mobs minecraft 0"
           sleep 6
           java -cp vtools Shot "truth-shots/gal-e0-again.png"
-          echo "shot entity page 0 again"
+          echo "shot mob page 0 again"
           ls -la truth-shots/
 
       - name: upload truth wall artifacts (manifests = THE CELL CONTRACT)
@@ -296,7 +317,7 @@ jobs:
           path: |
             truth-shots/
             srv-wall/c-imagine/scenes/gallery-create-p*.tsv
-            srv-wall/c-imagine/scenes/gallery-entity-minecraft-p*.tsv
+            srv-wall/c-imagine/scenes/gallery-entity*-minecraft-p*.tsv
             truth-pins.log
             srv-wall/boot.log
             truth-client/client.out
@@ -374,7 +395,7 @@ jobs:
           # spawned nothing, placed=0 on every page)
           find truth -name 'gallery-create-p*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
-          find truth -name 'gallery-entity-*.tsv' \
+          find truth -name 'gallery-entity*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
           ls srv-wall/c-imagine/scenes/
           # the pack's gallery channel rows: EVERY distinct state of the
@@ -551,7 +572,7 @@ jobs:
           echo "shot isolated pane+casing"
           ls -la ours-shots/
 
-      - name: entity walk — frozen entity replay + determinism probe
+      - name: entity walk — MOB replay (gate) + dyn replay (diagnostic)
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -562,25 +583,36 @@ jobs:
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
+          # MOB series (the gate): the RCON response IS the completion marker
           for p in $(seq 0 $((EPAGES-1))); do
-            # the RCON response IS the completion marker (measured); the
-            # kill also clears any mob that wandered between pages
             OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cim galleryclear" \
               "cim gallerypage-entity minecraft $p")
             echo "$OUT" | tee "ours-rcon-e$p.log"
             echo "$OUT" | grep -q "gallerypage-entity minecraft p$p -> placed=" \
-              || { echo "entity page $p no placed marker in the RCON response"; exit 1; }
+              || { echo "mob page $p no placed marker in the RCON response"; exit 1; }
             sleep 5   # section rebuild + entity render under llvmpipe
             java -cp vtools Shot "ours-shots/ours-gal-e$p.png"
-            echo "shot entity page $p"
+            echo "shot mob page $p"
+          done
+          # DYN series (diagnostic)
+          for p in $(seq 0 $((EDPAGES-1))); do
+            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cim galleryclear" \
+              "cim gallerypage-entity minecraft $p dyn")
+            echo "$OUT" | tee "ours-rcon-ed$p.log"
+            echo "$OUT" | grep -q "gallerypage-entity minecraft p$p dyn -> placed=" \
+              || { echo "dyn page $p no placed marker in the RCON response"; exit 1; }
+            sleep 5
+            java -cp vtools Shot "ours-shots/ours-gal-ed$p.png"
+            echo "shot dyn page $p"
           done
           # determinism probe (diagnostic, not gated)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "cim galleryclear" "cim gallerypage-entity minecraft 0"
           sleep 6
           java -cp vtools Shot "ours-shots/ours-gal-e0-again.png"
-          echo "shot entity page 0 again"
+          echo "shot mob page 0 again"
           ls -la ours-shots/
 
       - name: upload ours wall artifacts
@@ -657,9 +689,9 @@ jobs:
             T="truth-shots/gal-e$p.png"
             O="ours-shots/ours-gal-e$p.png"
             M=$(find truth -name "gallery-entity-minecraft-p$p.tsv" | head -1)
-            test -f "$T" || { echo "missing truth entity shot p$p"; GATE=1; continue; }
-            test -f "$O" || { echo "missing ours entity shot p$p"; GATE=1; continue; }
-            test -n "$M" || { echo "missing entity manifest p$p"; GATE=1; continue; }
+            test -f "$T" || { echo "missing truth mob shot p$p"; GATE=1; continue; }
+            test -f "$O" || { echo "missing ours mob shot p$p"; GATE=1; continue; }
+            test -n "$M" || { echo "missing mob manifest p$p"; GATE=1; continue; }
             # determinism probes (page 0 only, diagnostics, never gated)
             if [ "$p" = "0" ] && [ -f "truth-shots/gal-e0-again.png" ]; then
               python3 scripts/cimscene/gallery-diff.py --truth "$T" \
@@ -674,6 +706,19 @@ jobs:
             python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
               --manifest "$M" --out "gallery-report/join-e$p.json" \
               --diff-dir "gallery-report/diff-e$p" || GATE=1
+          done
+          echo "=== DYN pages: diagnostic join, never the gate ==="
+          for p in $(seq 0 $((EDPAGES-1))); do
+            T="truth-shots/gal-ed$p.png"
+            O="ours-shots/ours-gal-ed$p.png"
+            M=$(find truth -name "gallery-entitydyn-minecraft-p$p.tsv" | head -1)
+            if [ -f "$T" ] && [ -f "$O" ] && [ -n "$M" ]; then
+              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                --manifest "$M" --out "gallery-report/diag-dyn-p$p.json" \
+                --diff-dir "gallery-report/diff-dyn$p" || true
+            else
+              echo "dyn page $p incomplete (tolerated: exhausted window or missing shot)"
+            fi
           done
           echo "=== per-page verdicts ==="
           python3 - <<'PY'

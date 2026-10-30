@@ -189,11 +189,20 @@ public final class CimSceneMod {
                                                                 StringArgumentType.getString(ctx, "namespace"),
                                                                 IntegerArgumentType.getInteger(ctx, "page"))))))
                                 .then(Commands.literal("entity")
-                                        .then(Commands.argument("namespace", StringArgumentType.word())
-                                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
-                                                        .executes(ctx -> galleryEntity(ctx.getSource(),
-                                                                StringArgumentType.getString(ctx, "namespace"),
-                                                                IntegerArgumentType.getInteger(ctx, "page")))))))
+                                        .then(Commands.literal("mobs")
+                                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                                .executes(ctx -> galleryEntity(ctx.getSource(),
+                                                                        false,
+                                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                                        .then(Commands.literal("dyn")
+                                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                                .executes(ctx -> galleryEntity(ctx.getSource(),
+                                                                        true,
+                                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                                        IntegerArgumentType.getInteger(ctx, "page"))))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
@@ -433,7 +442,8 @@ public final class CimSceneMod {
      * wall geometry as the block gallery — the diff job's projection is
      * shared unchanged.
      */
-    private static int galleryEntity(CommandSourceStack src, String namespace, int page) {
+    private static int galleryEntity(CommandSourceStack src, boolean dynSeries,
+                                     String namespace, int page) {
         ServerLevel level = src.getLevel();
 
         // Deterministic entry list: sorted entity ids of the namespace.
@@ -444,13 +454,14 @@ public final class CimSceneMod {
             if (id.getNamespace().equals(namespace)) entries.add(id);
         }
 
-        LOGGER.info("[cimscene] gallery-entity begin ns={} page={} types={} cellsPerPage={}",
-                namespace, page, entries.size(), GALLERY_CELLS);
+        LOGGER.info("[cimscene] gallery-entity begin ns={} page={} series={} types={} cellsPerPage={}",
+                namespace, page, dynSeries ? "dyn" : "mobs", entries.size(), GALLERY_CELLS);
 
         int from = page * GALLERY_CELLS;
         if (from >= entries.size()) {
-            LOGGER.info("[cimscene] gallery-entity done ns={} page={} cells=0 dyn=0 "
-                    + "skipped_no_instance=0 dissolved=0 exhausted=1", namespace, page);
+            LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells=0 dyn=0 "
+                    + "skipped_no_instance=0 dissolved=0 exhausted=1",
+                    dynSeries ? "dyn" : "", namespace, page);
             return 0;
         }
         int to = Math.min(from + GALLERY_CELLS, entries.size());
@@ -478,9 +489,16 @@ public final class CimSceneMod {
         }
 
         // Spawn loop: freeze every entity, keep the refs for the settle pass.
+        // SERIES SPLIT (measured run 283ad61: every gateable cell went red
+        // from ASYMMETRIC spill — boats slide, the dragon flies, orbs drift;
+        // non-Mobs have no NoAI, so their pictures are time-varying AND they
+        // pollute the gateable cells' crops): the mobs series spawns ONLY
+        // Mob instances (frozen, deterministic spill among frozen subjects
+        // is symmetric and diffable); the dyn series owns everything else
+        // and its joins are diagnostics, never the gate.
         final List<Entity> spawned = new ArrayList<>();
         final List<Integer> spawnedIdx = new ArrayList<>();
-        int noInstance = 0;
+        int noInstance = 0, wrongSeries = 0;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
@@ -499,17 +517,23 @@ public final class CimSceneMod {
                         + "reason=no-instance entity={}", namespace, page, from + i, id);
                 continue;
             }
+            boolean isMob = e instanceof Mob;
+            if (isMob == dynSeries) {
+                wrongSeries++;
+                LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                        + "reason=wrong-series entity={}", namespace, page, from + i, id);
+                continue;
+            }
             e.setNoGravity(true);
             e.setInvulnerable(true);
             e.moveTo(GALLERY_X0 + col + 0.5, GALLERY_Y0 + row, GALLERY_Z + 0.5,
                     180.0f, 0.0f);
             e.addTag(GALLERY_TAG);
-            if (e instanceof Mob m) {
+            if (isMob) {
                 // NoAI: no movement, no look-at, no AI despawn logic — a
                 // still picture. Persistence: nothing despawns the subject
                 // between the settle pass and the shot.
-                m.setNoAi(true);
-                m.setPersistenceRequired();
+                m_setNoAi(e);
             }
             level.addFreshEntity(e);
             spawned.add(e);
@@ -524,19 +548,30 @@ public final class CimSceneMod {
         final int fPage = page;
         final List<ResourceLocation> fSlice = slice;
         final int fNoInstance = noInstance;
+        final int fWrongSeries = wrongSeries;
         final int fFrom = from;
+        final boolean fDyn = dynSeries;
         level.getServer().tell(new TickTask(level.getServer().getTickCount()
                 + ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
                         fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
-                        fNoInstance, fFrom)));
+                        fNoInstance, fWrongSeries, fFrom, fDyn)));
         return spawned.size();
+    }
+
+    /** Mob freeze without shadowing the pattern variable. */
+    private static void m_setNoAi(Entity e) {
+        Mob m = (Mob) e;
+        m.setNoAi(true);
+        m.setPersistenceRequired();
     }
 
     /** Settle pass body: re-read spawns, emit the settled manifest + marker. */
     private static void settleGalleryEntity(ServerLevel level, String namespace, int page,
                                             List<ResourceLocation> slice,
                                             List<Entity> spawned, List<Integer> spawnedIdx,
-                                            int noInstance, int from) {
+                                            int noInstance, int wrongSeries, int from,
+                                            boolean dynSeries) {
+        String seriesTag = dynSeries ? "dyn" : "";
         String[] rowStr = new String[slice.size()];
         int cells = 0, dyn = 0, dissolved = 0;
         for (int j = 0; j < spawned.size(); j++) {
@@ -552,8 +587,8 @@ public final class CimSceneMod {
             if (!alive || drift > 1.0) {
                 dissolved++;
                 rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t0\tdissolved";
-                LOGGER.info("[cimscene] gallery-entity settle ns={} page={} index={} "
-                                + "reason={} entity={} drift={}",
+                LOGGER.info("[cimscene] gallery-entity{} settle ns={} page={} index={} "
+                                + "reason={} entity={} drift={}", seriesTag,
                         namespace, page, from + i, alive ? "moved" : "dissolved",
                         id, drift);
                 continue;
@@ -570,7 +605,8 @@ public final class CimSceneMod {
                 tsv.append(rowStr[i]).append('\n');
             }
         }
-        String manifest = "gallery-entity-" + namespace + "-p" + page + ".tsv";
+        String manifest = "gallery-entity" + (dynSeries ? "dyn" : "") + "-"
+                + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
@@ -579,10 +615,10 @@ public final class CimSceneMod {
             LOGGER.error("[cimscene] gallery-entity manifest write failed {}: {}",
                     manifest, ioe.toString());
         }
-        LOGGER.info("[cimscene] gallery-entity done ns={} page={} cells={} dyn={} "
-                        + "skipped_no_instance={} dissolved={} first={} last={}",
-                namespace, page, cells, dyn, noInstance, dissolved,
-                slice.get(0), slice.get(slice.size() - 1));
+        LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells={} dyn={} "
+                        + "skipped_no_instance={} skipped_wrong_series={} dissolved={} first={} last={}",
+                seriesTag, namespace, page, cells, dyn, noInstance, wrongSeries,
+                dissolved, slice.get(0), slice.get(slice.size() - 1));
     }
 
     /** Canonical state string {@code ns:path[k=v,...]} (properties in

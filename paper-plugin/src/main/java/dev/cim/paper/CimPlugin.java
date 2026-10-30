@@ -1201,9 +1201,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * <p>Returns the placed count; the RCON response marker is
      * {@code gallerypage-entity <ns> p<page> -> placed=N nochannel=K}.
      */
-    private int[] galleryPageEntity(String ns, int page) {
+    private int[] galleryPageEntity(String ns, int page, boolean dynSeries) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
-                "gallery-entity-" + ns + "-p" + page + ".tsv");
+                "gallery-entity" + (dynSeries ? "dyn" : "") + "-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-entity: manifest missing: " + mf);
             return new int[]{0, 0};
@@ -1403,16 +1403,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
-        // /cim gallerypage-entity <ns> <page> — the M5.5 ENTITY GALLERY
+        // /cim gallerypage-entity <ns> <page> [dyn] — the M5.5 ENTITY GALLERY
         // ours-leg surface (owner directive 2026-10-31: mobs 100% identical):
         // replay a truth-leg entity manifest as REAL frozen entities — the
         // same spawn contract the truth leg uses, no pack channel involved.
+        // The `dyn` tail selects the diagnostic non-Mob series (boats,
+        // minecarts, the dragon...); the default series is the gateable Mob
+        // wall.
         if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-entity")) {
             try {
                 int page = Integer.parseInt(args[2]);
-                int[] counts = galleryPageEntity(args[1], page);
+                boolean dynSeries = args.length >= 4 && args[3].equalsIgnoreCase("dyn");
+                int[] counts = galleryPageEntity(args[1], page, dynSeries);
                 sender.sendMessage(LOG_PREFIX + "gallerypage-entity " + args[1]
-                        + " p" + page + " -> placed=" + counts[0]
+                        + " p" + page + (dynSeries ? " dyn" : "")
+                        + " -> placed=" + counts[0]
                         + " nochannel=" + counts[1]);
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-entity: bad page number: " + args[2]);
