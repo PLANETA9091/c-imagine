@@ -1928,3 +1928,44 @@ Stage Summary:
 - Diagnostics kept: scripts/render_composite2.py (faithful software render
   of a composite through the gate camera — the reference for judging ours
   crops without a 10-minute client loop).
+---
+Task ID: 12-aa
+Agent: main
+Task: THE PIXEL GATE RUNS IN CI — first honest verdict on a fresh same-run pair (22 named reds)
+
+Work Log:
+- The wall-grid gate completed END TO END on run 41109649821: wall-truth
+  SUCCESS (server boot + NeoForge client join + per-page shots + manifests),
+  wall-ours SUCCESS (Paper + GalleryPack + vanilla 26.3 client, placed=61/
+  47/59 matching the truth cell counts), wall-diff RED (the gate speaking).
+- First verdict (fresh pair, both legs from ONE run, one manifest set):
+  p0 10 red (acacia_window 146700 + 9 acacia_window_pane), p1 11 red
+  (andesite_bars), p2 1 red (andesite_casing) — 22 static reds of 105
+  static cells, 132 dynamic (diffed + reported, verdict -> M5.6), 64
+  skipped. Determinism p0 GREEN on both legs. The run ships both shot
+  sets + manifests + per-red triptychs as artifacts.
+- The CI pair measured CLEAN: c0r0 carries content on both sides (the
+  window block's wood), global phase correlation (0,-1) = the calibrated
+  channel shift. The 12-x "red families" classification stands on REAL
+  deltas now (the stale-pair specifics — pane count, the green window —
+  are superseded by this verdict).
+- CI-only failures found and fixed on the way (each named by its run):
+  rcon.py ConnectionRefused kills the boot poll loop under pipefail (fix:
+  poll lines absorb refused connections); fetch-visual-client.py never
+  creates the game dir (fix: mkdir before the client pins);
+  fetch-truth-client.py nfc truth-client splits runtime (nfc/) vs game
+  (truth-client/) and the cache shipped only truth-client — BootstrapLauncher
+  CNFE on every restored run (fix: cache both dirs, key v4, + a
+  classpath-integrity guard that names missing jars);
+  'cim gallerypage' feedback rides the RCON response, never boot.log
+  (fix: the walk asserts the synchronous response, ships ours-rcon-*.log);
+  the determinism probe must be page-0-only (the -again shots are page 0).
+
+Stage Summary:
+- THE GATE IS PIXELS and it is installed in CI: a red run names every
+  failing cell with its state and AE, ships both screenshots and triptychs,
+  and refuses to green on census-only evidence. The named backlog for the
+  pack channel: acacia_window(+pane) composites, andesite_bars composites,
+  andesite_casing — the item-display rendering of thin connected models vs
+  the real block renderer. That work happens against the artifacts of this
+  gate.

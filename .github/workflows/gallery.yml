@@ -506,17 +506,18 @@ jobs:
             test -f "$T" || { echo "missing truth shot p$p"; GATE=1; continue; }
             test -f "$O" || { echo "missing ours shot p$p"; GATE=1; continue; }
             test -n "$M" || { echo "missing manifest p$p"; GATE=1; continue; }
-            # determinism probes: diagnostics, never gated (an llvmpipe flake
-            # must not fake a content verdict)
-            if [ -f "truth-shots/gal-p0-again.png" ]; then
+            # determinism probes: page 0 ONLY (the -again shots are page 0
+            # re-placements); a probe against another page compares different
+            # content and is meaningless
+            if [ "$p" = "0" ] && [ -f "truth-shots/gal-p0-again.png" ]; then
               python3 scripts/cimscene/gallery-diff.py --truth "$T" \
                 --ours truth-shots/gal-p0-again.png --manifest "$M" \
-                --out "gallery-report/determinism-truth-p$p.json" || true
+                --out "gallery-report/determinism-truth-p0.json" || true
             fi
-            if [ -f "ours-shots/ours-gal-p0-again.png" ]; then
+            if [ "$p" = "0" ] && [ -f "ours-shots/ours-gal-p0-again.png" ]; then
               python3 scripts/cimscene/gallery-diff.py --truth "$O" \
                 --ours ours-shots/ours-gal-p0-again.png --manifest "$M" \
-                --out "gallery-report/determinism-ours-p$p.json" || true
+                --out "gallery-report/determinism-ours-p0.json" || true
             fi
             python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
               --manifest "$M" --out "gallery-report/join-p$p.json" \
