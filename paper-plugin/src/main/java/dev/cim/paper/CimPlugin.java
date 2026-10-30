@@ -1242,7 +1242,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 String entityKey = row[4];
                 org.bukkit.entity.EntityType type = null;
                 for (org.bukkit.entity.EntityType t : org.bukkit.entity.EntityType.values()) {
-                    if (t.getKey().toString().equals(entityKey)) {
+                    // UNKNOWN is a legacy sentinel declared FIRST in the enum
+                    // and getKey() THROWS on it (measured run de1679d:
+                    // "EntityType doesn't have key! Is it UNKNOWN?" killed
+                    // the whole replay on the first row) — skip it and any
+                    // other keyless entry
+                    if (t == org.bukkit.entity.EntityType.UNKNOWN) {
+                        continue;
+                    }
+                    String k;
+                    try {
+                        k = t.getKey().toString();
+                    } catch (Exception keyless) {
+                        continue;
+                    }
+                    if (k.equals(entityKey)) {
                         type = t;
                         break;
                     }

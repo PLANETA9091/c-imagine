@@ -2277,3 +2277,20 @@ Work Log:
 Stage Summary:
 - The pack channel's remaining unknowns are exactly two, and the next run
   answers both in one shot. Everything else on the block wall renders.
+
+Task ID: 12-ai
+Agent: main
+Task: run de1679d autopsy — the entity replay manifests landed, and Bukkit's legacy UNKNOWN sentinel killed the first spawn
+
+Work Log:
+- The 12-ag staging fix worked: the plugin FOUND gallery-entity-minecraft-p0.tsv and entered the replay — then died with
+  "EntityType doesn't have key! Is it UNKNOWN?": Bukkit's EntityType enum
+  declares a legacy UNKNOWN sentinel FIRST, and getKey() THROWS on it;
+  the scan hit it on every row's first iteration.
+- Fix: skip UNKNOWN (and any keyless entry) in the scan; the per-row spawn
+  already had its own try/catch.
+- The de1679d pack build report (now shipped as an artifact) shows all 59
+  warnings are COPY-path cosmetics (in-jar bare-parent misses, the
+  render path reads the client jar) — the pack content is correct, so
+  the casing invisibility is a client-side bake/atlas question; the
+  pane+casing isolated bisect in this run answers it.
