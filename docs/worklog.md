@@ -1969,3 +1969,40 @@ Stage Summary:
   andesite_casing — the item-display rendering of thin connected models vs
   the real block renderer. That work happens against the artifacts of this
   gate.
+---
+Task ID: 12-ab
+Agent: main
+Task: the fresh CI pair's red deltas measured — same extents, in-face pattern delta; the next pack work is the display-transform calibration
+
+Work Log:
+- Downloaded the gate's artifacts (wall-truth + wall-ours) and measured the
+  clean pair directly:
+  * the pair is ALIGNED: the wall's wood extents match within 1 px
+    (TRUTH x225..1201 vs OURS x224..1202 on row 0; the c0 column's wood
+    rows 321..479 vs 322..479), global phase correlation (0,-1);
+  * c0r0 carries the window block on BOTH sides — the 12-x stale-pair
+    offset is gone (same-run pairing fixed it);
+  * the 22 reds are REAL content deltas. The row-0 band shows it: same
+    cell size, same position, but ours' window/pane faces carry a DIFFERENT
+    INTERNAL pattern (fewer, wider slots; a side-face-like region) while
+    other cells (the self-similar columns) sit inside the datum.
+- Ruled out: camera rotation (the wall edges coincide), global shift
+  (phase correlation), vertical squash (the extents match), missing CMDs
+  (the placed=61/47/59 logs + wood colors), a stale pair (this IS the
+  same-run pair).
+- Open suspects for the in-face delta (next session, against the gate
+  artifacts): the ItemDisplay item-model render path for block models
+  (display-section application / face selection for ItemDisplayContext),
+  the client-side texture atlas mip level for entity rendering vs chunk
+  rendering, and a possible residual transform (GALLERY_TX/TY/SCALE were
+  calibrated on the corridor line, never re-measured on the wall grid).
+- Method note for that session: bisect with ONE isolated display per
+  candidate transform (the gallerypage rig), shoot, and compare against
+  the truth crop — the 10-minute leg loop is already scripted.
+
+Stage Summary:
+- The gate is installed, honest, and red with named cells; the reds are
+  measured to be REAL render deltas inside the affected faces. The pack
+  channel is close — most static cells pass — and the remaining families
+  (window/pane/bars/casing composites) now have a precise, reproducible
+  target and the tooling to iterate against.
