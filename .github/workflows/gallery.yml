@@ -432,17 +432,15 @@ jobs:
           mkdir -p ours-shots
           for p in $(seq 0 $((PAGES-1))); do
             # MEASURED (12-x run 3): passive mobs pre-spawn and WALK into the
-            # frame between pages — clear them before EVERY page
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            # frame between pages — clear them before EVERY page. The RCON
+            # response IS the completion marker (sendMessage goes to the
+            # sender, not boot.log — measured in run 41103826488)
+            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cim galleryclear" \
-              "cim gallerypage create $p"
-            ok=0
-            for i in $(seq 1 30); do
-              grep -q "gallerypage create p$p -> placed=" srv-wall/boot.log 2>/dev/null && { ok=1; break; }
-              sleep 1
-            done
-            [ "$ok" = "1" ] || { echo "page $p no placed marker"; grep "gallery" srv-wall/boot.log | tail -5; exit 1; }
-            grep "gallerypage create p$p -> placed=" srv-wall/boot.log | tail -1
+              "cim gallerypage create $p")
+            echo "$OUT" | tee "ours-rcon-p$p.log"
+            echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
+              || { echo "page $p no placed marker in the RCON response"; exit 1; }
             sleep 5   # section rebuild + entity render under llvmpipe
             java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
             echo "shot page $p"
@@ -462,6 +460,7 @@ jobs:
           name: wall-ours
           path: |
             ours-shots/
+            ours-rcon-p*.log
             ours-pins.log
             srv-wall/boot.log
             visual-client/client.out
