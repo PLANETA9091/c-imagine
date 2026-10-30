@@ -2247,3 +2247,33 @@ Stage Summary:
   proven, replay manifests staged, screenshots collected, the pack now
   synthesizes the vanilla-parent class (12-af). The remaining verdicts
   belong to the pixels.
+
+Task ID: 12-ah
+Agent: main
+Task: the e518279 block verdicts measured against the artifacts — casing is invisible in-cell while the structurally identical window cube renders green; the bisect doubles down
+
+Work Log:
+- e518279 block pages: 20 reds, the same three families, but the pack now
+  BUILDS them (177 states, 280 zip entries — the 12-af vanilla-parent
+  synthesis worked in CI). The reds are no longer "dropped rows": every
+  red cell has a spawned display with a resolved CMD.
+- The casing cell (p2 c3r3) measured on the raw frames: truth renders the
+  gray cube; ours renders SKY. The display spawned (boot.log: cell
+  -2,-57,9 cmd=100147), the pack composite verified locally IDENTICAL in
+  structure to the acacia_window cube that renders GREEN (one 0..16
+  element, cullfaces, parent block/block, texture PNG present in the
+  pack) — the difference is the sprite (create:block/andesite_casing) and
+  the wall context, nothing else.
+- The isolated-pane shot (12-ac bisect) renders its create sprite fine —
+  so create sprites DO atlas. The bisect now covers BOTH suspects side by
+  side (pane at -1.5, casing at +1.5, one shot): bake-vs-context for the
+  casing, structure-vs-blending for the pane.
+- The pack build report + resolved manifest now ship as artifacts (the 59
+  build warnings were previously invisible — never again).
+- Scene-noise confirmed live on ours: a village cow photobombed the p2
+  pair crop (the kill-before-page pattern keeps it out of the verdict
+  cells; recorded for the honesty ledger).
+
+Stage Summary:
+- The pack channel's remaining unknowns are exactly two, and the next run
+  answers both in one shot. Everything else on the block wall renders.
