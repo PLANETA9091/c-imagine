@@ -283,9 +283,23 @@ public final class CimSceneMod {
             }
         }
 
-        // place + manifest
+        // place + manifest. THE MANIFEST IS THE SETTLED CONTRACT: blocks
+        // whose models depend on their NEIGHBOURS (panes, bars — PaneBlock/
+        // CrossCollisionBlock families) recompute their connection
+        // properties SYNCHRONOUSLY inside the placement loop (setBlock flag
+        // 3 = UPDATE_NEIGHBORS: each later placement re-updates the
+        // already-placed neighbours), so the state the world holds at the
+        // end of the loop is NOT always the state that was placed. The
+        // pack channel renders the manifest state faithfully on the ours
+        // leg — comparing placed-vs-settled produced a wall of phantom
+        // reds (worklog 12-ac: the truth leg showed the settled east-arm
+        // pane while ours showed the placed full cross). The manifest
+        // therefore carries the RE-READ states; mutated cells are logged.
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\n");
-        int placed = 0, skipFluid = 0, skipInvisible = 0;
+        int placed = 0, skipFluid = 0, skipInvisible = 0, mutated = 0;
+        List<BlockPos> placedPos = new ArrayList<>();
+        List<Integer> placedIndex = new ArrayList<>();
+        String[] rowStr = new String[slice.size()];
         for (int i = 0; i < slice.size(); i++) {
             BlockState st = slice.get(i);
             ResourceLocation bid = BuiltInRegistries.BLOCK.getKey(st.getBlock());
@@ -293,14 +307,14 @@ public final class CimSceneMod {
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             if (!st.getFluidState().isEmpty()) {
                 skipFluid++;
-                tsv.append("skip\t-1\t-1\t-1\t").append(stateStr).append('\n');
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + stateStr;
                 LOGGER.info("[cimscene] gallery skip ns={} page={} index={} reason=fluid state={}",
                         namespace, page, from + i, stateStr);
                 continue;
             }
             if (st.getRenderShape() == RenderShape.INVISIBLE) {
                 skipInvisible++;
-                tsv.append("skip\t-1\t-1\t-1\t").append(stateStr).append('\n');
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + stateStr;
                 LOGGER.info("[cimscene] gallery skip ns={} page={} index={} reason=invisible state={}",
                         namespace, page, from + i, stateStr);
                 continue;
@@ -308,6 +322,24 @@ public final class CimSceneMod {
             BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
             level.setBlock(pos, st, 3);
             placed++;
+            placedPos.add(pos);
+            placedIndex.add(i);
+        }
+
+        // SETTLE PASS: re-read every placed cell and write the settled state
+        for (int j = 0; j < placedPos.size(); j++) {
+            BlockPos pos = placedPos.get(j);
+            int i = placedIndex.get(j);
+            BlockState now = level.getBlockState(pos);
+            BlockState was = slice.get(i);
+            ResourceLocation bid = BuiltInRegistries.BLOCK.getKey(now.getBlock());
+            String settled = stateString(now, bid);
+            String placedStr = stateString(was, BuiltInRegistries.BLOCK.getKey(was.getBlock()));
+            if (!settled.equals(placedStr)) {
+                mutated++;
+                LOGGER.info("[cimscene] gallery settle ns={} page={} cell={} {},{} from={} to={}",
+                        namespace, page, pos.getX(), pos.getY(), pos.getZ(), placedStr, settled);
+            }
             // dyn=1: the block carries a BlockEntity — part of its picture is
             // drawn by the mod's BlockEntityRenderer (chain-drive shafts,
             // kinetic animation...), which the vanilla-client pack channel
@@ -315,10 +347,14 @@ public final class CimSceneMod {
             // surface for these cells and reports the AE, but they carry no
             // red verdict — their gate is the real-client leg (roadmap M5.6).
             // Universal signal (the EntityBlock interface), zero hardcode.
-            tsv.append("cell\t").append(GALLERY_X0 + col).append('\t')
-                    .append(GALLERY_Y0 + row).append('\t').append(GALLERY_Z).append('\t')
-                    .append(stateStr).append('\t')
-                    .append(st.getBlock() instanceof EntityBlock ? 1 : 0).append('\n');
+            rowStr[i] = "cell\t" + pos.getX() + '\t' + pos.getY() + '\t' + pos.getZ() + '\t'
+                    + settled + '\t'
+                    + (now.getBlock() instanceof EntityBlock ? 1 : 0);
+        }
+        for (int i = 0; i < slice.size(); i++) {
+            if (rowStr[i] != null) {
+                tsv.append(rowStr[i]).append('\n');
+            }
         }
 
         String manifest = "gallery-" + namespace + "-p" + page + ".tsv";
@@ -330,9 +366,9 @@ public final class CimSceneMod {
             LOGGER.error("[cimscene] gallery manifest write failed {}: {}", manifest, ioe.toString());
         }
 
-        LOGGER.info("[cimscene] gallery done ns={} page={} cells={} skipped_fluid={} "
+        LOGGER.info("[cimscene] gallery done ns={} page={} cells={} mutated={} skipped_fluid={} "
                         + "skipped_invisible={} first={} last={}",
-                namespace, page, placed, skipFluid, skipInvisible,
+                namespace, page, placed, mutated, skipFluid, skipInvisible,
                 stateString(slice.get(0), BuiltInRegistries.BLOCK.getKey(slice.get(0).getBlock())),
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));

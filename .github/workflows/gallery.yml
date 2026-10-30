@@ -186,7 +186,10 @@ jobs:
           export LP_NUM_THREADS=2
           mkdir -p truth-client/game/mods
           cp srv-wall/mods/*.jar truth-client/game/mods/   # registry sync needs them
-          printf 'onboardAccessibility:false\nfov:-0.625\nrenderClouds:false\n' > truth-client/game/options.txt
+          # fov:0.0 renders 70 deg (options value maps LINEARLY, fov =
+          # 70 + 40*v — MEASURED 12-ac: -0.625 rendered 45 deg and pushed the
+          # wall's upper rows off-frame, breaking the cell projection)
+          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\n' > truth-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py truth-client/game
           LAUNCH=$(cat truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
@@ -399,7 +402,9 @@ jobs:
           # (fetch-visual-client.py never creates the game dir — the client
           # makes it on first launch; CI needs it BEFORE the pins)
           mkdir -p visual-client/game
-          printf 'onboardAccessibility:false\nfov:-0.625\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          # fov:0.0 = 70 deg (linear mapping 70+40*v, measured 12-ac —
+          # -0.625 rendered 45 deg; the wall contract needs 70)
+          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
           LAUNCH=$(cat visual-client/launch.txt)
           ARGS="${LAUNCH#java }"
@@ -458,6 +463,21 @@ jobs:
           sleep 6
           java -cp vtools Shot "ours-shots/ours-gal-p0-again.png"
           echo "shot page 0 again"
+          # 12-ac bisect: ONE isolated display of a settled pane composite
+          # (the first acacia_window_pane CMD in the resolved manifest —
+          # deterministic order, nothing hardcoded). Answers: does the
+          # item-display channel render the composite's full structure
+          # alone (then wall deltas are cross-display blending) or not
+          # (then the channel itself flattens the model)?
+          CMD=$(grep -m1 "create:acacia_window_pane" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+          test -n "$CMD" || { echo "no pane CMD in the resolved manifest"; exit 1; }
+          echo "isolated display cmd=$CMD"
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "kill @e[type=!player]" "cim galleryclear" \
+            "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}"
+          sleep 6
+          java -cp vtools Shot "ours-shots/ours-isolated-pane.png"
+          echo "shot isolated pane"
           ls -la ours-shots/
 
       - name: upload ours wall artifacts

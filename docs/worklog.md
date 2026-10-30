@@ -2006,3 +2006,67 @@ Stage Summary:
   channel is close — most static cells pass — and the remaining families
   (window/pane/bars/casing composites) now have a precise, reproducible
   target and the tooling to iterate against.
+
+Task ID: 12-ac
+Agent: main
+Task: the calibration session the 12-ab note called for — the wall pair re-measured, the gate's own measurement chain audited
+
+Work Log:
+- Re-downloaded the run 41112056567 artifacts and started from the 12-ab
+  suspects. The first hard numbers came from the RAW frames, not the gate
+  crops: the gearshift band's dark-red windows sit at x=128, 230, 332...
+  — a 102.0-102.5 px cell pitch, NOT the 60.5 px the diff script
+  projects (F=514 @ 70 deg), and the fitted horizon lands at sy=360.2
+  with eye_y=-58.38, pitch 0 (the rig is exact; only the FOV assumption
+  was wrong).
+- ROOT CAUSE #1 (projection): options.txt `fov:-0.625` renders 45.0 deg,
+  not 70 — the options value maps LINEARLY (fov = 70 + 40*v; 70-25=45)
+  on 1.21.1 AND 26.3, measured independently on both legs (identical
+  102.25 px pitch). The rig authors read -0.625 as "70". At 45 deg the
+  wall's upper rows sit off-frame and every cell center lands up to
+  83 px off: the per-cell crops sampled the WRONG cells. The named
+  reds' STATE ATTRIBUTION was unreliable; the truth-vs-ours deltas were
+  real (both legs render 45 deg identically), the names were not.
+- Fix: both legs now pin `fov:0.0` (=70.0 under the same formula — the
+  wall contract in CimSceneMod was designed for exactly 70 and fits
+  again); gallery-diff.py keeps 70 deg and gained a GLOBAL-ALIGNMENT
+  GUARD: the full frames must align within half a cell (24 px) or the
+  report is GLOBAL-MISALIGNED and per-cell verdicts are withheld
+  (verified: fires on the p2 sparse-page noise only above the honest
+  threshold; the determinism pair passes at (0,0) err=1.5).
+- ROOT CAUSE #2 (the phantom reds): the truth leg's wall SELF-MODIFIES
+  after placement. Hard evidence, gearshift row: truth renders DARK-red
+  windows for ALL ten cells (including the powered=true states the
+  manifest carries), ours renders bright red exactly on the powered
+  cells — Create's kinetic blocks drop power without a network and the
+  blockstate flips; the manifest recorded the PLACED state. Same class,
+  synchronous: pane/bars connection properties recompute from the
+  ACTUAL neighbours inside the placement loop (setBlock flag 3) — the
+  truth c3r0 shows the settled EAST-ARM pane while ours faithfully
+  renders the placed full cross (the pack model g29 was verified
+  element-by-element: all 5 parts, correct boxes). The 22 "named reds"
+  were ours-vs-mutated-truth comparisons.
+- Fix: CimSceneMod's gallery now runs a SETTLE PASS after the placement
+  loop — every placed cell is re-read and the manifest carries the
+  SETTLED state (mutations logged: "gallery settle ... from= to=");
+  the done line counts them. The manifest stays the single contract;
+  the pack build and the ours-leg replay consume settled states with
+  zero changes downstream.
+- Local bisect rig attempted (Paper + plugin + pack + xvfb client) to
+  answer "does the item-display channel render the pane's depth
+  structure alone": the sandbox client dies silently at connect (no
+  root for mesa-vulkan-drivers; the lvp ICD path gets as far as the
+  world join). The question moves to CI as a 5-line bisect step: one
+  isolated item_display of a settled pane CMD, shot as
+  ours-isolated-pane.png — evidence on the real runner next run.
+- The p2 casing red (a plain cube_all!) and the window c0r0 family are
+  NOT yet explained; with the corrected projection + settled manifests
+  the next CI run names them honestly for the first time.
+
+Stage Summary:
+- The gate's measurement chain is now measured itself: projection from
+  the frames, not assumptions; a guard against stale pairs; a manifest
+  that records what the world actually holds. The previous "22 named
+  reds" were partially phantom (placed-vs-settled comparisons); the
+  honest red list is what the next run produces, and every family it
+  names is now a REAL pack-channel or dynamic-leg question.

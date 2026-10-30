@@ -11,9 +11,18 @@ Inputs:
   --gate <n>            per-cell AE datum after alignment + luminance
                         normalisation (default 60000, run-9 calibrated)
 
-Projection (pinhole, measured against the vanilla renderer): the gallery wall
-is 8.5 m in front of the camera (wall z=9, camera z=0.5), vertical FOV 70 deg
--> focal_px = (H/2)/tan(35). A cell at (x, y) projects to
+Projection (pinhole, calibrated): the gallery wall is 8.5 m in front of the
+camera (wall z=9, camera z=0.5), vertical FOV 70 deg -> focal_px = (H/2)/tan(35)
+= 514.1 px, cell pitch 60.5 px. CAUTION (worklog 12-ac): the rig used to pin
+`fov:-0.625` in options.txt believing it renders 70 deg — it renders 45 deg
+(options value maps LINEARLY, fov = 70 + 40*v, on 1.21.1 AND 26.3: measured
+102.25 px cell pitch on the run-41112056567 shots = 2*atan(360/869) = 45.06).
+At 45 deg the wall's upper rows sit off-frame and every cell center lands up
+to 83 px off — garbage per-cell verdicts. The legs now pin `fov:0.0` (=70.0
+under the same formula) and this guard catches any future drift: before the
+per-cell verdicts, the FULL frames must globally align within +-2 px
+(downsampled integer search) or the run fails with GLOBAL-MISALIGNED instead
+of reporting per-cell noise. A cell at (x, y) projects to
   sx = W/2 + f * (x + 0.5 - cam_x) / dist
   sy = H/2 - f * (y + 0.5 - eye_y) / dist
 with cam_x=0.5, eye_y = -60 + 1.62 = -58.38. The crop is CELL*0.92 wide
@@ -49,7 +58,7 @@ GALLERY_X0 = -5  # mirror of CimSceneMod gallery constants
 GALLERY_Y0 = -60
 
 W, H = 1280, 720
-VF = 70.0
+VF = 70.0  # the legs pin fov:0.0 = 70.0 (see the projection note above)
 F = (H / 2.0) / math.tan(math.radians(VF / 2.0))  # 514.1 px at 720p
 CAM_X = 0.5
 EYE_Y = -58.38
@@ -115,6 +124,29 @@ def highlight(truth, ours, box):
     return Image.fromarray(out.astype(np.uint8))
 
 
+def global_alignment(truth, ours, radius=20, step=2):
+    """Best integer shift (dx, dy) between the two FULL frames, searched on
+    a 4x downsampled luma grid within +-radius px. The projection/camera
+    contract puts the same world at the same pixels on both legs; a global
+    offset beyond a couple of px means the contract broke (fov mapping,
+    camera position, stale pair) and per-cell verdicts would be noise."""
+    t = truth[:, :, 0] + truth[:, :, 1] + truth[:, :, 2]
+    o = ours[:, :, 0] + ours[:, :, 1] + ours[:, :, 2]
+    t = t[::4, ::4]
+    o = o[::4, ::4]
+    m = min(t.shape[0], o.shape[0])
+    n = min(t.shape[1], o.shape[1])
+    best = (None, 0, 0)
+    bestv = None
+    for dy in range(-radius, radius + 1, step):
+        for dx in range(-radius, radius + 1, step):
+            oo = np.roll(np.roll(o, dy, axis=0), dx, axis=1)
+            v = float(np.abs(t[:m, :n] - oo[:m, :n]).mean())
+            if bestv is None or v < bestv:
+                bestv, best = v, (dx, dy)
+    return best[0], best[1], bestv
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", required=True)
@@ -130,6 +162,27 @@ def main():
 
     truth = load(args.truth)
     ours = load(args.ours)
+    # PROJECTION GUARD (worklog 12-ac): per-cell verdicts are meaningless on
+    # a stale pair or a drifted camera. The threshold is HALF A CELL (24 px
+    # at 70 deg): stale pairs / camera teleports miss by hundreds of px,
+    # while sparse-page search noise measured 18 px (p2, mostly sky). A
+    # SCALE drift (both legs' fov changed together) is invisible to a shift
+    # search by construction — the legs pin fov:0.0 and the fov-mapping
+    # lesson lives in the workflow comments.
+    gdx, gdy, gerr = global_alignment(truth, ours)
+    print(f"gallery-diff: global alignment shift=({gdx},{gdy}) err={gerr:.1f}")
+    if abs(gdx) > 24 or abs(gdy) > 24:
+        out = {
+            "verdict": "GLOBAL-MISALIGNED",
+            "global_shift": [gdx, gdy],
+            "note": "full frames disagree on world placement beyond half a "
+                    "cell — stale pair or camera drift; per-cell verdicts "
+                    "withheld (fix the legs' options.txt fov pin or the "
+                    "camera-lock rig, then re-run)",
+        }
+        pathlib.Path(args.out).write_text(json.dumps(out, indent=1))
+        print(f"gallery-diff: GLOBAL-MISALIGNED shift=({gdx},{gdy}) -> {args.out}")
+        return 3
     rows = []
     red = 0
     skipped = 0
