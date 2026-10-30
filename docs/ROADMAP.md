@@ -290,26 +290,51 @@ is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
     gate is no longer "some region somewhere".
   - The sweep terminator is the exhausted marker (`cells=0`), the page loop is
     data-driven — adding a mod adds registry rows, not harness code.
-  - Truth-leg status: REAL server + Create page 0 = 61 cells placed, 16
-    waterlogged variants skipped, first/last cells verified by `execute if
-    block` — the wall exists in the world, not only in the log.
-  - **Ours-leg requirement (the named next work)**: the layer must project
-    every modded blockstate the gallery places onto the vanilla 26.3 client
-    through the ITEM/DISPLAY channel (f2v v1's ItemDisplay + CustomModelData
-    path — pack-synthesised models, runs 43/44 prove the rig) — the
-    note_block stand-in channel is REJECTED for the gallery by owner
-    directive (it is a debug stand-in, not a parity surface). Until that
-    projection exists, ours-leg gallery rows are RED by construction, which
-    is the honest CI state the roadmap now encodes: **green requires the
-    picture, not the census.**
+  - Truth-leg status: REAL server + Create pages 0..2 = 167 cells placed,
+    64 waterlogged variants skipped, determinism probe = pixel-identical
+    re-placement (per-cell AE = 0, worklog 12-v/12-w) — the wall exists and
+    re-renders byte-stable, so every future diff is signal, not noise.
+  - **Ours leg (IMPLEMENTED 2026-10-30, worklog 12-w)**: the layer projects
+    every modded blockstate onto the vanilla 26.3 client through the
+    ITEM/DISPLAY channel (f2v v1's ItemDisplay + CustomModelData path):
+    `GalleryPack` synthesises per-state models from the mod jar (variants →
+    direct model refs + entity-borne rotations; multipart → composite models
+    with baked, COORDINATE-SORTED rotations and namespaced texture keys), the
+    plugin replays the truth-leg manifests one ItemDisplay per cell, and
+    `gallery-diff.py` aligns + luma-normalises + diffs per cell. Ours-leg
+    determinism probe: per-cell AE = 0 (run 12-w). The note_block stand-in
+    stays rejected for the gallery.
+  - **The dynamic class (owner-honest gate accounting, 2026-10-30)**: blocks
+    carrying a BlockEntity draw part of their picture through the mod's
+    BlockEntityRenderer (Create chain-drive shafts, kinetic animation), which
+    the vanilla-client pack channel STRUCTURALLY cannot reproduce — measured:
+    ours renders the static casing pixel-aligned while truth adds the BEW
+    shaft (c0r3 evidence, worklog 12-w). The scene-mod manifest marks these
+    states `dyn=1` (universal EntityBlock check, zero hardcode); the gate
+    diffs and reports them but their RED belongs to the real-client leg
+    (M5.6), not to the pack channel. Current Create pages 0..2: 132/167
+    cells dynamic, 35 static — 11 green, 24 RED across exactly three named
+    families (acacia_window_pane, andesite_bars, andesite_casing — the
+    connected-texture composite deltas), every red cell shipping truth/ours
+    crops in the artifacts. That IS the honest CI state: red names the
+    failing states; no green without the picture.
 - **Gate semantics (the anti-"green for nothing" law)**: census/registration
   parity stays a REQUIRED PRE-GATE (identical sets on both stacks), but the
-  green verdict for M5.5 per mod is the GALLERY verdict: every non-skipped
-  cell of every page passes its per-cell PixelDiffNorm datum (calibrated per
-  the camera-lock identity metric; the version-level 1.0703 luminance factor
-  is normalised, not chased), diff images + both screenshots ship as
-  artifacts for every red cell, and the run is RED when any cell is red.
-  "100% identical" = 100% of cells at the calibrated identity datum.
+  green verdict for M5.5 per mod is the GALLERY verdict: every non-skipped,
+  non-dynamic cell of every page passes its per-cell aligned+normalised AE
+  datum, diff images + both screenshots ship as artifacts for every red cell,
+  and the run is RED when any static cell is red. Dynamic (EntityBlock) cells
+  are reported, never silently green — their verdict moves to M5.6.
+  "100% identical" = 100% of the cells the channel can express at the
+  calibrated identity datum, PLUS M5.6 green for the dynamic surface.
+- **M5.6 — the real-client leg (the dynamic-content gate)**: the pack
+  channel's ceiling is static models; the mod's own rendering (BlockEntity
+  renderers, shaders, particle engines) reaches the vanilla client only
+  through c-imagine's actual class/mixin pipeline running the mod's client
+  code. M5.6 = the layer projects Create's BEW content (shaft rendering,
+  kinetic animation) and re-runs the SAME gallery diff — dynamic cells join
+  the red gate there. This is the leg that finally owns "Create 100%
+  identical".
 
 **Accept:** the GALLERY gate: every Create blockstate page green at the
 calibrated identity datum (truth leg vs ours leg, per-cell PixelDiffNorm),

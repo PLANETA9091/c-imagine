@@ -77,7 +77,8 @@ public final class F2vPack {
 
     /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
     public record Result(List<VisualItem> items, List<VisualBlock> blocks,
-                         String sha1, int entryCount, List<String> warnings) {
+                         String sha1, int entryCount, List<String> warnings,
+                         List<GalleryPack.Resolved> gallery) {
     }
 
     /**
@@ -551,6 +552,7 @@ public final class F2vPack {
         }
 
         List<Path> jars = listJars(modsDir);
+        List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
             String[] keyParts = host.getKey().split("\t");
             String hostItem = keyParts[0];
@@ -571,6 +573,9 @@ public final class F2vPack {
                 }
                 if (floatKind) {
                     entriesForHost.add(Map.entry(row.cmd(), found));
+                    if (hostItem.equals("minecraft:paper")) {
+                        paperFloatEntries.add(Map.entry(row.cmd(), found));
+                    }
                 } else {
                     casesForHost.add(Map.entry(row.selectValue(), found));
                 }
@@ -596,6 +601,32 @@ public final class F2vPack {
         List<Path> equipJars = jars.isEmpty() ? listJars(modsDir) : jars;
         for (EquipmentAsset asset : equipmentRows) {
             emitEquipment(equipJars, asset, entries, warnings);
+        }
+
+        // GALLERY channel (M5.5, the main pixel gate's ours leg): per-state
+        // rows ride the SAME host (paper) range_dispatch as float entries.
+        // The model refs resolve INSIDE GalleryPack (direct rows at original
+        // paths, multipart composites under c-imagine:models/gallery/).
+        List<GalleryPack.Resolved> gallery = List.of();
+        Path galleryManifest = outDir.resolve("visual-gallery.tsv");
+        if (Files.isRegularFile(galleryManifest)) {
+            List<GalleryPack.Input> galleryInputs =
+                    GalleryPack.readManifest(galleryManifest);
+            if (!galleryInputs.isEmpty()) {
+                gallery = GalleryPack.build(jars, galleryInputs, entries, warnings);
+                GalleryPack.writeResolvedManifest(
+                        outDir.resolve("visual-gallery.resolved.tsv"), gallery);
+                if (!gallery.isEmpty()) {
+                    List<Map.Entry<Float, String>> paperEntries =
+                            new ArrayList<>(paperFloatEntries);
+                    for (GalleryPack.Resolved r : gallery) {
+                        paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                    }
+                    paperEntries.sort(Map.Entry.comparingByKey());
+                    entries.put("assets/minecraft/items/paper.json",
+                            itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+                }
+            }
         }
 
         // block channel (parity matrix "blocks", block-channel-26-3.md):
@@ -644,7 +675,7 @@ public final class F2vPack {
         }
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
-        return new Result(rows, blockRows, sha1, entries.size(), warnings);
+        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery);
     }
 
     private static List<Path> listJars(Path modsDir) throws IOException {
@@ -892,8 +923,9 @@ public final class F2vPack {
         return baseJson.replace(from, to);
     }
 
-    /** Depth-limited parent walk within the SAME jar as the entry model. */
-    private static void copyParentGraph(ZipFile zf, String modelPath, byte[] modelBytes,
+    /** Depth-limited parent walk within the SAME jar as the entry model
+     *  (package-visible: GalleryPack's direct-model rows reuse it). */
+    static void copyParentGraph(ZipFile zf, String modelPath, byte[] modelBytes,
                                         TreeMap<String, byte[]> entries,
                                         List<String> warnings, int depth) throws IOException {
         if (depth > 16) {
@@ -1157,6 +1189,7 @@ public final class F2vPack {
                     ? readManifest(manifest) : List.of();
             Result r = build(modsDir, outDir, rows);
             System.out.println("f2v pack: built (" + r.items().size() + " item(s), "
+                    + r.gallery().size() + " gallery state(s), "
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
                     + r.warnings().size() + " warning(s))");
             return;
@@ -1181,6 +1214,34 @@ public final class F2vPack {
             "{\"parent\": \"minecraft:block/cube_all\", \"textures\": {\"all\": \"fakemod:block/rock_tex\"}}";
     private static final String MODEL_GEM =
             "{\"parent\": \"minecraft:item/generated\", \"textures\": {\"layer0\": \"fakemod:item/gem_tex\"}}";
+
+    /** Gallery fixtures: element models + blockstates (variants/multipart). */
+    private static final String MODEL_PANE_POST =
+            "{\"textures\": {\"tex\": \"fakemod:block/post_tex\"}, "
+            + "\"elements\": [{\"from\": [7,0,7], \"to\": [9,16,9], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,2,16], \"texture\": \"#tex\"}}}]}";
+    private static final String MODEL_PANE_SIDE =
+            "{\"textures\": {\"tex\": \"fakemod:block/side_tex\"}, "
+            + "\"elements\": [{\"from\": [0,0,7], \"to\": [16,16,9], "
+            + "\"faces\": {\"up\": {\"uv\": [0,0,16,2], \"texture\": \"#tex\"}}}]}";
+    private static final String MODEL_ROCK_ARROW =
+            "{\"parent\": \"fakemod:block/rock\", \"textures\": {\"all\": \"fakemod:block/arrow_tex\"}}";
+    private static final String BS_ROCK =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/rock\"}, "
+            + "\"facing=north\": {\"model\": \"fakemod:block/rock_arrow\", \"y\": 90}}}";
+    private static final String BS_PANE =
+            "{\"multipart\": [{\"apply\": {\"model\": \"fakemod:block/pane_post\"}}, "
+            + "{\"apply\": {\"model\": \"fakemod:block/pane_side\"}, \"when\": {\"north\": \"true\"}}, "
+            // rotated unconditional part: covers the composite bake path
+            // (y:90 element coords MUST come out sorted, from<=to per axis —
+            // unsorted boxes render INVISIBLE on the stock client, measured
+            // on the acacia_window_pane / chain-gearshift ours-leg run)
+            + "{\"apply\": {\"model\": \"fakemod:block/pane_side\", \"y\": 90}}]}";
+    private static final String GALLERY_TSV =
+            "fakemod:pane[north=true]\n"
+            + "fakemod:pane[north=false]\n"
+            + "fakemod:rock\n"
+            + "fakemod:rock[facing=north]\n";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -1213,6 +1274,14 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/textures/item/cool_sword_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/deep/custom_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/parent_tex.png", testPng());
+            jarEntries.put("assets/fakemod/models/block/pane_post.json", MODEL_PANE_POST.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/pane_side.json", MODEL_PANE_SIDE.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/rock_arrow.json", MODEL_ROCK_ARROW.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/rock.json", BS_ROCK.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/post_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/block/side_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
             writeJar(jar, jarEntries);
 
             // -- manifest ---------------------------------------------------------
@@ -1230,6 +1299,8 @@ public final class F2vPack {
             Files.writeString(out.resolve("visual-palettes.tsv"),
                     "fakemod:gem\tfakemod:item/gem_tex\tfakemod:textures/palettes/gem_key.png\t_"
                     + "\tred=fakemod:textures/palettes/gem_red.png\n",
+                    StandardCharsets.UTF_8);
+            Files.writeString(out.resolve("visual-gallery.tsv"), GALLERY_TSV,
                     StandardCharsets.UTF_8);
 
             // -- build twice, must be byte-identical ------------------------------
@@ -1264,6 +1335,36 @@ public final class F2vPack {
                             && i.cmd() == 3001.0f
                             && i.hostItem().equals("minecraft:paper")),
                     "palette variant row resolved (gem@red cmd 3001 on paper)");
+
+            // GALLERY channel (M5.5): per-state rows resolve through the
+            // blockstates — direct refs, composite multipart, entity rots
+            expect(failures, r1.gallery().size() == 4,
+                    "gallery: 4 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 4) {
+                List<GalleryPack.Resolved> g = r1.gallery();
+                // pane[north=false] = composite of the unconditional parts
+                // (post + the y90 side) — multipart rows are ALWAYS composites
+                // even when no "when" matches (vanilla renders the
+                // unconditional parts the same way)
+                expect(failures, g.get(0).stateId().equals("fakemod:pane[north=false]")
+                                && g.get(0).cmd() == GalleryPack.CMD_BASE
+                                && g.get(0).composite()
+                                && g.get(0).modelRef().startsWith("c-imagine:gallery/g"),
+                        "gallery: pane[north=false] = composite (unconditional parts), cmd base");
+                expect(failures, g.get(1).stateId().equals("fakemod:pane[north=true]")
+                                && g.get(1).composite(),
+                        "gallery: pane[north=true] = multipart composite");
+                expect(failures, g.get(2).stateId().equals("fakemod:rock")
+                                && g.get(2).modelRef().equals("fakemod:block/rock"),
+                        "gallery: rock = direct (empty-variant key match)");
+                expect(failures, g.get(3).stateId().equals("fakemod:rock[facing=north]")
+                                && g.get(3).modelRef().equals("fakemod:block/rock_arrow")
+                                && g.get(3).yRot() == 90 && g.get(3).xRot() == 0,
+                        "gallery: rock[facing=north] = direct + yRot 90 on the entity");
+            }
+            expect(failures, r1.gallery().stream()
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 4,
+                    "gallery: cmds unique (100000..100003)");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
@@ -1315,6 +1416,49 @@ public final class F2vPack {
                     "paper def third threshold = the variant cmd");
             expect(failures, paper.contains("\"model\": \"fakemod:item/gem_red\""),
                     "paper def references the retinted variant model");
+            // GALLERY zip contents: composite file + host-def thresholds
+            String comp = str(entries, "assets/c-imagine/models/gallery/g0.json");
+            expect(failures, comp.contains("\"parent\":\"minecraft:block/block\""),
+                    "gallery composite keeps the block/block display context");
+            expect(failures, comp.contains("\"p0_tex\":\"fakemod:block/post_tex\"")
+                            && comp.contains("\"p1_tex\":\"fakemod:block/side_tex\""),
+                    "gallery composite namespaces part texture keys (p0_/p1_)");
+            expect(failures, comp.contains("\"texture\":\"#p0_tex\"")
+                            && comp.contains("\"texture\":\"#p1_tex\""),
+                    "gallery composite rewires element face refs");
+            expect(failures, comp.contains("fakemod:block/pane_post") == false
+                            && comp.contains("\"elements\":["),
+                    "gallery composite is standalone (no modded parent, elements inline)");
+            // the y:90 rotated part bakes SORTED element coords (from<=to per
+            // axis); unsorted boxes render invisible on the stock client
+            com.google.gson.JsonObject g0 = com.google.gson.JsonParser.parseString(comp)
+                    .getAsJsonObject();
+            com.google.gson.JsonArray els = g0.getAsJsonArray("elements");
+            // pane[north=false]: the unconditional parts only — post + y90 side
+            expect(failures, els.size() == 2,
+                    "gallery composite g0 = post + y90 side, got " + els.size());
+            if (els.size() == 2) {
+                com.google.gson.JsonArray f = els.get(1).getAsJsonObject().getAsJsonArray("from");
+                com.google.gson.JsonArray t = els.get(1).getAsJsonObject().getAsJsonArray("to");
+                boolean sorted = true;
+                for (int i = 0; i < 3; i++) {
+                    sorted &= f.get(i).getAsDouble() <= t.get(i).getAsDouble();
+                }
+                expect(failures, sorted,
+                        "gallery composite y90 part coords sorted (from<=to), from="
+                                + f + " to=" + t);
+            }
+            expect(failures, paper.contains("\"threshold\": " + GalleryPack.CMD_BASE),
+                    "paper def carries the gallery cmd base");
+            expect(failures, paper.contains("c-imagine:gallery/g0"),
+                    "paper def references the gallery composite");
+            // the DIRECT gallery rows copy their model files at original paths
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/models/block/pane_post.json"),
+                    "gallery direct row model file copied (pane_post)");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/models/block/rock_arrow.json"),
+                    "gallery direct row model file copied (rock_arrow)");
             // model graph copied at original paths
             expect(failures, entries.containsKey(
                     "assets/fakemod/models/item/cool_sword.json"), "entry model copied");

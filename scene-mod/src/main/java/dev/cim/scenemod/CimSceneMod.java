@@ -12,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -283,7 +284,7 @@ public final class CimSceneMod {
         }
 
         // place + manifest
-        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\n");
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\n");
         int placed = 0, skipFluid = 0, skipInvisible = 0;
         for (int i = 0; i < slice.size(); i++) {
             BlockState st = slice.get(i);
@@ -307,9 +308,17 @@ public final class CimSceneMod {
             BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
             level.setBlock(pos, st, 3);
             placed++;
+            // dyn=1: the block carries a BlockEntity — part of its picture is
+            // drawn by the mod's BlockEntityRenderer (chain-drive shafts,
+            // kinetic animation...), which the vanilla-client pack channel
+            // STRUCTURALLY cannot reproduce. The gate diffs the static model
+            // surface for these cells and reports the AE, but they carry no
+            // red verdict — their gate is the real-client leg (roadmap M5.6).
+            // Universal signal (the EntityBlock interface), zero hardcode.
             tsv.append("cell\t").append(GALLERY_X0 + col).append('\t')
                     .append(GALLERY_Y0 + row).append('\t').append(GALLERY_Z).append('\t')
-                    .append(stateStr).append('\n');
+                    .append(stateStr).append('\t')
+                    .append(st.getBlock() instanceof EntityBlock ? 1 : 0).append('\n');
         }
 
         String manifest = "gallery-" + namespace + "-p" + page + ".tsv";

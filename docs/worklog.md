@@ -1590,3 +1590,52 @@ Stage Summary:
   manifests, world probe, pixel-identical determinism (AE=0), eye-checked
   screenshots. The remaining gap to a meaningful GREEN is exactly one
   named subsystem: the ours-leg display-entity projection.
+
+---
+Task ID: 12-w
+Agent: main
+Task: OURS LEG LIVE — the gallery pixel gate runs end to end; the dyn class
+
+Work Log:
+- GalleryPack + the plugin's ItemDisplay replay are LIVE: visual-gallery.tsv
+  (231 distinct Create states from the truth manifests) -> per-state pack
+  models -> /cim gallerypage <ns> <p> spawns one ItemDisplay per manifest
+  cell (cmd through the paper range_dispatch; 61/47/59 placed = the exact
+  cell counts; zero unresolved states).
+- First full ours-vs-truth diff: 133/167 RED. Diagnosis on the actual pixels
+  (per-cell crops + grid overlays + strip cross-correlation, not guesses):
+  1. COMPOSITE BAKE BUG — rotated multipart/variant parts (y:90/x:270) baked
+     UNSORTED from/to (from>to): the stock geometry builder renders inverted
+     boxes INVISIBLE (acacia_window_pane west/east arms, chain-gearshift
+     composites vanished). Fix: sortBoxPair after bake + a selftest fixture
+     part that asserts sorted coords. Pack rebuilt (sha1 f09277be).
+  2. THE DYNAMIC CLASS — the remaining shaft-class deltas are NOT bugs: the
+     truth renders the chain-drive SHAFT through Create's BlockEntityRenderer
+     (ours shows the static casing pixel-aligned, 75x74px measured BOTH legs;
+     the shaft middle is sky). The pack channel structurally cannot express
+     BEW content. Universal honest accounting: scene-mod now marks
+     EntityBlock states dyn=1 in the manifest (zero hardcode), and
+     gallery-diff.py reports them as DYNAMIC — diffed, artifacted, but their
+     red verdict belongs to the real-client leg (roadmap M5.6), not to this
+     channel.
+  3. Runner fix — run-gallery-truth.sh now starts the truth server itself
+     (the sandbox reaps background processes between tool calls; the old
+     script assumed a live server and NOT JOINED).
+- FINAL measured state (fresh truth + ours legs, same-session manifests):
+  truth determinism AE=0 (44/62 p0 cells EntityBlock); ours determinism
+  AE=0; p0 12 red / p1 11 red / p2 1 red of 35 static cells (11 green),
+  132 dynamic. Every red names itself: acacia_window_pane (12),
+  andesite_bars (11), andesite_casing (1) — the connected-texture composite
+  deltas are the named next pack work; artifacts carry truth/ours crops for
+  every red cell.
+- ROADMAP M5.5 updated to the measured reality (ours leg implemented, the
+  dyn class, the three named families) + M5.6 added: the real-client leg
+  that owns the BEW/dynamic surface — the leg that finally owns "Create
+  100% identical".
+
+Stage Summary:
+- The gallery pixel gate is real end to end on BOTH legs with honest class
+  accounting: truth/ours determinism proven (AE=0), the bake bug fixed and
+  unit-covered, the dynamic surface separated by a universal signal, and
+  24 named red cells driving the next pack work. The CI verdict is a
+  PICTURE verdict with named failures — no more "green for nothing".

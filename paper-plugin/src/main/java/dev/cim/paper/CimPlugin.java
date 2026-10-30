@@ -2,6 +2,7 @@ package dev.cim.paper;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -76,6 +77,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /** Immutable F2V state resolved at enable time. */
     private record F2vState(List<dev.cim.f2v.F2vPack.VisualItem> items,
                             List<dev.cim.f2v.F2vPack.VisualBlock> blocks,
+                            List<dev.cim.f2v.GalleryPack.Resolved> gallery,
                             String sha1) {
     }
 
@@ -112,7 +114,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().warning(LOG_PREFIX + "f2v pack: warn " + w);
                 }
             }
-            f2v = new F2vState(result.items(), result.blocks(), result.sha1());
+            f2v = new F2vState(result.items(), result.blocks(), result.gallery(), result.sha1());
             int port = Integer.getInteger("cim.f2v.port", 25580);
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
@@ -142,6 +144,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             List<dev.cim.f2v.F2vPack.VisualBlock> blocks =
                     dev.cim.f2v.F2vPack.readBlockManifest(
                             base.resolve("visual-blocks.tsv"));
+            // the GALLERY manifest must come from the REAL f2v dir too (same
+            // 19ad1e3 lesson as the equipment manifests: build() reads
+            // visual-gallery.tsv from its OUT dir — which is the scratch here)
+            Path gallerySrc = base.resolve("visual-gallery.tsv");
+            if (Files.isRegularFile(gallerySrc)) {
+                Files.createDirectories(scratch);
+                Files.copy(gallerySrc, scratch.resolve("visual-gallery.tsv"),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
             return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows, equipment, blocks);
         } finally {
             // keep the tree small; the stored pack.zip is the served truth
@@ -150,6 +161,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 Files.deleteIfExists(scratch.resolve("pack.sha1"));
                 Files.deleteIfExists(scratch.resolve("build-report.txt"));
                 Files.deleteIfExists(scratch.resolve("visual-items.resolved.tsv"));
+                Files.deleteIfExists(scratch.resolve("visual-gallery.tsv"));
+                Files.deleteIfExists(scratch.resolve("visual-gallery.resolved.tsv"));
                 Files.deleteIfExists(scratch);
             } catch (IOException ignored) {
                 // scratch cleanup is best-effort
@@ -1045,6 +1058,140 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    // ---- GALLERY ours-leg surface (M5.5, roadmap) ------------------------------
+
+    /**
+     * Entity-transform calibration constants for gallery cells. MEASURED
+     * against the truth leg's page-0 screenshot (wall bounding box):
+     * run 4 @ scale 2.0 / ty −3/16 rendered the wall at 70.2 px/cell with its
+     * centre 14 px above the truth leg's — the applied item context is NOT
+     * the assumed ground transform. Calibrated (run 5): scale ×60.48/70.2 =
+     * 1.7236 (truth cell = F/dist = 60.48 px @ 720p FOV 70, dist 8.5),
+     * ty −0.419 (14 px / 60.48 px/m further down). Re-measure after any
+     * client-version bump.
+     */
+    static final float GALLERY_SCALE = 1.0126f;
+    static final float GALLERY_TX = 0.0f;
+    static final float GALLERY_TY = -0.0184f;
+    static final float GALLERY_TZ = 0.0f;
+
+    /**
+     * Replay one truth-leg gallery page manifest as ItemDisplay rigs:
+     * {@code c-imagine/scenes/gallery-<ns>-p<page>.tsv} rows
+     * {@code cell<TAB>x<TAB>y<TAB>TABz<TAB>state} — one display per cell at
+     * the cell CENTER (x+0.5, y+0.5, z+0.5), the actual block left AIR (the
+     * note-block stand-in is rejected for the gallery). States resolve to
+     * pack CMDs through the F2vState gallery rows (visual-gallery.resolved.tsv).
+     * Returns the placed count.
+     */
+    private int galleryPage(String ns, int page) {
+        if (f2v == null || f2v.gallery().isEmpty()) {
+            log().warning(LOG_PREFIX + "f2v gallery: no gallery rows in the pack "
+                    + "(build the pack with visual-gallery.tsv)");
+            return 0;
+        }
+        java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byState = new java.util.HashMap<>();
+        for (dev.cim.f2v.GalleryPack.Resolved r : f2v.gallery()) {
+            byState.put(r.stateId(), r);
+        }
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery: manifest missing: " + mf);
+            return 0;
+        }
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.isBlank() || line.startsWith("cell\t")) {
+                    if (line.startsWith("cell\t")) {
+                        cells.add(line.split("\t", -1));
+                    }
+                    continue;
+                }
+                // header row or skip row — nothing to spawn
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery: manifest read failed " + mf + ": " + ioe);
+            return 0;
+        }
+        final java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> map = byState;
+        Integer placed = callSync(() -> {
+            int n = 0;
+            for (String[] row : cells) {
+                // cell<TAB>x<TAB>y<TAB>z<TAB>state
+                if (row.length < 5) {
+                    continue;
+                }
+                int x, y, z;
+                try {
+                    x = Integer.parseInt(row[1]);
+                    y = Integer.parseInt(row[2]);
+                    z = Integer.parseInt(row[3]);
+                } catch (NumberFormatException bad) {
+                    continue;
+                }
+                String state = row[4];
+                dev.cim.f2v.GalleryPack.Resolved r = map.get(state);
+                if (r == null) {
+                    log().warning(LOG_PREFIX + "f2v gallery: no pack CMD for " + state
+                            + " — cell " + row[1] + "," + row[2] + "," + row[3] + " skipped");
+                    continue;
+                }
+                String bare = "paper";
+                Material material = Material.matchMaterial(bare);
+                ItemStack stack = new ItemStack(material);
+                stack.editMeta(meta -> {
+                    CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                    cmd.setFloats(List.of(r.cmd()));
+                    meta.setCustomModelDataComponent(cmd);
+                });
+                org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
+                        x + 0.5, y + 0.5, z + 0.5);
+                org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
+                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
+                        // MEASURED (run 9 vs the truth leg): vanilla blockstate
+                        // x=90 is R_x(-90) — joml rotationXYZ applies +angles,
+                        // so the variant rotations ride NEGATED (a positive
+                        // x=90 swung the chain-drive shaft UP out of the cell;
+                        // negated, it renders the truth's vertical drive)
+                        new org.joml.Quaternionf().rotationXYZ(
+                                -(float) Math.toRadians(r.xRot()),
+                                -(float) Math.toRadians(r.yRot()), 0f),
+                        new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
+                        new org.joml.Quaternionf());
+                org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
+                        org.bukkit.entity.ItemDisplay.class, e -> {
+                            e.setItemStack(stack);
+                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                            e.setTransformation(tr);
+                        });
+                log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
+                        + row[1] + "," + row[2] + "," + row[3] + " state=" + state
+                        + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId());
+                n++;
+            }
+            return n;
+        });
+        return placed == null ? 0 : placed;
+    }
+
+    /** Despawn every ItemDisplay in every world. Returns the removed count. */
+    private int galleryClear() {
+        Integer removed = callSync(() -> {
+            int n = 0;
+            for (World w : Bukkit.getWorlds()) {
+                for (org.bukkit.entity.ItemDisplay d : w.getEntitiesByClass(
+                        org.bukkit.entity.ItemDisplay.class)) {
+                    d.remove();
+                    n++;
+                }
+            }
+            return n;
+        });
+        return removed == null ? 0 : removed;
+    }
+
     // ---- helpers -------------------------------------------------------------
 
     private World world(String name) {
@@ -1109,6 +1256,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             spawnDisplayFor(args[1], modded);
             return true;
         }
+        // /cim gallerypage <ns> <page> — the M5.5 GALLERY ours-leg surface:
+        // replay a truth-leg page manifest (c-imagine/scenes/) as ItemDisplay
+        // rigs — one per cell, carrying the state's pack CMD (GalleryPack).
+        // The NOTE BLOCK channel is rejected here by owner directive.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int placed = galleryPage(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage " + args[1]
+                        + " p" + page + " -> placed=" + placed);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim galleryclear — despawn every ItemDisplay (page swaps).
+        if (args.length >= 1 && args[0].equalsIgnoreCase("galleryclear")) {
+            int removed = galleryClear();
+            sender.sendMessage(LOG_PREFIX + "galleryclear -> removed=" + removed);
+            return true;
+        }
         sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.3)");
         sender.sendMessage(LOG_PREFIX + "kernel: Paper 26.3 | layer: mini NeoForge 1.21.1");
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
@@ -1116,6 +1284,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
         sender.sendMessage(LOG_PREFIX + "blocks: /cim placeblock <player> [moddedId]");
         sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
+        sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> | /cim galleryclear");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

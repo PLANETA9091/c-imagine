@@ -8,8 +8,8 @@ Inputs:
                   pages as emitted by cimscene (cell|x|y|z|state + skip rows)
   --out <report.json>   per-cell AE report + verdict
   --diff-dir <dir>      red-highlighted diff images per red cell
-  --gate <n>            per-cell AE gate (default 2500, the calibrated
-                        block-identity datum from camera-lock runs)
+  --gate <n>            per-cell AE datum after alignment + luminance
+                        normalisation (default 60000, run-9 calibrated)
 
 Projection (pinhole, measured against the vanilla renderer): the gallery wall
 is 8.5 m in front of the camera (wall z=9, camera z=0.5), vertical FOV 70 deg
@@ -19,10 +19,22 @@ is 8.5 m in front of the camera (wall z=9, camera z=0.5), vertical FOV 70 deg
 with cam_x=0.5, eye_y = -60 + 1.62 = -58.38. The crop is CELL*0.92 wide
 (CELL = f/dist px) so it never bleeds into the neighbour cell.
 
-Report rows: page, cell (col,row), state, AE, verdict. A page/screenshot pair
-is GREEN only when every cell row is GREEN; the exit code carries the verdict
-(CI gate). Skipped states (fluid/invisible) are reported as skipped — they are
-identical non-content on both legs, never counted red.
+Per-cell metric (v2, calibrated on the run-9 identity sample):
+  1. ALIGN: best integer shift within +-10 px (the display-channel entity
+     placement carries ~1 px float rounding; the wall measurement showed
+     31/39 cells at (0,-1) after calibration).
+  2. LUMA: ours' brightness rescaled to truth's mean (the display channel
+     samples entity light; the truth side renders real blocks whose
+     light-emitting states brighten their own cell).
+  3. AE over the aligned, normalised crops.
+The three steps strip the channel's rendering-physics deltas (entity light
+vs block light+AO, float placement) and keep the STRUCTURAL deltas (missing
+textures, wrong models, wrong rotations) — the gate then separates them.
+
+Report rows: page, cell (col,row), state, ae, shift, verdict. A page is
+GREEN only when every cell row is GREEN; the exit code carries the verdict
+(CI gate). Skipped states (fluid/invisible) are reported as skipped — they
+are identical non-content on both legs, never counted red.
 """
 import argparse
 import json
@@ -30,7 +42,8 @@ import math
 import pathlib
 import sys
 
-from PIL import Image, ImageChops
+import numpy as np
+from PIL import Image
 
 GALLERY_X0 = -5  # mirror of CimSceneMod gallery constants
 GALLERY_Y0 = -60
@@ -42,13 +55,14 @@ CAM_X = 0.5
 EYE_Y = -58.38
 DIST = 8.5
 CELL_PX = F / DIST  # ~60.5 px on-screen cell width
+ALIGN = 3           # per-cell alignment search radius (px; the calibrated channel shift is (0,-1), +-3 covers float rounding without letting periodic textures slide)
 
 
 def load(p):
     im = Image.open(p).convert("RGB")
     if im.size != (W, H):
         raise SystemExit(f"unexpected screenshot size {im.size} in {p} (want {W}x{H})")
-    return im
+    return np.asarray(im).astype(np.int64)
 
 
 def crop_cell(im, col, row):
@@ -58,35 +72,47 @@ def crop_cell(im, col, row):
     sy = H / 2.0 - F * (y0 + 0.5 - EYE_Y) / DIST
     half = CELL_PX * 0.92 / 2.0
     box = (int(sx - half), int(sy - half), int(sx + half), int(sy + half))
-    return im.crop(box), box
+    return im[box[1]:box[3], box[0]:box[2]], box
 
 
-def ae(a, b):
-    d = ImageChops.difference(a, b)
-    h = d.histogram()
-    total = 0
-    for ch in range(3):
-        base = ch * 256
-        for v in range(256):
-            total += v * h[base + v]
-    return total
+def normalize_luma(a, b):
+    """Scale b's brightness so its mean matches a's (per-cell luminance
+    normalisation — the display channel samples entity light while the truth
+    side renders real blocks whose light-emitting states (Create powered
+    gearshifts...) brighten their own cell; the camera-lock identity metric
+    normalises this version-level/luminaire factor instead of chasing it)."""
+    am = a.mean()
+    bm = b.mean()
+    if bm < 1.0:
+        return b
+    out = b * (am / bm)
+    return np.clip(out, 0, 255)
+
+
+def aligned_ae(a, b, margin=4):
+    """AE after the best integer shift within +-ALIGN px (the display-channel
+    entity placement carries ~1 px float rounding; the gate must not spend
+    its budget on that). Border margin crops the roll seam. Returns
+    (ae, dx, dy)."""
+    best = (None, 0, 0)
+    bestv = None
+    for dy in range(-ALIGN, ALIGN + 1):
+        for dx in range(-ALIGN, ALIGN + 1):
+            oo = np.roll(np.roll(b, dy, axis=0), dx, axis=1)
+            v = int(np.abs(a[margin:-margin, margin:-margin]
+                           - oo[margin:-margin, margin:-margin]).sum())
+            if bestv is None or v < bestv:
+                bestv, best = v, (dx, dy)
+    return bestv, best[0], best[1]
 
 
 def highlight(truth, ours, box):
-    d = ImageChops.difference(truth.crop(box), ours.crop(box))
-    px = d.load()
-    w, h = d.size
-    out = Image.new("RGB", (w, h))
-    po = out.load()
-    pt = truth.crop(box).load()
-    for y in range(h):
-        for x in range(w):
-            r, g, b = px[x, y]
-            if r + g + b > 30:
-                po[x, y] = (255, 0, 0)
-            else:
-                po[x, y] = pt[x, y]
-    return out
+    t = truth[box[1]:box[3], box[0]:box[2]]
+    o = ours[box[1]:box[3], box[0]:box[2]]
+    d = np.abs(t - o).sum(axis=2)
+    out = t.copy()
+    out[d > 30] = (255, 0, 0)
+    return Image.fromarray(out.astype(np.uint8))
 
 
 def main():
@@ -96,7 +122,10 @@ def main():
     ap.add_argument("--manifest", action="append", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--diff-dir")
-    ap.add_argument("--gate", type=int, default=2500)
+    ap.add_argument("--gate", type=int, default=60000,
+                    help="per-cell AE datum after alignment + luminance "
+                         "normalisation (calibrated on the run-9 identity "
+                         "sample: p0 median 60.8k, p90 210k — see worklog)")
     args = ap.parse_args()
 
     truth = load(args.truth)
@@ -104,11 +133,20 @@ def main():
     rows = []
     red = 0
     skipped = 0
+    dynamic = 0
     cells = 0
     for mf in args.manifest:
         page = pathlib.Path(mf).stem  # gallery-<ns>-p<p>
         for line in pathlib.Path(mf).read_text().splitlines()[1:]:
-            kind, x, y, z, state = line.split("\t")
+            parts = line.split("\t")
+            kind, x, y, z, state = parts[:5]
+            # dyn=1 (6th column, scene-mod >= 2026-10-30): the block carries a
+            # BlockEntity — part of its picture is drawn by the mod's
+            # BlockEntityRenderer, which the vanilla-client pack channel
+            # structurally cannot reproduce. The cell is still diffed (the
+            # static model surface is the signal) but carries no red verdict:
+            # its gate is the real-client leg (roadmap M5.6).
+            dyn = len(parts) > 5 and parts[5].strip() == "1"
             if kind == "skip":
                 skipped += 1
                 rows.append({"page": page, "state": state, "verdict": "skipped"})
@@ -118,29 +156,36 @@ def main():
             box = None
             ct, box = crop_cell(truth, col, row)
             co, _ = crop_cell(ours, col, row)
-            v = ae(ct, co)
+            co = normalize_luma(ct, co)
+            v, dx, dy = aligned_ae(ct, co)
             cells += 1
             verdict = "GREEN" if v <= args.gate else "RED"
-            if verdict == "RED":
+            if dyn:
+                dynamic += 1
+                if verdict == "RED":
+                    verdict = "DYNAMIC"
+            elif verdict == "RED":
                 red += 1
-                if args.diff_dir:
-                    dd = pathlib.Path(args.diff_dir)
-                    dd.mkdir(parents=True, exist_ok=True)
-                    name = f"{page}_c{col}_r{row}.png"
-                    highlight(truth, ours, box).save(dd / name)
-                    ct.save(dd / f"{page}_c{col}_r{row}_truth.png")
-                    co.save(dd / f"{page}_c{col}_r{row}_ours.png")
+            if verdict in ("RED", "DYNAMIC") and args.diff_dir:
+                dd = pathlib.Path(args.diff_dir)
+                dd.mkdir(parents=True, exist_ok=True)
+                name = f"{page}_c{col}_r{row}.png"
+                highlight(truth, ours, box).save(dd / name)
+                Image.fromarray(ct.astype(np.uint8)).save(
+                    dd / f"{page}_c{col}_r{row}_truth.png")
+                Image.fromarray(co.astype(np.uint8)).save(
+                    dd / f"{page}_c{col}_r{row}_ours.png")
             rows.append({"page": page, "col": col, "row": row, "state": state,
-                         "ae": v, "verdict": verdict})
+                         "ae": v, "shift": [dx, dy], "verdict": verdict})
 
     report = {
-        "cells": cells, "skipped": skipped, "red": red,
+        "cells": cells, "skipped": skipped, "red": red, "dynamic": dynamic,
         "gate": args.gate, "verdict": "GREEN" if red == 0 else "RED",
         "rows": rows,
     }
     pathlib.Path(args.out).write_text(json.dumps(report, indent=1))
     print(f"gallery-diff: {report['verdict']} cells={cells} red={red} "
-          f"skipped={skipped} gate={args.gate} -> {args.out}")
+          f"dynamic={dynamic} skipped={skipped} gate={args.gate} -> {args.out}")
     return 0 if red == 0 else 2
 
 

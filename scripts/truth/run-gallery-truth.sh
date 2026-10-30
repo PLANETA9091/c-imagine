@@ -21,7 +21,24 @@ mkdir -p "$XDG_RUNTIME_DIR" "$SHOTS"
 export DISPLAY=:99
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
-export LD_LIBRARY_PATH=/tmp/xdebs/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}
+export LD_LIBRARY_PATH=/tmp/xdebs/root/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}
+
+# ---- truth SERVER (must live inside the same command: the sandbox reaps
+# background processes between tool calls) ------------------------------------
+cd "$SRV"
+rm -f console.in boot.log
+mkfifo console.in
+tail -f console.in | MALLOC_ARENA_MAX=2 java -Xmx2G @user_jvm_args.txt \
+    @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt nogui > boot.log 2>&1 &
+SPID=$!
+echo "server pid $SPID"
+for i in $(seq 1 60); do
+  grep -q 'Done (.*! For help, type "help")' "$SRV/boot.log" 2>/dev/null && break
+  kill -0 $SPID 2>/dev/null || { echo "SERVER DIED"; tail -20 "$SRV/boot.log"; exit 1; }
+  sleep 5
+done
+grep -q 'Done (.*! For help' "$SRV/boot.log" || { echo "SERVER NOT DONE"; tail -10 "$SRV/boot.log"; exit 1; }
+echo "SERVER UP"
 
 Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset > /tmp/xvfb.log 2>&1 &
 XVPID=$!
@@ -92,5 +109,5 @@ fi
 ls -la "$SHOTS"
 kill $CPID 2>/dev/null
 sleep 2
-kill $XVPID 2>/dev/null
+kill $SPID $XVPID 2>/dev/null
 echo "TRUTH GALLERY SESSION DONE"
