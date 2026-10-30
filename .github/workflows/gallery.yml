@@ -105,7 +105,7 @@ jobs:
           setsid bash -c "java -Xmx2G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           for i in $(seq 1 150); do
-            R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1)
+            R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             [ -n "$R" ] && break
             sleep 2
           done
@@ -162,7 +162,7 @@ jobs:
           LAUNCH=$(cat truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
-            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1)
+            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             case "$L" in *cimviewer*) break;; esac
             sleep 2
           done
@@ -337,7 +337,7 @@ jobs:
           setsid bash -c "java -Xmx1G -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           for i in $(seq 1 120); do
-            R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1)
+            R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             [ -n "$R" ] && break
             sleep 2
           done
@@ -374,7 +374,7 @@ jobs:
           CLIENT_JAVA="${{ steps.jdk25.outputs.path }}/bin/java"
           setsid bash -c "cd visual-client && $CLIENT_JAVA $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
-            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1)
+            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             case "$L" in *cimviewer*) break;; esac
             sleep 2
           done
