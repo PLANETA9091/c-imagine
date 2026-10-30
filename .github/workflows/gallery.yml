@@ -387,7 +387,7 @@ jobs:
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
             java -cp "srv-wall/plugins/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods srv-wall/c-imagine/f2v \
-            --assets visual-client/client.jar
+            --assets visual-client/client.jar 2>&1 | tee pack-build.log
           # --assets = the VANILLA client jar: the pack builder resolves
           # vanilla parents (block/cube_all -> block/cube -> block/block, BARE
           # refs) from the same client that will render the pack — without it
@@ -395,6 +395,8 @@ jobs:
           # drops (measured: andesite_casing class, run 41126658261 + the
           # 12-af selftest)
           test -f srv-wall/c-imagine/f2v/pack.sha1
+          cp srv-wall/c-imagine/f2v/build-report.txt f2v-build-report.txt
+          cp srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv f2v-gallery-resolved.tsv
 
       - name: assemble server properties (pack + RCON)
         run: |
@@ -529,15 +531,24 @@ jobs:
           # item-display channel render the composite's full structure
           # alone (then wall deltas are cross-display blending) or not
           # (then the channel itself flattens the model)?
-          CMD=$(grep -m1 "create:acacia_window_pane" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
-          test -n "$CMD" || { echo "no pane CMD in the resolved manifest"; exit 1; }
-          echo "isolated display cmd=$CMD"
+          # 12-ac/12-ah bisect x2: ONE isolated display per suspect family,
+          # shot alone against sky. The pane answers "does the item-display
+          # channel render the composite's depth structure alone"; the casing
+          # (a PLAIN vanilla-parent cube, measured invisible in its wall cell
+          # while the structurally identical acacia_window cube renders
+          # green) answers "is it the model bake or the wall context".
+          CMD_PANE=$(grep -m1 "create:acacia_window_pane" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+          test -n "$CMD_PANE" || { echo "no pane CMD in the resolved manifest"; exit 1; }
+          CMD_CASING=$(grep -m1 "create:andesite_casing" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+          test -n "$CMD_CASING" || { echo "no casing CMD in the resolved manifest"; exit 1; }
+          echo "isolated displays: pane cmd=$CMD_PANE casing cmd=$CMD_CASING"
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "cim galleryclear" \
-            "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}"
+            "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_PANE}f]}}}}" \
+            "summon minecraft:item_display 1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_CASING}f]}}}}"
           sleep 6
-          java -cp vtools Shot "ours-shots/ours-isolated-pane.png"
-          echo "shot isolated pane"
+          java -cp vtools Shot "ours-shots/ours-isolated-pane-casing.png"
+          echo "shot isolated pane+casing"
           ls -la ours-shots/
 
       - name: entity walk — frozen entity replay + determinism probe
@@ -582,6 +593,9 @@ jobs:
             ours-rcon-p*.log
             ours-rcon-e*.log
             ours-pins.log
+            f2v-build-report.txt
+            f2v-gallery-resolved.tsv
+            pack-build.log
             srv-wall/boot.log
             visual-client/client.out
 
