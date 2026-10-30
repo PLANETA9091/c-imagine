@@ -1857,3 +1857,74 @@ Stage Summary:
   unit-covered, the dynamic surface separated by a universal signal, and
   24 named red cells driving the next pack work. The CI verdict is a
   PICTURE verdict with named failures — no more "green for nothing".
+---
+Task ID: 12-y
+Agent: main
+Task: the red merge bc64ad8 cured — every fix measured before the claim; the wall-grid pixel gate wired into CI (12-z)
+
+Work Log:
+- bc64ad8 shipped RED (ci / integration / mod-matrix / gallery startup_failure).
+  Four causes, each diagnosed from the run artifacts and re-verified by an
+  actual run:
+  1. gallery.yml had a DUPLICATE step id jdk25 -> startup_failure on every
+     push (actionlint names it; the run had 0 jobs). Renamed jdk25b.
+  2. ci.yml's F2vPack --selftest ran the bare plugin jar ->
+     NoClassDefFoundError gson (GalleryPack parses model JSON; on live Paper
+     the server supplies gson, the CLI does not). Fix:
+     dependency:build-classpath. Proven LOCALLY first: offline build at
+     --release 25 (paper-api 26.3 is class 69 — javac 21 cannot read it;
+     build-paper-plugin-offline.sh updated) + selftest ALL OK.
+  3. integration.yml asserted the DEPRECATED note_block stand-in log line;
+     the code now places block_display carriers
+     ("as block_display[note_block instrument=creeper,note=13]"). Assert
+     updated to the measured line; pack-content asserts unchanged (the
+     carrier blockstate surface survives).
+  4. mod-matrix create-truth's wall probe checked "first cell of page 0 is
+     not air" — but every page rebuilds the SAME wall region and page 59's
+     index-0 state was a skipped waterlogged stairs -> legitimately air
+     (the CI log names the state). Probe rewritten MANIFEST-DRIVEN: every
+     placed cell of the LAST page via `execute unless block`, any miss names
+     itself. Page cap 60 removed (the exhausted=1 marker is the bound — the
+     60-page run was NOT exhausted; pages 60+ were silently dropped).
+  - RESULT (GitHub runs on b2393d3): ci SUCCESS, integration SUCCESS,
+    mod-matrix SUCCESS — the merge is green for named, measured reasons.
+- The 12-x "named red families" investigated on the actual pixels
+  (acacia_window_pane x12): the composite models are FAITHFUL (g29 verified
+  element-by-element against the jar: post + 4 arms, correct per-face
+  textures/UVs), the CMD chain is EXACT (resolved.tsv <-> paper.json
+  range_dispatch <-> plugin's exact state match), the fresh ours leg is
+  positionally exact against the manifest (left wood edge x=341 vs predicted
+  338; global phase correlation (0,-1) — the calibrated channel shift).
+  THE 12-x ARTIFACT PAIR IS STALE: the truth shot's wall content sits ONE
+  CELL RIGHT of its own manifest (window block renders at c1, c0 is grass
+  in BOTH frames; right wall edge 972=972 — no camera rotation). Every
+  per-cell join then compared mismatched content: structural AE on all
+  distinct-content cells (the panes -> 12 false reds), pass on uniform
+  columns (the casings -> 11 greens). The honest verdict comes from a
+  FRESH same-run pair — exactly what the wall gate produces.
+- gallery.yml REWRITTEN to the wall-grid line (12-z): wall-truth (fixed
+  camera, per-page rebuild + count-based done wait + shots + manifests as
+  THE CELL CONTRACT) -> wall-ours (Paper + GalleryPack; visual-gallery.tsv
+  derived via scripts/f2v/gallery-manifest.py — measured 231 distinct
+  states; F2vPack --build on the gson classpath; /cim gallerypage replays
+  the contract; kill @e + galleryclear before every page) -> wall-diff
+  (per-page per-cell join; RED unless every static cell is inside the
+  datum; dynamic cells diffed+reported, verdict belongs to M5.6;
+  determinism probes reported, never gated). Pack chain proven locally end
+  to end: pack.zip sha1 62f76733, 231 range_dispatch entries, 64 gallery
+  composite models.
+- First wall-gate CI run died in 0.15s at the truth boot: rcon.py raises
+  ConnectionRefusedError (exit 1) while the server is still booting and
+  set -euo pipefail killed the poll loop on the FIRST iteration. Every
+  poll loop now absorbs the refused connection ("| tail -1 || true") —
+  the same latent bug sat in the superseded corridor workflow (its CI
+  legs never got past boot either).
+
+Stage Summary:
+- The red merge is cured and the wall-grid pixel gate IS the CI surface
+  now. The 12-x red families are re-classified: not pack-channel rendering
+  defects (the composites are faithful, the chain is exact) but a stale
+  shot<->manifest pairing — the fresh same-run pair in the gate decides.
+- Diagnostics kept: scripts/render_composite2.py (faithful software render
+  of a composite through the gate camera — the reference for judging ours
+  crops without a 10-minute client loop).
