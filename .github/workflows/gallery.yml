@@ -134,7 +134,28 @@ jobs:
         uses: actions/cache@v4
         with:
           path: truth-client
-          key: neoforge-truth-client-1211-v2
+          key: neoforge-truth-client-1211-v3
+
+      - name: verify the client runtime (stale-cache guard)
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          missing = []
+          cp = pathlib.Path('truth-client/classpath.txt')
+          if not cp.is_file():
+              print('classpath.txt missing'); sys.exit(1)
+          missing += [p for p in cp.read_text().split(':')
+                      if p.strip() and not pathlib.Path(p).is_file()]
+          launch = pathlib.Path('truth-client/launch.txt').read_text()
+          if '-p ' in launch:
+              seg = launch.split('-p ', 1)[1].split()[0]
+              missing += [p for p in seg.split(':')
+                          if p.strip() and not pathlib.Path(p).is_file()]
+          if missing:
+              print('runtime jars MISSING (stale cache):', missing[:8])
+              sys.exit(1)
+          print('client runtime classpath verified')
+          PY
 
       - name: fetch + assemble the NeoForge client runtime (cache miss)
         if: steps.nfc-cache.outputs.cache-hit != 'true'
