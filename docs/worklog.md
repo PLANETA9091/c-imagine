@@ -2070,3 +2070,103 @@ Stage Summary:
   reds" were partially phantom (placed-vs-settled comparisons); the
   honest red list is what the next run produces, and every family it
   names is now a REAL pack-channel or dynamic-leg question.
+
+Task ID: 12-ad
+Agent: main
+Task: the honest red list answered — the pack channel's invisible and fat-model families fixed against run 41126658261
+
+Work Log:
+- Run 41126658261 (first fully honest pair: fov pinned, settled manifests,
+  global-alignment guard green) named the real pack-channel reds, and the
+  artifacts answered both open families from 12-ac:
+  * ROOT CAUSE #1 (invisible rows): the DIRECT emit path (a model riding at
+    its original path, the client resolving the parent chain) renders
+    NOTHING on the 26.3 item-model surface whenever the elements come from
+    a parent outside the pack — measured: create:block/andesite_casing
+    (parent minecraft:block/cube_all, no own elements) spawned as a display
+    and drew nothing, while the door models (own elements) rendered fine.
+  * Fix (GalleryPack): EVERY row now emits a SELF-CONTAINED model (explicit
+    elements + resolved textures + parent minecraft:block/block) through
+    the proven composite path — single-part rows ride it too (their
+    blockstate rotation bakes into the elements, exactly the measured
+    composite behaviour; the spawning entity carries 0/0).
+  * ROOT CAUSE #2 (fat models): DEGENERATE (zero-thickness) element boxes —
+    Create's bars/cap posts are FLAT PLANES (from.x == to.x = 8) — bake
+    into a fat cube on the 26.3 item-model surface (measured: the
+    all-false andesite_bars post rendered as a full cube). Fix:
+    inflateDegenerate() expands zero-thickness axes by 0.02 units per side
+    (0.25% of a block, ~0.15 px on the wall — visually identical, bakes
+    correctly).
+  * gallery-diff.py: settled-air cells (the block popped on placement —
+    funnels without a belt) are a new verdict class AIR: the cell's own
+    surface is sky on both legs, the crop catches neighbouring DYNAMIC
+    geometry spill; reported, never silently green — the gate is M5.6's.
+  * Repository hygiene: 2883 generated model JSONs from a probe run were
+    sitting in paper-plugin/src/main/resources/assets/ (the offline build
+    jars the whole folder — they would have shipped); removed, and the
+    path is gitignored with a comment pointing at the pack zip as the
+    only artifact channel.
+- Verified locally (no server runs): the plugin compiles (javac offline,
+  jdk25); the diff script accepts the new verdict classes.
+
+Stage Summary:
+- Both pack-channel red families from the honest run have measured root
+  causes and fixes in the emit path; the next CI pair decides them. The
+  plugin's source resources can no longer silently absorb generated
+  content.
+
+Task ID: 12-ae
+Agent: main
+Task: the ENTITY gallery — mobs under the same pixel gate (owner directive 2026-10-31: мобы 100% идентичные, и вообще весь контент)
+
+Work Log:
+- ROADMAP M5.5 rewritten around the extended gate: census is a pre-gate and
+  nothing else; the green verdict is the PIXEL verdict across every content
+  class (block wall + entity wall + item channel + sound census; particles
+  are the next leg of the same pattern). The ENTITY GALLERY is specified
+  and implemented:
+  * scene-mod `/cimscene gallery entity <ns> <page>`: EVERY EntityType of
+    the namespace, sorted, 77 per page on the SAME wall grid (the diff
+    projection is shared unchanged). Each entity is FROZEN at its cell
+    (feet, yaw 180, pitch 0): Mob -> NoAI + NoGravity + Invulnerable +
+    persistence (a still picture); non-Mob -> NoGravity + Invulnerable +
+    dyn=1 (time-varying pixels: fuse/spin/orb drift — reported, never a
+    red verdict). SETTLE PASS 40 server ticks after placement re-reads
+    every spawn and writes the manifest + done marker from what the world
+    HOLDS: dead or drifted >1.0 (lightning_bolt ~2-tick life, hanging
+    entities without a wall, evoker fangs...) become recorded skip rows
+    (dissolved) — the 12-ac settled-manifest law, entity edition.
+  * plugin `/cim gallerypage-entity <ns> <page>`: replays the manifest as
+    REAL frozen entities through the stock registry (Mob#setAware(false) =
+    NMS NoAI, NoGravity, Invulnerable, tag cimgallery); modded types not
+    in the stock registry count as nochannel and stay empty on ours — the
+    join names them RED (no silent green). /cim galleryclear now removes
+    tagged gallery entities too.
+  * gallery.yml: EPAGES=2 entity walk on BOTH legs (difficulty easy pinned
+    identically — peaceful discards Monsters every tick; kills before every
+    page; the truth side waits for the settle-pass done marker), the same
+    per-cell pixel join (join-e<p>.json) in the SAME GATE (red entity cells
+    fail the run), page-0 determinism probes as diagnostics.
+  * gallery-diff.py needed ZERO changes: the 7-column entity manifest
+    (cell|x|y|z|entity|dyn|note) flows through the existing parser, the
+    6th column stays the dyn switch — smoke-tested end-to-end (identity
+    pair -> GREEN, dissolved rows -> skipped).
+- Build chain hardening (measured, bit the compile): the offline
+  scene-mod classpath picked up OBFUSCATED Minecraft server jars
+  (net/minecraft/server/1.21.1/server-1.21.1.jar, the -extra/-slim/
+  -unpacked intermediates, neoforge-*-server.jar) that shadow mojmap
+  classes under identical FQCNs — MinecraftServer compiled against
+  obfuscated signatures (tell/getTickCount "missing"). The offline script
+  now excludes the reobf bundles and counts the filtered classpath.
+- Verified locally (no heavy runs): scene-mod compiles (javac offline,
+  89-cp-jar filtered classpath), the plugin compiles (javac offline,
+  jdk25), gallery.yml parses, the diff smoke test is green. The FIRST
+  REAL entity verdict comes from CI: the pixel join names every failing
+  mob per cell.
+
+Stage Summary:
+- The gate is no longer blocks-only: the run is RED unless the block wall
+  AND the entity wall sit inside the identity datum (minus honest
+  dyn/dissolved classes). The next CI run is the first mob verdict c-imagine
+  has ever had; the modded-entity channel (BOP mobs on a stock client)
+  remains the named-red backlog owned by M5.6.

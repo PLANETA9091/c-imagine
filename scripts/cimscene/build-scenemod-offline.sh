@@ -20,12 +20,26 @@ if [ ! -d "$LIBS" ]; then
   echo "ERROR: layer libraries dir missing: $LIBS"; exit 2
 fi
 
-CP="$(find "$LIBS" -name '*.jar' | tr '\n' ':')"
+# Compile classpath: every layer jar EXCEPT the reobfuscated Minecraft
+# server bundles (net/minecraft/server/1.21.1/server-1.21.1.jar,
+# neoforge-<v>-server.jar and the timestamped -extra/-slim/-unpacked
+# intermediates). Those carry OBFUSCATED Minecraft classes under the same
+# package names — for classes that exist in BOTH jars
+# (net.minecraft.server.MinecraftServer keeps its name when obfuscated)
+# javac picks the first match and the mod compiles against OBFUSCATED
+# signatures (measured: tell/getTickCount "missing"). The mojmap artifact
+# is the timestamped -srg.jar.
+CP="$(find "$LIBS" -name '*.jar' \
+    ! -path '*/net/minecraft/server/1.21.1/*' \
+    ! -name 'neoforge-*-server.jar' \
+    ! -name 'server-*extra.jar' \
+    ! -name 'server-*slim.jar' \
+    ! -name 'server-*unpacked.jar' | tr '\n' ':')"
 BUILD="$ROOT/scene-mod/build/offline/classes"
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
-echo "=== javac cimscene (offline, $(find "$LIBS" -name '*.jar' | wc -l) cp jars) ==="
+echo "=== javac cimscene (offline, $(echo "$CP" | tr ':' '\n' | grep -c . ) cp jars) ==="
 javac --release 21 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
 
 echo "=== jar ==="

@@ -1184,7 +1184,111 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return placed == null ? 0 : placed;
     }
 
-    /** Despawn every ItemDisplay in every world. Returns the removed count. */
+    /**
+     * Replay one truth-leg ENTITY gallery page manifest as REAL entities:
+     * {@code c-imagine/scenes/gallery-entity-<ns>-p<page>.tsv} rows
+     * {@code cell|x|y|z|entity|dyn|note} — one entity per cell, feet at the
+     * cell position (x+0.5, y, z+0.5), yaw 180 / pitch 0 (the same freeze
+     * contract the truth leg uses: Mob#setAware(false) = NMS NoAI,
+     * NoGravity, Invulnerable, scoreboard tag {@code cimgallery}).
+     *
+     * <p>Entity types resolve through the Bukkit EntityType registry key
+     * (vanilla keys only — a modded namespace has no stock-client renderer;
+     * its rows are counted as {@code nochannel} and stay empty on this leg,
+     * which the pixel join honestly reports RED until the entity-model
+     * channel exists — roadmap M5.5/M5.6 accounting).
+     *
+     * <p>Returns the placed count; the RCON response marker is
+     * {@code gallerypage-entity <ns> p<page> -> placed=N nochannel=K}.
+     */
+    private int[] galleryPageEntity(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-entity-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-entity: manifest missing: " + mf);
+            return new int[]{0, 0};
+        }
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                }
+                // header / skip rows — nothing to spawn
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-entity: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0};
+        }
+        final String nsf = ns;
+        final int pagef = page;
+        int[] counts = callSync(() -> {
+            int placed = 0, nochannel = 0;
+            World w = world(worldName());
+            for (String[] row : cells) {
+                // cell|x|y|z|entity|dyn|note
+                if (row.length < 5) {
+                    continue;
+                }
+                int x, y, z;
+                try {
+                    x = Integer.parseInt(row[1]);
+                    y = Integer.parseInt(row[2]);
+                    z = Integer.parseInt(row[3]);
+                } catch (NumberFormatException bad) {
+                    continue;
+                }
+                String entityKey = row[4];
+                org.bukkit.entity.EntityType type = null;
+                for (org.bukkit.entity.EntityType t : org.bukkit.entity.EntityType.values()) {
+                    if (t.getKey().toString().equals(entityKey)) {
+                        type = t;
+                        break;
+                    }
+                }
+                if (type == null) {
+                    // not spawnable through the stock registry (a modded
+                    // namespace) — the cell stays empty on this leg and the
+                    // pixel join names it; nothing is hidden
+                    nochannel++;
+                    log().warning(LOG_PREFIX + "f2v gallery-entity: no stock entity type "
+                            + entityKey + " — cell " + row[1] + "," + row[2] + "," + row[3]
+                            + " left empty (nochannel)");
+                    continue;
+                }
+                org.bukkit.Location at = new org.bukkit.Location(w,
+                        x + 0.5, y, z + 0.5, 180.0f, 0.0f);
+                try {
+                    org.bukkit.entity.Entity e = w.spawnEntity(at, type);
+                    if (e instanceof org.bukkit.entity.Mob m) {
+                        // NoAI equivalent (paper 26.3 surface): a still mob —
+                        // no movement, no look-at, no AI despawn
+                        m.setAware(false);
+                        m.setRemoveWhenFarAway(false);
+                    }
+                    e.setGravity(false);
+                    e.setInvulnerable(true);
+                    e.setRotation(180.0f, 0.0f);
+                    e.addScoreboardTag("cimgallery");
+                    placed++;
+                    log().info(LOG_PREFIX + "f2v gallery-entity: page " + pagef
+                            + " cell " + row[1] + "," + row[2] + "," + row[3]
+                            + " entity=" + entityKey + " uuid=" + e.getUniqueId());
+                } catch (Exception ex) {
+                    log().warning(LOG_PREFIX + "f2v gallery-entity: spawn failed "
+                            + entityKey + " at " + row[1] + "," + row[2] + "," + row[3]
+                            + ": " + ex);
+                }
+            }
+            return new int[]{placed, nochannel};
+        });
+        return counts == null ? new int[]{0, 0} : counts;
+    }
+
+    /** Despawn every ItemDisplay AND every tagged gallery entity in every
+     *  world (page swaps; the tag is shared with the truth leg). Returns the
+     *  removed count. */
     private int galleryClear() {
         Integer removed = callSync(() -> {
             int n = 0;
@@ -1193,6 +1297,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         org.bukkit.entity.ItemDisplay.class)) {
                     d.remove();
                     n++;
+                }
+                for (org.bukkit.entity.Entity e : w.getEntities()) {
+                    if (e.getScoreboardTags().contains("cimgallery")) {
+                        e.remove();
+                        n++;
+                    }
                 }
             }
             return n;
@@ -1279,7 +1389,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
-        // /cim galleryclear — despawn every ItemDisplay (page swaps).
+        // /cim gallerypage-entity <ns> <page> — the M5.5 ENTITY GALLERY
+        // ours-leg surface (owner directive 2026-10-31: mobs 100% identical):
+        // replay a truth-leg entity manifest as REAL frozen entities — the
+        // same spawn contract the truth leg uses, no pack channel involved.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-entity")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageEntity(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-entity " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-entity: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim galleryclear — despawn every ItemDisplay + tagged gallery
+        // entity (page swaps).
         if (args.length >= 1 && args[0].equalsIgnoreCase("galleryclear")) {
             int removed = galleryClear();
             sender.sendMessage(LOG_PREFIX + "galleryclear -> removed=" + removed);
@@ -1292,7 +1419,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
         sender.sendMessage(LOG_PREFIX + "blocks: /cim placeblock <player> [moddedId]");
         sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
-        sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> | /cim galleryclear");
+        sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> "
+                + "| /cim gallerypage-entity <ns> <page> | /cim galleryclear");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

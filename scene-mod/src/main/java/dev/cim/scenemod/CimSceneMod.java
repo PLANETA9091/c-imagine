@@ -9,13 +9,18 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
@@ -182,6 +187,12 @@ public final class CimSceneMod {
                                                 .then(Commands.argument("page", IntegerArgumentType.integer(0))
                                                         .executes(ctx -> gallery(ctx.getSource(),
                                                                 StringArgumentType.getString(ctx, "namespace"),
+                                                                IntegerArgumentType.getInteger(ctx, "page"))))))
+                                .then(Commands.literal("entity")
+                                        .then(Commands.argument("namespace", StringArgumentType.word())
+                                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> galleryEntity(ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "namespace"),
                                                                 IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
@@ -211,7 +222,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -373,6 +384,205 @@ public final class CimSceneMod {
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
         return placed;
+    }
+
+    // --- entity gallery (owner directive 2026-10-31: mobs 100% identical,
+    // --- and ALL content under the pixel gate) -----------------------------
+
+    /** Scoreboard tag shared by BOTH parity legs for gallery-entity cleanup. */
+    static final String GALLERY_TAG = "cimgallery";
+
+    /**
+     * Settle delay (server ticks) before the entity-page manifest is
+     * written. Entities whose existence is bounded (lightning_bolt lives
+     * ~2 ticks, hanging entities die without a wall, evoker fangs...) are
+     * DEAD by the settle pass and become recorded skip rows — identical on
+     * both stacks, never compared as content. Frozen mobs survive it.
+     */
+    static final int ENTITY_SETTLE_TICKS = 40;
+
+    /**
+     * The universal ENTITY gallery: EVERY {@link EntityType} registered by
+     * the namespace, sorted by id, spawned one per wall cell (feet at the
+     * cell position, yaw 180 = facing the locked camera, pitch 0) and
+     * FROZEN — Mobs carry NoAI + NoGravity + Invulnerable + persistence
+     * (NoAI mobs never move or look around; the picture is a still),
+     * non-Mobs carry NoGravity + Invulnerable and are marked {@code dyn=1}
+     * (their pixels are time-varying: fuse flashes, client spin phase, orb
+     * drift — diffed and reported, never a red verdict). Zero per-mod code:
+     * the sweep is the registry walk.
+     *
+     * <p>Universal honesty rules, identical on both stacks:
+     * <ul>
+     *   <li>{@code create()} returned null / threw → {@code skip} row
+     *       (reason=no-instance) — the type cannot exist as an entity on
+     *       ANY stack;</li>
+     *   <li>SETTLE PASS (after {@link #ENTITY_SETTLE_TICKS} server ticks):
+     *       every spawn is re-read — dead or drifted &gt; 1.0 from its cell →
+     *       {@code skip} row (reason=dissolved/moved, logged). The manifest
+     *       carries what the world HOLDS, not what was placed (the 12-ac
+     *       law, same as the block wall's settle pass);</li>
+     *   <li>the manifest + the done marker are written by the settle pass,
+     *       so the page is complete before any screenshot can be taken.</li>
+     * </ul>
+     *
+     * <p>Manifest per page:
+     * {@code c-imagine/scenes/gallery-entity-<ns>-p<p>.tsv} rows
+     * {@code cell|x|y|z|entity|dyn|note} ({@code note}: {@code ok} for
+     * compared cells) plus {@code skip|...|entity|0|<reason>} rows. Same
+     * wall geometry as the block gallery — the diff job's projection is
+     * shared unchanged.
+     */
+    private static int galleryEntity(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+
+        // Deterministic entry list: sorted entity ids of the namespace.
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ENTITY_TYPE.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-entity begin ns={} page={} types={} cellsPerPage={}",
+                namespace, page, entries.size(), GALLERY_CELLS);
+
+        int from = page * GALLERY_CELLS;
+        if (from >= entries.size()) {
+            LOGGER.info("[cimscene] gallery-entity done ns={} page={} cells=0 dyn=0 "
+                    + "skipped_no_instance=0 dissolved=0 exhausted=1", namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + GALLERY_CELLS, entries.size());
+        List<ResourceLocation> slice = entries.subList(from, to);
+
+        // Clear the wall region (blocks) + every previously spawned gallery
+        // entity (the shared tag; both parity legs clean the same way).
+        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
+            for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
+                for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
+                    level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+        AABB sweep = new AABB(GALLERY_X0 - 1, GALLERY_Y0, GALLERY_Z - 1,
+                GALLERY_X0 + GALLERY_COLS + 1, GALLERY_Y0 + GALLERY_ROWS + 3, GALLERY_Z + 2);
+        List<Entity> stale = level.getEntitiesOfClass(Entity.class, sweep,
+                e -> e.getTags().contains(GALLERY_TAG));
+        for (Entity e : stale) {
+            e.discard();
+        }
+        if (!stale.isEmpty()) {
+            LOGGER.info("[cimscene] gallery-entity cleaned stale={} ns={} page={}",
+                    stale.size(), namespace, page);
+        }
+
+        // Spawn loop: freeze every entity, keep the refs for the settle pass.
+        final List<Entity> spawned = new ArrayList<>();
+        final List<Integer> spawnedIdx = new ArrayList<>();
+        int noInstance = 0;
+        for (int i = 0; i < slice.size(); i++) {
+            ResourceLocation id = slice.get(i);
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
+            Entity e = null;
+            try {
+                e = type.create(level);
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                        + "reason=no-instance entity={} err={}",
+                        namespace, page, from + i, id, t.toString());
+            }
+            if (e == null) {
+                noInstance++;
+                LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                        + "reason=no-instance entity={}", namespace, page, from + i, id);
+                continue;
+            }
+            e.setNoGravity(true);
+            e.setInvulnerable(true);
+            e.moveTo(GALLERY_X0 + col + 0.5, GALLERY_Y0 + row, GALLERY_Z + 0.5,
+                    180.0f, 0.0f);
+            e.addTag(GALLERY_TAG);
+            if (e instanceof Mob m) {
+                // NoAI: no movement, no look-at, no AI despawn logic — a
+                // still picture. Persistence: nothing despawns the subject
+                // between the settle pass and the shot.
+                m.setNoAi(true);
+                m.setPersistenceRequired();
+            }
+            level.addFreshEntity(e);
+            spawned.add(e);
+            spawnedIdx.add(i);
+        }
+
+        // SETTLE PASS (delayed, server thread): re-read every spawn, write
+        // the manifest + the done marker. The CI waits for the done marker,
+        // so the page is complete before any screenshot fires.
+        final ServerLevel fLevel = level;
+        final String fNs = namespace;
+        final int fPage = page;
+        final List<ResourceLocation> fSlice = slice;
+        final int fNoInstance = noInstance;
+        final int fFrom = from;
+        level.getServer().tell(new TickTask(level.getServer().getTickCount()
+                + ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
+                        fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
+                        fNoInstance, fFrom)));
+        return spawned.size();
+    }
+
+    /** Settle pass body: re-read spawns, emit the settled manifest + marker. */
+    private static void settleGalleryEntity(ServerLevel level, String namespace, int page,
+                                            List<ResourceLocation> slice,
+                                            List<Entity> spawned, List<Integer> spawnedIdx,
+                                            int noInstance, int from) {
+        String[] rowStr = new String[slice.size()];
+        int cells = 0, dyn = 0, dissolved = 0;
+        for (int j = 0; j < spawned.size(); j++) {
+            Entity e = spawned.get(j);
+            int i = spawnedIdx.get(j);
+            ResourceLocation id = slice.get(i);
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            double cx = GALLERY_X0 + col + 0.5;
+            double cy = GALLERY_Y0 + row;
+            double cz = GALLERY_Z + 0.5;
+            boolean alive = e.isAlive() && !e.isRemoved();
+            double drift = alive ? e.position().distanceTo(new Vec3(cx, cy, cz)) : -1.0;
+            if (!alive || drift > 1.0) {
+                dissolved++;
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t0\tdissolved";
+                LOGGER.info("[cimscene] gallery-entity settle ns={} page={} index={} "
+                                + "reason={} entity={} drift={}",
+                        namespace, page, from + i, alive ? "moved" : "dissolved",
+                        id, drift);
+                continue;
+            }
+            boolean isMob = e instanceof Mob;
+            if (!isMob) dyn++;
+            cells++;
+            rowStr[i] = "cell\t" + (GALLERY_X0 + col) + '\t' + (GALLERY_Y0 + row)
+                    + '\t' + GALLERY_Z + '\t' + id + '\t' + (isMob ? 0 : 1) + "\tok";
+        }
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tentity\tdyn\tnote\n");
+        for (int i = 0; i < slice.size(); i++) {
+            if (rowStr[i] != null) {
+                tsv.append(rowStr[i]).append('\n');
+            }
+        }
+        String manifest = "gallery-entity-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-entity manifest write failed {}: {}",
+                    manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-entity done ns={} page={} cells={} dyn={} "
+                        + "skipped_no_instance={} dissolved={} first={} last={}",
+                namespace, page, cells, dyn, noInstance, dissolved,
+                slice.get(0), slice.get(slice.size() - 1));
     }
 
     /** Canonical state string {@code ns:path[k=v,...]} (properties in

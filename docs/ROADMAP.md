@@ -242,6 +242,10 @@ the vanilla client, and compare — by profile numbers AND by eye. Per mod, per
 block, per sound, per particle: everything a mod ships gets an automated scene on
 BOTH stacks. **Create mod 100% identical is the single top priority.** CI budget
 is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
+**Owner directive 2026-10-31: MOBS and ALL content under the same 100%-identical
+pixel gate** — the gallery covers entities too, and the gate semantics below are
+extended from blockstates to every content class (blocks, entities, items,
+sounds; particles next).
 
 - **Priority ladder (Tier 0 in `MODPACK.md`):**
   - **P0 — Create**: 100% identical target (kinetic network, contraptions,
@@ -318,15 +322,56 @@ is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
     connected-texture composite deltas), every red cell shipping truth/ours
     crops in the artifacts. That IS the honest CI state: red names the
     failing states; no green without the picture.
-- **Gate semantics (the anti-"green for nothing" law)**: census/registration
-  parity stays a REQUIRED PRE-GATE (identical sets on both stacks), but the
-  green verdict for M5.5 per mod is the GALLERY verdict: every non-skipped,
-  non-dynamic cell of every page passes its per-cell aligned+normalised AE
-  datum, diff images + both screenshots ship as artifacts for every red cell,
-  and the run is RED when any static cell is red. Dynamic (EntityBlock) cells
-  are reported, never silently green — their verdict moves to M5.6.
+- **THE ENTITY GALLERY — mobs under the same pixel gate (owner directive
+  2026-10-31: мобы 100% идентичные, и вообще весь контент). Implemented
+  2026-10-31** — scene-mod `/cimscene gallery entity <ns> <page>`, plugin
+  `/cim gallerypage-entity`, gallery.yml entity walk + entity join:
+  - EVERY `EntityType` of the namespace in sorted-id order, 77 per page on
+    the SAME absolute wall grid as the block wall (the diff job's
+    projection is shared unchanged). Each entity spawns FROZEN at its cell
+    (feet at the cell, yaw 180 facing the locked camera): Mobs carry
+    NoAI + NoGravity + Invulnerable + persistence (a still picture — no
+    movement, no look-at, no AI despawn); non-Mobs carry
+    NoGravity + Invulnerable and are marked `dyn=1` (time-varying pixels:
+    fuse flashes, client spin phase, orb drift — diffed and reported,
+    never a red verdict). Zero per-mod code: the sweep is the registry walk.
+  - Universal honesty rules, identical on both stacks: `create()` null or
+    threw → `skip` row (no-instance); the SETTLE PASS re-reads every spawn
+    40 server ticks after placement and writes the manifest + the done
+    marker from what the world HOLDS — dead or drifted >1.0
+    (lightning_bolt's ~2-tick life, hanging entities without a wall,
+    evoker fangs...) become recorded `skip` rows (dissolved), never
+    compared as content. The 12-ac law (manifest = the settled world)
+    applies to entities unchanged.
+  - Ours leg: the plugin replays the manifest as REAL frozen entities
+    through the stock registry (same freeze contract, the shared
+    `cimgallery` tag). For the `minecraft` namespace this is full native
+    coverage (~90 types, pages 0..1 in CI, `EPAGES=2`) — the gate is RED
+    unless every non-dynamic cell of both entity pages sits inside the
+    datum. Modded namespaces have no stock-client renderer — their rows
+    count as `nochannel`, stay empty on ours, and are named RED by the
+    join until the entity-model channel exists (f2v v1's PacketSanitizer
+    entity surface, the M5.6 leg). No silent green anywhere.
+  - The entity determinism probe (page-0 re-placement, both legs) measures
+    the ambient-animation class (squash/spin phases are client-side and
+    time-based) — a diagnostic that separates channel noise from content
+    deltas, never gated itself.
+- **Gate semantics (the anti-"green for nothing" law, extended to ALL
+  content — owner directive 2026-10-31)**: census/registration parity
+  stays a REQUIRED PRE-GATE (identical sets on both stacks) and nothing
+  else — registration never greens a picture. The green verdict for M5.5
+  per mod is the PIXEL verdict across every content class: the BLOCK wall
+  (every non-skipped, non-dynamic state cell of every page), the ENTITY
+  wall (every non-skipped, non-dynamic entity cell of every page), the
+  item channel (M5.2 hotbar gate) and the wire-level sound census.
   "100% identical" = 100% of the cells the channel can express at the
-  calibrated identity datum, PLUS M5.6 green for the dynamic surface.
+  calibrated identity datum, PLUS M5.6 green for the dynamic / no-channel
+  surface (BEW blocks, modded entity renderers). Every red ships
+  truth/ours/highlight triptychs and both screenshots; the run is RED
+  when any gateable cell of any content class is red. **The particle
+  gallery** is the next leg of the same pattern (auto-collected particle
+  ids, a fixed shot-window protocol, honesty rows for client-side-only
+  types) — its design note lands with the implementation, not before.
 - **M5.6 — the real-client leg (the dynamic-content gate)**: the pack
   channel's ceiling is static models; the mod's own rendering (BlockEntity
   renderers, shaders, particle engines) reaches the vanilla client only
@@ -336,12 +381,14 @@ is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
   the red gate there. This is the leg that finally owns "Create 100%
   identical".
 
-**Accept:** the GALLERY gate: every Create blockstate page green at the
-calibrated identity datum (truth leg vs ours leg, per-cell PixelDiffNorm),
-every Create channel (kinetic/fluid/UI/particle/sound) green on its scene rows,
-BOP / Dynamic Trees / Combat Roll galleries green; every run ships both
-screenshot sets + per-cell diff artifacts for eye review, and the run is RED
-whenever any cell or any channel row is red.
+**Accept:** the GALLERY gate across ALL content: every Create blockstate
+page AND every minecraft entity page green at the calibrated identity
+datum (truth leg vs ours leg, per-cell PixelDiffNorm), every Create
+channel (kinetic/fluid/UI/particle/sound) green on its scene rows, BOP /
+Dynamic Trees / Combat Roll galleries (blocks AND entities) green; the
+particle gallery green per namespace once its leg lands; every run ships
+both screenshot sets + per-cell diff artifacts for eye review, and the
+run is RED whenever any cell or any channel row is red.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 
