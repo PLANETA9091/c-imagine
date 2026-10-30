@@ -63,8 +63,11 @@ F = (H / 2.0) / math.tan(math.radians(VF / 2.0))  # 514.1 px at 720p
 CAM_X = 0.5
 EYE_Y = -58.38
 DIST = 8.5
-CELL_PX = F / DIST  # ~60.5 px on-screen cell width
+CELL_PX = F / DIST  # ~60.5 px on-screen cell width at 1-block pitch
 ALIGN = 3           # per-cell alignment search radius (px; the calibrated channel shift is (0,-1), +-3 covers float rounding without letting periodic textures slide)
+PITCH = 1           # cell pitch in blocks (the ENTITY grid uses 2: sparse,
+                    # zero bbox overlap — CimSceneMod ENTITY_PITCH); the crop
+                    # half-width scales with it so pitch-2 cells never bleed
 
 
 def load(p):
@@ -75,11 +78,11 @@ def load(p):
 
 
 def crop_cell(im, col, row):
-    x0 = GALLERY_X0 + col
-    y0 = GALLERY_Y0 + row
+    x0 = GALLERY_X0 + col * PITCH
+    y0 = GALLERY_Y0 + row * PITCH
     sx = W / 2.0 + F * (x0 + 0.5 - CAM_X) / DIST
     sy = H / 2.0 - F * (y0 + 0.5 - EYE_Y) / DIST
-    half = CELL_PX * 0.92 / 2.0
+    half = CELL_PX * 0.92 * PITCH / 2.0
     box = (int(sx - half), int(sy - half), int(sx + half), int(sy + half))
     return im[box[1]:box[3], box[0]:box[2]], box
 
@@ -158,7 +161,13 @@ def main():
                     help="per-cell AE datum after alignment + luminance "
                          "normalisation (calibrated on the run-9 identity "
                          "sample: p0 median 60.8k, p90 210k — see worklog)")
+    ap.add_argument("--pitch", type=int, default=1,
+                    help="cell pitch in blocks (the sparse entity grid uses "
+                         "2 — mirror of CimSceneMod.ENTITY_PITCH); the crop "
+                         "geometry scales with it")
     args = ap.parse_args()
+    global PITCH
+    PITCH = max(1, args.pitch)
 
     truth = load(args.truth)
     ours = load(args.ours)
@@ -212,8 +221,8 @@ def main():
                 skipped += 1
                 rows.append({"page": page, "state": state, "verdict": "skipped"})
                 continue
-            col = int(x) - GALLERY_X0
-            row = int(y) - GALLERY_Y0
+            col = (int(x) - GALLERY_X0) // PITCH
+            row = (int(y) - GALLERY_Y0) // PITCH
             box = None
             ct, box = crop_cell(truth, col, row)
             co, _ = crop_cell(ours, col, row)

@@ -36,11 +36,13 @@ on:
 env:
   PAGES: "3"   # gate scope: pages 0..PAGES-1 (77 states per page); the
                # census sweep in mod-matrix.yml walks to exhaustion
-  EPAGES: "2"  # entity gate scope: MOB pages 0..EPAGES-1 (77 cells per page;
-               # frozen Mob subjects with bbox <= 2x3 -> ~2 pages). The large
-               # (oversized/animated Mobs) and dyn (non-Mob) series walk
-               # EDPAGES and are diagnostics, never the gate
-  EDPAGES: "2"
+  EPAGES: "5"  # entity gate scope: MOB pages 0..EPAGES-1 on the SPARSE 6x3
+               # grid (18 cells/page, pitch 2 — zero bbox overlap so no
+               # subject can ever push another; measured 16d62f0: at the
+               # 1-block pitch the wide subjects (ravager/horse/llama)
+               # scrambled the wall via collision push, differently per leg).
+               # The large/dyn series walk EDPAGES as diagnostics
+  EDPAGES: "3"
 
 jobs:
   wall-truth:
@@ -710,16 +712,19 @@ jobs:
             if [ "$p" = "0" ] && [ -f "truth-shots/gal-e0-again.png" ]; then
               python3 scripts/cimscene/gallery-diff.py --truth "$T" \
                 --ours truth-shots/gal-e0-again.png --manifest "$M" \
-                --out "gallery-report/determinism-truth-e0.json" || true
+                --out "gallery-report/determinism-truth-e0.json" \
+                --pitch 2 --gate 240000 || true
             fi
             if [ "$p" = "0" ] && [ -f "ours-shots/ours-gal-e0-again.png" ]; then
               python3 scripts/cimscene/gallery-diff.py --truth "$O" \
                 --ours ours-shots/ours-gal-e0-again.png --manifest "$M" \
-                --out "gallery-report/determinism-ours-e0.json" || true
+                --out "gallery-report/determinism-ours-e0.json" \
+                --pitch 2 --gate 240000 || true
             fi
             python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
               --manifest "$M" --out "gallery-report/join-e$p.json" \
-              --diff-dir "gallery-report/diff-e$p" || GATE=1
+              --diff-dir "gallery-report/diff-e$p" \
+              --pitch 2 --gate 240000 || GATE=1
           done
           echo "=== DYN + LARGE pages: diagnostic join, never the gate ==="
           for p in $(seq 0 $((EDPAGES-1))); do
@@ -730,7 +735,8 @@ jobs:
               if [ -f "$T" ] && [ -f "$O" ] && [ -n "$M" ]; then
                 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                   --manifest "$M" --out "gallery-report/diag-$SERIES-p$p.json" \
-                  --diff-dir "gallery-report/diff-$SERIES$p" || true
+                  --diff-dir "gallery-report/diff-$SERIES$p" \
+                  --pitch 2 --gate 240000 || true
               else
                 echo "$SERIES page $p incomplete (tolerated: exhausted window or missing shot)"
               fi

@@ -2356,3 +2356,40 @@ Stage Summary:
   into AIR on both legs — for the first time the mob-render question is
   asked cleanly. The dragon/ghast/wither class keeps an honest diagnostic
   channel (their gate is the ambient-animation probe + the M5.6 leg).
+
+Task ID: 12-al
+Agent: main
+Task: the push chain measured — collision scramble, not render deltas; the sparse entity grid
+
+Work Log:
+- 16d62f0 (wall cleared, series clean) STILL measured 75/78 mob reds with
+  the alignment search saturated. The authoritative triptychs settled it:
+  the TRUTH leg's own cells held DIFFERENT subjects than its own manifest
+  (the rabbit cell held a rabbit two pages away from its row) — the wall
+  SCRAMBLED between the settle pass (+40t, drift<=1.0, dissolved=0) and
+  the shot (+8s). Mechanism: the 1-block block-wall pitch puts subjects
+  WIDER than one block (ravager 1.95, horse 1.4, llama 1.2, ...) into
+  OVERLAPPING bounding boxes; collision push (not AI — NoAI mobs are
+  still pushed) scrambles them over seconds, and the two legs scramble
+  DIFFERENTLY. The gate was measuring a bar fight.
+- THE SPARSE ENTITY GRID: 6 cols x 3 rows at a 2-block pitch on BOTH
+  axes (CimSceneMod.ENTITY_PITCH=2, 18 cells/page, EPAGES=5). For the
+  gateable class (bb <= 2.0 x 2.0 — the height gate tightened from 3.0)
+  zero overlap is a GEOMETRIC guarantee: no subject can ever touch
+  another, so nothing can push anything. Iron golem/warden/ravager join
+  the dragon/ghast/wither in the `large` diagnostic series (universal
+  bbox rule, no hardcode).
+- gallery-diff.py grew --pitch (mirror of ENTITY_PITCH): the crop geometry
+  scales with the pitch (111px crops for 121px pitch — no bleed), and the
+  AE datum scales with the crop AREA: the entity joins pass
+  --pitch 2 --gate 240000 (4x the run-9 datum for the 4x area), the block
+  joins keep the calibrated defaults.
+- The plugin needs NO position changes: the manifest carries the sparse
+  x|y|z and the replay spawns from them verbatim.
+- Verified locally: scene-mod compiles, the diff script parses, yaml ok.
+
+Stage Summary:
+- The mob gate is now a clean room in the strongest sense: frozen,
+  non-overlapping, non-animating subjects, sparse enough that physics
+  cannot rearrange the picture. The next run's verdict — whatever it
+  names — is a RENDER delta, finally.

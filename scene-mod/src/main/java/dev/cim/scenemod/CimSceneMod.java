@@ -256,6 +256,20 @@ public final class CimSceneMod {
     static final int GALLERY_Y0 = -60;   // bottom row sits on the floor
     static final int GALLERY_Z = 9;
 
+    /** ENTITY grid: SPARSE 6x3 with a 2-block pitch BOTH axes (measured
+     *  16d62f0: at the 1-block block-wall pitch the subjects WIDER than one
+     *  block (ravager 1.95, horse 1.4, llama 1.2...) overlap their
+     *  neighbours' bounding boxes and the collision push SCRAMBLES the wall
+     *  differently on the two legs AFTER the settle pass — every cell red
+     *  with the alignment search saturated). Pitch 2 means zero overlap by
+     *  construction for the gateable class (bb <= 2.0 x 2.0), so no subject
+     *  can ever push another. 6 cols x 3 rows = 18 cells per entity page;
+     *  rows y = -60/-58/-56 keep every 2-tall subject fully in frame. */
+    static final int ENTITY_COLS = 6;
+    static final int ENTITY_ROWS = 3;
+    static final int ENTITY_CELLS = ENTITY_COLS * ENTITY_ROWS; // 18
+    static final int ENTITY_PITCH = 2;
+
     /**
      * The universal content gallery: EVERY block (and then EVERY blockstate
      * of every block) registered by the namespace, placed on a deterministic
@@ -462,16 +476,16 @@ public final class CimSceneMod {
         }
 
         LOGGER.info("[cimscene] gallery-entity begin ns={} page={} series={} types={} cellsPerPage={}",
-                namespace, page, series, entries.size(), GALLERY_CELLS);
+                namespace, page, series, entries.size(), ENTITY_CELLS);
 
-        int from = page * GALLERY_CELLS;
+        int from = page * ENTITY_CELLS;
         if (from >= entries.size()) {
             LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells=0 dyn=0 "
                     + "skipped_no_instance=0 dissolved=0 exhausted=1",
                     seriesTag(series), namespace, page);
             return 0;
         }
-        int to = Math.min(from + GALLERY_CELLS, entries.size());
+        int to = Math.min(from + ENTITY_CELLS, entries.size());
         List<ResourceLocation> slice = entries.subList(from, to);
 
         // Clear the wall region (blocks) + every previously spawned gallery
@@ -508,7 +522,7 @@ public final class CimSceneMod {
         int noInstance = 0, wrongSeries = 0;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
-            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
             Entity e = null;
             try {
@@ -526,7 +540,7 @@ public final class CimSceneMod {
             }
             boolean isMob = e instanceof Mob;
             String kind = !isMob ? "dyn"
-                    : (e.getBbWidth() <= 2.0f && e.getBbHeight() <= 3.0f ? "mobs" : "large");
+                    : (e.getBbWidth() <= 2.0f && e.getBbHeight() <= 2.0f ? "mobs" : "large");
             if (!kind.equals(series)) {
                 wrongSeries++;
                 LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
@@ -536,7 +550,8 @@ public final class CimSceneMod {
             }
             e.setNoGravity(true);
             e.setInvulnerable(true);
-            e.moveTo(GALLERY_X0 + col + 0.5, GALLERY_Y0 + row, GALLERY_Z + 0.5,
+            e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
+                    GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z + 0.5,
                     180.0f, 0.0f);
             e.addTag(GALLERY_TAG);
             if (isMob) {
@@ -593,9 +608,9 @@ public final class CimSceneMod {
             Entity e = spawned.get(j);
             int i = spawnedIdx.get(j);
             ResourceLocation id = slice.get(i);
-            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
-            double cx = GALLERY_X0 + col + 0.5;
-            double cy = GALLERY_Y0 + row;
+            int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+            double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+            double cy = GALLERY_Y0 + row * ENTITY_PITCH;
             double cz = GALLERY_Z + 0.5;
             boolean alive = e.isAlive() && !e.isRemoved();
             double drift = alive ? e.position().distanceTo(new Vec3(cx, cy, cz)) : -1.0;
@@ -611,7 +626,8 @@ public final class CimSceneMod {
             boolean isMob = e instanceof Mob;
             if (!isMob) dyn++;
             cells++;
-            rowStr[i] = "cell\t" + (GALLERY_X0 + col) + '\t' + (GALLERY_Y0 + row)
+            rowStr[i] = "cell\t" + (GALLERY_X0 + col * ENTITY_PITCH) + '\t'
+                    + (GALLERY_Y0 + row * ENTITY_PITCH)
                     + '\t' + GALLERY_Z + '\t' + id + '\t' + (isMob ? 0 : 1) + "\tok";
         }
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tentity\tdyn\tnote\n");
