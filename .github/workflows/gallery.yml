@@ -367,6 +367,9 @@ jobs:
           export LP_NUM_THREADS=2
           # 26.3 (renderpearl) probes Vulkan even with the opengl launch pin —
           # mesa-vulkan-drivers above satisfies the probe; the render stays GL
+          # (fetch-visual-client.py never creates the game dir — the client
+          # makes it on first launch; CI needs it BEFORE the pins)
+          mkdir -p visual-client/game
           printf 'onboardAccessibility:false\nfov:-0.625\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
           LAUNCH=$(cat visual-client/launch.txt)
