@@ -133,8 +133,15 @@ jobs:
         id: nfc-cache
         uses: actions/cache@v4
         with:
-          path: truth-client
-          key: neoforge-truth-client-1211-v3
+          # MEASURED (run 41106933552, the guard's missing-jar list):
+          # fetch-truth-client.py nfc truth-client puts the RUNTIME
+          # (libraries/classpath/launch) in nfc/ and the game dir in
+          # truth-client/ — the classpath references nfc/...; caching only
+          # truth-client shipped a client whose jars were never there
+          path: |
+            nfc
+            truth-client
+          key: neoforge-truth-client-1211-v4
 
       - name: verify the client runtime (stale-cache guard)
         if: steps.nfc-cache.outputs.cache-hit == 'true'
