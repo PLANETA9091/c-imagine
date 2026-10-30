@@ -1201,9 +1201,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * <p>Returns the placed count; the RCON response marker is
      * {@code gallerypage-entity <ns> p<page> -> placed=N nochannel=K}.
      */
-    private int[] galleryPageEntity(String ns, int page, boolean dynSeries) {
+    private int[] galleryPageEntity(String ns, int page, String series) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
-                "gallery-entity" + (dynSeries ? "dyn" : "") + "-" + ns + "-p" + page + ".tsv");
+                "gallery-entity" + (series.equals("mobs") ? "" : series)
+                        + "-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-entity: manifest missing: " + mf);
             return new int[]{0, 0};
@@ -1226,6 +1227,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         int[] counts = callSync(() -> {
             int placed = 0, nochannel = 0;
             World w = world(worldName());
+            // CLEAR THE WALL REGION FIRST (measured afebfbc: the truth scene
+            // sweeps the wall blocks to air before spawning, the ours replay
+            // did not — the entity pages shot the CREATE BLOCK WALL with the
+            // mobs in front, and every cell differed by construction). The
+            // same sweep, same coordinates as CimSceneMod's gallery region.
+            for (int bx = -6; bx <= 6; bx++) {
+                for (int by = -60; by <= -53; by++) {
+                    for (int bz = 8; bz <= 10; bz++) {
+                        try {
+                            w.getBlockAt(bx, by, bz).setType(Material.AIR, false);
+                        } catch (Exception clearFail) {
+                            // unloaded corner: forceload covers the region;
+                            // never let one block abort the page
+                        }
+                    }
+                }
+            }
             for (String[] row : cells) {
                 // cell|x|y|z|entity|dyn|note
                 if (row.length < 5) {
@@ -1403,20 +1421,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
-        // /cim gallerypage-entity <ns> <page> [dyn] — the M5.5 ENTITY GALLERY
-        // ours-leg surface (owner directive 2026-10-31: mobs 100% identical):
-        // replay a truth-leg entity manifest as REAL frozen entities — the
-        // same spawn contract the truth leg uses, no pack channel involved.
-        // The `dyn` tail selects the diagnostic non-Mob series (boats,
-        // minecarts, the dragon...); the default series is the gateable Mob
-        // wall.
+        // /cim gallerypage-entity <ns> <page> [dyn|large] — the M5.5 ENTITY
+        // GALLERY ours-leg surface (owner directive 2026-10-31: mobs 100%
+        // identical): replay a truth-leg entity manifest as REAL frozen
+        // entities — the same spawn contract the truth leg uses, no pack
+        // channel involved. Series tail: default = the gateable Mob wall;
+        // `large` = oversized/animated Mobs (the dragon, ghast, wither —
+        // universal bbox rule); `dyn` = non-Mobs. The non-default series
+        // are diagnostics, never the gate.
         if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-entity")) {
             try {
                 int page = Integer.parseInt(args[2]);
-                boolean dynSeries = args.length >= 4 && args[3].equalsIgnoreCase("dyn");
-                int[] counts = galleryPageEntity(args[1], page, dynSeries);
+                String series = args.length >= 4
+                        && (args[3].equalsIgnoreCase("dyn") || args[3].equalsIgnoreCase("large"))
+                        ? args[3].toLowerCase(java.util.Locale.ROOT) : "mobs";
+                int[] counts = galleryPageEntity(args[1], page, series);
                 sender.sendMessage(LOG_PREFIX + "gallerypage-entity " + args[1]
-                        + " p" + page + (dynSeries ? " dyn" : "")
+                        + " p" + page + (series.equals("mobs") ? "" : " " + series)
                         + " -> placed=" + counts[0]
                         + " nochannel=" + counts[1]);
             } catch (NumberFormatException nfe) {

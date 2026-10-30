@@ -2324,3 +2324,35 @@ Stage Summary:
 - The gate now measures exactly what it claims: frozen mob vs frozen mob.
   The dyn class keeps its honest diagnostic channel without poisoning the
   verdicts. The mob-render question is finally asked in a clean room.
+
+Task ID: 12-ak
+Agent: main
+Task: the clean-room autopsy — ours shot the entity pages THROUGH the standing block wall; the dragon is a Mob with an animated wing phase; three series
+
+Work Log:
+- afebfbc measured the first CLEAN mob wall and it was still 76/82 red
+  with alignment saturated at +-3. The cell crops explained everything:
+  1. THE OURS LEG NEVER CLEARED THE WALL REGION — the truth scene sweeps
+     the Create wall to air before spawning; the plugin replay killed
+     entities only. Ours' entity pages shot the MOBS IN FRONT OF THE
+     STANDING BLOCK WALL (gold blocks in the crops). Every cell differed
+     by construction. Fix: the replay sweeps the same region (x -6..6,
+     y -60..-53, z 8..10) to air before spawning.
+  2. minecraft:ender_dragon sits in the MOB series (EnderDragon extends
+     Mob in 1.21.1) and its WING FLAP is a client-side animation — the
+     wings cover dozens of cells at different phases per leg.
+  3. Ghast/wither-class subjects spill across many cells with ambient
+     animation.
+- THE THIRD SERIES (universal, zero hardcode): a Mob whose BOUNDING BOX
+  exceeds 2.0 wide or 3.0 tall rides the `large` series (the dragon,
+  ghast, wither — still spawned, diffed, reported as diagnostics);
+  everything else stays in the gateable `mobs` wall. Series: mobs | large
+  | dyn (non-Mob), each with its own manifest/marker/diff join; the CI
+  walks all three on both legs.
+- Verified locally: scene-mod + plugin compile, yaml parses.
+
+Stage Summary:
+- The mob gate now shoots frozen, bbox-bounded, animated-free subjects
+  into AIR on both legs — for the first time the mob-render question is
+  asked cleanly. The dragon/ghast/wither class keeps an honest diagnostic
+  channel (their gate is the ambient-animation probe + the M5.6 leg).
