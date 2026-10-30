@@ -381,7 +381,14 @@ jobs:
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
             java -cp "srv-wall/plugins/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
-            --build srv-wall/mods srv-wall/c-imagine/f2v
+            --build srv-wall/mods srv-wall/c-imagine/f2v \
+            --assets visual-client/client.jar
+          # --assets = the VANILLA client jar: the pack builder resolves
+          # vanilla parents (block/cube_all -> block/cube -> block/block, BARE
+          # refs) from the same client that will render the pack — without it
+          # every vanilla-parent model has no in-jar elements and its row
+          # drops (measured: andesite_casing class, run 41126658261 + the
+          # 12-af selftest)
           test -f srv-wall/c-imagine/f2v/pack.sha1
 
       - name: assemble server properties (pack + RCON)
@@ -410,7 +417,11 @@ jobs:
           set -euo pipefail
           cd srv-wall
           rm -rf world world_nether world_the_end
-          setsid bash -c "java -Xmx1G -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          # -Dcim.f2v.assetsJars pins the vanilla client jar for the plugin's
+          # SERVER-SIDE pack rebuild (rebuildForVerification): the rebuilt
+          # pack must be identical to the staged one (same vanilla-parent
+          # resolution) — a drift would shift CMDs and poison the replay
+          setsid bash -c "java -Xmx1G -Dcim.f2v.assetsJars=${GITHUB_WORKSPACE}/visual-client/client.jar -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           for i in $(seq 1 120); do
             R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)

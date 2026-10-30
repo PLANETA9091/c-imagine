@@ -282,6 +282,31 @@ public final class F2vPack {
     }
 
     /**
+     * Extra ASSETS jars for the pack builder: the VANILLA client jar — the
+     * gallery pack builder resolves VANILLA parents ({@code block/cube_all},
+     * {@code block/cube_column}, ...) from the SAME client that will render
+     * the pack, so a self-contained composite can be synthesized for the
+     * most common mod model shape (own textures + a vanilla element parent).
+     * Measured (run 41126658261 + selftest 12-af): without it every
+     * vanilla-parent model has no in-jar elements and its row DROPS.
+     *
+     * <p>Read from {@code -Dcim.f2v.assetsJars="a.jar:b.jar"} when no
+     * explicit list is threaded (the server-side rebuild path; CI pins the
+     * property on the Paper boot line). Mod jars keep precedence: the
+     * client jar is appended LAST and only fills gaps (first-match-wins).
+     */
+    static List<Path> extraAssets() {
+        List<Path> out = new ArrayList<>();
+        String prop = System.getProperty("cim.f2v.assetsJars", "");
+        for (String s : prop.split(":")) {
+            if (!s.isBlank()) {
+                out.add(Path.of(s));
+            }
+        }
+        return out;
+    }
+
+    /**
      * Read {@code visual-blocks.tsv}: {@code moddedBlockId<TAB>instrument[
      * <TAB>note]} — one note_block stand-in slot per row (measured surface:
      * block-channel-26-3.md). Optional; missing file = no block overrides.
@@ -476,11 +501,24 @@ public final class F2vPack {
                 readPaletteManifest(outDir.resolve("visual-palettes.tsv")));
     }
 
-    /** Full build with explicit equipment + block + palette rows (selftest seam). */
+    /** Full build with explicit equipment + block + palette rows (selftest
+     *  seam; extra ASSETS jars come from {@code -Dcim.f2v.assetsJars}). */
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
                                List<EquipmentAsset> equipmentRows,
                                List<VisualBlock> blockRows,
                                List<PaletteRow> paletteRows)
+            throws IOException {
+        return build(modsDir, outDir, manifestRows, equipmentRows, blockRows,
+                paletteRows, extraAssets());
+    }
+
+    /** CORE build: explicit equipment + block + palette rows + the extra
+     *  ASSETS jars (the vanilla client jar in CI). */
+    public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
+                               List<EquipmentAsset> equipmentRows,
+                               List<VisualBlock> blockRows,
+                               List<PaletteRow> paletteRows,
+                               List<Path> extraAssets)
             throws IOException {
         List<String> warnings = new ArrayList<>();
         List<VisualItem> baseResolved = assignCmds(manifestRows);
@@ -552,6 +590,9 @@ public final class F2vPack {
         }
 
         List<Path> jars = listJars(modsDir);
+        // vanilla parents resolve from the ASSETS jars (client jar), never
+        // shadowing mod jars (mods first, client last, first-match-wins)
+        jars.addAll(extraAssets);
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
             String[] keyParts = host.getKey().split("\t");
@@ -1180,21 +1221,30 @@ public final class F2vPack {
             Path modsDir = Path.of(args[1]);
             Path outDir = Path.of(args[2]);
             Path manifest = outDir.resolve("visual-items.tsv");
+            List<Path> extraAssets = new ArrayList<>();
             for (int i = 3; i < args.length - 1; i++) {
                 if (args[i].equals("--manifest")) {
                     manifest = Path.of(args[i + 1]);
                 }
+                if (args[i].equals("--assets")) {
+                    extraAssets.add(Path.of(args[i + 1]));
+                }
             }
             List<VisualItem> rows = Files.isRegularFile(manifest)
                     ? readManifest(manifest) : List.of();
-            Result r = build(modsDir, outDir, rows);
+            Result r = build(modsDir, outDir, rows,
+                    readEquipmentManifest(outDir.resolve("visual-equipment.tsv")),
+                    readBlockManifest(outDir.resolve("visual-blocks.tsv")),
+                    readPaletteManifest(outDir.resolve("visual-palettes.tsv")),
+                    extraAssets);
             System.out.println("f2v pack: built (" + r.items().size() + " item(s), "
                     + r.gallery().size() + " gallery state(s), "
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
                     + r.warnings().size() + " warning(s))");
             return;
         }
-        System.err.println("usage: F2vPack --build <modsDir> <outDir> [--manifest <tsv>]");
+        System.err.println("usage: F2vPack --build <modsDir> <outDir> [--manifest <tsv>]"
+                + " [--assets <vanillaClientJar>]");
         System.err.println("       F2vPack --selftest");
         System.exit(2);
     }
@@ -1284,6 +1334,41 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
             writeJar(jar, jarEntries);
 
+            // -- vanilla stub jar (stands in for the 26.3 client jar) -----------
+            // The gallery's vanilla-parent resolution reads ASSETS jars: the
+            // most common mod model shape (own textures + a vanilla element
+            // parent like block/cube_all) synthesizes ONLY when the parent
+            // chain reaches the client's vanilla models. The stub mirrors the
+            // MEASURED 26.3 vanilla assets — including the BARE parent refs
+            // (cube_all -> "block/cube" -> "block/block"): the bare parent
+            // inherits the namespace of the model that references it, which
+            // is exactly what the per-hop namespace tracking in
+            // resolveModelGraph exists for. NOTE: the stub lives OUTSIDE the
+            // mods dir so the test exercises the extraAssets seam (the client
+            // jar is never a mod jar).
+            Path vanillaJar = tmp.resolve("client-stub.jar");
+            TreeMap<String, byte[]> vanillaEntries = new TreeMap<>();
+            vanillaEntries.put("assets/minecraft/models/block/cube_all.json",
+                    ("{\"parent\": \"block/cube\", "
+                    + "\"textures\": {\"particle\": \"#all\", \"down\": \"#all\", "
+                    + "\"up\": \"#all\", \"north\": \"#all\", \"east\": \"#all\", "
+                    + "\"south\": \"#all\", \"west\": \"#all\"}}")
+                    .getBytes(StandardCharsets.UTF_8));
+            vanillaEntries.put("assets/minecraft/models/block/cube.json",
+                    ("{\"parent\": \"block/block\", "
+                    + "\"textures\": {\"particle\": \"#down\"}, "
+                    + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
+                    + "\"faces\": {\"down\": {\"uv\": [0,0,16,16], \"texture\": \"#down\", \"cullface\": \"down\"}, "
+                    + "\"up\": {\"uv\": [0,0,16,16], \"texture\": \"#up\", \"cullface\": \"up\"}, "
+                    + "\"north\": {\"uv\": [0,0,16,16], \"texture\": \"#north\", \"cullface\": \"north\"}, "
+                    + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#south\", \"cullface\": \"south\"}, "
+                    + "\"west\": {\"uv\": [0,0,16,16], \"texture\": \"#west\", \"cullface\": \"west\"}, "
+                    + "\"east\": {\"uv\": [0,0,16,16], \"texture\": \"#east\", \"cullface\": \"east\"}}}]}")
+                    .getBytes(StandardCharsets.UTF_8));
+            vanillaEntries.put("assets/minecraft/models/block/block.json",
+                    "{\"gui_light\": \"side\"}".getBytes(StandardCharsets.UTF_8));
+            writeJar(vanillaJar, vanillaEntries);
+
             // -- manifest ---------------------------------------------------------
             Path out = tmp.resolve("out");
             Files.createDirectories(out);
@@ -1308,8 +1393,14 @@ public final class F2vPack {
                     "fakemod:shiny",
                     "textures/models/armor/shiny_layer_1.png",
                     "textures/models/armor/shiny_layer_2.png"));
-            Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")), equipment);
-            Result r2 = build(mods, out, readManifest(out.resolve("visual-items.tsv")), equipment);
+            Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
+                    equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
+                    readPaletteManifest(out.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            Result r2 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
+                    equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
+                    readPaletteManifest(out.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
             if (!r1.sha1().equals(r2.sha1())) {
                 failures.add("sha1 not deterministic: " + r1.sha1() + " vs " + r2.sha1());
             }
@@ -1336,8 +1427,10 @@ public final class F2vPack {
                             && i.hostItem().equals("minecraft:paper")),
                     "palette variant row resolved (gem@red cmd 3001 on paper)");
 
-            // GALLERY channel (M5.5): per-state rows resolve through the
-            // blockstates — direct refs, composite multipart, entity rots
+            // GALLERY channel (M5.5): EVERY row is a self-contained
+            // composite — including the vanilla-parent shape (own textures,
+            // elements from the client jar's block/cube_all), which the old
+            // direct path rendered as NOTHING (measured run 41126658261)
             expect(failures, r1.gallery().size() == 4,
                     "gallery: 4 state rows resolved, got " + r1.gallery().size());
             if (r1.gallery().size() == 4) {
@@ -1354,13 +1447,17 @@ public final class F2vPack {
                 expect(failures, g.get(1).stateId().equals("fakemod:pane[north=true]")
                                 && g.get(1).composite(),
                         "gallery: pane[north=true] = multipart composite");
+                // rock = OWN textures + VANILLA cube_all elements — the
+                // vanilla-parent class the client jar seam exists for
                 expect(failures, g.get(2).stateId().equals("fakemod:rock")
-                                && g.get(2).modelRef().equals("fakemod:block/rock"),
-                        "gallery: rock = direct (empty-variant key match)");
+                                && g.get(2).composite()
+                                && g.get(2).modelRef().equals("c-imagine:gallery/g2"),
+                        "gallery: rock = composite synthesized from the vanilla parent");
                 expect(failures, g.get(3).stateId().equals("fakemod:rock[facing=north]")
-                                && g.get(3).modelRef().equals("fakemod:block/rock_arrow")
-                                && g.get(3).yRot() == 90 && g.get(3).xRot() == 0,
-                        "gallery: rock[facing=north] = direct + yRot 90 on the entity");
+                                && g.get(3).composite()
+                                && g.get(3).modelRef().equals("c-imagine:gallery/g3")
+                                && g.get(3).yRot() == 0 && g.get(3).xRot() == 0,
+                        "gallery: rock[facing=north] = composite, y90 baked into elements");
             }
             expect(failures, r1.gallery().stream()
                     .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 4,
@@ -1448,6 +1545,24 @@ public final class F2vPack {
                         "gallery composite y90 part coords sorted (from<=to), from="
                                 + f + " to=" + t);
             }
+            // g2 = rock: ONE cube element synthesized from the VANILLA
+            // cube_all parent, the mod's own texture riding the namespaced key
+            String g2 = str(entries, "assets/c-imagine/models/gallery/g2.json");
+            expect(failures, g2.contains("\"p0_all\":\"fakemod:block/rock_tex\""),
+                    "gallery vanilla-parent composite carries the mod texture (p0_all)");
+            com.google.gson.JsonObject g2o = com.google.gson.JsonParser.parseString(g2)
+                    .getAsJsonObject();
+            expect(failures, g2o.getAsJsonArray("elements").size() == 1,
+                    "gallery vanilla-parent composite = one cube element");
+            // g3 = rock[facing=north]: the y90 variant baked into the
+            // composite (a full cube is rotation-invariant — uniform UVs make
+            // the key permutation unobservable in JSON; the observable is the
+            // synthesized file itself + the entity carrying 0/0, asserted
+            // above). The NON-invariant bake path is covered by g0's y90 side
+            // (sorted-coords assert below).
+            String g3 = str(entries, "assets/c-imagine/models/gallery/g3.json");
+            expect(failures, g3.contains("\"p0_all\":\"fakemod:block/arrow_tex\""),
+                    "gallery y90 bake keeps the VARIANT's texture override (arrow_tex)");
             expect(failures, paper.contains("\"threshold\": " + GalleryPack.CMD_BASE),
                     "paper def carries the gallery cmd base");
             expect(failures, paper.contains("c-imagine:gallery/g0"),

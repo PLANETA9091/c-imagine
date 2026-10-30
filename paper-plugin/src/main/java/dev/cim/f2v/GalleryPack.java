@@ -519,24 +519,44 @@ public final class GalleryPack {
     }
 
     /**
-     * Walk the parent chain (in-jar only): textures merge child-over-parent,
-     * elements come from the nearest level that has them. Texture values are
-     * fully resolved ({@code #ref} chains followed to concrete sprite ids).
+     * Walk the parent chain across ALL jars (mods first, the vanilla client
+     * jar last): textures merge child-over-parent, elements come from the
+     * nearest level that has them. Texture values are fully resolved
+     * ({@code #ref} chains followed to concrete sprite ids).
+     *
+     * <p>NAMESPACE RULE (measured on the real 26.3 client jar): vanilla
+     * models reference their parents BARE — {@code cube_all.json} says
+     * {@code "parent": "block/cube"} — and a bare parent inherits the
+     * NAMESPACE OF THE MODEL THAT REFERENCES IT, not the original ref's.
+     * The walk therefore tracks the current hop's namespace: a namespaced
+     * parent resets it, a bare parent keeps it (create:andesite_casing ->
+     * minecraft:block/cube_all -> minecraft:block/cube -> minecraft:block/
+     * block — the vanilla chain resolves only with per-hop tracking).
      */
     static ModelGraph resolveModelGraph(List<Path> jars, String ref,
                                         List<String> warnings) throws IOException {
         int colon = ref.indexOf(':');
         String ns = colon > 0 ? ref.substring(0, colon) : "minecraft";
-        String path = colon > 0 ? ref.substring(colon + 1) : ref;
         Map<String, String> textures = new LinkedHashMap<>();
         JsonArray elements = null;
         String cur = ref;
         int depth = 0;
         while (cur != null && depth <= 16) {
             depth++;
-            String c = cur.contains(":") ? cur : ns + ":" + cur;
-            int cc = c.indexOf(':');
-            String file = "assets/" + c.substring(0, cc) + "/models/" + c.substring(cc + 1) + ".json";
+            // resolve THIS hop: a namespaced ref wins, a bare ref rides the
+            // namespace of the model we just came from
+            String hopNs;
+            String hopPath;
+            int hc = cur.indexOf(':');
+            if (hc > 0) {
+                hopNs = cur.substring(0, hc);
+                hopPath = cur.substring(hc + 1);
+            } else {
+                hopNs = ns;
+                hopPath = cur;
+            }
+            ns = hopNs;
+            String file = "assets/" + hopNs + "/models/" + hopPath + ".json";
             JsonObject json = readJsonFromJars(jars, file);
             if (json == null) {
                 warnings.add("gallery: model missing in jar chain: " + file);

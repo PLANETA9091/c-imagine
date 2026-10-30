@@ -2170,3 +2170,50 @@ Stage Summary:
   dyn/dissolved classes). The next CI run is the first mob verdict c-imagine
   has ever had; the modded-entity channel (BOP mobs on a stock client)
   remains the named-red backlog owned by M5.6.
+
+Task ID: 12-af
+Agent: main
+Task: the selftest caught the vanilla-parent class — the pack builder now resolves vanilla parents from the SAME client jar that renders the pack
+
+Work Log:
+- The CI `ci` workflow went red on eb687d8 BEFORE the gallery run wasted a
+  pair: the F2vPack selftest failed "4 state rows resolved, got 2". The
+  12-ad all-composite emit path had a fatal gap: models whose elements
+  come from a VANILLA parent (own textures + parent block/cube_all — the
+  most common mod model shape, measured as andesite_casing) have NO
+  in-jar elements anywhere, so the composite synthesis had nothing to
+  merge and the rows DROPPED — the same empty picture as the 12-ad bug,
+  now with a named reason.
+- Fix (measured against the REAL 26.3 client jar):
+  * extraAssets seam: F2vPack.build threads extra ASSETS jars (mods keep
+    precedence, first-match-wins); the CLI grew `--assets <jar>`; the
+    server-side rebuild path reads `-Dcim.f2v.assetsJars` (CI pins it on
+    the Paper boot line so the rebuilt pack is identical to the staged
+    one — a drift would shift CMDs and poison the replay).
+  * ROOT CAUSE #2 (bare parents): the real 26.3 vanilla cube_all says
+    `"parent": "block/cube"` — BARE. resolveModelGraph prefixed bare
+    parents with the ORIGINAL ref's namespace (create:block/cube —
+    missing). Fixed: the walk tracks the CURRENT model's namespace per
+    hop (bare parent inherits it, namespaced parent resets it) —
+    create:andesite_casing -> minecraft:block/cube_all ->
+    minecraft:block/cube -> minecraft:block/block resolves fully.
+  * REAL BUILD PROOF (local CLI, create-1.21.1-6.0.10.jar + the real 26.3
+    client jar): create:acacia_window, create:andesite_casing and
+    create:cogwheel[axis=y] all synthesize (the honest-red families from
+    run 41126658261); 1 remaining warning is the copy path's in-jar
+    bare-parent miss (cosmetic — the render path reads, not copies).
+  * selftest: a client-stub jar mirrors the MEASURED vanilla assets
+    (bare parents included) and rides the extraAssets seam from OUTSIDE
+    the mods dir; the gallery contract asserts 4 composites (pane x2 +
+    rock + rock[facing=north] with the y90 baked and the VARIANT's
+    texture override arrow_tex riding the composite) — ALL OK.
+- CI: gallery.yml stage step passes `--assets visual-client/client.jar`
+  (fetched before the pack build); the Paper boot line pins
+  -Dcim.f2v.assetsJars.
+
+Stage Summary:
+- The selftest did its job: it caught the regression the same push that
+  introduced it, before a CI pair was spent. The pack channel now
+  synthesizes every Create family that run 41126658261 named, and the
+  vanilla-parent class — the biggest shape family in real mods — is
+  covered by the same client that renders it.

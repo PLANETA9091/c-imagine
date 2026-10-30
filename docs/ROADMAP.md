@@ -301,9 +301,11 @@ sounds; particles next).
   - **Ours leg (IMPLEMENTED 2026-10-30, worklog 12-w)**: the layer projects
     every modded blockstate onto the vanilla 26.3 client through the
     ITEM/DISPLAY channel (f2v v1's ItemDisplay + CustomModelData path):
-    `GalleryPack` synthesises per-state models from the mod jar (variants →
-    direct model refs + entity-borne rotations; multipart → composite models
-    with baked, COORDINATE-SORTED rotations and namespaced texture keys), the
+    `GalleryPack` synthesises per-state models from the mod jars + the
+    vanilla client jar (EVERY row emits a self-contained composite —
+    explicit elements, resolved textures, vanilla parents resolved from the
+    client's own assets, blockstate rotations baked coordinate-sorted into
+    the elements), the
     plugin replays the truth-leg manifests one ItemDisplay per cell, and
     `gallery-diff.py` aligns + luma-normalises + diffs per cell. Ours-leg
     determinism probe: per-cell AE = 0 (run 12-w). The note_block stand-in
