@@ -148,7 +148,7 @@ jobs:
             gallery-seed-v1-
 
       - name: seed cache hit — verify the payload, exit fast
-        if: steps.seed-cache.outputs.cache-hit == 'true'
+        if: steps.seed-cache.outputs.cache-matched-key != ''
         run: |
           set -euo pipefail
           test -f seed-pack/f2v/pack.sha1 || { echo "seed cache stale: no pack.sha1"; exit 1; }
@@ -158,13 +158,13 @@ jobs:
           echo "seed cache HIT: pack.sha1=$(cat seed-pack/f2v/pack.sha1), $N block manifests"
 
       - name: seed cache miss — build cimtest + cimscene
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         run: |
           gradle build --no-daemon -p test-mods
           gradle build --no-daemon -p scene-mod
 
       - name: restore NeoForge server layer (cache miss)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         id: layer-cache
         uses: actions/cache@v4
         with:
@@ -172,18 +172,18 @@ jobs:
           key: neoforge-layer-21.1.265
 
       - name: download + install NeoForge 21.1.265 server (cache miss)
-        if: steps.seed-cache.outputs.cache-hit != 'true' && steps.layer-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == '' && steps.layer-cache.outputs.cache-hit != 'true'
         run: |
           curl -sL --max-time 300 -o nf-srv-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           java -jar nf-srv-installer.jar --installServer layer-srv
 
       - name: fetch P0 Create (locked — scripts/cimscene/mods.lock)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         run: bash scripts/cimscene/fetch-ladder.sh mods-create create
 
       - name: assemble server dir (cache miss)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         run: |
           cp -r layer-srv srv-wall
           mkdir -p srv-wall/mods
@@ -207,7 +207,7 @@ jobs:
           PROPS
 
       - name: boot real NeoForge server (cache miss; RCON poll 1s)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         run: |
           set -euo pipefail
           cd srv-wall
@@ -223,7 +223,7 @@ jobs:
           echo "seed server up: $R"
 
       - name: server-side walk — ALL series, manifests only, no shots (cache miss)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         run: |
           set -euo pipefail
           # THE MANIFEST-GENERATION WALK (12-ax, kept verbatim except the
@@ -347,7 +347,7 @@ jobs:
           ls srv-wall/c-imagine/scenes/ | wc -l
 
       - name: build plugin (maven) + F2vPack pack (cache miss)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         run: |
           set -euo pipefail
           PV=$(bash scripts/resolve-paper-version.sh 26.3)
@@ -386,16 +386,14 @@ jobs:
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
       - name: save seed cache (success-only — a partial seed-pack must never poison the key)
-        if: success() && steps.seed-cache.outputs.cache-hit != 'true'
+        if: success() && steps.seed-cache.outputs.cache-matched-key == ''
         uses: actions/cache/save@v4
         with:
           path: seed-pack
           key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
-          restore-keys: |
-            gallery-seed-v1-
 
       - name: upload seed-pack artifact (cache-eviction fallback)
-        if: success() && steps.seed-cache.outputs.cache-hit != 'true'
+        if: success() && steps.seed-cache.outputs.cache-matched-key == ''
         uses: actions/upload-artifact@v4
         with:
           name: seed-pack
@@ -886,7 +884,7 @@ jobs:
             gallery-seed-v1-
 
       - name: seed artifact fallback (cache eviction)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: steps.seed-cache.outputs.cache-matched-key == ''
         uses: actions/download-artifact@v4
         with:
           name: seed-pack
