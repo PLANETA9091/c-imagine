@@ -120,6 +120,15 @@ jobs:
     name: gallery seed — pack + manifests (cache-hit ~1 min, miss = full walk)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # ONE fingerprint for the cache key AND the payload stamp: the prefix
+      # restore-keys fallback may return an OLDER pack (measured #47: the uv
+      # fix changed the builder, the exact key moved, the prefix hit served
+      # the stale missingno pack anyway). The payload carries
+      # f2v/inputs.sha1; the verify step compares it against SEED_INPUTS and
+      # a mismatch falls back to the full rebuild — workflow-only commits
+      # keep the ~1 min prefix hit, real input changes never serve stale.
+      SEED_INPUTS: ${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -143,28 +152,37 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+          key: gallery-seed-v1-${{ env.SEED_INPUTS }}
           restore-keys: |
             gallery-seed-v1-
 
-      - name: seed cache hit — verify the payload, exit fast
-        if: steps.seed-cache.outputs.cache-matched-key != ''
+      - name: seed payload verify (freshness gate)
+        id: seed-verify
         run: |
           set -euo pipefail
-          test -f seed-pack/f2v/pack.sha1 || { echo "seed cache stale: no pack.sha1"; exit 1; }
-          test -f seed-pack/plugin/cim-paper-plugin.jar || { echo "seed cache stale: no plugin jar"; exit 1; }
-          N=$(ls seed-pack/scenes/gallery-create-p*.tsv 2>/dev/null | wc -l || true)
-          [ "${N:-0}" -gt 100 ] || { echo "seed cache stale: only $N block manifests"; exit 1; }
-          echo "seed cache HIT: pack.sha1=$(cat seed-pack/f2v/pack.sha1), $N block manifests"
+          HIT=false
+          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ] \
+             && [ -f seed-pack/f2v/pack.sha1 ] && [ -f seed-pack/plugin/cim-paper-plugin.jar ]; then
+            N=$(ls seed-pack/scenes/gallery-create-p*.tsv 2>/dev/null | wc -l || true)
+            [ "${N:-0}" -gt 100 ] && HIT=true
+          fi
+          if [ "$HIT" = "true" ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "seed cache HIT (fresh): pack.sha1=$(cat seed-pack/f2v/pack.sha1), inputs=$SEED_INPUTS"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "seed payload STALE or missing (payload inputs=$(cat seed-pack/f2v/inputs.sha1 2>/dev/null || echo none), want=$SEED_INPUTS) — full rebuild"
+            rm -rf seed-pack
+          fi
 
       - name: seed cache miss — build cimtest + cimscene
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         run: |
           gradle build --no-daemon -p test-mods
           gradle build --no-daemon -p scene-mod
 
       - name: restore NeoForge server layer (cache miss)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         id: layer-cache
         uses: actions/cache@v4
         with:
@@ -172,18 +190,18 @@ jobs:
           key: neoforge-layer-21.1.265
 
       - name: download + install NeoForge 21.1.265 server (cache miss)
-        if: steps.seed-cache.outputs.cache-matched-key == '' && steps.layer-cache.outputs.cache-hit != 'true'
+        if: steps.seed-verify.outputs.hit != 'true' && steps.layer-cache.outputs.cache-hit != 'true'
         run: |
           curl -sL --max-time 300 -o nf-srv-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           java -jar nf-srv-installer.jar --installServer layer-srv
 
       - name: fetch P0 Create (locked — scripts/cimscene/mods.lock)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         run: bash scripts/cimscene/fetch-ladder.sh mods-create create
 
       - name: assemble server dir (cache miss)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         run: |
           cp -r layer-srv srv-wall
           mkdir -p srv-wall/mods
@@ -207,7 +225,7 @@ jobs:
           PROPS
 
       - name: boot real NeoForge server (cache miss; RCON poll 1s)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           cd srv-wall
@@ -223,7 +241,7 @@ jobs:
           echo "seed server up: $R"
 
       - name: server-side walk — ALL series, manifests only, no shots (cache miss)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           # THE MANIFEST-GENERATION WALK (12-ax, kept verbatim except the
@@ -347,7 +365,7 @@ jobs:
           ls srv-wall/c-imagine/scenes/ | wc -l
 
       - name: build plugin (maven) + F2vPack pack (cache miss)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+        if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           PV=$(bash scripts/resolve-paper-version.sh 26.3)
@@ -383,17 +401,22 @@ jobs:
           cp paper-plugin/target/cim-paper-plugin.jar seed-pack/plugin/
           cp paper-plugin/target/selftest-cp.txt seed-pack/plugin/
           cp srv-wall/boot.log seed-pack/boot-walk.log
+          # the FRESHNESS STAMP: this payload is valid only for THIS input
+          # tree; the verify steps (seed + ours shards) compare it against
+          # SEED_INPUTS — measured #47: a prefix-restored older pack silently
+          # served a stale builder and the missingno wall came back
+          echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
       - name: save seed cache (success-only — a partial seed-pack must never poison the key)
-        if: success() && steps.seed-cache.outputs.cache-matched-key == ''
+        if: success() && steps.seed-verify.outputs.hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+          key: gallery-seed-v1-${{ env.SEED_INPUTS }}
 
       - name: upload seed-pack artifact (cache-eviction fallback)
-        if: success() && steps.seed-cache.outputs.cache-matched-key == ''
+        if: success() && steps.seed-verify.outputs.hit != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: seed-pack
@@ -865,6 +888,10 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       SI: ${{ matrix.shard }}
+      # the SAME fingerprint the seed job stamps into f2v/inputs.sha1 — the
+      # ours shard must serve the pack built from THIS input tree (measured
+      # #47: a prefix-restored older pack silently served the stale builder)
+      SEED_INPUTS: ${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -879,12 +906,25 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+          key: gallery-seed-v1-${{ env.SEED_INPUTS }}
           restore-keys: |
             gallery-seed-v1-
 
-      - name: seed artifact fallback (cache eviction)
-        if: steps.seed-cache.outputs.cache-matched-key == ''
+      - name: seed payload freshness (stale prefix hit -> the artifact)
+        id: seed-verify
+        run: |
+          set -euo pipefail
+          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "seed payload fresh: inputs=$SEED_INPUTS"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "seed payload STALE (payload inputs=$(cat seed-pack/f2v/inputs.sha1 2>/dev/null || echo none), want=$SEED_INPUTS) — download this run's seed artifact"
+            rm -rf seed-pack
+          fi
+
+      - name: seed artifact fallback (cache eviction / staleness)
+        if: steps.seed-verify.outputs.hit != 'true'
         uses: actions/download-artifact@v4
         with:
           name: seed-pack
