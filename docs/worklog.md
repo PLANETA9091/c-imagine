@@ -2778,3 +2778,41 @@ Stage Summary:
 - #31's failure was not content, not coverage, not the quarantine — it was
   a one-line shell race in the harness itself. The fix costs one token per
   site; the walk's 30+ minutes are no longer hostage to ls's exit code.
+
+Task ID: 12-au
+Agent: main
+Task: CI forensics #25/#26/#30 — the c-imagine leg's boot wait was measured shorter than the plugin's own onEnable pack rebuild
+
+Work Log:
+- MEASURED #26 (284c8bb, the fluid-walk run): the truth leg died at the
+  entity walk, `create dyn page 0 no done marker` — `cimscene gallery
+  entity dyn create 0` answered "An unexpected error occurred trying to
+  execute that command" (a spawn crash inside the create dyn series); the
+  fluid walk itself was never reached in that run. #25 (ef29e21) shows the
+  IDENTICAL first cause at 09:53:38 — one bug, two runs.
+- That bug class is already fixed downstream: 8f84a12 (spawn crash → NAMED
+  manifest row) + 67c99ab (entity-tick Throwable → NAMED discard,
+  create:potato_projectile NPE measured in #27-#29). #30's truth leg went
+  GREEN for the first time.
+- MEASURED #30's new failure (c-imagine leg, boot Paper): boot.log's last
+  line is "[c-imagine] status: module=native ..." at 11:58:51, then 240s of
+  silence, then exit 1 from the RCON settle loop (120x2s). Root cause in
+  code: CimPlugin.f2vInit() runs rebuildForVerification() synchronously
+  inside onEnable BEFORE "Done" — the identical pre-boot build took 5m33s
+  at 21939 gallery states (11:53:02→11:58:35), and the on-boot rebuild gets
+  only -Xmx1G. The loop ceiling (240s) < the rebuild (~6min+): a pure
+  harness-timeout bug, not a server hang. The exhaustive-walk commits
+  ballooned the pack and made the old ceiling obsolete.
+- FIX: boot wait 300x3s=900s + a liveness heartbeat every 60s naming the
+  cause (rebuildForVerification is CPU-bound inside onEnable). The plugin's
+  integrity-first law is untouched — the rebuild still gates "Done" and the
+  gate still greps "f2v pack: serving" after RCON settles.
+- Verified: gallery.yml parses (python yaml.safe_load). No heavy local runs
+  (owner directive): the fix's proof is #34's c-imagine leg.
+
+Stage Summary:
+- #25 and #26 died on one bug (create dyn spawn crash — honest reds, since
+  fixed by the quarantine chain); #31 died on a shell race (fixed 12-at);
+  #30 died on a measured harness timeout — the harness must wait as long
+  as the work it commissioned. Each red now has a named, measured cause;
+  none of them is a coverage or verdict failure.

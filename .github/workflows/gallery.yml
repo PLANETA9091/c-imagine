@@ -626,10 +626,17 @@ jobs:
           # resolution) — a drift would shift CMDs and poison the replay
           setsid bash -c "java -Xmx1G -Dcim.f2v.assetsJars=${GITHUB_WORKSPACE}/visual-client/client.jar -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
-          for i in $(seq 1 120); do
+          # measured #30: the plugin's onEnable runs the SERVER-SIDE pack
+          # rebuild (rebuildForVerification) synchronously BEFORE "Done" —
+          # the identical pre-boot build took 5m33s at 21939 gallery states
+          # (11:53:02→11:58:35), and the on-boot rebuild gets only -Xmx1G,
+          # so the old 120x2s=240s RCON loop exited 1 while the rebuild was
+          # still running. 300x3s=900s ceiling + a liveness heartbeat.
+          for i in $(seq 1 300); do
             R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             [ -n "$R" ] && break
-            sleep 2
+            if [ $((i % 20)) -eq 0 ]; then echo "boot wait: $((i * 3))s (rebuildForVerification is CPU-bound inside onEnable)"; fi
+            sleep 3
           done
           [ -n "$R" ] || { tail -30 srv-wall/boot.log; exit 1; }
           grep -q "f2v pack: serving" srv-wall/boot.log || { tail -30 srv-wall/boot.log; exit 1; }
