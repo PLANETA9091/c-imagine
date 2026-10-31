@@ -136,9 +136,9 @@ jobs:
           distribution: temurin
           java-version: 25    # paper 26.3 api + the 26.3 client are class 69
 
-      - name: restore seed (cache)
+      - name: restore seed (cache, restore-only)
         id: seed-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: seed-pack
           key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
@@ -349,9 +349,10 @@ jobs:
           PV=$(bash scripts/resolve-paper-version.sh 26.3)
           echo "paper-api: $PV"
           mvn -B -ntp -Dpaper.version="$PV" package -f paper-plugin/pom.xml
-          mvn -B -ntp -q dependency:build-classpath \
-            -Dmdep.outputFile=paper-plugin/target/selftest-cp.txt -f paper-plugin/pom.xml
+          (cd paper-plugin && mvn -B -ntp -q dependency:build-classpath \
+            -Dmdep.outputFile=target/selftest-cp.txt)
           test -f paper-plugin/target/cim-paper-plugin.jar
+          test -f paper-plugin/target/selftest-cp.txt
           # the pack build consumes the manifests (the CMD space) + the mod
           # jars + the VANILLA client jar (--assets: the vanilla-parent
           # resolution must ride the same client that renders the pack —
@@ -380,8 +381,15 @@ jobs:
           cp srv-wall/boot.log seed-pack/boot-walk.log
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
+      - name: save seed cache (success-only — a partial seed-pack must never poison the key)
+        if: success() && steps.seed-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: seed-pack
+          key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+
       - name: upload seed-pack artifact (cache-eviction fallback)
-        if: steps.seed-cache.outputs.cache-hit != 'true'
+        if: success() && steps.seed-cache.outputs.cache-hit != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: seed-pack
@@ -859,9 +867,9 @@ jobs:
           distribution: temurin
           java-version: 25    # paper 26.3 api + the 26.3 client are class 69
 
-      - name: restore seed (cache)
+      - name: restore seed (cache, restore-only)
         id: seed-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: seed-pack
           key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
