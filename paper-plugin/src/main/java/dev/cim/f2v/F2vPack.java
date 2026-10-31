@@ -700,6 +700,20 @@ public final class F2vPack {
         // + addAll) — only OUR sources live here, vanilla trims keep working.
         emitPaletteAtlas(jars, validPalettes, entries, warnings);
 
+        // 26.3 MODEL UV SANITIZER (run #46 forensics, measured): create-1.21.1
+        // models carry element-face uv rects extending PAST the sprite
+        // (creative_motor/block.json north face uv [14,4,20,10] — a legal
+        // 1.21.1 texture-bleed). 26.3's FaceBakery.computeMaterialTransparency
+        // samples that rect INSIDE the sprite image and THROWS
+        // ("Cannot compute translucency out of bounds") — the exception aborts
+        // the ENTIRE host item def bake (minecraft:paper: 21939 range
+        // entries), and every gallery ItemDisplay then renders the missing
+        // item model = the #46 universal missingno wall. Vanilla 26.3 models
+        // never exceed the sprite; clamp every emitted model's face uv into
+        // [0,16]. String-level surgery: models without an offending uv array
+        // stay byte-identical (the pack sha1 moves only with real fixes).
+        sanitizeFaceUvs(entries, warnings);
+
         byte[] zip = zip(entries);
         String sha1 = sha1Hex(zip);
         Files.createDirectories(outDir);
@@ -717,6 +731,63 @@ public final class F2vPack {
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
         return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery);
+    }
+
+    /** Any element-face uv array in a model json, 4 numbers. */
+    private static final java.util.regex.Pattern FACE_UV = java.util.regex.Pattern.compile(
+            "\"uv\"\\s*:\\s*\\[\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,"
+            + "\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,"
+            + "\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*\\]");
+
+    /**
+     * Clamp every emitted model's element-face uv rects into [0,16] (see the
+     * build-site comment for the measured #46 failure). Only offending
+     * arrays are rewritten — the byte image of every other model (and every
+     * clean coordinate inside a fixed array) is preserved verbatim.
+     */
+    static void sanitizeFaceUvs(TreeMap<String, byte[]> entries, List<String> warnings) {
+        for (Map.Entry<String, byte[]> e : entries.entrySet()) {
+            String name = e.getKey();
+            if (!name.startsWith("assets/") || !name.contains("/models/")
+                    || !name.endsWith(".json")) {
+                continue;
+            }
+            String json = new String(e.getValue(), StandardCharsets.UTF_8);
+            if (!json.contains("\"uv\"")) {
+                continue;
+            }
+            java.util.regex.Matcher m = FACE_UV.matcher(json);
+            StringBuilder out = new StringBuilder(json.length());
+            boolean changed = false;
+            int last = 0;
+            while (m.find()) {
+                out.append(json, last, m.start());
+                StringBuilder repl = new StringBuilder("\"uv\": [");
+                for (int i = 1; i <= 4; i++) {
+                    double v = Double.parseDouble(m.group(i));
+                    double c = Math.max(0.0, Math.min(16.0, v));
+                    if (c != v) {
+                        changed = true;
+                    }
+                    if (i > 1) {
+                        repl.append(", ");
+                    }
+                    if (c == Math.rint(c) && Math.abs(c) < 1e9) {
+                        repl.append((long) c);
+                    } else {
+                        repl.append(c);
+                    }
+                }
+                repl.append(']');
+                out.append(repl);
+                last = m.end();
+            }
+            out.append(json, last, json.length());
+            if (changed) {
+                warnings.add("face uv clamped to [0,16] (26.3 bake-safety) in " + name);
+                e.setValue(out.toString().getBytes(StandardCharsets.UTF_8));
+            }
+        }
     }
 
     private static List<Path> listJars(Path modsDir) throws IOException {
@@ -1276,6 +1347,19 @@ public final class F2vPack {
             + "\"faces\": {\"up\": {\"uv\": [0,0,16,2], \"texture\": \"#tex\"}}}]}";
     private static final String MODEL_ROCK_ARROW =
             "{\"parent\": \"fakemod:block/rock\", \"textures\": {\"all\": \"fakemod:block/arrow_tex\"}}";
+    /** The MEASURED #46 killer: create-1.21.1's creative_motor carries a face
+     *  uv rect [14,4,20,10] — past the 16px sprite (a legal 1.21.1 texture
+     *  bleed). 26.3's FaceBakery.computeMaterialTransparency samples the rect
+     *  in the sprite image and THROWS, aborting the whole host item def bake
+     *  (minecraft:paper) — every gallery display then renders the missing
+     *  model = the #46 universal missingno. The sanitizer must clamp it. */
+    private static final String MODEL_ZMOTOR =
+            "{\"textures\": {\"tex\": \"fakemod:block/post_tex\"}, "
+            + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
+            + "\"faces\": {\"north\": {\"uv\": [14,4,20,10], \"texture\": \"#tex\"}, "
+            + "\"up\": {\"uv\": [0,0,16,16], \"texture\": \"#tex\"}}}]}";
+    private static final String BS_ZMOTOR =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/zmotor\"}}}";
     private static final String BS_ROCK =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/rock\"}, "
             + "\"facing=north\": {\"model\": \"fakemod:block/rock_arrow\", \"y\": 90}}}";
@@ -1291,7 +1375,8 @@ public final class F2vPack {
             "fakemod:pane[north=true]\n"
             + "fakemod:pane[north=false]\n"
             + "fakemod:rock\n"
-            + "fakemod:rock[facing=north]\n";
+            + "fakemod:rock[facing=north]\n"
+            + "fakemod:zmotor\n";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -1329,6 +1414,8 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/models/block/rock_arrow.json", MODEL_ROCK_ARROW.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/rock.json", BS_ROCK.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/zmotor.json", BS_ZMOTOR.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/zmotor.json", MODEL_ZMOTOR.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/textures/block/post_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/side_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
@@ -1431,9 +1518,9 @@ public final class F2vPack {
             // composite — including the vanilla-parent shape (own textures,
             // elements from the client jar's block/cube_all), which the old
             // direct path rendered as NOTHING (measured run 41126658261)
-            expect(failures, r1.gallery().size() == 4,
-                    "gallery: 4 state rows resolved, got " + r1.gallery().size());
-            if (r1.gallery().size() == 4) {
+            expect(failures, r1.gallery().size() == 5,
+                    "gallery: 5 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 5) {
                 List<GalleryPack.Resolved> g = r1.gallery();
                 // pane[north=false] = composite of the unconditional parts
                 // (post + the y90 side) — multipart rows are ALWAYS composites
@@ -1460,11 +1547,24 @@ public final class F2vPack {
                         "gallery: rock[facing=north] = composite, y90 baked into elements");
             }
             expect(failures, r1.gallery().stream()
-                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 4,
-                    "gallery: cmds unique (100000..100003)");
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 5,
+                    "gallery: cmds unique (100000..100004)");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
+            // 26.3 UV SANITIZER (run #46): the zmotor fixture rides the bad
+            // creative_motor uv [14,4,20,10]; the emitted model MUST come out
+            // clamped in [0,16] — an unclamped rect kills the 26.3 host def
+            // bake (computeMaterialTransparency) and turns the whole gallery
+            // into the missing model
+            String zmotor = str(entries, "assets/fakemod/models/block/zmotor.json");
+            expect(failures, zmotor.contains("\"uv\": [14, 4, 16, 10]"),
+                    "uv sanitizer clamped the out-of-bounds face rect: " + zmotor);
+            expect(failures, !zmotor.contains("20"),
+                    "uv sanitizer removed the out-of-bounds coordinate");
+            expect(failures, r1.warnings().stream()
+                            .anyMatch(w -> w.contains("zmotor") && w.contains("uv clamped")),
+                    "uv sanitizer warning recorded for the clamped model");
             String mcmeta = str(entries, "pack.mcmeta");
             expect(failures, mcmeta.contains("\"min_format\": [" + PACK_FORMAT_MAJOR
                     + ", " + PACK_FORMAT_MINOR + "]"), "pack.mcmeta min_format pair");
