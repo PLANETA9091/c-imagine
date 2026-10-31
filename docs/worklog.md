@@ -3168,3 +3168,50 @@ Work Log:
 Stage Summary:
 - The wall is sharded, cached and honest: 6-minute runs, the verdict
   gates the union of 16 shards, and the red it prints is the wall's own.
+
+---
+Task ID: 13-g
+Agent: main
+Task: the #46 honest red root-caused and fixed — the universal missingno was ONE out-of-bounds face uv killing the whole host item def bake
+
+Work Log:
+- MEASURED (CI artifacts #44/#46): ours renders were a UNIVERSAL checkerboard
+  (blocks AND items), while the client logs baked the pack CLEAN ("Missing
+  texture references" only for 174 particle keys + the gem permutation) and
+  the atlas grew with the pack (2048x2048 -> 4096x2048 locally). The same
+  wall states appeared GREEN and RED across pages — the green cells were
+  grass/sky-only crops (both legs empty), so the channel had NEVER rendered
+  textured; the honest red was reporting it from the start.
+- LOCAL REPRO built (scripts/probe-gallery-repro.sh): Paper 26.3 + the CI
+  seed pack + the stock 26.3 client under Xvfb/lavapipe — the exact #46
+  checkerboard reproduced locally page-for-page. Sandbox note: GLX visual
+  match fails here; renderpearl runs on the lavapipe ICD (xlibs) as in the
+  old local walk.
+- BISECT: a 4-state mini pack rendered TEXTURED; a 4605-state pack rendered
+  missingno with the atlas UNCHANGED (2048x2048) — not an atlas-size limit.
+  The client log named it: "Unable to bake item model: 'minecraft:paper'":
+  java.lang.IllegalArgumentException: Cannot compute translucency out of
+  bounds: [14, 4, 20, 10] in 16x16 image — FaceBakery.computeMaterialTransparency.
+- ROOT CAUSE: create-1.21.1's creative_motor model carries face uv
+  [14,4,20,10] (a legal 1.21.1 texture bleed past the sprite). 26.3 samples
+  that rect INSIDE the sprite image and THROWS, aborting the ENTIRE
+  minecraft:paper item def bake (21939 range entries) — every gallery
+  ItemDisplay (paper + CMD) then renders the missing item model. One bad
+  rect = the whole wall of missingno.
+- FIX: F2vPack clamps every emitted model's face uv into [0,16]
+  (string-level surgery — clean models stay byte-identical, the 8 poisoned
+  models are logged: 6 creative_motor composites + the 2 create source
+  models). Selftest fixture fakemod:zmotor rides the exact measured rect
+  and asserts the clamp + warning; f2v selftest ALL OK locally, ci.yml
+  covers it.
+- VERIFIED END-TO-END: the b5000-state pack rebuilt with the fixed builder
+  -> client "Unable to bake" count 0 -> the wall composite renders with its
+  real palette texture (probe shot). The full 21939-state local build is
+  too slow in the sandbox (per-hop jar re-scans) — CI's seed walk covers it.
+
+Stage Summary:
+- The harness's honest red was honest to the end: it reported a REAL defect,
+  just not the one its per-page verdicts implied — the defect was in the
+  pack's MODEL bytes, fatal at the client's def-bake level. Gallery #47
+  (cold seed, the sha1 moves) is the first run the 60k pixel gate judges
+  with actually-textured ours legs.
