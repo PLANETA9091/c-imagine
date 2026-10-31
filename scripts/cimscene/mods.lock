@@ -1,0 +1,8 @@
+# THE LADDER LOCK (13-c): fetch-ladder.sh pins each slug to THIS version
+# instead of Modrinth's "latest matching" — the gallery seed cache key
+# hashes this file, so a mod update can never silently desync the cached
+# pack/manifests from a fresh walk (and the walk itself stops drifting
+# with upstream releases). Bump deliberately: edit, commit, one slow seed
+# run repopulates the cache.
+#   create 6.0.10+mc1.21.1 = the measured #34/#35 walk + pack reference
+create=6.0.10+mc1.21.1

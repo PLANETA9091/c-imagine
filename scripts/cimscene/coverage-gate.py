@@ -69,6 +69,16 @@ Usage:
   coverage-gate.py --ns create --index <gallery-<ns>-index.tsv> \
       --scenes <truth scenes dir> --truth-shots <dir> --ours-shots <dir> \
       [--boot <truth boot.log>]
+
+SHARD SHOT LISTS (13-b): a sharded run's screenshots live in per-shard
+artifacts; the verdict job checks EXISTENCE (not pixels) and must not
+download every shard's PNGs. If a shots dir contains a shots.txt file
+(one shot FILE NAME per line, as the walks upload), the dir's existence
+checks join against that LISTING instead of the filesystem. The listing
+is itself gated: the per-page pixel join (which reads the real files)
+runs in the same shards that wrote the lists, so a missing file the
+listing claims is caught by the join, and a file the listing omits is
+caught here as missing.
 """
 import argparse
 import math
@@ -149,6 +159,26 @@ def shot_stem(base, sub, ns):
     return base + word
 
 
+def shot_present(dirpath, name, listing):
+    """The shot exists on disk, or the dir's shots.txt listing claims it
+    (the SHARD SHOT LISTS contract — the verdict job checks existence
+    without downloading every shard's PNGs; the per-page pixel join in
+    the same shard that wrote the list reads the real files)."""
+    if (dirpath / name).is_file():
+        return True
+    return listing is not None and name in listing
+
+
+def shot_present(dirpath, name, listing):
+    """The shot exists on disk, or the dir's shots.txt listing claims it
+    (the SHARD SHOT LISTS contract — the verdict job checks existence
+    without downloading every shard's PNGs; the per-page pixel join in
+    the same shard that wrote the list reads the real files)."""
+    if (dirpath / name).is_file():
+        return True
+    return listing is not None and name in listing
+
+
 def read_index(path, ns):
     rows = {}
     lines = pathlib.Path(path).read_text(encoding="utf-8").splitlines()
@@ -200,6 +230,14 @@ def main():
     oshots = pathlib.Path(args.ours_shots)
     boot = pathlib.Path(args.boot).read_text(encoding="utf-8",
                                              errors="replace") if args.boot else None
+    tlist_f = tshots / "shots.txt"
+    olist_f = oshots / "shots.txt"
+    tlist = set(tlist_f.read_text(encoding="utf-8").split()) if tlist_f.is_file() else None
+    olist = set(olist_f.read_text(encoding="utf-8").split()) if olist_f.is_file() else None
+    if tlist is not None or olist is not None:
+        print("coverage-gate: shard shot lists in effect "
+              "(truth=%s, ours=%s)" % ("yes" if tlist is not None else "no",
+                                        "yes" if olist is not None else "no"))
 
     incomplete = []
     print(f"coverage-gate: ns={args.ns} index={args.index}")
@@ -262,9 +300,9 @@ def main():
             for p in range(needed):
                 if not (scenes / mf_tpl.format(ns=args.ns, p=p)).is_file():
                     missing_mf += 1
-                if not (tshots / f"{tstem}{infix}{p}.png").is_file():
+                if not shot_present(tshots, f"{tstem}{infix}{p}.png", tlist):
                     missing_ts += 1
-                if not (oshots / f"{ostem}{infix}{p}.png").is_file():
+                if not shot_present(oshots, f"{ostem}{infix}{p}.png", olist):
                     missing_os += 1
             if boot is not None and needed > 0:
                 marker = done_tpl.format(ns=args.ns, p=needed)

@@ -305,6 +305,43 @@ def main():
         print("O fluid no-channel RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
+    # P: SHARD SHOT LISTS (13-b) — real PNGs replaced by shots.txt listings.
+    # P1: the listing covers every expected name -> GREEN (existence joins
+    #     the listing without any PNG on disk).
+    # P2: the listing drops one name -> RED with the missing count.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        names = sorted(p.name for p in (root / "truth-shots").glob("*.png"))
+        onames = sorted(p.name for p in (root / "ours-shots").glob("*.png"))
+        for d, lst in (("truth-shots", names), ("ours-shots", onames)):
+            for f in (root / d).glob("*.png"):
+                f.unlink()
+            (root / d / "shots.txt").write_text("\n".join(lst) + "\n",
+                                                encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "shard shot lists in effect" in r.stdout
+        print("P1 shard shot lists GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        names = sorted(p.name for p in (root / "truth-shots").glob("*.png"))
+        onames = sorted(p.name for p in (root / "ours-shots").glob("*.png"))
+        for d, lst in (("truth-shots", names), ("ours-shots", onames)):
+            for f in (root / d).glob("*.png"):
+                f.unlink()
+            (root / d / "shots.txt").write_text("\n".join(lst) + "\n",
+                                                encoding="utf-8")
+        (root / "ours-shots" / "shots.txt").write_text(
+            "\n".join(n for n in onames if n != "ours-gal-p1.png") + "\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "missing_ours_shots=1" in r.stdout
+        print("P2 shard shot list hole RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
     print("SMOKE:", "ALL PASS" if failures == 0 else f"{failures} FAILURES")
     return 1 if failures else 0
 

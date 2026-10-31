@@ -2938,3 +2938,71 @@ Stage Summary:
 - Both legs green for the first time; the pipeline now fails only on
   real verdict output. One harness crash fixed; the remaining red is the
   honest one — the wall itself.
+
+---
+Task ID: 13-b
+Agent: main
+Task: THE SHARDED WALL — owner directive 2026-10-31: "оптимизируй на максимум, очень много потоков, 10 минут, не 70"
+
+Work Log:
+- MEASURED baseline: gallery #35 = 81.7 min wall (truth 34.1 serial-beside
+  manifests + ours 44.0 + join 3.3; per-page ≈ 4.3-4.4s over ~419 walked
+  pages per leg, RCON poll 1s + settle + llvmpipe shot). The 12-ax split
+  helped the ours start but both legs still WALK SERIALLY inside one job.
+- THE TOPOLOGY (gallery.yml rewritten): the wall is sharded. K=8 (the
+  free-plan pool is 20 concurrent jobs; 8+8 shards + seed + verdict = 18):
+  seed (cache-keyed pack + manifest generation; hit ~1 min, miss = full
+  server-side walk + maven + F2vPack), wall-truth matrix 0..7 (each shard
+  = its own NF server + client, walks pages i, i+K, ... of EVERY class),
+  wall-ours matrix 0..7 (needs seed; fastBoot Paper; replays the SAME
+  stride; downloads ONLY its truth-shard counterpart and runs the
+  per-page pixel join INLINE — the diff left the critical path),
+  wall-verdict (coverage gate over merged manifests + merged boot logs +
+  shot LISTS + every shard's gate.json; a missing shard report is RED).
+- THE STRIDE LAW: every shard walks i, i+K, ... — the scene answers
+  exhausted=1 for any p >= total (verified in CimSceneMod for all four
+  walk families), so each shard terminates on its own sequence; the
+  union of strides = exactly the full page space (simulated for blocks
+  408/items 7/particles 1/fluids 1/entities per series — each page once,
+  every shard hit its exhaustion). truth-shard i <-> ours-shard i <->
+  diff shard i pairing is exact (same K, same i). MAXP stays the cap.
+- FAST BOOT (plugin): -Dcim.f2v.fastBoot=true serves the SEEDED pack zip
+  + sha1 + resolved rows (GalleryPack.readResolvedManifest — the writer
+  now persists the full Resolved state: state/cmd/modelRef/xRot/yRot/
+  composite; the reader tolerates the legacy 2-column width) instead of
+  re-running rebuildForVerification (measured 4.8 min of every ours
+  boot, #35). Integrity unchanged: the served zip is the stored one, the
+  sha1 is pinned in server.properties, the client verifies the pack hash
+  at download, and the seed ran the same pure function. Default boots
+  still rebuild+compare.
+- THE LADDER LOCK (scripts/cimscene/mods.lock): fetch-ladder.sh resolved
+  "latest matching" — an upstream release would silently desync the
+  seeded pack/manifests from a fresh walk. create is pinned to
+  6.0.10+mc1.21.1 (the measured #34/#35 reference); unlisted slugs still
+  resolve latest with a warning. The seed cache key hashes the lock.
+- SHARD SHOT LISTS (coverage-gate.py): the verdict job checks shot
+  EXISTENCE against per-shard shots.txt listings instead of downloading
+  every shard's PNGs; the per-page pixel join in the same shard that
+  wrote the list reads the real files. P1/P2 cases added to the gate's
+  SMOKE suite (ALL PASS, 17 cases).
+- TIME CUTS (nothing coverage-bearing removed): RCON done-marker polls
+  1s -> 0.25s (same 30s ceilings); server boot overlaps client-runtime
+  prep (background launch, the join step polls RCON first); dpkg -s
+  guards replace blind apt-get update+install; gradle jar artifacts
+  cached by source hash; seed cache replaces the per-run maven + F2vPack
+  + server-side walk; concurrency group cancels superseded runs.
+  KEPT UNTOUCHED: every page, every settle window (1s static, 4-5s mobs),
+  every probe, every marker contract, both world pins, per-class hygiene.
+- VERIFIED locally: yaml.safe_load + job graph; bash -n over every run
+  block; stride-union simulation (10 class shapes); coverage-gate SMOKE
+  incl. P1/P2 + merged-boot-log semantics; offline plugin build (jdk25)
+  + GalleryPack resolved-manifest round-trip + legacy-width read.
+
+Stage Summary:
+- The hour was serial walks + serial boots. Now 16 server+client pairs
+  shoot in parallel and the run clock is the slowest shard (~10 min
+  projected at ~52 pages/shard), the pack/manifests are content-keyed
+  seeds, and the verdict gates the UNION — a hole in any shard is red.
+- Expected on the first post-merge run: one slow seed (cache miss), then
+  the steady-state timing to measure; if the tail is over, the knobs are
+  K (with the pool cap) and the inline-diff overlap.

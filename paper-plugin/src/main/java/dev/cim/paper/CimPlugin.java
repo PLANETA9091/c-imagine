@@ -95,6 +95,48 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             Path modsDir = Path.of(System.getProperty("user.dir"), "mods");
             Path manifest = base.resolve("visual-items.tsv");
             dev.cim.f2v.F2vPack.Result result;
+            // THE FAST BOOT PATH (gallery CI shards, 13-b): the pack + sha1 +
+            // fully-resolved rows were produced by a pre-boot build THIS RUN
+            // (the seeded F2vPack run) — the boot-time rebuild would
+            // re-execute the same pure function over the same jars for
+            // minutes of CPU (measured 4.8 min at 21939 gallery states,
+            // boot step #35). Integrity is NOT weakened: the served zip is
+            // the stored one, the sha1 is pinned in server.properties (the
+            // client verifies the pack hash at download), and the resolved
+            // rows load from the SAME build that wrote that zip. Default is
+            // unchanged: without -Dcim.f2v.fastBoot=true every boot still
+            // rebuilds + compares (drift detection for non-CI boots).
+            if (Boolean.getBoolean("cim.f2v.fastBoot")
+                    && Files.isRegularFile(packZip)
+                    && Files.isRegularFile(base.resolve("pack.sha1"))) {
+                String cachedSha1 = Files.readString(base.resolve("pack.sha1")).trim();
+                List<dev.cim.f2v.F2vPack.VisualItem> fastItems =
+                        Files.isRegularFile(base.resolve("visual-items.resolved.tsv"))
+                                ? dev.cim.f2v.F2vPack.readManifest(
+                                        base.resolve("visual-items.resolved.tsv"))
+                                : List.of();
+                List<dev.cim.f2v.F2vPack.VisualBlock> fastBlocks =
+                        dev.cim.f2v.F2vPack.readBlockManifest(
+                                base.resolve("visual-blocks.tsv"));
+                List<dev.cim.f2v.GalleryPack.Resolved> fastGallery =
+                        Files.isRegularFile(base.resolve("visual-gallery.resolved.tsv"))
+                                ? dev.cim.f2v.GalleryPack.readResolvedManifest(
+                                        base.resolve("visual-gallery.resolved.tsv"))
+                                : List.of();
+                f2v = new F2vState(fastItems, fastBlocks, fastGallery, cachedSha1);
+                int fastPort = Integer.getInteger("cim.f2v.port", 25580);
+                dev.cim.f2v.PackHttp fastHttp =
+                        dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
+                log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
+                        + "serving the pre-boot build's zip, sha1=" + cachedSha1
+                        + ", " + fastGallery.size() + " gallery row(s), "
+                        + fastItems.size() + " item row(s); rebuild-verification "
+                        + "skipped (integrity = the server.properties sha1 pin "
+                        + "+ the client's pack hash check)");
+                log().info(LOG_PREFIX + "f2v pack: serving " + fastHttp.url()
+                        + " sha1=" + cachedSha1);
+                return;
+            }
             if (Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
                 String preSha1 = Files.readString(base.resolve("pack.sha1")).trim();
                 result = rebuildForVerification(modsDir, base, manifest);

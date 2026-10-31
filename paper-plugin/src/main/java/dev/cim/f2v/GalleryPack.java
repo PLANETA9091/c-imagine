@@ -103,15 +103,73 @@ public final class GalleryPack {
         return rows;
     }
 
-    /** Write the RESOLVED manifest: {@code state<TAB>cmd} per row. */
+    /**
+     * Write the RESOLVED manifest. Columns: {@code state<TAB>cmd[<TAB>ref
+     * <TAB>xrot<TAB>yrot<TAB>composite]}. The first two columns are the
+     * historical format (humans + the workflow grep it); the trailing
+     * columns carry the full {@link Resolved} state so a boot can LOAD the
+     * resolved rows instead of re-running the (CPU-bound) model resolution
+     * — the {@code cim.f2v.fastBoot} contract (CimPlugin#f2vInit). The
+     * reader tolerates both widths.
+     */
     static void writeResolvedManifest(Path tsv, List<Resolved> rows) throws IOException {
         StringBuilder sb = new StringBuilder("# resolved by GalleryPack — final "
                 + "custom_model_data floats (do not edit; regenerate instead)\n");
         for (Resolved r : rows) {
-            sb.append(r.stateId()).append('\t').append(r.cmd()).append('\n');
+            sb.append(r.stateId()).append('\t').append(r.cmd())
+              .append('\t').append(r.modelRef())
+              .append('\t').append(r.xRot())
+              .append('\t').append(r.yRot())
+              .append('\t').append(r.composite()).append('\n');
         }
         Files.createDirectories(tsv.getParent());
         Files.writeString(tsv, sb.toString(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Read a resolved manifest written by {@link #writeResolvedManifest}.
+     * Two columns (the historical width) resolve to the defaults a
+     * composite row always carries (modelRef empty, rotations 0/0,
+     * composite=true) — every row GalleryPack emits IS a self-contained
+     * composite with baked rotations, so a legacy file loses nothing the
+     * replay uses (the replay reads cmd + xRot + yRot only).
+     */
+    public static List<Resolved> readResolvedManifest(Path tsv) throws IOException {
+        List<Resolved> rows = new ArrayList<>();
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 2) {
+                continue;
+            }
+            float cmd;
+            try {
+                cmd = Float.parseFloat(parts[1].trim());
+            } catch (NumberFormatException bad) {
+                continue;
+            }
+            String ref = parts.length >= 3 ? parts[2].trim() : "";
+            int xRot = 0, yRot = 0;
+            boolean composite = true;
+            try {
+                if (parts.length >= 4) {
+                    xRot = Integer.parseInt(parts[3].trim());
+                }
+                if (parts.length >= 5) {
+                    yRot = Integer.parseInt(parts[4].trim());
+                }
+                if (parts.length >= 6) {
+                    composite = Boolean.parseBoolean(parts[5].trim());
+                }
+            } catch (NumberFormatException bad) {
+                // rotations stay 0/0 — the composite defaults
+            }
+            rows.add(new Resolved(parts[0].trim(), cmd, ref, xRot, yRot, composite));
+        }
+        return rows;
     }
 
     // ---- build -----------------------------------------------------------------
