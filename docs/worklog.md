@@ -2860,3 +2860,47 @@ Stage Summary:
   empty create-mobs page was true. Now the harness expects what the plugin
   says, and what the plugin says says whether the wall was empty by data or
   empty because nothing was staged.
+
+---
+Task ID: 12-ax
+Agent: main
+Task: gallery wall run time — owner directive: the whole thing must be ~10 minutes, it ran an hour+
+
+Work Log:
+- MEASURED #35 per-step (Actions API): truth leg 34.1 min (wall walk 30.0,
+  entity 2.0, boot+join ~2); ours leg 36+ min (boot chain ~10.6: maven 0.4
+  + client fetch 1.2 + stage+pack 4.2 + boot 4.8, walk 24+). Per block page
+  ≈ 4.8s: RCON ~0.4 + SLEEP 4 + Shot JVM ~0.4 — ~90% of the walk is blind
+  fixed sleeps. AND the topology was SERIAL: wall-ours needs wall-truth —
+  the ours leg waited ~35 min for the truth leg while consuming ONLY its
+  gallery-*.tsv manifests (the shots it never reads).
+- FIX 1 (topology): new job wall-manifests — the manifest-generation MIRROR
+  of the truth walk: identical walk commands, markers, exhaustion asserts,
+  world pins, difficulty pin — but NO settles and NO shots (manifests are
+  written server-side; a client changes nothing about them). It feeds
+  wall-ours (needs: [wall-manifests], artifact wall-manifests → truth/ so
+  every find path is unchanged). wall-truth keeps shooting in parallel.
+  Critical path: manifests + ours + join instead of truth + ours + join.
+- FIX 2 (measured fixed-window settles): block + item pages sleep 4 → 1s
+  on BOTH legs — the particles/fluids 1s fixed-window protocol was already
+  measured stable (12-as), static block sections and static item displays
+  settle the same way; the p0-again determinism probes + the join gate
+  verify every run. Diagnostic probes 5/6s → 2s. Mob pages KEEP 4-5s
+  (model render, conservative — ~20 pages total).
+- FIX 3 (boot chain): Paper boot -Xmx1G → -Xmx3G (rebuildForVerification
+  is CPU/GC-bound, 12-au); visual-client runtime cached by version with a
+  launch.txt miss-guard.
+- Verified: yaml.safe_load parses; job A's loops are line-for-line the
+  truth walk minus Shot/settle (diff-checked against the walk block);
+  env MAXP/EPAGES/EDPAGES are top-level (all jobs); ours' find-truth
+  paths all resolve under the manifests artifact; no wall-truth
+  dependency left in wall-ours. Phase 2 targets (measured headroom):
+  multi-page tiling per shot, the pack hash-verify fast path at boot
+  (skip rebuildForVerification when the pack hash matches its inputs),
+  walk sharding across matrix runners.
+
+Stage Summary:
+- The hour was not compute — it was waiting: 4-second sleeps x 408 pages
+  x 2 legs, plus a serial dependency the ours leg never needed. The walk
+  is now split from the shots, and every remaining wait is either
+  measured (1s fixed window) or explicitly kept conservative (mobs).

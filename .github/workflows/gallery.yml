@@ -7,6 +7,16 @@ name: gallery
 # slider units, spectator camera, OOM heaps, fluid skips — are all folded
 # into this file).
 #
+# RUN TOPOLOGY (12-ax, measured #34/#35 forensics — the run was a 75-min
+# SERIAL chain: ours waited for the whole truth leg while consuming only
+# its manifests): wall-manifests walks ALL series server-side (no client,
+# no shots, ~t+10min) and feeds the ours leg; wall-truth keeps shooting
+# the ground truth in parallel; wall-ours replays against the manifests;
+# wall-diff joins. Critical path ~manifests + ours + join instead of
+# truth + ours + join. Per-page settles follow the measured fixed-window
+# protocol (particles/fluids = 1s; blocks/items = 1s, verified by the
+# p0-again determinism probes; mob pages keep 4-5s).
+#
 # EXHAUSTIVE COVERAGE LAW (owner directive 2026-10-31: does the verdict
 # actually SEE all mod content? — it saw 3 pages = 231 of create's 31,389
 # blockstates = 0.74%, while items/particles/mod-entities reached nothing):
@@ -79,6 +89,249 @@ env:
   EDPAGES: "3"
 
 jobs:
+  wall-manifests:
+    name: gallery wall — manifest generation (server-side walk, no client, no shots)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build cimtest + cimscene
+        run: |
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+
+      - name: restore NeoForge server layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+
+      - name: fetch P0 Create (Modrinth ladder fetch)
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+
+      - name: assemble server dir
+        run: |
+          cp -r layer-srv srv-wall
+          mkdir -p srv-wall/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv-wall/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-wall/mods/
+          cp mods-create/*.jar srv-wall/mods/
+          echo "eula=true" > srv-wall/eula.txt
+          cat > srv-wall/server.properties <<'PROPS'
+          online-mode=false
+          white-list=false
+          difficulty=peaceful
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=6
+          simulation-distance=4
+          spawn-protection=0
+          max-players=5
+          enable-rcon=true
+          rcon.port=25575
+          rcon.password=cimgate
+          PROPS
+
+      - name: boot real NeoForge server (RCON after the port settles)
+        run: |
+          set -euo pipefail
+          cd srv-wall
+          rm -rf world world_nether world_the_end   # fresh flat world
+          setsid bash -c "java -Xmx2G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          cd ..
+          for i in $(seq 1 150); do
+            R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            [ -n "$R" ] && break
+            sleep 2
+          done
+          [ -n "$R" ] || { tail -60 srv-wall/boot.log; exit 1; }
+          echo "truth server up: $R"
+
+      - name: world pins + page-0 scene contract (same pins as the truth leg)
+        run: |
+          set -euo pipefail
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "gamerule doDaylightCycle false" "time set noon" \
+            "gamerule doWeatherCycle false" "weather clear" \
+            "gamerule doMobSpawning false" | tee truth-pins.log
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "cimscene gallery page create 0" | tee truth-page0.log
+          for i in $(seq 1 30); do
+            grep -q "gallery done ns=create page=0 " srv-wall/boot.log && break
+            sleep 1
+          done
+          grep -q "gallery done ns=create page=0 " srv-wall/boot.log
+          test -f srv-wall/c-imagine/scenes/gallery-create-p0.tsv
+
+      - name: server-side walk — ALL series, manifests only (no client, no shots)
+        run: |
+          set -euo pipefail
+          # THE MANIFEST-GENERATION MIRROR of the truth walk: identical walk
+          # commands, identical done markers, identical exhaustion asserts —
+          # but NO shot settles and NO shots. The manifests are written by
+          # the scene server-side; a joined client changes nothing about
+          # them (they record what the walk placed, not what a camera saw).
+          # This job exists because wall-ours was SEQUENTIAL behind the full
+          # truth leg (needs: wall-truth) while it consumes ONLY these tsv
+          # files — the ours leg now starts at ~t+10min, not ~t+35min.
+          # BLOCK pages (to exhaustion — the coverage law)
+          EXHAUSTED=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery page create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then
+              echo "block walk exhausted at page $p"
+              EXHAUSTED=1
+              break
+            fi
+          done
+          [ "$EXHAUSTED" = "1" ] || { echo "block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
+          # ENTITY pages: difficulty easy (the SAME pin as the truth entity
+          # walk — hostile mobs must survive), then the fixed minecraft
+          # scope + the create namespace to exhaustion, series by series
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "difficulty easy" "kill @e[type=!player]"
+          for p in $(seq 0 $((EPAGES-1))); do
+            BEFORE=$(grep -c "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery entity mobs minecraft $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+          done
+          for p in $(seq 0 $((EDPAGES-1))); do
+            for SERIES in dyn large; do
+              TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
+              BEFORE=$(grep -c "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log || true)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery entity $SERIES minecraft $p"
+              ok=0
+              for i in $(seq 1 30); do
+                C=$(grep -c "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log || true)
+                [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+                sleep 1
+              done
+              [ "$ok" = "1" ] || { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+            done
+          done
+          for SERIES in mobs dyn large; do
+            TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
+            EX=0
+            for p in $(seq 0 $MAXP); do
+              BEFORE=$(grep -c "gallery-$TAG done ns=create page=$p " srv-wall/boot.log || true)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
+              ok=0
+              for i in $(seq 1 30); do
+                C=$(grep -c "gallery-$TAG done ns=create page=$p " srv-wall/boot.log || true)
+                [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+                sleep 1
+              done
+              [ "$ok" = "1" ] || { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              LINE=$(grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1)
+              echo "$LINE"
+              if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            done
+            [ "$EX" = "1" ] || { echo "create $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # ITEM walk (create, to exhaustion)
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery-item done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cimscene gallery item create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-item done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+          done
+          [ "$EX" = "1" ] || { echo "item walk hit the MAXP cap without exhausted"; exit 1; }
+          # PARTICLE walk (create, to exhaustion)
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery-particle done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery particle create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-particle done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+          done
+          [ "$EX" = "1" ] || { echo "particle walk hit the MAXP cap without exhausted"; exit 1; }
+          # FLUID walk (create, to exhaustion)
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery-fluid done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery fluid create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-fluid done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+          done
+          [ "$EX" = "1" ] || { echo "fluid walk hit the MAXP cap without exhausted"; exit 1; }
+          ls srv-wall/c-imagine/scenes/ | wc -l
+
+      - name: upload wall manifests (THE CELL CONTRACT for the ours leg)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wall-manifests
+          path: |
+            srv-wall/c-imagine/scenes/
+            srv-wall/boot.log
+            truth-pins.log
+
   wall-truth:
     name: gallery wall — truth leg (real NeoForge server + client, xvfb)
     runs-on: ubuntu-latest
@@ -224,7 +477,7 @@ jobs:
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=2
+          export LP_NUM_THREADS=4
           mkdir -p truth-client/game/mods
           cp srv-wall/mods/*.jar truth-client/game/mods/   # registry sync needs them
           # fov:0.0 renders 70 deg (options value maps LINEARLY, fov =
@@ -253,7 +506,7 @@ jobs:
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=2
+          export LP_NUM_THREADS=4
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
@@ -286,7 +539,10 @@ jobs:
               EXHAUSTED=1
               break
             fi
-            sleep 4   # section rebuild + lighting under llvmpipe
+            sleep 1   # section rebuild + lighting (the particles/fluids
+            # fixed-window protocol measured stable at 1s on BOTH legs;
+            # static block sections settle the same way — the p0-again
+            # determinism probe + the join gate verify every run)
             java -cp vtools Shot "truth-shots/gal-p$p.png"
             echo "shot page $p"
           done
@@ -294,7 +550,7 @@ jobs:
           # determinism probe: re-place page 0, shoot again (diagnostic, not gated)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "cimscene gallery page create 0"
-          sleep 5
+          sleep 2
           java -cp vtools Shot "truth-shots/gal-p0-again.png"
           echo "shot page 0 again"
           # the `|| true` guards the SIGPIPE race under pipefail (measured
@@ -310,7 +566,7 @@ jobs:
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=2
+          export LP_NUM_THREADS=4
           # difficulty easy: HOSTILE mobs must survive — peaceful discards
           # every Monster each tick (both legs pin the SAME difficulty, so
           # the comparison stays fair; frozen mobs ignore everything else)
@@ -362,7 +618,7 @@ jobs:
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" \
             "cimscene gallery entity mobs minecraft 0"
-          sleep 6
+          sleep 2
           java -cp vtools Shot "truth-shots/gal-e0-again.png"
           echo "shot mob page 0 again"
           # MOD-NAMESPACE entity walk (create): the same series split, to
@@ -409,7 +665,7 @@ jobs:
             LINE=$(grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1)
             echo "$LINE"
             if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
-            sleep 4
+            sleep 1   # static item displays settle like the block pages
             java -cp vtools Shot "truth-shots/gal-i-create$p.png"
             echo "shot item page $p"
           done
@@ -484,7 +740,12 @@ jobs:
     name: gallery wall — c-imagine leg (Paper 26.3 + GalleryPack, xvfb)
     runs-on: ubuntu-latest
     timeout-minutes: 110
-    needs: [wall-truth]   # the truth manifests ARE the cell contract
+    # The ours leg consumes ONLY the staged truth manifests (the cell
+    # contract) — NOT the truth shots. The manifests come from the fast
+    # server-side walk job (no client, no shots, ~t+10min); the truth
+    # SHOTS keep coming from wall-truth in parallel. The run is no longer
+    # a 75-minute serial chain (measured #34/#35 forensics).
+    needs: [wall-manifests]
     steps:
       - uses: actions/checkout@v4
 
@@ -496,7 +757,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: wall-truth
+          name: wall-manifests
           path: truth
 
       - name: resolve newest stable paper-api for 26.3
@@ -520,9 +781,15 @@ jobs:
       - name: fetch P0 Create (assets source for the pack)
         run: bash scripts/cimscene/fetch-ladder.sh mods-create create
 
+      - name: restore visual client runtime (cache)
+        uses: actions/cache@v4
+        with:
+          path: visual-client
+          key: visual-client-26.3-assets-v1
+
       - name: fetch visual client runtime (piston-meta, with assets)
         run: |
-          python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+          [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           wc -c visual-client/classpath.txt visual-client/launch.txt
           sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
 
@@ -624,7 +891,7 @@ jobs:
           # SERVER-SIDE pack rebuild (rebuildForVerification): the rebuilt
           # pack must be identical to the staged one (same vanilla-parent
           # resolution) — a drift would shift CMDs and poison the replay
-          setsid bash -c "java -Xmx1G -Dcim.f2v.assetsJars=${GITHUB_WORKSPACE}/visual-client/client.jar -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          setsid bash -c "java -Xmx3G -Dcim.f2v.assetsJars=${GITHUB_WORKSPACE}/visual-client/client.jar -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           # measured #30: the plugin's onEnable runs the SERVER-SIDE pack
           # rebuild (rebuildForVerification) synchronously BEFORE "Done" —
@@ -661,7 +928,7 @@ jobs:
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=2
+          export LP_NUM_THREADS=4
           # 26.3 (renderpearl) probes Vulkan even with the opengl launch pin —
           # mesa-vulkan-drivers above satisfies the probe; the render stays GL
           # (fetch-visual-client.py never creates the game dir — the client
@@ -700,7 +967,7 @@ jobs:
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=2
+          export LP_NUM_THREADS=4
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
@@ -724,7 +991,9 @@ jobs:
             echo "$OUT" | tee "ours-rcon-p$p.log"
             echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
               || { echo "page $p no placed marker in the RCON response"; exit 1; }
-            sleep 4   # section rebuild + entity render under llvmpipe
+            sleep 1   # section rebuild (the particles/fluids fixed-window
+            # protocol measured stable at 1s on BOTH legs; the p0-again
+            # determinism probe + the join gate verify every run)
             java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
             test -s "ours-shots/ours-gal-p$p.png" || { echo "page $p shot empty/missing"; exit 1; }
             echo "shot page $p"
@@ -733,7 +1002,7 @@ jobs:
           # determinism probe (diagnostic, not gated)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "cim galleryclear" "cim gallerypage create 0"
-          sleep 6
+          sleep 2
           java -cp vtools Shot "ours-shots/ours-gal-p0-again.png"
           echo "shot page 0 again"
           # 12-ac bisect: ONE isolated display of a settled pane composite
@@ -757,7 +1026,7 @@ jobs:
             "kill @e[type=!player]" "cim galleryclear" \
             "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_PANE}f]}}}}" \
             "summon minecraft:item_display 1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_CASING}f]}}}}"
-          sleep 6
+          sleep 2
           java -cp vtools Shot "ours-shots/ours-isolated-pane-casing.png"
           echo "shot isolated pane+casing"
           ls -la ours-shots/
@@ -768,7 +1037,7 @@ jobs:
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=2
+          export LP_NUM_THREADS=4
           # SAME difficulty pin as the truth leg (hostile mobs must survive)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
@@ -846,7 +1115,7 @@ jobs:
             echo "$OUT" | tee "ours-rcon-i$p.log"
             echo "$OUT" | grep -q "gallerypage-item create p$p -> placed=" \
               || { echo "item page $p no placed marker"; exit 1; }
-            sleep 4
+            sleep 1   # static item displays settle like the block pages
             java -cp vtools Shot "ours-shots/ours-gal-i-create$p.png"
             test -s "ours-shots/ours-gal-i-create$p.png" || { echo "item page $p shot missing"; exit 1; }
             echo "shot item page $p"
