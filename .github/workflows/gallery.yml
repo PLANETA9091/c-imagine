@@ -144,6 +144,8 @@ jobs:
         with:
           path: seed-pack
           key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+          restore-keys: |
+            gallery-seed-v1-
 
       - name: seed cache hit — verify the payload, exit fast
         if: steps.seed-cache.outputs.cache-hit == 'true'
@@ -389,6 +391,8 @@ jobs:
         with:
           path: seed-pack
           key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+          restore-keys: |
+            gallery-seed-v1-
 
       - name: upload seed-pack artifact (cache-eviction fallback)
         if: success() && steps.seed-cache.outputs.cache-hit != 'true'
@@ -878,6 +882,8 @@ jobs:
         with:
           path: seed-pack
           key: gallery-seed-v1-${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
+          restore-keys: |
+            gallery-seed-v1-
 
       - name: seed artifact fallback (cache eviction)
         if: steps.seed-cache.outputs.cache-hit != 'true'
