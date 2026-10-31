@@ -120,17 +120,19 @@ jobs:
     name: gallery seed — pack + manifests (cache-hit ~1 min, miss = full walk)
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    env:
-      # ONE fingerprint for the cache key AND the payload stamp: the prefix
-      # restore-keys fallback may return an OLDER pack (measured #47: the uv
-      # fix changed the builder, the exact key moved, the prefix hit served
-      # the stale missingno pack anyway). The payload carries
-      # f2v/inputs.sha1; the verify step compares it against SEED_INPUTS and
-      # a mismatch falls back to the full rebuild — workflow-only commits
-      # keep the ~1 min prefix hit, real input changes never serve stale.
-      SEED_INPUTS: ${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
     steps:
       - uses: actions/checkout@v4
+
+      # ONE fingerprint for the cache key AND the payload stamp (hashFiles is
+      # not allowed in job-level env — measured #48 startup rejection — so a
+      # step computes it; steps context IS allowed in `with`). The prefix
+      # restore-keys fallback may return an OLDER pack (measured #47: the uv
+      # fix changed the builder, the exact key moved, the prefix hit served
+      # the stale missingno pack anyway) — the payload carries
+      # f2v/inputs.sha1 and every consumer compares it against this hash.
+      - name: seed input fingerprint
+        id: seed-inputs
+        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -152,12 +154,14 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ env.SEED_INPUTS }}
+          key: gallery-seed-v1-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
             gallery-seed-v1-
 
       - name: seed payload verify (freshness gate)
         id: seed-verify
+        env:
+          SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
         run: |
           set -euo pipefail
           HIT=false
@@ -366,6 +370,8 @@ jobs:
 
       - name: build plugin (maven) + F2vPack pack (cache miss)
         if: steps.seed-verify.outputs.hit != 'true'
+        env:
+          SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
         run: |
           set -euo pipefail
           PV=$(bash scripts/resolve-paper-version.sh 26.3)
@@ -413,7 +419,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ env.SEED_INPUTS }}
+          key: gallery-seed-v1-${{ steps.seed-inputs.outputs.hash }}
 
       - name: upload seed-pack artifact (cache-eviction fallback)
         if: success() && steps.seed-verify.outputs.hit != 'true'
@@ -888,12 +894,16 @@ jobs:
         shard: [0, 1, 2, 3, 4, 5, 6, 7]
     env:
       SI: ${{ matrix.shard }}
-      # the SAME fingerprint the seed job stamps into f2v/inputs.sha1 — the
-      # ours shard must serve the pack built from THIS input tree (measured
-      # #47: a prefix-restored older pack silently served the stale builder)
-      SEED_INPUTS: ${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}
     steps:
       - uses: actions/checkout@v4
+
+      # the SAME fingerprint the seed job stamps into f2v/inputs.sha1 — the
+      # ours shard must serve the pack built from THIS input tree (measured
+      # #47: a prefix-restored older pack silently served the stale builder;
+      # hashFiles lives in a step — job-level env rejects it, measured #48)
+      - name: seed input fingerprint
+        id: seed-inputs
+        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         id: jdk25
@@ -906,12 +916,14 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ env.SEED_INPUTS }}
+          key: gallery-seed-v1-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
             gallery-seed-v1-
 
       - name: seed payload freshness (stale prefix hit -> the artifact)
         id: seed-verify
+        env:
+          SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
         run: |
           set -euo pipefail
           if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ]; then
