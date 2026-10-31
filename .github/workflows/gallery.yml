@@ -818,7 +818,13 @@ jobs:
                 "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage-entity create $p $SERIES")
               echo "$OUT" | tee "ours-rcon-e$SERIES-create$p.log"
-              echo "$OUT" | grep -q "gallerypage-entity create p$p $SERIES -> placed=" \
+              # THE MARKER CONTRACT (measured #34: create mobs died here):
+              # the plugin prints the series tag ONLY for dyn/large — a mobs
+              # call answers tag-less ("create p0 -> placed="), exactly like
+              # the vanilla mob gate at line ~782. The expected marker must
+              # follow the series, or create mobs is a false red forever.
+              STAG=$([ "$SERIES" = mobs ] && echo "" || echo " $SERIES")
+              echo "$OUT" | grep -q "gallerypage-entity create p$p$STAG -> placed=" \
                 || { echo "create $SERIES page $p no placed marker"; exit 1; }
               sleep 4
               java -cp vtools Shot "ours-shots/ours-gal-e$SERIES-create$p.png"

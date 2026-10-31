@@ -2816,3 +2816,47 @@ Stage Summary:
   #30 died on a measured harness timeout — the harness must wait as long
   as the work it commissioned. Each red now has a named, measured cause;
   none of them is a coverage or verdict failure.
+
+---
+Task ID: 12-av
+Agent: main
+Task: gallery #34 forensics — the create entity replay died on a marker-contract mismatch, not on content
+
+Work Log:
+- MEASURED #34 (aa63472): the truth leg went GREEN for the first time under
+  the full exhaustive walk (the 12-au boot-wait fix held). The c-imagine leg
+  cleared boot, the vanilla mob/dyn/large walks placed and shot every page,
+  and then died at `create mobs page 0 no placed marker` with the plugin
+  answering `gallerypage-entity create p0 -> placed=0 nochannel=0`.
+- ROOT CAUSE (code, both sides measured): the plugin prints the series tag
+  ONLY for dyn/large (CimPlugin: series.equals("mobs") ? "" : " " + series) —
+  the same tag-less mobs marker the vanilla gate at gallery.yml:782 greps
+  for — while the create replay's grep hardcoded the tag for ALL series.
+  mobs + tag expectation = a false red forever, independent of content.
+- THE 0/0 ITSELF IS HONEST: the truth leg's create mobs walk measured
+  `cells=0 skipped_wrong_series=9` (create registers 9 entity types, none is
+  a Mob; its dyn series has cells=4 dyn=4 failed=5 — the quarantined spawns).
+  So ours' placed=0 nochannel=0 for that page is the correct empty replay of
+  a zero-cell manifest. What was dishonest: a missing manifest returned the
+  SAME {0,0} as a zero-cell one.
+- FIX 1 (workflow): the create replay grep now derives the expected marker
+  from the series (mobs -> tag-less, dyn/large -> tagged) — the contract the
+  plugin actually implements, symmetric with the vanilla gate.
+- FIX 2 (plugin): every gallerypage marker gains ` cells=M` — the manifest's
+  parsed cell-row count; a missing/unreadable manifest prints `cells=missing`
+  ({0,0,-1} internally). A zero-cell page and an absent manifest can never
+  collapse into one number again. The appended field is grep-compatible with
+  every existing `-> placed=` gate (substring match), CI maven path and the
+  offline javac path both compile it.
+- Verified: javac 25 offline build OK; synthetic marker test — mobs tag-less,
+  dyn/large tagged, missing form all match the new greps, and the OLD
+  pattern reproduces the #34 false-red against the mobs marker (proving the
+  diagnosis); gallery.yml parses; hazard sweep: gallery.yml is the only
+  consumer of the create-entity marker.
+
+Stage Summary:
+- #34 was one line of grep against a contract the plugin never implemented,
+  plus an honest number that carried two meanings. The red was false; the
+  empty create-mobs page was true. Now the harness expects what the plugin
+  says, and what the plugin says says whether the wall was empty by data or
+  empty because nothing was staged.

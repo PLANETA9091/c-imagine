@@ -1199,7 +1199,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * channel exists — roadmap M5.5/M5.6 accounting).
      *
      * <p>Returns the placed count; the RCON response marker is
-     * {@code gallerypage-entity <ns> p<page> -> placed=N nochannel=K}.
+     * {@code gallerypage-entity <ns> p<page> [series] -> placed=N nochannel=K
+     * cells=M} — cells is the manifest's parsed cell-row count; a page with a
+     * ZERO-cell manifest (create mobs: measured truth cells=0) is HONESTLY
+     * empty, while cells=missing means the manifest file itself was absent —
+     * two states that must never collapse into the same {0,0} again
+     * (measured #34 forensics).
      */
     private int[] galleryPageEntity(String ns, int page, String series) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -1207,7 +1212,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + "-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-entity: manifest missing: " + mf);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         final java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
@@ -1220,7 +1225,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-entity: manifest read failed "
                     + mf + ": " + ioe);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         final String nsf = ns;
         final int pagef = page;
@@ -1313,9 +1318,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             + ": " + ex);
                 }
             }
-            return new int[]{placed, nochannel};
+            return new int[]{placed, nochannel, cells.size()};
         });
-        return counts == null ? new int[]{0, 0} : counts;
+        return counts == null ? new int[]{0, 0, -1} : counts;
     }
 
     /**
@@ -1330,15 +1335,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * pack row is {@code nochannel}: the cell stays empty and the pixel
      * join names it (honest backlog, never a silent skip).
      *
-     * <p>Returns {@code [placed, nochannel]}; the RCON response marker is
-     * {@code gallerypage-item <ns> p<page> -> placed=N nochannel=K}.
+     * <p>Returns {@code [placed, nochannel, cells]}; the RCON response marker
+     * is {@code gallerypage-item <ns> p<page> -> placed=N nochannel=K cells=M}
+     * (cells=-1 prints as {@code cells=missing} — the manifest file itself
+     * was absent, never collapsed with a zero-cell page).
      */
     private int[] galleryPageItem(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-item-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-item: manifest missing: " + mf);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         final java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
@@ -1351,7 +1358,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-item: manifest read failed "
                     + mf + ": " + ioe);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         // item id -> pack CMD carrier (the resolved visual-items rows carry
         // BOTH the hand-written manifest and the CI-generated gallery rows)
@@ -1424,9 +1431,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + " uuid=" + display.getUniqueId());
                 placed++;
             }
-            return new int[]{placed, nochannel};
+            return new int[]{placed, nochannel, cells.size()};
         });
-        return counts == null ? new int[]{0, 0} : counts;
+        return counts == null ? new int[]{0, 0, -1} : counts;
     }
 
     /**
@@ -1438,15 +1445,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * counted, so the pixel join reports the full cell list — the particle
      * channel backlog is VISIBLE in the verdict, not a missing screenshot.
      *
-     * <p>Returns {@code [placed=0, nochannel=N]}; the RCON response marker is
-     * {@code gallerypage-particle <ns> p<page> -> placed=0 nochannel=N}.
+     * <p>Returns {@code [placed=0, nochannel=N, cells=N]}; the RCON response
+     * marker is {@code gallerypage-particle <ns> p<page> -> placed=0
+     * nochannel=N cells=M} (cells=-1 prints as {@code cells=missing}).
      */
     private int[] galleryPageParticle(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-particle-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-particle: manifest missing: " + mf);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         int cells = 0;
         try {
@@ -1459,7 +1467,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-particle: manifest read failed "
                     + mf + ": " + ioe);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         final int cellsf = cells;
         callSync(() -> {
@@ -1479,7 +1487,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         });
         log().warning(LOG_PREFIX + "f2v gallery-particle: " + cellsf
                 + " cell(s) nochannel — Paper has no mod-particle channel");
-        return new int[]{0, cellsf};
+        return new int[]{0, cellsf, cellsf};
     }
 
     /**
@@ -1495,15 +1503,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * silent skip). Skip rows pass through untouched (both legs recorded
      * them identically).
      *
-     * <p>Returns {@code [placed, nochannel]}; the RCON response marker is
-     * {@code gallerypage-fluid <ns> p<page> -> placed=N nochannel=K}.
+     * <p>Returns {@code [placed, nochannel, cells]}; the RCON response marker
+     * is {@code gallerypage-fluid <ns> p<page> -> placed=N nochannel=K cells=M}
+     * (cells=-1 prints as {@code cells=missing}).
      */
     private int[] galleryPageFluid(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-fluid-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest missing: " + mf);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         final java.util.List<String[]> rows = new java.util.ArrayList<>();
         try {
@@ -1515,7 +1524,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest read failed "
                     + mf + ": " + ioe);
-            return new int[]{0, 0};
+            return new int[]{0, 0, -1};
         }
         final int pagef = page;
         int[] counts = callSync(() -> {
@@ -1582,9 +1591,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             + parseFail.getMessage() + ")");
                 }
             }
-            return new int[]{placed, nochannel};
+            return new int[]{placed, nochannel, rows.size()};
         });
-        return counts == null ? new int[]{0, 0} : counts;
+        return counts == null ? new int[]{0, 0, -1} : counts;
     }
 
     /** Despawn every ItemDisplay AND every tagged gallery entity in every
@@ -1708,7 +1717,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-entity " + args[1]
                         + " p" + page + (series.equals("mobs") ? "" : " " + series)
                         + " -> placed=" + counts[0]
-                        + " nochannel=" + counts[1]);
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-entity: bad page number: " + args[2]);
             }
@@ -1727,7 +1737,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 int[] counts = galleryPageItem(args[1], page);
                 sender.sendMessage(LOG_PREFIX + "gallerypage-item " + args[1]
                         + " p" + page + " -> placed=" + counts[0]
-                        + " nochannel=" + counts[1]);
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-item: bad page number: " + args[2]);
             }
@@ -1744,7 +1755,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 int[] counts = galleryPageParticle(args[1], page);
                 sender.sendMessage(LOG_PREFIX + "gallerypage-particle " + args[1]
                         + " p" + page + " -> placed=" + counts[0]
-                        + " nochannel=" + counts[1]);
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-particle: bad page number: " + args[2]);
             }
@@ -1760,7 +1772,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 int[] counts = galleryPageFluid(args[1], page);
                 sender.sendMessage(LOG_PREFIX + "gallerypage-fluid " + args[1]
                         + " p" + page + " -> placed=" + counts[0]
-                        + " nochannel=" + counts[1]);
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-fluid: bad page number: " + args[2]);
             }
