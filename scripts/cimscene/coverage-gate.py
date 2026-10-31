@@ -94,6 +94,21 @@ CLASSES = {
 SERIES_WORD = {"entity-mobs": "mobs", "entity-dyn": "dyn",
                "entity-large": "large"}
 
+# THE REST OF THE VISUAL SURFACE (12-aq): ledger classes the scene COUNTS
+# (static BuiltIn + datapack registries whose entries alter a rendered
+# frame) but NO gallery walk exists for yet. A positive total is
+# COVERAGE-INCOMPLETE reason=no-walk-yet — the named backlog (the verdict
+# must SEE its holes, never green over them); total=0 is OK; a negative
+# total means the dynamic registry itself was unreadable at index time —
+# unverifiable coverage is also red, honestly.
+# The documented line: worldgen plumbing (features, carvers, loot,
+# predicates, attributes, menus, recipes...) shapes the world or has no
+# per-entry pixel surface — it stays OUTSIDE the world-frame ledger.
+NO_WALK = {"biome", "painting_variant", "wolf_variant", "cat_variant",
+           "frog_variant", "villager_type", "mob_effect", "trim_material",
+           "trim_pattern", "banner_pattern", "decorated_pot_pattern",
+           "enchantment", "jukebox_song", "dimension_type"}
+
 
 def shot_infix(cls, ns):
     """The namespace infix of the shot file names: none for the block
@@ -187,6 +202,21 @@ def main():
                 continue
             print(f"OK\tblockentity\ttotal={total} (every BE type has a "
                   f"placeable valid state on the block wall)")
+            continue
+        if cls in NO_WALK:
+            if total < 0:
+                print(f"COVERAGE-INCOMPLETE\t{cls}\treason=unreadable-registry "
+                      "(the ledger could not read the dynamic registry — "
+                      "unverifiable coverage is RED, not green)")
+                incomplete.append(cls)
+                continue
+            if total == 0:
+                print(f"OK\t{cls}\ttotal=0 (nothing registered in this namespace)")
+                continue
+            print(f"COVERAGE-INCOMPLETE\t{cls}\ttotal={total} "
+                  "reason=no-walk-yet (the ledger SEES the class; no gallery "
+                  "walk exists yet — the named backlog, not a silent hole)")
+            incomplete.append(cls)
             continue
         # the ledger's single `entity` row fans out to the three series —
         # each series paginates the SAME entry list, so each must walk

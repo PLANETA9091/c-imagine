@@ -2597,3 +2597,49 @@ Stage Summary:
   reached the picture). #25's failure mode is structurally impossible;
   its red returns as a NAME, which is the only kind of red that leads
   somewhere.
+
+---
+Task ID: 12-aq
+Agent: main
+Task: the ledger counts the WHOLE visual surface — biomes, paintings, entity variants, effects, trims, banners, pot patterns, enchantments, jukebox songs, dimension types join the verdict as named no-walk reds (owner: «СЕРЬЕЗНО ВСЁ»)
+
+Work Log:
+- AUDIT (owner: «может есть штуки которые не доходят до вердикта»): the
+  ledger covered block/entity/item/particle/fluid/blockentity — but the
+  world-frame VISUAL registries were invisible to it. Verified against the
+  real 1.21.1 mojmap artifacts (javap on the -srg jar, not from memory):
+  STATIC (BuiltInRegistries): MOB_EFFECT, CAT_VARIANT, FROG_VARIANT,
+  VILLAGER_TYPE, DECORATED_POT_PATTERN. DATAPACK/dynamic (registryAccess —
+  NOT in BuiltInRegistries): BIOME, PAINTING_VARIANT, WOLF_VARIANT,
+  TRIM_MATERIAL, TRIM_PATTERN, BANNER_PATTERN, ENCHANTMENT, JUKEBOX_SONG,
+  DIMENSION_TYPE. BOP's whole identity (its 60+ biomes) lived outside the
+  verdict's ledger — the exact «штуки которые не доходят до вердикта».
+- SCENE (writeGalleryIndex): signature gains the ServerLevel; the index
+  gains 14 rows (class|total|0). Dynamic counts via
+  level.registryAccess().registryOrThrow(...); a registry that cannot be
+  READ writes total=-1 (the gate reds unreadable too — unverifiable
+  coverage is not green). staticCount/dynCount helpers; the gallery-index
+  log line now names every new count.
+- GATE (coverage-gate.py): NO_WALK set — a positive total is
+  COVERAGE-INCOMPLETE reason=no-walk-yet (the named backlog, never a silent
+  hole), 0 is OK, negative is reason=unreadable-registry RED. The
+  documented line (challengeable): worldgen plumbing (features, carvers,
+  loot, predicates, attributes, menus, recipes...) has no per-entry pixel
+  surface and stays outside the world-frame ledger; everything that alters
+  a rendered frame is IN.
+- Expected CI behaviour: create registers ZERO of the new classes (all its
+  content sits in the walked classes) → the gate stays green on them for
+  create; BOP (when it enters the matrix) will light up red across
+  biome/painting/variants — that red is the roadmap order, not noise.
+- TESTS: the fixture index carries all 14 classes at 0; new cases K (biome
+  64 -> RED no-walk-yet), L (painting_variant -1 -> RED unreadable), M (all
+  zero -> GREEN). 13/13 PASS locally; offline javac build GREEN against
+  the real 1.21.1 layer (RegistryAccess/Registries/ResourceKey imports,
+  raw-type bridge in dynCount).
+
+Stage Summary:
+- The ledger's inventory is now: everything the mod REGISTERS that can
+  alter a frame — the 6 walked classes (hard pixel gate), blockentity
+  (reconciliation), and the 14 no-walk classes (counted, named, red until
+  a walk exists). The verdict cannot be surprised by a class it never
+  knew about: every registry name in the ledger is now deliberate.

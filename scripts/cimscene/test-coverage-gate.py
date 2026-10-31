@@ -15,6 +15,10 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
   I. entity manifest skip row note=dissolved                  -> RED (named)
   J. entity manifest skip row note=wrong-series (foreign)     -> GREEN
      (only the absence notes are red; series ownership is not)
+  K. no-walk class total>0 (biome 64, no gallery yet)         -> RED (named)
+     (12-aq: the ledger sees the visual class, the red is the backlog)
+  L. no-walk class total=-1 (unreadable dynamic registry)     -> RED (named)
+  M. no-walk classes all total=0 in the namespace             -> GREEN
 """
 import pathlib
 import shutil
@@ -41,7 +45,21 @@ def build_fixture(root, ns="create"):
         f"item\t{cells}\t{cells}\n"
         "particle\t10\t77\n"
         "fluid\t18\t18\n"
-        "blockentity\t3\t0\n", encoding="utf-8")
+        "blockentity\t3\t0\n"
+        "biome\t0\t0\n"
+        "painting_variant\t0\t0\n"
+        "wolf_variant\t0\t0\n"
+        "cat_variant\t0\t0\n"
+        "frog_variant\t0\t0\n"
+        "villager_type\t0\t0\n"
+        "mob_effect\t0\t0\n"
+        "trim_material\t0\t0\n"
+        "trim_pattern\t0\t0\n"
+        "banner_pattern\t0\t0\n"
+        "decorated_pot_pattern\t0\t0\n"
+        "enchantment\t0\t0\n"
+        "jukebox_song\t0\t0\n"
+        "dimension_type\t0\t0\n", encoding="utf-8")
     # block pages 0..1 (+ terminal page 2)
     for p in (0, 1):
         (scenes / f"gallery-{ns}-p{p}.tsv").write_text("cell\tx\ty\tz\tstate\n", encoding="utf-8")
@@ -216,6 +234,43 @@ def main():
         r = run_gate(root)
         ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout
         print("J foreign skip note GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # K: a no-walk visual class with entries -> RED, named (12-aq)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "biome\t0\t0\n", "biome\t64\t0\n")
+        idx.write_text(txt, encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "biome\ttotal=64" in r.stdout \
+            and "no-walk-yet" in r.stdout
+        print("K no-walk class RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # L: an unreadable dynamic registry (-1) -> RED
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "painting_variant\t0\t0\n", "painting_variant\t-1\t0\n")
+        idx.write_text(txt, encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "painting_variant" in r.stdout \
+            and "unreadable-registry" in r.stdout
+        print("L unreadable registry RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # M: all no-walk classes at 0 -> GREEN (the create case)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)  # every no-walk row is 0 in the base fixture
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout
+        print("M no-walk zeros GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     print("SMOKE:", "ALL PASS" if failures == 0 else f"{failures} FAILURES")

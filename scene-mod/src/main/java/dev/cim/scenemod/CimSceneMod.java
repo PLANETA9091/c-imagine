@@ -8,8 +8,11 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
@@ -325,7 +328,7 @@ public final class CimSceneMod {
      */
     private static int gallery(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
-        writeGalleryIndex(namespace);
+        writeGalleryIndex(level, namespace);
 
         // Deterministic entry list: sorted ids of the namespace, each block's
         // states in getPossibleStates() order.
@@ -469,7 +472,7 @@ public final class CimSceneMod {
      *  O(states x BE-types) — once per server is the right cost). */
     private static final Set<String> LEDGER_WRITTEN = new HashSet<>();
 
-    private static void writeGalleryIndex(String namespace) {
+    private static void writeGalleryIndex(ServerLevel level, String namespace) {
         if (!LEDGER_WRITTEN.add(namespace)) {
             return;
         }
@@ -496,6 +499,32 @@ public final class CimSceneMod {
         for (ResourceLocation id : BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet()) {
             if (id.getNamespace().equals(namespace)) blockEntities++;
         }
+        // THE REST OF THE VISUAL SURFACE (12-aq): the world-frame ledger
+        // counts EVERY registry whose entries alter a rendered frame — the
+        // mod's biomes (BOP's whole identity), paintings, entity texture
+        // variants, mob effects (particle overlays), armor trims, banner
+        // patterns, decorated-pot patterns, enchantments (item glint),
+        // jukebox songs, dimension types (sky/fog). These classes have NO
+        // gallery walk yet — the gate reports them COVERAGE-INCOMPLETE
+        // reason=no-walk-yet: the ledger SEES the hole, the red is the
+        // named backlog. Worldgen plumbing (features, loot, predicates,
+        // attributes...) shapes the world, not a gallery cell, and stays
+        // outside the world-frame ledger (documented line, challengeable).
+        RegistryAccess access = level.registryAccess();
+        long biomes = dynCount(access, Registries.BIOME, namespace);
+        long paintingVariants = dynCount(access, Registries.PAINTING_VARIANT, namespace);
+        long wolfVariants = dynCount(access, Registries.WOLF_VARIANT, namespace);
+        long trimMaterials = dynCount(access, Registries.TRIM_MATERIAL, namespace);
+        long trimPatterns = dynCount(access, Registries.TRIM_PATTERN, namespace);
+        long bannerPatterns = dynCount(access, Registries.BANNER_PATTERN, namespace);
+        long enchantments = dynCount(access, Registries.ENCHANTMENT, namespace);
+        long jukeboxSongs = dynCount(access, Registries.JUKEBOX_SONG, namespace);
+        long dimensionTypes = dynCount(access, Registries.DIMENSION_TYPE, namespace);
+        long mobEffects = staticCount(BuiltInRegistries.MOB_EFFECT, namespace);
+        long catVariants = staticCount(BuiltInRegistries.CAT_VARIANT, namespace);
+        long frogVariants = staticCount(BuiltInRegistries.FROG_VARIANT, namespace);
+        long villagerTypes = staticCount(BuiltInRegistries.VILLAGER_TYPE, namespace);
+        long potPatterns = staticCount(BuiltInRegistries.DECORATED_POT_PATTERN, namespace);
         StringBuilder tsv = new StringBuilder("class\ttotal\tcellsPerPage\n")
                 .append("block\t").append(states).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("entity\t").append(entities).append('\t').append(ENTITY_CELLS).append('\n')
@@ -505,7 +534,24 @@ public final class CimSceneMod {
                 // no pages of its own: the BE class's picture is drawn by the
                 // block wall (real EntityBlock placement); the gate checks the
                 // reconciliation file below instead of page counts
-                .append("blockentity\t").append(blockEntities).append('\t').append(0).append('\n');
+                .append("blockentity\t").append(blockEntities).append('\t').append(0).append('\n')
+                // the no-walk classes (12-aq): counted, not walked yet — a
+                // negative total means the dynamic registry itself could not
+                // be READ at index time (the gate reds that too, honestly)
+                .append("biome\t").append(biomes).append("\t0\n")
+                .append("painting_variant\t").append(paintingVariants).append("\t0\n")
+                .append("wolf_variant\t").append(wolfVariants).append("\t0\n")
+                .append("cat_variant\t").append(catVariants).append("\t0\n")
+                .append("frog_variant\t").append(frogVariants).append("\t0\n")
+                .append("villager_type\t").append(villagerTypes).append("\t0\n")
+                .append("mob_effect\t").append(mobEffects).append("\t0\n")
+                .append("trim_material\t").append(trimMaterials).append("\t0\n")
+                .append("trim_pattern\t").append(trimPatterns).append("\t0\n")
+                .append("banner_pattern\t").append(bannerPatterns).append("\t0\n")
+                .append("decorated_pot_pattern\t").append(potPatterns).append("\t0\n")
+                .append("enchantment\t").append(enchantments).append("\t0\n")
+                .append("jukebox_song\t").append(jukeboxSongs).append("\t0\n")
+                .append("dimension_type\t").append(dimensionTypes).append("\t0\n");
         // BLOCK ENTITY RECONCILIATION: a BlockEntityType whose every valid
         // state is fluid-carried or RenderShape.INVISIBLE would never reach
         // the block wall — its renderer would silently vanish from the
@@ -546,9 +592,45 @@ public final class CimSceneMod {
             LOGGER.error("[cimscene] gallery-index write failed ns={}: {}", namespace, ioe.toString());
         }
         LOGGER.info("[cimscene] gallery-index ns={} block-states={} entities={} items={} "
-                        + "particles={} fluids={} block-entities={} be-uncovered={}",
+                        + "particles={} fluids={} block-entities={} be-uncovered={} "
+                        + "biomes={} paintings={} effects={} enchantments={} trims={}/{} "
+                        + "banners={} pot-patterns={} variants={}/{}/{} villager={} songs={} "
+                        + "dimension-types={}",
                 namespace, states, entities, items, particles, fluids, blockEntities,
-                beUncovered.size());
+                beUncovered.size(), biomes, paintingVariants, mobEffects, enchantments,
+                trimMaterials, trimPatterns, bannerPatterns, potPatterns,
+                wolfVariants, catVariants, frogVariants, villagerTypes, jukeboxSongs,
+                dimensionTypes);
+    }
+
+    /** Namespace count from a STATIC (BuiltIn) registry. */
+    private static long staticCount(Registry<?> reg, String namespace) {
+        long n = 0;
+        for (ResourceLocation id : reg.keySet()) {
+            if (id.getNamespace().equals(namespace)) n++;
+        }
+        return n;
+    }
+
+    /** Namespace count from a DATAPACK (dynamic) registry; -1 when the
+     *  registry itself cannot be read — the gate reds that honestly
+     *  (unverifiable coverage is not green). */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static long dynCount(RegistryAccess access,
+                                 ResourceKey<? extends Registry<?>> key,
+                                 String namespace) {
+        try {
+            Registry<?> reg = access.registryOrThrow((ResourceKey) key);
+            long n = 0;
+            for (ResourceLocation id : reg.keySet()) {
+                if (id.getNamespace().equals(namespace)) n++;
+            }
+            return n;
+        } catch (Throwable t) {
+            LOGGER.error("[cimscene] gallery-index dynamic registry unreadable {}: {}",
+                    key.location(), t.toString());
+            return -1;
+        }
     }
 
     /**
@@ -607,7 +689,7 @@ public final class CimSceneMod {
      */
     private static int galleryItem(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
-        writeGalleryIndex(namespace);
+        writeGalleryIndex(level, namespace);
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -694,7 +776,7 @@ public final class CimSceneMod {
      */
     private static int galleryParticle(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
-        writeGalleryIndex(namespace);
+        writeGalleryIndex(level, namespace);
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.PARTICLE_TYPE.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -783,7 +865,7 @@ public final class CimSceneMod {
      */
     private static int galleryFluid(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
-        writeGalleryIndex(namespace);
+        writeGalleryIndex(level, namespace);
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.FLUID.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -942,7 +1024,7 @@ public final class CimSceneMod {
     private static int galleryEntity(CommandSourceStack src, String series,
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
-        writeGalleryIndex(namespace);
+        writeGalleryIndex(level, namespace);
 
         // Deterministic entry list: sorted entity ids of the namespace.
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ENTITY_TYPE.keySet());
