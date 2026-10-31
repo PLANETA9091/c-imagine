@@ -3084,3 +3084,53 @@ Stage Summary:
   snapshots before it commands, exactly like the #34 loops did with
   grep counts. The 82-minute serial wall is still dead; the sharded
   run's remaining work is one green seed, then the steady-state timing.
+
+---
+Task ID: 13-e
+Agent: main
+Task: bring-up of the sharded wall — five measured fixes in four runs (#40-#44), the pipeline went end-to-end GREEN-with-an-honest-red
+
+Work Log:
+- MEASURED #40: every server launch died instantly — "could not open
+  libraries/.../unix_args.txt". ROOT CAUSE: commit 7a39406 swept 14 LOCAL
+  runtime files into git (git add -A), including srv-wall/ — the checkout
+  created the dir, `cp -r layer-srv srv-wall` nested the layer INSIDE it
+  (the classic cp pitfall) and the args file was never where java looked.
+  FIX: git rm --cached + .gitignore for every runtime workspace.
+- MEASURED #41: the seed walk COMPLETED (408 block pages exhausted in ~2
+  min — the file channel works at scale) but the pack build died on
+  `cat: paper-plugin/target/selftest-cp.txt: No such file or directory`
+  — with -f from the root, maven resolves -Dmdep.outputFile against the
+  project base dir but the step read it from the root. FIX: run maven in
+  paper-plugin/ like the proven workflow. AND the poisoned-cache hazard:
+  a failed seed build still SAVED its partial seed-pack under the key —
+  the cache is now restore-only + an explicit success-gated save.
+- MEASURED #42: every ours shard died in 0.1 min — `cp: -r not
+  specified; omitting directory 'seed-pack/f2v/.'`. FIX: cp -r. The
+  gate.json step now mkdirs its report dir.
+- MEASURED #43: the ours shards died on `NEED: unbound variable` the
+  moment a package was missing (truth runners preinstall mesa, ours
+  don't — the dpkg guard only ever ran its else-branch on truth). FIX:
+  NEED="" init. AND the seed cache never hit: the gradle action's
+  per-matrix-job cache writes (146 entries!) flooded the 10GB cap and
+  evicted the seed — gradle caching OFF in gallery.
+- MEASURED #44 (the pipeline went END-TO-END): seed green (miss path
+  9.3 min), truth x8 green (2.9-3.7 min each), ours x8 walked the FULL
+  stride, downloaded their truth counterparts and ran the inline pixel
+  join — the run went RED on REAL pixel mismatches
+  (create:cut_diorite_wall[...] ae≈880k — the SAME honest red family as
+  the serial #35). The harness is done; the red is the wall's.
+- THE LAST TIMING HAZARD: the seed's exact cache key moved on every
+  commit (hashFiles sees more than the intended inputs — three keys for
+  three workflow-only commits) → a 9-min walk per push. FIX:
+  restore-keys prefix fallback — the previous byte-identical pack
+  serves in ~1 min; the per-page join re-verifies it against the fresh
+  truth manifests every run (drift = red, never a silent green).
+
+Stage Summary:
+- Five fixes, each measured from its own run's logs. The sharded wall is
+  UP: 16 parallel server+client pairs, inline per-shard pixel joins, a
+  coverage verdict over merged manifests/boot logs/shot lists. #44 ran
+  17.0 min with a 9.3-min cold seed; the first prefix-hit run is the
+  real steady-state measurement (projected ~8-9 min, the truth shards
+  finish at ~4 and the ours tail at ~6).
