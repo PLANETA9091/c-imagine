@@ -54,3 +54,18 @@ __pycache__/
 # resources (the offline build jars the whole folder); the pack emits into
 # its own zip at runtime.
 paper-plugin/src/main/resources/assets/
+
+# CI/runtime workspaces (never commit — a checked-in srv-wall/ makes
+# `cp -r layer-srv srv-wall` nest the layer INSIDE the existing dir and
+# the server can't find its args file — measured #40)
+/srv-wall/
+/srv-ours/
+/ours-shots/
+/truth-shots/
+/seed-pack/
+/nfc/
+/truth-client/
+/visual-client/
+/layer-srv/
+/mods-create/
+/vtools/
