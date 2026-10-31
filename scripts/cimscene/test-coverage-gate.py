@@ -19,6 +19,10 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
      (12-aq: the ledger sees the visual class, the red is the backlog)
   L. no-walk class total=-1 (unreadable dynamic registry)     -> RED (named)
   M. no-walk classes all total=0 in the namespace             -> GREEN
+  N. particle manifest skip row no-simple-options             -> RED (named)
+     (measured #30: all 13 create particles rejected the bare spawn)
+  O. fluid manifest skip row no-channel                       -> RED (named)
+     (measured #30: 4 of 8 create fluids have no legacy block/bucket)
 """
 import pathlib
 import shutil
@@ -271,6 +275,34 @@ def main():
         r = run_gate(root)
         ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout
         print("M no-walk zeros GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # N: particle absence row -> RED, named (12-as)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-particle-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tparticle\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:rot\t1\tno-simple-options\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:rot(no-simple-options)" in r.stdout \
+            and "particle" in r.stdout
+        print("N particle absence RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # O: fluid no-channel row -> RED, named (12-as)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-fluid-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n"
+                     "skip\t-1\t-1\t-1\tcreate:honey_flow\t1\tno-channel\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:honey_flow(no-channel)" in r.stdout \
+            and "fluid" in r.stdout
+        print("O fluid no-channel RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     print("SMOKE:", "ALL PASS" if failures == 0 else f"{failures} FAILURES")

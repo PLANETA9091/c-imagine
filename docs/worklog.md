@@ -2697,3 +2697,56 @@ Stage Summary:
   red is exactly the modded-entity backlog (create's 6 subjects that
   cannot exist bare + every modded entity the ours leg cannot render yet),
   named and waiting for M5.6's real-client leg.
+
+---
+Task ID: 12-as
+Agent: main
+Task: gallery #30 forensics — the truth leg survives end to end (quarantine works), and the honesty chain closes its last two gaps: the final-rewrite settle pass + absence notes for item/particle/fluid
+
+Work Log:
+- GALLERY #30 (67c99ab) RESULTS: the truth leg COMPLETED for the first time
+  since the entity walk exists — the quarantine mixin caught
+  create:potato_projectile's tick NPE (boot.log: `entity-tick quarantine
+  entity=create:potato_projectile err=...this.type" is null`), the server
+  lived, and every walk finished: blocks 404 pages, entities (mobs/dyn/
+  large create + minecraft), items 0..9 (699), particles, fluids. The ours
+  leg ran. The system is finally observing its whole surface.
+- NEW HOLE 1 (measured #30): the quarantine fired AFTER the settle pass —
+  potato was alive at pass 1 (manifest row ok, dissolved=0) and quarantined
+  at ~+48 ticks; the shot (~+120 ticks) showed an EMPTY cell, the ours leg
+  nochannel'd it (empty too) → empty-vs-empty GREEN while the manifest
+  claimed content. THE FINAL-REWRITE PASS (CimSceneMod.ENTITY_FINAL_TICKS):
+  settleGalleryEntity runs twice — pass 1 at +40 ticks (manifest + done
+  marker as before), pass 2 at +40 ticks after pass 1 (~+80 ticks, still
+  inside the CI shot window of marker + 4 s) REWRITES the manifest with
+  the final subject states (quarantined/self-discarded → dissolved) and
+  prints settle-final (NO done marker, NO further scheduling — a pass
+  chain would never terminate and pollute the CI's count-based wait).
+- NEW HOLE 2 (measured #30): the gate's absence scan was entity-only, but
+  the walks record honest absence for OTHER classes: particle
+  `no-simple-options` (ALL 13 create particles — the vanilla particle
+  command rejects the bare spawn for option-required types) and fluid
+  `no-channel` (4 of 8 create fluids — no legacy block and no bucket),
+  item `summon-failed`. The gate now scans every class's skip rows against
+  per-class ABSENCE_NOTES and reds them with the names. BLOCK stays exempt
+  (the deliberate 12-ao accounting: fluid states have their own class,
+  invisible states render identically by vanilla's own contract).
+- The create backlog is now FULLY NAMED by the gate: 5 entity placement
+  failures (carriage_contraption / crafting_blueprint / gantry_contraption
+  / package / stationary_contraption), potato_projectile (dissolved via
+  the rewrite), 13 particles (no-simple-options), 4 fluids (no-channel),
+  every modded entity nochannel on the ours leg (M5.6). Nothing silent
+  remains — the reds are the roadmap order.
+- Verified locally (light): offline javac GREEN; gate smoke 15/15 (A-O)
+  including the new N (particle absence) and O (fluid no-channel) cases;
+  heavy verification = CI #32+ (the settle-final lines must appear before
+  the shots, the gate must print the named backlog, the ours leg + diff
+  must run to the end).
+
+Stage Summary:
+- The honesty chain is closed on both ends: the walk cannot be killed
+  (12-ap), the server cannot be killed (12-ar), the manifest cannot lie
+  about a post-settle death (12-as rewrite), and no class's absence notes
+  escape the gate (12-as scan). The verdict now behaves exactly as the
+  owner demanded: seriously everything, honestly red where content cannot
+  yet be shown, each red naming its subject.

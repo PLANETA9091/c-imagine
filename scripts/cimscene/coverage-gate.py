@@ -21,17 +21,28 @@ against what the run ACTUALLY produced:
   or RenderShape.INVISIBLE never reaches the wall and is named here.
 
 HONEST-RED on the manifest's own words (owner directive "СЕРЬЕЗНО ВСЁ",
-measured failure gallery #25 run 41188197904): an ENTITY manifest row whose
-note is not ok means the subject is ABSENT from the picture on the truth
-leg — dissolved (it slid/died before the settle pass), no-instance
-(EntityType.create returned null), failed-create / failed (the spawn or
-configure threw). The pixel join alone would compare empty-vs-empty and
-stay silent; the gate turns every named note RED for all three entity
-series — a modded subject that crashes its own spawn becomes the named
-backlog, never a silent green. (BLOCK manifests' skip rows are the
-different, deliberate accounting of 12-ao: fluid-carried states moved to
-their own class, RenderShape.INVISIBLE states render identically on both
-legs by vanilla's own contract — reported as skipped, never red.)
+measured failure gallery #25 run 41188197904): a manifest row whose note
+means ABSENCE turns the run RED with the named subjects. The pixel join
+alone would compare empty-vs-empty and stay silent. Per class:
+  entity-*   dissolved (slid/died/QUARANTINED before the final settle),
+             no-instance (EntityType.create returned null), failed-* (the
+             spawn or configure threw) — measured #25/#27/#30;
+  item       summon-failed (the display summon failed) — 12-ap;
+  particle   no-simple-options (the vanilla particle command rejected the
+             bare spawn — measured #30: ALL 13 create particles);
+  fluid      no-channel (no legacy block and no bucket — measured #30: 4 of
+             8 create fluids).
+(BLOCK manifests' skip rows are the different, deliberate accounting of
+12-ao: fluid-carried states moved to their own class, RenderShape.INVISIBLE
+states render identically on both legs by vanilla's own contract — reported
+as skipped, never red.)
+
+THE FINAL-REWRITE CONTRACT (12-as, measured #30): the entity-tick
+quarantine can fire AFTER the settle pass — potato_projectile was alive at
+pass 1 (row ok) and quarantined at ~+48 ticks, the shot then showed an
+empty cell and the manifest claimed content nobody saw. The scene's second
+settle pass (+40 ticks after pass 1, still inside the shot window) rewrites
+the manifest with the final states; the gate reads the rewritten file.
 
 Any shortfall is COVERAGE-INCOMPLETE — the run is RED no matter how green
 the per-cell joins were (the measured motivating gap: create registers
@@ -109,6 +120,18 @@ NO_WALK = {"biome", "painting_variant", "wolf_variant", "cat_variant",
            "trim_pattern", "banner_pattern", "decorated_pot_pattern",
            "enchantment", "jukebox_song", "dimension_type"}
 
+# per class: manifest skip-row notes that mean the subject is ABSENT from
+# the picture (see the HONEST-RED docstring above). A note matches when it
+# equals an entry or starts with one (entity failed:<throwable>).
+ABSENCE_NOTES = {
+    "entity-mobs": ("dissolved", "no-instance", "failed"),
+    "entity-dyn": ("dissolved", "no-instance", "failed"),
+    "entity-large": ("dissolved", "no-instance", "failed"),
+    "item": ("summon-failed",),
+    "particle": ("no-simple-options",),
+    "fluid": ("no-channel",),
+}
+
 
 def shot_infix(cls, ns):
     """The namespace infix of the shot file names: none for the block
@@ -139,10 +162,13 @@ def read_index(path, ns):
     return rows
 
 
-def unshown_entities(scenes, mf_tpl, ns, needed):
-    """The named subjects absent from the picture: entity-manifest skip rows
-    whose note means failed content (dissolved / no-instance / failed-*).
-    Rows are the honesty channel the pixel join cannot see (empty vs empty)."""
+def unshown_rows(scenes, mf_tpl, ns, needed, cls):
+    """The named subjects absent from the picture: manifest skip rows whose
+    note is one of the class's ABSENCE_NOTES. Rows are the honesty channel
+    the pixel join cannot see (empty vs empty)."""
+    prefixes = ABSENCE_NOTES.get(cls, ())
+    if not prefixes:
+        return []
     out = []
     for p in range(needed):
         mf = scenes / mf_tpl.format(ns=ns, p=p)
@@ -153,8 +179,7 @@ def unshown_entities(scenes, mf_tpl, ns, needed):
             if len(parts) < 7 or parts[0] != "skip":
                 continue
             note = parts[6].strip()
-            if note == "dissolved" or note.startswith("failed") \
-                    or note == "no-instance":
+            if any(note == pre or note.startswith(pre) for pre in prefixes):
                 out.append(f"{parts[4]}({note})")
     return out
 
@@ -247,8 +272,7 @@ def main():
                     no_exhaust = True
             ok = needed == 0 or (missing_mf == 0 and missing_ts == 0
                                  and missing_os == 0 and not no_exhaust)
-            unshown = (unshown_entities(scenes, mf_tpl, args.ns, needed)
-                       if sub.startswith("entity") else [])
+            unshown = unshown_rows(scenes, mf_tpl, args.ns, needed, sub)
             if unshown:
                 ok = False
             note = "OK" if ok else "COVERAGE-INCOMPLETE"

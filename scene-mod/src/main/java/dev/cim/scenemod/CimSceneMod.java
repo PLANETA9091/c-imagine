@@ -990,6 +990,20 @@ public final class CimSceneMod {
     static final int ENTITY_SETTLE_TICKS = 40;
 
     /**
+     * The FINAL-REWRITE pass delay (12-as): a second settle runs this many
+     * ticks AFTER pass 1 and rewrites the manifest with the final subject
+     * states. The quarantine (and a subject's own self-discard) can fire
+     * AFTER pass 1 — measured gallery #30: create:potato_projectile was
+     * alive at pass 1 (row ok) and quarantined at ~+48 ticks, so the
+     * manifest claimed content the shot no longer shows and the gate was
+     * blind (empty-vs-empty). +40 ticks after pass 1 = ~+80 ticks after the
+     * command — still inside the CI shot window (done marker + 4 s) but
+     * after the measured first-bad-tick deaths. No done marker on pass 2:
+     * the page's readiness was already signalled.
+     */
+    static final int ENTITY_FINAL_TICKS = 40;
+
+    /**
      * The universal ENTITY gallery: EVERY {@link EntityType} registered by
      * the namespace, sorted by id, spawned one per wall cell (feet at the
      * cell position, yaw 180 = facing the locked camera, pitch 0) and
@@ -1173,7 +1187,7 @@ public final class CimSceneMod {
                 + ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
                         fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
                         fNoInstance, fWrongSeries, fFailed, fSkipNotes,
-                        fFrom, fSeries)));
+                        fFrom, fSeries, false)));
         return spawned.size();
     }
 
@@ -1189,13 +1203,16 @@ public final class CimSceneMod {
         return "mobs".equals(series) ? "" : series;
     }
 
-    /** Settle pass body: re-read spawns, emit the settled manifest + marker. */
+    /** Settle pass body: re-read spawns, emit the settled manifest + marker.
+     *  Pass 2 ({@code finalPass}) rewrites the manifest with the final
+     *  subject states (quarantines/self-discards after pass 1 reclassify to
+     *  dissolved) and writes NO done marker. */
     private static void settleGalleryEntity(ServerLevel level, String namespace, int page,
                                             List<ResourceLocation> slice,
                                             List<Entity> spawned, List<Integer> spawnedIdx,
                                             int noInstance, int wrongSeries, int failed,
                                             java.util.Map<Integer, String> skipNotes,
-                                            int from, String series) {
+                                            int from, String series, boolean finalPass) {
         String tag = seriesTag(series);
         String[] rowStr = new String[slice.size()];
         int cells = 0, dyn = 0, dissolved = 0;
@@ -1248,10 +1265,30 @@ public final class CimSceneMod {
             LOGGER.error("[cimscene] gallery-entity manifest write failed {}: {}",
                     manifest, ioe.toString());
         }
+        if (finalPass) {
+            // pass 2: the manifest is rewritten, readiness was already
+            // signalled — no done marker, no further scheduling (a chain
+            // of passes would never terminate and would pollute the CI's
+            // count-based wait with phantom markers)
+            LOGGER.info("[cimscene] gallery-entity{} settle-final ns={} page={} cells={} dyn={} "
+                            + "dissolved={} (manifest rewritten inside the shot window; "
+                            + "no done marker)",
+                    tag, namespace, page, cells, dyn, dissolved);
+            return;
+        }
         LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells={} dyn={} "
                         + "skipped_no_instance={} skipped_wrong_series={} failed={} dissolved={} first={} last={}",
                 tag, namespace, page, cells, dyn, noInstance, wrongSeries,
                 failed, dissolved, slice.get(0), slice.get(slice.size() - 1));
+        // FINAL REWRITE PASS (12-as): catch the deaths that happen after
+        // pass 1 — the tick quarantine, a modded subject's own
+        // self-discard — while still inside the CI shot window, and rewrite
+        // the manifest so the gate reads the state the SHOT will show.
+        level.getServer().tell(new TickTask(level.getServer().getTickCount()
+                + ENTITY_FINAL_TICKS, () -> settleGalleryEntity(
+                        level, namespace, page, slice, spawned, spawnedIdx,
+                        noInstance, wrongSeries, failed, skipNotes,
+                        from, series, true)));
     }
 
     /** Canonical state string {@code ns:path[k=v,...]} (properties in
