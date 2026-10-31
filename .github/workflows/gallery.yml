@@ -230,16 +230,22 @@ jobs:
           # #38: page 0's done line sat 30s and landed exactly when the
           # wait gave up — a Files.writeString cannot stall. The boot.log
           # lines are echoed best-effort for the log readers.
-          wait_done() { # $1 = stem; rc0 done | rc1 exhausted | rc2 timeout
+          base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
+            # command: the scene writes the marker INSIDE the command's
+            # execution (the mtime measured #39: 17:57:32 vs the response
+            # 17:57:33.8) — a baseline read after the response would see
+            # the fresh file and wait for a change that already happened
+            V0D=$(cat "srv-wall/c-imagine/scenes/$1.done" 2>/dev/null || echo 0)
+            V0E=$(cat "srv-wall/c-imagine/scenes/$1.exhausted" 2>/dev/null || echo 0)
+          }
+          wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
             local BASE="srv-wall/c-imagine/scenes/$1"
-            local V0D V0E VD VE
-            V0D=$(cat "$BASE.done" 2>/dev/null || echo 0)
-            V0E=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+            local VD VE
             for i in $(seq 1 120); do
               VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
               VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
-              [ "$VD" != "$V0D" ] && return 0
-              [ "$VE" != "$V0E" ] && return 1
+              [ "$VD" != "$2" ] && return 0
+              [ "$VE" != "$3" ] && return 1
               sleep 0.25
             done
             echo "no done marker file: $1"; return 2
@@ -247,9 +253,10 @@ jobs:
           # BLOCK pages (to exhaustion — the coverage law)
           EXHAUSTED=0
           for p in $(seq 0 $MAXP); do
+            base_of "gallery-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery page create $p"
-            RC=0; wait_done "gallery-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then
               echo "block walk exhausted at page $p"
@@ -265,18 +272,20 @@ jobs:
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "difficulty easy" "kill @e[type=!player]"
           for p in $(seq 0 $((EPAGES-1))); do
+            base_of "gallery-entity-minecraft-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery entity mobs minecraft $p"
-            RC=0; wait_done "gallery-entity-minecraft-p$p" || RC=$?
+            RC=0; wait_done "gallery-entity-minecraft-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
           done
           for p in $(seq 0 $((EDPAGES-1))); do
             for SERIES in dyn large; do
               TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
+              base_of "gallery-$TAG-minecraft-p$p"
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery entity $SERIES minecraft $p"
-              RC=0; wait_done "gallery-$TAG-minecraft-p$p" || RC=$?
+              RC=0; wait_done "gallery-$TAG-minecraft-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             done
@@ -285,9 +294,10 @@ jobs:
             TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
             EX=0
             for p in $(seq 0 $MAXP); do
+              base_of "gallery-$TAG-create-p$p"
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
-              RC=0; wait_done "gallery-$TAG-create-p$p" || RC=$?
+              RC=0; wait_done "gallery-$TAG-create-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -297,9 +307,10 @@ jobs:
           # ITEM walk (create, to exhaustion)
           EX=0
           for p in $(seq 0 $MAXP); do
+            base_of "gallery-item-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cimscene gallery item create $p"
-            RC=0; wait_done "gallery-item-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-item-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -308,9 +319,10 @@ jobs:
           # PARTICLE walk (create, to exhaustion)
           EX=0
           for p in $(seq 0 $MAXP); do
+            base_of "gallery-particle-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery particle create $p"
-            RC=0; wait_done "gallery-particle-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-particle-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -319,9 +331,10 @@ jobs:
           # FLUID walk (create, to exhaustion)
           EX=0
           for p in $(seq 0 $MAXP); do
+            base_of "gallery-fluid-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery fluid create $p"
-            RC=0; wait_done "gallery-fluid-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-fluid-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -591,25 +604,32 @@ jobs:
           # exactly the full page space. THE MARKER IS THE FILE the scene
           # writes at the same code point as the boot.log line (13-c — a
           # quiet console pipeline can stall, a Files.writeString cannot).
-          wait_done() { # $1 = stem; rc0 done | rc1 exhausted | rc2 timeout
+          base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
+            # command: the scene writes the marker INSIDE the command's
+            # execution (the mtime measured #39: 17:57:32 vs the response
+            # 17:57:33.8) — a baseline read after the response would see
+            # the fresh file and wait for a change that already happened
+            V0D=$(cat "srv-wall/c-imagine/scenes/$1.done" 2>/dev/null || echo 0)
+            V0E=$(cat "srv-wall/c-imagine/scenes/$1.exhausted" 2>/dev/null || echo 0)
+          }
+          wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
             local BASE="srv-wall/c-imagine/scenes/$1"
-            local V0D V0E VD VE
-            V0D=$(cat "$BASE.done" 2>/dev/null || echo 0)
-            V0E=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+            local VD VE
             for i in $(seq 1 120); do
               VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
               VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
-              [ "$VD" != "$V0D" ] && return 0
-              [ "$VE" != "$V0E" ] && return 1
+              [ "$VD" != "$2" ] && return 0
+              [ "$VE" != "$3" ] && return 1
               sleep 0.25
             done
             echo "no done marker file: $1"; return 2
           }
           EXHAUSTED=0
           for p in $(seq $SI $K $MAXP); do
+            base_of "gallery-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery page create $p"
-            RC=0; wait_done "gallery-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then
               echo "block walk exhausted at page $p"
@@ -652,16 +672,22 @@ jobs:
           # block walk; the entity settle pass writes its marker file in the
           # same server-thread task that rewrites the manifest (40 ticks
           # after the command, still inside the shot window).
-          wait_done() { # $1 = stem; rc0 done | rc1 exhausted | rc2 timeout
+          base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
+            # command: the scene writes the marker INSIDE the command's
+            # execution (the mtime measured #39: 17:57:32 vs the response
+            # 17:57:33.8) — a baseline read after the response would see
+            # the fresh file and wait for a change that already happened
+            V0D=$(cat "srv-wall/c-imagine/scenes/$1.done" 2>/dev/null || echo 0)
+            V0E=$(cat "srv-wall/c-imagine/scenes/$1.exhausted" 2>/dev/null || echo 0)
+          }
+          wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
             local BASE="srv-wall/c-imagine/scenes/$1"
-            local V0D V0E VD VE
-            V0D=$(cat "$BASE.done" 2>/dev/null || echo 0)
-            V0E=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+            local VD VE
             for i in $(seq 1 120); do
               VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
               VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
-              [ "$VD" != "$V0D" ] && return 0
-              [ "$VE" != "$V0E" ] && return 1
+              [ "$VD" != "$2" ] && return 0
+              [ "$VE" != "$3" ] && return 1
               sleep 0.25
             done
             echo "no done marker file: $1"; return 2
@@ -669,9 +695,10 @@ jobs:
           # MOB series (the gate): frozen NoAI subjects on the wall. The
           # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq $SI $K $((EPAGES-1))); do
+            base_of "gallery-entity-minecraft-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery entity mobs minecraft $p"
-            RC=0; wait_done "gallery-entity-minecraft-p$p" || RC=$?
+            RC=0; wait_done "gallery-entity-minecraft-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             sleep 4   # section rebuild (wall -> air) + entity render under llvmpipe
@@ -683,9 +710,10 @@ jobs:
           for p in $(seq $SI $K $((EDPAGES-1))); do
             for SERIES in dyn large; do
               TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
+              base_of "gallery-$TAG-minecraft-p$p"
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery entity $SERIES minecraft $p"
-              RC=0; wait_done "gallery-$TAG-minecraft-p$p" || RC=$?
+              RC=0; wait_done "gallery-$TAG-minecraft-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
               sleep 4
@@ -710,9 +738,10 @@ jobs:
             TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
             EX=0
             for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-$TAG-create-p$p"
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
-              RC=0; wait_done "gallery-$TAG-create-p$p" || RC=$?
+              RC=0; wait_done "gallery-$TAG-create-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -726,9 +755,10 @@ jobs:
           # cell carrying the REAL modded item, to exhaustion.
           EX=0
           for p in $(seq $SI $K $MAXP); do
+            base_of "gallery-item-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cimscene gallery item create $p"
-            RC=0; wait_done "gallery-item-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-item-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -744,9 +774,10 @@ jobs:
           # comparison; the manifest rows are dyn=1, diagnostics, never red).
           EX=0
           for p in $(seq $SI $K $MAXP); do
+            base_of "gallery-particle-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery particle create $p"
-            RC=0; wait_done "gallery-particle-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-particle-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1 || true
@@ -763,9 +794,10 @@ jobs:
           # shot protocol is measured stable.
           EX=0
           for p in $(seq $SI $K $MAXP); do
+            base_of "gallery-fluid-create-p$p"
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery fluid create $p"
-            RC=0; wait_done "gallery-fluid-create-p$p" || RC=$?
+            RC=0; wait_done "gallery-fluid-create-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1 || true

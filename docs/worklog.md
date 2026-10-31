@@ -3048,3 +3048,39 @@ Stage Summary:
 - The console was never a contract — the manifests were. The walks now
   wait on what the scene actually writes to disk, not on when a
   buffered pipeline decides to flush.
+
+---
+Task ID: 13-d
+Agent: main
+Task: #39 post-mortem — the walks raced their own snapshot; the marker file was always there (mtime 17:57:32 vs the wait that gave up at 17:58:04)
+
+Work Log:
+- MEASURED #39: ALL 8 truth shards + the seed died at their FIRST walk
+  page with "no done marker file" — yet the shard-7 meta artifact PROVES
+  gallery-create-p7.done existed with mtime 17:57:32, written BEFORE the
+  RCON response (17:57:33.8: rcon.py prints "> cmd" only after the
+  response, so the command — and the scene's file write INSIDE it — had
+  completed). wait_done read its baseline AFTER the command, saw the
+  fresh nonce as "no change", and timed out on a file that was there.
+- THE ILLUSION, named: the "30s console stall" of #38 was never real —
+  the job-log pipeline timestamps lag the runner by ~30s (boot.log's own
+  mtime = the page-7 done moment; tail -10 printed the lines from the
+  file). The #38 seed failure had the SAME shape: wait_marker read its
+  grep-count baseline inside the function, i.e. after the command —
+  while the #38 TRUTH shards survived because their inline loops read
+  BEFORE=$(grep -c ...) BEFORE sending the command. #34's original
+  inline loops had the baseline in the right place too.
+- FIX: base_of <stem> reads the done/exhausted baselines BEFORE the RCON
+  command; wait_done takes them as arguments ($2/$3) and compares
+  content. Applied to all 14 walk sites (seed x7 families + truth x7);
+  the function definitions updated (3 copies). Unit tests: the exact
+  #39 race (baseline, instant write, first poll sees the change),
+  exhausted, re-walk, timeout — ALL PASS.
+- The ours leg is untouched (the RCON response channel is inherently
+  ordered — the plugin answers after the state is committed).
+
+Stage Summary:
+- The gate was never blind — the harness was racing itself. The walk now
+  snapshots before it commands, exactly like the #34 loops did with
+  grep counts. The 82-minute serial wall is still dead; the sharded
+  run's remaining work is one green seed, then the steady-state timing.
