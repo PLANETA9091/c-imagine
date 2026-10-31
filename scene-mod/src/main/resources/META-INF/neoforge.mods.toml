@@ -15,6 +15,13 @@ c-imagine APIs — that drives the census-driven scene sweep on BOTH stacks
 between the stacks is by construction a c-imagine defect.
 '''
 
+# The entity-tick quarantine (12-ar): a bare-spawned modded entity whose
+# tick NPEs (measured: create:potato_projectile, gallery #27) used to be a
+# FATAL server crash on the truth leg; the guard degrades it into a named
+# discard that the settle pass reports and the coverage gate reds.
+[[mixins]]
+config = "cimscene.mixins.json"
+
 [[dependencies.cimscene]]
 modId = "neoforge"
 type = "required"

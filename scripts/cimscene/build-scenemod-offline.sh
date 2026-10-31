@@ -40,7 +40,12 @@ rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
 echo "=== javac cimscene (offline, $(echo "$CP" | tr ':' '\n' | grep -c . ) cp jars) ==="
-javac --release 21 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
+# -proc:none: the offline classpath is SRG-named (the reobfuscated layer), so
+# the sponge-mixin annotation processor cannot resolve mojmap @Redirect
+# targets (measured 12-ar: "Unable to locate obfuscation mapping for
+# @Redirect target guardEntityTick"). Runtime is mojmap — the target exists;
+# the CI gradle build (ModDevGradle, mojmap CP) runs the AP for real.
+javac --release 21 -nowarn -proc:none -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
 
 echo "=== jar ==="
 mkdir -p "$(dirname "$OUT_JAR")"

@@ -2643,3 +2643,57 @@ Stage Summary:
   (reconciliation), and the 14 no-walk classes (counted, named, red until
   a walk exists). The verdict cannot be surprised by a class it never
   knew about: every registry name in the ledger is now deliberate.
+
+---
+Task ID: 12-ar
+Agent: main
+Task: the entity-tick quarantine — a bare-spawned modded subject can never kill the truth server again (measured gallery #27: create:potato_projectile tick NPE = FATAL)
+
+Work Log:
+- FORENSICS on gallery #27 (8f84a12): the crash-proof walk WORKED —
+  `gallery-entitydyn done ns=create page=0 cells=4 ... failed=5` (five
+  subjects threw during configure/addFreshEntity and became named rows:
+  carriage_contraption NPE UUID.getMostSignificantBits, crafting_blueprint
+  NPE Direction.get3DDataValue, gantry_contraption NPE Enum.name,
+  package EncoderException Empty ItemStack, stationary_contraption NPE
+  BlockPos.subtract) — the page completed, the settle fired, the shot was
+  taken. THEN the server DIED: create:potato_projectile placed fine
+  (inside cells=4) and NPE'd on its first server tick
+  (PotatoProjectileEntity.tick:149 — `this.type` is null because the
+  projectile type is only set when the potato cannon FIRES it); vanilla
+  turns any entity-tick Throwable into a FATAL crash (ReportedException →
+  "Ticking entity" crash report). The next RCON call hit a dead server —
+  Connection refused — the ours leg and the diff never ran.
+- THE QUARANTINE MIXIN (scene-mod, 12-ar): cimscene.mixins.json +
+  [[mixins]] in neoforge.mods.toml + LevelGuardMixin — @Redirect on
+  `Level.guardEntityTick`'s `Consumer.accept` call: any entity-tick
+  Throwable is logged (`[cimscene] entity-tick quarantine entity=<id>
+  err=<t>`), the subject is discarded, the tick loop continues. The settle
+  pass reads the discarded subject as `dissolved` → the manifest row → the
+  coverage gate turns it into the honest red WITH the subject's name
+  (the 12-ap chain, one layer deeper). A non-entity argument rethrows —
+  vanilla's fatal semantics stay for anything unexpected.
+- The honesty chain end to end: registry ledger → exhaustive walk →
+  crash-proof placement (named failed rows) → tick-proof server (named
+  quarantines) → settle (dissolved rows) → pixel join (visual) + coverage
+  gate (structural) + named absence reds (failed/no-instance/dissolved).
+  The run still goes RED for create (5 failed + potato dissolved + every
+  modded entity nochannel on the ours leg) — but now the red NAMES every
+  culprit and the server survives to diff everything else.
+- Verified locally (light): offline javac GREEN (the sponge-mixin AP runs
+  offline against the SRG-named layer and cannot resolve mojmap targets —
+  `-proc:none` added to the offline build with the measured reason; the CI
+  gradle build on ModDevGradle's mojmap CP validates for real); the jar
+  carries LevelGuardMixin.class + cimscene.mixins.json + the [[mixins]]
+  mods.toml entry. Heavy verification = CI: the truth leg must survive
+  create dyn page 0 (quarantine log line present, done marker for page 1),
+  and the wall-diff must print the named unshown reds.
+
+Stage Summary:
+- The truth server is now unkillable by its own gallery content: a
+  placement throw is a named row, a tick throw is a named quarantine, and
+  both degrade into honest reds in the ledger. #27's failure mode (a dead
+  server between two RCON calls) is structurally impossible; what remains
+  red is exactly the modded-entity backlog (create's 6 subjects that
+  cannot exist bare + every modded entity the ours leg cannot render yet),
+  named and waiting for M5.6's real-client leg.
