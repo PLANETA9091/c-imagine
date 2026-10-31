@@ -455,6 +455,28 @@ not cosmetic — THE EXHAUSTIVE COVERAGE LAW (implemented same day):
   namespaces; the block walk never infixes). The law lives in one place
   (`coverage-gate.py`), smoke-tested GREEN/RED on fixtures including the
   wrong-naming regression case.
+- **THE CRASH-PROOF WALK LAW (12-ap, 2026-10-31, measured gallery #25)**:
+  one modded subject that throws during its own spawn must never burn a
+  page, a walk, or a CI job — the entity walk wraps the whole
+  configure+addFreshEntity body per subject and the subject becomes a NAMED
+  manifest skip row (`no-instance` / `failed-create:<t>` / `failed:<t>`) +
+  a `failed=` counter on the done line. The gate reads the manifests and
+  turns every absence note into a COVERAGE red naming the subject
+  (`unshown=create:...`) — measured hole: the pixel join sees a crashed
+  subject as empty-vs-empty and would have stayed silent forever.
+- **THE WHOLE-SURFACE LEDGER LAW (12-aq, 2026-10-31)**: the ledger counts
+  EVERY registry whose entries alter a rendered frame — the 6 walked
+  classes + blockentity reconciliation + 14 no-walk classes (biome,
+  painting_variant, wolf/cat/frog variants, villager_type, mob_effect,
+  trim_material, trim_pattern, banner_pattern, decorated_pot_pattern,
+  enchantment, jukebox_song, dimension_type — static BuiltIn + datapack
+  registries, verified against the real 1.21.1 mojmap artifacts). A
+  positive no-walk total is COVERAGE red reason=no-walk-yet (the named
+  backlog); an unreadable dynamic registry (-1) is red too. Documented
+  line: worldgen plumbing (features, loot, predicates, menus, recipes)
+  has no per-entry pixel surface and stays outside the ledger. BOP's
+  biomes — the mod's whole identity — were outside the verdict before
+  this law; now they are a named red the roadmap must answer.
 - **Gate semantics (the anti-"green for nothing" law, extended to ALL
   content — owner directive 2026-10-31)**: census/registration parity
   stays a REQUIRED PRE-GATE (identical sets on both stacks) and nothing
