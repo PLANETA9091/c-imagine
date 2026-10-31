@@ -223,32 +223,40 @@ jobs:
         run: |
           set -euo pipefail
           # THE MANIFEST-GENERATION WALK (12-ax, kept verbatim except the
-          # poll granularity): identical walk commands, identical done
-          # markers, identical exhaustion asserts — no shot settles, no
-          # shots. The manifests record what the walk PLACED.
-          wait_marker() { # log-file pattern prefix(=0 to force match)
-            local PAT="$1"
-            local BEFORE; BEFORE=$(grep -c "$PAT" srv-wall/boot.log || true)
+          # marker channel): identical walk commands, identical exhaustion
+          # asserts — no shot settles, no shots. THE MARKER IS THE FILE the
+          # scene writes at the same code point as the boot.log line
+          # (13-c): a quiet server's console pipeline can STALL — measured
+          # #38: page 0's done line sat 30s and landed exactly when the
+          # wait gave up — a Files.writeString cannot stall. The boot.log
+          # lines are echoed best-effort for the log readers.
+          wait_done() { # $1 = stem; rc0 done | rc1 exhausted | rc2 timeout
+            local BASE="srv-wall/c-imagine/scenes/$1"
+            local V0D V0E VD VE
+            V0D=$(cat "$BASE.done" 2>/dev/null || echo 0)
+            V0E=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
             for i in $(seq 1 120); do
-              local C; C=$(grep -c "$PAT" srv-wall/boot.log || true)
-              [ "${C:-0}" -gt "${BEFORE:-0}" ] && return 0
+              VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
+              VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+              [ "$VD" != "$V0D" ] && return 0
+              [ "$VE" != "$V0E" ] && return 1
               sleep 0.25
             done
-            echo "no done marker: $PAT"; tail -10 srv-wall/boot.log; return 1
+            echo "no done marker file: $1"; return 2
           }
           # BLOCK pages (to exhaustion — the coverage law)
           EXHAUSTED=0
           for p in $(seq 0 $MAXP); do
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery page create $p"
-            wait_marker "gallery done ns=create page=$p " || exit 1
-            LINE=$(grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then
+            RC=0; wait_done "gallery-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then
               echo "block walk exhausted at page $p"
               EXHAUSTED=1
               break
             fi
+            grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1 || true
           done
           [ "$EXHAUSTED" = "1" ] || { echo "block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
           # ENTITY pages: difficulty easy (the SAME pin as the truth entity
@@ -259,16 +267,18 @@ jobs:
           for p in $(seq 0 $((EPAGES-1))); do
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery entity mobs minecraft $p"
-            wait_marker "gallery-entity done ns=minecraft page=$p " || exit 1
-            grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+            RC=0; wait_done "gallery-entity-minecraft-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
           done
           for p in $(seq 0 $((EDPAGES-1))); do
             for SERIES in dyn large; do
               TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery entity $SERIES minecraft $p"
-              wait_marker "gallery-$TAG done ns=minecraft page=$p " || exit 1
-              grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+              RC=0; wait_done "gallery-$TAG-minecraft-p$p" || RC=$?
+              [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             done
           done
           for SERIES in mobs dyn large; do
@@ -277,10 +287,10 @@ jobs:
             for p in $(seq 0 $MAXP); do
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
-              wait_marker "gallery-$TAG done ns=create page=$p " || exit 1
-              LINE=$(grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1)
-              echo "$LINE"
-              if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+              RC=0; wait_done "gallery-$TAG-create-p$p" || RC=$?
+              [ "$RC" = "2" ] && { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             done
             [ "$EX" = "1" ] || { echo "create $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
           done
@@ -289,10 +299,10 @@ jobs:
           for p in $(seq 0 $MAXP); do
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cimscene gallery item create $p"
-            wait_marker "gallery-item done ns=create page=$p " || exit 1
-            LINE=$(grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            RC=0; wait_done "gallery-item-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then EX=1; break; fi
+            grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1 || true
           done
           [ "$EX" = "1" ] || { echo "item walk hit the MAXP cap without exhausted"; exit 1; }
           # PARTICLE walk (create, to exhaustion)
@@ -300,10 +310,10 @@ jobs:
           for p in $(seq 0 $MAXP); do
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery particle create $p"
-            wait_marker "gallery-particle done ns=create page=$p " || exit 1
-            LINE=$(grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            RC=0; wait_done "gallery-particle-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then EX=1; break; fi
+            grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1 || true
           done
           [ "$EX" = "1" ] || { echo "particle walk hit the MAXP cap without exhausted"; exit 1; }
           # FLUID walk (create, to exhaustion)
@@ -311,10 +321,10 @@ jobs:
           for p in $(seq 0 $MAXP); do
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery fluid create $p"
-            wait_marker "gallery-fluid done ns=create page=$p " || exit 1
-            LINE=$(grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            RC=0; wait_done "gallery-fluid-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then EX=1; break; fi
+            grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1 || true
           done
           [ "$EX" = "1" ] || { echo "fluid walk hit the MAXP cap without exhausted"; exit 1; }
           ls srv-wall/c-imagine/scenes/ | wc -l
@@ -578,27 +588,35 @@ jobs:
           # walks its own arithmetic progression; the scene answers
           # exhausted=1 for any page beyond the registry, so each shard
           # terminates on its own sequence and the union of strides is
-          # exactly the full page space. Poll granularity 0.25s (the 1s
-          # RCON poll added ~0.5s/page at 408 pages — measured #35).
-          EXHAUSTED=0
-          for p in $(seq $SI $K $MAXP); do
-            BEFORE=$(grep -c "gallery done ns=create page=$p " srv-wall/boot.log || true)
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "cimscene gallery page create $p"
-            ok=0
+          # exactly the full page space. THE MARKER IS THE FILE the scene
+          # writes at the same code point as the boot.log line (13-c — a
+          # quiet console pipeline can stall, a Files.writeString cannot).
+          wait_done() { # $1 = stem; rc0 done | rc1 exhausted | rc2 timeout
+            local BASE="srv-wall/c-imagine/scenes/$1"
+            local V0D V0E VD VE
+            V0D=$(cat "$BASE.done" 2>/dev/null || echo 0)
+            V0E=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
             for i in $(seq 1 120); do
-              C=$(grep -c "gallery done ns=create page=$p " srv-wall/boot.log || true)
-              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
+              VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+              [ "$VD" != "$V0D" ] && return 0
+              [ "$VE" != "$V0E" ] && return 1
               sleep 0.25
             done
-            [ "$ok" = "1" ] || { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-            LINE=$(grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then
+            echo "no done marker file: $1"; return 2
+          }
+          EXHAUSTED=0
+          for p in $(seq $SI $K $MAXP); do
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery page create $p"
+            RC=0; wait_done "gallery-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then
               echo "block walk exhausted at page $p"
               EXHAUSTED=1
               break
             fi
+            grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # section rebuild + lighting (the measured fixed-window
             # protocol — NEVER trimmed; the polls around it were)
             java -cp vtools Shot "truth-shots/gal-p$p.png"
@@ -630,20 +648,32 @@ jobs:
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
+          # THE MARKER IS THE FILE (13-c) — same wait_done contract as the
+          # block walk; the entity settle pass writes its marker file in the
+          # same server-thread task that rewrites the manifest (40 ticks
+          # after the command, still inside the shot window).
+          wait_done() { # $1 = stem; rc0 done | rc1 exhausted | rc2 timeout
+            local BASE="srv-wall/c-imagine/scenes/$1"
+            local V0D V0E VD VE
+            V0D=$(cat "$BASE.done" 2>/dev/null || echo 0)
+            V0E=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+            for i in $(seq 1 120); do
+              VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
+              VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
+              [ "$VD" != "$V0D" ] && return 0
+              [ "$VE" != "$V0E" ] && return 1
+              sleep 0.25
+            done
+            echo "no done marker file: $1"; return 2
+          }
           # MOB series (the gate): frozen NoAI subjects on the wall. The
           # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq $SI $K $((EPAGES-1))); do
-            BEFORE=$(grep -c "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log || true)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery entity mobs minecraft $p"
-            ok=0
-            for i in $(seq 1 120); do
-              C=$(grep -c "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log || true)
-              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
-              sleep 0.25
-            done
-            [ "$ok" = "1" ] || { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-            grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+            RC=0; wait_done "gallery-entity-minecraft-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             sleep 4   # section rebuild (wall -> air) + entity render under llvmpipe
             java -cp vtools Shot "truth-shots/gal-e$p.png"
             echo "shot mob page $p"
@@ -653,17 +683,11 @@ jobs:
           for p in $(seq $SI $K $((EDPAGES-1))); do
             for SERIES in dyn large; do
               TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
-              BEFORE=$(grep -c "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log || true)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery entity $SERIES minecraft $p"
-              ok=0
-              for i in $(seq 1 120); do
-                C=$(grep -c "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log || true)
-                [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
-                sleep 0.25
-              done
-              [ "$ok" = "1" ] || { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-              grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1
+              RC=0; wait_done "gallery-$TAG-minecraft-p$p" || RC=$?
+              [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
               sleep 4
               java -cp vtools Shot "truth-shots/gal-e$SERIES$p.png"
               echo "shot $SERIES page $p"
@@ -686,19 +710,12 @@ jobs:
             TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
             EX=0
             for p in $(seq $SI $K $MAXP); do
-              BEFORE=$(grep -c "gallery-$TAG done ns=create page=$p " srv-wall/boot.log || true)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
-              ok=0
-              for i in $(seq 1 120); do
-                C=$(grep -c "gallery-$TAG done ns=create page=$p " srv-wall/boot.log || true)
-                [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
-                sleep 0.25
-              done
-              [ "$ok" = "1" ] || { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-              LINE=$(grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1)
-              echo "$LINE"
-              if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+              RC=0; wait_done "gallery-$TAG-create-p$p" || RC=$?
+              [ "$RC" = "2" ] && { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1 || true
               sleep 4
               java -cp vtools Shot "truth-shots/gal-e$SERIES-create$p.png"
               echo "shot create $SERIES page $p"
@@ -709,19 +726,12 @@ jobs:
           # cell carrying the REAL modded item, to exhaustion.
           EX=0
           for p in $(seq $SI $K $MAXP); do
-            BEFORE=$(grep -c "gallery-item done ns=create page=$p " srv-wall/boot.log || true)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cimscene gallery item create $p"
-            ok=0
-            for i in $(seq 1 120); do
-              C=$(grep -c "gallery-item done ns=create page=$p " srv-wall/boot.log || true)
-              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
-              sleep 0.25
-            done
-            [ "$ok" = "1" ] || { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-            LINE=$(grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            RC=0; wait_done "gallery-item-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then EX=1; break; fi
+            grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # static item displays settle like the block pages
             java -cp vtools Shot "truth-shots/gal-i-create$p.png"
             echo "shot item page $p"
@@ -734,19 +744,12 @@ jobs:
           # comparison; the manifest rows are dyn=1, diagnostics, never red).
           EX=0
           for p in $(seq $SI $K $MAXP); do
-            BEFORE=$(grep -c "gallery-particle done ns=create page=$p " srv-wall/boot.log || true)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery particle create $p"
-            ok=0
-            for i in $(seq 1 120); do
-              C=$(grep -c "gallery-particle done ns=create page=$p " srv-wall/boot.log || true)
-              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
-              sleep 0.25
-            done
-            [ "$ok" = "1" ] || { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-            LINE=$(grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            RC=0; wait_done "gallery-particle-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then EX=1; break; fi
+            grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
             java -cp vtools Shot "truth-shots/gal-pa-create$p.png"
             echo "shot particle page $p"
@@ -760,19 +763,12 @@ jobs:
           # shot protocol is measured stable.
           EX=0
           for p in $(seq $SI $K $MAXP); do
-            BEFORE=$(grep -c "gallery-fluid done ns=create page=$p " srv-wall/boot.log || true)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery fluid create $p"
-            ok=0
-            for i in $(seq 1 120); do
-              C=$(grep -c "gallery-fluid done ns=create page=$p " srv-wall/boot.log || true)
-              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
-              sleep 0.25
-            done
-            [ "$ok" = "1" ] || { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-            LINE=$(grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1)
-            echo "$LINE"
-            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            RC=0; wait_done "gallery-fluid-create-p$p" || RC=$?
+            [ "$RC" = "2" ] && { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then EX=1; break; fi
+            grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
             java -cp vtools Shot "truth-shots/gal-fl-create$p.png"
             echo "shot fluid page $p"

@@ -3006,3 +3006,45 @@ Stage Summary:
 - Expected on the first post-merge run: one slow seed (cache miss), then
   the steady-state timing to measure; if the tail is over, the knobs are
   K (with the pool cap) and the inline-diff overlap.
+
+---
+Task ID: 13-c
+Agent: main
+Task: #38 post-mortem — the seed died on a STALLED CONSOLE, the marker gains a FILE channel
+
+Work Log:
+- MEASURED #38: the sharding WORKS — all 8 truth shards GREEN in
+  3.0-4.8 min each (the 34-min serial walk became ~4 min per shard);
+  the seed failed at 2 min: its wait_marker polled boot.log for page 0's
+  done line, gave up at the 30s ceiling — and the log shows the line
+  landing 4ms AFTER the giveup, with the line's own server timestamp
+  30.6s earlier ([17:33:20] inside a 17:33:51.336 pipeline write). A
+  quiet server (no client, no log volume) stalls its console pipeline;
+  busy servers (the truth shards, a joined client) mask it with volume —
+  the same latent race the old boot.log greps always carried. Local
+  repro: a quiet server froze boot.log entirely at 9514 bytes (even RCON
+  connection lines stopped) while the RCON responses kept working.
+- FIX (the honest, deterministic one): the scene's done marker gains a
+  FILE channel at the SAME code point as the LOGGER line —
+  c-imagine/scenes/<stem>.done / <stem>.exhausted (stem = the manifest
+  stem: gallery-<ns>-p<p>, gallery-[entity[series]|item|particle|fluid]-
+  <ns>-p<p>), written by Files.writeString with a wall-clock nonce
+  (content-based change detection — no mtime-granularity races on
+  re-walks). The boot.log lines stay (the coverage gate joins their
+  terminal markers; humans grep them). The seed walk AND all truth-shard
+  walks now poll the files (wait_done: rc0 done / rc1 exhausted / rc2
+  timeout, 30s ceiling, 0.25s polls); the ours leg keeps the PROVEN RCON
+  response channel (the plugin's marker contract, #35/#38 scale).
+- The entity pass-1 settle writes its marker file inside the same
+  server-thread task that rewrites the manifest (pass 2 stays
+  marker-less by design — readiness was already signalled).
+- VERIFIED: scene-mod compiles offline (jdk25, 89-jar layer classpath);
+  wait_done unit-tested (fresh done / exhausted / content-change
+  re-walk / timeout — all pass); bash -n over every run block; the
+  manifest globs (gallery-manifest.py) only match *.tsv so the marker
+  files are inert to the pack build; stride union unchanged.
+
+Stage Summary:
+- The console was never a contract — the manifests were. The walks now
+  wait on what the scene actually writes to disk, not on when a
+  buffered pipeline decides to flush.

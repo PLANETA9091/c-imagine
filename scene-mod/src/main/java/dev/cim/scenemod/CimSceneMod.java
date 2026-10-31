@@ -329,6 +329,7 @@ public final class CimSceneMod {
     private static int gallery(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        String blockStem = "gallery-" + namespace + "-p" + page;
 
         // Deterministic entry list: sorted ids of the namespace, each block's
         // states in getPossibleStates() order.
@@ -345,6 +346,7 @@ public final class CimSceneMod {
 
         int from = page * GALLERY_CELLS;
         if (from >= entries.size()) {
+            writeDoneMarkerFile(blockStem, true);
             LOGGER.info("[cimscene] gallery done ns={} page={} cells=0 skipped_fluid=0 "
                     + "skipped_invisible=0 exhausted=1", namespace, page);
             return 0;
@@ -447,6 +449,7 @@ public final class CimSceneMod {
                 stateString(slice.get(0), BuiltInRegistries.BLOCK.getKey(slice.get(0).getBlock())),
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
+        writeDoneMarkerFile(blockStem, false);
         return placed;
     }
 
@@ -690,6 +693,7 @@ public final class CimSceneMod {
     private static int galleryItem(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        String itemStem = "gallery-item-" + namespace + "-p" + page;
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -704,6 +708,7 @@ public final class CimSceneMod {
                 namespace, page, entries.size(), GALLERY_CELLS);
         int from = page * GALLERY_CELLS;
         if (from >= entries.size()) {
+            writeDoneMarkerFile(itemStem, true);
             LOGGER.info("[cimscene] gallery-item done ns={} page={} cells=0 failed=0 exhausted=1",
                     namespace, page);
             return 0;
@@ -748,6 +753,7 @@ public final class CimSceneMod {
         }
         LOGGER.info("[cimscene] gallery-item done ns={} page={} cells={} failed={} first={} last={}",
                 namespace, page, placed, failed, slice.get(0), slice.get(slice.size() - 1));
+        writeDoneMarkerFile(itemStem, false);
         return placed;
     }
 
@@ -777,6 +783,7 @@ public final class CimSceneMod {
     private static int galleryParticle(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        String particleStem = "gallery-particle-" + namespace + "-p" + page;
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.PARTICLE_TYPE.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -789,6 +796,7 @@ public final class CimSceneMod {
                 namespace, page, entries.size(), GALLERY_CELLS);
         int from = page * GALLERY_CELLS;
         if (from >= entries.size()) {
+            writeDoneMarkerFile(particleStem, true);
             LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells=0 failed=0 exhausted=1",
                     namespace, page);
             return 0;
@@ -828,6 +836,7 @@ public final class CimSceneMod {
         }
         LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells={} failed={} first={} last={}",
                 namespace, page, spawned, failed, slice.get(0), slice.get(slice.size() - 1));
+        writeDoneMarkerFile(particleStem, false);
         return spawned;
     }
 
@@ -866,6 +875,7 @@ public final class CimSceneMod {
     private static int galleryFluid(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        String fluidStem = "gallery-fluid-" + namespace + "-p" + page;
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.FLUID.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -878,6 +888,7 @@ public final class CimSceneMod {
                 namespace, page, entries.size(), FLUID_CELLS);
         int from = page * FLUID_CELLS;
         if (from >= entries.size()) {
+            writeDoneMarkerFile(fluidStem, true);
             LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells=0 failed=0 exhausted=1",
                     namespace, page);
             return 0;
@@ -951,6 +962,7 @@ public final class CimSceneMod {
         }
         LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells={} failed={} first={} last={}",
                 namespace, page, placed, failed, slice.get(0), slice.get(slice.size() - 1));
+        writeDoneMarkerFile(fluidStem, false);
         return placed;
     }
 
@@ -1039,6 +1051,7 @@ public final class CimSceneMod {
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        String entityStem = "gallery-entity" + seriesTag(series) + "-" + namespace + "-p" + page;
 
         // Deterministic entry list: sorted entity ids of the namespace.
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ENTITY_TYPE.keySet());
@@ -1053,6 +1066,7 @@ public final class CimSceneMod {
 
         int from = page * ENTITY_CELLS;
         if (from >= entries.size()) {
+            writeDoneMarkerFile(entityStem, true);
             LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells=0 dyn=0 "
                     + "skipped_no_instance=0 skipped_wrong_series=0 failed=0 dissolved=0 exhausted=1",
                     seriesTag(series), namespace, page);
@@ -1203,6 +1217,31 @@ public final class CimSceneMod {
         return "mobs".equals(series) ? "" : series;
     }
 
+    /**
+     * THE DONE-MARKER FILE CHANNEL (13-c): the console/boot.log pipeline of
+     * a quiet server can STALL — measured gallery #38: a quiet seed server
+     * executed page 0 in 0.5s (the line's own timestamp) but the bytes sat
+     * in the console pipeline for 30s and landed exactly when the CI wait
+     * gave up; a busy server (a joined client) masks it with log volume.
+     * The manifests were always FILES written synchronously by the walk —
+     * the done marker gains the same channel: {@code <stem>.done} (or
+     * {@code <stem>.exhausted} for the terminal page) written by
+     * Files.writeString AT THE SAME CODE POINT as the LOGGER line. The CI
+     * walks poll the file CONTENT (a wall-clock nonce, no mtime-granularity
+     * races on re-walks). The boot.log lines stay: the coverage gate joins
+     * their terminal markers, and humans grep them.
+     */
+    private static void writeDoneMarkerFile(String stem, boolean exhausted) {
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(stem + (exhausted ? ".exhausted" : ".done")),
+                    String.valueOf(System.currentTimeMillis()), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] done-marker file write failed {}: {}", stem, ioe.toString());
+        }
+    }
+
     /** Settle pass body: re-read spawns, emit the settled manifest + marker.
      *  Pass 2 ({@code finalPass}) rewrites the manifest with the final
      *  subject states (quarantines/self-discards after pass 1 reclassify to
@@ -1280,6 +1319,11 @@ public final class CimSceneMod {
                         + "skipped_no_instance={} skipped_wrong_series={} failed={} dissolved={} first={} last={}",
                 tag, namespace, page, cells, dyn, noInstance, wrongSeries,
                 failed, dissolved, slice.get(0), slice.get(slice.size() - 1));
+        // THE FILE CHANNEL of the done marker (same code point as the
+        // LOGGER line): the settle pass runs 40 ticks AFTER the RCON command
+        // returned, so the console/boot.log line is the only pass-1 signal
+        // — unless the file exists. The CI walk polls this file.
+        writeDoneMarkerFile("gallery-entity" + tag + "-" + namespace + "-p" + page, false);
         // FINAL REWRITE PASS (12-as): catch the deaths that happen after
         // pass 1 — the tick quarantine, a modded subject's own
         // self-discard — while still inside the CI shot window, and rewrite
