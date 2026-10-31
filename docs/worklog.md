@@ -2469,3 +2469,74 @@ Stage Summary:
   pages + item/particle/mod-entity pages, all triptychs in artifacts.
 - Verified locally: scene-mod + plugin compile, python scripts smoke
   green, workflow YAML parses. Heavy verification = the CI run itself.
+
+Task ID: 12-ao
+Agent: main
+Task: fluids + block entities under the verdict — the last silently-skipped classes closed, the false-red gate naming fixed (owner: «сделай чтобы наш вердикт вообще всё всё всё проверял, СЕРЬЕЗНО ВСЁ»)
+
+Work Log:
+- MEASURED the remaining holes after 12-an: (1) the block wall SKIPS every
+  fluid state (reason=fluid) and the FLUID registry was not a ledger class —
+  not one liquid pixel ever reached the verdict; (2) BlockEntity coverage was
+  implicit (real EntityBlock placement) with NO reconciliation — a BE whose
+  every valid state is fluid-carried or invisible would silently vanish;
+  (3) the coverage gate's shot templates were BARE (gal-e0.png,
+  gal-i0.png...) while the walks actually produce gal-emobs-create0.png,
+  gal-i-create0.png, gal-pa-create0.png for mod namespaces — the gate would
+  have reported COVERAGE-INCOMPLETE on a PERFECT exhaustive run (a false
+  red — it must join against what landed, or it lies).
+- FLUID GALLERY, end to end:
+  - scene-mod /cimscene gallery fluid <ns> <page>: EVERY Fluid of the
+    namespace, one per SEALED glass case on the sparse pitch-2 grid (a
+    liquid at the 1-block pitch flows and rearranges the wall; two cases
+    need one glass block between them; the floor is never replaced).
+    Channels identical on both stacks: block = defaultFluidState()
+    .createLegacyBlock() placed into the case (the manifest carries the
+    state string); bucket = no legacy block -> the <path>_bucket item as an
+    item_display; no-channel = named skip. All rows dyn=1 (liquid textures
+    animate, the legs are not tick-locked — the particle lesson); COVERAGE
+    of the class is still gate-hard via the ledger.
+  - paper-plugin /cim gallerypage-fluid: vanilla-namespace block rows are
+    placed as REAL sealed liquid states on Paper (Bukkit BlockData parsed
+    from the manifest's state string, same glass shells — vanilla fluids
+    can be GREEN); mod fluids/buckets/unexpressible states are nochannel
+    (honest backlog, named). Skip rows pass through.
+  - gallery.yml: fluid walk (truth, exhaustive, FIXED 1s shot window) +
+    fluid replay (ours) + fluid shot copy globs + fluid join loop
+    (pitch 2, missing shots are NOT tolerated) + the staging glob fix
+    (gallery-fluid-*.tsv never reached the ours server — the replay would
+    have died on page 0).
+- BLOCK-ENTITY RECONCILIATION: the ledger gains a blockentity row (no
+  pages — the BE picture is drawn by the block wall's real EntityBlock
+  placement); the scene statically reconciles every BlockEntityType against
+  the wall's placeable predicate (valid state, not fluid-carried, not
+  RenderShape.INVISIBLE) and NAMES the uncovered in
+  gallery-<ns>-be-uncovered.tsv; the gate turns a non-empty (or missing)
+  file into COVERAGE red. Ledger writes are cached per namespace per boot
+  (the reconciliation is O(states x BE-types)).
+- THE SHOT NAME LAW (the false-red fix): coverage-gate.py now mirrors the
+  walks' actual shot names per class/ns (block never infixes; minecraft
+  control stays bare: gal-e0.png; mod namespaces carry the ns and the
+  entity series word: gal-emobs-create0.png; item/particle/fluid carry the
+  ns: gal-i-create0.png...). The law is documented in the gate + ROADMAP.
+- Verified locally (light): scene-mod + plugin offline javac builds GREEN
+  (the fluid code compiles against real 1.21.1 mappings:
+  defaultFluidState/createLegacyBlock/BlockEntityType.isValid), gallery.yml
+  parses, coverage-gate smoke tests 6/6 GREEN (full-fixture green path,
+  missing-ours-fluid-shot red, BE-uncovered named red, BE-file-missing
+  red, wrong-naming regression red, minecraft bare-naming green) — the
+  fixture itself initially FAILED case A because the fixture (not the
+  gate) had the mob shot name wrong: the law held. Heavy verification =
+  the CI run (gallery #25 on ef29e21 still in flight on the OLD gate; its
+  wall-diff is expected to name entity/item/particle COVERAGE-INCOMPLETE
+  even if every walk exhausted — that IS the false-red pattern this
+  commit fixes).
+
+Stage Summary:
+- The verdict's registry-class inventory is now complete: BLOCK (all
+  states), ENTITY (all three series), ITEM, PARTICLE, FLUID (all entries,
+  sealed cases), BLOCK-ENTITY (reconciled per type) — every class walked to
+  exhaustion, ledger-gated, with honest named reds for whatever a channel
+  cannot express yet. Nothing silently skipped remains on the visual
+  surface; the next run's reds are the named backlog, the greens are
+  picture-proven.

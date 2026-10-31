@@ -1482,6 +1482,111 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return new int[]{0, cellsf};
     }
 
+    /**
+     * Replay one truth-leg FLUID gallery page manifest:
+     * {@code c-imagine/scenes/gallery-fluid-<ns>-p<page>.tsv} rows
+     * {@code cell|x|y|z|fluid|dyn|channel|extra}. Vanilla-namespace block
+     * rows are placed as REAL liquid states (Bukkit BlockData parsed from
+     * the manifest's state string) inside their glass cases — the vanilla
+     * client renders them through the same liquid surface the truth client
+     * uses, so vanilla fluids can be GREEN. EVERYTHING else (mod fluids,
+     * buckets, states Paper cannot express) is {@code nochannel}: the cell
+     * stays empty and the pixel join names it (honest backlog, never a
+     * silent skip). Skip rows pass through untouched (both legs recorded
+     * them identically).
+     *
+     * <p>Returns {@code [placed, nochannel]}; the RCON response marker is
+     * {@code gallerypage-fluid <ns> p<page> -> placed=N nochannel=K}.
+     */
+    private int[] galleryPageFluid(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-fluid-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest missing: " + mf);
+            return new int[]{0, 0};
+        }
+        final java.util.List<String[]> rows = new java.util.ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t") || line.startsWith("skip\t")) {
+                    rows.add(line.split("\t", -1));
+                }
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0};
+        }
+        final int pagef = page;
+        int[] counts = callSync(() -> {
+            int placed = 0, nochannel = 0;
+            World w = world(worldName());
+            // SAME wall sweep the truth scene runs (12-ac symmetry law) —
+            // covers the pitch-2 fluid grid and its glass cases entirely
+            for (int bx = -6; bx <= 6; bx++) {
+                for (int by = -60; by <= -53; by++) {
+                    for (int bz = 8; bz <= 10; bz++) {
+                        try {
+                            w.getBlockAt(bx, by, bz).setType(Material.AIR, false);
+                        } catch (Exception clearFail) {
+                            // unloaded corner: forceload covers the region
+                        }
+                    }
+                }
+            }
+            for (String[] row : rows) {
+                // cell|x|y|z|fluid|dyn|channel|extra   (skip|...|fluid|dyn|reason)
+                if (row.length < 5 || row[0].equals("skip")) {
+                    continue;
+                }
+                String channel = row.length > 6 ? row[6] : "";
+                String extra = row.length > 7 ? row[7] : "";
+                if (!channel.equals("block") || !extra.startsWith("minecraft:")) {
+                    nochannel++;
+                    log().warning(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
+                            + " channel=" + channel + " — cell " + row[1] + ","
+                            + row[2] + "," + row[3] + " left empty (nochannel)");
+                    continue;
+                }
+                int x, y, z;
+                try {
+                    x = Integer.parseInt(row[1]);
+                    y = Integer.parseInt(row[2]);
+                    z = Integer.parseInt(row[3]);
+                } catch (NumberFormatException bad) {
+                    continue;
+                }
+                try {
+                    // the glass case first (the same shell the truth leg
+                    // builds), then the liquid — sealed, static pixels
+                    org.bukkit.block.data.BlockData glass = Material.GLASS.createBlockData();
+                    int[][] faces = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
+                            {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+                    for (int[] f : faces) {
+                        int bx = x + f[0], by = y + f[1], bz = z + f[2];
+                        if (by < -60) {
+                            continue; // the floor stays
+                        }
+                        w.getBlockAt(bx, by, bz).setBlockData(glass, false);
+                    }
+                    w.getBlockAt(x, y, z).setBlockData(Bukkit.createBlockData(extra), false);
+                    log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
+                            + " cell " + row[1] + "," + row[2] + "," + row[3]
+                            + " fluid=" + row[4] + " state=" + extra);
+                    placed++;
+                } catch (IllegalArgumentException parseFail) {
+                    nochannel++;
+                    log().warning(LOG_PREFIX + "f2v gallery-fluid: state " + extra
+                            + " not expressible on Paper — cell " + row[1] + ","
+                            + row[2] + "," + row[3] + " left empty (nochannel: "
+                            + parseFail.getMessage() + ")");
+                }
+            }
+            return new int[]{placed, nochannel};
+        });
+        return counts == null ? new int[]{0, 0} : counts;
+    }
+
     /** Despawn every ItemDisplay AND every tagged gallery entity in every
      *  world (page swaps; the tag is shared with the truth leg). Returns the
      *  removed count. */
@@ -1645,6 +1750,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
+        // /cim gallerypage-fluid <ns> <page> — the M5.5 FLUID gallery
+        // ours-leg surface: replay a truth-leg fluid manifest;
+        // vanilla-namespace block rows become REAL sealed liquid states,
+        // everything else is nochannel (honest backlog the join names).
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-fluid")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageFluid(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-fluid " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-fluid: bad page number: " + args[2]);
+            }
+            return true;
+        }
         // /cim galleryclear — despawn every ItemDisplay + tagged gallery
         // entity (page swaps).
         if (args.length >= 1 && args[0].equalsIgnoreCase("galleryclear")) {
@@ -1662,7 +1783,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> "
                 + "| /cim gallerypage-entity <ns> <page> | /cim galleryclear");
         sender.sendMessage(LOG_PREFIX + "       /cim gallerypage-item <ns> <page> "
-                + "| /cim gallerypage-particle <ns> <page>");
+                + "| /cim gallerypage-particle <ns> <page> "
+                + "| /cim gallerypage-fluid <ns> <page>");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

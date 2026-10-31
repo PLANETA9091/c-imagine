@@ -21,6 +21,16 @@ name: gallery
 #   particles: EVERY registered particle (vanilla /particle, count 1 speed
 #          0, FIXED 1s shot window on both legs; dyn class, diagnostics
 #          until the protocol is measured stable)
+#   fluids: EVERY registered fluid, one SEALED glass case per cell on the
+#          sparse pitch-2 grid (a liquid at the 1-block pitch would flow
+#          and rearrange the wall); vanilla-namespace block rows replay as
+#          REAL liquid states on Paper, mod fluids/buckets are nochannel;
+#          dyn class (liquid textures animate, the legs are not
+#          tick-locked), FIXED 1s shot window both legs
+#   block entities: no pages of their own — their picture is drawn by the
+#          block wall's real EntityBlock placement; the scene reconciles
+#          every BE type against the wall's placeable predicate and the
+#          gate turns a non-empty reconciliation file into COVERAGE red
 # The scene writes a per-namespace COVERAGE LEDGER (gallery-<ns>-index.tsv:
 # class|total|cellsPerPage, registry-derived); wall-diff's coverage-gate.py
 # joins it against the manifests + boot.log exhaustion markers — a partial
@@ -425,6 +435,33 @@ jobs:
             echo "shot particle page $p"
           done
           [ "$EX" = "1" ] || { echo "particle walk hit the MAXP cap without exhausted"; exit 1; }
+          # FLUID walk (create): every registered fluid, one SEALED glass
+          # case per cell on the sparse pitch-2 grid (a liquid at the
+          # 1-block pitch would flow and rearrange the wall). The FIXED 1s
+          # shot window mirrors the particle walk; rows are dyn=1 (liquid
+          # textures animate, the legs are not tick-locked) — the COVERAGE
+          # is gate-hard via the ledger, the pixels are reported until the
+          # shot protocol is measured stable.
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery-fluid done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery fluid create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-fluid done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
+            java -cp vtools Shot "truth-shots/gal-fl-create$p.png"
+            echo "shot fluid page $p"
+          done
+          [ "$EX" = "1" ] || { echo "fluid walk hit the MAXP cap without exhausted"; exit 1; }
           ls truth-shots/ | wc -l
 
       - name: upload truth wall artifacts (manifests = THE CELL CONTRACT)
@@ -517,6 +554,8 @@ jobs:
           find truth -name 'gallery-item-*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
           find truth -name 'gallery-particle-*.tsv' \
+            -exec cp {} srv-wall/c-imagine/scenes/ \;
+          find truth -name 'gallery-fluid-*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
           ls srv-wall/c-imagine/scenes/ | wc -l
           # the pack's gallery channel rows: EVERY distinct state of the
@@ -816,6 +855,26 @@ jobs:
             echo "shot particle page $p"
           done
           [ "$EX" = "1" ] || { echo "ours particle replay hit the MAXP cap"; exit 1; }
+          # FLUID replay (create): vanilla-namespace block rows become REAL
+          # sealed liquid states on Paper (the same glass cases the truth
+          # leg builds); mod fluids/buckets are nochannel (honest backlog
+          # the join names). FIXED 1s shot window (mirror of the truth leg).
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-fluid-create-p$p.tsv"
+            [ -f "$M" ] || { echo "no manifest for fluid page $p — exhausted"; EX=1; break; }
+            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cim galleryclear" \
+              "cim gallerypage-fluid create $p")
+            echo "$OUT" | tee "ours-rcon-fl$p.log"
+            echo "$OUT" | grep -q "gallerypage-fluid create p$p -> placed=" \
+              || { echo "fluid page $p no placed marker"; exit 1; }
+            sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
+            java -cp vtools Shot "ours-shots/ours-gal-fl-create$p.png"
+            test -s "ours-shots/ours-gal-fl-create$p.png" || { echo "fluid page $p shot missing"; exit 1; }
+            echo "shot fluid page $p"
+          done
+          [ "$EX" = "1" ] || { echo "ours fluid replay hit the MAXP cap"; exit 1; }
           ls ours-shots/ | wc -l
 
       - name: upload ours wall artifacts
@@ -871,6 +930,8 @@ jobs:
           find ours  -name 'ours-gal-emobs-*.png' -exec cp {} ours-shots/ \;
           find truth -name 'gal-i-*.png'      -exec cp {} truth-shots/ \;
           find ours  -name 'ours-gal-i-*.png' -exec cp {} ours-shots/ \;
+          find truth -name 'gal-fl-*.png'     -exec cp {} truth-shots/ \;
+          find ours  -name 'ours-gal-fl-*.png' -exec cp {} ours-shots/ \;
           ls truth-shots/ | wc -l; ls ours-shots/ | wc -l
           GATE=0
           echo "=== BLOCK pages: manifest-driven (the staged truth manifests ARE the page set) ==="
@@ -987,6 +1048,18 @@ jobs:
             else
               echo "particle page $p shots missing (tolerated: diagnostic)"
             fi
+          done
+          echo "=== FLUID pages: diagnostic join, no missing-shot excuses (dyn class, fixed 1s shot window, pitch-2 cases) ==="
+          for M in $(find truth -name 'gallery-fluid-create-p*.tsv' | sort -V); do
+            B=$(basename "$M" .tsv); p=${B##*-p}
+            T="truth-shots/gal-fl-create$p.png"
+            O="ours-shots/ours-gal-fl-create$p.png"
+            test -f "$T" || { echo "missing truth fluid shot p$p"; GATE=1; continue; }
+            test -f "$O" || { echo "missing ours fluid shot p$p"; GATE=1; continue; }
+            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              --manifest "$M" --out "gallery-report/join-fluid-p$p.json" \
+              --diff-dir "gallery-report/diff-fluid-p$p" \
+              --pitch 2 --gate 240000 || GATE=1
           done
           echo "=== THE COVERAGE GATE: content that never reached a page is RED, not green ==="
           IDX=$(find truth -name 'gallery-create-index.tsv' | head -1)

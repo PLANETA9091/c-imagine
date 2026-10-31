@@ -17,7 +17,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
@@ -40,9 +43,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -223,6 +228,12 @@ public final class CimSceneMod {
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
                                                 .executes(ctx -> galleryParticle(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("fluid")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryFluid(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
@@ -252,7 +263,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle]|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -283,6 +294,17 @@ public final class CimSceneMod {
     static final int ENTITY_ROWS = 3;
     static final int ENTITY_CELLS = ENTITY_COLS * ENTITY_ROWS; // 18
     static final int ENTITY_PITCH = 2;
+
+    /** FLUID grid: the SAME sparse pitch-2 geometry as the entities — a
+     *  liquid needs a SEALED glass case (a fluid at the 1-block block-wall
+     *  pitch would flow into its neighbours' cells and rearrange the wall;
+     *  measured lesson from the corridor design), and two cases need one
+     *  block of glass between them, i.e. pitch 2. 6 cols x 3 rows = 18
+     *  cells per fluid page; rows y = -60/-58/-56. */
+    static final int FLUID_COLS = 6;
+    static final int FLUID_ROWS = 3;
+    static final int FLUID_CELLS = FLUID_COLS * FLUID_ROWS; // 18
+    static final int FLUID_PITCH = 2;
 
     /**
      * The universal content gallery: EVERY block (and then EVERY blockstate
@@ -442,7 +464,15 @@ public final class CimSceneMod {
      * that motivated this: create registers {@value #GALLERY_CELLS} * 408
      * ≈ 31,389 blockstates while the gate walked 3 pages = 231 = 0.74%).
      */
+    /** One ledger write per namespace per boot (the walks re-call it on
+     *  every page; the registry walk + the BlockEntity reconciliation are
+     *  O(states x BE-types) — once per server is the right cost). */
+    private static final Set<String> LEDGER_WRITTEN = new HashSet<>();
+
     private static void writeGalleryIndex(String namespace) {
+        if (!LEDGER_WRITTEN.add(namespace)) {
+            return;
+        }
         long states = 0;
         for (ResourceLocation id : BuiltInRegistries.BLOCK.keySet()) {
             if (id.getNamespace().equals(namespace)) {
@@ -450,7 +480,7 @@ public final class CimSceneMod {
                         .getStateDefinition().getPossibleStates().size();
             }
         }
-        long entities = 0, items = 0, particles = 0;
+        long entities = 0, items = 0, particles = 0, fluids = 0, blockEntities = 0;
         for (ResourceLocation id : BuiltInRegistries.ENTITY_TYPE.keySet()) {
             if (id.getNamespace().equals(namespace)) entities++;
         }
@@ -460,21 +490,65 @@ public final class CimSceneMod {
         for (ResourceLocation id : BuiltInRegistries.PARTICLE_TYPE.keySet()) {
             if (id.getNamespace().equals(namespace)) particles++;
         }
+        for (ResourceLocation id : BuiltInRegistries.FLUID.keySet()) {
+            if (id.getNamespace().equals(namespace)) fluids++;
+        }
+        for (ResourceLocation id : BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet()) {
+            if (id.getNamespace().equals(namespace)) blockEntities++;
+        }
         StringBuilder tsv = new StringBuilder("class\ttotal\tcellsPerPage\n")
                 .append("block\t").append(states).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("entity\t").append(entities).append('\t').append(ENTITY_CELLS).append('\n')
                 .append("item\t").append(items).append('\t').append(GALLERY_CELLS).append('\n')
-                .append("particle\t").append(particles).append('\t').append(GALLERY_CELLS).append('\n');
+                .append("particle\t").append(particles).append('\t').append(GALLERY_CELLS).append('\n')
+                .append("fluid\t").append(fluids).append('\t').append(FLUID_CELLS).append('\n')
+                // no pages of its own: the BE class's picture is drawn by the
+                // block wall (real EntityBlock placement); the gate checks the
+                // reconciliation file below instead of page counts
+                .append("blockentity\t").append(blockEntities).append('\t').append(0).append('\n');
+        // BLOCK ENTITY RECONCILIATION: a BlockEntityType whose every valid
+        // state is fluid-carried or RenderShape.INVISIBLE would never reach
+        // the block wall — its renderer would silently vanish from the
+        // verdict. Reconcile statically (the same predicate the block wall
+        // skips on) and NAME every uncovered type; the gate turns a
+        // non-empty file into COVERAGE red.
+        List<String> beUncovered = new ArrayList<>();
+        if (blockEntities > 0) {
+            for (ResourceLocation id : BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet()) {
+                if (!id.getNamespace().equals(namespace)) continue;
+                BlockEntityType<?> type = BuiltInRegistries.BLOCK_ENTITY_TYPE.get(id);
+                boolean covered = false;
+                for (ResourceLocation bid : BuiltInRegistries.BLOCK.keySet()) {
+                    for (BlockState st : BuiltInRegistries.BLOCK.get(bid)
+                            .getStateDefinition().getPossibleStates()) {
+                        if (type.isValid(st) && st.getFluidState().isEmpty()
+                                && st.getRenderShape() != RenderShape.INVISIBLE) {
+                            covered = true;
+                            break;
+                        }
+                    }
+                    if (covered) break;
+                }
+                if (!covered) {
+                    beUncovered.add(id.toString());
+                }
+            }
+        }
         try {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
             Files.writeString(parent.resolve("gallery-" + namespace + "-index.tsv"),
                     tsv.toString(), StandardCharsets.UTF_8);
+            Files.writeString(parent.resolve("gallery-" + namespace + "-be-uncovered.tsv"),
+                    beUncovered.isEmpty() ? "" : String.join("\n", beUncovered) + "\n",
+                    StandardCharsets.UTF_8);
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] gallery-index write failed ns={}: {}", namespace, ioe.toString());
         }
-        LOGGER.info("[cimscene] gallery-index ns={} block-states={} entities={} items={} particles={}",
-                namespace, states, entities, items, particles);
+        LOGGER.info("[cimscene] gallery-index ns={} block-states={} entities={} items={} "
+                        + "particles={} fluids={} block-entities={} be-uncovered={}",
+                namespace, states, entities, items, particles, fluids, blockEntities,
+                beUncovered.size());
     }
 
     /**
@@ -673,6 +747,149 @@ public final class CimSceneMod {
         LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells={} failed={} first={} last={}",
                 namespace, page, spawned, failed, slice.get(0), slice.get(slice.size() - 1));
         return spawned;
+    }
+
+    // --- fluid gallery (every registered FLUID of the namespace) -----------
+
+    /**
+     * The universal FLUID gallery: EVERY {@link Fluid} registered by the
+     * namespace, sorted by id, shown one per SEALED glass case on the sparse
+     * pitch-2 grid. The truth leg renders the liquid itself —
+     * {@code defaultFluidState().createLegacyBlock()} placed into the case,
+     * where it cannot flow (all six faces glass, so the pixels are static).
+     * Channel selection, identical on both stacks:
+     * <ul>
+     *   <li>{@code block} — the fluid state has a legacy block (every
+     *       vanilla + modded liquid does): placed into the case, the
+     *       manifest row carries the state string so the ours leg can
+     *       replay what it can;</li>
+     *   <li>{@code bucket} — no legacy block: the fluid's registered
+     *       {@code <path>_bucket} item is shown as an item_display (the
+     *       same rig grammar as the item gallery);</li>
+     *   <li>{@code no-channel} — neither: a recorded skip row, never
+     *       silently dropped.</li>
+     * </ul>
+     *
+     * <p>All rows carry {@code dyn=1}: liquid textures are ANIMATED
+     * (mcmeta frametime), and the two legs' clients are not tick-locked to
+     * each other — the same lesson the particle walk measured (fixed shot
+     * window, dyn class). The join diffs and REPORTS every fluid cell; the
+     * red verdict waits for a measured-stable shot protocol (the entity
+     * dyn pattern). The COVERAGE of the class (every fluid walked to
+     * exhaustion) is still gate-hard via the ledger.
+     *
+     * <p>Manifest {@code gallery-fluid-<ns>-p<p>.tsv}, rows
+     * {@code cell|x|y|z|fluid|dyn|channel|extra} plus skip rows.
+     */
+    private static int galleryFluid(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(namespace);
+
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.FLUID.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-fluid begin ns={} page={} fluids={} cellsPerPage={}",
+                namespace, page, entries.size(), FLUID_CELLS);
+        int from = page * FLUID_CELLS;
+        if (from >= entries.size()) {
+            LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + FLUID_CELLS, entries.size());
+        List<ResourceLocation> slice = entries.subList(from, to);
+
+        clearWall(level);
+        // page hygiene: stale gallery displays from the previous page
+        runQuiet(src, "kill @e[type=minecraft:item_display,tag=" + GALLERY_TAG + "]");
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n");
+        int placed = 0, failed = 0;
+        for (int i = 0; i < slice.size(); i++) {
+            ResourceLocation id = slice.get(i);
+            int col = i % FLUID_COLS, row = i / FLUID_COLS;
+            int x = GALLERY_X0 + col * FLUID_PITCH, y = GALLERY_Y0 + row * FLUID_PITCH, z = GALLERY_Z;
+            String channel = "no-channel";
+            String extra = "";
+            try {
+                Fluid fluid = BuiltInRegistries.FLUID.get(id);
+                FluidState fs = fluid.defaultFluidState();
+                BlockState legacy = fs.createLegacyBlock();
+                if (!legacy.isAir()) {
+                    buildFluidShell(level, x, y, z);
+                    level.setBlock(new BlockPos(x, y, z), legacy, 3);
+                    channel = "block";
+                    extra = stateString(legacy, BuiltInRegistries.BLOCK.getKey(legacy.getBlock()));
+                    placed++;
+                } else {
+                    // no legacy block: show the fluid's bucket item if the
+                    // mod registered one (honest evidence of the visual)
+                    ResourceLocation bucket = ResourceLocation.fromNamespaceAndPath(
+                            id.getNamespace(), id.getPath() + "_bucket");
+                    if (BuiltInRegistries.ITEM.containsKey(bucket)) {
+                        String nbt = "{Tags:[\"" + GALLERY_TAG + "\"],billboard:\"fixed\","
+                                + "brightness:{sky:15b,block:15b},"
+                                + "item:{id:\"" + bucket + "\",count:1}}";
+                        int rc = runQuiet(src, "summon minecraft:item_display "
+                                + (x + 0.5) + " " + (y + 0.5) + " " + (z + 0.5) + " " + nbt);
+                        if (rc > 0) {
+                            channel = "bucket";
+                            extra = bucket.toString();
+                            placed++;
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-fluid fail ns={} page={} index={} fluid={} err={}",
+                        namespace, page, from + i, id, t.toString());
+            }
+            if (channel.equals("no-channel")) {
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\tno-channel\n");
+                LOGGER.info("[cimscene] gallery-fluid skip ns={} page={} index={} "
+                                + "reason=no-channel fluid={}",
+                        namespace, page, from + i, id);
+            } else {
+                tsv.append("cell\t").append(x).append('\t').append(y).append('\t').append(z)
+                        .append('\t').append(id).append("\t1\t").append(channel)
+                        .append('\t').append(extra).append('\n');
+            }
+        }
+        String manifest = "gallery-fluid-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-fluid manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells={} failed={} first={} last={}",
+                namespace, page, placed, failed, slice.get(0), slice.get(slice.size() - 1));
+        return placed;
+    }
+
+    /**
+     * The glass case around one fluid cell: six glass faces so the placed
+     * liquid can never flow (static pixels). Adjacent pitch-2 cases share
+     * their face blocks — the same glass set twice, harmless. The floor is
+     * never replaced: the bottom-row interior sits ON the superflat floor
+     * exactly like the block wall's bottom row (the fill-one-lower floor
+     * lesson).
+     */
+    private static void buildFluidShell(ServerLevel level, int x, int y, int z) {
+        BlockState glass = Blocks.GLASS.defaultBlockState();
+        int[][] faces = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+        for (int[] f : faces) {
+            int bx = x + f[0], by = y + f[1], bz = z + f[2];
+            if (by < GALLERY_Y0) {
+                continue; // the floor stays
+            }
+            level.setBlock(new BlockPos(bx, by, bz), glass, 3);
+        }
     }
 
     // --- entity gallery (owner directive 2026-10-31: mobs 100% identical,

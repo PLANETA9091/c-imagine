@@ -253,7 +253,8 @@ mod-namespace entities reached the verdict not at all. The fix is structural,
 not cosmetic — THE EXHAUSTIVE COVERAGE LAW (implemented same day):
 - the scene writes a per-namespace **coverage ledger**
   (`gallery-<ns>-index.tsv`: class|total|cellsPerPage, derived from the same
-  registries on both stacks — blockstates, entity types, items, particles);
+  registries on both stacks — blockstates, entity types, items, particles,
+  fluids, block-entity types);
 - every gallery class **walks to exhaustion** (the `exhausted=1` terminal
   marker is mandatory; the walk loops are data-driven, safety-capped);
 - the diff job's **coverage gate** (`scripts/cimscene/coverage-gate.py`)
@@ -414,6 +415,46 @@ not cosmetic — THE EXHAUSTIVE COVERAGE LAW (implemented same day):
   and the coverage gate requires every page. Ours leg: `/cim
   gallerypage-particle` counts every cell nochannel (Paper has no
   mod-particle channel — the backlog is VISIBLE, never a missing shot).
+- **THE FLUID GALLERY — every registered FLUID shown to the test player
+  (implemented 2026-10-31, closing the last silently-skipped class)** — the
+  block wall SKIPS fluid states (they would flow and rearrange the wall), so
+  until this leg not a single liquid pixel reached the verdict.
+  `/cimscene gallery fluid <ns> <page>`: EVERY `Fluid` of the namespace,
+  one per SEALED glass case on the sparse pitch-2 grid (a liquid at the
+  1-block pitch would flow; two cases need one glass block between them;
+  the floor is never replaced). Channels, identical on both stacks: `block`
+  = the fluid's `defaultFluidState().createLegacyBlock()` placed into the
+  case (static pixels; the manifest row carries the state string so ours
+  can replay); `bucket` = no legacy block → the fluid's registered
+  `<path>_bucket` item as an item_display (the item-gallery rig grammar);
+  `no-channel` = neither → a named skip row. All rows dyn=1 (liquid
+  textures are ANIMATED and the legs are not tick-locked — the particle
+  lesson): the join diffs and reports every cell, the red verdict waits for
+  a measured-stable shot protocol, and the COVERAGE of the class is still
+  gate-hard via the ledger. Ours leg: `/cim gallerypage-fluid` places
+  vanilla-namespace block rows as REAL sealed liquid states on Paper (the
+  vanilla client renders them through the same liquid surface the truth
+  client uses — vanilla fluids can be GREEN); mod fluids/buckets are
+  nochannel (honest backlog, named by the join).
+- **THE BLOCK-ENTITY RECONCILIATION (implemented 2026-10-31)** — the
+  block-entity class has no pages of its own: its picture is drawn by the
+  block wall's real EntityBlock placement (dyn cells → M5.6 for the BER
+  surface). The ledger counts every `BlockEntityType` of the namespace and
+  the scene statically reconciles each type against the wall's placeable
+  predicate (a valid state that is neither fluid-carried nor
+  RenderShape.INVISIBLE); a type with no such state would never reach the
+  wall and its renderer would silently vanish from the verdict — it is
+  NAMED in `gallery-<ns>-be-uncovered.tsv` and the coverage gate turns a
+  non-empty file into COVERAGE red.
+- **THE SHOT NAME LAW (the false-red fix, 2026-10-31)** — the coverage
+  gate must join against the shot names the walks ACTUALLY produce; the
+  first committed gate used bare templates for every class and would have
+  reported COVERAGE-INCOMPLETE on a perfect exhaustive run (the walks name
+  their shots gal-e0.png for the minecraft control but gal-emobs-create0.png,
+  gal-i-create0.png, gal-pa-create0.png, gal-fl-create0.png for mod
+  namespaces; the block walk never infixes). The law lives in one place
+  (`coverage-gate.py`), smoke-tested GREEN/RED on fixtures including the
+  wrong-naming regression case.
 - **Gate semantics (the anti-"green for nothing" law, extended to ALL
   content — owner directive 2026-10-31)**: census/registration parity
   stays a REQUIRED PRE-GATE (identical sets on both stacks) and nothing
@@ -422,7 +463,10 @@ not cosmetic — THE EXHAUSTIVE COVERAGE LAW (implemented same day):
   (every non-skipped, non-dynamic state cell of every page — now all 408
   create pages, not 3), the ENTITY wall (every non-skipped, non-dynamic
   entity cell of every page, mod namespace included), the ITEM wall (the
-  item channel's gate pages) and the wire-level sound census — plus the
+  item channel's gate pages), the FLUID walk (every fluid walked to
+  exhaustion, every cell diffed and reported; red verdicts on the
+  measured-stable protocol), the BLOCK-ENTITY reconciliation (every BE type
+  provably reaches the wall) and the wire-level sound census — plus the
   COVERAGE gate over the ledger, without which no pixel verdict counts.
   "100% identical" = 100% of the cells the channel can express at the
   calibrated identity datum, PLUS M5.6 green for the dynamic / no-channel
