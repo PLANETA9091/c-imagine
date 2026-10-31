@@ -2750,3 +2750,31 @@ Stage Summary:
   escape the gate (12-as scan). The verdict now behaves exactly as the
   owner demanded: seriously everything, honestly red where content cannot
   yet be shown, each red naming its subject.
+
+---
+Task ID: 12-at
+Agent: main
+Task: the SIGPIPE flake — `ls | head` under pipefail burned gallery #31's truth leg AFTER its successful 408-page walk
+
+Work Log:
+- MEASURED gallery #31 (0ad6f25, identical scene code to #30): the block
+  walk completed all 408 pages + exhausted + the determinism probe shot,
+  and THEN the step died exit-2 at the diagnostic line
+  `ls truth-shots/ | head -5` — head closed the pipe after 5 lines, ls
+  lost the race, got SIGPIPE (log: "ls: write error: Broken pipe"),
+  pipefail + set -e killed the step. #30 won the same race (the pipeline
+  is racy by construction: SIGPIPE delivery depends on whether ls finishes
+  writing before head exits).
+- FIX: `|| true` on the diagnostic pipeline + the two `find | head -1`
+  manifest probes in the diff job (the same hazard class: head closes
+  after the first match while find is still walking; one burn mid-diff
+  costs the whole run). Semantics unchanged: the empty result paths were
+  already handled (`[ -n "$M" ]`).
+- Verified: gallery.yml parses; the hazard class in this workflow is now
+  guarded (ls|head x1, find|head x2; `| wc -l` and `| tail -1` read to EOF
+  and are safe by construction).
+
+Stage Summary:
+- #31's failure was not content, not coverage, not the quarantine — it was
+  a one-line shell race in the harness itself. The fix costs one token per
+  site; the walk's 30+ minutes are no longer hostage to ls's exit code.

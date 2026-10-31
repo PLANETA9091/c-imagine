@@ -297,7 +297,11 @@ jobs:
           sleep 5
           java -cp vtools Shot "truth-shots/gal-p0-again.png"
           echo "shot page 0 again"
-          ls truth-shots/ | head -5
+          # the `|| true` guards the SIGPIPE race under pipefail (measured
+          # gallery #31: `ls | head` killed the whole walk step AFTER the
+          # successful 408-page walk — ls lost the head-closes-pipe race,
+          # exited 141, pipefail + set -e burned the job)
+          ls truth-shots/ | head -5 || true
           echo "block pages shot: $(ls truth-shots/gal-p\*.png 2>/dev/null | wc -l)"
 
       - name: entity walk — MOB pages (gate) + dyn pages (diagnostic)
@@ -962,7 +966,7 @@ jobs:
           for p in $(seq 0 $((EPAGES-1))); do
             T="truth-shots/gal-e$p.png"
             O="ours-shots/ours-gal-e$p.png"
-            M=$(find truth -name "gallery-entity-minecraft-p$p.tsv" | head -1)
+            M=$(find truth -name "gallery-entity-minecraft-p$p.tsv" | head -1 || true)
             test -f "$T" || { echo "missing truth mob shot p$p"; GATE=1; continue; }
             test -f "$O" || { echo "missing ours mob shot p$p"; GATE=1; continue; }
             test -n "$M" || { echo "missing mob manifest p$p"; GATE=1; continue; }
@@ -989,7 +993,7 @@ jobs:
             for SERIES in dyn large; do
               T="truth-shots/gal-e$SERIES$p.png"
               O="ours-shots/ours-gal-e$SERIES$p.png"
-              M=$(find truth -name "gallery-entity$SERIES-minecraft-p$p.tsv" | head -1)
+              M=$(find truth -name "gallery-entity$SERIES-minecraft-p$p.tsv" | head -1 || true)
               if [ -f "$T" ] && [ -f "$O" ] && [ -n "$M" ]; then
                 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                   --manifest "$M" --out "gallery-report/diag-$SERIES-p$p.json" \
