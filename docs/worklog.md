@@ -3134,3 +3134,37 @@ Stage Summary:
   17.0 min with a 9.3-min cold seed; the first prefix-hit run is the
   real steady-state measurement (projected ~8-9 min, the truth shards
   finish at ~4 and the ours tail at ~6).
+
+---
+Task ID: 13-f
+Agent: main
+Task: THE STEADY-STATE MEASUREMENT — gallery #46 ran in 6.0 minutes (was 81.7)
+
+Work Log:
+- MEASURED #46 (070d199): run wall time 6.0 min. seed 0.7 min (the
+  prefix-restored seed-pack verified and served), truth s0-s7 green in
+  2.8-3.6 min (16 server+client pairs never wait for each other), ours
+  s0-s7 4.5-5.2 min each INCLUDING their inline per-shard pixel joins,
+  the verdict skipped per GitHub semantics (a gate leg failed). 82 min
+  -> 6.0 min = 13.6x, with ZERO checks removed: every blockstate/item/
+  entity/particle/fluid page still placed, shot, joined and
+  coverage-gated; every settle window, probe and marker contract kept.
+- THE VERDICT #46 REPORTS (the honest red, now every 6 minutes):
+  gateable cells RED across the wall families — waxed_weathered_copper
+  shingle stairs, small_*_brick_wall, polished_cut_*_wall (35-36 red
+  cells per page — whole wall-state pages), consistent with the serial
+  #35's cut_diorite_wall finding: the pack's composite channel does not
+  yet reproduce the real client's pixels for the wall/stairs families.
+  The harness is DONE; the next battle is content (the pack channel).
+- The bring-up cost, for the record: #40 srv-wall/ committed by git
+  add -A (cp nests, args file lost) -> #41 maven classpath path +
+  poisoned-cache hazard (success-gated save) -> #42 cp -r -> #43 NEED
+  unbound + the 10GB cache cap flooded by per-matrix gradle homes ->
+  #44-#45 the seed's cache-hit semantics (actions/cache/restore sets
+  cache-hit only on an EXACT key; restore-keys hits read
+  cache-matched-key) + the restore-keys prefix fallback (the exact key
+  moves per commit while the hashed content rarely does).
+
+Stage Summary:
+- The wall is sharded, cached and honest: 6-minute runs, the verdict
+  gates the union of 16 shards, and the red it prints is the wall's own.
