@@ -1355,8 +1355,14 @@ jobs:
           else
             SCENES=$(dirname "$IDX")
             BOOT=$(find truth -name 'boot.log' | head -1)
+            # MEASURED #35: the 12-as absence-note feature added the two
+            # REQUIRED shot dirs and the workflow call was never updated —
+            # the gate died exit-2 (argparse) and the run red on a harness
+            # crash, not a verdict. The join step's find-copy block above
+            # populates both dirs.
             python3 scripts/cimscene/coverage-gate.py --ns create --index "$IDX" \
-              --scenes "$SCENES" ${BOOT:+--boot "$BOOT"} || GATE=1
+              --scenes "$SCENES" --truth-shots truth-shots --ours-shots ours-shots \
+              ${BOOT:+--boot "$BOOT"} || GATE=1
           fi
           echo "=== per-page verdicts ==="
           python3 - <<'PY'

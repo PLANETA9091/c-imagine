@@ -2904,3 +2904,37 @@ Stage Summary:
   x 2 legs, plus a serial dependency the ours leg never needed. The walk
   is now split from the shots, and every remaining wait is either
   measured (1s fixed window) or explicitly kept conservative (mobs).
+
+---
+Task ID: 12-ay
+Agent: main
+Task: #35 post-mortem — both legs GREEN for the first time, the red moved to the join, and one half of it was a harness crash
+
+Work Log:
+- MEASURED #35 (12f7a90): wall-truth GREEN, wall-ours GREEN — the marker
+  contract fix (12-av) held, the ours leg replayed the ENTIRE manifest set
+  (block 408 + entity mobs/dyn/large vanilla+create + item + particle +
+  fluid) for the first time. The failure moved to the pixel join: the
+  per-page verdicts ran across all 408 block pages (pages with gateable
+  cells RED nearly everywhere; pages whose cells are all dyn-class GREEN —
+  the classification works), then the COVERAGE GATE crashed:
+  `coverage-gate.py: error: the following arguments are required:
+  --truth-shots, --ours-shots` (exit 2). The 12-as absence-note feature
+  added two REQUIRED args; the workflow call was never updated — the run
+  red on a harness crash, not on the verdict.
+- FIX: the join passes --truth-shots truth-shots --ours-shots ours-shots
+  (both dirs are populated by the join's find-copy block; `gal-p*` covers
+  the particle `gal-pa-*` family too). gallery-diff.py's args re-checked
+  against the workflow — no other drift. coverage-gate.py's own SMOKE
+  suite passes (scripts/cimscene/test-coverage-gate.py: ALL PASS).
+- THE VERDICT IS NOW REAL: the first full-pixel wall read is RED —
+  gateable static cells differ truth-vs-ours on almost every page
+  (e.g. join-p73: cells=38 red=38; join-p8 GREEN only because every cell
+  is dyn-class). That is the honest red the owner demanded: the pack/CMD
+  channel does not yet reproduce the real client's pixels. The next
+  battle is content (make the channel match), not the harness.
+
+Stage Summary:
+- Both legs green for the first time; the pipeline now fails only on
+  real verdict output. One harness crash fixed; the remaining red is the
+  honest one — the wall itself.
