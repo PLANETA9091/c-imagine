@@ -20,6 +20,19 @@ against what the run ACTUALLY produced:
   and be EMPTY — a BlockEntityType whose every valid state is fluid-carried
   or RenderShape.INVISIBLE never reaches the wall and is named here.
 
+HONEST-RED on the manifest's own words (owner directive "СЕРЬЕЗНО ВСЁ",
+measured failure gallery #25 run 41188197904): an ENTITY manifest row whose
+note is not ok means the subject is ABSENT from the picture on the truth
+leg — dissolved (it slid/died before the settle pass), no-instance
+(EntityType.create returned null), failed-create / failed (the spawn or
+configure threw). The pixel join alone would compare empty-vs-empty and
+stay silent; the gate turns every named note RED for all three entity
+series — a modded subject that crashes its own spawn becomes the named
+backlog, never a silent green. (BLOCK manifests' skip rows are the
+different, deliberate accounting of 12-ao: fluid-carried states moved to
+their own class, RenderShape.INVISIBLE states render identically on both
+legs by vanilla's own contract — reported as skipped, never red.)
+
 Any shortfall is COVERAGE-INCOMPLETE — the run is RED no matter how green
 the per-cell joins were (the measured motivating gap: create registers
 31,389 blockstates; the gate walked 3 pages = 231 = 0.74% and could green
@@ -111,6 +124,26 @@ def read_index(path, ns):
     return rows
 
 
+def unshown_entities(scenes, mf_tpl, ns, needed):
+    """The named subjects absent from the picture: entity-manifest skip rows
+    whose note means failed content (dissolved / no-instance / failed-*).
+    Rows are the honesty channel the pixel join cannot see (empty vs empty)."""
+    out = []
+    for p in range(needed):
+        mf = scenes / mf_tpl.format(ns=ns, p=p)
+        if not mf.is_file():
+            continue
+        for line in mf.read_text(encoding="utf-8").splitlines()[1:]:
+            parts = line.split("\t")
+            if len(parts) < 7 or parts[0] != "skip":
+                continue
+            note = parts[6].strip()
+            if note == "dissolved" or note.startswith("failed") \
+                    or note == "no-instance":
+                out.append(f"{parts[4]}({note})")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ns", required=True)
@@ -184,12 +217,23 @@ def main():
                     no_exhaust = True
             ok = needed == 0 or (missing_mf == 0 and missing_ts == 0
                                  and missing_os == 0 and not no_exhaust)
+            unshown = (unshown_entities(scenes, mf_tpl, args.ns, needed)
+                       if sub.startswith("entity") else [])
+            if unshown:
+                ok = False
             note = "OK" if ok else "COVERAGE-INCOMPLETE"
-            print(f"{note}\t{sub}\ttotal={total}\tpages_needed={needed} "
-                  f"missing_manifests={missing_mf} "
-                  f"missing_truth_shots={missing_ts} "
-                  f"missing_ours_shots={missing_os}"
-                  + (" terminal-marker-missing" if no_exhaust else ""))
+            line = (f"{note}\t{sub}\ttotal={total}\tpages_needed={needed} "
+                    f"missing_manifests={missing_mf} "
+                    f"missing_truth_shots={missing_ts} "
+                    f"missing_ours_shots={missing_os}"
+                    + (" terminal-marker-missing" if no_exhaust else ""))
+            if unshown:
+                names = ", ".join(unshown[:8])
+                more = len(unshown) - min(len(unshown), 8)
+                line += (f" unshown={names}"
+                         + (f" +{more} more" if more > 0 else "")
+                         + " (subjects absent from the picture are RED)")
+            print(line)
             if not ok:
                 incomplete.append(sub)
 

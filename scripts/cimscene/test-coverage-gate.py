@@ -9,6 +9,12 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
   E. wrong shot-name convention (gal-i0 vs gal-i-create0)     -> RED
      (the false-red fix: the gate must join the names the walks produce)
   F. minecraft control ns with the bare naming                -> GREEN
+  G. entity manifest skip row note=failed:<t>                 -> RED (named)
+     (gallery #25: the spawn crash must be the named backlog, not silence)
+  H. entity manifest skip row note=no-instance                -> RED (named)
+  I. entity manifest skip row note=dissolved                  -> RED (named)
+  J. entity manifest skip row note=wrong-series (foreign)     -> GREEN
+     (only the absence notes are red; series ownership is not)
 """
 import pathlib
 import shutil
@@ -155,6 +161,61 @@ def main():
         r = run_gate(root, ns="minecraft")
         ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout
         print("F minecraft bare naming GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # G: entity spawn crash row -> RED, named (the #25 honesty hole)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-entitydyn-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:carriage_contraption\t0\t"
+                     "failed:java.lang.NullPointerException\n", encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:carriage_contraption(failed:" in r.stdout \
+            and "entity-dyn" in r.stdout
+        print("G entity failed row RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # H: no-instance row -> RED, named
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-entity-create-p1.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:ghost_mob\t0\tno-instance\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:ghost_mob(no-instance)" in r.stdout \
+            and "entity-mobs" in r.stdout
+        print("H entity no-instance row RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # I: dissolved row -> RED, named
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-entitylarge-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:sliding_boat\t0\tdissolved\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:sliding_boat(dissolved)" in r.stdout \
+            and "entity-large" in r.stdout
+        print("I entity dissolved row RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # J: a foreign skip note (series ownership) must NOT red
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-entitydyn-create-p1.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:other_series_owner\t0\t"
+                     "wrong-series\n", encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout
+        print("J foreign skip note GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     print("SMOKE:", "ALL PASS" if failures == 0 else f"{failures} FAILURES")

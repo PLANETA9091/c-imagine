@@ -958,7 +958,7 @@ public final class CimSceneMod {
         int from = page * ENTITY_CELLS;
         if (from >= entries.size()) {
             LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells=0 dyn=0 "
-                    + "skipped_no_instance=0 dissolved=0 exhausted=1",
+                    + "skipped_no_instance=0 skipped_wrong_series=0 failed=0 dissolved=0 exhausted=1",
                     seriesTag(series), namespace, page);
             return 0;
         }
@@ -996,7 +996,18 @@ public final class CimSceneMod {
         // and its joins are diagnostics, never the gate.
         final List<Entity> spawned = new ArrayList<>();
         final List<Integer> spawnedIdx = new ArrayList<>();
-        int noInstance = 0, wrongSeries = 0;
+        // SKIPPED rows (measured run 41188197904 / gallery #25: a modded
+        // entity threw inside the configure+addFreshEntity body — the whole
+        // command died, the settle TickTask was never scheduled, the page
+        // never got its done marker and the walk burned). Two contracts:
+        // 1) one bad subject must never kill the page — it becomes a NAMED
+        // skip row in the manifest (note=no-instance | failed-create:<t> |
+        // failed:<t>) and the walk continues;
+        // 2) the row is the honesty channel — the pixel join alone would
+        // see empty-vs-empty and stay silent; the coverage gate turns the
+        // named notes RED (content absent from the picture is not green).
+        final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
+        int noInstance = 0, wrongSeries = 0, failed = 0;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
@@ -1006,11 +1017,16 @@ public final class CimSceneMod {
                 e = type.create(level);
             } catch (Throwable t) {
                 LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
-                        + "reason=no-instance entity={} err={}",
+                                + "reason=failed-create entity={} err={}",
                         namespace, page, from + i, id, t.toString());
+                skipNotes.put(i, "failed-create:" + t.getClass().getName());
             }
             if (e == null) {
                 noInstance++;
+                // a type that cannot be instantiated on the truth stack is
+                // content that never reaches ANY series' picture — the named
+                // row (not a bare counter) is what the gate reads
+                skipNotes.putIfAbsent(i, "no-instance");
                 LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
                         + "reason=no-instance entity={}", namespace, page, from + i, id);
                 continue;
@@ -1025,19 +1041,35 @@ public final class CimSceneMod {
                         from + i, kind, id);
                 continue;
             }
-            e.setNoGravity(true);
-            e.setInvulnerable(true);
-            e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
-                    GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z + 0.5,
-                    180.0f, 0.0f);
-            e.addTag(GALLERY_TAG);
-            if (isMob) {
-                // NoAI: no movement, no look-at, no AI despawn logic — a
-                // still picture. Persistence: nothing despawns the subject
-                // between the settle pass and the shot.
-                m_setNoAi(e);
+            try {
+                e.setNoGravity(true);
+                e.setInvulnerable(true);
+                e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
+                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z + 0.5,
+                        180.0f, 0.0f);
+                e.addTag(GALLERY_TAG);
+                if (isMob) {
+                    // NoAI: no movement, no look-at, no AI despawn logic — a
+                    // still picture. Persistence: nothing despawns the subject
+                    // between the settle pass and the shot.
+                    m_setNoAi(e);
+                }
+                level.addFreshEntity(e);
+            } catch (Throwable t) {
+                failed++;
+                skipNotes.put(i, "failed:" + t.getClass().getName());
+                LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                                + "reason=failed entity={} err={}",
+                        namespace, page, from + i, id, t.toString());
+                // best-effort: if the entity half-entered the level before
+                // the throw, discard it — the cell stays empty and NAMED
+                try {
+                    e.discard();
+                } catch (Throwable ignore) {
+                    // a discard failure cannot matter — the row is already named
+                }
+                continue;
             }
-            level.addFreshEntity(e);
             spawned.add(e);
             spawnedIdx.add(i);
         }
@@ -1051,12 +1083,15 @@ public final class CimSceneMod {
         final List<ResourceLocation> fSlice = slice;
         final int fNoInstance = noInstance;
         final int fWrongSeries = wrongSeries;
+        final int fFailed = failed;
+        final java.util.Map<Integer, String> fSkipNotes = skipNotes;
         final int fFrom = from;
         final String fSeries = series;
         level.getServer().tell(new TickTask(level.getServer().getTickCount()
                 + ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
                         fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
-                        fNoInstance, fWrongSeries, fFrom, fSeries)));
+                        fNoInstance, fWrongSeries, fFailed, fSkipNotes,
+                        fFrom, fSeries)));
         return spawned.size();
     }
 
@@ -1076,8 +1111,9 @@ public final class CimSceneMod {
     private static void settleGalleryEntity(ServerLevel level, String namespace, int page,
                                             List<ResourceLocation> slice,
                                             List<Entity> spawned, List<Integer> spawnedIdx,
-                                            int noInstance, int wrongSeries, int from,
-                                            String series) {
+                                            int noInstance, int wrongSeries, int failed,
+                                            java.util.Map<Integer, String> skipNotes,
+                                            int from, String series) {
         String tag = seriesTag(series);
         String[] rowStr = new String[slice.size()];
         int cells = 0, dyn = 0, dissolved = 0;
@@ -1109,6 +1145,13 @@ public final class CimSceneMod {
         }
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tentity\tdyn\tnote\n");
         for (int i = 0; i < slice.size(); i++) {
+            if (rowStr[i] == null && skipNotes.containsKey(i)) {
+                // the spawn failed BEFORE or DURING placement — the row must
+                // be VISIBLE in the manifest (named), not silent: the join
+                // sees a skip, the coverage gate turns it into a named RED
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + slice.get(i) + "\t0\t"
+                        + skipNotes.get(i);
+            }
             if (rowStr[i] != null) {
                 tsv.append(rowStr[i]).append('\n');
             }
@@ -1124,9 +1167,9 @@ public final class CimSceneMod {
                     manifest, ioe.toString());
         }
         LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells={} dyn={} "
-                        + "skipped_no_instance={} skipped_wrong_series={} dissolved={} first={} last={}",
+                        + "skipped_no_instance={} skipped_wrong_series={} failed={} dissolved={} first={} last={}",
                 tag, namespace, page, cells, dyn, noInstance, wrongSeries,
-                dissolved, slice.get(0), slice.get(slice.size() - 1));
+                failed, dissolved, slice.get(0), slice.get(slice.size() - 1));
     }
 
     /** Canonical state string {@code ns:path[k=v,...]} (properties in

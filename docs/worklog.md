@@ -2540,3 +2540,60 @@ Stage Summary:
   cannot express yet. Nothing silently skipped remains on the visual
   surface; the next run's reds are the named backlog, the greens are
   picture-proven.
+
+---
+Task ID: 12-ap
+Agent: main
+Task: one crashed spawn can never burn a walk again — the entity walk is crash-proof and the gate reads the manifests' own honesty notes (owner: «СЕРЬЕЗНО ВСЁ» + «ну хотя бы ред честный»)
+
+Work Log:
+- FORENSICS on gallery #25 (run 41188197904, ef29e21): the truth leg died in
+  the MOD-NAMESPACE entity walk at `cimscene gallery entity dyn create 0` —
+  "An unexpected error occurred trying to execute that command", the done
+  marker never fired, the step burned, jobs 2-3 skipped. The artifact's
+  boot.log carries NO stack trace (console cut at the begin line), so the
+  root cause is an unguarded throw inside the per-entity body AFTER the
+  begin log: the code only wrapped `EntityType.create(level)` in try/catch —
+  setNoGravity/setInvulnerable/moveTo/addTag/m_setNoAi/addFreshEntity ran
+  bare, and ONE Create subject (first dyn-kind: carriage_contraption or a
+  neighbour of the 9) threw and killed the whole command, the settle TickTask
+  with it, and the page's done marker.
+- SCENE FIX (CimSceneMod.galleryEntity / settleGalleryEntity): the whole
+  configure+addFreshEntity body is now try/catch(Throwable) — a throwing
+  subject is discarded (best-effort) and the walk CONTINUES. Three named
+  skip-note kinds reach the manifest as `skip|-1|-1|-1|<id>|0|<note>`:
+  `no-instance` (create returned null), `failed-create:<t>` (create threw),
+  `failed:<t>` (configure/addFreshEntity threw). Previously no-instance was
+  a bare counter with NO manifest row — invisible to every reader. The done
+  line gains `failed=` (counter) and the exhausted early-return line is
+  symmetric. The 12-ap contract: one bad subject = a NAMED row + a failed=N
+  counter, never a dead page.
+- HONESTY HOLE CLOSED (coverage-gate.py): the pixel join sees a skipped
+  cell as empty-vs-empty (green); the structural gate checked only
+  manifests/shots/exhaustion — a spawn-crashed subject would have been a
+  SILENT GREEN forever. The gate now scans the three entity series'
+  manifests and turns every absence note (dissolved / no-instance /
+  failed*) into a COVERAGE-INCOMPLETE with the NAMED subjects
+  (`unshown=create:carriage_contraption(failed:...), ... +N more`).
+  BLOCK manifests' skip rows stay the deliberate 12-ao accounting
+  (fluid-carried states have their own class; RenderShape.INVISIBLE renders
+  identically on both legs by vanilla's own contract).
+- TESTS: scripts/cimscene/test-coverage-gate.py grows G/H/I/J — failed row
+  RED (named), no-instance RED (named), dissolved RED (named), foreign
+  skip-note (wrong-series) GREEN. 10/10 PASS locally.
+- Verified locally (light): offline javac build GREEN (the new Map import
+  is fully qualified; settle signature extended, all callers updated);
+  gate smoke 10/10 GREEN; heavy verification = CI (gallery #27+ — the
+  create dyn walk must now COMPLETE with named rows instead of burning,
+  and the gate must go red naming the subject that #25 crashed on).
+
+Stage Summary:
+- The walk cannot be murdered by its own content anymore: a spawn crash
+  degrades to a named manifest row, and the coverage gate converts every
+  named absence into an honest red with the subject's name. The verdict
+  now covers the full honesty chain: registry index -> exhaustive walk ->
+  crash-proof placement -> manifest rows -> pixel join (visual) + ledger
+  gate (coverage) + named absence reds (content that exists but never
+  reached the picture). #25's failure mode is structurally impossible;
+  its red returns as a NAME, which is the only kind of red that leads
+  somewhere.
