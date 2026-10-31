@@ -3215,3 +3215,47 @@ Stage Summary:
   pack's MODEL bytes, fatal at the client's def-bake level. Gallery #47
   (cold seed, the sha1 moves) is the first run the 60k pixel gate judges
   with actually-textured ours legs.
+
+---
+Task ID: 13-h
+Agent: main
+Task: #47/#48/#49 — the stale-seed hole, the hashFiles rule, and the FIRST TEXTURED ours wall
+
+Work Log:
+- MEASURED #47: the uv fix never reached CI — the restore-keys PREFIX hit
+  returned cache-matched-key set, the seed skipped the rebuild and every
+  ours shard served the OLD missingno pack. The fallback's "previous
+  byte-identical pack" assumption was never verified. FIX: the pack build
+  now stamps seed-pack/f2v/inputs.sha1 with the SEED_INPUTS fingerprint
+  (the same hashFiles tree as the cache key); the seed job and every ours
+  shard compare the payload stamp against the current fingerprint —
+  mismatch = full rebuild (seed) / this run's seed artifact (ours).
+  Workflow-only commits keep the ~1 min prefix hit; real input changes
+  can never serve stale bytes.
+- MEASURED #48: GitHub rejects `hashFiles` inside job-level env
+  ("Unrecognized function: 'hashFiles'", the run dies with ZERO jobs —
+  only visible through a workflow_dispatch attempt). FIX: the fingerprint
+  computes in a `seed-inputs` step (GITHUB_OUTPUT); the restore/save keys
+  and the verify steps read `steps.seed-inputs.outputs.hash`.
+- MEASURED #49: the first TEXTURED ours wall — deepslate/scorchia wall
+  composites render their real palette textures, silhouettes match truth,
+  "Unable to bake item model" count = 0. The universal missingno is DEAD.
+  The honest red now reports the genuine content-parity deltas:
+  (a) wall cells RED at ae 130-170k with textured renders — the composite
+      channel's texture alignment (uvlock: create blockstates carry
+      uvlock=true; our bakeRotation rotates elements but not UVs — vanilla
+      uvlock keeps the grain world-aligned) + per-face shading (entity
+      light vs block light+AO beyond the luma normalization);
+  (b) the item strip renders but darker/misaligned (item model parity —
+      separate families);
+  (c) 257 GREEN / 432 DYNAMIC cells pass — the gate's first textured
+      greens on real content.
+- Note: ours s2 of #49 hung on the Paper CDN download (fill.papermc.io),
+  not our logic; the 30-min job timeout is the backstop.
+
+Stage Summary:
+- The pack channel finally renders what it should: the tool is honest AND
+  the wall is textured. The remaining red is the real parity campaign:
+  uvlock emulation in bakeRotation (highest leverage: 30 red cells per
+  wall page), item model parity, shading deltas — each measurable in a
+  6-minute CI run against the 60k gate.
