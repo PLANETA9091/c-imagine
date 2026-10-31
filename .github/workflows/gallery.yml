@@ -895,8 +895,8 @@ jobs:
           set -euo pipefail
           mkdir -p srv-wall/plugins srv-wall/c-imagine/f2v srv-wall/c-imagine/scenes
           cp seed-pack/plugin/cim-paper-plugin.jar srv-wall/plugins/
-          cp seed-pack/f2v/. srv-wall/c-imagine/f2v/
-          cp seed-pack/scenes/. srv-wall/c-imagine/scenes/
+          cp -r seed-pack/f2v/. srv-wall/c-imagine/f2v/
+          cp -r seed-pack/scenes/. srv-wall/c-imagine/scenes/
           ls srv-wall/c-imagine/scenes/ | wc -l
           SHA1=$(cat srv-wall/c-imagine/f2v/pack.sha1)
           echo "eula=true" > srv-wall/eula.txt
@@ -1358,6 +1358,7 @@ jobs:
       - name: shard gate JSON
         if: always()
         run: |
+          mkdir -p gallery-report
           python3 - <<'PY'
           import glob, json, os
           # job.status: 'success' only when the INLINE join step passed its
