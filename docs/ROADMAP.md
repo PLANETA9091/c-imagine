@@ -463,7 +463,14 @@ not cosmetic — THE EXHAUSTIVE COVERAGE LAW (implemented same day):
   a `failed=` counter on the done line. The gate reads the manifests and
   turns every absence note into a COVERAGE red naming the subject
   (`unshown=create:...`) — measured hole: the pixel join sees a crashed
-  subject as empty-vs-empty and would have stayed silent forever.
+  subject as empty-vs-empty and would have stayed silent forever. The same
+  law one layer deeper (12-ar): a subject that places cleanly but NPEs on
+  its first server tick (measured: create:potato_projectile, gallery #27 —
+  a FATAL server crash after a green placement) is handled by the
+  entity-tick quarantine mixin in the scene harness (Level.guardEntityTick
+  redirect): the Throwable is logged with the subject's name, the subject
+  is discarded, the settle pass reads it as dissolved, and the gate reds
+  it — the truth server is unkillable by its own gallery content.
 - **THE WHOLE-SURFACE LEDGER LAW (12-aq, 2026-10-31)**: the ledger counts
   EVERY registry whose entries alter a rendered frame — the 6 walked
   classes + blockentity reconciliation + 14 no-walk classes (biome,
