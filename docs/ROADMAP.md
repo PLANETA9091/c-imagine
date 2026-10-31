@@ -246,6 +246,25 @@ is not a constraint (owner, 2026-10-29) — runs are no longer rationed.
 pixel gate** — the gallery covers entities too, and the gate semantics below are
 extended from blockstates to every content class (blocks, entities, items,
 sounds; particles next).
+**Owner directive 2026-10-31 (the coverage audit): does the verdict actually
+SEE all mod content?** — measured answer: NO. The pixel gate walked 3 pages =
+231 of create's 31,389 blockstates (**0.74%**), while items, particles and
+mod-namespace entities reached the verdict not at all. The fix is structural,
+not cosmetic — THE EXHAUSTIVE COVERAGE LAW (implemented same day):
+- the scene writes a per-namespace **coverage ledger**
+  (`gallery-<ns>-index.tsv`: class|total|cellsPerPage, derived from the same
+  registries on both stacks — blockstates, entity types, items, particles);
+- every gallery class **walks to exhaustion** (the `exhausted=1` terminal
+  marker is mandatory; the walk loops are data-driven, safety-capped);
+- the diff job's **coverage gate** (`scripts/cimscene/coverage-gate.py`)
+  joins the ledger against the manifests and exhaustion markers actually
+  present — a class short of `ceil(total/cellsPerPage)` pages fails the run
+  COVERAGE-INCOMPLETE **even if every joined cell were green**;
+- Create's "mechanics and block stages" (owner's example) decompose
+  automatically: state-driven stages ARE blockstates (all 31,389 now reach
+  the wall), renderer-driven mechanics are BlockEntity/BER surfaces (dyn
+  class → M5.6's real-client gate), animated entities/particles are the
+  entity/particle legs below. Nothing about a mod is hand-enumerated.
 
 - **Priority ladder (Tier 0 in `MODPACK.md`):**
   - **P0 — Create**: 100% identical target (kinetic network, contraptions,
@@ -366,22 +385,51 @@ sounds; particles next).
     the ambient-animation class (squash/spin phases are client-side and
     time-based) — a diagnostic that separates channel noise from content
     deltas, never gated itself.
+- **THE ITEM GALLERY — every registered ITEM under the same wall + pixel gate
+  (implemented 2026-10-31)** — `/cimscene gallery item <ns> <page>`: EVERY
+  `Item` of the namespace (the air sentinel excluded), sorted, one per wall
+  cell as a REAL `item_display` carrying the REAL modded item — the truth
+  client renders the true item model including the mod's own item renderers;
+  billboard FIXED, light PINNED 15/15, the proven summon grammar. Ours leg:
+  the pack's ITEM channel (the M5.2 item-model path generalized) — the CI
+  pack step generates `visual-items.tsv` rows for every gallery item (paper
+  host + explicit 300000+i CMD, a space disjoint from the block gallery and
+  the pinned rows) via `scripts/f2v/gallery-items-manifest.py`; the plugin's
+  `/cim gallerypage-item` resolves id→CMD through the resolved rows; items
+  with no pack row count as nochannel and are named by the join. Manifests
+  `gallery-item-<ns>-p<p>.tsv` (cell|x|y|z|item|dyn|note) — the join key,
+  same wall geometry, one bad item names itself. The ITEM pages are GATE
+  pages (red verdicts), unlike dyn diagnostics.
+- **THE PARTICLE GALLERY — every registered PARTICLE shown to the test player
+  (implemented 2026-10-31, diagnostics until measured stable)** —
+  `/cimscene gallery particle <ns> <page>`: EVERY `ParticleType` of the
+  namespace through the vanilla `/particle` surface (count 1, delta 0/0/0,
+  speed 0 → a static particle exactly at the cell; `force` past the
+  view-distance rule). Types whose options need data (dust colors, item
+  particles...) fail the parse identically on both stacks → recorded skip
+  rows (no-simple-options), never silently dropped. Every spawned particle
+  is dyn=1 (fade/drift is time-varying by nature): the join reports every
+  cell without a red verdict until the FIXED 1s shot-window protocol is
+  measured stable — but the walk still shows every type to the test player
+  and the coverage gate requires every page. Ours leg: `/cim
+  gallerypage-particle` counts every cell nochannel (Paper has no
+  mod-particle channel — the backlog is VISIBLE, never a missing shot).
 - **Gate semantics (the anti-"green for nothing" law, extended to ALL
   content — owner directive 2026-10-31)**: census/registration parity
   stays a REQUIRED PRE-GATE (identical sets on both stacks) and nothing
   else — registration never greens a picture. The green verdict for M5.5
   per mod is the PIXEL verdict across every content class: the BLOCK wall
-  (every non-skipped, non-dynamic state cell of every page), the ENTITY
-  wall (every non-skipped, non-dynamic entity cell of every page), the
-  item channel (M5.2 hotbar gate) and the wire-level sound census.
+  (every non-skipped, non-dynamic state cell of every page — now all 408
+  create pages, not 3), the ENTITY wall (every non-skipped, non-dynamic
+  entity cell of every page, mod namespace included), the ITEM wall (the
+  item channel's gate pages) and the wire-level sound census — plus the
+  COVERAGE gate over the ledger, without which no pixel verdict counts.
   "100% identical" = 100% of the cells the channel can express at the
   calibrated identity datum, PLUS M5.6 green for the dynamic / no-channel
-  surface (BEW blocks, modded entity renderers). Every red ships
-  truth/ours/highlight triptychs and both screenshots; the run is RED
-  when any gateable cell of any content class is red. **The particle
-  gallery** is the next leg of the same pattern (auto-collected particle
-  ids, a fixed shot-window protocol, honesty rows for client-side-only
-  types) — its design note lands with the implementation, not before.
+  surface (BEW blocks, modded entity renderers, particles, the mod's own
+  client code). Every red ships truth/ours/highlight triptychs and both
+  screenshots; the run is RED when any gateable cell of any content class
+  is red OR any class was not walked to exhaustion.
 - **M5.6 — the real-client leg (the dynamic-content gate)**: the pack
   channel's ceiling is static models; the mod's own rendering (BlockEntity
   renderers, shaders, particle engines) reaches the vanilla client only
@@ -391,14 +439,17 @@ sounds; particles next).
   the red gate there. This is the leg that finally owns "Create 100%
   identical".
 
-**Accept:** the GALLERY gate across ALL content: every Create blockstate
-page AND every minecraft entity page green at the calibrated identity
-datum (truth leg vs ours leg, per-cell PixelDiffNorm), every Create
-channel (kinetic/fluid/UI/particle/sound) green on its scene rows, BOP /
-Dynamic Trees / Combat Roll galleries (blocks AND entities) green; the
-particle gallery green per namespace once its leg lands; every run ships
-both screenshot sets + per-cell diff artifacts for eye review, and the
-run is RED whenever any cell or any channel row is red.
+**Accept:** the GALLERY gate across ALL content, EXHAUSTIVELY: the coverage
+ledger proves every class walked to exhaustion (all ~408 create blockstate
+pages, every item page, every particle page, every entity series page — the
+coverage gate is RED otherwise), every gateable cell of every page green at
+the calibrated identity datum (truth leg vs ours leg, per-cell
+PixelDiffNorm), every Create channel (kinetic/fluid/UI/particle/sound) green
+on its scene rows, BOP / Dynamic Trees / Combat Roll galleries (blocks AND
+entities) green; the particle leg's fixed-window protocol measured stable,
+then promoted to the gate; every run ships both screenshot sets + per-cell
+diff artifacts for eye review, and the run is RED whenever any cell is red,
+any channel row is red, or any class did not reach the verdict.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 

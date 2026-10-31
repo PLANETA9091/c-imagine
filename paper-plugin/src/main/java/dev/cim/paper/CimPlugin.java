@@ -1318,6 +1318,170 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return counts == null ? new int[]{0, 0} : counts;
     }
 
+    /**
+     * Replay one truth-leg ITEM gallery page manifest as ItemDisplays:
+     * {@code c-imagine/scenes/gallery-item-<ns>-p<page>.tsv} rows
+     * {@code cell|x|y|z|item|dyn|note} — one display per cell at the cell
+     * CENTER, billboard FIXED, light PINNED 15/15 (the same rig contract the
+     * truth leg summons with). Item stacks resolve to pack CMD carriers
+     * (paper + custom_model_data float) through the resolved visual-items
+     * rows — the SAME item-model channel the M5.2 hotbar datum proved; the
+     * CI pack step generates a row for every gallery item. An item with no
+     * pack row is {@code nochannel}: the cell stays empty and the pixel
+     * join names it (honest backlog, never a silent skip).
+     *
+     * <p>Returns {@code [placed, nochannel]}; the RCON response marker is
+     * {@code gallerypage-item <ns> p<page> -> placed=N nochannel=K}.
+     */
+    private int[] galleryPageItem(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-item-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-item: manifest missing: " + mf);
+            return new int[]{0, 0};
+        }
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                }
+                // header / skip rows — nothing to spawn
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-item: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0};
+        }
+        // item id -> pack CMD carrier (the resolved visual-items rows carry
+        // BOTH the hand-written manifest and the CI-generated gallery rows)
+        final java.util.Map<String, Float> cmdByItem = new java.util.HashMap<>();
+        if (f2v != null) {
+            for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                cmdByItem.putIfAbsent(r.moddedId(), r.cmd());
+            }
+        }
+        final int pagef = page;
+        int[] counts = callSync(() -> {
+            int placed = 0, nochannel = 0;
+            World w = world(worldName());
+            // SAME wall sweep the truth scene runs (12-ac symmetry law)
+            for (int bx = -6; bx <= 6; bx++) {
+                for (int by = -60; by <= -53; by++) {
+                    for (int bz = 8; bz <= 10; bz++) {
+                        try {
+                            w.getBlockAt(bx, by, bz).setType(Material.AIR, false);
+                        } catch (Exception clearFail) {
+                            // unloaded corner: forceload covers the region
+                        }
+                    }
+                }
+            }
+            for (String[] row : cells) {
+                // cell|x|y|z|item|dyn|note
+                if (row.length < 5) {
+                    continue;
+                }
+                int x, y, z;
+                try {
+                    x = Integer.parseInt(row[1]);
+                    y = Integer.parseInt(row[2]);
+                    z = Integer.parseInt(row[3]);
+                } catch (NumberFormatException bad) {
+                    continue;
+                }
+                String itemId = row[4];
+                Float cmd = cmdByItem.get(itemId);
+                if (cmd == null) {
+                    nochannel++;
+                    log().warning(LOG_PREFIX + "f2v gallery-item: no pack CMD for "
+                            + itemId + " — cell " + row[1] + "," + row[2] + ","
+                            + row[3] + " left empty (nochannel)");
+                    continue;
+                }
+                ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
+                stack.editMeta(meta -> {
+                    CustomModelDataComponent c = meta.getCustomModelDataComponent();
+                    c.setFloats(List.of(cmd));
+                    meta.setCustomModelDataComponent(c);
+                });
+                org.bukkit.Location at = new org.bukkit.Location(w,
+                        x + 0.5, y + 0.5, z + 0.5);
+                final float fcmd = cmd;
+                org.bukkit.entity.ItemDisplay display = w.spawn(at,
+                        org.bukkit.entity.ItemDisplay.class, e -> {
+                            e.setItemStack(stack);
+                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                            // identity transform — the truth leg carries no
+                            // transformation NBT, so this leg must not either
+                            // (both render the item model in the NONE context)
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(
+                                    15, 15));
+                        });
+                log().info(LOG_PREFIX + "f2v gallery-item: page " + pagef
+                        + " cell " + row[1] + "," + row[2] + "," + row[3]
+                        + " item=" + itemId + " cmd=" + fcmd
+                        + " uuid=" + display.getUniqueId());
+                placed++;
+            }
+            return new int[]{placed, nochannel};
+        });
+        return counts == null ? new int[]{0, 0} : counts;
+    }
+
+    /**
+     * Replay one truth-leg PARTICLE gallery page manifest: every cell counts
+     * as {@code nochannel} — Paper cannot spawn mod particles (the mod's
+     * particle textures/logic exist only in the mod's client, which this
+     * vanilla-client pack channel structurally cannot express). The wall is
+     * still swept (the shot shows the honestly empty wall) and every cell is
+     * counted, so the pixel join reports the full cell list — the particle
+     * channel backlog is VISIBLE in the verdict, not a missing screenshot.
+     *
+     * <p>Returns {@code [placed=0, nochannel=N]}; the RCON response marker is
+     * {@code gallerypage-particle <ns> p<page> -> placed=0 nochannel=N}.
+     */
+    private int[] galleryPageParticle(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-particle-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-particle: manifest missing: " + mf);
+            return new int[]{0, 0};
+        }
+        int cells = 0;
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t")) {
+                    cells++;
+                }
+                // header / skip rows
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-particle: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0};
+        }
+        final int cellsf = cells;
+        callSync(() -> {
+            World w = world(worldName());
+            for (int bx = -6; bx <= 6; bx++) {
+                for (int by = -60; by <= -53; by++) {
+                    for (int bz = 8; bz <= 10; bz++) {
+                        try {
+                            w.getBlockAt(bx, by, bz).setType(Material.AIR, false);
+                        } catch (Exception clearFail) {
+                            // unloaded corner: forceload covers the region
+                        }
+                    }
+                }
+            }
+            return cellsf;
+        });
+        log().warning(LOG_PREFIX + "f2v gallery-particle: " + cellsf
+                + " cell(s) nochannel — Paper has no mod-particle channel");
+        return new int[]{0, cellsf};
+    }
+
     /** Despawn every ItemDisplay AND every tagged gallery entity in every
      *  world (page swaps; the tag is shared with the truth leg). Returns the
      *  removed count. */
@@ -1445,6 +1609,42 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
+        // /cim gallerypage-item <ns> <page> — the M5.5 ITEM gallery ours-leg
+        // surface (owner directive 2026-10-31: ALL content under the verdict):
+        // replay a truth-leg item manifest as ItemDisplays carrying the pack's
+        // CMD carrier (the same item-model channel the M5.2 hotbar datum
+        // proved — visual-items.tsv rows are generated for every gallery item
+        // by the CI pack step). Items with no pack row count as nochannel
+        // (empty cell, named by the pixel join) — never a silent skip.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-item")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageItem(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-item " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-item: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim gallerypage-particle <ns> <page> — the M5.5 PARTICLE gallery
+        // ours-leg surface: the truth manifests are the cell contract; Paper
+        // has NO mod-particle channel, so every cell counts as nochannel and
+        // the shot shows the honestly empty wall — the pixel join names every
+        // cell (the backlog is visible, never hidden behind a missing shot).
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-particle")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageParticle(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-particle " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-particle: bad page number: " + args[2]);
+            }
+            return true;
+        }
         // /cim galleryclear — despawn every ItemDisplay + tagged gallery
         // entity (page swaps).
         if (args.length >= 1 && args[0].equalsIgnoreCase("galleryclear")) {
@@ -1461,6 +1661,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
         sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> "
                 + "| /cim gallerypage-entity <ns> <page> | /cim galleryclear");
+        sender.sendMessage(LOG_PREFIX + "       /cim gallerypage-item <ns> <page> "
+                + "| /cim gallerypage-particle <ns> <page>");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

@@ -7,26 +7,46 @@ name: gallery
 # slider units, spectator camera, OOM heaps, fluid skips — are all folded
 # into this file).
 #
+# EXHAUSTIVE COVERAGE LAW (owner directive 2026-10-31: does the verdict
+# actually SEE all mod content? — it saw 3 pages = 231 of create's 31,389
+# blockstates = 0.74%, while items/particles/mod-entities reached nothing):
+# every content class now walks to EXHAUSTION and the run is RED unless the
+# coverage ledger proves every page landed:
+#   blocks: EVERY blockstate (77 cells per page, walk until exhausted=1)
+#   entities: the minecraft CONTROL (EPAGES) + the mod namespace, all three
+#             series (mobs/dyn/large) to exhaustion
+#   items: EVERY registered item (truth: item_display with the REAL modded
+#          item; ours: the pack's item channel — visual-items rows generated
+#          from the same manifests, 300000+i CMD space)
+#   particles: EVERY registered particle (vanilla /particle, count 1 speed
+#          0, FIXED 1s shot window on both legs; dyn class, diagnostics
+#          until the protocol is measured stable)
+# The scene writes a per-namespace COVERAGE LEDGER (gallery-<ns>-index.tsv:
+# class|total|cellsPerPage, registry-derived); wall-diff's coverage-gate.py
+# joins it against the manifests + boot.log exhaustion markers — a partial
+# walk fails COVERAGE-INCOMPLETE even if every joined cell were green.
+#
 # job 1 wall-truth: real NeoForge 21.1.265 server + Create + real NeoForge
-#   1.21.1 client under xvfb. The universal gallery (scene-mod: EVERY block
-#   of the namespace in sorted order x EVERY state, 11x7=77 per page, fluid +
-#   invisible states skipped honestly) is rebuilt page by page at the fixed
-#   camera cell; the client shoots gal-p<p>.png per page plus a page-0
-#   re-placement determinism probe. Manifests gallery-create-p<p>.tsv are
-#   THE CELL CONTRACT.
+#   1.21.1 client under xvfb. The universal gallery (scene-mod: EVERY entry
+#   of the namespace in sorted order, 11x7=77 cells per page, honest skip
+#   rows recorded) is rebuilt page by page at the fixed camera cell; the
+#   client shoots gal-p<p>.png per page plus page-0 determinism probes.
+#   Manifests gallery-create-p<p>.tsv are THE CELL CONTRACT.
 # job 2 wall-ours (needs truth): Paper 26.3 + c-imagine plugin + GalleryPack
-#   (per-state models synthesized from the mod jar) + vanilla 26.3 client —
-#   /cim gallerypage replays the TRUTH manifests one ItemDisplay per cell
-#   (brightness pinned 15/15); shots ours-gal-p<p>.png + the same probe.
+#   (per-state AND per-item models synthesized from the mod jar) + vanilla
+#   26.3 client — /cim gallerypage[-entity|-item|-particle] replays the
+#   TRUTH manifests one rig per cell (brightness pinned 15/15 where the
+#   channel supports it); shots ours-gal-*.png + the same probes.
 # job 3 wall-diff (needs both): per-page per-cell pixel join
 #   (scripts/cimscene/gallery-diff.py — projection crop + align + luma
 #   normalise + AE). GATE: RED unless every non-skip non-dynamic cell of
-#   every page sits inside the calibrated AE datum; red cells ship truth |
-#   ours | highlight triptychs + TSV/JSON reports as artifacts. Dynamic
-#   (EntityBlock) cells are diffed and reported but carry no red verdict —
-#   their gate is the real-client leg (roadmap M5.6). Determinism probes are
-#   reported as diagnostics, never gated (an llvmpipe flake must not fake a
-#   content verdict).
+#   every page sits inside the calibrated AE datum AND the coverage gate
+#   proves the walk was exhaustive; red cells ship truth | ours | highlight
+#   triptychs + TSV/JSON reports as artifacts. Dynamic (EntityBlock) cells
+#   are diffed and reported but carry no red verdict — their gate is the
+#   real-client leg (roadmap M5.6). Determinism probes are reported as
+#   diagnostics, never gated (an llvmpipe flake must not fake a content
+#   verdict).
 
 on:
   push:
@@ -34,21 +54,25 @@ on:
   workflow_dispatch: {}
 
 env:
-  PAGES: "3"   # gate scope: pages 0..PAGES-1 (77 states per page); the
-               # census sweep in mod-matrix.yml walks to exhaustion
-  EPAGES: "5"  # entity gate scope: MOB pages 0..EPAGES-1 on the SPARSE 6x3
-               # grid (18 cells/page, pitch 2 — zero bbox overlap so no
-               # subject can ever push another; measured 16d62f0: at the
-               # 1-block pitch the wide subjects (ravager/horse/llama)
-               # scrambled the wall via collision push, differently per leg).
-               # The large/dyn series walk EDPAGES as diagnostics
+  MAXP: "460"  # exhaustive-walk safety cap (create measured 31,389 block
+               # states = 408 pages at 77/page; the walk ALWAYS breaks on the
+               # scene's exhausted marker first, and the coverage gate in
+               # wall-diff re-checks the ledger against what landed). Owner
+               # directive 2026-10-31: the verdict must SEE every state/item/
+               # entity/particle — the old PAGES=3 gate covered 231 of 31,389
+               # states (0.74%) and could green on that.
+  EPAGES: "5"  # entity gate scope: MOB pages 0..EPAGES-1 of the minecraft
+               # CONTROL namespace on the SPARSE 6x3 grid (18 cells/page,
+               # pitch 2 — zero bbox overlap so no subject can ever push
+               # another; measured 16d62f0). The mod namespace (create)
+               # walks ALL THREE series to exhaustion separately
   EDPAGES: "3"
 
 jobs:
   wall-truth:
     name: gallery wall — truth leg (real NeoForge server + client, xvfb)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 110
     steps:
       - uses: actions/checkout@v4
 
@@ -213,7 +237,7 @@ jobs:
           done
           sleep 8   # first chunk render on llvmpipe
 
-      - name: wall walk — fixed camera, page shots + determinism probe
+      - name: wall walk — fixed camera, EXHAUSTIVE page shots + determinism probe
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -226,10 +250,15 @@ jobs:
           java -cp vtools Key F1
           sleep 1
           mkdir -p truth-shots
-          for p in $(seq 0 $((PAGES-1))); do
-            # count-based done wait (run-gallery-truth.sh's wait_page_done):
-            # the marker repeats across pages and re-placements, so wait for
-            # the count of THIS page's marker to grow past its baseline
+          # EXHAUSTIVE WALK (owner directive 2026-10-31): every page until the
+          # scene's exhausted marker — the gate must SEE every blockstate. The
+          # terminal page (cells=0 ... exhausted=1) produces no manifest and no
+          # shot; the coverage gate in wall-diff re-checks the ledger.
+          EXHAUSTED=0
+          for p in $(seq 0 $MAXP); do
+            # count-based done wait (the marker repeats across pages and
+            # re-placements, so wait for the count of THIS page's marker to
+            # grow past its baseline
             BEFORE=$(grep -c "gallery done ns=create page=$p " srv-wall/boot.log || true)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery page create $p"
@@ -240,17 +269,26 @@ jobs:
               sleep 1
             done
             [ "$ok" = "1" ] || { echo "page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then
+              echo "block walk exhausted at page $p"
+              EXHAUSTED=1
+              break
+            fi
             sleep 4   # section rebuild + lighting under llvmpipe
             java -cp vtools Shot "truth-shots/gal-p$p.png"
             echo "shot page $p"
           done
+          [ "$EXHAUSTED" = "1" ] || { echo "block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
           # determinism probe: re-place page 0, shoot again (diagnostic, not gated)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "cimscene gallery page create 0"
           sleep 5
           java -cp vtools Shot "truth-shots/gal-p0-again.png"
           echo "shot page 0 again"
-          ls -la truth-shots/
+          ls truth-shots/ | head -5
+          echo "block pages shot: $(ls truth-shots/gal-p\*.png 2>/dev/null | wc -l)"
 
       - name: entity walk — MOB pages (gate) + dyn pages (diagnostic)
         run: |
@@ -313,7 +351,81 @@ jobs:
           sleep 6
           java -cp vtools Shot "truth-shots/gal-e0-again.png"
           echo "shot mob page 0 again"
-          ls -la truth-shots/
+          # MOD-NAMESPACE entity walk (create): the same series split, to
+          # exhaustion. Modded types replay as nochannel on ours (the honest
+          # backlog the join names); a mod that registers real mobs lands in
+          # mobs/ = THE GATE, automatically, zero per-mod code.
+          for SERIES in mobs dyn large; do
+            TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
+            EX=0
+            for p in $(seq 0 $MAXP); do
+              BEFORE=$(grep -c "gallery-$TAG done ns=create page=$p " srv-wall/boot.log || true)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
+              ok=0
+              for i in $(seq 1 30); do
+                C=$(grep -c "gallery-$TAG done ns=create page=$p " srv-wall/boot.log || true)
+                [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+                sleep 1
+              done
+              [ "$ok" = "1" ] || { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              LINE=$(grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1)
+              echo "$LINE"
+              if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+              sleep 4
+              java -cp vtools Shot "truth-shots/gal-e$SERIES-create$p.png"
+              echo "shot create $SERIES page $p"
+            done
+            [ "$EX" = "1" ] || { echo "create $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # ITEM walk (create): every registered item, one item_display per
+          # cell carrying the REAL modded item, to exhaustion.
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery-item done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cimscene gallery item create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-item done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            sleep 4
+            java -cp vtools Shot "truth-shots/gal-i-create$p.png"
+            echo "shot item page $p"
+          done
+          [ "$EX" = "1" ] || { echo "item walk hit the MAXP cap without exhausted"; exit 1; }
+          # PARTICLE walk (create): every registered particle through the
+          # vanilla /particle surface, count=1 delta 0 speed 0. The SHOT
+          # WINDOW is pinned: 1s after the spawn command on BOTH legs (the
+          # particle is a client-side spec — a fixed age is the only fair
+          # comparison; the manifest rows are dyn=1, diagnostics, never red).
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            BEFORE=$(grep -c "gallery-particle done ns=create page=$p " srv-wall/boot.log || true)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery particle create $p"
+            ok=0
+            for i in $(seq 1 30); do
+              C=$(grep -c "gallery-particle done ns=create page=$p " srv-wall/boot.log || true)
+              [ "${C:-0}" -gt "${BEFORE:-0}" ] && { ok=1; break; }
+              sleep 1
+            done
+            [ "$ok" = "1" ] || { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            LINE=$(grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1)
+            echo "$LINE"
+            if echo "$LINE" | grep -q "exhausted=1"; then EX=1; break; fi
+            sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
+            java -cp vtools Shot "truth-shots/gal-pa-create$p.png"
+            echo "shot particle page $p"
+          done
+          [ "$EX" = "1" ] || { echo "particle walk hit the MAXP cap without exhausted"; exit 1; }
+          ls truth-shots/ | wc -l
 
       - name: upload truth wall artifacts (manifests = THE CELL CONTRACT)
         if: always()
@@ -322,8 +434,7 @@ jobs:
           name: wall-truth
           path: |
             truth-shots/
-            srv-wall/c-imagine/scenes/gallery-create-p*.tsv
-            srv-wall/c-imagine/scenes/gallery-entity*-minecraft-p*.tsv
+            srv-wall/c-imagine/scenes/
             truth-pins.log
             srv-wall/boot.log
             truth-client/client.out
@@ -331,7 +442,7 @@ jobs:
   wall-ours:
     name: gallery wall — c-imagine leg (Paper 26.3 + GalleryPack, xvfb)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 110
     needs: [wall-truth]   # the truth manifests ARE the cell contract
     steps:
       - uses: actions/checkout@v4
@@ -395,21 +506,36 @@ jobs:
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv srv-wall/c-imagine/f2v/
           # the truth manifests ARE the cell contract the plugin replays
           # (download-artifact nests them under truth/srv-wall/... — the LCA
-          # of the upload paths; find, not a fixed path). BOTH manifest
-          # families stage: the block pages AND the entity pages (measured
-          # run 41135456681: entity manifests missing -> the ours replay
-          # spawned nothing, placed=0 on every page)
+          # of the upload paths; find, not a fixed path). ALL manifest
+          # families stage: block pages AND entity pages (measured run
+          # 41135456681: entity manifests missing -> the ours replay spawned
+          # nothing) AND the item + particle pages + the coverage index.
           find truth -name 'gallery-create-p*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
           find truth -name 'gallery-entity*.tsv' \
             -exec cp {} srv-wall/c-imagine/scenes/ \;
-          ls srv-wall/c-imagine/scenes/
+          find truth -name 'gallery-item-*.tsv' \
+            -exec cp {} srv-wall/c-imagine/scenes/ \;
+          find truth -name 'gallery-particle-*.tsv' \
+            -exec cp {} srv-wall/c-imagine/scenes/ \;
+          ls srv-wall/c-imagine/scenes/ | wc -l
           # the pack's gallery channel rows: EVERY distinct state of the
           # truth manifests (GalleryPack assigns CMDs in that deterministic
           # order; the plugin's replay resolves through it)
           python3 scripts/f2v/gallery-manifest.py \
             srv-wall/c-imagine/scenes create srv-wall/c-imagine/f2v/visual-gallery.tsv
           wc -l srv-wall/c-imagine/f2v/visual-gallery.tsv
+          # THE ITEM CHANNEL (owner directive 2026-10-31: ALL content under
+          # the verdict): every truth item manifest row becomes a visual-items
+          # row (paper host + explicit 300000+i CMD — disjoint from the block
+          # gallery space and the pinned hand-written rows). F2vPack resolves
+          # each item's model graph from the mod jars and rides the SAME
+          # range_dispatch the M5.2 hotbar datum proved.
+          python3 scripts/f2v/gallery-items-manifest.py \
+            srv-wall/c-imagine/scenes create srv-wall/c-imagine/f2v/visual-gallery-items.tsv
+          cat scripts/f2v/visual-items.tsv srv-wall/c-imagine/f2v/visual-gallery-items.tsv \
+            > srv-wall/c-imagine/f2v/visual-items.tsv
+          wc -l srv-wall/c-imagine/f2v/visual-items.tsv
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
             java -cp "srv-wall/plugins/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
@@ -531,7 +657,13 @@ jobs:
           java -cp vtools Key F1
           sleep 1
           mkdir -p ours-shots
-          for p in $(seq 0 $((PAGES-1))); do
+          # EXHAUSTIVE REPLAY: the staged truth manifests ARE the page set —
+          # replay each page until the manifest list runs out (the terminal
+          # truth page produced no manifest by design).
+          EXHAUSTED=0
+          for p in $(seq 0 $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-create-p$p.tsv"
+            [ -f "$M" ] || { echo "no manifest for page $p — ours block replay exhausted"; EXHAUSTED=1; break; }
             # MEASURED (12-x run 3): passive mobs pre-spawn and WALK into the
             # frame between pages — clear them before EVERY page. The RCON
             # response IS the completion marker (sendMessage goes to the
@@ -542,10 +674,12 @@ jobs:
             echo "$OUT" | tee "ours-rcon-p$p.log"
             echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
               || { echo "page $p no placed marker in the RCON response"; exit 1; }
-            sleep 5   # section rebuild + entity render under llvmpipe
+            sleep 4   # section rebuild + entity render under llvmpipe
             java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
+            test -s "ours-shots/ours-gal-p$p.png" || { echo "page $p shot empty/missing"; exit 1; }
             echo "shot page $p"
           done
+          [ "$EXHAUSTED" = "1" ] || { echo "ours block replay hit the MAXP cap — staged manifest set incomplete"; exit 1; }
           # determinism probe (diagnostic, not gated)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "kill @e[type=!player]" "cim galleryclear" "cim gallerypage create 0"
@@ -621,7 +755,68 @@ jobs:
           sleep 6
           java -cp vtools Shot "ours-shots/ours-gal-e0-again.png"
           echo "shot mob page 0 again"
-          ls -la ours-shots/
+          # MOD-NAMESPACE entity replay (create): the staged create manifests
+          # are the page set; modded types count as nochannel (honest backlog
+          # the join names) — the replay still runs + shoots every page.
+          for SERIES in mobs dyn large; do
+            TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
+            EX=0
+            for p in $(seq 0 $MAXP); do
+              M="srv-wall/c-imagine/scenes/gallery-$TAG-create-p$p.tsv"
+              [ -f "$M" ] || { echo "no manifest for create $SERIES page $p — exhausted"; EX=1; break; }
+              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "kill @e[type=!player]" "cim galleryclear" \
+                "cim gallerypage-entity create $p $SERIES")
+              echo "$OUT" | tee "ours-rcon-e$SERIES-create$p.log"
+              echo "$OUT" | grep -q "gallerypage-entity create p$p $SERIES -> placed=" \
+                || { echo "create $SERIES page $p no placed marker"; exit 1; }
+              sleep 4
+              java -cp vtools Shot "ours-shots/ours-gal-e$SERIES-create$p.png"
+              test -s "ours-shots/ours-gal-e$SERIES-create$p.png" || { echo "create $SERIES page $p shot missing"; exit 1; }
+              echo "shot create $SERIES page $p"
+            done
+            [ "$EX" = "1" ] || { echo "ours create $SERIES replay hit the MAXP cap"; exit 1; }
+          done
+          # ITEM replay (create): the pack's item channel (300000+i CMD rows
+          # generated from the staged truth manifests) carries every item;
+          # missing pack rows count as nochannel and the join names them.
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-item-create-p$p.tsv"
+            [ -f "$M" ] || { echo "no manifest for item page $p — exhausted"; EX=1; break; }
+            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cim galleryclear" \
+              "cim gallerypage-item create $p")
+            echo "$OUT" | tee "ours-rcon-i$p.log"
+            echo "$OUT" | grep -q "gallerypage-item create p$p -> placed=" \
+              || { echo "item page $p no placed marker"; exit 1; }
+            sleep 4
+            java -cp vtools Shot "ours-shots/ours-gal-i-create$p.png"
+            test -s "ours-shots/ours-gal-i-create$p.png" || { echo "item page $p shot missing"; exit 1; }
+            echo "shot item page $p"
+          done
+          [ "$EX" = "1" ] || { echo "ours item replay hit the MAXP cap"; exit 1; }
+          # PARTICLE replay (create): no mod-particle channel on Paper —
+          # every cell is nochannel, the shot shows the honestly empty wall
+          # and the join names every cell (the backlog is VISIBLE). The FIXED
+          # 1s shot window mirrors the truth leg.
+          EX=0
+          for p in $(seq 0 $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-particle-create-p$p.tsv"
+            [ -f "$M" ] || { echo "no manifest for particle page $p — exhausted"; EX=1; break; }
+            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cim galleryclear" \
+              "cim gallerypage-particle create $p")
+            echo "$OUT" | tee "ours-rcon-pa$p.log"
+            echo "$OUT" | grep -q "gallerypage-particle create p$p -> placed=" \
+              || { echo "particle page $p no placed marker"; exit 1; }
+            sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
+            java -cp vtools Shot "ours-shots/ours-gal-pa-create$p.png"
+            test -s "ours-shots/ours-gal-pa-create$p.png" || { echo "particle page $p shot missing"; exit 1; }
+            echo "shot particle page $p"
+          done
+          [ "$EX" = "1" ] || { echo "ours particle replay hit the MAXP cap"; exit 1; }
+          ls ours-shots/ | wc -l
 
       - name: upload ours wall artifacts
         if: always()
@@ -642,7 +837,7 @@ jobs:
   wall-diff:
     name: gallery wall — pixel join (RED unless 100% inside the datum)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     needs: [wall-truth, wall-ours]
     steps:
       - uses: actions/checkout@v4
@@ -672,15 +867,19 @@ jobs:
           find truth -name 'gal-elarge*.png'  -exec cp {} truth-shots/ \;
           find ours  -name 'ours-gal-edyn*.png'  -exec cp {} ours-shots/ \;
           find ours  -name 'ours-gal-elarge*.png' -exec cp {} ours-shots/ \;
-          ls truth-shots/ ours-shots/
+          find truth -name 'gal-emobs-*.png'  -exec cp {} truth-shots/ \;
+          find ours  -name 'ours-gal-emobs-*.png' -exec cp {} ours-shots/ \;
+          find truth -name 'gal-i-*.png'      -exec cp {} truth-shots/ \;
+          find ours  -name 'ours-gal-i-*.png' -exec cp {} ours-shots/ \;
+          ls truth-shots/ | wc -l; ls ours-shots/ | wc -l
           GATE=0
-          for p in $(seq 0 $((PAGES-1))); do
+          echo "=== BLOCK pages: manifest-driven (the staged truth manifests ARE the page set) ==="
+          for M in $(find truth -name 'gallery-create-p*.tsv' | sort -V); do
+            B=$(basename "$M" .tsv); p=${B##*-p}
             T="truth-shots/gal-p$p.png"
             O="ours-shots/ours-gal-p$p.png"
-            M=$(find truth -name "gallery-create-p$p.tsv" | head -1)
             test -f "$T" || { echo "missing truth shot p$p"; GATE=1; continue; }
             test -f "$O" || { echo "missing ours shot p$p"; GATE=1; continue; }
-            test -n "$M" || { echo "missing manifest p$p"; GATE=1; continue; }
             # determinism probes: page 0 ONLY (the -again shots are page 0
             # re-placements); a probe against another page compares different
             # content and is meaningless
@@ -740,6 +939,66 @@ jobs:
               fi
             done
           done
+          echo "=== MOD-NAMESPACE entity pages (create): mobs = the gate, dyn/large = diagnostic ==="
+          for SERIES in mobs dyn large; do
+            TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
+            for M in $(find truth -name "gallery-$TAG-create-p*.tsv" | sort -V); do
+              B=$(basename "$M" .tsv); p=${B##*-p}
+              T="truth-shots/gal-e$SERIES-create$p.png"
+              O="ours-shots/ours-gal-e$SERIES-create$p.png"
+              if [ -f "$T" ] && [ -f "$O" ]; then
+                if [ "$SERIES" = mobs ]; then
+                  python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                    --manifest "$M" --out "gallery-report/join-e-create-$p.json" \
+                    --diff-dir "gallery-report/diff-e-create-$p" \
+                    --pitch 2 --gate 240000 || GATE=1
+                else
+                  python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                    --manifest "$M" --out "gallery-report/diag-e-$SERIES-$p.json" \
+                    --diff-dir "gallery-report/diff-e-$SERIES-$p" \
+                    --pitch 2 --gate 240000 || true
+                fi
+              elif [ "$SERIES" = mobs ]; then
+                echo "create mobs page $p shots missing"; GATE=1
+              else
+                echo "create $SERIES page $p shots missing (diagnostic tolerated)"
+              fi
+            done
+          done
+          echo "=== ITEM pages: the item channel's gate (CMD rows generated from the same manifests) ==="
+          for M in $(find truth -name 'gallery-item-create-p*.tsv' | sort -V); do
+            B=$(basename "$M" .tsv); p=${B##*-p}
+            T="truth-shots/gal-i-create$p.png"
+            O="ours-shots/ours-gal-i-create$p.png"
+            test -f "$T" || { echo "missing truth item shot p$p"; GATE=1; continue; }
+            test -f "$O" || { echo "missing ours item shot p$p"; GATE=1; continue; }
+            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              --manifest "$M" --out "gallery-report/join-item-p$p.json" \
+              --diff-dir "gallery-report/diff-item-p$p" || GATE=1
+          done
+          echo "=== PARTICLE pages: diagnostic join (dyn class, fixed 1s shot window) ==="
+          for M in $(find truth -name 'gallery-particle-create-p*.tsv' | sort -V); do
+            B=$(basename "$M" .tsv); p=${B##*-p}
+            T="truth-shots/gal-pa-create$p.png"
+            O="ours-shots/ours-gal-pa-create$p.png"
+            if [ -f "$T" ] && [ -f "$O" ]; then
+              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                --manifest "$M" --out "gallery-report/diag-particle-p$p.json" || true
+            else
+              echo "particle page $p shots missing (tolerated: diagnostic)"
+            fi
+          done
+          echo "=== THE COVERAGE GATE: content that never reached a page is RED, not green ==="
+          IDX=$(find truth -name 'gallery-create-index.tsv' | head -1)
+          if [ -z "$IDX" ]; then
+            echo "missing coverage index — the ledger is mandatory"
+            GATE=1
+          else
+            SCENES=$(dirname "$IDX")
+            BOOT=$(find truth -name 'boot.log' | head -1)
+            python3 scripts/cimscene/coverage-gate.py --ns create --index "$IDX" \
+              --scenes "$SCENES" ${BOOT:+--boot "$BOOT"} || GATE=1
+          fi
           echo "=== per-page verdicts ==="
           python3 - <<'PY'
           import glob, json

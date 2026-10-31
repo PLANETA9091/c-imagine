@@ -2416,3 +2416,56 @@ Stage Summary:
 - The mob gate now names real render work per subject. The next run gives
   the FULL named backlog (pages 0-4) plus the isolated pane+casing bisect
   reading.
+
+Task ID: 12-an
+Agent: main
+Task: the coverage audit — the verdict must SEE all mod content (owner: «точно ли сейчас вердикт смотрит на весь контент модов?»)
+
+Work Log:
+- MEASURED the gap the owner suspected: the pixel gate walked PAGES=3 =
+  231 cells while the truth server's own manifest log reports
+  states=31389 for create (srv-gallery latest.log). The verdict could
+  green while 99.26% of create's blockstates and 100% of its items,
+  particles and entity types never reached a wall.
+- EXHAUSTIVE COVERAGE LAW, implemented end to end:
+  - scene-mod: writeGalleryIndex() — the per-namespace coverage ledger
+    (gallery-<ns>-index.tsv: block-state/entity/item/particle totals,
+    registry-derived); /cimscene gallery item (EVERY item as a REAL
+    item_display, proven summon grammar, light pinned 15/15) and
+    /cimscene gallery particle (EVERY particle via vanilla /particle,
+    count 1 speed 0; data-needing options fail the parse identically on
+    both stacks → honest skip rows). Both write the same manifest shape
+    the diff joins, with exhausted markers for the coverage gate.
+    Verified: offline javac build green.
+  - paper-plugin: /cim gallerypage-item (CMD carriers via the resolved
+    visual-items rows — the M5.2 item channel generalized; nochannel
+    rows stay empty and are NAMED) and /cim gallerypage-particle (all
+    nochannel — Paper has no mod-particle channel; the shot shows the
+    honestly empty wall). Verified: offline javac build green.
+  - pack: scripts/f2v/gallery-items-manifest.py generates visual-items
+    rows for every truth item manifest entry (paper host + explicit
+    300000+i CMD — disjoint from the 100000+ block space and the pinned
+    rows). Smoke-tested on fixtures (sorted, deduped).
+  - gallery.yml: PAGES=3 → MAXP=460 exhaustive walks (break ONLY on the
+    scene's exhausted marker, asserted; the ours leg replays the staged
+    manifest set and stops when it runs out), create-ns entity walk (all
+    three series), item walk, particle walk with the FIXED 1s shot
+    window on both legs; the diff job joins manifest-driven page sets
+    (no more fixed page ranges — the copy-glob regression class is
+    gone); wall-diff ends with coverage-gate.py — the ledger vs what
+    actually landed (manifests + boot.log exhaustion markers).
+  - coverage-gate.py smoke-tested: GREEN path, missing-shot path,
+    missing-terminal-marker path, entity fan-out (one ledger row →
+    three series).
+- ROADMAP M5.5: the coverage audit + the law written in; the item and
+  particle gallery legs documented; gate semantics extended (red when
+  any gateable cell is red OR any class was not walked to exhaustion).
+
+Stage Summary:
+- The verdict now structurally cannot green on partial coverage: the
+  ledger says how much content EXISTS, the walks must SHOW all of it,
+  the gate checks the ledger against what landed. The first exhaustive
+  run will be honestly RED (the named backlog is the point): 408 block
+  pages + item/particle/mod-entity pages, all triptychs in artifacts.
+- Verified locally: scene-mod + plugin compile, python scripts smoke
+  green, workflow YAML parses. Heavy verification = the CI run itself.

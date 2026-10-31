@@ -1,7 +1,9 @@
 package dev.cim.scenemod;
 
+import com.mojang.brigadier.ParseResults;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
@@ -209,7 +211,19 @@ public final class CimSceneMod {
                                                                 .executes(ctx -> galleryEntity(ctx.getSource(),
                                                                         "dyn",
                                                                         StringArgumentType.getString(ctx, "namespace"),
-                                                                        IntegerArgumentType.getInteger(ctx, "page"))))))))
+                                                                        IntegerArgumentType.getInteger(ctx, "page")))))))
+                        .then(Commands.literal("item")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryItem(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("particle")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryParticle(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
@@ -238,7 +252,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity]|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -289,6 +303,7 @@ public final class CimSceneMod {
      */
     private static int gallery(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        writeGalleryIndex(namespace);
 
         // Deterministic entry list: sorted ids of the namespace, each block's
         // states in getPossibleStates() order.
@@ -316,13 +331,7 @@ public final class CimSceneMod {
         // top block lives at y=-61 (measured: feet rest at y=-60) — filling
         // one lower would punch a hole in the floor; the wall's own bottom
         // row y=-60 is still cleared, the floor under it stays intact)
-        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
-            for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
-                for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
-                    level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
-                }
-            }
-        }
+        clearWall(level);
 
         // place + manifest. THE MANIFEST IS THE SETTLED CONTRACT: blocks
         // whose models depend on their NEIGHBOURS (panes, bars — PaneBlock/
@@ -416,6 +425,256 @@ public final class CimSceneMod {
         return placed;
     }
 
+    // --- coverage ledger (owner directive 2026-10-31: the verdict must SEE
+    // --- everything — content that never reaches a page is COVERAGE red,
+    // --- not a silent green) ----------------------------------------------
+
+    /**
+     * The coverage ledger: how many entries of each gallery class the
+     * namespace registers and how many cells one page holds. Written by
+     * EVERY gallery command (idempotent, registry-derived — identical on
+     * both stacks because it is the same code over the same registries).
+     *
+     * <p>The CI coverage gate joins this file against the manifests +
+     * screenshots actually present: a class whose page count falls short of
+     * {@code ceil(total / cellsPerPage)} fails the run COVERAGE-INCOMPLETE —
+     * a partial walk can never green the verdict again (the measured gap
+     * that motivated this: create registers {@value #GALLERY_CELLS} * 408
+     * ≈ 31,389 blockstates while the gate walked 3 pages = 231 = 0.74%).
+     */
+    private static void writeGalleryIndex(String namespace) {
+        long states = 0;
+        for (ResourceLocation id : BuiltInRegistries.BLOCK.keySet()) {
+            if (id.getNamespace().equals(namespace)) {
+                states += BuiltInRegistries.BLOCK.get(id)
+                        .getStateDefinition().getPossibleStates().size();
+            }
+        }
+        long entities = 0, items = 0, particles = 0;
+        for (ResourceLocation id : BuiltInRegistries.ENTITY_TYPE.keySet()) {
+            if (id.getNamespace().equals(namespace)) entities++;
+        }
+        for (ResourceLocation id : BuiltInRegistries.ITEM.keySet()) {
+            if (id.getNamespace().equals(namespace)) items++;
+        }
+        for (ResourceLocation id : BuiltInRegistries.PARTICLE_TYPE.keySet()) {
+            if (id.getNamespace().equals(namespace)) particles++;
+        }
+        StringBuilder tsv = new StringBuilder("class\ttotal\tcellsPerPage\n")
+                .append("block\t").append(states).append('\t').append(GALLERY_CELLS).append('\n')
+                .append("entity\t").append(entities).append('\t').append(ENTITY_CELLS).append('\n')
+                .append("item\t").append(items).append('\t').append(GALLERY_CELLS).append('\n')
+                .append("particle\t").append(particles).append('\t').append(GALLERY_CELLS).append('\n');
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve("gallery-" + namespace + "-index.tsv"),
+                    tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-index write failed ns={}: {}", namespace, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-index ns={} block-states={} entities={} items={} particles={}",
+                namespace, states, entities, items, particles);
+    }
+
+    /**
+     * Silent command execution surface: the proven vanilla summon/particle
+     * grammar (the SAME strings the ours leg runs over RCON in gallery.yml)
+     * executed through the dispatcher with a NULL source — no RCON response
+     * pollution, no 31k-line boot.log echo (the walk greps that log for the
+     * done markers). Returns the command result (0 = failed → the caller
+     * records an honest skip row; a failure is identical on both stacks
+     * because both run the same command strings).
+     */
+    private static int runQuiet(CommandSourceStack src, String cmd) {
+        try {
+            CommandSourceStack quiet = src.withSource(CommandSource.NULL)
+                    .withSuppressedOutput().withPermission(2);
+            ParseResults<CommandSourceStack> parsed = src.getServer().getCommands()
+                    .getDispatcher().parse(cmd, quiet);
+            return src.getServer().getCommands().getDispatcher().execute(parsed);
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery cmd failed: {} -> {}", cmd, t.toString());
+            return 0;
+        }
+    }
+
+    /** The shared wall sweep (identical coordinates on every gallery leg). */
+    private static void clearWall(ServerLevel level) {
+        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
+            for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
+                for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
+                    level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+    }
+
+    // --- item gallery (every registered ITEM of the namespace, shown to the
+    // --- test player under the same wall grid + pixel gate) ----------------
+
+    /**
+     * The universal ITEM gallery: EVERY {@link net.minecraft.world.item.Item}
+     * registered by the namespace (the {@code air} sentinel excluded), sorted
+     * by id, rendered one per wall cell as a REAL item_display carrying the
+     * REAL modded item — the truth client renders the true item model (incl.
+     * the mod's own item renderers). Billboard FIXED, light PINNED 15/15, at
+     * the cell center: the same summon grammar the ours leg proved for its
+     * CMD carriers (gallery.yml isolated-pane step), so the two stacks spawn
+     * byte-identical rigs.
+     *
+     * <p>Manifest {@code gallery-item-<ns>-p<p>.tsv}, rows
+     * {@code cell|x|y|z|item|dyn|note} (dyn=0 — item models are static;
+     * the animated vanilla clocks/compasses live in the minecraft namespace,
+     * whose item pages are diagnostics, never the gate). A summon that
+     * fails becomes a recorded skip row (reason=summon-failed) — identical
+     * on both stacks, never silently dropped. Zero per-mod code: the sweep
+     * is the registry walk.
+     */
+    private static int galleryItem(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(namespace);
+
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace) && !id.getPath().equals("air")) {
+                entries.add(id);
+            }
+        }
+
+        LOGGER.info("[cimscene] gallery-item begin ns={} page={} items={} cellsPerPage={}",
+                namespace, page, entries.size(), GALLERY_CELLS);
+        int from = page * GALLERY_CELLS;
+        if (from >= entries.size()) {
+            LOGGER.info("[cimscene] gallery-item done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + GALLERY_CELLS, entries.size());
+        List<ResourceLocation> slice = entries.subList(from, to);
+
+        clearWall(level);
+        // page hygiene: stale gallery displays from the previous page (the
+        // walk also kills all entities before each page; this is self-contained)
+        runQuiet(src, "kill @e[type=minecraft:item_display,tag=" + GALLERY_TAG + "]");
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\titem\tdyn\tnote\n");
+        int placed = 0, failed = 0;
+        for (int i = 0; i < slice.size(); i++) {
+            ResourceLocation id = slice.get(i);
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            int x = GALLERY_X0 + col, y = GALLERY_Y0 + row, z = GALLERY_Z;
+            String nbt = "{Tags:[\"" + GALLERY_TAG + "\"],billboard:\"fixed\","
+                    + "brightness:{sky:15b,block:15b},"
+                    + "item:{id:\"" + id + "\",count:1}}";
+            int rc = runQuiet(src, "summon minecraft:item_display "
+                    + (x + 0.5) + " " + (y + 0.5) + " " + (z + 0.5) + " " + nbt);
+            if (rc > 0) {
+                placed++;
+                tsv.append("cell\t").append(x).append('\t').append(y).append('\t').append(z)
+                        .append('\t').append(id).append("\t0\tok\n");
+            } else {
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t0\tsummon-failed\n");
+                LOGGER.info("[cimscene] gallery-item skip ns={} page={} index={} reason=summon-failed item={}",
+                        namespace, page, from + i, id);
+            }
+        }
+        String manifest = "gallery-item-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-item manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-item done ns={} page={} cells={} failed={} first={} last={}",
+                namespace, page, placed, failed, slice.get(0), slice.get(slice.size() - 1));
+        return placed;
+    }
+
+    // --- particle gallery (every registered PARTICLE of the namespace) ------
+
+    /**
+     * The universal PARTICLE gallery: EVERY {@link net.minecraft.core.particles.ParticleType}
+     * registered by the namespace, sorted by id, one particle per wall cell
+     * spawned through the vanilla {@code /particle} surface (count=1,
+     * delta 0/0/0, speed 0 → a STATIC particle exactly at the cell;
+     * {@code force} so no view-distance rule eats it).
+     *
+     * <p>Honesty rules, identical on both stacks (same command strings):
+     * a particle type whose options need DATA (dust colors, item particles,
+     * entity_effect...) fails the argument parse → a recorded skip row
+     * (reason=no-simple-options), never silently dropped. Every spawned
+     * particle is {@code dyn=1} — particles are time-varying by nature
+     * (fade, drift), so the join reports them without a red verdict until
+     * the fixed-shot-window protocol is measured stable (the entity dyn
+     * pattern); the walk still SHOWS every type to the test player.
+     *
+     * <p>The manifest is written synchronously (a particle is a spawn spec,
+     * not a settled world state) and the done marker carries the exhausted
+     * flag for the coverage gate. The SHOT WINDOW (fixed sleep after this
+     * command on both legs) is pinned by the walk, not by the scene.
+     */
+    private static int galleryParticle(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(namespace);
+
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.PARTICLE_TYPE.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-particle begin ns={} page={} particles={} cellsPerPage={}",
+                namespace, page, entries.size(), GALLERY_CELLS);
+        int from = page * GALLERY_CELLS;
+        if (from >= entries.size()) {
+            LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + GALLERY_CELLS, entries.size());
+        List<ResourceLocation> slice = entries.subList(from, to);
+
+        clearWall(level);
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tparticle\tdyn\tnote\n");
+        int spawned = 0, failed = 0;
+        for (int i = 0; i < slice.size(); i++) {
+            ResourceLocation id = slice.get(i);
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            int x = GALLERY_X0 + col, y = GALLERY_Y0 + row, z = GALLERY_Z;
+            int rc = runQuiet(src, "particle " + id + " " + (x + 0.5) + " "
+                    + (y + 0.5) + " " + (z + 0.5) + " 0 0 0 0 1 force");
+            if (rc > 0) {
+                spawned++;
+                tsv.append("cell\t").append(x).append('\t').append(y).append('\t').append(z)
+                        .append('\t').append(id).append("\t1\tok\n");
+            } else {
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\tno-simple-options\n");
+                LOGGER.info("[cimscene] gallery-particle skip ns={} page={} index={} "
+                                + "reason=no-simple-options particle={}",
+                        namespace, page, from + i, id);
+            }
+        }
+        String manifest = "gallery-particle-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-particle manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells={} failed={} first={} last={}",
+                namespace, page, spawned, failed, slice.get(0), slice.get(slice.size() - 1));
+        return spawned;
+    }
+
     // --- entity gallery (owner directive 2026-10-31: mobs 100% identical,
     // --- and ALL content under the pixel gate) -----------------------------
 
@@ -466,6 +725,7 @@ public final class CimSceneMod {
     private static int galleryEntity(CommandSourceStack src, String series,
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
+        writeGalleryIndex(namespace);
 
         // Deterministic entry list: sorted entity ids of the namespace.
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ENTITY_TYPE.keySet());
