@@ -913,18 +913,23 @@ public final class GalleryPack {
     }
 
     /**
-     * THE VANILLA UVLOCK (1.21.1 net.minecraft.core.BlockMath
-     * getUVLockTransform + net.minecraft.client.renderer.block.model
-     * FaceBakery.recomputeUVs, decompiled — task 14-c): rotate the face's
-     * uv rect by the INVERSE of the variant rotation expressed in the face's
-     * uv plane, so the texture stays world-aligned. The matrix composes
-     * L2G[F'] * R^-1 * G2L[F] where F is the face's PRE-rotation key (the
-     * key bakeFace receives — 14-e contract fix: the old code unmapped it
-     * AGAIN, a double unmap that telescopes to the correct matrix under
-     * pure y-rotations but misrotates x-rotated faces) and F' = R.apply(F).
-     * Returns the mapped diagonal corners + the rect/tag the rect+tag
-     * carrier would emit — since #52 the carrier is the rotated sprite
-     * asset; the mapped corners drive {@link #uvRotCode}.
+     * THE VANILLA UVLOCK (1.21.1, decompiled verbatim — task 14-e: net.minecraft.core.BlockMath.a(Transformation, Direction)
+     * + FaceBakery's recomputeUVs call site + com.mojang.math.Transformation.a
+     * (this.mul(other) — the composition order pinned by decompiling the
+     * wrapper)): M = G2L[F] . R^-1 . L2G[F'] where F is the face's
+     * PRE-rotation key (the key FaceBakery receives — the model's authored
+     * face), F' = R.apply(F), and the matrix maps the POST-frame uv back to
+     * the PRE frame (lift via L2G[F'], un-rotate, lower via G2L[F]) — the
+     * world-aligned grain. The authored corner values ride the post quad,
+     * so the post-vertex samples the sprite at M(corner). 14-c composed the
+     * INVERSE order (L2G[F'] . R^-1 . G2L[F]) — a conjugation flipped by
+     * the inversion, i.e. the same rotation angle in the opposite
+     * direction: measured #53, the rotated tops moved AWAY from truth
+     * (red 931 -> 983, the walls' ae p50 ~2.5x worse) and the direction
+     * inverted. Returns the mapped diagonal corners; the rect/tag fields
+     * are the metadata carrier's outputs (unused since #52 — the carrier
+     * is the rotated sprite asset). The mapped corners drive
+     * {@link #uvRotCode}.
      */
     private static UvlockRect uvlockRectForFace(float u1, float v1, float u2, float v2,
                                                 int faceRot, int xRot, int yRot,
@@ -932,9 +937,9 @@ public final class GalleryPack {
         org.joml.Quaternionf q = new org.joml.Quaternionf().rotateYXZ(
                 -(float) Math.toRadians(yRot), -(float) Math.toRadians(xRot), 0f);
         String newFace = rotateFaceDir(preFace, q);
-        Matrix4f m = uvL2G(newFace)
+        Matrix4f m = new Matrix4f(uvL2G(preFace)).invert()
                 .mul(new Matrix4f().rotation(q).invert())
-                .mul(new Matrix4f(uvL2G(preFace)).invert());
+                .mul(uvL2G(newFace));
         Matrix4f M = new Matrix4f().translation(0.5f, 0.5f, 0.5f)
                 .mul(m).translate(-0.5f, -0.5f, -0.5f);
         org.joml.Vector4f p0 = M.transform(new org.joml.Vector4f(u1 / 16f, v1 / 16f, 0f, 1f));

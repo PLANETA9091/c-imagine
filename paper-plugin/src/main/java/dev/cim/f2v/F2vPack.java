@@ -1385,10 +1385,11 @@ public final class F2vPack {
     private static final String BS_ZMOTOR =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/zmotor\"}}}";
     /** The 14-e UVLOCK fixture: a y90 variant carrying uvlock=true. The
-     *  decompiled matrix acts as the IDENTITY on the north face (horizontal
-     *  grain survives a y-rotation) and as the 270-degree centre rotation on
-     *  the up face — the carrier must be the physically rotated sprite (the
-     *  26.3 item pipeline ignores the face rotation tag, measured #52). */
+     *  decompiled matrix (G2L[F]·R⁻¹·L2G[F'], measured #54 direction) acts
+     *  as the IDENTITY on the north face (horizontal grain survives a
+     *  y-rotation) and as the 90-degree centre rotation on the up face —
+     *  the carrier must be the physically rotated sprite (the 26.3 item
+     *  pipeline ignores the face rotation tag, measured #52). */
     private static final String MODEL_SPIN =
             "{\"textures\": {\"tex\": \"fakemod:block/spin_tex\"}, "
             + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
@@ -1714,7 +1715,7 @@ public final class F2vPack {
             // north face stays exactly the #51 baseline.
             String g4 = str(entries, "assets/c-imagine/models/gallery/g4.json");
             expect(failures, g4.contains(
-                            "\"up\":{\"uv\":[0,0,16,16],\"texture\":\"c-imagine:block/rot270/block/spin_tex\"}"),
+                            "\"up\":{\"uv\":[0,0,16,16],\"texture\":\"c-imagine:block/rot90/block/spin_tex\"}"),
                     "uvlock carrier: up face = rotated sprite ref, original uv, no tag: " + g4);
             // the north face RENAMES to east under the y90 bake (remapFace)
             // and keeps its original uv + sprite — the identity-uvlock face
@@ -1723,7 +1724,7 @@ public final class F2vPack {
                     "uvlock identity face stays the #51 baseline (north->east under y90)");
             expect(failures, !g4.contains("\"rotation\""),
                     "uvlock carrier emits no rotation tag (ignored by the 26.3 item pipeline)");
-            String rotPngKey = "assets/c-imagine/textures/block/rot270/block/spin_tex.png";
+            String rotPngKey = "assets/c-imagine/textures/block/rot90/block/spin_tex.png";
             expect(failures, entries.containsKey(rotPngKey),
                     "uvlock carrier: rotated sprite png emitted into the blocks atlas tree");
             if (entries.containsKey(rotPngKey)) {
@@ -1732,18 +1733,18 @@ public final class F2vPack {
                 java.awt.image.BufferedImage orig = javax.imageio.ImageIO.read(
                         new java.io.ByteArrayInputStream(jarEntries.get(
                                 "assets/fakemod/textures/block/spin_tex.png")));
-                // out(i,j) = src(col=j, row=7-i): the model-space 270-degree
+                // out(i,j) = src(col=7-j, row=i): the model-space 90-degree
                 // centre rotation on the 8x8 fixture — hand-derived from
                 // applyUvRot's definition, independent of the implementation
                 boolean pixels = rot != null && orig != null
                         && rot.getWidth() == 8 && rot.getHeight() == 8;
                 if (pixels) {
                     for (int[] p : new int[][]{{0, 0}, {7, 0}, {0, 7}, {7, 7}, {3, 5}, {5, 3}}) {
-                        pixels &= rot.getRGB(p[0], p[1]) == orig.getRGB(p[1], 7 - p[0]);
+                        pixels &= rot.getRGB(p[0], p[1]) == orig.getRGB(7 - p[1], p[0]);
                     }
                 }
                 expect(failures, pixels,
-                        "uvlock carrier: rotated png pixels = src(R270(x)) in model uv space");
+                        "uvlock carrier: rotated png pixels = src(R90(x)) in model uv space");
             }
             expect(failures, paper.contains("\"threshold\": " + GalleryPack.CMD_BASE),
                     "paper def carries the gallery cmd base");
