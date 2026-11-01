@@ -3349,3 +3349,45 @@ Stage Summary:
   delta from EVERY page (blocks, entities, items, particles, fluids); the
   next run's per-cell ae distribution is the clean signal for the two
   remaining layers (neighbour-culling families, display origin).
+
+---
+Task ID: 14-b
+Agent: main
+Task: gallery #51 (b4c9834, fov:-0.65) — THE FIRST MASS GREEN: 862 gateable cells green on shard 0 alone; the remaining red decomposed into a texture (uvlock) layer, not geometry
+
+Work Log:
+- MEASURED #51 (15.0 min — a cold seed, the workflow hash moved): seed
+  green, truth s0-s7 green, ours shards red with a RADICALLY different
+  distribution: shard-0 blocks red 1508 -> 934, GREEN 9 -> 862, DYNAMIC
+  345; ae percentiles p50 240k -> 63k (p10 5.6k) — the MEDIAN cell now sits
+  AT the 60k gate. The fov re-pin removed the systematic scale delta from
+  every page, exactly as the probe predicted.
+- FAMILY DECOMPOSITION (fam51.py over the shard-0 joins): the red tail is
+  concentrated in stairs (29-25 red, ae 100-135k), walls (27-14, 54-119k)
+  and window/pane families (12-14, 144k); flat blocks and most slabs are
+  already GREEN or DYNAMIC.
+- DISPLAY-GEOMETRY CALIBRATION (calib51b.py, per-row sprite bounds on the
+  #51 ours vs truth frames): the ours wall sprites' vertical bounds match
+  the truth frame PIXEL FOR PIXEL on 6 of 7 rows (316..417 vs 316..417,
+  etc.) — the 26.3 ItemDisplay renders the baked composite at the right
+  place at scale 1.0126 with TY -0.0184. The run-9 rig survives; the
+  "half-block down" hypothesis from the local summon probes was a probe
+  artifact (single display entities among mobs, HUD, paperclip relaunch).
+- THE REMAINING RED IS A TEXTURE DELTA: same geometry, shifted/rotated
+  grain — create blockstates carry uvlock=true and the pack's
+  bakeRotation rotates elements + face directions but NOT the UV rects
+  (bakeFace only remaps cullface). The vanilla rule: uvlock rotates each
+  face's uv rect with the block rotation so the texture stays
+  world-aligned. Next step (14-c): uvlock emulation in bakeFace — the
+  decompiled FaceBakery rule, applied only when the variant carried
+  uvlock, verified against the per-family ae on a 6-min CI run.
+- Probe rigs committed (probe-fov.sh with the direct-summon page placer;
+  the JAVA_TOOL_OPTIONS fastBoot path does NOT survive the paperclip
+  relaunch — the CI paper.jar download is the only reliable fastBoot
+  stack, noted for future local probes).
+
+Stage Summary:
+- The wall turned: a thousand green cells judged by the honest pixel gate,
+  and the red now names ONE mechanism (uvlock). The instrument did exactly
+  what it was built for: no silent green, every remaining red cell
+  attributed to a rule we can implement.
