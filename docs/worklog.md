@@ -3259,3 +3259,52 @@ Stage Summary:
   uvlock emulation in bakeRotation (highest leverage: 30 red cells per
   wall page), item model parity, shading deltas — each measurable in a
   6-minute CI run against the 60k gate.
+
+---
+Task ID: 13-i
+Agent: main
+Task: gallery #50 — the item channel bakes (0 errors), walls textured; the remaining red is structural wall-geometry parity
+
+Work Log:
+- MEASURED #50 (c451c54, cold seed): truth s0-s7 green; ours shards red with
+  1638 RED cells — but TEXTURED. ae percentiles of the red cells: p10=109k,
+  p50=240k, p75=392k (gate 60k). The pack bakes clean: the full 699-item
+  paper def bakes with ZERO "Unable to bake" (the #49 items pack aborted the
+  whole def).
+- THE ITEM-CHANNEL FIXES (all measured locally first, probe
+  scripts/probe-gallery-repro.sh):
+  (a) host normalization: the gallery-items manifest writes the host BARE
+      ("paper") — every pack so far DROPPED all item rows at the
+      minecraft:-guard; item cells rendered the fallback paper sprite.
+  (b) the 26.3 atlas rule, decompiled at the exact throw site
+      (CuboidItemModelWrapper.validateAtlasUsage): every quad of ONE item
+      model must come from ONE atlas; a mixed set aborts the whole host
+      def bake. Create's block-parented item models were copied raw with
+      mixed sprite sets (vanilla namespaced AND bare "block/x" forms AND
+      item-path textures).
+  (c) the fix: block-geometry item models ride the PROVEN gallery-composite
+      shape — inline elements + a 100% pack-side blocks-atlas sprite set
+      (vanilla/bare/item-path sprites re-hosted under
+      c-imagine:block/items/ from the client jar); sprite-driven
+      (item/generated) items stay vanilla-shaped. chainHasElements
+      inherits the namespace per hop. 552 of 699 create items become
+      composites; the local probe renders the acacia window with its real
+      3D wood texture and bakes clean.
+  (d) an attempted items-atlas unification (directory "block" source in the
+      pack's atlases/items.json) is REJECTED by measurement: it makes
+      vanilla block models "contain sprites from outside of supported
+      atlas" (the client rejects them; the superflat ground turned
+      missingno). The two-atlas split is STRICT in 26.3.
+- THE REMAINING RED (measured, not yet fixed): the wall staircase
+  silhouettes match truth 1:1 but ours renders ~1.3 extra blocks of wall
+  at the BOTTOM of the structures (truth's walls stop ~80px higher; the
+  global alignment passes because grass/sky dominate the frame). This is
+  the wall multipart semantics delta: what 1.21.1 renders for up=true /
+  up=false post parts vs what our composite matched — the next surgical
+  compare is the per-part part list of one wall state against the real
+  block's render. Items: 123 red cells of the item pages (geometry/scale
+  parity of the composite items — next iteration).
+
+Stage Summary:
+- The pipeline: 6-minute runs, textured ours legs, honest structural red.
+  The harness is now judging REAL geometry parity, not missing bytes.
