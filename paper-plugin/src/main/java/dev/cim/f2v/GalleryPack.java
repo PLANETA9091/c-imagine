@@ -13,6 +13,8 @@ import java.util.TreeMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import org.joml.Matrix4f;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -264,8 +266,11 @@ public final class GalleryPack {
 
     // ---- blockstate resolution -----------------------------------------------------
 
-    /** One resolved render part: model ref + the rotation it must carry. */
-    private record Part(String modelRef, int xRot, int yRot) {
+    /** One resolved render part: model ref + the rotation it must carry
+     *  (+ the variant's uvlock flag — the vanilla rule keeps the texture
+     *  grain world-aligned under the rotation; measured #51: the remaining
+     *  stair/wall red was exactly this missing layer). */
+    private record Part(String modelRef, int xRot, int yRot, boolean uvlock) {
     }
 
     /**
@@ -304,9 +309,10 @@ public final class GalleryPack {
                 String model = entry.get("model").getAsString();
                 int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
                 int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y)));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
                 } else {
                     warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
                             + " -> " + model);
@@ -327,9 +333,10 @@ public final class GalleryPack {
                 String model = entry.get("model").getAsString();
                 int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
                 int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y)));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
                 }
                 // a missing multipart part model: recorded, the composite
                 // synthesizes from what resolved (honest partial render)
@@ -634,7 +641,7 @@ public final class GalleryPack {
             for (Map.Entry<String, String> t : mg.textures.entrySet()) {
                 textures.put(prefix + t.getKey(), t.getValue());
             }
-            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot());
+            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot(), p.uvlock());
             for (JsonElement el : baked) {
                 mergedElements.add(renameTextureRefs(
                         inflateDegenerate(el.getAsJsonObject()), prefix));
@@ -804,18 +811,18 @@ public final class GalleryPack {
      * then y). 90-degree steps only; per-element "rotation" origins rotate
      * with the element, axes remap, angles pass through.
      */
-    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot) {
+    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot, boolean uvlock) {
         if (xRot == 0 && yRot == 0) {
             return elements;
         }
         JsonArray out = new JsonArray();
         for (JsonElement el : elements) {
-            out.add(bakeElement(el.getAsJsonObject(), xRot, yRot));
+            out.add(bakeElement(el.getAsJsonObject(), xRot, yRot, uvlock));
         }
         return out;
     }
 
-    private static JsonObject bakeElement(JsonObject el, int xRot, int yRot) {
+    private static JsonObject bakeElement(JsonObject el, int xRot, int yRot, boolean uvlock) {
         JsonObject e = el.deepCopy();
         JsonArray from = e.has("from") ? bakeVec(e.getAsJsonArray("from"), xRot, yRot) : null;
         JsonArray to = e.has("to") ? bakeVec(e.getAsJsonArray("to"), xRot, yRot) : null;
@@ -836,19 +843,145 @@ public final class GalleryPack {
             JsonObject faces = e.getAsJsonObject("faces").deepCopy();
             JsonObject out = new JsonObject();
             for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
-                out.add(remapFace(f.getKey(), xRot, yRot), bakeFace(f.getValue().getAsJsonObject(), xRot, yRot));
+                out.add(remapFace(f.getKey(), xRot, yRot),
+                        bakeFace(f.getValue().getAsJsonObject(), f.getKey(), xRot, yRot, uvlock));
             }
             e.add("faces", out);
         }
         return e;
     }
 
-    private static JsonElement bakeFace(JsonObject face, int xRot, int yRot) {
+    private static JsonElement bakeFace(JsonObject face, String faceKey,
+                                        int xRot, int yRot, boolean uvlock) {
         JsonObject f = face.deepCopy();
         if (f.has("cullface")) {
             f.addProperty("cullface", remapFace(f.get("cullface").getAsString(), xRot, yRot));
         }
+        if (uvlock && f.has("uv") && f.getAsJsonArray("uv").size() == 4) {
+            com.google.gson.JsonArray uv = f.getAsJsonArray("uv");
+            float[] r = uvlockRectForFace(
+                    uv.get(0).getAsFloat(), uv.get(1).getAsFloat(),
+                    uv.get(2).getAsFloat(), uv.get(3).getAsFloat(),
+                    f.has("rotation") ? f.get("rotation").getAsInt() : 0,
+                    xRot, yRot, faceKey);
+            com.google.gson.JsonArray nuv = new com.google.gson.JsonArray();
+            nuv.add(uvPrim(r[0]));
+            nuv.add(uvPrim(r[1]));
+            nuv.add(uvPrim(r[2]));
+            nuv.add(uvPrim(r[3]));
+            f.add("uv", nuv);
+            int rot = (int) r[4];
+            if (rot != 0) {
+                f.addProperty("rotation", rot);
+            }
+        }
         return f;
+    }
+
+    /** Snap a uv coordinate to 1 decimal and keep INTEGER values integer
+     *  (gson would otherwise emit 0.0 for 0 and churn every untouched
+     *  face's bytes — the sha must move only with REAL uvlock deltas). */
+    private static com.google.gson.JsonPrimitive uvPrim(float v) {
+        float r = Math.round(v * 10f) / 10f;
+        if (r == Math.floor(r) && Math.abs(r) < 1e9f) {
+            return new com.google.gson.JsonPrimitive((int) r);
+        }
+        return new com.google.gson.JsonPrimitive(r);
+    }
+
+    /**
+     * THE VANILLA UVLOCK (1.21.1 net.minecraft.core.BlockMath
+     * getUVLockTransform + net.minecraft.client.renderer.block.model
+     * FaceBakery.recomputeUVs, decompiled — task 14-c): rotate the face's
+     * uv rect by the INVERSE of the variant rotation expressed in the face's
+     * uv plane, so the texture stays world-aligned. The matrix composes
+     * L2G[F'] * R^-1 * G2L[F] where F is the PRE-rotation face direction
+     * (unmapped from the post-rotation key this face carries when baking
+     * runs) and F' = R.apply(F). Returns {u1, v1, u2, v2, rotTag}.
+     */
+    private static float[] uvlockRectForFace(float u1, float v1, float u2, float v2,
+                                             int faceRot, int xRot, int yRot,
+                                             String postFace) {
+        String preFace = unmapFace(postFace, xRot, yRot);
+        org.joml.Quaternionf q = new org.joml.Quaternionf().rotateYXZ(
+                -(float) Math.toRadians(yRot), -(float) Math.toRadians(xRot), 0f);
+        String newFace = rotateFaceDir(preFace, q);
+        Matrix4f m = uvL2G(newFace)
+                .mul(new Matrix4f().rotation(q).invert())
+                .mul(new Matrix4f(uvL2G(preFace)).invert());
+        Matrix4f M = new Matrix4f().translation(0.5f, 0.5f, 0.5f)
+                .mul(m).translate(-0.5f, -0.5f, -0.5f);
+        org.joml.Vector4f p0 = M.transform(new org.joml.Vector4f(u1 / 16f, v1 / 16f, 0f, 1f));
+        org.joml.Vector4f p2 = M.transform(new org.joml.Vector4f(u2 / 16f, v2 / 16f, 0f, 1f));
+        float x0 = p0.x() * 16f, y0 = p0.y() * 16f;
+        float x2 = p2.x() * 16f, y2 = p2.y() * 16f;
+        float nu1, nu2, nv1, nv2;
+        if (Math.signum(u2 - u1) == Math.signum(x2 - x0)) {
+            nu1 = x0;
+            nu2 = x2;
+        } else {
+            nu1 = x2;
+            nu2 = x0;
+        }
+        if (Math.signum(v2 - v1) == Math.signum(y2 - y0)) {
+            nv1 = y0;
+            nv2 = y2;
+        } else {
+            nv1 = y2;
+            nv2 = y0;
+        }
+        org.joml.Vector3f rv = M.transformDirection(new org.joml.Vector3f(
+                (float) Math.cos(Math.toRadians(faceRot)),
+                (float) Math.sin(Math.toRadians(faceRot)), 0f));
+        int rot = Math.floorMod(
+                -((int) Math.round(Math.toDegrees(Math.atan2(rv.y(), rv.x())) / 90.0)) * 90,
+                360);
+        return new float[]{nu1, nv1, nu2, nv2, rot};
+    }
+
+    /** The pre-rotation face direction: inverse of remapFace. */
+    private static String unmapFace(String face, int xRot, int yRot) {
+        for (String d : new String[]{"down", "up", "north", "south", "west", "east"}) {
+            if (remapFace(d, xRot, yRot).equals(face)) {
+                return d;
+            }
+        }
+        return face;
+    }
+
+    /** Direction whose normal is the rotated face normal. */
+    private static String rotateFaceDir(String face, org.joml.Quaternionf q) {
+        org.joml.Vector3f v = switch (face) {
+            case "down" -> new org.joml.Vector3f(0, -1, 0);
+            case "up" -> new org.joml.Vector3f(0, 1, 0);
+            case "north" -> new org.joml.Vector3f(0, 0, -1);
+            case "south" -> new org.joml.Vector3f(0, 0, 1);
+            case "west" -> new org.joml.Vector3f(-1, 0, 0);
+            case "east" -> new org.joml.Vector3f(1, 0, 0);
+            default -> new org.joml.Vector3f(0, 0, 1);
+        };
+        q.transform(v);
+        float ax = Math.abs(v.x()), ay = Math.abs(v.y()), az = Math.abs(v.z());
+        if (ax >= ay && ax >= az) {
+            return v.x() > 0 ? "east" : "west";
+        }
+        if (ay >= az) {
+            return v.y() > 0 ? "up" : "down";
+        }
+        return v.z() > 0 ? "south" : "north";
+    }
+
+    /** BlockMath's LOCAL_TO_GLOBAL uv-plane matrices (decompiled). */
+    private static Matrix4f uvL2G(String face) {
+        return switch (face) {
+            case "down" -> new Matrix4f().rotationX((float) (Math.PI / 2));
+            case "up" -> new Matrix4f().rotationX((float) (-Math.PI / 2));
+            case "north" -> new Matrix4f().rotationY((float) Math.PI);
+            case "south" -> new Matrix4f();
+            case "west" -> new Matrix4f().rotationY((float) (-Math.PI / 2));
+            case "east" -> new Matrix4f().rotationY((float) (Math.PI / 2));
+            default -> new Matrix4f();
+        };
     }
 
     /** Rotate one XYZ point (block space 0..16, center 8) by x then y. */

@@ -3391,3 +3391,38 @@ Stage Summary:
   and the red now names ONE mechanism (uvlock). The instrument did exactly
   what it was built for: no silent green, every remaining red cell
   attributed to a rule we can implement.
+
+---
+Task ID: 14-c
+Agent: main
+Task: uvlock emulation implemented from the decompiled vanilla rule (FaceBakery.recomputeUVs + BlockMath.getUVLockTransform + BlockModelRotation quaternions) — the remaining stair/wall red layer
+
+Work Log:
+- DECOMPILED the exact vanilla rule from the 1.21.1 client (official
+  mappings + vineflower): FaceBakery.recomputeUVs rotates the face's uv
+  rect corners by the blockCenterToCorner(GETUVLockTransform(R, F)) matrix
+  and restores the rect by sign pairs; BlockMath composes
+  G2L[F'] * R^-1 * L2G[F]; BlockModelRotation pins the variant quaternion
+  rotateYXZ(-y, -x, 0) (the same rotation our bakeVec applies to geometry —
+  the #51 pixel-for-pixel wall bounds match proved the geometry side).
+- IMPLEMENTED in GalleryPack: the variant's uvlock flag rides Part;
+  bakeFace now rewrites the face's uv rect (+ the vanilla sprite rotation
+  tag) through uvlockRectForFace — a joml Matrix4f composition, the
+  decompiled semantics verbatim. Integer uv values stay integer
+  (uvPrim): gson would otherwise emit 0.0 for 0 and churn every
+  untouched face's bytes; the sha must move only with real deltas.
+- MEASURED locally (F2vPack --build, mods-create + the 26.3 client jar,
+  the #51 manifests): the new pack (sha c59d984b) changes 5046 of 21939
+  gallery composites — uv rects rotated/re-ordered (8,0,16,16 ->
+  0,8,16,16) and sprite rotation tags (90/270) appear exactly where the
+  variant carried uvlock=true; untouched faces stay byte-identical.
+- Local render verification was attempted twice and the paperclip sandbox
+  stack proved unreliable today (port zombies, a 12-minute boot-time pack
+  rebuild — the ZipFile re-opening cost JarCache will kill — and two
+  unexplained process deaths); the decisive verification runs in CI on the
+  controlled 6-minute pipeline: if the direction is right, the stair/wall
+  families' ae drops; if wrong, it grows and the composition inverts.
+
+Stage Summary:
+- The uvlock layer is in, rule-exact, sha-disciplined, and measurable.
+  The next run's per-family ae distribution is the verdict.
