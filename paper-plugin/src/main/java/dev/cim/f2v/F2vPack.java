@@ -1384,6 +1384,19 @@ public final class F2vPack {
             + "\"up\": {\"uv\": [0,0,16,16], \"texture\": \"#tex\"}}}]}";
     private static final String BS_ZMOTOR =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/zmotor\"}}}";
+    /** The 14-e UVLOCK fixture: a y90 variant carrying uvlock=true. The
+     *  decompiled matrix acts as the IDENTITY on the north face (horizontal
+     *  grain survives a y-rotation) and as the 270-degree centre rotation on
+     *  the up face — the carrier must be the physically rotated sprite (the
+     *  26.3 item pipeline ignores the face rotation tag, measured #52). */
+    private static final String MODEL_SPIN =
+            "{\"textures\": {\"tex\": \"fakemod:block/spin_tex\"}, "
+            + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
+            + "\"faces\": {\"up\": {\"uv\": [0,0,16,16], \"texture\": \"#tex\"}, "
+            + "\"north\": {\"uv\": [0,0,16,16], \"texture\": \"#tex\"}}}]}";
+    private static final String BS_SPIN =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/spin\", "
+            + "\"y\": 90, \"uvlock\": true}}}";
     private static final String BS_ROCK =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/rock\"}, "
             + "\"facing=north\": {\"model\": \"fakemod:block/rock_arrow\", \"y\": 90}}}";
@@ -1400,6 +1413,7 @@ public final class F2vPack {
             + "fakemod:pane[north=false]\n"
             + "fakemod:rock\n"
             + "fakemod:rock[facing=north]\n"
+            + "fakemod:spin\n"
             + "fakemod:zmotor\n";
 
     static boolean selftest() throws Exception {
@@ -1440,6 +1454,9 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/zmotor.json", BS_ZMOTOR.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/zmotor.json", MODEL_ZMOTOR.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/spin.json", BS_SPIN.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/spin.json", MODEL_SPIN.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/spin_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/post_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/side_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
@@ -1542,9 +1559,9 @@ public final class F2vPack {
             // composite — including the vanilla-parent shape (own textures,
             // elements from the client jar's block/cube_all), which the old
             // direct path rendered as NOTHING (measured run 41126658261)
-            expect(failures, r1.gallery().size() == 5,
-                    "gallery: 5 state rows resolved, got " + r1.gallery().size());
-            if (r1.gallery().size() == 5) {
+            expect(failures, r1.gallery().size() == 6,
+                    "gallery: 6 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 6) {
                 List<GalleryPack.Resolved> g = r1.gallery();
                 // pane[north=false] = composite of the unconditional parts
                 // (post + the y90 side) — multipart rows are ALWAYS composites
@@ -1571,8 +1588,8 @@ public final class F2vPack {
                         "gallery: rock[facing=north] = composite, y90 baked into elements");
             }
             expect(failures, r1.gallery().stream()
-                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 5,
-                    "gallery: cmds unique (100000..100004)");
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 6,
+                    "gallery: cmds unique (100000..100005)");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
@@ -1687,6 +1704,47 @@ public final class F2vPack {
             String g3 = str(entries, "assets/c-imagine/models/gallery/g3.json");
             expect(failures, g3.contains("\"p0_all\":\"fakemod:block/arrow_tex\""),
                     "gallery y90 bake keeps the VARIANT's texture override (arrow_tex)");
+            // g4 = spin: THE 14-e UVLOCK CARRIER. The variant is y90+uvlock;
+            // the decompiled matrix acts as the IDENTITY on the north face
+            // (horizontal grain survives a y-rotation) and as the 270-degree
+            // centre rotation on the up face. The up face must point at the
+            // PHYSICALLY ROTATED sprite (the 26.3 item pipeline ignores the
+            // face rotation tag — measured #52: bit-identical pixels with a
+            // changed pack), keep the original uv rect and carry no tag; the
+            // north face stays exactly the #51 baseline.
+            String g4 = str(entries, "assets/c-imagine/models/gallery/g4.json");
+            expect(failures, g4.contains(
+                            "\"up\":{\"uv\":[0,0,16,16],\"texture\":\"c-imagine:block/rot270/block/spin_tex\"}"),
+                    "uvlock carrier: up face = rotated sprite ref, original uv, no tag: " + g4);
+            // the north face RENAMES to east under the y90 bake (remapFace)
+            // and keeps its original uv + sprite — the identity-uvlock face
+            expect(failures, g4.contains("\"east\":{\"uv\":[0,0,16,16],\"texture\":\"#p0_tex\"}")
+                            && g4.contains("\"p0_tex\":\"fakemod:block/spin_tex\""),
+                    "uvlock identity face stays the #51 baseline (north->east under y90)");
+            expect(failures, !g4.contains("\"rotation\""),
+                    "uvlock carrier emits no rotation tag (ignored by the 26.3 item pipeline)");
+            String rotPngKey = "assets/c-imagine/textures/block/rot270/block/spin_tex.png";
+            expect(failures, entries.containsKey(rotPngKey),
+                    "uvlock carrier: rotated sprite png emitted into the blocks atlas tree");
+            if (entries.containsKey(rotPngKey)) {
+                java.awt.image.BufferedImage rot = javax.imageio.ImageIO.read(
+                        new java.io.ByteArrayInputStream(entries.get(rotPngKey)));
+                java.awt.image.BufferedImage orig = javax.imageio.ImageIO.read(
+                        new java.io.ByteArrayInputStream(jarEntries.get(
+                                "assets/fakemod/textures/block/spin_tex.png")));
+                // out(i,j) = src(col=j, row=7-i): the model-space 270-degree
+                // centre rotation on the 8x8 fixture — hand-derived from
+                // applyUvRot's definition, independent of the implementation
+                boolean pixels = rot != null && orig != null
+                        && rot.getWidth() == 8 && rot.getHeight() == 8;
+                if (pixels) {
+                    for (int[] p : new int[][]{{0, 0}, {7, 0}, {0, 7}, {7, 7}, {3, 5}, {5, 3}}) {
+                        pixels &= rot.getRGB(p[0], p[1]) == orig.getRGB(p[1], 7 - p[0]);
+                    }
+                }
+                expect(failures, pixels,
+                        "uvlock carrier: rotated png pixels = src(R270(x)) in model uv space");
+            }
             expect(failures, paper.contains("\"threshold\": " + GalleryPack.CMD_BASE),
                     "paper def carries the gallery cmd base");
             expect(failures, paper.contains("c-imagine:gallery/g0"),

@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -195,6 +196,10 @@ public final class GalleryPack {
         List<Resolved> out = new ArrayList<>();
         int compositeIdx = 0;
         float cmd = CMD_BASE;
+        // the rotated-sprite asset cache is BUILD-wide (14-e): wall/stair
+        // palettes repeat across hundreds of states — one PNG per (sprite,
+        // rotation), shared by every composite that needs it
+        Map<String, String> rotCache = new HashMap<>();
         for (Input in : seen.values()) {
             String state = in.stateId();
             try {
@@ -219,7 +224,7 @@ public final class GalleryPack {
                 // measured composite behaviour; the spawning entity carries
                 // 0/0).
                 String ref = synthesizeComposite(jars, state, parts,
-                        compositeIdx, entries, warnings);
+                        compositeIdx, entries, warnings, rotCache);
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
@@ -625,7 +630,8 @@ public final class GalleryPack {
      */
     private static String synthesizeComposite(List<Path> jars, String state, List<Part> parts,
                                               int idx, TreeMap<String, byte[]> entries,
-                                              List<String> warnings) throws IOException {
+                                              List<String> warnings,
+                                              Map<String, String> rotCache) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
         int partNo = 0;
@@ -641,7 +647,8 @@ public final class GalleryPack {
             for (Map.Entry<String, String> t : mg.textures.entrySet()) {
                 textures.put(prefix + t.getKey(), t.getValue());
             }
-            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot(), p.uvlock());
+            UvlockCtx ctx = new UvlockCtx(jars, mg.textures(), entries, warnings, rotCache);
+            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot(), p.uvlock(), ctx);
             for (JsonElement el : baked) {
                 mergedElements.add(renameTextureRefs(
                         inflateDegenerate(el.getAsJsonObject()), prefix));
@@ -811,18 +818,20 @@ public final class GalleryPack {
      * then y). 90-degree steps only; per-element "rotation" origins rotate
      * with the element, axes remap, angles pass through.
      */
-    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot, boolean uvlock) {
+    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot, boolean uvlock,
+                                  UvlockCtx ctx) {
         if (xRot == 0 && yRot == 0) {
             return elements;
         }
         JsonArray out = new JsonArray();
         for (JsonElement el : elements) {
-            out.add(bakeElement(el.getAsJsonObject(), xRot, yRot, uvlock));
+            out.add(bakeElement(el.getAsJsonObject(), xRot, yRot, uvlock, ctx));
         }
         return out;
     }
 
-    private static JsonObject bakeElement(JsonObject el, int xRot, int yRot, boolean uvlock) {
+    private static JsonObject bakeElement(JsonObject el, int xRot, int yRot, boolean uvlock,
+                                          UvlockCtx ctx) {
         JsonObject e = el.deepCopy();
         JsonArray from = e.has("from") ? bakeVec(e.getAsJsonArray("from"), xRot, yRot) : null;
         JsonArray to = e.has("to") ? bakeVec(e.getAsJsonArray("to"), xRot, yRot) : null;
@@ -844,7 +853,7 @@ public final class GalleryPack {
             JsonObject out = new JsonObject();
             for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
                 out.add(remapFace(f.getKey(), xRot, yRot),
-                        bakeFace(f.getValue().getAsJsonObject(), f.getKey(), xRot, yRot, uvlock));
+                        bakeFace(f.getValue().getAsJsonObject(), f.getKey(), xRot, yRot, uvlock, ctx));
             }
             e.add("faces", out);
         }
@@ -852,27 +861,41 @@ public final class GalleryPack {
     }
 
     private static JsonElement bakeFace(JsonObject face, String faceKey,
-                                        int xRot, int yRot, boolean uvlock) {
+                                        int xRot, int yRot, boolean uvlock, UvlockCtx ctx) {
         JsonObject f = face.deepCopy();
         if (f.has("cullface")) {
             f.addProperty("cullface", remapFace(f.get("cullface").getAsString(), xRot, yRot));
         }
-        if (uvlock && f.has("uv") && f.getAsJsonArray("uv").size() == 4) {
+        if (uvlock && ctx != null && f.has("uv") && f.getAsJsonArray("uv").size() == 4) {
             com.google.gson.JsonArray uv = f.getAsJsonArray("uv");
-            float[] r = uvlockRectForFace(
-                    uv.get(0).getAsFloat(), uv.get(1).getAsFloat(),
-                    uv.get(2).getAsFloat(), uv.get(3).getAsFloat(),
+            float u1 = uv.get(0).getAsFloat();
+            float v1 = uv.get(1).getAsFloat();
+            float u2 = uv.get(2).getAsFloat();
+            float v2 = uv.get(3).getAsFloat();
+            // the decompiled uvlock matrix, evaluated for THIS face — the
+            // DIRECTION ORACLE (which faces need which rotation)
+            UvlockRect r = uvlockRectForFace(
+                    u1, v1, u2, v2,
                     f.has("rotation") ? f.get("rotation").getAsInt() : 0,
                     xRot, yRot, faceKey);
-            com.google.gson.JsonArray nuv = new com.google.gson.JsonArray();
-            nuv.add(uvPrim(r[0]));
-            nuv.add(uvPrim(r[1]));
-            nuv.add(uvPrim(r[2]));
-            nuv.add(uvPrim(r[3]));
-            f.add("uv", nuv);
-            int rot = (int) r[4];
-            if (rot != 0) {
-                f.addProperty("rotation", rot);
+            int code = uvRotCode(u1, v1, u2, v2, r);
+            if (code > 0) {
+                String sprite = faceSprite(f, ctx.textures());
+                if (sprite != null) {
+                    String rotRef = materializeRotatedSprite(ctx, sprite, code);
+                    if (rotRef != null) {
+                        // THE 14-e CARRIER: the uvlock travels in the BYTES —
+                        // the face's texture points at a physically rotated
+                        // sprite copy (c-imagine:block/rot<code>/...), the uv
+                        // rect stays the variant's original and NO rotation
+                        // tag is emitted (the 26.3 item-model pipeline ignores
+                        // the tag: measured #52, a bit-identical render with
+                        // a changed pack). A model-space image rotation and
+                        // the rect+tag carrier are pixel-equivalent — but the
+                        // bytes survive ANY baking pipeline.
+                        f.addProperty("texture", rotRef);
+                    }
+                }
             }
         }
         return f;
@@ -895,14 +918,17 @@ public final class GalleryPack {
      * FaceBakery.recomputeUVs, decompiled — task 14-c): rotate the face's
      * uv rect by the INVERSE of the variant rotation expressed in the face's
      * uv plane, so the texture stays world-aligned. The matrix composes
-     * L2G[F'] * R^-1 * G2L[F] where F is the PRE-rotation face direction
-     * (unmapped from the post-rotation key this face carries when baking
-     * runs) and F' = R.apply(F). Returns {u1, v1, u2, v2, rotTag}.
+     * L2G[F'] * R^-1 * G2L[F] where F is the face's PRE-rotation key (the
+     * key bakeFace receives — 14-e contract fix: the old code unmapped it
+     * AGAIN, a double unmap that telescopes to the correct matrix under
+     * pure y-rotations but misrotates x-rotated faces) and F' = R.apply(F).
+     * Returns the mapped diagonal corners + the rect/tag the rect+tag
+     * carrier would emit — since #52 the carrier is the rotated sprite
+     * asset; the mapped corners drive {@link #uvRotCode}.
      */
-    private static float[] uvlockRectForFace(float u1, float v1, float u2, float v2,
-                                             int faceRot, int xRot, int yRot,
-                                             String postFace) {
-        String preFace = unmapFace(postFace, xRot, yRot);
+    private static UvlockRect uvlockRectForFace(float u1, float v1, float u2, float v2,
+                                                int faceRot, int xRot, int yRot,
+                                                String preFace) {
         org.joml.Quaternionf q = new org.joml.Quaternionf().rotateYXZ(
                 -(float) Math.toRadians(yRot), -(float) Math.toRadians(xRot), 0f);
         String newFace = rotateFaceDir(preFace, q);
@@ -936,17 +962,159 @@ public final class GalleryPack {
         int rot = Math.floorMod(
                 -((int) Math.round(Math.toDegrees(Math.atan2(rv.y(), rv.x())) / 90.0)) * 90,
                 360);
-        return new float[]{nu1, nv1, nu2, nv2, rot};
+        return new UvlockRect(nu1, nv1, nu2, nv2, rot, x0, y0, x2, y2);
     }
 
-    /** The pre-rotation face direction: inverse of remapFace. */
-    private static String unmapFace(String face, int xRot, int yRot) {
-        for (String d : new String[]{"down", "up", "north", "south", "west", "east"}) {
-            if (remapFace(d, xRot, yRot).equals(face)) {
-                return d;
+    /** The uvlock oracle's output: the rect+tag the metadata carrier would
+     *  emit (kept for reference/sha debugging) plus the RAW mapped diagonal
+     *  corners (x0,y0) = M(u1,v1) and (x2,y2) = M(u2,v2) — the corners pin
+     *  the matrix's in-plane rotation for the asset carrier. */
+    private record UvlockRect(float nu1, float nv1, float nu2, float nv2,
+                              int rotTag, float x0, float y0, float x2, float y2) {
+    }
+
+    /** Per-part uvlock materialization state (14-e): the part's resolved
+     *  sprite map + the shared pack emission state for rotated sprite
+     *  assets (the cache is build-wide — palettes repeat across states). */
+    private record UvlockCtx(List<Path> jars, Map<String, String> textures,
+                             TreeMap<String, byte[]> entries, List<String> warnings,
+                             Map<String, String> rotCache) {
+    }
+
+    /** Which of the four model-space centre rotations maps the rect's
+     *  diagonal corners to their uvlock images? R(0)=id, R(90)(u,v)=(16-v,u),
+     *  R(180), R(270) — the same map for the corner matcher and the pixel
+     *  loop ({@link #applyUvRot}). Returns 0 when the uvlock matrix acts as
+     *  the identity on this face (nothing to carry), -1 when its action is
+     *  not one of the four (degenerate — the face stays untouched, the
+     *  honest #51 baseline). Both diagonal corners must agree, which also
+     *  disambiguates rects whose first corner sits on the sprite centre. */
+    private static int uvRotCode(float u1, float v1, float u2, float v2, UvlockRect r) {
+        for (int code = 0; code <= 270; code += 90) {
+            float[] a = applyUvRot(code, u1, v1);
+            float[] b = applyUvRot(code, u2, v2);
+            if (Math.abs(a[0] - r.x0()) < 0.05f && Math.abs(a[1] - r.y0()) < 0.05f
+                    && Math.abs(b[0] - r.x2()) < 0.05f && Math.abs(b[1] - r.y2()) < 0.05f) {
+                return code;
             }
         }
-        return face;
+        return -1;
+    }
+
+    /** The uv-plane centre rotation about the sprite centre (8,8) in model
+     *  uv units — applied to CORNERS by the matcher and to PIXEL CENTRES by
+     *  the PNG loop (one map, one convention). */
+    private static float[] applyUvRot(int code, float u, float v) {
+        return switch (code) {
+            case 90 -> new float[]{16f - v, u};
+            case 180 -> new float[]{16f - u, 16f - v};
+            case 270 -> new float[]{v, 16f - u};
+            default -> new float[]{u, v};
+        };
+    }
+
+    /** The face's CONCRETE sprite id: a {@code #key} resolved against the
+     *  part's resolved texture map, a direct sprite id passed through —
+     *  null when unresolvable (the face stays untouched). */
+    private static String faceSprite(JsonObject face, Map<String, String> textures) {
+        if (!face.has("texture")) {
+            return null;
+        }
+        String t = face.get("texture").getAsString();
+        if (t.isEmpty()) {
+            return null;
+        }
+        if (t.startsWith("#")) {
+            String s = textures.get(t.substring(1));
+            return s != null && !s.startsWith("#") && !s.isEmpty() ? s : null;
+        }
+        return t;
+    }
+
+    /** Emit the uvlock carrier: the sprite's PNG physically rotated by
+     *  {@code code} degrees in MODEL uv space, hosted pack-side under
+     *  {@code c-imagine:block/rot<code>/<sprite path>} — a blocks-atlas
+     *  sprite (vanilla's blocks atlas directory source scans EVERY
+     *  namespace's textures/block tree, the same rule the item composites'
+     *  re-hosted sprites ride, measured #49/#50). Deduplicated per (sprite,
+     *  code) per build; failures are warned once and leave the face at the
+     *  proven #51 baseline (original sprite, no rotation). */
+    private static String materializeRotatedSprite(UvlockCtx ctx, String sprite, int code) {
+        String key = sprite + "#" + code;
+        String cached = ctx.rotCache().get(key);
+        if (cached != null) {
+            return cached.isEmpty() ? null : cached;
+        }
+        String ref = null;
+        try {
+            String png = spritePathPng(sprite);
+            byte[] bytes = readPngFromJars(ctx.jars(), png);
+            if (bytes == null) {
+                ctx.warnings().add("uvlock: sprite png missing: " + sprite);
+            } else {
+                byte[] mcmeta = readPngFromJars(ctx.jars(), png + ".mcmeta");
+                if (mcmeta != null && (code == 90 || code == 270)) {
+                    // a vertical animation frame strip stops being a strip
+                    // under a quarter turn — the face stays unrotated
+                    ctx.warnings().add("uvlock: animated sprite not rotated: " + sprite);
+                } else {
+                    byte[] rotated = rotatePng(bytes, code);
+                    if (rotated == null) {
+                        ctx.warnings().add("uvlock: sprite not decodable: " + sprite);
+                    } else {
+                        String path = spritePathOf(sprite);
+                        ref = WRAPPER_NS + ":block/rot" + code + "/" + path;
+                        ctx.entries().put("assets/" + WRAPPER_NS + "/textures/block/rot"
+                                + code + "/" + path + ".png", rotated);
+                        if (mcmeta != null) {
+                            ctx.entries().put("assets/" + WRAPPER_NS + "/textures/block/rot"
+                                    + code + "/" + path + ".png.mcmeta", mcmeta);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            ctx.warnings().add("uvlock: rotation failed for " + sprite + ": " + e);
+            ref = null;
+        }
+        ctx.rotCache().put(key, ref == null ? "" : ref);
+        return ref;
+    }
+
+    /** Rotate a sprite's pixels: out(x) = src(R_code(x)) in MODEL uv space
+     *  ([0,16]² — the space the model's uv rects live in). This is the
+     *  IMAGE form of the vanilla uvlock mapping: the emitted face keeps its
+     *  original rect, so vertex sampling out(P(rect)) = src(M(P(rect)))
+     *  exactly. Output keeps the source dimensions (the model square maps
+     *  onto itself); a non-16 texture rides the same model units, so an
+     *  8x8 fixture rotates exactly like a 16x16 atlas sprite. */
+    private static byte[] rotatePng(byte[] png, int code) throws IOException {
+        java.awt.image.BufferedImage src;
+        try {
+            src = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+        } catch (javax.imageio.IIOException e) {
+            return null;
+        }
+        if (src == null) {
+            return null;
+        }
+        int w = src.getWidth();
+        int h = src.getHeight();
+        java.awt.image.BufferedImage out =
+                new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int j = 0; j < h; j++) {
+            for (int i = 0; i < w; i++) {
+                float mu = (i + 0.5f) * 16f / w;
+                float mv = (j + 0.5f) * 16f / h;
+                float[] s = applyUvRot(code, mu, mv);
+                int sc = Math.max(0, Math.min(w - 1, (int) Math.floor(s[0] * w / 16f)));
+                int sr = Math.max(0, Math.min(h - 1, (int) Math.floor(s[1] * h / 16f)));
+                out.setRGB(i, j, src.getRGB(sc, sr));
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(out, "png", bos);
+        return bos.toByteArray();
     }
 
     /** Direction whose normal is the rotated face normal. */
