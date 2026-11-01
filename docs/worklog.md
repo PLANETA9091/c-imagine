@@ -3426,3 +3426,33 @@ Work Log:
 Stage Summary:
 - The uvlock layer is in, rule-exact, sha-disciplined, and measurable.
   The next run's per-family ae distribution is the verdict.
+
+---
+Task ID: 14-d
+Agent: main
+Task: #52 (e75159b) measured — the uvlock rect+rotation-tag rewrite reached the pack but the 26.3 item pipeline ignores the face rotation tag; the layer moves to rotated-texture assets
+
+Work Log:
+- MEASURED #52 (15.7 min, cold seed): the CI pack DOES carry the uvlock
+  rewrite (the #52 seed pack and the locally built c59d984b pack agree on
+  the gallery composites: 8089 rotation-tag files in both; the 576 file
+  diff is my local build's narrower mods set, all items/textures). The
+  pixels DID NOT MOVE: shard-0 red 931/2182 (was 934), GREEN 862 (was
+  862), ae p50 63032 — bit-identical to #51. A bit-identical render with
+  a changed pack has one reading: the 26.3 item-model pipeline does not
+  apply the face "rotation" tag (a 1.21 block-model surface feature the
+  new item baking path does not honor), and a uv-rect rotation is a
+  no-op for the dominant full-rect faces.
+- CONSEQUENCE: uvlock must be carried by ASSETS, not by model metadata:
+  emit physically rotated sprite copies (c-imagine:block/items/<sprite>
+  _r90.png etc.) for the faces whose variant carried uvlock, and point
+  those faces' textures at the rotated copies. That works on ANY baking
+  pipeline — the pixels move with the bytes.
+- State: the decompiled-rule implementation stays (it computes WHICH faces
+  need which rotation — the 90-degree direction table is already exact);
+  14-e replaces the metadata carrier with texture assets.
+
+Stage Summary:
+- The honest instrument earned its keep again: a correct-looking rewrite
+  that renders identically is a red flag only a pixel gate can raise, and
+  it did. The next carrier is trivial bytes: rotated PNGs.
