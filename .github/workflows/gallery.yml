@@ -1007,9 +1007,14 @@ jobs:
           wc -c visual-client/classpath.txt visual-client/launch.txt
           sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
           mkdir -p visual-client/game
-          # fov:0.0 = 70 deg (linear mapping 70+40*v, measured 12-ac —
-          # -0.625 rendered 45 deg; the wall contract needs 70)
-          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          # THE 26.3 FOV PIN (task 14, measured locally 2026-11-01, probe-fov.sh):
+          # the 26.3 client no longer maps the slider as fov = 70 + 40*v (the
+          # 1.21.1 rule, measured 12-ac). At fov:0.0 it renders ~99 deg — the
+          # same scene fits the truth frame at scale 0.60 (global-alignment
+          # error 126 -> 56 on the fit; both legs' FULL frames, probe-fov.sh).
+          # fov:-0.65 fits at scale 1.00 (err 64) — that is the 70-deg pin the
+          # wall contract needs. The truth leg (1.21.1) keeps fov:0.0 = 70.
+          printf 'onboardAccessibility:false\nfov:-0.65\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)

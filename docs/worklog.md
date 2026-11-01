@@ -3308,3 +3308,44 @@ Work Log:
 Stage Summary:
 - The pipeline: 6-minute runs, textured ours legs, honest structural red.
   The harness is now judging REAL geometry parity, not missing bytes.
+
+---
+Task ID: 14-a
+Agent: main
+Task: the #50 universal red root-caused — the 26.3 client renders a WIDER fov at the same options pin; the fix is the fov:-0.65 re-pin (owner directive: "now we WORK with the tool — the first GREENs")
+
+Work Log:
+- MEASURED #50 artifacts (shard-0 report + shots): the honest red is NOT a
+  pack-content failure. Full-frame probe: rescaling the ours p0 frame by
+  s=0.58-0.60 drops the global-alignment error 126 -> 56 (a SHIFT search is
+  blind to scale by construction — the guard comment says so). The SAME
+  0.60 fit on the ENTITY page (real Paper mobs, no pack channel at all)
+  proves it is a CLIENT property, not a channel one: the 26.3 client
+  renders ~99 deg where the 1.21.1 truth renders 70 at fov:0.0.
+- LOCAL FOV PROBE (scripts/probe-fov.sh, single server + per-value client
+  restarts, the page placed by DIRECT summons — paperclip eats -D flags on
+  relaunch so "cim gallerypage" answers placed=0 without fastBoot):
+  fov 0.0 -> scale 0.60 (err 56), fov -0.5 -> 0.90 (err 52), fov -0.65 ->
+  1.00 (err 64). The 26.3 slider no longer maps 70+40*v.
+- FIX: the ours leg pins fov:-0.65 (comment carries the measured table);
+  the truth leg keeps fov:0.0 = 70 (measured 12-ac on 1.21.1).
+- VALIDATION (gallery-diff on the local probe frames vs the CI truth
+  shots): p0 goes global-misaligned-free (shift (2,0)) with 9 GREEN of the
+  gateable cells; the remaining red splits into (a) window/pane families
+  — create windows/panes MERGE with neighbours in 1.21.1 via skipRendering
+  culling (WindowBlock = TransparentBlock, NO BlockEntity — the state
+  carries nothing), which isolated ItemDisplays structurally cannot
+  reproduce — and (b) a display-geometry layer: the 26.3 ItemDisplay
+  renders the block model ~0.5 block lower than the 1.21.1 run-9 rig and
+  the scale/origin rule moved (single-cell probes measured the acacia cube
+  at 77x56 px, 0.5-block floors, z-drift); that layer needs its own
+  calibration pass against the NEXT CI run's artifacts — the probe rigs
+  (probe-fov.sh / probe-cell2.sh, summon grammar with transformation) are
+  committed for exactly that.
+
+Stage Summary:
+- The tool judged honestly and the red was real — but it was the CAMERA's
+  red, not the wall's. The fov re-pin removes the systematic 0.6-scale
+  delta from EVERY page (blocks, entities, items, particles, fluids); the
+  next run's per-cell ae distribution is the clean signal for the two
+  remaining layers (neighbour-culling families, display origin).
