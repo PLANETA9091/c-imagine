@@ -231,7 +231,16 @@ public final class F2vPack {
                 String v = parts[3].trim();
                 select = v.startsWith("select:") ? v.substring("select:".length()) : v;
             }
-            rows.add(new VisualItem(parts[0].trim(), parts[1].trim(), cmd, select));
+            // HOST NORMALIZATION (measured #49 forensics): the gallery-items
+            // manifest writes the host BARE ("paper") — a bare host skipped
+            // the WHOLE group at the minecraft:-guard ("host paper is not
+            // vanilla"), and every item cell rendered the fallback paper
+            // sprite instead of its model. Bare = minecraft namespace.
+            String host = parts[1].trim();
+            if (!host.isEmpty() && !host.contains(":")) {
+                host = "minecraft:" + host;
+            }
+            rows.add(new VisualItem(parts[0].trim(), host, cmd, select));
         }
         rows.sort(Comparator.comparing(VisualItem::moddedId));
         return rows;
@@ -594,6 +603,7 @@ public final class F2vPack {
         // shadowing mod jars (mods first, client last, first-match-wins)
         jars.addAll(extraAssets);
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
+        int itemCompositeNo = 0;
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
             String[] keyParts = host.getKey().split("\t");
             String hostItem = keyParts[0];
@@ -607,6 +617,20 @@ public final class F2vPack {
             for (VisualItem row : host.getValue()) {
                 String found = resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings,
                         paletteByVariantId);
+                // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see
+                // GalleryPack.synthesizeItemComposite): block-geometry item
+                // models ride a standalone composite (inline elements, all
+                // sprites pack-side) — a raw block-parented model or a
+                // vanilla-sprite reference aborts the whole host def bake at
+                // CuboidItemModelWrapper.validateAtlasUsage. Sprite-driven
+                // item models (item/generated chains) stay vanilla-shaped.
+                if (found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
+                    String comp = GalleryPack.synthesizeItemComposite(
+                            jars, found, itemCompositeNo++, entries, warnings);
+                    if (comp != null) {
+                        found = comp;
+                    }
+                }
                 if (found == null) {
                     warnings.add("no item model found for " + row.moddedId()
                             + " in any mod jar — row dropped");
@@ -1463,7 +1487,7 @@ public final class F2vPack {
                     "fakemod:cool_sword\tminecraft:paper\n"
                     + "fakemod:deep_thing\tminecraft:paper\t2000.0\n"
                     + "fakemod:gem\tminecraft:paper\t3000.0\n"
-                    + "fakemod:wand_thing\tminecraft:brick\t\tselect:wand\n",
+                    + "fakemod:wand_thing\tbrick\t\tselect:wand\n",  // BARE host: readManifest normalizes to minecraft:brick (measured #49: a bare host skipped the whole group)
                     StandardCharsets.UTF_8);
             Files.writeString(out.resolve("visual-blocks.tsv"),
                     "fakemod:rock\tcreeper\t13\n",

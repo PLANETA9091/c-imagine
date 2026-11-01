@@ -137,7 +137,8 @@ java -cp "$G/vtools" Shot "$OUT/page-$PAGE.png"
 test -s "$OUT/page-$PAGE.png" || { echo "SHOT FAILED"; exit 1; }
 echo "shot page $PAGE"
 
-CMD=$(grep -m1 "$STATE" "$SRV/c-imagine/f2v/visual-gallery.resolved.tsv" | cut -f2)
+CMD=$(grep -m1 "$STATE" "$SRV/c-imagine/f2v/visual-gallery.resolved.tsv" 2>/dev/null | cut -f2)
+[ -n "$CMD" ] || CMD=$(grep -m1 "$STATE" "$SRV/c-imagine/f2v/visual-items.resolved.tsv" 2>/dev/null | cut -f3)
 echo "isolated state cmd=$CMD ($STATE)"
 $RCON "kill @e[type=!player]" "cim galleryclear" \
   "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}" \

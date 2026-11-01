@@ -463,6 +463,153 @@ public final class GalleryPack {
     // ---- composite synthesis (multipart rows) -----------------------------------
 
     /**
+     * TRUE when the model's parent chain carries explicit {@code elements}
+     * (block-shaped geometry). The 26.3 item channel routes those models
+     * through {@link #synthesizeItemComposite} — see the F2vPack call site
+     * for the measured atlas failure this avoids.
+     */
+    static boolean chainHasElements(List<Path> jars, String modelRef,
+                                    List<String> warnings) throws IOException {
+        // namespace inheritance mirrors resolveModelGraph: a BARE parent
+        // ("block/lever_x") rides the namespace of the model that references
+        // it — defaulting it to minecraft: (the naive walk) loses create:
+        // chains mid-way and leaves raw cuboid models in the item def
+        String cur = modelRef;
+        String ns = null;
+        int depth = 0;
+        while (cur != null && depth++ <= 16) {
+            int hc = cur.indexOf(':');
+            String hopNs;
+            String hopPath;
+            if (hc > 0) {
+                hopNs = cur.substring(0, hc);
+                hopPath = cur.substring(hc + 1);
+            } else {
+                hopNs = ns != null ? ns : "minecraft";
+                hopPath = cur;
+            }
+            ns = hopNs;
+            String file = "assets/" + ns + "/models/" + hopPath + ".json";
+            JsonObject json = readJsonFromJars(jars, file);
+            if (json == null) {
+                return false;
+            }
+            if (json.has("elements")) {
+                return true;
+            }
+            cur = json.has("parent") ? json.get("parent").getAsString() : null;
+        }
+        return false;
+    }
+
+    /**
+     * The 26.3 ITEM-CHANNEL shape (measured #49/#50): an item model whose
+     * chain carries block geometry bakes sprites from the BLOCKS atlas while
+     * the items/*.json wrapper expects the ITEMS atlas — a mixed or
+     * vanilla-sprite set aborts the ENTIRE host def bake ("Multiple atlases
+     * used in model, expected items.png, but also got blocks.png"). The
+     * PROVEN shape (the #49 wall composites rendered textured end to end) is
+     * a standalone composite: inline elements + the model's own textures,
+     * every sprite PACK-SIDE (vanilla sprites are re-hosted under
+     * c-imagine:block/items/ from the client jar). Sprite-driven item models
+     * (item/generated chains) stay vanilla-shaped — items-atlas only.
+     *
+     * @param itemNo deterministic emit index (the file name + sprite keys)
+     * @return the composite model ref, or null when the chain has no elements
+     */
+    static String synthesizeItemComposite(List<Path> jars, String modelRef, int itemNo,
+                                          TreeMap<String, byte[]> entries,
+                                          List<String> warnings) throws IOException {
+        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
+        if (mg == null || mg.elements == null || mg.elements.size() == 0) {
+            return null;
+        }
+        Map<String, String> textures = new TreeMap<>();
+        int texNo = 0;
+        for (Map.Entry<String, String> t : mg.textures.entrySet()) {
+            String sprite = t.getValue();
+            if (sprite.startsWith("#") || sprite.isEmpty()) {
+                continue;
+            }
+            // THE ATLAS OWNERSHIP RULE (measured #50, then decompiled —
+            // CuboidItemModelWrapper.validateAtlasUsage): every quad of ONE
+            // model must come from ONE atlas. The composite's quads bake
+            // against the BLOCKS atlas (its sprites live under textures/
+            // block/ of the pack stack) — so EVERY sprite must be a
+            // blocks-atlas sprite: vanilla (namespaced OR BARE) sprites AND
+            // item/-path sprites (create block models reference item-path
+            // textures too — measured: those landed in items.png and the
+            // mixed quad set aborted the whole host def bake) are re-hosted
+            // under c-imagine:block/items/ from the jars (the client jar
+            // carries the vanilla PNGs).
+            boolean vanillaSprite = sprite.startsWith("minecraft:") || !sprite.contains(":");
+            String spritePath = spritePathOf(sprite);
+            boolean itemPathSprite = !vanillaSprite && spritePath.startsWith("item/");
+            if (vanillaSprite || itemPathSprite) {
+                String key = "items/t" + itemNo + "_" + texNo;
+                String newSprite = WRAPPER_NS + ":block/" + key;
+                String png = vanillaSprite
+                        ? "assets/minecraft/textures/" + spritePath + ".png"
+                        : spritePathPng(sprite);
+                byte[] bytes = readPngFromJars(jars, png);
+                if (bytes == null) {
+                    warnings.add("item composite: texture missing: " + sprite
+                            + " (" + modelRef + ")");
+                    continue;
+                }
+                entries.put("assets/" + WRAPPER_NS + "/textures/block/" + key + ".png", bytes);
+                textures.put(t.getKey(), newSprite);
+                texNo++;
+            } else {
+                // pack block-path sprite: its PNG was already copied by copyModelGraph
+                textures.put(t.getKey(), sprite);
+            }
+        }
+        if (textures.isEmpty()) {
+            warnings.add("item composite without textures: " + modelRef);
+            return null;
+        }
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("parent", "minecraft:block/block");
+        JsonObject texObj = new JsonObject();
+        for (Map.Entry<String, String> t : textures.entrySet()) {
+            texObj.addProperty(t.getKey(), t.getValue());
+        }
+        wrapper.add("textures", texObj);
+        wrapper.add("elements", mg.elements.deepCopy());
+        String file = "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json";
+        entries.put(file, wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        return WRAPPER_NS + ":items/i" + itemNo;
+    }
+
+    /** {@code ns:block/foo} -> {@code block/foo} (the textures/ sub path). */
+    private static String spritePathOf(String sprite) {
+        int c = sprite.indexOf(':');
+        return c > 0 ? sprite.substring(c + 1) : sprite;
+    }
+
+    /** {@code ns:path} -> {@code assets/ns/textures/path.png}. */
+    private static String spritePathPng(String sprite) {
+        int c = sprite.indexOf(':');
+        String ns = c > 0 ? sprite.substring(0, c) : "minecraft";
+        String path = c > 0 ? sprite.substring(c + 1) : sprite;
+        return "assets/" + ns + "/textures/" + path + ".png";
+    }
+
+    /** Read one PNG from the jars (the client jar carries vanilla textures). */
+    private static byte[] readPngFromJars(List<Path> jars, String file) throws IOException {
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                ZipEntry e = zf.getEntry(file);
+                if (e != null) {
+                    return zf.getInputStream(e).readAllBytes();
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
      * Merge the matching parts into ONE composite model file:
      * elements concatenated (part rotations baked, texture keys namespaced
      * per part), concrete texture map merged, parent minecraft:block/block
