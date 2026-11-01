@@ -3514,3 +3514,30 @@ Stage Summary:
   is now the per-face grain mapping of the 26.3 item channel. The
   instrument stays honest: every claim above is measured from artifacts,
   not guessed.
+
+---
+Task ID: 14-f
+Agent: main
+Task: #55 (01bb142, the reverted #51 builder) measured — the anchor reproduces; the campaign restarts from a clean measured floor
+
+Work Log:
+- MEASURED #55 (about 7 min, warm seed): shard-0 red 925/2182 (was 934 on
+  #51 — run noise +-9), walls 534 (was 535), stairs 248 (was 249), pane
+  46, slab 22, other 68, ae p50 78.5k (was 77.8k). The seed job hit the
+  cache and the whole pipeline ran the fast path. The revert is
+  verified: the pack builder, the selftest fixtures and the numbers are
+  the #51 state again, now on top of the JarCache cold-path speedup.
+- The red table to beat (shard 0): walls 534 (p50 59.4k — ON the 60k
+  gate), stairs 248 (p50 98.3k), other 68, pane 46, slab 22, door 7.
+- Next probes, in cost order: (1) the 8 missing-display cells (p208
+  light_blue_sail x3, p304 redstone_contact, p224 piston_extension_pole,
+  p144 top stairs, p96 outer stairs, p200 framed_glass_pane) — a
+  single-page CI probe with per-cell shots; (2) the grain identity test:
+  re-host vs original sprite bytes and the auto-uv mapping through the
+  26.3 baker, measured on the geometry-matched deep-red cells
+  (NCC 0.21 today).
+
+Stage Summary:
+- The tool is calibrated, fast, and the floor is honest: 925 red cells
+  all attributed to the texture layer. The next carrier gets designed
+  against measured facts, not guesses.
