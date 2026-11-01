@@ -3456,3 +3456,61 @@ Stage Summary:
 - The honest instrument earned its keep again: a correct-looking rewrite
   that renders identically is a red flag only a pixel gate can raise, and
   it did. The next carrier is trivial bytes: rotated PNGs.
+
+---
+Task ID: 14-e
+Agent: main
+Task: #53 (b148e00) and #54 (75110db) measured — the rotated-sprite uvlock carrier is WORSE in BOTH directions; the forensic pass over the runs rewrites several earlier conclusions; the tree reverts to the measured #51 pack builder as the anchor
+
+Work Log:
+- MEASURED #53 (rotated sprite assets, direction A): shard-0 red 934 ->
+  983, stairs red 249 -> 282 (ae p50 98.8k -> 148k). MEASURED #54
+  (direction B, 75110db): red 996, stairs 306 (p50 224.9k). The carrier
+  loses in BOTH directions — the grain rotation it introduces is absent
+  from the truth leg's picture, and flipping the matrix direction does
+  not rescue it. The 14-c/14-d/14-e uvlock carrier line is CLOSED.
+- CORRECTION TO 14-d ("bit-identical"): the per-cell join diff #51 vs #52
+  shows 636 of 2182 cells changed ae and 60 verdict flips (scaffolding
+  335k -> 33k improved, cut_andesite_brick_wall 42k -> 184k worsened).
+  The aggregates matched; the pixels DID move. The 26.3 item pipeline
+  DOES honour face uv rects. Any rect-mapping carrier moves pixels —
+  unpredictably w.r.t. truth so far.
+- FORENSICS on the #51/#54 artifacts (fam_cmp.py + crop analysis):
+  (a) silhouette IoU(truth, ours) on p368 = 0.923 at shift (0,0) — the
+  geometry matches; the 8% is the dyn ground row (structurally absent on
+  the ours leg, by design). Wall multipart arms render correctly: a
+  per-cell west/east arm-zone scan gives (truth-has, ours-has) agreeing
+  on ~97% of wall cells.
+  (b) the remaining red is a TEXTURE-level delta inside matching
+  silhouettes: 285 wall cells with ae > 80k and pixel-perfect silhouette
+  IoU; on the deepest (p320 c1 r0, ae 460k) the luma NCC between the
+  legs is 0.21 — the grains are UNCORRELATED, not shifted (a +-8px
+  shift search peaks nowhere).
+  (c) the +-8px shift search "fixes" walls AND green cells alike
+  (periodic brick textures slide) — shift evidence is non-informative.
+  (d) stairs facing gradient on #51 straight stairs: facing=north (the
+  y270 variant) p50 68k is the BEST, facing=east (y0) the WORST (156k) —
+  no simple grain-rotation model predicts this; no clean correlation
+  with the e/w-arm count either. Open.
+  (e) the far-background fog/terrain edge sits ~6px lower on the ours
+  leg; red is uniform across rows so this is a minor contributor.
+  (f) a real but small bug class: 8 red cells render the ours leg EMPTY
+  (grass-through: p144 cut_scorchia_brick_stairs[top], p304
+  redstone_contact, p224 piston_extension_pole, p208 light_blue_sail x3,
+  p96 outer stairs, p200 framed_glass_pane) — placed=N reports success,
+  the display never draws. Needs a single-cell CI probe.
+- DECISION: the tree reverts GalleryPack + F2vPack to the b4c9834
+  (#51-exact) builder — the measured best (red 934/2182, walls p50
+  59.4k sitting ON the 60k gate). The half-done bbox-carrier working
+  tree is dropped unmeasured. The next carrier must be designed against
+  finding (b): the grain inside matched silhouettes is wrong in a way a
+  shift cannot express — sprite-identity and auto-uv-vs-atlas mapping
+  are the first suspects; the 8 missing displays are the cheap
+  plugin-side hunt.
+
+Stage Summary:
+- Three runs and a forensic pass bought the truth: geometry parity is
+  DONE (IoU 0.92, arms correct), uvlock was a dead end, and the battle
+  is now the per-face grain mapping of the 26.3 item channel. The
+  instrument stays honest: every claim above is measured from artifacts,
+  not guessed.
