@@ -3833,3 +3833,26 @@ Stage Summary:
   1311 red cells (17.6% of the table). The instrument discipline held:
   the law was measured on four probe pages, shipped, and confirmed by the
   next run's red table — no join parameters were touched.
+
+---
+Task ID: 14-n
+Agent: main
+Task: ship the 14-n probe — plugin-path isolates: one-cell manifests (p9001 layered_scoria, p9002 sail[south]) rendered through the plugin's own Bukkit path in isolation
+
+Work Log:
+- The NOT-FOUND class (layered_*, sail[south/west/down], contact[down],
+  pole[south]) survives the 14-l fix: spawned, models bake clean, yet no
+  content within +-130px of the truth position — while the SAME composites
+  rendered fine through the vanilla-summon isolates (14-h v2). The two
+  paths differ in exactly one dimension left: the spawn path (Bukkit
+  Transformation vs vanilla NBT) AND the display count (77 vs 1). The
+  probe removes the count: ONE display per run, spawned by the plugin's
+  own gallerypage (one-cell manifests p9001/p9002 at the real wall cells),
+  shot in isolation. If it renders — the page context (the display count /
+  the neighbour interference) is the poison; if not — the Bukkit-path bake
+  of those composites is. The calibrated projector (14-l) reads the
+  position AND the look off the shot.
+
+Stage Summary:
+- One probe, one run (#64), two discriminating shots. The vanilla rig
+  stays parked; the plugin path is the one that carries the gate.

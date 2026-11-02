@@ -1177,6 +1177,36 @@ jobs:
               java -cp vtools Shot "ours-shots/ours-iso-$NAME.png"
               echo "shot isolated $NAME (x=$X cmd=$CMD)"
             done
+            # 14-n PLUGIN-PATH ISOLATES (diagnostic, not gated): the v2
+            # isolates summon through vanilla NBT and RENDER (the 14-l law
+            # explained their offset) — the NOT-FOUND class (layered_*,
+            # sail[south/west/down], contact[down], pole[south]) spawns
+            # through the PLUGIN's own Bukkit path and renders NOTHING
+            # in-page. One suspect per ONE-CELL manifest page at its real
+            # wall cell: if it renders here, the page context (display
+            # count / neighbours) is the poison; if not, the composite's
+            # Bukkit-path bake is.
+            SC=scenes/gallery-create-p9001.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC"
+            printf 'cell\t-5\t-60\t9\tcreate:layered_scoria\n' >> "srv-wall/c-imagine/$SC"
+            SC2=scenes/gallery-create-p9002.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC2"
+            printf 'cell\t-2\t-54\t9\tcreate:light_blue_sail[facing=south]\n' >> "srv-wall/c-imagine/$SC2"
+            for ENTRY in "9001:layered" "9002:sailsouth"; do
+              P="${ENTRY%%:*}"; NAME="${ENTRY#*:}"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "kill @e[type=!player]" "cim galleryclear" \
+                "cim gallerypage create $P" \
+                "data get entity cimviewer Pos" \
+                | tee "ours-rcon-iso9001-$NAME.log"
+              grep -q "placed=1" "ours-rcon-iso9001-$NAME.log" \
+                || { echo "plugin-path isolate $NAME: placed!=1"; exit 1; }
+              sleep 1
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/ours-iso9001-$NAME.png"
+              echo "shot plugin-path isolate $NAME (page $P)"
+            done
           fi
           ls ours-shots/ | head -5 || true
           EXHAUSTED=0
