@@ -4034,3 +4034,43 @@ Work Log:
 Stage Summary:
 - The next gallery run measures BOTH the nixie recovery (p208's nixie
   cells: skip -> placed) AND a sail isolate actually in frame.
+
+---
+Task ID: 14-q
+Agent: main
+Task: the stairs flip class found in the grain-RED table — triangulation
+isolates shipped
+
+Work Log:
+- THE GRAIN TABLE DECOMPOSES FURTHER: a wide-range cross-correlation
+  over the #64 diff pairs (the join's own shift search is clamped at
+  +-3) splits the reds into (a) aligned-at-(0,0) cells whose ae is pure
+  texture detail — the majority, (b) a REAL flip class: the stairs
+  cells facing east/south (small_scoria/cut_crimsite, outer/inner/
+  straight, both halves) render a horizontally MIRRORED silhouette
+  (mirrorX fit -36..-41% ae, rot180 close behind; aligned control
+  cells get WORSE under both — the fit is real), and (c) the large
+  wheels (large_cogwheel/large_water_wheel) whose models span past the
+  cell bounds.
+- THE EMITTED COMPOSITES ARE CORRECT: the outer_left/east composite
+  carries the post at NE — exactly create's own semantics (create's
+  blockstate says y:270 for east over the shared minecraft:block/
+  outer_stairs parent [bottom + post ES]; ES + y270 = NE); the 1.21.1
+  and 26.3 vanilla stairs/outer_stairs models are geometry-identical,
+  so no version skew. The resolved manifest carries 0/0 rotations
+  everywhere; the spawn Transformation is translation + positive scale
+  only; block/block's fixed context is rotation-free. The flip happens
+  INSIDE the 26.3 client's item-model rendering of the composite.
+- 14-Q ISOLATES SHIPPED: p9003 (stairs outer_left/east, front view),
+  p9004 (the SAME cell shot from BEHIND — camera south of the cell at
+  z 17.5, yaw 180) and p9005 (outer_left/north front). If the back
+  view shows the truth's front silhouette, the client applies a
+  180/mirror and the compensation rides the spawn Transformation. The
+  isolate loop now takes per-ENTRY cameras
+  (page:name:camX:camY:camZ:yaw:pitch, cut-parsed — the first heredoc
+  attempt broke the YAML scalar and was replaced).
+
+Stage Summary:
+- The "grain" class is not one battle: texture detail (majority) PLUS
+  a runtime flip on rotated asymmetric geometry PLUS the oversized
+  wheel models. The isolates decide where the flip fix lands.
