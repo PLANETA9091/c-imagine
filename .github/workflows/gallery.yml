@@ -1201,9 +1201,40 @@ jobs:
             SC2=scenes/gallery-create-p9002.tsv
             printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC2"
             printf 'cell\t-2\t-54\t9\tcreate:light_blue_sail[facing=south]\n' >> "srv-wall/c-imagine/$SC2"
-            for ENTRY in "9001:layered:0:0" "9002:sailsouth:16:-34"; do
-              P="${ENTRY%%:*}"; REST="${ENTRY#*:}"; NAME="${REST%%:*}"
-              CAM="${REST#*:}"; YAW="${CAM%%:*}"; PITCH="${CAM#*:}"
+            # 14-q STAIRS FLIP TRIANGULATION: the grain-RED stairs cells
+            # (facing east/south) fit a horizontal MIRROR / 180-y rotation of
+            # the truth (measured #64 sbs + mirrorX ae -38%), while the
+            # emitted composites are vanilla-correct (post NE for
+            # outer_left/east, verified against create's y:270 + the
+            # outer_stairs parent). Three isolates of ONE stairs state
+            # triangulate the runtime: front view (yaw 0) vs BACK view
+            # (yaw 180) vs the north variant. If the back view matches the
+            # truth's front silhouette, the client renders the composite
+            # rotated/mirrored and the spawn carries the compensation.
+            SC3=scenes/gallery-create-p9003.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC3"
+            printf 'cell\t-5\t-60\t9\tcreate:small_scoria_brick_stairs[facing=east,half=bottom,shape=outer_left,waterlogged=false]\n' >> "srv-wall/c-imagine/$SC3"
+            SC4=scenes/gallery-create-p9004.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC4"
+            printf 'cell\t-5\t-60\t9\tcreate:small_scoria_brick_stairs[facing=east,half=bottom,shape=outer_left,waterlogged=false]\n' >> "srv-wall/c-imagine/$SC4"
+            SC5=scenes/gallery-create-p9005.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC5"
+            printf 'cell\t-5\t-60\t9\tcreate:small_scoria_brick_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=false]\n' >> "srv-wall/c-imagine/$SC5"
+            # ENTRY = page:name:camX:camY:camZ:yaw:pitch — the camera is
+            # per-isolate now: the front views sit at the cispot (0.5,-60,0.5,
+            # yaw 0 = south in MC, the wall's cells face it); the back view
+            # (9004) stands SOUTH of the cell (z 17.5) looking NORTH (yaw
+            # 180) to see the composite from behind; 9002 aims up at the
+            # raised sail cell (yaw 16, pitch -34).
+            for ENTRY in \
+              "9001:layered:0.5:-60:0.5:0:0" \
+              "9002:sailsouth:0.5:-60:0.5:16:-34" \
+              "9003:stairseast:0.5:-60:0.5:0:0" \
+              "9004:stairseastback:-4.5:-60:17.5:180:0" \
+              "9005:stairsnorth:0.5:-60:0.5:0:0"; do
+              IFS=: read -r P NAME CX CY CZ YAW PITCH <<EOF
+$ENTRY
+EOF
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage create $P" \
@@ -1213,9 +1244,9 @@ jobs:
                 || { echo "plugin-path isolate $NAME: placed!=1"; exit 1; }
               sleep 1
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 $YAW $PITCH" >/dev/null 2>&1
+                "tp cimviewer $CX $CY $CZ $YAW $PITCH" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-iso9001-$NAME.png"
-              echo "shot plugin-path isolate $NAME (page $P, yaw $YAW pitch $PITCH)"
+              echo "shot plugin-path isolate $NAME (page $P cam $CX,$CY,$CZ yaw $YAW pitch $PITCH)"
             done
           fi
           ls ours-shots/ | head -5 || true
