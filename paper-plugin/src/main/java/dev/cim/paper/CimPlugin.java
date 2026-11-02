@@ -1123,7 +1123,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     static final float GALLERY_SCALE = 1.0126f;
     static final float GALLERY_TX = 0.0f;
     static final float GALLERY_TY = -0.0184f;
-    static final float GALLERY_TZ = 0.0f;
+    /**
+     * MEASURED (#62 forensics, 14-l): the 26.3 display pipeline renders the
+     * item-display geometry ~0.20 blocks CLOSER to the camera than the
+     * entity Pos — the in-page render law over the four probe pages is
+     * dx_px = 1.35*wx - 0.5, dy_px = -1.5*h + 3.55 (wx = manifest x, h =
+     * height above the eye), i.e. a magnification about the camera axis +
+     * eye level with slope 61.8 px/block instead of the truth's 60.5 —
+     * equivalent to the geometry sitting 0.183..0.20 blocks nearer. The
+     * suspected mechanism: the vanilla "fixed" display-context translation
+     * ([0,0,-4] model units = 0.25 blocks) now applied by the 26.3
+     * item-display path. The join's ALIGN=3 mask absorbed this for |wx|<=2;
+     * every cell further out or higher up paid the shift as AE (the sail
+     * family's -6px reads as an empty window). T_Z = +0.20 pushes the
+     * geometry back onto the truth positions; re-measure after any client
+     * bump.
+     */
+    static final float GALLERY_TZ = 0.20f;
 
     /**
      * Replay one truth-leg gallery page manifest as ItemDisplay rigs:

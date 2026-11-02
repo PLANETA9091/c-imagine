@@ -3736,3 +3736,60 @@ Stage Summary:
   instrument fix is one line; the 26.3 NBT-format delta is logged as a
   compatibility find (it will matter for any external tool summoning
   transformed displays on 26.3).
+
+---
+Task ID: 14-l
+Agent: main
+Task: #62 measured — the NBT theory is dead (identity transform renders bit-identical); the in-page forensics found the real law: the display pipeline renders ~0.20 blocks CLOSER to the camera; fix = GALLERY_TZ=+0.20
+
+Work Log:
+- MEASURED #62 (bf29e62): the four suspect isolates summoned WITHOUT the
+  transformation NBT (identity verified in the RCON dump) rendered at the
+  same (940,478) as #60/#61's transformed renders — the transformation NBT
+  is INNOCENT; the iso rig has its own pathology (renders mirrored about
+  the camera axis; the pane/casing control lands near ITS contract). The
+  iso instrument stays parked; the in-page join is the projector of record.
+- IN-PAGE FORENSICS (p208/p144/p304/p224, all shard-0 artifacts):
+  the join's col/row are MANIFEST INDICES, not a spatial grid — the pages
+  are 3D contraptions (11x7 cells at x=-5..5, y=-60..-54, z=9, camera
+  pinned (0.5,-60,0.5)). boot.log placed-counts: p208 placed=36 of 52
+  CMD-bearing cells; the 21 no-spawn cells are exactly the
+  powered=true/waterlogged=true variants (no pack CMD) + air rows — 6 of
+  them are trivially GREEN (empty on BOTH legs, ae<=26k). Honest skips.
+- THE RED TABLE DECOMPOSES INTO THREE CLASSES (calibrated SAD search +-45px
+  around each truth position, the world->screen projector fitted on 36
+  placed cells to 0.2px residual):
+  1. RENDERED-SHIFTED (~40%): the display renders INTACT at a SMALL offset
+     from the truth position — sail_east (+3,-6), sail_up (-7,-6), seat
+     (+3,-5), pole_west (-7,-2), 6 stairs cells (+-3..7, -1..-6). The
+     join's ALIGN=3 cannot reach -5..-7px, so the ae is paid on the 2px
+     miss: RED with the truth silhouette's ae.
+  2. NOT-FOUND (~40%): spawned, model bakes clean (the client log has only
+     harmless 'particle' warnings), but NO content within +-130px of the
+     truth position (SAD stays 134k-877k) — the sail south/west/down, the
+     layered family, contact down/east, pole south. A second, real bug —
+     the next front.
+  3. GRAIN (~20%): renders in place, ae 61-90k at the best alignment — the
+     known texture-grain walls.
+- THE LAW (class 1, opaque cells): dx_px = 1.35*wx - 0.5,
+  dy_px = -1.5*h + 3.55 (wx = manifest x, h = height above the eye) — a
+  magnification about the camera axis + eye level with the render slope
+  61.8 px/block vs the truth's 60.5 = the geometry sitting ~0.20 blocks
+  CLOSER to the camera. The join's +-3px mask hid this for |wx|<=2 (the
+  GREEN shifts clustering at +-3 = the law clamped at the search border).
+  Suspected mechanism: the vanilla "fixed" display-context translation
+  ([0,0,-4] model units = 0.25 blocks) now applied by the 26.3 item-display
+  path (the "Resizing Dynamic Transforms UBO" rework).
+- FIX (this commit): GALLERY_TZ = +0.20f — the geometry is pushed back onto
+  the truth positions; the class-1 shifts collapse to <=1.5px, inside
+  ALIGN=3, and their ae drops to the grain level. Expected on #63: the
+  sail family, the seat, the pole west, and the |wx|>=3 / top-row cells go
+  GREEN first; the red table should drop well below 900. The join tool is
+  UNTOUCHED (the instrument of record stays honest).
+
+Stage Summary:
+- Three runs bought the decomposition; the fourth ships the calibration.
+  The campaign's next fronts after #63: class 2 (NOT-FOUND — bake/variant
+  bugs in specific composites) and the grain walls. The 26.3 display
+  pipeline now renders item displays with a toward-camera displacement —
+  logged as a compatibility find for every external display rig.
