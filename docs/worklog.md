@@ -3917,3 +3917,51 @@ Stage Summary:
   real pack gap is the pure-BER families (nixie/valve, 0 rows shipped),
   which live on the DYNAMIC/BER gate — the static red table's battle
   remains the grain walls.
+
+---
+Task ID: 14-o
+Agent: main
+Task: CI access restored (new PAT), the #64 artifacts measured — the
+NOT-FOUND class is DEAD, the red table is pure grain; the plugin-path
+isolate renders in CI itself
+
+Work Log:
+- TOKEN: the user shipped a fresh PAT (the old one was auto-revoked,
+  401); verified 200 on /user and the repo with full scopes; stored at
+  .secrets/gh_token (600, outside the repo); git remote now clean (the
+  dead token baked in the URL was dropped) with a credential helper
+  reading that one file — push and API share a single token source.
+- CI #64 MEASURED (sha 0f242f3, the isolates run; 8 gallery-report
+  shards + wall shots/meta): 408 join pages -> RED 6500, GREEN 8486,
+  DYNAMIC 1974, skipped 14228, AIR 201 and NOT-FOUND **0** — the class
+  that started 14-g no longer exists after the 14-m camera law; p207's
+  former NOT-FOUND variants (layered_andesite/crimsite/deepslate) join
+  with verdicts, the whole table is now the grain class.
+- THE RED TABLE IS GRAIN: top rows are stairs/walls/panes
+  (small_scoria_brick_stairs outer_left ae=946k, cut_crimsite_stairs,
+  jungle_window panes...) all with |shift|<=3px and huge ae — position
+  is right, texture detail is not; RED total is stable vs #63 (6500 vs
+  6495, +5 noise). The static gate front = wall/texture identity.
+- ISOLATES IN CI: ours-iso9001-layered.png SHOWS the layered_scoria
+  cube (first direct CI proof through the plugin's Bukkit path);
+  ours-iso9001-sailsouth.png is EMPTY but by FRAMING, not render: the
+  cell (-2,-54,9) sits 6 blocks above and 8.5 south of the cispot
+  camera (0.5,-60,0.5), a ~34 deg vertical angle that exceeds the ~27
+  deg half-cone at the contract fov (-0.65); the local render proof
+  stands (it was shot pre-fix at the 99 deg fov:0.0). The diagnostic
+  step needs a pitched camera or its own vantage (14-p, non-blocking).
+- p208 SAIL PARITY IS ANGLE-DEPENDENT: facing=east and up GREEN,
+  north/south/west/down RED (ae 129-340k) — same composite, so the
+  loss is texture/normal detail at oblique facings, consistent with
+  the grain verdict.
+- NEXT: 14-o continues as planned — the measured BER fallback in
+  GalleryPack (synthesize the nixie casing panel for element-less
+  chains instead of dropping; glyphs stay dynamic/out of scope) for
+  the DYNAMIC/BER gate, and the grain probe (wall-texture identity,
+  probe #2 of the 14-g plan) for the static gate.
+
+Stage Summary:
+- The 14-g question is closed: no bake bug, no spawn bug, no display
+  bug — NOT-FOUND was the camera. What remains is measured: ~6.5k
+  grain reds on the static gate, ~2k dynamic/BER rows, and a
+  mis-framed sail isolate shot that needs a vantage, not a fix.
