@@ -4016,3 +4016,21 @@ Stage Summary:
 - The "pure-BER gap" story is dead: the gap was a LOADER gap. The
   composite children flatten recovers every composite-encoded family
   with REAL geometry — no placeholder boxes needed for nixie.
+
+---
+Task ID: 14-p
+Agent: main
+Task: the isolate vantage fix — the p9002 sail isolate shot gets its own
+aimed camera instead of the flat cispot
+
+Work Log:
+- The 14-o CI measurement proved the sailsouth isolate shot EMPTY by
+  FRAMING (cell 6 above the cispot, ~34 deg > the ~27 deg half-cone).
+  The diagnostic loop now carries yaw/pitch per ENTRY: 9001 keeps the
+  flat cispot (its wall cell renders right-of-center), 9002 aims
+  yaw 16 / pitch -34 at the raised sail cell. Diagnostic-only, not
+  gated; runs with the 14-o composite flatten in the same gallery run.
+
+Stage Summary:
+- The next gallery run measures BOTH the nixie recovery (p208's nixie
+  cells: skip -> placed) AND a sail isolate actually in frame.

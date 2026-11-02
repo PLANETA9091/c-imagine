@@ -1186,14 +1186,24 @@ jobs:
             # wall cell: if it renders here, the page context (display
             # count / neighbours) is the poison; if not, the composite's
             # Bukkit-path bake is.
+            # 14-p VANTAGE FIX: one cell per isolate needs its own camera —
+            # the p9002 sail cell (-2,-54,9) sits 6 blocks ABOVE the cispot
+            # (0.5,-60,0.5), a ~34 deg vertical angle that exceeds the ~27
+            # deg half-cone at the contract fov (-0.65): the 14-n sailsouth
+            # shot came out EMPTY (measured #64) while the cell rendered
+            # (local probe). Each ENTRY now carries yaw/pitch aimed at its
+            # cell: 9001 = the wall cell at (-5,-60,9) south-west, yaw 0
+            # catches it right-of-center; 9002 = up and south-west,
+            # yaw ~16 (atan2(2.5,8.5)), pitch ~-34 (-atan(6/8.86)).
             SC=scenes/gallery-create-p9001.tsv
             printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC"
             printf 'cell\t-5\t-60\t9\tcreate:layered_scoria\n' >> "srv-wall/c-imagine/$SC"
             SC2=scenes/gallery-create-p9002.tsv
             printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC2"
             printf 'cell\t-2\t-54\t9\tcreate:light_blue_sail[facing=south]\n' >> "srv-wall/c-imagine/$SC2"
-            for ENTRY in "9001:layered" "9002:sailsouth"; do
-              P="${ENTRY%%:*}"; NAME="${ENTRY#*:}"
+            for ENTRY in "9001:layered:0:0" "9002:sailsouth:16:-34"; do
+              P="${ENTRY%%:*}"; REST="${ENTRY#*:}"; NAME="${REST%%:*}"
+              CAM="${REST#*:}"; YAW="${CAM%%:*}"; PITCH="${CAM#*:}"
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage create $P" \
@@ -1203,9 +1213,9 @@ jobs:
                 || { echo "plugin-path isolate $NAME: placed!=1"; exit 1; }
               sleep 1
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                "tp cimviewer 0.5 -60 0.5 $YAW $PITCH" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-iso9001-$NAME.png"
-              echo "shot plugin-path isolate $NAME (page $P)"
+              echo "shot plugin-path isolate $NAME (page $P, yaw $YAW pitch $PITCH)"
             done
           fi
           ls ours-shots/ | head -5 || true
