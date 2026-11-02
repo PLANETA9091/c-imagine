@@ -3856,3 +3856,64 @@ Work Log:
 Stage Summary:
 - One probe, one run (#64), two discriminating shots. The vanilla rig
   stays parked; the plugin path is the one that carries the gate.
+
+---
+Task ID: 14-n-measured
+Agent: main
+Task: the 14-n probe MEASURED LOCALLY (CI unreachable — the GH PAT was
+revoked by GitHub, 401 on every API call; no runs since #63): the
+plugin-path isolates render, the #57 empty-display class decomposes, and
+the pack's BER coverage gap is measured at the source
+
+Work Log:
+- LOCAL CI-FAITHFUL RIG: srv-probe (the #57 seed pack, sha1 a483f644) +
+  the HEAD plugin jar + the stock 26.3 client on Xvfb :99. The replay of
+  p208 returned placed=36 — BIT-IDENTICAL to CI #61 — so the local loop
+  now reproduces the CI measurement exactly (probe_14n.py / rejoin_client.py
+  in scripts/, all waits inside python, no shell sleeps).
+- ISOLATES RENDER: p9001 (create:layered_scoria at its real wall cell) and
+  p9002 (create:light_blue_sail[facing=south]) both placed=1 through the
+  plugin's own Bukkit path and BOTH RENDER (cispot + straight-on shots).
+  The g11012/g11050 composites are healthy (1 element full cube / 9
+  elements). The NOT-FOUND class is NOT a bake bug, NOT the Bukkit spawn,
+  NOT the display count.
+- THE #57 EMPTIES EXPLAINED: the #57 diff crops (sail c3r6 ours=sky,
+  truth=sail) were shot under the pre-14-m camera drift; locally at the
+  contract camera the same cells render in-page (p208 replay: the layered
+  cubes AND the sail undersides visible). The class was the camera, fixed
+  by 14-i re-pin + 14-m T_Z — not a composite bug for sail/layered.
+- THE LOCAL RIG'S OWN CALIBRATION BUG (found + fixed): the probe harness
+  wrote fov:0.0 — the 26.3 client renders ~99 deg at 0.0 (the 14 task's
+  measured slider law); the contract pin is fov:-0.65. At 0.0 the p208
+  ours-vs-truth diff was 87.6% big-pixels; at -0.65 it collapsed to 13.6%.
+- THE PACK'S BER COVERAGE GAP, MEASURED AT THE SOURCE: a local F2vPack
+  --build over the create jar printed the drop verbatim — nixie_tube's
+  model chain carries NO static elements (pure BER: casing+glyphs are
+  drawn by the renderer), so "composite part without elements -> composite
+  failed -> row dropped". The shipped (CI) resolved table (21939 rows)
+  contains ZERO nixie_tube and ZERO valve_handle rows; per 3162-state
+  fixture list the drops are nixie 37 + valve_handle 24 (+minecraft:air).
+  With --assets the vanilla-parent class resolves (729 -> 3100 states in
+  a create-only build; CI already passes --assets client.jar) — what
+  remains dropped is EXACTLY the pure-BER families. p208's 40 nixie
+  states can never place: the whole white nixie rows in the truth frame
+  have no ours counterpart (visible in the 13.6% residual sbs).
+- PRIORITY CORRECTION for the static red table (6495): the nixie/valve
+  cells are DYNAMIC/BER-gate verdicts, NOT static reds — the 6423-cell
+  "other" mass is the GRAIN WALLS (44 walls within ~2k of the 62k gate),
+  plus the 72 sail/layered/contact/pole cells that now render at <=3px
+  and lose on texture detail. The static-gate front stays the grain.
+- NEXT (14-o): the measured BER fallback in GalleryPack — synthesize a
+  casing composite for element-less chains instead of dropping (nixie
+  first: a pale panel box measured from the truth crops; the glyphs are
+  dynamic text and stay out of static scope) — it moves the DYNAMIC/BER
+  gate, not the static table; the static front remains the grain probe
+  (wall-texture identity, probe #2 of the 14-g plan).
+
+Stage Summary:
+- The local loop is now a CI-faithful measurement instrument (placed +
+  pixel diffs, no CI needed). The 14-n question is answered: the plugin
+  path and the composites are clean; the #57 empties were the camera; the
+  real pack gap is the pure-BER families (nixie/valve, 0 rows shipped),
+  which live on the DYNAMIC/BER gate — the static red table's battle
+  remains the grain walls.
