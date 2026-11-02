@@ -3594,3 +3594,33 @@ Stage Summary:
   the per-cell offset class is the next wall. The isolated-suspects shot
   on the next run decides: composite-borne offset (fix the builder) vs
   page-context offset (fix the walk/rig).
+
+---
+Task ID: 14-h
+Agent: main
+Task: isolated-suspects v1 measured — the batch shot's layout is MIRRORED/STRETCHED (geometrically impossible for a camera pose); v2 runs one display per shot with the entity Pos dumped
+
+Work Log:
+- MEASURED #58 (f3efb74): the floor holds (the ours jobs fail through the
+  honest gate as designed); the isolated-suspects v1 shot landed in
+  wall-ours-shots-0.
+- v1 READ-OUT: all 8 displays RENDER (the sail's frame+canvas, the seat's
+  cushion, the contact's red front, the layered cube — the "empty" class
+  renders in isolation too) — but the LAYOUT is wrong: the ground row
+  spreads with ~198 px pitch instead of 121, the row-2 pair floats at the
+  correct height (cy 272-273 = exactly y=-57.5 at dist 8.5) but shifted
+  right, and the assignment renders x ~= -1.27*x + 4.0 — a MIRROR. No
+  rigid camera transform mirrors: the batch itself (8 vanilla /summon NBT
+  displays in one frame after a 50-page replay) is the suspect, not the
+  composites. The in-page renders (Bukkit-API spawns through the plugin's
+  gallerypage) stay camera-correct — GREEN cells exist.
+- v2 (this commit): ONE display per shot at a FIXED position (-2.5), 4
+  probes = the perfect north control + the two shifted south straights +
+  the in-page-empty layered_scoria; every shot is preceded by a
+  data-get of the display's authoritative Pos + transformation into
+  ours-rcon-iso-*.log. Model-borne vs rig-borne settles in one run.
+
+Stage Summary:
+- The instrument discipline held: a suspicious v1 read-out was not
+  forced into a conclusion — the probe is redesigned until the evidence
+  is single-valued.
