@@ -3793,3 +3793,43 @@ Stage Summary:
   bugs in specific composites) and the grain walls. The 26.3 display
   pipeline now renders item displays with a toward-camera displacement —
   logged as a compatibility find for every external display rig.
+
+---
+Task ID: 14-m
+Agent: main
+Task: #63 measured — GALLERY_TZ=+0.20 confirmed: 7806 -> 6495 reds (-1311, -16.8%) in one constant; the fixed cells' shifts collapsed to <=3px; the remaining reds = the NOT-FOUND class + grain
+
+Work Log:
+- MEASURED #63 (cd413d2, the first run under the T_Z calibration): the
+  full red table 7806/14784 -> 6495/14987 (-1311). The probe pages tell
+  the mechanism story per cell: 13 of the 49 tracked REDs went GREEN and
+  they are EXACTLY the law-predicted set — light_blue_sail[east] (32309),
+  [up] (36417), the seat (17815!), red_sail[up], pole[west] (48009), the
+  whole stairs r5 row (44-57k), stairs c0r2/c8r2/c10r2 (15k!), the contacts
+  south/south_pw/west_pw (19-44k), slab c8r0. Their join shifts collapsed
+  from the +-7px law band to (0,0)..(1,-2) — the 26.3 toward-camera
+  displacement is real, measured, and cured.
+- The NOT-FOUND class is now cleanly isolated (the same cells stay RED
+  with big ae at (0,0)-ish shifts): layered_scoria/tuff/veridium,
+  sail[south/west/down], contact[north/east/down...], pole[south] —
+  spawned (boot.log uuids), models bake clean, yet no content within
+  +-130px of the truth position in #62. ~40% of the remaining reds.
+- The grain class: several former REDs dipped under the gate as side
+  effects (slab c8r0 56481) — the 62k gate edge cells.
+- A few cells got WORSE (c3r3 63k -> 103k, shift (1,-3)): the T_Z
+  overshoot for their specific variant geometry — the residual calibration
+  error is now the +-1-2px band, inside ALIGN=3, but the periodic brick
+  textures still slide to costlier minima for a handful of cells. Accept;
+  the join's radius stays honest.
+- NEXT (14-n): the class-2 probe — one-cell manifests through the PLUGIN's
+  own Bukkit path (gallery-create-p9001 = layered_scoria at its real wall
+  cell, p9002 = sail[south]), shot in isolation with the calibrated
+  projector. This discriminates model-borne bake failure vs page-context
+  interference for the NOT-FOUND families without touching the vanilla
+  summon rig (parked, mirrors).
+
+Stage Summary:
+- The GREEN campaign's largest single win: one measured constant removed
+  1311 red cells (17.6% of the table). The instrument discipline held:
+  the law was measured on four probe pages, shipped, and confirmed by the
+  next run's red table — no join parameters were touched.
