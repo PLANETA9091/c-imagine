@@ -4074,3 +4074,45 @@ Stage Summary:
 - The "grain" class is not one battle: texture detail (majority) PLUS
   a runtime flip on rotated asymmetric geometry PLUS the oversized
   wheel models. The isolates decide where the flip fix lands.
+
+---
+Task ID: 14-r
+Agent: main
+Task: the #66 measurement — the composite flatten's verdicts are in, the
+sail isolate renders in frame, and an empty-GREEN gate hole is measured
+
+Work Log:
+- RUN BOOK: #65 was cancelled by the push chain (gallery concurrency);
+  #66 (17da9c9: the flatten + the vantage fix) is the complete
+  measurement; #67 (7305683) died on the broken-YAML heredoc (fixed in
+  8735ace); #68 (8735ace) carries the 14-q stairs isolates.
+- GLOBAL DELTA #64 -> #66: RED 6500 -> 6491, GREEN 8486 -> 8525 (+39),
+  DYNAMIC 1974 -> 1958, AIR 201 -> 187, skipped 14228 unchanged.
+- NIXIE RECOVERED AND RENDERING: p208 placed 36 -> 52 (+16 = exactly the
+  waterlogged=false nixie cells); the pack's resolved table carries 512
+  nixie rows (the #64 pack: ZERO — re-verified from the #64 seed-pack
+  artifact). Across the joins: nixie GREEN 89 -> 103, DYNAMIC 167 ->
+  153. The rendered pairs show the pale tube panel matching the truth
+  on straight-on cells (the 5 p208 GREENs); the DYNAMIC residual is
+  measured: the truth tube reads DARK (the translucent tube child over
+  the dark casing) while ours renders OPAQUE pale (the composite has no
+  render_type — the known 14-o limitation), plus the glyphs are dynamic
+  text (out of static scope).
+- THE OTHER 16 p208 NIXIE ARE TRUTH-SIDE SKIPS: the page manifest marks
+  the waterlogged=true nixie (16) + 8 postbox + 1 seat rows as
+  'skip/-1-1-1' — the truth leg never placed them; no pack-side action
+  can move those rows (25/77 cells on p208 are truth-side skips).
+- EMPTY-GREEN GATE HOLE (measured, important): the #64 joins show 89
+  nixie GREENs with the pack carrying ZERO nixie — empty-ours cells
+  against small truth content (ae 221..36k) PASS the GREEN threshold.
+  The #66 real renders turned 14 of them into better-content verdicts;
+  the gate's absolute-ae threshold lets empty cells pass against small
+  truths — a gate integrity item for the 14-g verdict work.
+- SAIL ISOLATE FIXED: ours-iso9001-sailsouth.png (run #66) SHOWS the
+  sail (the 14-p yaw16/pitch-34 camera) — the 14-n empty shot is
+  explained and closed.
+
+Stage Summary:
+- The loader-flatten class is landed and measured: +39 GREEN, +16 placed
+  nixie cells, the residual moved to translucency + glyphs (dynamic
+  scope). The stairs flip triangulation rides #68.
