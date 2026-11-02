@@ -3624,3 +3624,42 @@ Stage Summary:
 - The instrument discipline held: a suspicious v1 read-out was not
   forced into a conclusion — the probe is redesigned until the evidence
   is single-valued.
+
+---
+Task ID: 14-i
+Agent: main
+Task: isolated-suspects v2 measured — the composites are EQUAL at one position (no model-borne shift); the camera DRIFT is caught red-handed (yaw 180 behind the wall); the per-shot tp re-pin ships on every shot of both legs
+
+Work Log:
+- MEASURED #59 (ec986e8): the 4 v2 probes (nb / sb / st / layered_scoria,
+  all summoned at the SAME position (-2.5,-59.5,9.5)) render at ONE
+  position — (941,474-476), bbox ~134x110 each. The authoritative entity
+  Pos = [-2.5,-59.5,9.5] and the transformation = the walk's exact values
+  for every probe. VERDICT: the composites carry NO per-model offset —
+  the north control, the two "shifted" south straights and the
+  in-page-empty layered_scoria are render-equivalent in isolation.
+- THE CAMERA DRIFT IS MEASURED, NOT GUESSED: the (941,474) landing with
+  the true Pos at (-2.5,-59.5,9.5) + the v1 layout re-read as a rigid
+  fit = the client camera ended at yaw 180 BEHIND the display wall
+  (the displays have no collision; the client slides forward through
+  them), looking back at the row — the x-order reversal read as a
+  "mirror". The v1 batch was fine; the CAMERA was not. The drift
+  accumulates during the ~7-minute stride walk (the step pins the camera
+  ONCE at the start); the in-page joins survived because the +-24px
+  global guard passed — but the per-cell windows of late pages sit on a
+  drifting camera, and the (6,14)-class per-cell shifts (14-g) are the
+  drift seen through the +-3px join.
+- FIX (this commit): a camera RE-PIN ("tp cimviewer 0.5 -60 0.5 0 0")
+  immediately before EVERY page shot on BOTH legs (the truth walk, the
+  ours stride replay, the determinism probe, the pane/casing and
+  suspect isolates, the entity/item/fluid page shots — 16 pin sites),
+  plus the player's Pos/Rotation dumped next to the display Pos in the
+  v2 iso logs. One RCON call per page is ~free against the 6-minute
+  loop.
+
+Stage Summary:
+- The 14-g "offset class" decomposes: composites CLEAN (v2), camera
+  DIRTY (v1+v2). The next run's red table is the first one shot under
+  the per-shot pin — if the drift was feeding the offset class, the
+  near-gate walls (44 cells <62k) and the shifted stair cells move
+  first; the grain-class walls (533) decide the next carrier.

@@ -699,6 +699,14 @@ jobs:
             grep "gallery done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # section rebuild + lighting (the measured fixed-window
             # protocol — NEVER trimmed; the polls around it were)
+            # 14-i CAMERA RE-PIN before EVERY shot (the measured 14-h/14-g
+            # drift: the client slides forward through the collision-free
+            # display wall between the step's single pin and the late probes
+            # — the isolated v1/v2 shots caught the camera at yaw 180 behind
+            # the wall, mirrored x. One RCON call per page is ~free; the
+            # shot-time camera is now contract-exact forever).
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-p$p.png"
             echo "shot page $p"
           done
@@ -762,6 +770,8 @@ jobs:
             [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             sleep 4   # section rebuild (wall -> air) + entity render under llvmpipe
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-e$p.png"
             echo "shot mob page $p"
           done
@@ -777,6 +787,8 @@ jobs:
               [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
               sleep 4
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "truth-shots/gal-e$SERIES$p.png"
               echo "shot $SERIES page $p"
             done
@@ -787,6 +799,8 @@ jobs:
               "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" \
               "cimscene gallery entity mobs minecraft 0"
             sleep 2
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-e0-again.png"
             echo "shot mob page 0 again"
           fi
@@ -806,6 +820,8 @@ jobs:
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1 || true
               sleep 4
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "truth-shots/gal-e$SERIES-create$p.png"
               echo "shot create $SERIES page $p"
             done
@@ -823,6 +839,8 @@ jobs:
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # static item displays settle like the block pages
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-i-create$p.png"
             echo "shot item page $p"
           done
@@ -842,6 +860,8 @@ jobs:
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-pa-create$p.png"
             echo "shot particle page $p"
           done
@@ -862,6 +882,8 @@ jobs:
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1 || true
             sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-fl-create$p.png"
             echo "shot fluid page $p"
           done
@@ -1108,6 +1130,9 @@ jobs:
             echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
               || { echo "page $p no placed marker in the RCON response"; exit 1; }
             sleep 1   # section rebuild (the measured fixed-window protocol)
+            # 14-i CAMERA RE-PIN before EVERY shot (see the truth-leg twin)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
             test -s "ours-shots/ours-gal-p$p.png" || { echo "page $p shot empty/missing"; exit 1; }
             echo "shot page $p"
@@ -1118,6 +1143,8 @@ jobs:
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cim galleryclear" "cim gallerypage create 0"
             sleep 2
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-p0-again.png"
             echo "shot page 0 again"
             # 12-ac/12-ah bisect x2: ONE isolated display per suspect family,
@@ -1132,6 +1159,8 @@ jobs:
               "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_PANE}f]}}}}" \
               "summon minecraft:item_display 1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_CASING}f]}}}}"
             sleep 2
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-isolated-pane-casing.png"
             echo "shot isolated pane+casing"
             # 14-g/h SUSPECT ISOLATES v2 (diagnostic, not gated): the v1 batch
@@ -1158,8 +1187,12 @@ jobs:
                 "summon minecraft:item_display $X -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}" \
                 "data get entity @e[type=minecraft:item_display,limit=1] Pos" \
                 "data get entity @e[type=minecraft:item_display,limit=1] transformation" \
+                "data get entity cimviewer Pos" \
+                "data get entity cimviewer Rotation" \
                 | tee "ours-rcon-iso-$NAME.log"
               sleep 1
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-iso-$NAME.png"
               echo "shot isolated $NAME (x=$X cmd=$CMD)"
             done
@@ -1186,6 +1219,8 @@ jobs:
             echo "$OUT" | grep -q "gallerypage-entity minecraft p$p -> placed=" \
               || { echo "mob page $p no placed marker in the RCON response"; exit 1; }
             sleep 5   # section rebuild + entity render under llvmpipe
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-e$p.png"
             echo "shot mob page $p"
           done
@@ -1199,6 +1234,8 @@ jobs:
               echo "$OUT" | grep -q "gallerypage-entity minecraft p$p $SERIES -> placed=" \
                 || { echo "$SERIES page $p no placed marker in the RCON response"; exit 1; }
               sleep 5
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-gal-e$SERIES$p.png"
               echo "shot $SERIES page $p"
             done
@@ -1208,6 +1245,8 @@ jobs:
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "cim galleryclear" "cim gallerypage-entity minecraft 0"
             sleep 6
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-e0-again.png"
             echo "shot mob page 0 again"
           fi
@@ -1233,6 +1272,8 @@ jobs:
               echo "$OUT" | grep -q "gallerypage-entity create p$p$STAG -> placed=" \
                 || { echo "create $SERIES page $p no placed marker"; exit 1; }
               sleep 4
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-gal-e$SERIES-create$p.png"
               test -s "ours-shots/ours-gal-e$SERIES-create$p.png" || { echo "create $SERIES page $p shot missing"; exit 1; }
               echo "shot create $SERIES page $p"
@@ -1252,6 +1293,8 @@ jobs:
             echo "$OUT" | grep -q "gallerypage-item create p$p -> placed=" \
               || { echo "item page $p no placed marker"; exit 1; }
             sleep 1   # static item displays settle like the block pages
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-i-create$p.png"
             test -s "ours-shots/ours-gal-i-create$p.png" || { echo "item page $p shot missing"; exit 1; }
             echo "shot item page $p"
@@ -1272,6 +1315,8 @@ jobs:
             echo "$OUT" | grep -q "gallerypage-particle create p$p -> placed=" \
               || { echo "particle page $p no placed marker"; exit 1; }
             sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-pa-create$p.png"
             test -s "ours-shots/ours-gal-pa-create$p.png" || { echo "particle page $p shot missing"; exit 1; }
             echo "shot particle page $p"
@@ -1292,6 +1337,8 @@ jobs:
             echo "$OUT" | grep -q "gallerypage-fluid create p$p -> placed=" \
               || { echo "fluid page $p no placed marker"; exit 1; }
             sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-fl-create$p.png"
             test -s "ours-shots/ours-gal-fl-create$p.png" || { echo "fluid page $p shot missing"; exit 1; }
             echo "shot fluid page $p"
