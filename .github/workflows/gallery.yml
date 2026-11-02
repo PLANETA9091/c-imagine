@@ -432,6 +432,22 @@ jobs:
             seed-pack/plugin
           if-no-files-found: error
 
+      # the pack BYTES themselves, always — local probes must debug the exact
+      # model/composite files the CI render consumed (14-g: the empty-display
+      # cells reproduced nowhere locally, the byte-level diff was the blocker)
+      - name: upload seed pack bytes (always)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-pack-bytes
+          path: |
+            seed-pack/f2v/pack.zip
+            seed-pack/f2v/pack.sha1
+            seed-pack/f2v/inputs.sha1
+            seed-pack/f2v/visual-gallery.resolved.tsv
+            seed-pack/f2v/visual-items.resolved.tsv
+          if-no-files-found: error
+
   # ----------------------------------------------------------- wall-truth --
   # K shards, each = one full truth stack (real NeoForge server + real
   # client) shooting pages i, i+K, ... of EVERY class. The manifests are
