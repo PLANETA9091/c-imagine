@@ -3663,3 +3663,41 @@ Stage Summary:
   the per-shot pin — if the drift was feeding the offset class, the
   near-gate walls (44 cells <62k) and the shifted stair cells move
   first; the grain-class walls (533) decide the next carrier.
+
+---
+Task ID: 14-j
+Agent: main
+Task: #60 measured — the per-shot tp pin changed NOTHING (the red ae's are bit-stable across runs); the iso-probe camera is STILL broken with the pin verified server-side; the isolates move to run BEFORE the walk
+
+Work Log:
+- MEASURED #60 (ad2dbda, the first run under the per-shot pin): shard-0
+  red 933/2182 (was 927 — run noise), the families unchanged, and the
+  suspect ae's are BIT-IDENTICAL to #57 (south-top-straight 588521,
+  layered_scoria 183698, sail 254862, seat 159219, contact-down 516841).
+  The in-page renders are DETERMINISTIC and the camera pin did not touch
+  them — the 14-i "drift feeds the offset class" theory is DEAD for the
+  pages. The pin stays (free, camera-exact by construction).
+- THE ISO RIG IS BROKEN IN A NEW, MEASURED WAY: with the player's
+  server-side Pos=(0.5,-60,0.5) Rotation=[0,0] DUMPED right next to the
+  display Pos=(-2.5,-59.5,9.5), all four probes render at ONE spot
+  (941,474), bbox ~134x110 — the correct render (469,428, 60.5px cube)
+  MIRRORED in x and magnified ~1.8x about the frame center. A mirror is
+  impossible for any camera pose; the magnification matches the 26.3
+  fov:-0.65=44-deg reading (f=891) — the iso renders look like a
+  DIFFERENT camera state entirely (the workflow header's "spectator
+  camera" lesson is the suspect). The in-page shots in the SAME session
+  render 70-deg-correct (the join's GREEN cells exist) — the client's
+  camera state differs between the walked pages and the late probes.
+- ACTION: the determinism probe + the pane/casing + the suspect isolates
+  moved BEFORE the stride walk in the ours job (fresh-pinned camera,
+  seconds after the join pin). #61's iso shots either land at the
+  contract (the walk poisons the camera state — find what) or at (941,474)
+  again (the vanilla-summon path itself renders displaced — compare with
+  the Bukkit-spawned gallerypage-0 display in the same frame next).
+
+Stage Summary:
+- The gate floor is stable and deterministic (933 +- noise, every ae
+  reproducible bit-for-bit) — the instrument is trustworthy. The offset
+  class (~40-60 cells) now has two live suspects: the page-context
+  placement vs the vanilla-summon render path. The #61 isolates
+  discriminate.

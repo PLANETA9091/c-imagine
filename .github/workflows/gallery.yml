@@ -1119,25 +1119,6 @@ jobs:
           # THIS shard's progression. The RCON response IS the completion
           # marker (sendMessage goes to the sender, not boot.log — measured
           # in run 41103826488).
-          EXHAUSTED=0
-          for p in $(seq $SI $K $MAXP); do
-            M="srv-wall/c-imagine/scenes/gallery-create-p$p.tsv"
-            [ -f "$M" ] || { echo "no manifest for page $p — ours block replay exhausted"; EXHAUSTED=1; break; }
-            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "kill @e[type=!player]" "cim galleryclear" \
-              "cim gallerypage create $p")
-            echo "$OUT" | tee "ours-rcon-p$p.log"
-            echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
-              || { echo "page $p no placed marker in the RCON response"; exit 1; }
-            sleep 1   # section rebuild (the measured fixed-window protocol)
-            # 14-i CAMERA RE-PIN before EVERY shot (see the truth-leg twin)
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
-            test -s "ours-shots/ours-gal-p$p.png" || { echo "page $p shot empty/missing"; exit 1; }
-            echo "shot page $p"
-          done
-          [ "$EXHAUSTED" = "1" ] || { echo "ours block replay hit the MAXP cap — staged manifest set incomplete"; exit 1; }
           # determinism probe (diagnostic, not gated) — shard 0 owns page 0
           if [ "$SI" = "0" ]; then
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
@@ -1198,6 +1179,26 @@ jobs:
             done
           fi
           ls ours-shots/ | head -5 || true
+          EXHAUSTED=0
+          for p in $(seq $SI $K $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-create-p$p.tsv"
+            [ -f "$M" ] || { echo "no manifest for page $p — ours block replay exhausted"; EXHAUSTED=1; break; }
+            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cim galleryclear" \
+              "cim gallerypage create $p")
+            echo "$OUT" | tee "ours-rcon-p$p.log"
+            echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
+              || { echo "page $p no placed marker in the RCON response"; exit 1; }
+            sleep 1   # section rebuild (the measured fixed-window protocol)
+            # 14-i CAMERA RE-PIN before EVERY shot (see the truth-leg twin)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
+            test -s "ours-shots/ours-gal-p$p.png" || { echo "page $p shot empty/missing"; exit 1; }
+            echo "shot page $p"
+          done
+          [ "$EXHAUSTED" = "1" ] || { echo "ours block replay hit the MAXP cap — staged manifest set incomplete"; exit 1; }
+
 
       - name: entity replay — STRIDE (MOB gate + dyn/large diagnostic + create)
         run: |
