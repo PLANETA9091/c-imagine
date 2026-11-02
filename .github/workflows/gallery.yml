@@ -1165,7 +1165,7 @@ jobs:
               NAME="${ENTRY%%:*}"; REST="${ENTRY#*:}"; CMD="${REST%%:*}"; X="${REST#*:}"
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "kill @e[type=!player]" \
-                "summon minecraft:item_display $X -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}" \
+                "summon minecraft:item_display $X -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}" \
                 "data get entity @e[type=minecraft:item_display,limit=1] Pos" \
                 "data get entity @e[type=minecraft:item_display,limit=1] transformation" \
                 "data get entity cimviewer Pos" \

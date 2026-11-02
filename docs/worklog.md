@@ -3701,3 +3701,38 @@ Stage Summary:
   class (~40-60 cells) now has two live suspects: the page-context
   placement vs the vanilla-summon render path. The #61 isolates
   discriminate.
+
+---
+Task ID: 14-k
+Agent: main
+Task: #61 measured — the iso renders are bit-identical at (941,474) even BEFORE the walk with the camera verified — the transformation NBT is the poison; the isolates drop it
+
+Work Log:
+- MEASURED #61 (eea4c89, the isolates running FIRST, seconds after the
+  join pin): the four probes render at (941,474) BIT-IDENTICAL to #60's
+  late-probe renders, with the player's server-side Pos=(0.5,-60,0.5)
+  Rotation=[0,0] verified in the same RCON batch. The walk is innocent —
+  the render path itself is.
+- THE DISCRIMINATOR WAS ALREADY IN THE DATA: the pane/casing probe (a
+  vanilla summon WITHOUT a transformation NBT) renders near the contract
+  (pane +19px, casing +55px), every transformed summon renders at
+  (941,474) — mirrored x, ~1.8x magnified about the frame center. The
+  vanilla NBT `transformation:{translation,left_rotation,right_rotation,
+  scale}` is parsed differently by the 26.3 display pipeline than the
+  same values set through Paper's Bukkit Transformation API (the
+  gallerypage path, which renders camera-correct). 26.3 reshaped the
+  display-transform system ("Resizing Dynamic Transforms UBO" in the
+  client log) — the NBT quaternion/compound format is the prime suspect.
+- ACTION: the suspect isolates drop the transformation NBT (the walk's
+  scale 1.0126 / ty -0.0184 are sub-pixel calibration constants the
+  diagnostic does not need). #62's isolates must land at the contract —
+  then the sb/st-vs-nb comparison at ONE position finally answers
+  model-borne vs page-context for the offset class.
+
+Stage Summary:
+- Three runs bought a clean fact table: the gate renders are
+  deterministic and camera-correct; the vanilla-summon+transformation-NBT
+  path renders displaced; the Bukkit-API path renders correct. The
+  instrument fix is one line; the 26.3 NBT-format delta is logged as a
+  compatibility find (it will matter for any external tool summoning
+  transformed displays on 26.3).
