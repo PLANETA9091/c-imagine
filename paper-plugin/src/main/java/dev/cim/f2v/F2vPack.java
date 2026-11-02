@@ -19,6 +19,10 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 /**
  * F2V 2.0 visual pack builder (26.3 surface).
  *
@@ -1092,35 +1096,75 @@ public final class F2vPack {
         // textures owned by a modded namespace get copied into the pack
         Map<String, String> textures = extractTextures(json);
         for (String ref : textures.values()) {
-            if (ref.startsWith("#") || ref.startsWith("minecraft:")) {
-                continue; // local key or vanilla texture — nothing to copy
-            }
-            int c = ref.indexOf(':');
-            if (c <= 0) {
-                continue;
-            }
-            String texNs = ref.substring(0, c);
-            String texPath = ref.substring(c + 1);
-            String texFile = "assets/" + texNs + "/textures/" + texPath + ".png";
-            if (entries.containsKey(texFile)) {
-                continue;
-            }
-            ZipEntry te = zf.getEntry(texFile);
-            if (te == null) {
-                warnings.add("texture missing in jar: " + ref
-                        + " (referenced by " + modelPath + ")");
-                continue;
-            }
-            if (!texPath.startsWith("item/") && !texPath.startsWith("block/")) {
-                // outside the auto-atlased directories — a merged atlas
-                // override would be needed (v1 constraint). Skip the copy:
-                // without an atlas entry the client cannot resolve the
-                // texture either way, and dead bytes would mask the warning.
-                warnings.add("texture outside item|block dirs not atlased: " + ref);
-                continue;
-            }
-            entries.put(texFile, zf.getInputStream(te).readAllBytes());
+            copyTextureRef(zf, ref, modelPath, entries, warnings);
         }
+        // NEOFORGE:COMPOSITE children (14-o): create 6.0 ships nixie_tube /
+        // display_link / stock_link as composite models — their texture refs
+        // hide in "children" sub-models, and the gallery composite flattens
+        // those children (GalleryPack.mergeModelGeometry), so the child
+        // sprites must ride the pack exactly like the top-level ones.
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            if (obj.has("children") && obj.getAsJsonObject("children").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> ch : obj.getAsJsonObject("children")
+                        .entrySet()) {
+                    if (!ch.getValue().isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject child = ch.getValue().getAsJsonObject();
+                    if (!child.has("textures") || !child.getAsJsonObject("textures")
+                            .isJsonObject()) {
+                        continue;
+                    }
+                    for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
+                            .entrySet()) {
+                        copyTextureRef(zf, t.getValue().getAsString(),
+                                modelPath + " child " + ch.getKey(), entries, warnings);
+                    }
+                }
+            }
+        } catch (Exception bad) {
+            // not a JSON-object model — the string extractors above already
+            // did their best; nothing to add for children
+        }
+    }
+
+    /** Copy ONE concrete modded sprite (the PNG behind a texture ref) into
+     *  the pack — the per-ref body shared by the top-level texture walk and
+     *  the neoforge:composite children walk. Local ({@code #key}) and
+     *  vanilla refs carry nothing to copy; sprites outside the auto-atlased
+     *  {@code item|block} directories stay skipped (v1 constraint). */
+    private static void copyTextureRef(ZipFile zf, String ref, String modelPath,
+                                       TreeMap<String, byte[]> entries,
+                                       List<String> warnings) throws IOException {
+        if (ref.startsWith("#") || ref.startsWith("minecraft:")) {
+            return; // local key or vanilla texture — nothing to copy
+        }
+        int c = ref.indexOf(':');
+        if (c <= 0) {
+            return;
+        }
+        String texNs = ref.substring(0, c);
+        String texPath = ref.substring(c + 1);
+        String texFile = "assets/" + texNs + "/textures/" + texPath + ".png";
+        if (entries.containsKey(texFile)) {
+            return;
+        }
+        ZipEntry te = zf.getEntry(texFile);
+        if (te == null) {
+            warnings.add("texture missing in jar: " + ref
+                    + " (referenced by " + modelPath + ")");
+            return;
+        }
+        if (!texPath.startsWith("item/") && !texPath.startsWith("block/")) {
+            // outside the auto-atlased directories — a merged atlas
+            // override would be needed (v1 constraint). Skip the copy:
+            // without an atlas entry the client cannot resolve the
+            // texture either way, and dead bytes would mask the warning.
+            warnings.add("texture outside item|block dirs not atlased: " + ref);
+            return;
+        }
+        entries.put(texFile, zf.getInputStream(te).readAllBytes());
     }
 
     // ---- emitters ---------------------------------------------------------------
@@ -1384,6 +1428,27 @@ public final class F2vPack {
             + "\"up\": {\"uv\": [0,0,16,16], \"texture\": \"#tex\"}}}]}";
     private static final String BS_ZMOTOR =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/zmotor\"}}}";
+    /** The 14-o fixture: the {@code neoforge:composite} loader shape (create
+     *  6.0 ships nixie_tube / display_link / stock_link this way) — geometry
+     *  hides in "children" sub-models, the naive elements-only walk resolved
+     *  the chain element-less and DROPPED the row (37 nixie gallery states
+     *  never placed). The flatten must merge BOTH children, namespace their
+     *  texture keys per child (both reference #0), and pull the child sprite
+     *  PNGs into the pack. */
+    private static final String MODEL_COMPOSITE =
+            "{\"loader\": \"neoforge:composite\", \"parent\": \"block/block\", "
+            + "\"textures\": {\"particle\": \"fakemod:block/comp_tex\"}, "
+            + "\"children\": {"
+            + "\"feet\": {\"render_type\": \"minecraft:solid\", "
+            + "\"textures\": {\"0\": \"fakemod:block/feet_tex\"}, "
+            + "\"elements\": [{\"from\": [5,0,9], \"to\": [11,3,15], "
+            + "\"faces\": {\"north\": {\"uv\": [0,10,6,13], \"texture\": \"#0\"}}}]}, "
+            + "\"tube\": {\"render_type\": \"minecraft:translucent\", "
+            + "\"textures\": {\"0\": \"fakemod:block/comp_tex\"}, "
+            + "\"elements\": [{\"from\": [5,3,9], \"to\": [11,12,15], "
+            + "\"faces\": {\"north\": {\"uv\": [0,1,6,10], \"texture\": \"#0\"}}}]}}}";
+    private static final String BS_COMPOSITE =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/comp\"}}}";
     private static final String BS_ROCK =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/rock\"}, "
             + "\"facing=north\": {\"model\": \"fakemod:block/rock_arrow\", \"y\": 90}}}";
@@ -1400,7 +1465,8 @@ public final class F2vPack {
             + "fakemod:pane[north=false]\n"
             + "fakemod:rock\n"
             + "fakemod:rock[facing=north]\n"
-            + "fakemod:zmotor\n";
+            + "fakemod:zmotor\n"
+            + "fakemod:zcomp\n";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -1440,6 +1506,10 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/zmotor.json", BS_ZMOTOR.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/zmotor.json", MODEL_ZMOTOR.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/zcomp.json", BS_COMPOSITE.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/comp.json", MODEL_COMPOSITE.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/comp_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/block/feet_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/post_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/side_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
@@ -1542,9 +1612,9 @@ public final class F2vPack {
             // composite — including the vanilla-parent shape (own textures,
             // elements from the client jar's block/cube_all), which the old
             // direct path rendered as NOTHING (measured run 41126658261)
-            expect(failures, r1.gallery().size() == 5,
-                    "gallery: 5 state rows resolved, got " + r1.gallery().size());
-            if (r1.gallery().size() == 5) {
+            expect(failures, r1.gallery().size() == 6,
+                    "gallery: 6 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 6) {
                 List<GalleryPack.Resolved> g = r1.gallery();
                 // pane[north=false] = composite of the unconditional parts
                 // (post + the y90 side) — multipart rows are ALWAYS composites
@@ -1569,10 +1639,18 @@ public final class F2vPack {
                                 && g.get(3).modelRef().equals("c-imagine:gallery/g3")
                                 && g.get(3).yRot() == 0 && g.get(3).xRot() == 0,
                         "gallery: rock[facing=north] = composite, y90 baked into elements");
+                // zcomp = the neoforge:composite fixture: the children
+                // geometry must flatten into the composite instead of the row
+                // dropping (the 14-o nixie kill); located by state, not slot
+                GalleryPack.Resolved zrow = g.stream()
+                        .filter(r -> r.stateId().equals("fakemod:zcomp"))
+                        .findFirst().orElse(null);
+                expect(failures, zrow != null && zrow.composite(),
+                        "gallery: zcomp = composite flattened from the neoforge:composite children");
             }
             expect(failures, r1.gallery().stream()
-                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 5,
-                    "gallery: cmds unique (100000..100004)");
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 6,
+                    "gallery: cmds unique (100000..100005)");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
@@ -1589,6 +1667,28 @@ public final class F2vPack {
             expect(failures, r1.warnings().stream()
                             .anyMatch(w -> w.contains("zmotor") && w.contains("uv clamped")),
                     "uv sanitizer warning recorded for the clamped model");
+            // 14-O COMPOSITE FLATTEN: the emitted composite merges the
+            // neoforge:composite children — per-child texture keys, per-child
+            // face refs, both children's boxes, and the child sprite PNG in
+            // the pack (the file located through the resolved row's modelRef)
+            String compFile = r1.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:zcomp"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !compFile.isEmpty(), "composite: emit slot resolvable");
+            String zcompjson = compFile.isEmpty() ? "" : str(entries, compFile);
+            String zcompflat = zcompjson.replace(" ", "");
+            expect(failures, zcompflat.contains("\"p0_feet_0\"") && zcompflat.contains("\"p0_tube_0\""),
+                    "composite: child textures merged under the part prefix: " + zcompjson);
+            expect(failures, zcompflat.contains("\"texture\":\"#p0_feet_0\"")
+                            && zcompflat.contains("\"texture\":\"#p0_tube_0\""),
+                    "composite: child face refs renamed per child");
+            expect(failures, zcompflat.contains("\"from\":[5,0,9]") && zcompflat.contains("\"from\":[5,3,9]"),
+                    "composite: both children's elements present");
+            expect(failures, entries.containsKey("assets/fakemod/textures/block/feet_tex.png"),
+                    "composite: the child sprite PNG rides the pack");
             String mcmeta = str(entries, "pack.mcmeta");
             expect(failures, mcmeta.contains("\"min_format\": [" + PACK_FORMAT_MAJOR
                     + ", " + PACK_FORMAT_MINOR + "]"), "pack.mcmeta min_format pair");

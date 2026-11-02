@@ -494,7 +494,13 @@ public final class GalleryPack {
             if (json == null) {
                 return false;
             }
-            if (json.has("elements")) {
+            // NEOFORGE:COMPOSITE (14-o): the loader shape carries the geometry
+            // in "children" sub-models, not in a top-level "elements" array —
+            // create 6.0 ships nixie_tube / display_link / stock_link this
+            // way, and the naive elements-only predicate resolved those chains
+            // as element-less (37 nixie gallery states never placed). A
+            // children level counts as geometry; resolveModelGraph flattens it.
+            if (json.has("elements") || json.has("children")) {
                 return true;
             }
             cur = json.has("parent") ? json.get("parent").getAsString() : null;
@@ -772,8 +778,8 @@ public final class GalleryPack {
                     textures.putIfAbsent(t.getKey(), t.getValue().getAsString());
                 }
             }
-            if (elements == null && json.has("elements")) {
-                elements = json.getAsJsonArray("elements").deepCopy();
+            if (elements == null && (json.has("elements") || json.has("children"))) {
+                elements = mergeModelGeometry(json, textures, warnings);
             }
             cur = json.has("parent") ? json.get("parent").getAsString() : null;
         }
@@ -795,6 +801,60 @@ public final class GalleryPack {
             resolved.put(t.getKey(), v);
         }
         return new ModelGraph(resolved, elements);
+    }
+
+    /**
+     * Collect one model level's geometry: the own {@code elements} array (if
+     * any) PLUS every {@code children} sub-model flattened — the
+     * {@code neoforge:composite} loader shape (create 6.0 ships
+     * nixie_tube / display_link / stock_link this way). The naive
+     * elements-only walk resolved those chains as element-less and DROPPED
+     * the rows (measured 14-o: 37 nixie gallery states never placed, the
+     * whole white nixie wall empty on the truth side).
+     *
+     * <p>Child texture keys are namespaced with the child's key
+     * (child {@code "connectors"} referencing {@code #0} ->
+     * {@code #connectors_0}) so sibling children cannot collide, and each
+     * child's own texture map rides along under the same prefix — the
+     * {@code #ref} resolution below then sees concrete sprite ids exactly
+     * like a plain model's. Child {@code render_type} hints (translucent
+     * tubes) are dropped: the emitted composite renders on the solid layer,
+     * an alpha-carrying sprite shows opaque.
+     *
+     * @return the merged element array, or null when the level carries no
+     *         geometry at all (the parent walk continues)
+     */
+    private static JsonArray mergeModelGeometry(JsonObject json, Map<String, String> textures,
+                                                List<String> warnings) {
+        JsonArray out = new JsonArray();
+        if (json.has("elements")) {
+            for (JsonElement el : json.getAsJsonArray("elements")) {
+                out.add(el.deepCopy());
+            }
+        }
+        if (json.has("children")) {
+            for (Map.Entry<String, JsonElement> c : json.getAsJsonObject("children").entrySet()) {
+                if (!c.getValue().isJsonObject()) {
+                    continue;
+                }
+                JsonObject child = c.getValue().getAsJsonObject();
+                if (!child.has("elements") || !child.getAsJsonArray("elements")
+                        .isJsonArray() || child.getAsJsonArray("elements").size() == 0) {
+                    continue;
+                }
+                String prefix = c.getKey() + "_";
+                if (child.has("textures") && child.getAsJsonObject("textures").isJsonObject()) {
+                    for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
+                            .entrySet()) {
+                        textures.putIfAbsent(prefix + t.getKey(), t.getValue().getAsString());
+                    }
+                }
+                for (JsonElement el : child.getAsJsonArray("elements")) {
+                    out.add(renameTextureRefs(el.getAsJsonObject(), prefix));
+                }
+            }
+        }
+        return out.size() == 0 ? null : out;
     }
 
     // ---- rotation bake ------------------------------------------------------------

@@ -3965,3 +3965,54 @@ Stage Summary:
   bug — NOT-FOUND was the camera. What remains is measured: ~6.5k
   grain reds on the static gate, ~2k dynamic/BER rows, and a
   mis-framed sail isolate shot that needs a vantage, not a fix.
+
+---
+Task ID: 14-o-code
+Agent: main
+Task: the pack-side fix for the dropped element-less chains — root cause
+found at the source: NOT pure-BER, but the neoforge:composite loader
+
+Work Log:
+- ROOT CAUSE CORRECTED: nixie_tube is NOT a pure-BER family. create
+  6.0's nixie_tube/block.json is a {"loader": "neoforge:composite"}
+  model — the casing+tube geometry lives in "children" sub-models
+  ("connectors" 2 boxes solid + "tubes" 2 boxes translucent), and the
+  elements-only walk resolved the chain as element-less -> composite
+  failed -> row dropped (the 14-n-measured "pure BER" reading was the
+  drop message's framing, not the asset truth).
+- SCOPE: 7 composite models ship in the create jar (nixie_tube,
+  display_link x2, stock_link x4); valve_handle is a different class
+  (neoforge:obj, and NO blockstate json at all — its 24 rows stay
+  dropped, honest skip, 14-p material).
+- THE FIX (GalleryPack): resolveModelGraph now flattens "children" —
+  own elements (if any) PLUS every child's elements, child texture keys
+  namespaced per child (connectors:#0 -> #connectors_0) with the child
+  texture map riding along; the #ref resolution then treats it exactly
+  like a plain model. chainHasElements counts a children level as
+  geometry (the item channel routes composite chains the same way).
+  Child render_type hints are dropped — the composite renders solid.
+- TEXTURES (F2vPack): copyParentGraph walks composite children too —
+  child sprites copy into the pack (display_link's link_base/link_details
+  would have been missing otherwise); the per-ref body factored into
+  copyTextureRef shared by both walks.
+- SELFTEST: the neoforge:composite fixture (two children, both
+  referencing #0, distinct child sprites) rides GALLERY_TSV; asserts
+  cover the resolved row, the merged composite json (per-child keys,
+  per-child face refs, both boxes) and the child PNG in the pack.
+  ALL OK.
+- MEASURED OVER THE REAL CREATE JAR (the 3162-state gallery manifest):
+  resolved 3101 -> 3137 (+36; all 37 nixie states present — one was
+  already resolving via a sibling path); the emitted nixie composite
+  carries 4 elements (connector1/2 + tube1/2), refs #p0_connectors_0 /
+  #p0_tubes_0, textures merged, boxes baked to the variant rotation
+  (CEILING x180/y270 verified by hand); nixie_tube.png rides the pack.
+  No row regressed (the old resolved set is a strict subset).
+- NEXT: CI gallery run on this sha = the pixel verdict for the nixie
+  wall (p208's 40 nixie cells: skip -> placed). The translucent tube
+  layer renders opaque — an honest limitation until a render_type pass.
+  valve_handle (obj, no blockstate) stays skipped.
+
+Stage Summary:
+- The "pure-BER gap" story is dead: the gap was a LOADER gap. The
+  composite children flatten recovers every composite-encoded family
+  with REAL geometry — no placeholder boxes needed for nixie.
