@@ -4116,3 +4116,31 @@ Stage Summary:
 - The loader-flatten class is landed and measured: +39 GREEN, +16 placed
   nixie cells, the residual moved to translucency + glyphs (dynamic
   scope). The stairs flip triangulation rides #68.
+
+---
+Task ID: 14-s
+Agent: main
+Task: the wall class probed — no flip, no version skew; a brightness and
+post-height divergence measured; the wall isolate rides the next run
+
+Work Log:
+- THE WALL CLASS ALIGNS: the cut_scoria_wall[east=low,...,up=true] pair
+  (p161 c9r1) best-shifts at (0,0) and mirrorX makes it WORSE — walls
+  are NOT the stairs flip; their ae is content.
+- NO VERSION SKEW: template_wall_post is byte-identical across the
+  1.21.1 and 26.3 client jars (post [4,0,4]->[12,16,12]).
+- MEASURED DIVERGENCES on the pair: ours renders 1.5x brighter on the
+  common dark pixels (42 vs 63 — the display pipeline lacks the world's
+  face shading/AO?), the ours dark mass spans the full 56px crop height
+  while the truth's sits in rows 32-55 (the tall up=true post visible
+  in OURS' frame context, absent from the truth crop), and ours carries
+  932 pure-white pixels where the truth has none.
+- P9006 WALL ISOLATE SHIPPED (cut_scoria_wall east=low up=true, front
+  view) — the next gallery run answers what our wall renders alone
+  against the p161 truth pair; the brightness question (display vs
+  world face shading) is the 14-t candidate.
+
+Stage Summary:
+- Three distinct wall/texture mechanisms now measured: brightness
+  (1.5x), post-height visibility, and pure texture phase — the isolate
+  separates them before any fix code.

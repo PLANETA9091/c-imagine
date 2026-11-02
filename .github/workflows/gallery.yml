@@ -1217,6 +1217,9 @@ jobs:
             SC4=scenes/gallery-create-p9004.tsv
             printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC4"
             printf 'cell\t-5\t-60\t9\tcreate:small_scoria_brick_stairs[facing=east,half=bottom,shape=outer_left,waterlogged=false]\n' >> "srv-wall/c-imagine/$SC4"
+            SC6=scenes/gallery-create-p9006.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC6"
+            printf 'cell\t-5\t-60\t9\tcreate:cut_scoria_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]\n' >> "srv-wall/c-imagine/$SC6"
             SC5=scenes/gallery-create-p9005.tsv
             printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC5"
             printf 'cell\t-5\t-60\t9\tcreate:small_scoria_brick_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=false]\n' >> "srv-wall/c-imagine/$SC5"
@@ -1231,7 +1234,8 @@ jobs:
               "9002:sailsouth:0.5:-60:0.5:16:-34" \
               "9003:stairseast:0.5:-60:0.5:0:0" \
               "9004:stairseastback:-4.5:-60:17.5:180:0" \
-              "9005:stairsnorth:0.5:-60:0.5:0:0"; do
+              "9005:stairsnorth:0.5:-60:0.5:0:0" \
+              "9006:wallpost:0.5:-60:0.5:0:0"; do
               P=$(printf '%s' "$ENTRY" | cut -d: -f1)
               NAME=$(printf '%s' "$ENTRY" | cut -d: -f2)
               CX=$(printf '%s' "$ENTRY" | cut -d: -f3)
