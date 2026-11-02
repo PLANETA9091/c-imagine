@@ -3541,3 +3541,56 @@ Stage Summary:
 - The tool is calibrated, fast, and the floor is honest: 925 red cells
   all attributed to the texture layer. The next carrier gets designed
   against measured facts, not guesses.
+
+---
+Task ID: 14-g
+Agent: main
+Task: #57 forensic pass — the "empty displays" class is actually a PER-CELL OFFSET class; the composite builder verified correct; the decisive isolated-suspects probe moves to the CI rig
+
+Work Log:
+- MEASURED #57 (the honest red gate working as designed — the ours jobs'
+  failure = the gate exit code, not infrastructure): the red floor
+  reproduces. The report-0 join set: 3927 judged rows, red 927 (wall 533,
+  stair 248, other 72, pane 45, slab 22, door 7) — #55's table within
+  run noise. The pack the ours legs served is byte-identical to the seed
+  payload (sha1 a483f644...).
+- THE 8-CELL CLASS EXPLODED: sails (6), redstone_contact (9),
+  piston_extension_pole (2), layered_scoria/tuff/veridium (3),
+  light_blue_seat, cut_scorchia top stairs (many) are NOT empty — a
+  cross-correlation of the truth cell against the ours page finds the
+  SAME content displaced by (+-6, +-6..20) px with near-perfect match
+  quality (luma diff 1.7-33 on cells the join reads as 98k-588k ae:
+  p144 c0r4 south-bottom-straight matches at shift (+6,+14) with diff
+  10.7; c10r4 west-top-straight at (-6,+14) diff 7.2; c2r6 at (6,-6)
+  diff 1.7). The +-3px per-cell alignment cannot eat a 14px shift — the
+  offset class IS the red.
+- THE COMPOSITE BUILDER IS CLEAN: the pack's gallery models for every
+  suspect state have correct elements (the south/top stair bake compared
+  element-by-element against the vanilla blockstate rotation rule —
+  exact), all referenced PNGs ship in the pack, the paper.json
+  range_dispatch selects the exact model for every CMD float, and the
+  client log carries NO bake error beyond the benign "Missing texture
+  references: particle" warning shared by all 21942 models.
+- The truth leg has its own holes (p144 c2r6 tPx=0 — the real client
+  rendered nothing where the ours leg renders) — separate class, noted.
+- LOCAL ISOLATED PROBE BLOCKED: the sandbox killed the client twice
+  (global OOM: client 1.74G + server 1.4G > 4G; retuned 700M/600M), the
+  sandbox recycles background processes between tool calls (the stack
+  must live inside ONE invocation — scripted), and the local rig renders
+  item_displays at a mirrored/offset position (a real horse renders at
+  its true bearing while a display summoned at x=-4.5 lands at sx~1160
+  instead of 337; the x=0.5 display lands near-center) — a rig artifact
+  the CI client (same binary, fov:-0.65 pin, proven projection: GREEN
+  cells exist) does not have. Parked; scripts/probe-cell3.sh keeps the
+  one-invocation recipe.
+- ACTION: the workflow's isolated-display probe (12-ac pane/casing
+  continuity shot) now also renders the 8 suspect composites ISOLATED on
+  the CI rig (sparse pitch-2 grid, the walk's own transformation: scale
+  1.0126, ty -0.0184, identity rotations — resolved.tsv xRot/yRot are 0,
+  the variant rotation rides baked in the geometry).
+
+Stage Summary:
+- The red table decomposes: geometry DONE, mapping DONE, pack bytes DONE —
+  the per-cell offset class is the next wall. The isolated-suspects shot
+  on the next run decides: composite-borne offset (fix the builder) vs
+  page-context offset (fix the walk/rig).

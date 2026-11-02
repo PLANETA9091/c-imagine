@@ -1134,6 +1134,42 @@ jobs:
             sleep 2
             java -cp vtools Shot "ours-shots/ours-isolated-pane-casing.png"
             echo "shot isolated pane+casing"
+            # 14-g SUSPECT ISOLATES (diagnostic, not gated): the #57 in-page
+            # join found the suspect families (south/top scorchia stairs,
+            # sail, seat, layered_scoria, redstone_contact) rendered at a
+            # PER-CELL OFFSET — the +-3px join eats a (6,14)-class shift as a
+            # 150-590k ae. Isolated displays on the CORRECT-projection rig
+            # (the walk's own transformation: scale 1.0126, ty -0.0184, identity
+            # rotations — the resolved.tsv xRot/yRot are 0, the variant rotation
+            # rides baked in the composite geometry) answer whether the offset
+            # lives in the composite or in the page context. Sparse pitch-2
+            # grid, two rows, each display alone against sky.
+            CMD_WALL=$(grep -m1 "create:cut_ochrum_wall\[" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_ST_NB=$(grep -m1 "create:cut_scorchia_brick_stairs\[facing=north,half=bottom,shape=straight,waterlogged=false\]" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_ST_SB=$(grep -m1 "create:cut_scorchia_brick_stairs\[facing=south,half=bottom,shape=straight,waterlogged=false\]" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_ST_ST=$(grep -m1 "create:cut_scorchia_brick_stairs\[facing=south,half=top,shape=straight,waterlogged=false\]" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_SAIL=$(grep -m1 "create:light_blue_sail\[facing=north\]" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_SEAT=$(grep -m1 "create:light_blue_seat\[" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_LAYERED=$(grep -m1 "create:layered_scoria" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            CMD_CONTACT=$(grep -m1 "create:redstone_contact\[facing=down,powered=false\]" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
+            test -n "$CMD_WALL" && test -n "$CMD_ST_NB" && test -n "$CMD_ST_SB" && test -n "$CMD_ST_ST" \
+              && test -n "$CMD_SAIL" && test -n "$CMD_SEAT" && test -n "$CMD_LAYERED" && test -n "$CMD_CONTACT" \
+              || { echo "suspect CMDs missing from the resolved manifest"; exit 1; }
+            echo "suspects: wall=$CMD_WALL nb=$CMD_ST_NB sb=$CMD_ST_SB st=$CMD_ST_ST sail=$CMD_SAIL seat=$CMD_SEAT layered=$CMD_LAYERED contact=$CMD_CONTACT"
+            TR='transformation:{translation:[0f,-0.0184f,0f],left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[1.0126f,1.0126f,1.0126f]}'
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "kill @e[type=!player]" "cim galleryclear" \
+              "summon minecraft:item_display -4.5 -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_WALL}f]}}}}" \
+              "summon minecraft:item_display -2.5 -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_ST_NB}f]}}}}" \
+              "summon minecraft:item_display -0.5 -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_ST_SB}f]}}}}" \
+              "summon minecraft:item_display 1.5 -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_ST_ST}f]}}}}" \
+              "summon minecraft:item_display 3.5 -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_SAIL}f]}}}}" \
+              "summon minecraft:item_display 5.5 -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_SEAT}f]}}}}" \
+              "summon minecraft:item_display -4.5 -57.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_LAYERED}f]}}}}" \
+              "summon minecraft:item_display -2.5 -57.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},$TR,item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_CONTACT}f]}}}}"
+            sleep 2
+            java -cp vtools Shot "ours-shots/ours-isolated-suspects.png"
+            echo "shot isolated suspects"
           fi
           ls ours-shots/ | head -5 || true
 
