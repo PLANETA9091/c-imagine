@@ -80,7 +80,13 @@ def load(p):
 def crop_cell(im, col, row):
     x0 = GALLERY_X0 + col * PITCH
     y0 = GALLERY_Y0 + row * PITCH
-    sx = W / 2.0 + F * (x0 + 0.5 - CAM_X) / DIST
+    # 14-t SIGN FIX: the camera pins yaw 0 = FACING SOUTH — east is on the
+    # screen's LEFT, so a world offset toward +x projects NEGATIVE screen
+    # dx. The old +F*... mirrored the whole crop grid onto the real
+    # mirrored cells: every asymmetric page compared states against the
+    # wrong positions' pixels (the symmetric pages hid it — measured 14-s:
+    # the wall/stairs "flips" were the mislabelled grid, not the render).
+    sx = W / 2.0 - F * (x0 + 0.5 - CAM_X) / DIST
     sy = H / 2.0 - F * (y0 + 0.5 - EYE_Y) / DIST
     half = CELL_PX * 0.92 * PITCH / 2.0
     box = (int(sx - half), int(sy - half), int(sx + half), int(sy + half))
@@ -88,16 +94,25 @@ def crop_cell(im, col, row):
 
 
 def normalize_luma(a, b):
-    """Scale b's brightness so its mean matches a's (per-cell luminance
-    normalisation — the display channel samples entity light while the truth
-    side renders real blocks whose light-emitting states (Create powered
-    gearshifts...) brighten their own cell; the camera-lock identity metric
-    normalises this version-level/luminaire factor instead of chasing it)."""
-    am = a.mean()
-    bm = b.mean()
+    """Scale b's brightness so its MEDIAN (of the sub-200 luma pixels —
+    content, not sky) matches a's, CLAMPED to [0.6, 1.6] (per-cell
+    luminance normalisation — the display channel samples entity light while
+    the truth side renders real blocks whose light-emitting states (Create
+    powered gearshifts...) brighten their own cell; the camera-lock identity
+    metric normalises this version-level/luminaire factor instead of
+    chasing it).
+
+    14-t: the v1 mean-matching exploded on crops where a dark neighbour
+    dominated the box (bm tiny -> scale huge -> the sky clipped to WHITE,
+    1213 white px measured in one crop vs 0 in the frame) and the exploded
+    crop rode straight into the verdict AE, inflating REDs on cells whose
+    own display was fine."""
+    am = float(np.median(a[a < 200])) if (a < 200).any() else float(a.mean())
+    bm = float(np.median(b[b < 200])) if (b < 200).any() else float(b.mean())
     if bm < 1.0:
         return b
-    out = b * (am / bm)
+    scale = max(0.6, min(1.6, am / bm))
+    out = b * scale
     return np.clip(out, 0, 255)
 
 

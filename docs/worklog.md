@@ -4144,3 +4144,55 @@ Stage Summary:
 - Three distinct wall/texture mechanisms now measured: brightness
   (1.5x), post-height visibility, and pure texture phase — the isolate
   separates them before any fix code.
+
+---
+Task ID: 14-t
+Agent: main
+Task: the measurement integrity pass — the join's projection sign was
+inverted and the luma normalisation exploded on neighbour-dominated crops
+
+Work Log:
+- THE JOIN GRID WAS MIRRORED: gallery-diff.py projected world x with
+  sx = W/2 + F*(x-CAM_X)/DIST, but the pinned camera (yaw 0) FACES
+  SOUTH — east is on the screen's LEFT, so the sign is MINUS. The old
+  grid cut every asymmetric page's crops at the real mirrored cells:
+  states rode labels pointing at other positions' pixels (the
+  symmetric pages hid it; the truth crop still matched its frame
+  exactly because both legs' crops cut the same wrong box — same-cell
+  pixel pairs with swapped labels). FIXED to sx = W/2 - F*(...)/DIST.
+- NORMALIZE_CLAMP: normalize_luma matched MEANS — on crops where a
+  dark neighbour dominated, bm collapsed and the scale exploded the
+  sky to WHITE (measured: 1213 white px in one c10 crop vs 0 in the
+  frame), and the exploded crop rode into the verdict AE. Now: MEDIAN
+  of the sub-200 luma (content, not sky) + the scale clamped to
+  [0.6, 1.6].
+- LOCAL RE-MEASURE of p367 (the #66 frames + the truth manifests,
+  both legs re-fetched from the artifacts): RED 25 -> 23; the
+  empty-GREEN class visible directly (four cells at 1.00 sky on BOTH
+  legs — the gate hole from 14-r, now attributable precisely).
+- THE FLIP CLASS RE-ATTRIBUTED: with correct labels the big-ae cells
+  are the x-rotated variants (half=top carries x:180 in the create
+  blockstate); the emitted composite for half=top/outer_left/east is
+  vanilla-correct (verified element-by-element against the hand-baked
+  outer_stairs parent), and the #68 isolate of the bottom variant
+  rendered UNMIRRORED through the same spawn path while the page cell
+  renders empty/mirrored. THE OPEN 14-u THREAD: what differs for the
+  x-rotated composites between the 1-display isolate and the
+  39-display page walk (the rotation-order lead is dead: x:180 is
+  single-axis and bakes correctly; the sync-race lead is dead: the
+  REDs spread across all manifest orders).
+- SESSION HYGIENE: the sandbox root filled (100%) mid-analysis — the
+  stale /home/z/my-project/{artifacts,workspace,ci-artifacts} copies
+  (8+G) removed; the live stand stays /tmp/my-project/artifacts; the
+  working data moved to /home/z/my-project/work (persists across
+  calls; /tmp was wiped twice this session). A sandbox snapshot
+  rollback also reverted this repo to yesterday's base mid-session —
+  the local 14-t commit was rebuilt cleanly on origin/main (4190ebb)
+  without yesterday's junk files.
+
+Stage Summary:
+- The verdict pipeline had TWO integrity bugs (the mirrored grid
+  labels, the unclamped luma normalisation) — both fixed in
+  gallery-diff.py. The next gallery run re-measures the whole table on
+  honest geometry; the 14-u isolate/page divergence is the last open
+  thread before the flip class can be fixed for real.
