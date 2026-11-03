@@ -4363,3 +4363,79 @@ Stage Summary:
   probe #2) on THIS baseline — the yaw pollution that inflated the wall
   class is gone, so the remaining 1106 wall REDs are the honest texture-gap
   target; then the pane/other classes if the wall probe lands.
+
+---
+## Task 14-x — the grain probe exploded the MEASUREMENT instead: the join's
+luma normaliser was manufacturing sky-vs-sky reds at scale (top-RED table
+was ~95% artifact); the v3 join (content-only scale + min(raw,norm))
+re-joins #71 to green-share 98.8% (RED 3219 -> 172)
+
+Agent: main
+Task: the 14-o grain probe on the #71 baseline — take the top wall REDs
+apart (which sprite region each leg samples, shading, clip) and fix the
+texture gap
+
+Work Log:
+- TOP-RED PROBE SET (7 decisive cells from #71: zinc_block, granite_pillar,
+  brick wall, scorchia stairs, jungle pane, redstone_contact x2) — the
+  frames re-joined locally and decomposed per pixel class. THREE surprise
+  findings before any texture work:
+  (a) the "zinc_block 496k" cell is NOT a cube test: the crop catches the
+  WHEEL OVERSPILL of a neighbouring large_cogwheel (ours shows sky where
+  the truth shows the arc) — the 14-q oversized-model class, attributed to
+  the wrong row by per-cell bookkeeping on a dense wall;
+  (b) the WALL/STAIRS/PANE cells are STRUCTURALLY MATCHED: content NCC
+  0.83-0.94, wide-window mean |dluma| 1.6-3.2 (2-cell-wide crops align at
+  +-1 px) — there is no uncorrelated grain left on the honest baseline;
+  (c) their 300-500k ae is manufactured by the JOIN ITSELF.
+- ROOT CAUSE (measured on p42 c9r2, cut_andesite_brick_wall tall x3
+  up=true): normalize_luma took the median of the ELEMENTWISE sub-200
+  population — all RGB channel values < 200 — and the near-horizon sky IS
+  elementwise sub-200 (crop sky mass ~177-192 per channel). The population
+  is bimodal (dark content cluster + sky cluster) and the median jumps
+  between clusters on the two legs: truth 104 vs ours 177 on the SAME
+  pixels (their dark contents match to ae 43k raw!). scale clamps to 0.60,
+  ours' sky rescales to ~106-115 against truth's 177-192 -> ~510k of
+  sky-vs-sky ae on a cell whose content matched to mean |dluma| ~3. The
+  raw cell ae is 43k (GREEN); the join published 504967 (RED).
+- THE V3 FIX (gallery-diff.py): the scale now comes from the JOINT-CONTENT
+  luma medians (pixels sub-200 on BOTH legs — matched content, sky
+  excluded, one value per pixel instead of elementwise), skip when <50
+  joint px, clamp [0.6,1.6] kept; AND the normalisation became a HYPOTHESIS
+  that may only help: per cell the join computes ae_raw and ae_normalised
+  and keeps the minimum (rows now carry luma_norm/luma_scale telemetry).
+  The entity-light story (run-9) survives wherever rescaling actually
+  helps; no rescale can manufacture red anymore.
+- FULL LOCAL RE-JOIN of #71 with the v3 join (all 16 shots shards + 8 meta
+  shards downloaded; 413 gate pages re-joined: 328 clean + 82 join-red
+  JSONs + 1 terminal page without shots):
+  RED 172 / GREEN 14604 -> green-share 98.8% (CI-as-published: 3219 /
+  14092 = 81.4%). The families: wall 9/9111 judged, stairs 37/2880, pane
+  11/294, pillar 10/672, slab 1/216, other 104. The 14-o "grain wall
+  class" does not exist on the honest join — the wall battle is OVER
+  (99.9% green).
+- FLIP PURITY: 1657 RED->GREEN vs 7 GREEN->RED across 14776 commonly
+  judged cells. Five of the seven are knife-edge cells moved +-10% around
+  the 60k gate; two are entity cells (e1 chicken/cow) where the CI GREEN
+  was itself the artifact — the truth crop holds a chicken + terrain and
+  the ours crop holds FLAT GRASS (raw ae 2.19M); no normaliser should
+  call that green. NOTE: the CI e-page mob numbers are not reproducible
+  from the artifact frames under either normaliser (the 12-al scramble +
+  v2 rescale) — the e-page table needs its own integrity pass (14-y
+  candidate), the p-page numbers reproduce to the digit.
+- THE HONEST RESIDUAL (172 REDs, /home/z/my-project/work/g71rejoin/):
+  a real long tail of mechanics, not textures — doors (brass/train/
+  framed_glass/andesite, open=true geometry), copycat_panel x3 (inherently
+  neighbour-dynamic), peculiar_bell, large_bogey, valve_handle[facing=down],
+  gantry_shaft[part=START], nixie (translucency+glyphs, known), placard,
+  stockpile_switch, plus the entity-scramble cells (cow/parrot/chicken/
+  phantom). NEXT: CI #72 re-measures the table with the v3 join in CI;
+  then the DOOR class (open-state geometry) is the biggest honest pack
+  battle left in "other".
+
+Stage Summary:
+- The campaign's biggest instrument failure yet, caught by the probe
+  discipline: the join was the red table's main author. With the v3 join
+  the gate is honest and the static front is ~99% green — the remaining
+  172 reds are named mechanics. The instrument stays honest: every number
+  above is measured from the #71 artifacts, not guessed.

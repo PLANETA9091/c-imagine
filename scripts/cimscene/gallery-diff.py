@@ -28,17 +28,23 @@ of reporting per-cell noise. A cell at (x, y) projects to
 with cam_x=0.5, eye_y = -60 + 1.62 = -58.38. The crop is CELL*0.92 wide
 (CELL = f/dist px) so it never bleeds into the neighbour cell.
 
-Per-cell metric (v2, calibrated on the run-9 identity sample):
-  1. ALIGN: best integer shift within +-10 px (the display-channel entity
-     placement carries ~1 px float rounding; the wall measurement showed
-     31/39 cells at (0,-1) after calibration).
-  2. LUMA: ours' brightness rescaled to truth's mean (the display channel
-     samples entity light; the truth side renders real blocks whose
-     light-emitting states brighten their own cell).
-  3. AE over the aligned, normalised crops.
-The three steps strip the channel's rendering-physics deltas (entity light
-vs block light+AO, float placement) and keep the STRUCTURAL deltas (missing
-textures, wrong models, wrong rotations) — the gate then separates them.
+Per-cell metric (v3, 14-x): ALIGN + OPTIONAL LUMA + AE, where the luma
+normalisation is a HYPOTHESIS that may only help:
+  1. ALIGN: best integer shift within +-3 px (the display-channel entity
+     placement carries ~1 px float rounding).
+  2. LUMA (optional): ours rescaled so the JOINT-content luma medians match
+     (pixels sub-200 on BOTH legs — matched content, sky excluded). The
+     per-cell ae is then min(ae_raw, ae_normalised): a rescale that makes
+     the cell worse is discarded.
+  3. AE over the aligned crops.
+14-x MEASURED ROOT CAUSE of the v2 forced normalisation: the elementwise
+sub-200 median population included the near-horizon SKY (sky RGB channels
+are <200 elementwise!), so on sky-dominated crops the median jumped between
+the sky cluster and the content cluster of the two legs (104 vs 177 measured
+on one #71 wall cell) -> a ~0.6 forced rescale -> ~510k of SKY-vs-SKY ae
+manufactured on cells whose raw content matched to mean |dluma| ~3. The
+min() rule keeps the entity-light story where it helps and never
+manufactures red.
 
 Report rows: page, cell (col,row), state, ae, shift, verdict. A page is
 GREEN only when every cell row is GREEN; the exit code carries the verdict
@@ -94,26 +100,30 @@ def crop_cell(im, col, row):
 
 
 def normalize_luma(a, b):
-    """Scale b's brightness so its MEDIAN (of the sub-200 luma pixels —
-    content, not sky) matches a's, CLAMPED to [0.6, 1.6] (per-cell
-    luminance normalisation — the display channel samples entity light while
-    the truth side renders real blocks whose light-emitting states (Create
-    powered gearshifts...) brighten their own cell; the camera-lock identity
-    metric normalises this version-level/luminaire factor instead of
-    chasing it).
+    """Scale b's brightness so the JOINT-CONTENT luma medians match, CLAMPED
+    to [0.6, 1.6]. The population is the JOINT content mask — pixels whose
+    luma is sub-200 on BOTH legs — never the sky, and one value per pixel
+    (luma), not elementwise RGB values.
 
     14-t: the v1 mean-matching exploded on crops where a dark neighbour
-    dominated the box (bm tiny -> scale huge -> the sky clipped to WHITE,
-    1213 white px measured in one crop vs 0 in the frame) and the exploded
-    crop rode straight into the verdict AE, inflating REDs on cells whose
-    own display was fine."""
-    am = float(np.median(a[a < 200])) if (a < 200).any() else float(a.mean())
-    bm = float(np.median(b[b < 200])) if (b < 200).any() else float(b.mean())
+    dominated the box (bm tiny -> scale huge -> the sky clipped to WHITE).
+    14-x: the v2 elementwise sub-200 median was sky-poisoned (near-horizon
+    sky channels are <200 elementwise) and bimodal-fragile — on sky-heavy
+    crops the median landed in the sky cluster on one leg and the content
+    cluster on the other (104 vs 177 measured), forcing a ~0.6 rescale that
+    manufactured ~510k of sky-vs-sky ae on a cell whose raw content matched
+    to mean |dluma| ~3."""
+    la = a.mean(axis=2)
+    lb = b.mean(axis=2)
+    m = (la < 200) & (lb < 200)
+    if int(m.sum()) < 50:
+        return b, 1.0
+    am = float(np.median(la[m]))
+    bm = float(np.median(lb[m]))
     if bm < 1.0:
-        return b
+        return b, 1.0
     scale = max(0.6, min(1.6, am / bm))
-    out = b * scale
-    return np.clip(out, 0, 255)
+    return np.clip(b * scale, 0, 255), scale
 
 
 def aligned_ae(a, b, margin=4):
@@ -241,8 +251,16 @@ def main():
             box = None
             ct, box = crop_cell(truth, col, row)
             co, _ = crop_cell(ours, col, row)
-            co = normalize_luma(ct, co)
-            v, dx, dy = aligned_ae(ct, co)
+            v_raw, dxr, dyr = aligned_ae(ct, co)
+            cn, scale = normalize_luma(ct, co)
+            v_norm, dxn, dyn = aligned_ae(ct, cn)
+            # v3 (14-x): the luma normalisation is a hypothesis that may
+            # only help — a rescale that makes the cell worse is discarded
+            # (it was manufacturing sky-vs-sky ae on sky-dominated crops).
+            if v_norm < v_raw:
+                v, dx, dy, co, luma_norm = v_norm, dxn, dyn, cn, True
+            else:
+                v, dx, dy, luma_norm = v_raw, dxr, dyr, False
             cells += 1
             verdict = "GREEN" if v <= args.gate else "RED"
             if dyn or air:
@@ -261,7 +279,8 @@ def main():
                 Image.fromarray(co.astype(np.uint8)).save(
                     dd / f"{page}_c{col}_r{row}_ours.png")
             rows.append({"page": page, "col": col, "row": row, "state": state,
-                         "ae": v, "shift": [dx, dy], "verdict": verdict})
+                         "ae": v, "shift": [dx, dy], "verdict": verdict,
+                         "luma_norm": luma_norm, "luma_scale": round(scale, 3)})
 
     report = {
         "cells": cells, "skipped": skipped, "red": red, "dynamic": dynamic,
