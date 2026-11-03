@@ -4259,3 +4259,60 @@ Stage Summary:
   exonerated). NEXT: reproduce on the local stand with a single
   display at (0,-58) vs (2,-58) (same state, two positions) to split
   placement vs client rendering, then fix.
+
+---
+## Task 14-v — the axis mirror root-caused and fixed: the 26.3 client
+rotates EVERY item_display by PI around Y (decompile fact); the plugin now
+counter-yaws in entity space, and the x=0 flip class is dead locally
+
+Agent: main
+Task: close the 14-u thread (stairs mirrored on the camera axis) — find the
+root cause, fix the plugin, verify on the local stand, ship
+
+Work Log:
+- CLIENT DECOMPILE (26.3, net/minecraft/client/renderer/entity/
+  DisplayRenderer.java, ItemDisplayRenderer.submitInner): the renderer does
+  `poseStack.rotate(Axis.YP, (float) Math.PI);` UNCONDITIONALLY before
+  submitting the item — every item_display's item is drawn 180-deg-yawed.
+  This is client-fixed behavior, invisible for vanilla item frames/heads
+  semantics but a hard mirror for billboard:fixed composite galleries whose
+  camera looks at the display head-on.
+- THE x=0 SIGNATURE EXPLAINED: off-axis the yawed composite is seen
+  obliquely, so the extra PI hides inside the legitimate side-face
+  perspective (both the truth leg and the ae metric tolerate it); ON the
+  view axis (cell x=0, display at world x=0.5 = camera x) the view is
+  head-on and the PI is EXACTLY an image mirror — which is why the flip
+  test flagged 52 cells in c5 and nowhere else, why straight stairs
+  flip-won hardest (self-mirror pair), and why the isolate (never at x=0)
+  stayed GREEN.
+- THE FIX (CimPlugin gallery spawn path): the spawn quaternion gains an
+  entity-space counter-yaw — rotationXYZ(-xRot, -yRot, 0).rotateY(PI).
+  Algebra: L o R_y(PI) o R_van(PI) = L — the counter-yaw lands LEFT of the
+  renderer's PI and the variant rotations keep their measured semantics for
+  every row (variant rotations ride negated as before).
+- BUILD + DEPLOY: offline javac build clean; the deployed srv-probe jar's
+  CimPlugin.class sha256-identical to the fresh build (bytecode shows the
+  rotateY(PI) ldc 3.1415927f + invokevirtual chain).
+- LOCAL STAND VERIFICATION (page 9012 = asurine east/top/straight replayed
+  by the FIXED plugin, client shot e2e2.png): all 11 columns x=-5..5 render
+  ONE orientation (mass-LEFT / notch-RIGHT); the x=0 cell is mass-LEFT.
+- ORIENTATION TRIANGLE at p231 c5r2 (the 14-u flip-winner, x=0):
+  TRUTH crop = mass-LEFT; OURS pre-fix (CI #70 frame) = mass-RIGHT
+  (mirrored); OURS post-fix (e2e2 local) = mass-LEFT = TRUTH. The axis
+  mirror is dead at the exact cell that defined the defect.
+- REGRESSION GUARD: manually summoned displays (no transformation NBT —
+  not the plugin's path) are pixel-stable pre/post (x=-1.5 cell ae 170 =
+  sub-pixel noise; the x=-3.5 "flip" was a 10px shift fooling the median
+  profile, visual zoom confirms identical orientation). The fix touches
+  only plugin-spawned composites.
+- LIMIT: local stand has no full 408-page truth walk — the definitive
+  table is CI's. Expectations for #71: the 52-cell c5 flip class drops to
+  ~0; if the "every composite was yawed" reading is right, the whole
+  walls/stairs RED table (6.9k) should move substantially, not just c5.
+
+Stage Summary:
+- 14-u resolved into a one-line client-optics fix: counter-yaw PI in the
+  gallery spawn transform; verified locally at the defect cell against the
+  truth orientation with a pixel-stable guard on the rest. NEXT: commit,
+  push, let CI #71 measure the honest table; then the grain probe (14-o
+  half two) runs on the post-fix baseline.

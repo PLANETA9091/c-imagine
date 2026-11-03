@@ -1221,9 +1221,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         // so the variant rotations ride NEGATED (a positive
                         // x=90 swung the chain-drive shaft UP out of the cell;
                         // negated, it renders the truth's vertical drive)
+                        // MEASURED (14-v, local stand + client decompile): the
+                        // 26.3 ItemDisplayRenderer rotates EVERY item_display
+                        // pose by PI around Y before submitting the item
+                        // (DisplayRenderer$ItemDisplayRenderer.submitInner:
+                        // poseStack.rotate(Axis.YP, PI)). Uncompensated, every
+                        // gallery composite renders 180-deg-yawed — asymmetric
+                        // states (stairs/walls/panes) mirror vs the truth leg
+                        // (the flip test only caught it dead-center on straight
+                        // stairs: c5's 52 wins, the "x=0 axis defect" was the
+                        // one configuration where yaw ~= image flip). The
+                        // entity-space counter-yaw lands LEFT of the renderer's
+                        // PI: L o R_y(PI) o R_van(PI) = L — variant rotations
+                        // keep their measured semantics for every row.
                         new org.joml.Quaternionf().rotationXYZ(
                                 -(float) Math.toRadians(r.xRot()),
-                                -(float) Math.toRadians(r.yRot()), 0f),
+                                -(float) Math.toRadians(r.yRot()), 0f)
+                                .rotateY((float) Math.PI),
                         new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                         new org.joml.Quaternionf());
                 org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
