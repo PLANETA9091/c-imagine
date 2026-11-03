@@ -635,6 +635,7 @@ jobs:
           # the camera can see behind the wall (view-distance 6 = 96 blocks).
           # The fill is part of the RIG, identical on both stacks.
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "forceload add -128 8 128 104" \
             "fill -40 -61 -2 40 -61 9 minecraft:smooth_stone" \
             "fill -128 -61 10 128 -61 100 minecraft:smooth_stone" | tee ground-fill.log
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
@@ -939,6 +940,7 @@ jobs:
             srv-wall/c-imagine/scenes/
             srv-wall/boot.log
             truth-pins.log
+            ground-fill.log
             truth-shots/shots.txt
           if-no-files-found: warn
 
@@ -1110,6 +1112,7 @@ jobs:
             "gamerule doMobSpawning false" "forceload add -64 -32 64 48" \
             | tee ours-pins.log
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "forceload add -128 8 128 104" \
             "fill -40 -61 -2 40 -61 9 minecraft:smooth_stone" \
             "fill -128 -61 10 128 -61 100 minecraft:smooth_stone" | tee ground-fill.log
           LAUNCH=$(cat visual-client/launch.txt)
@@ -1757,6 +1760,7 @@ jobs:
           path: |
             srv-wall/boot.log
             ours-pins.log
+            ground-fill.log
             visual-client/client.out
             ours-shots/shots.txt
           if-no-files-found: warn
