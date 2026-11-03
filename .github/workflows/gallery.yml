@@ -705,8 +705,23 @@ jobs:
             # — the isolated v1/v2 shots caught the camera at yaw 180 behind
             # the wall, mirrored x. One RCON call per page is ~free; the
             # shot-time camera is now contract-exact forever).
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            # 14-y RENDER-SETTLE (the #72 p5 failure: server reported
+            # cells=63 mutated=44 with the settled TSV holding all 48 pillar
+            # cells, yet the truth frame caught PRE-RENDER sky + stale
+            # debris — the llvmpipe client had not rasterised the heavy
+            # section when the 1s window elapsed). Two consecutive identical
+            # shots = the frame is settled; bounded to 8 tries; the camera
+            # is re-pinned before every attempt (14-i law).
+            PREV=""
+            for i in $(seq 1 8); do
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "truth-shots/.settle-p$p.png"
+              CUR=$(md5sum "truth-shots/.settle-p$p.png" | cut -d' ' -f1)
+              if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+              PREV="$CUR"
+            done
+            rm -f "truth-shots/.settle-p$p.png"
             java -cp vtools Shot "truth-shots/gal-p$p.png"
             echo "shot page $p"
           done
