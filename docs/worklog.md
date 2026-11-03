@@ -4639,3 +4639,72 @@ Stage Summary:
   a structural, channel-level texture-mapping difference — the 14-ad
   controlled transform experiment decides whether it is fixable in the
   composite bake or inherent to the display channel.
+
+---
+## Task 14-ad — the controlled transform experiment on the local stand:
+the counter-yaw PI is a pixel no-op for symmetric faces (A=B at ae 0, and
+the NBT replica of the plugin spawn is pixel-exact vs the plugin page) —
+the item channel is self-consistent; the truth-vs-ours structural
+residual is therefore the QUAD-GLUED UV of the block channel vs the
+coordinate-derived UV of the baked composite — the U-axis mirror on
+variant-rotated faces, invisible on X-symmetric textures, exactly the
+14-q stairs signature
+
+Agent: main
+Task: one variable at a time on the local stand — does the spawn yaw /
+counter-yaw change the face content the item channel shows?
+
+Work Log:
+- REPLICA FIRST: the plugin spawn is Transformation(translation
+  (0,-0.0184,0.20), left_rotation = rotationXYZ(-xRot,-yRot,0).rotateY(PI),
+  scale 1.0126, right_rotation identity) — and COMPOSITE ROWS CARRY
+  rotations 0/0 (GalleryPack.readResolvedManifest: every emitted row IS a
+  baked composite), so the real left_rotation for g20823 is PURE Ry(PI) =
+  (0,1,0,0). My first replica attempt used the variant rotations (90/90)
+  and rendered an edge-on dark model (luma 30) — joml confirmed the
+  algebra was right and the INPUT was wrong.
+- PIXEL-EXACT REPLICATION: summon item_display at x.5 -59.5 9.5 with the
+  NBT transformation (left_rotation [0,1,0,0], scale 1.0126, translation
+  (0,-0.0184,0.20), CMD 120823) -> the 5 cells match the plugin p391 page
+  at ae 0 / 0 / 0 / 0 / 4547 (one cell caught 17k of entity-noise in the
+  determinism twin; the rest are 0). The NBT path == the plugin path.
+- THE A/B VERDICT: B (left_rotation identity, i.e. WITHOUT the counter-
+  yaw) vs A (with it) = ae 0 on 4/5 cells (the fifth = the same 17k
+  noise). A 180-degree change of the entity's left_rotation does not
+  change ONE PIXEL of the face content: the client's unconditional PI
+  yaw (ItemDisplayRenderer.submitInner) cancels A's counter-yaw (net
+  identity) and doubles B's (net PI) — and the two renders are still
+  identical because the composite's opposite faces carry the same
+  X-SYMMETRIC side texture. The 14-v counter-yaw is confirmed necessary
+  only for asymmetric states; the item channel itself is deterministic
+  and self-consistent.
+- CONSEQUENCE FOR THE PILLAR/STAIRS/WALL CLASSES: the structural truth-
+  vs-ours residual (14-ac: band V-mapping, 60-118k against the 60k gate)
+  is NOT the spawn transform. It is the UV SEMANTICS of the two render
+  channels on variant-rotated models: the real block channel BAKES the
+  variant rotation into the quads with the texture GLUED to each quad
+  (the west face's U axis, world +Z, rides the y90 rotation into world
+  X), while the baked composite lets the client DERIVE each face's UV
+  from the rotated coordinates and the remapped face direction (the
+  north-face convention samples U along -X). For a full cube the UV RECT
+  is the same [0,0,16,16]; the in-plane U direction is MIRRORED. On
+  X-symmetric textures (tuff_cut_pillar) the mirror is invisible — which
+  is exactly why p391's residual is only ~20 luma of band-position
+  difference and why the A/B test showed nothing. On asymmetric textures
+  it is the 14-q "horizontal mirror on facing=east/south stairs" — the
+  stairs 442 + wall 114 + pane 90 RED families.
+- NEXT (14-ae, the mechanical fix): the composite bake must emit EXPLICIT
+  per-face UVs that replicate the block channel's quad-glued mapping —
+  for every variant-rotated face, carry the source face's UV rect
+  through the rotation (u/v axis remap per face-direction table, the
+  defaultFaceUV formulas from 14-y) instead of letting the client derive
+  it. Verification loop: rebuild the pack -> local stand p391 + a stairs
+  page -> CI (the stairs class must collapse from 442).
+
+Stage Summary:
+- The transform experiment closed the last "ours-side" theory: the item
+  channel renders exactly what the bake authors, deterministically, and
+  the counter-yaw only matters for asymmetric faces. The remaining static
+  RED mass is a UV-mirroring difference between the channels, which is
+  mechanically fixable in the composite bake (explicit UVs through the
+  rotation) — the biggest single lever left in the campaign.
