@@ -4564,3 +4564,78 @@ Stage Summary:
   top-RED theory from "client render instability" to "ours-leg settle
   deficit on heavy pages". Both fixes are mechanical and verified locally
   in YAML; #74 is the verdict run.
+
+---
+## Task 14-ac — #74 measured FULL (89.75%, race guard + both-legs settle
+verified: identity ae = 0); the 14-z isolates kill multiplicity+axis; the
+p391 residual is structural between the render channels; the join gains a
+constrained per-cell linear-light fit (ae_fit) under the same min() rule
+
+Agent: main
+Task: verdict #74 (first run with the 14-aa fixes), the 14-z isolate
+triangulation, and drive the next GREEN lever on the honest baseline
+
+Work Log:
+- #73 POST-MORTEM (measured, then fixed): only 1 of 8 shards joined — the
+  ours legs overtook their render-settled truth siblings and 7 downloads
+  hit "Artifact not found" (s0 log, 17:15:50). The one joined shard (s4)
+  was BIT-STABLE against #72's s4 (53 pages, 200 reds) — the pipeline is
+  deterministic run-to-run.
+- #74 = THE FULL TABLE AGAIN: 438 pages, GREEN 15047 / RED 1718 / DYNAMIC
+  1241 / skipped 14283 / AIR 78 -> green-share 89.75% (#72: 89.4%). The
+  race guard worked (8/8 shards joined); pillar 485, stairs 442, other
+  498, pane 90, wall 114, slab 55, door 17, copycat 7.
+- INSTRUMENT PROOF: #74's determinism probes (page 0 re-shot on both legs)
+  — OURS p0: median ae 0, p90 0, MAX 0 (pixel-identical!); TRUTH p0:
+  median 0, max 14k (pane seams). The 60k gate now sits ~4x above the
+  actual noise floor; every remaining RED is content, not noise. The
+  entity pages stay noisy (blaze/bee/bat 200k-1M — mobs move; known).
+- 14-z ISOLATE VERDICT (probe14z.py on #73 artifacts, after fixing its
+  darkrow for 2D luma): 5x identical tuff_pillar[axis=x] -> cell-to-cell
+  NCC 0.940, dark rows 47/48/47/48/47 (COHERENT); 5x axis=y -> NCC 1.000;
+  1x clean. MULTIPLICITY AND AXIS ARE OUT — identical models side by side
+  render coherently on the ours channel.
+- p391 FORENSICS (the deep dive): the 68 pillar REDs are NOT settle, NOT
+  multiplicity, NOT per-cell randomness:
+  (a) the local stand (fresh + walk-load churn) renders the page
+      pixel-stable with COHERENT dark rows (34 across the row; 39/40
+      veridium) — the CI bimodality does not reproduce on a fresh world;
+  (b) the CI truth leg has its own holes (#72 p391 veridium y=-56:
+      NCC -0.007, dark row 2 = sky cells) — the 1832a19 settle fixed the
+      class (#74 truth p391: tuff row NCC 0.909, coherent dark 28);
+  (c) the residual TRUTH-vs-OURS is STRUCTURAL: per-pixel diff
+      concentrates in a horizontal band (rows 50-75% of the crop;
+      corners = centre, so NOT AO), the linear-light fit does not absorb
+      it, and no uniform shift aligns it;
+  (d) texel-level: both legs match the raw tuff_cut_pillar best at
+      rot90 (truth 0.508, ours 0.22-0.43 with per-cell circular-shift
+      scatter dH 2..13); the composite JSON is a FAITHFUL bake of the
+      26.3 cube_column_horizontal (north = side, no rotation — verified
+      against the client jar); the mirror (counter-yaw PI) hypothesis is
+      NOT confirmed at texel resolution (id 0.306 vs flipH 0.306).
+  OPEN 14-ad THREAD: the block-renderer leg maps variant-rotated face
+  textures differently from the item-display channel's baked composite.
+  Next probe: the local stand, one composite, yaw 0 vs PI vs the raw
+  blockstate — one variable at a time.
+- 14-ac JOIN METRIC: fit_ae — per-cell LINEAR lighting map (luma fit
+  a*x+b applied to all three channels, chroma untouched) constrained to
+  scale 0.5-2.0 / offset +-60, +-ALIGN shift search, joins the hypothesis
+  set under the same min(raw, norm, fit) rule. Honesty: the fit absorbs a
+  lighting wobble, never geometry; the residual clears the same gate; the
+  min() rule can only turn REDs GREEN. Smoke test on #74's p391 pair:
+  fit wins on 10/77 cells, 68 REDs stay (the residual is structural —
+  exactly what the metric must NOT excuse).
+- LOCAL STAND EVIDENCE (g74 + /tmp/probe14aa/): fresh vs walk-churn
+  p391 renders identical (total |dluma| 22k, 0 cells >60k; the only mover
+  is the animated turntable); CI74-OURS matches LOCAL at mean 36k/cell
+  (76/77 under gate), CI74-TRUTH at 38k (74/77) — while the CI pair's
+  mutual ae lands 60-118k. The legs are each close to the canonical
+  render and far from each other: the pair residual is the battle.
+
+Stage Summary:
+- The instrument is now trustworthy end-to-end: deterministic legs, full
+  coverage, race-guarded. 89.75% honest. The biggest remaining static
+  families (pillar 485 + stairs 442) sit 60-118k against a 60k gate with
+  a structural, channel-level texture-mapping difference — the 14-ad
+  controlled transform experiment decides whether it is fixable in the
+  composite bake or inherent to the display channel.
