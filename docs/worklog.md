@@ -4196,3 +4196,66 @@ Stage Summary:
   gallery-diff.py. The next gallery run re-measures the whole table on
   honest geometry; the 14-u isolate/page divergence is the last open
   thread before the flip class can be fixed for real.
+
+---
+Task ID: 14-u
+Agent: main
+Task: #70 (honest geometry) measured — the 14-u isolate/page thread is
+CLOSED and re-attributed: the flip class is the x=0 display column, live in
+the page walk only, stairs-only so far; the pack composites are innocent
+
+Work Log:
+- #70 MEASURED (run 41519286588, sha e395eb6 — the 14-t honest-geometry
+  fix's own run, previously unmeasured): 408 join pages, RED 6977 /
+  GREEN 7991 / DYNAMIC 1979 / skipped 14228 / AIR 214; green-share
+  47.2%; page verdicts 382 RED / 26 GREEN. vs #64: honest labels moved
+  ~500 cells (RED +477, GREEN -495) — the mirrored grid had been
+  passing wrongly-cropped pairs.
+- THE RED TABLE re-decomposed: walls 4105 rows (59%) now dominate,
+  stairs 1803; all shifts still <=3px (position correct everywhere).
+- STAIRS half=top vs bottom ae is BALANCED (mean 197.6k vs 208.9k,
+  medians 130k vs 148k) — the x:180-rotation attribution from 14-t is
+  DEAD as an ae driver; RED ae tracks shape complexity instead
+  (outer_right 245k > straight 222k > inner_right 150k mean).
+- THE FLIP CLASS IS THE x=0 COLUMN (c5): flip-truth ae test over ALL
+  11959 stairs/wall RED+GREEN cells — RED c5 wins 52/244 (21%) while
+  EVERY other RED column is 0-3/400-800 and GREEN is 0/5422 anywhere.
+  All 52 are stairs spread across facings/halves/shapes.
+- IT IS A REAL GEOMETRIC MIRROR: p231 c5r2 (polished_cut_asurine_stairs
+  east/top/STRAIGHT) flip-wins 797k->98k — straight stairs are their
+  own mirror pair, no variant swap can fake that. Visual 3-up (truth |
+  ours | flip(truth)) on p86 c5r2 confirms ours = the horizontal
+  mirror of the truth render, content slab on the opposite crop side.
+- THE PACK IS INNOCENT: the resolved composites for outer_left /
+  outer_right east/top (g4592/g4594) are proper mirror twins
+  ([8,0,0,16,8,8] vs [8,0,8,16,8,16] steps), pre-rotated (xRot=yRot=0
+  rows); the element geometry is vanilla-correct.
+- NOT a position swap either: the row -58 5x5 match matrix (ours crop
+  at x vs truth crop at x') has no crushing anti-diagonal; the
+  position-mirror (display k at cell -k) predicts one and it is absent.
+  The p9003 isolate state renders GREEN in its page occurrence
+  (p367 c10r2, x=5) and the isolate itself sits at x=-5 — the 14-t
+  "isolate unmirrored" observation now reads as: the isolate never
+  samples the x=0 column, so it never meets the mirror.
+- WHAT THE x=0 COLUMN IS: the display entities for cell x=0 sit at
+  world x=0.5 — EXACTLY the camera's own x (the view axis). The mirror
+  hits displays ON the view axis; both half=top and half=bottom states
+  mirror there (p161 c5r1 = east/bottom/outer_right 620k->40k). The
+  plugin spawn path is identical for every cell (rotationXYZ(-xRot,
+  -yRot, 0) + FIXED billboard), so the divergence is client-side
+  rendering of an item_display whose center lies on the camera axis —
+  the one remaining unknown (vanilla 26.3 item-display render at
+  bearing 0).
+- THE REST OF THE RED TABLE (the c5 non-mirrors and every other
+  column) stays the 14-s wall/brightness + grain classes; the mirror
+  class is ~52 cells of 6977 — small but a REAL BUG, and fixing it is
+  a gate-integrity prerequisite (an axis-display mirror test belongs
+  in the isolate loop: p9007 = any stairs at cell (0,-58)).
+
+Stage Summary:
+- The 14-u thread resolved into a concrete, reproducible defect:
+  stairs item_displays centered on the camera axis (cell x=0) render
+  x-mirrored in the page walk (52 measured cells, visual proof, pack
+  exonerated). NEXT: reproduce on the local stand with a single
+  display at (0,-58) vs (2,-58) (same state, two positions) to split
+  placement vs client rendering, then fix.
