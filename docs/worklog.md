@@ -4800,3 +4800,71 @@ Stage Summary:
   stand went NIGHT mid-experiment (doDaylightCycle was still on) — the
   luma-30 A/B frames were a day/night artifact, redo after /time set
   noon + gamerule off; the ae-0 results above are the daytime redo.
+
+---
+## Task 14-ae ground truth (decompiled, independent confirmation of the 14-ad
+UV theory) — the 1.21.1 FaceBakery recomputeUVs chain extracted from the real
+client jar bytecode: the UV_ROTATIONS map is SOUTH-identity (not NORTH), the
+composition order is q⁻¹ · UVROT⁻¹[facing] · UVROT[remapped] with the ±0.5
+centering, and the composite-bake fix only needs explicit DEFAULT uvs — the
+mismatch is confined to faces without authored uv
+
+Agent: main
+Task: 14-ae starts from the decompile ground truth (the 14-ad addendum's
+requirement); this task decompiles it from both client jars and states the
+exact semantics the bake must reproduce
+
+Work Log:
+- METHOD: the 1.21.1 client jar is OBFUSCATED — FaceBakery = ggd, BlockFaceUV
+  = gga, Direction = ji, the UV helper = jc, the Transformation wrapper = j
+  (mapped via the piston-meta client_mappings for 1.21.1). The 26.3 client
+  jar ships UNOBFUSCATED class names (net/minecraft/client/resources/model/
+  cuboid/FaceBakery readable directly). javap -c on both.
+- 26.3 defaultFaceUV (decompiled, Vector3fc from/to, Direction):
+  DOWN [x1,16-z2,x2,16-z1]; UP [x1,z1,x2,z2]; NORTH [16-x2,16-y2,16-x1,16-y1];
+  SOUTH [x1,16-y2,x2,16-y1]; WEST [z1,16-y2,z2,16-y1]; EAST [16-z2,16-y2,16-z1,16-y1].
+  Called ONLY when CuboidFace.uvs() == null; authored uvs ride the quad
+  VERBATIM through the rotation (no uv-space transform anywhere in the 26.3
+  bake path — there is NO recomputeUVs in the 26.3 FaceBakery at all).
+- 1.21.1 (truth channel) HAS the recompute step: FaceBakery.bakeQuad
+  (ggd.a) calls, when ModelState.c() (has rotation),
+  jc.a(BlockFaceUV, Direction, Transformation) — which composes
+    M = T(0.5,0.5,0.5) · q⁻¹ · UVROT⁻¹[facing] · UVROT[rotate(q, facing)] ·
+        T(-0.5,-0.5,-0.5)
+  (j.a(j) = joml this.mul(other), so the written order applies right-to-left
+  to the uv vector), transforms BOTH uv corners (indices 0 and 2) as
+  (u/16, v/16, 0, 1) -> (16x, 16y), then fixes the corner ORDER by winding
+  sign comparison and derives the BlockFaceUV rotation quadrant from
+  atan2 of the transformed axis vector (Matrix3f). The UVROT map (jc builder,
+  enum fields a..f = DOWN,UP,NORTH,SOUTH,WEST,EAST by mojmap declaration
+  order = protocol ids 0..5):
+    SOUTH identity; EAST rotY(+90); WEST rotY(-90); NORTH rotY(180);
+    UP rotX(-90); DOWN rotX(+90).
+- CONSEQUENCE FOR THE BAKE (the 14-ae fix shape): the mismatch is CONFINED
+  to faces WITHOUT authored uv. For those, the truth channel renders
+  defaultFaceUV(ORIGINAL from/to, ORIGINAL direction) transported rigidly
+  with the rotated quad (via recomputeUVs' re-indexing), while the ours
+  composite lets the 26.3 item path DERIVE defaultFaceUV(ROTATED from/to,
+  REMAPPED direction) — a different array whenever the direction's uv axes
+  do not commute with the rotation. Writing the explicit
+  defaultFaceUV(original) array into every null-uv face BEFORE the vertex
+  bake makes the 26.3 item channel use authored uvs verbatim = the truth
+  semantics, with NO recomputeUVs re-implementation needed in the pack
+  (the vertex/uv attachment is per-face-corner and both channels glue).
+  Faces WITH authored uv are already correct on both channels (glued
+  verbatim) — the 14-ad A=B pixel-exact result on the pillar (X-symmetric
+  texture) is consistent.
+- VALIDATION INSTRUMENT (next session): a Probe against the real 1.21.1
+  classes via reflection dies in the Direction codec static-init
+  dependency web (fastutil/dfu/gson/authlib versions) — do the probe with
+  a hand-rolled Direction + the exact chain above, then verify the pillar
+  signature (truth = raw texture at rot90, ours scattered — 14-ac) flips
+  to a stable mapping; the local stand A/B (one composite, one variable)
+  remains the acceptance gate before the CI run.
+
+Stage Summary:
+- The 14-ad theory is confirmed at the source level and NARROWED: only
+  null-uv faces need the explicit default-uv bake; authored-uv faces are
+  already correct. The fix is small and mechanical in GalleryPack
+  (synthesizeComposite: pre-bake explicit uvs per element face), but its
+  acceptance needs the local stand A/B per 14-ad's instrument note.
