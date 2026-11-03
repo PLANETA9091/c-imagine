@@ -105,7 +105,13 @@ jobs:
           (cd test-mods/src/main/resources && zip -qr /tmp/cimtest-assets.jar assets)
           cp /tmp/cimtest-assets.jar srv/mods/cimtest-1.0.0.jar
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv srv/c-imagine/f2v/
-          java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+          # the standalone builder needs the plugin's runtime deps (gson for
+          # the model-graph JSON walk) — same classpath rule as the gallery
+          # seed and the integration pre-boot build
+          (cd paper-plugin && mvn -q -B dependency:build-classpath \
+            -Dmdep.outputFile=target/selftest-cp.txt)
+          FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
+          java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv/mods srv/c-imagine/f2v
           SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
           echo "eula=true" > srv/eula.txt

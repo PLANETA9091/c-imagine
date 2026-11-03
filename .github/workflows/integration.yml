@@ -150,9 +150,16 @@ jobs:
       - name: build F2V visual pack (pre-boot)
         run: |
           set -euo pipefail
+          # the standalone F2vPack main() needs the plugin's runtime deps on
+          # the classpath (gson for the model-graph JSON walk — the bare
+          # plugin jar alone dies with NoClassDefFoundError
+          # com/google/gson/JsonParser); the gallery seed builds the same way
+          (cd paper-plugin && mvn -q -B dependency:build-classpath \
+            -Dmdep.outputFile=target/selftest-cp.txt)
+          FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
           mkdir -p srv/c-imagine/f2v
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv srv/c-imagine/f2v/
-          java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+          java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv/mods srv/c-imagine/f2v
           cat srv/c-imagine/f2v/build-report.txt
           SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
@@ -161,7 +168,7 @@ jobs:
           # read from the outDir by default, measured 94e1e28)
           mkdir -p /tmp/f2v-again
           cp srv/c-imagine/f2v/visual-items.tsv srv/c-imagine/f2v/visual-equipment.tsv srv/c-imagine/f2v/visual-blocks.tsv /tmp/f2v-again/
-          java -cp paper-plugin/target/cim-paper-plugin.jar dev.cim.f2v.F2vPack \
+          java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv/mods /tmp/f2v-again --manifest srv/c-imagine/f2v/visual-items.tsv
           diff /tmp/f2v-again/pack.sha1 srv/c-imagine/f2v/pack.sha1 \
             || { echo "F2V pack is NOT byte-deterministic"; exit 1; }
