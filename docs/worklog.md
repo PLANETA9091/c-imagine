@@ -4566,6 +4566,84 @@ Stage Summary:
   in YAML; #74 is the verdict run.
 
 ---
+## Task 14-ab — #74 measured honestly (RED 1234 / GREEN 12528, green-share
+91.03% — the render-settle race fix landed, the full 8-shard table is back);
+two GROUND-LEVEL ae floors identified by measurement and fixed at the root:
+the version grass-tint drift and the truth-side popped-block item drops
+
+Agent: main
+Task: measure CI #74 (gallery run 41685096419, sha 59297e2 — the 14-aa
+symmetric render-settle + race guard), classify every RED, and remove the
+measured floors honestly (no gate weakening)
+
+Work Log:
+- MEASURED from the 8 gallery-report shards: 408 block pages joined (the
+  race guard worked — #73's 1-of-8 collapse is gone), cells 17161,
+  RED 1234 / GREEN 12528 / DYNAMIC 3399 -> green-share 91.03% (#72: 89.4%).
+  RED families: pillar 477, stairs 401, wall 84, pane 77, bracket 44,
+  scaffolding 20, slab 18, one-offs ~130. ae spread: min 60037 (just above
+  the 60k gate), median 83622, max 905352.
+- THE BIG-ae TAIL IS DEBRIS, NOT RENDERING: every 250k+ RED crop shows
+  content no manifest row describes — item frames, dropped valve handles,
+  cogwheels sitting on the floor around the wall (measured on p14/p202/
+  p207/p304/p384/p407). Confirmed owner diagnosis: blocks that pop after
+  placement (the settled-air cells: funnels without a belt, unsupported
+  states) drop ItemEntities; the truth walk never clears them (its block
+  loop has no kill between pages) while the ours leg kills @e per page and
+  places display rigs — the asymmetry lands straight in the crops.
+- THE GRASS FLOOR (measured, p80 both legs): pure-grass patches differ by
+  mean |d| = 10.6-11.9 per channel = ~100k ae per cell-equivalent — ABOVE
+  the 60k gate on its own. Ratios ours/truth = 1.08x uniform across all
+  patches; per-pixel p10/p90 = 0.87/1.33 (structural, not just scale).
+  Verified NOT the textures: grass_block_top/side/dirt/smooth_stone PNGs
+  are PIXEL-IDENTICAL between the 1.21.1 and 26.3 client jars (only PNG
+  compression differs); blockstates + models diff IDENTICAL. The drift is
+  in the 26.3 render pipeline's tint/AO application to the tinted grass.
+- MISSING-CMD HOLE = ZERO: only 2 static cells lack pack CMDs
+  (polished_cut_ochrum_wall / small_asurine_brick_wall all-none up=false);
+  create's multipart renders NOTHING for that state (post only when
+  up=true) — both legs show air, join GREEN ae=0. The dyn-missing cells
+  (valve handles, large water wheels, belts) are DYNAMIC-class, excluded
+  from the gate by design.
+- FIX 1 — drop guard (scene-mod): NeoForge EntityJoinLevelEvent handler
+  cancels ItemEntity spawns inside the gallery box (wall + floor strip);
+  plus a start-of-command + end-of-command sweep in every gallery command
+  (block/entity/item/particle/fluid) for anything that predates the guard.
+  No race with scheduled ticks or the shot window; quarantine loot is
+  eaten deterministically too.
+- FIX 2 — ground neutralization (gallery.yml, both legs): identical
+  smooth_stone fills over the corridor (z -2..9) and the whole visible
+  ground band behind the wall (z 10..100, x +-128 — view-distance 6 = 96
+  blocks). smooth_stone is untinted and pixel-identical between versions;
+  the grass (tinted, version-drifted) leaves the rig entirely. The fills
+  are part of the rig, byte-identical commands on both stacks.
+- FIX 3 — the integration pre-boot pack build died with
+  NoClassDefFoundError com/google/gson/JsonParser: F2vPack's model-graph
+  JSON walk needs gson, the step passed only the bare plugin jar. Same
+  classpath rule as the gallery seed (dependency:build-classpath ->
+  selftest-cp.txt) applied to integration.yml and visual.yml.
+- NOT FIXED HERE (the next battle, measured): the near-gate residual
+  (stairs/pillar cells at ae 60-120k with mean |d| 1-11 after the best
+  shift). This task's crops independently pointed at variant-rotated
+  faces (texture rows landing 1-2 px off); the parallel 14-ac/14-ad
+  tasks (landed while this fix was in flight) pinpointed the mechanism
+  precisely: the quad-glued UV of the block channel vs the
+  coordinate-derived UV of the bake — the U-axis mirror on
+  variant-rotated faces — and 14-ae carries the explicit-UV fix through
+  the rotation bake. The grass/drop floors here are the INDEPENDENT
+  ground-level contribution; both classes sit under the structural one
+  in the final table.
+
+Stage Summary:
+- #74's table is honest and the gate is back to full-shard coverage. The
+  two ground-level floors (grass drift + drop debris) are removed at the
+  root, not at the metric; the missing-CMD hole is measured ZERO. The
+  #75 verdict decides: if the bottom-row and debris classes collapse,
+  the pillar/stairs near-gate residual is the remaining honest battle.
+>>>>>>> 9958b8b (fix(scene): gallery drop guard + ground neutralization — the #74 measured floors)
+
+---
+
 ## Task 14-ac — #74 measured FULL (89.75%, race guard + both-legs settle
 verified: identity ae = 0); the 14-z isolates kill multiplicity+axis; the
 p391 residual is structural between the render channels; the join gains a

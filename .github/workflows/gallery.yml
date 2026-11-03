@@ -625,6 +625,18 @@ jobs:
           done
           [ -n "$R" ] || { tail -60 srv-wall/boot.log; exit 1; }
           echo "truth server up: $R"
+          # 14-ab GROUND NEUTRALIZATION (the #74 forensics: the superflat
+          # grass around the gallery renders with a version-tinted texture —
+          # 1.21.1 vs 26.3 grass_block differ by ~11 mean|d| per channel =
+          # ~100k of ae on every crop that touches the ground, an
+          # irreducible floor the 60k gate cannot survive). Both legs lay
+          # the SAME deterministic floor: smooth_stone (uniform texture, no
+          # per-block rotation) over the corridor and the whole ground band
+          # the camera can see behind the wall (view-distance 6 = 96 blocks).
+          # The fill is part of the RIG, identical on both stacks.
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "fill -40 -61 -2 40 -61 9 minecraft:smooth_stone" \
+            "fill -128 -61 10 128 -61 100 minecraft:smooth_stone" | tee ground-fill.log
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
@@ -1088,11 +1100,18 @@ jobs:
           grep -q "f2v pack: FAST BOOT" srv-wall/boot.log || { tail -30 srv-wall/boot.log; echo "fastBoot marker missing"; exit 1; }
           grep -q "f2v pack: serving" srv-wall/boot.log || { tail -30 srv-wall/boot.log; exit 1; }
           echo "cim server up + pack serving: $R"
+          # 14-ab GROUND NEUTRALIZATION — the truth-leg mirror (same fills,
+          # the same deterministic smooth_stone floor; see the truth leg's
+          # comment for the #74 grass-floor forensics). Runs after the
+          # forceload so the far band sits inside loaded chunks.
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
             "gamerule doMobSpawning false" "forceload add -64 -32 64 48" \
             | tee ours-pins.log
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "fill -40 -61 -2 40 -61 9 minecraft:smooth_stone" \
+            "fill -128 -61 10 128 -61 100 minecraft:smooth_stone" | tee ground-fill.log
           LAUNCH=$(cat visual-client/launch.txt)
           ARGS="${LAUNCH#java }"
           CLIENT_JAVA="${{ steps.jdk25.outputs.path }}/bin/java"

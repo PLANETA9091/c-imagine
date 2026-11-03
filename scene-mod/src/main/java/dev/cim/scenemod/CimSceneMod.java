@@ -27,6 +27,7 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
@@ -36,6 +37,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -92,7 +94,30 @@ public final class CimSceneMod {
         modBus.addListener(this::commonSetup);
         NeoForge.EVENT_BUS.addListener(this::serverStarted);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
+        NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
         LOGGER.info("[cimscene] mod constructed (ordinary-mod harness, no c-imagine APIs)");
+    }
+
+    /**
+     * Gallery-region drop guard (2026-11-03, #74 forensics): blocks that pop
+     * after placement (funnels without a belt, unsupported states — the
+     * settled-air cells) drop ItemEntities that land on the floor and stay
+     * in frame for every later page shot. The truth leg accumulated them
+     * (its walk never kills entities between pages) while the ours leg
+     * spawns display rigs and kills @e per page — the asymmetry polluted
+     * the per-cell crops with content no manifest row describes. Cancel the
+     * spawn itself (no race with scheduled ticks or the shot window): an
+     * ItemEntity joining the level inside the gallery box never exists.
+     * Quarantine kills on the entity pages drop loot the same way — eaten
+     * here too, deterministically on both stacks.
+     */
+    private void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (event.getLevel().isClientSide()) return;
+        if (!(event.getEntity() instanceof ItemEntity item)) return;
+        Vec3 pos = item.position();
+        if (GALLERY_DROP_BOX.contains(pos.x, pos.y, pos.z)) {
+            event.setCanceled(true);
+        }
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
@@ -330,6 +355,10 @@ public final class CimSceneMod {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
         String blockStem = "gallery-" + namespace + "-p" + page;
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
 
         // Deterministic entry list: sorted ids of the namespace, each block's
         // states in getPossibleStates() order.
@@ -432,6 +461,16 @@ public final class CimSceneMod {
             if (rowStr[i] != null) {
                 tsv.append(rowStr[i]).append('\n');
             }
+        }
+
+        // End-of-command drop sweep: pops that fired synchronously during the
+        // placement loop (updateShape chains) spawned their ItemEntities
+        // already — discard them before the manifest/done marker, so the page
+        // shot (>=1s later) shows exactly the manifest's cells and nothing else.
+        int sweptEnd = sweepGalleryDrops(level);
+        if (sweptEnd > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep end ns={} page={} removed={}",
+                    namespace, page, sweptEnd);
         }
 
         String manifest = "gallery-" + namespace + "-p" + page + ".tsv";
@@ -669,6 +708,33 @@ public final class CimSceneMod {
         }
     }
 
+    /**
+     * Where dropped items may exist for the pixel gate: the wall itself plus
+     * the floor strip in front of it where pops land (the wall bottom row
+     * sits on the superflat floor at y=-61; item entities rest there). The
+     * entity pages also spawn subjects inside this box — their loot is
+     * cancelled by {@link #onEntityJoinLevel} with the same contract.
+     */
+    private static final AABB GALLERY_DROP_BOX =
+            new AABB(GALLERY_X0 - 3, GALLERY_Y0 - 2, GALLERY_Z - 5,
+                     GALLERY_X0 + GALLERY_COLS + 3, GALLERY_Y0 + GALLERY_ROWS + 2, GALLERY_Z + 5);
+
+    /**
+     * Discard ItemEntities inside {@link #GALLERY_DROP_BOX}. The join event
+     * guard cancels NEW drops; this sweep removes anything that predates it
+     * (earlier walk stages, a guard registered after some pop) — belt and
+     * braces for the same asymmetry.
+     *
+     * @return the number of entities discarded (logged by the caller)
+     */
+    private static int sweepGalleryDrops(ServerLevel level) {
+        List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, GALLERY_DROP_BOX);
+        for (ItemEntity item : items) {
+            item.discard();
+        }
+        return items.size();
+    }
+
     // --- item gallery (every registered ITEM of the namespace, shown to the
     // --- test player under the same wall grid + pixel gate) ----------------
 
@@ -693,6 +759,10 @@ public final class CimSceneMod {
     private static int galleryItem(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
         String itemStem = "gallery-item-" + namespace + "-p" + page;
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
@@ -783,6 +853,10 @@ public final class CimSceneMod {
     private static int galleryParticle(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
         String particleStem = "gallery-particle-" + namespace + "-p" + page;
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.PARTICLE_TYPE.keySet());
@@ -875,6 +949,10 @@ public final class CimSceneMod {
     private static int galleryFluid(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
         String fluidStem = "gallery-fluid-" + namespace + "-p" + page;
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.FLUID.keySet());
@@ -1051,6 +1129,10 @@ public final class CimSceneMod {
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
         writeGalleryIndex(level, namespace);
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
         String entityStem = "gallery-entity" + seriesTag(series) + "-" + namespace + "-p" + page;
 
         // Deterministic entry list: sorted entity ids of the namespace.
