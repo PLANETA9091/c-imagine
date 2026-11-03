@@ -1326,9 +1326,26 @@ jobs:
             echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
               || { echo "page $p no placed marker in the RCON response"; exit 1; }
             sleep 1   # section rebuild (the measured fixed-window protocol)
-            # 14-i CAMERA RE-PIN before EVERY shot (see the truth-leg twin)
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            # 14-aa OURS RENDER-SETTLE (mirror of the truth-leg 14-y fix):
+            # heavy sections (p391 = 68 pillar cells) place + rasterise
+            # slower than the fixed window; a mid-placement frame carries
+            # per-row texture offsets that read as a render defect (#72's
+            # pillar[x] fingerprint was column-coherent and row-varying —
+            # the signature of entities caught at different placement
+            # progress, not of a UV bug; the clean 14-z isolate rendered
+            # coherent at NCC 0.94-1.00). Two consecutive identical frames
+            # = settled; bounded 8 (animated cells never converge and
+            # still proceed).
+            PREV=""
+            for i in $(seq 1 8); do
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/.settle-p$p.png"
+              CUR=$(md5sum "ours-shots/.settle-p$p.png" | cut -d' ' -f1)
+              if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+              PREV="$CUR"
+            done
+            rm -f "ours-shots/.settle-p$p.png"
             java -cp vtools Shot "ours-shots/ours-gal-p$p.png"
             test -s "ours-shots/ours-gal-p$p.png" || { echo "page $p shot empty/missing"; exit 1; }
             echo "shot page $p"
@@ -1487,6 +1504,26 @@ jobs:
         run: |
           (cd ours-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
           wc -l ours-shots/shots.txt
+
+      - name: wait for this shard's truth artifacts (14-aa race guard)
+        run: |
+          set -euo pipefail
+          # The render-settled truth walk (up to 8 shots per page) can finish
+          # AFTER its ours sibling reaches the join: #73 lost 7 of 8 joins to
+          # "Artifact not found" (the ours leg overtook the truth leg and the
+          # download raced a not-yet-registered artifact). Poll the API until
+          # BOTH artifacts exist, bounded 30 min.
+          for ART in "wall-truth-shots-${{ matrix.shard }}" "wall-truth-meta-${{ matrix.shard }}"; do
+            OK=""
+            for i in $(seq 1 90); do
+              N=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" \
+                    "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+                  | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for a in d['artifacts'] if a['name']=='$ART' and not a['expired']))" || echo 0)
+              if [ "${N:-0}" -ge 1 ]; then OK=1; echo "artifact $ART present"; break; fi
+              sleep 20
+            done
+            [ -n "$OK" ] || { echo "TIMEOUT waiting for artifact $ART"; exit 1; }
+          done
 
       - name: download this shard's truth artifacts (shots + meta)
         uses: actions/download-artifact@v4

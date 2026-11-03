@@ -4509,3 +4509,58 @@ Stage Summary:
   controlled single-display experiment on the local stand (one model, N
   positions/yaws, one variable at a time) — 14-z; then the stairs family
   rides the same fix if it is positional.
+
+---
+## Task 14-aa — #73 forensics: the join collapsed to 1 of 8 shards on a CI
+race (ours overtook the render-settled truth leg); the clean 14-z isolate
+renders COHERENT (NCC 0.94-1.00) — multiplicity and axis are OUT, the p391
+fingerprint is a settle deficit of the ours leg; fix = symmetric render-
+settle + a truth-artifact race guard, the instrument lands as #74
+
+Agent: main
+Task: measure CI #73 (gallery run 41681305557, sha 1832a19 — first run with
+the truth render-settle + the 14-z isolates), verdict the isolate
+triangulation, and drive the next GREEN lever
+
+Work Log:
+- ISOLATE VERDICT (scripts/probe14v/probe14z.py on the #73 artifacts, after
+  fixing its darkrow() to accept 2D luma): 9010 (5x identical
+  tuff_pillar[axis=x]) cell-to-cell NCC 0.940 with dark rows 47/48/47/48/47
+  — COHERENT, nothing like p391's 0.53 + 27/52/21; 9012 (5x axis=y) NCC
+  1.000; 9011 (1x) clean. MULTIPLICITY AND AXIS ARE OUT: identical models
+  side by side on the ours leg render coherently. The p391 per-cell
+  divergence is contextual, not intrinsic.
+- #73 GATE COLLAPSE: only 53 of ~438 pages joined (7 of 8 report shards are
+  one empty gate.json: {"join_pages":0}). Ours s0's log is the smoking gun:
+  at 17:15:50 the join's download-artifact step failed with "Artifact not
+  found for name: wall-truth-shots-0" — the render-settled truth walk (up
+  to 8 shots per page) finishes AFTER its ours sibling reaches the join.
+  The one shard that joined (s4) is BIT-STABLE against #72's s4: 53 pages,
+  200 reds, same table (pillar 95 / stairs 67 / pane 26 / wall 17; the
+  pillar names are deepslate/calcite/crimsite — p391's tuff/veridium live
+  on shard 7, which did not join).
+- THE REFRAME: p391 is the heaviest composite section (68 pillar cells).
+  The OURS leg still shoots block pages on the FIXED 1s window; a
+  mid-placement frame carries per-row texture offsets that are
+  column-coherent and row-varying — exactly the #72 fingerprint — because
+  entities reach placement/interpolation completion at different times.
+  The truth leg already settles (14-y); the ours leg did not. The clean
+  isolate (tiny page) at the same 1s window is coherent — consistent with
+  a placement/rastr deadline, not a UV bug.
+- FIX (this commit): (a) 14-aa OURS RENDER-SETTLE — the block replay now
+  re-pins the camera and shoots until two consecutive frames are identical
+  (bounded 8), mirror of the truth-leg law; (b) 14-aa RACE GUARD — the
+  join polls the API until BOTH wall-truth-shots-<shard> and
+  wall-truth-meta-<shard> exist (bounded 30 min) before downloading; #74
+  must deliver the full 8-shard table again.
+- NEXT: #74's honest table decides — if the pillar class collapses (like
+  the truth settle killed the p5 class), the GREEN campaign's remaining
+  battle is stairs residual + doors + entities; if it persists, the local
+  stand bisects further (controlled single-display, N positions/yaws/time).
+
+Stage Summary:
+- The instrument came back honest the hard way: a race ate 7/8 of the
+  table, and the analysis of the surviving shard + the isolates flipped the
+  top-RED theory from "client render instability" to "ours-leg settle
+  deficit on heavy pages". Both fixes are mechanical and verified locally
+  in YAML; #74 is the verdict run.
