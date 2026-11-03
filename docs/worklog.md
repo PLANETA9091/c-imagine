@@ -4708,3 +4708,17 @@ Stage Summary:
   RED mass is a UV-mirroring difference between the channels, which is
   mechanically fixable in the composite bake (explicit UVs through the
   rotation) — the biggest single lever left in the campaign.
+
+- 14-ad ADDENDUM (two theories measured dead tonight): (a) the vanilla
+  model-difference theory — 1.21.1's cube_column_horizontal.json is
+  BYTE-IDENTICAL to 26.3's (up rotation 180, sides unrotated; both jars
+  read directly), so the truth leg's rot90-looking face is NOT a version
+  change; (b) my first quad-glue sign analysis (west U(+Z) -> -X under
+  y90 == the north convention) suggests NO mirror for the full-cube
+  pillar — which contradicts the measured truth-vs-ours rot90/id split.
+  The block channel's variant-rotation UV semantics need the DECOMPILE
+  ground truth (FaceBakery + the BlockStateModel rotation path) before
+  any bake change; 14-ae starts there. The instrument note: the local
+  stand went NIGHT mid-experiment (doDaylightCycle was still on) — the
+  luma-30 A/B frames were a day/night artifact, redo after /time set
+  noon + gamerule off; the ae-0 results above are the daytime redo.
