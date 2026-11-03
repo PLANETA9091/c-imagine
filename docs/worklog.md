@@ -4439,3 +4439,73 @@ Stage Summary:
   the gate is honest and the static front is ~99% green — the remaining
   172 reds are named mechanics. The instrument stays honest: every number
   above is measured from the #71 artifacts, not guessed.
+
+---
+## Task 14-y — #72 measured CI-natively (green-share 89.4%, the v3+hotfix
+join's first honest in-CI table); the pillar[x] probe decomposed the top
+class and eliminated five suspects — the remaining fingerprint is a
+per-row render instability of identical composite models, ours-only
+
+Agent: main
+Task: measure CI #72 (gallery run 41659327623, sha 4c4bf92 — first run with
+the v3+dy_n join inside CI) and drive the next GREEN lever on the honest
+baseline
+
+Work Log:
+- MEASURED from the 8 gallery-report shards (scripts/probe14v/measure72.py,
+  recreated after the sandbox recycle; two-step artifact fetch per 14-w):
+  pages=438, GREEN 14961 / RED 1769 / DYNAMIC 1263 / AIR 91 / skipped 14283
+  -> judged 16730, green-share 89.4% (local #71 re-join said 90.7% — same
+  league, the hotfix conclusion is confirmed in CI).
+- RED families: pillar 497 (TOP), stairs 445, wall 122, pane 96, slab 55,
+  door 19, copycat 6, other ~530 (brackets 46, entities...). The 14-x
+  "static front ~99%" was the dyn-shadow bug talking; the honest table is
+  89.4% and the pillar class is real.
+- PILLAR PROBE (p391 = 68 REDs, all tuff/veridium pillar cells; p5; p42
+  control; seed-pack composites; create 6.0.10 jar from Modrinth):
+  (a) p5's TRUTH LEG IS BROKEN — the truth frame shows sky + debris
+      particles where the scene has a 7-row pillar wall (ours renders the
+      wall correctly; horizon aligned 376=376). 48 REDs on p5 are a
+      truth-side scene failure, ours innocent. Truth-dark fraction check
+      across all 18 pillar pages (pillar_truthcheck.py): p5 ratio 0.02,
+      every other page 0.65-1.16 — p5 is the only broken one.
+  (b) COMPOSITE GEOMETRY VERIFIED CORRECT: g306
+      (andesite_pillar[axis=x,no arms]) has caps at east/west, side
+      elsewhere — matches the real create 6.0.10 blockstate
+      (axis=x -> pillar_horizontal + x90 y90). The 26.3 client's
+      defaultFaceUV formula (decompiled from FaceBakery bytecode:
+      DOWN[x1,16-z2,x2,16-z1] / UP[x1,z1,x2,z2] /
+      NORTH[16-x2,16-y2,16-x1,16-y1] / SOUTH[x1,16-y2,x2,16-y1] /
+      WEST[z1,16-y2,z2,16-y1] / EAST[16-z2,16-y2,16-z1,16-y1]) gives a
+      full-cube element the full texture per face — the emitted composite
+      (no explicit uv) renders full-texture on the stock client.
+  (c) SUSPECTS ELIMINATED by measurement: no systematic placement shift
+      (wide +-10px search: best shifts random, ae floor ~120k at ANY
+      shift); no UV-rotation gap (rot0 fits truth and ours equally,
+      NCC-test against the raw texture at 16x16); no texel-scale
+      mismatch (horizontal band counts per column match, 5.5-7.3 both
+      legs); brightness is NOT the discriminator (joint-dark luma ratio
+      0.83-0.95 on RED pillars BUT 0.85-0.97 on GREEN wall cells of p42 —
+      the universal offset the normaliser already absorbs).
+  (d) THE FINGERPRINT: identical states + identical composites render
+      DIFFERENTLY per cell on ours. Truth: cell-to-cell NCC 0.763, the
+      texture's dark row at y=34 on EVERY r0 cell. Ours: cell-to-cell
+      NCC 0.530, dark row alternating 27/52/21 across r0; per-row
+      truth->ours offsets vary wildly (-7, -23, -24, -5, +34, +12 px for
+      r0..r5) while staying column-coherent. The texture pattern lands
+      at a different V position per row on ours only.
+- STAIRS (445 RED): ae 62-112k, median 75k vs gate 60k — the whole family
+  sits just above the gate; the cheapest lever once the render
+  instability is understood.
+- p5 truth-side breakage: separate thread — the truth walk's page p5
+  placed no blocks (debris only). The settle pass re-reads states
+  (CimSceneMod SETTLE PASS), so the TSV is not stale; the placement
+  itself failed. Worth a 14-z look at the truth walk's rcon log for p5.
+
+Stage Summary:
+- The gate is honest at 89.4% and the top class is decomposed to a
+  single open mechanism: ours renders identical composite models with a
+  per-row texture instability the truth leg does not have. Next: the
+  controlled single-display experiment on the local stand (one model, N
+  positions/yaws, one variable at a time) — 14-z; then the stairs family
+  rides the same fix if it is positional.
