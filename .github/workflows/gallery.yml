@@ -1256,6 +1256,48 @@ jobs:
               java -cp vtools Shot "ours-shots/ours-iso9001-$NAME.png"
               echo "shot plugin-path isolate $NAME (page $P cam $CX,$CY,$CZ yaw $YAW pitch $PITCH)"
             done
+            # 14-z RENDER-INSTABILITY TRIANGULATION (diagnostic, not gated):
+            # #72's pillar[x] probe measured ours rendering IDENTICAL
+            # composite models with per-cell texture divergence (cell-to-cell
+            # NCC 0.53 vs truth's 0.76; dark-row offsets -24..+34 px per row,
+            # column-coherent). Three isolate pages split the suspects:
+            # 9010 = FIVE identical tuff_pillar[axis=x] cells in one row
+            #   (reproduces the p391 r0 geometry: if the divergence shows
+            #   here, it is spatial/positional, not walk-progression noise);
+            # 9011 = ONE cell of the same state (multiplicity control);
+            # 9012 = FIVE identical tuff_pillar[axis=y] cells (axis control —
+            #   axis=y is mostly green in the gate).
+            # Metric after the run: cell-to-cell NCC + dark-row positions of
+            # the identical cells inside each shot.
+            SC10=scenes/gallery-create-p9010.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC10"
+            for XI in -4 -3 -2 -1 0; do
+              printf 'cell\t%s\t-58\t9\tcreate:tuff_pillar[axis=x,east=false,north=false,south=false,west=false]\n' "$XI" >> "srv-wall/c-imagine/$SC10"
+            done
+            SC11=scenes/gallery-create-p9011.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC11"
+            printf 'cell\t-2\t-58\t9\tcreate:tuff_pillar[axis=x,east=false,north=false,south=false,west=false]\n' >> "srv-wall/c-imagine/$SC11"
+            SC12=scenes/gallery-create-p9012.tsv
+            printf 'cell\tx\ty\tz\tstate\n' > "srv-wall/c-imagine/$SC12"
+            for XI in -4 -3 -2 -1 0; do
+              printf 'cell\t%s\t-58\t9\tcreate:tuff_pillar[axis=y,east=false,north=false,south=false,west=false]\n' "$XI" >> "srv-wall/c-imagine/$SC12"
+            done
+            for ENTRY in "9010:instab5x:5" "9011:instab1x:1" "9012:instab5y:5"; do
+              P=$(printf '%s' "$ENTRY" | cut -d: -f1)
+              NAME=$(printf '%s' "$ENTRY" | cut -d: -f2)
+              WANT=$(printf '%s' "$ENTRY" | cut -d: -f3)
+              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "kill @e[type=!player]" "cim galleryclear" \
+                "cim gallerypage create $P")
+              echo "$OUT" | tee "ours-rcon-iso14z-$NAME.log"
+              echo "$OUT" | grep -q "placed=$WANT" \
+                || { echo "14z isolate $NAME: placed!=$WANT"; exit 1; }
+              sleep 1
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/ours-iso14z-$NAME.png"
+              echo "shot 14z isolate $NAME (page $P placed=$WANT)"
+            done
           fi
           ls ours-shots/ | head -5 || true
           EXHAUSTED=0
