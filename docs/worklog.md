@@ -4316,3 +4316,50 @@ Stage Summary:
   truth orientation with a pixel-stable guard on the rest. NEXT: commit,
   push, let CI #71 measure the honest table; then the grain probe (14-o
   half two) runs on the post-fix baseline.
+
+---
+## Task 14-w — #71 measured: the counter-yaw is the campaign's biggest
+single jump — green-share 47.2% -> 81.4%, RED halved, the x=0 axis column
+is no longer an outlier
+
+Agent: main
+Task: measure CI #71 (run 41643963318, sha bd087a8 — the 14-v counter-yaw
+run) against #70's table; confirm the mirror class is gone and quantify the
+movement for the grain-probe baseline
+
+Work Log:
+- CI #71: gallery run 41643963318 completed; all 8 truth shards success,
+  all 8 ours shards ended at the INLINE pixel join step (the gate is still
+  hard-red, expected), all 8 shard reports uploaded (42 artifacts). The ci
+  workflow is fully GREEN (paper plugin maven build incl. the fix). The
+  integration workflow's "build F2V visual pack (pre-boot)" failure is
+  PRE-EXISTING (fails on every run since at least f3efb74, incl. the #70
+  era) — not a 14-v regression.
+- MEASURED over all join-p*.json (459 p-pages this run vs 408 in #70 — the
+  page set grew; comparisons below are same-method row-level):
+  RED 3219 / GREEN 14092 / DYNAMIC 1732 / skipped 16073 / AIR 200 —
+  green-share 81.4% vs #70's 47.2% (+34.2 pp) and #64's 56.6%.
+  RED 6977 -> 3219 (-54%), GREEN 7991 -> 14092 (+76%).
+- THE AXIS COLUMN IS CURED: col 5 (cell x=0, the 14-u mirror home) now has
+  205 REDs — mid-pack, below col 0 (445), col 9 (370), col 1 (350); the
+  52-cell flip-win class has no special position anymore. Consistent with
+  the local orientation triangle (p231 c5r2: truth mass-LEFT, pre-fix ours
+  mass-RIGHT, post-fix ours mass-LEFT).
+- THE WALL CLASS COLLAPSED: wall RED 4105 -> 1106 (-73%), stairs 1803 ->
+  1068 (-41%), pane 150, other 895. The counter-yaw interpretation ("every
+  composite rendered 180-deg-yawed") is confirmed at scale: fixing it moved
+  far more than the 52-cell axis class — the oblique columns' yawed side
+  faces were polluting the whole table.
+- ARTIFACT DOWNLOAD NOTE (for future runs): the artifact zip endpoint
+  302-redirects to a signed blob URL that REJECTS the forwarded
+  Authorization header — two-step fetch (auth for the API call, bare GET
+  for the Location) is required; scripts/probe14v/measure71.py has the
+  working implementation.
+
+Stage Summary:
+- 14-v shipped and measured: green-share 81.4%, the best gate state of the
+  campaign; the red table is now a pure content/texture residual (walls
+  1106, stairs 1068). NEXT: the 14-o grain probe (wall-texture identity,
+  probe #2) on THIS baseline — the yaw pollution that inflated the wall
+  class is gone, so the remaining 1106 wall REDs are the honest texture-gap
+  target; then the pane/other classes if the wall probe lands.
