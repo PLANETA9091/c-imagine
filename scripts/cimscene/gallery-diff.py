@@ -253,12 +253,14 @@ def main():
             co, _ = crop_cell(ours, col, row)
             v_raw, dxr, dyr = aligned_ae(ct, co)
             cn, scale = normalize_luma(ct, co)
-            v_norm, dxn, dyn = aligned_ae(ct, cn)
+            v_norm, dxn, dy_n = aligned_ae(ct, cn)
             # v3 (14-x): the luma normalisation is a hypothesis that may
             # only help — a rescale that makes the cell worse is discarded
             # (it was manufacturing sky-vs-sky ae on sky-dominated crops).
+            # NOTE: the norm shift is dy_n, NOT dyn — the name must not
+            # shadow the manifest's dyn flag below.
             if v_norm < v_raw:
-                v, dx, dy, co, luma_norm = v_norm, dxn, dyn, cn, True
+                v, dx, dy, co, luma_norm = v_norm, dxn, dy_n, cn, True
             else:
                 v, dx, dy, luma_norm = v_raw, dxr, dyr, False
             cells += 1
