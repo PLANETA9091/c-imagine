@@ -2091,6 +2091,26 @@ public final class F2vPack {
         } finally {
             deleteRecursively(tmp);
         }
+        // neoforge:obj — a quad becomes one element, a triangle pair rejoins
+        // into one, a lone triangle waits for its cutout sprite
+        var quad = ObjMesh.parse("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n"
+                + "usemtl m\nf 1/1 2/2 3/3 4/4\n", Map.of("m", "#t"), false);
+        var quadEls = ObjMesh.toElements(quad, ObjMesh.fitScale(quad));
+        expect(failures, quadEls.size() == 1 && quadEls.get(0).getAsJsonObject().has("faces"),
+                "obj: a unit quad bakes to one element");
+        var pair = ObjMesh.parse("v 0 0 0\nv 1 0 0\nv 1 1 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n"
+                + "usemtl m\nf 1/1 2/2 3/3\nf 1/1 3/3 4/4\n", Map.of("m", "#t"), false);
+        expect(failures, ObjMesh.toElements(pair, 1).size() == 1, "obj: a triangle pair rejoins");
+        var tri = ObjMesh.parse("v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\n"
+                + "usemtl m\nf 1/1 2/2 3/3\n", Map.of("m", "#t"), false);
+        expect(failures, ObjMesh.toElements(tri, 1).get(0).getAsJsonObject().has(ObjMesh.POLY),
+                "obj: a lone triangle is a cutout polygon");
+        var big = ObjMesh.parse("v -3 0 0\nv 4 0 0\nv 4 1 0\nv -3 1 0\nvt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n"
+                + "usemtl m\nf 1/1 2/2 3/3 4/4\n", Map.of("m", "#t"), false);
+        expect(failures, ObjMesh.fitScale(big) == 4, "obj: an oversized mesh shrinks to the element limits");
+        double[] angles = ObjMesh.eulerOf(ObjMesh.columnsOf(30, 40, 50));
+        expect(failures, Math.abs(angles[0] - 30) < 1e-6 && Math.abs(angles[1] - 40) < 1e-6
+                && Math.abs(angles[2] - 50) < 1e-6, "obj: euler decomposition round-trips");
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;

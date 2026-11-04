@@ -516,7 +516,7 @@ public final class GalleryPack {
             // way, and the naive elements-only predicate resolved those chains
             // as element-less (37 nixie gallery states never placed). A
             // children level counts as geometry; resolveModelGraph flattens it.
-            if (json.has("elements") || json.has("children")) {
+            if (json.has("elements") || json.has("children") || isObjModel(json)) {
                 return true;
             }
             cur = json.has("parent") ? json.get("parent").getAsString() : null;
@@ -546,6 +546,7 @@ public final class GalleryPack {
         if (mg == null || mg.elements == null || mg.elements.size() == 0) {
             return null;
         }
+        materializeCutouts(jars, mg, entries, warnings);
         Map<String, String> textures = new TreeMap<>();
         int texNo = 0;
         for (Map.Entry<String, String> t : mg.textures.entrySet()) {
@@ -599,6 +600,7 @@ public final class GalleryPack {
         }
         wrapper.add("textures", texObj);
         wrapper.add("elements", mg.elements.deepCopy());
+        addDisplayScale(wrapper, mg.displayScale());
         String file = "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json";
         entries.put(file, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         return WRAPPER_NS + ":items/i" + itemNo;
@@ -643,6 +645,7 @@ public final class GalleryPack {
                                               List<String> warnings, String ctCtx) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
+        double displayScale = 1;
         int partNo = 0;
         for (Part p : parts) {
             ModelGraph mg = resolveModelGraph(jars, p.modelRef(), warnings);
@@ -652,6 +655,8 @@ public final class GalleryPack {
                 partNo++;
                 continue;
             }
+            materializeCutouts(jars, mg, entries, warnings);
+            displayScale = Math.max(displayScale, mg.displayScale());
             String prefix = "p" + partNo + "_";
             for (Map.Entry<String, String> t : mg.textures.entrySet()) {
                 textures.put(prefix + t.getKey(), t.getValue());
@@ -679,6 +684,7 @@ public final class GalleryPack {
         }
         wrapper.add("textures", texObj);
         wrapper.add("elements", mergedElements);
+        addDisplayScale(wrapper, displayScale);
         String file = WRAPPER_PREFIX + idx + ".json";
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
@@ -883,7 +889,71 @@ public final class GalleryPack {
     // ---- model graph resolution (composite parts) --------------------------------
 
     /** A resolved model: concrete texture map + the nearest elements array. */
-    private record ModelGraph(Map<String, String> textures, JsonArray elements) {
+    /** {@code displayScale}: the shrink an oversized OBJ mesh took to fit the
+     *  element limits, undone by the wrapper's display transform. */
+    private record ModelGraph(Map<String, String> textures, JsonArray elements,
+                              double displayScale) {
+    }
+
+    private static boolean isObjModel(JsonObject json) {
+        return json.has("loader") && json.has("model")
+                && "neoforge:obj".equals(json.get("loader").getAsString());
+    }
+
+    /** The {@code neoforge:obj} geometry as elements, or null when its files are missing. */
+    private static ObjGeometry readObjGeometry(List<Path> jars, JsonObject json,
+                                               List<String> warnings) throws IOException {
+        String ref = json.get("model").getAsString();
+        int c = ref.indexOf(':');
+        String file = "assets/" + ref.substring(0, c) + "/" + ref.substring(c + 1);
+        byte[] obj = readPngFromJars(jars, file);
+        if (obj == null) {
+            warnings.add("gallery: obj missing: " + file);
+            return null;
+        }
+        String text = new String(obj, StandardCharsets.UTF_8);
+        Map<String, String> materials = new LinkedHashMap<>();
+        for (String line : text.split("\n")) {
+            if (line.startsWith("mtllib ")) {
+                String mtl = file.substring(0, file.lastIndexOf('/') + 1) + line.substring(7).trim();
+                byte[] bytes = readPngFromJars(jars, mtl);
+                if (bytes != null) {
+                    materials.putAll(ObjMesh.parseMtl(new String(bytes, StandardCharsets.UTF_8)));
+                }
+            }
+        }
+        boolean flipV = json.has("flip_v") && json.get("flip_v").getAsBoolean();
+        List<ObjMesh.Face> faces = ObjMesh.parse(text, materials, flipV);
+        double k = ObjMesh.fitElements(faces);
+        return new ObjGeometry(ObjMesh.toElements(faces, k), k);
+    }
+
+    private record ObjGeometry(JsonArray elements, double scale) {
+    }
+
+    /** Turn the mesh's polygon markers into rectangles on a generated cutout sprite. */
+    private static void materializeCutouts(List<Path> jars, ModelGraph mg,
+                                           TreeMap<String, byte[]> entries,
+                                           List<String> warnings) throws IOException {
+        ObjMesh.materialize(mg.elements(), mg.textures(),
+                sprite -> readPngFromJars(jars, spritePathPng(sprite)),
+                WRAPPER_NS, entries, warnings);
+    }
+
+    /** Undo the OBJ fit shrink: the wrapper renders scaled back up about the block centre. */
+    private static void addDisplayScale(JsonObject wrapper, double k) {
+        if (k == 1) {
+            return;
+        }
+        JsonArray scale = new JsonArray();
+        scale.add(k);
+        scale.add(k);
+        scale.add(k);
+        JsonObject none = new JsonObject();
+        none.add("scale", scale);
+        JsonObject display = new JsonObject();
+        display.add("none", none);
+        wrapper.add("display", display);
     }
 
     /**
@@ -907,6 +977,7 @@ public final class GalleryPack {
         String ns = colon > 0 ? ref.substring(0, colon) : "minecraft";
         Map<String, String> textures = new LinkedHashMap<>();
         JsonArray elements = null;
+        double displayScale = 1;
         String cur = ref;
         int depth = 0;
         while (cur != null && depth <= 16) {
@@ -938,10 +1009,17 @@ public final class GalleryPack {
             if (elements == null && (json.has("elements") || json.has("children"))) {
                 elements = mergeModelGeometry(json, textures, warnings);
             }
+            if (elements == null && isObjModel(json)) {
+                ObjGeometry g = readObjGeometry(jars, json, warnings);
+                if (g != null) {
+                    elements = g.elements();
+                    displayScale = g.scale();
+                }
+            }
             cur = json.has("parent") ? json.get("parent").getAsString() : null;
         }
         if (elements == null) {
-            return new ModelGraph(textures, null);
+            return new ModelGraph(textures, null, 1);
         }
         // resolve #ref chains to concrete sprite ids
         Map<String, String> resolved = new LinkedHashMap<>();
@@ -957,7 +1035,7 @@ public final class GalleryPack {
             }
             resolved.put(t.getKey(), v);
         }
-        return new ModelGraph(resolved, elements);
+        return new ModelGraph(resolved, elements, displayScale);
     }
 
     /**
@@ -1028,6 +1106,10 @@ public final class GalleryPack {
         JsonArray out = new JsonArray();
         for (JsonElement el : elements) {
             JsonObject e = el.getAsJsonObject().deepCopy();
+            if (isEulerElement(e)) {
+                out.add(bakeEulerElement(e, xRot, yRot));
+                continue;
+            }
             applyFaceUvs(e, xRot, yRot, uvlock);
             out.add(bakeElement(e, xRot, yRot));
         }
@@ -1149,6 +1231,53 @@ public final class GalleryPack {
             case "east" -> new double[]{16 - z2, 16 - y2, 16 - z1, 16 - y1};
             default -> null;
         };
+    }
+
+    private static boolean isEulerElement(JsonObject e) {
+        return e.has("rotation") && e.getAsJsonObject("rotation").has("x");
+    }
+
+    /**
+     * A mesh element keeps its local box, UVs and face key: the variant
+     * rotation composes into its Euler rotation and moves its origin.
+     */
+    private static JsonObject bakeEulerElement(JsonObject e, int xRot, int yRot) {
+        JsonObject rot = e.getAsJsonObject("rotation");
+        JsonArray origin = rot.getAsJsonArray("origin");
+        double[] o = {origin.get(0).getAsDouble(), origin.get(1).getAsDouble(),
+                origin.get(2).getAsDouble()};
+        JsonArray movedOrigin = bakeVec(origin, xRot, yRot);
+        double[] moved = {movedOrigin.get(0).getAsDouble(), movedOrigin.get(1).getAsDouble(),
+                movedOrigin.get(2).getAsDouble()};
+        double[][] cols = ObjMesh.columnsOf(rot.get("x").getAsDouble(),
+                rot.get("y").getAsDouble(), rot.get("z").getAsDouble());
+        double[][] out = new double[3][3];
+        for (int i = 0; i < 3; i++) {
+            JsonArray tip = new JsonArray();
+            for (int k = 0; k < 3; k++) {
+                tip.add(o[k] + cols[i][k]);
+            }
+            JsonArray t = bakeVec(tip, xRot, yRot);
+            for (int k = 0; k < 3; k++) {
+                out[i][k] = t.get(k).getAsDouble() - moved[k];
+            }
+        }
+        double[] angles = ObjMesh.eulerOf(out);
+        JsonObject newRot = new JsonObject();
+        newRot.add("origin", movedOrigin);
+        newRot.addProperty("x", angles[0]);
+        newRot.addProperty("y", angles[1]);
+        newRot.addProperty("z", angles[2]);
+        e.add("rotation", newRot);
+        for (String key : List.of("from", "to")) {
+            JsonArray v = e.getAsJsonArray(key);
+            JsonArray shifted = new JsonArray();
+            for (int k = 0; k < 3; k++) {
+                shifted.add(v.get(k).getAsDouble() + moved[k] - o[k]);
+            }
+            e.add(key, shifted);
+        }
+        return e;
     }
 
     private static JsonObject bakeElement(JsonObject el, int xRot, int yRot) {

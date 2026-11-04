@@ -5620,3 +5620,35 @@ first); the pack side verified end-to-end locally (the resolved rows, the
 g307 composite uvs, the 28 byte-identical sheets). The next run measures
 the real CT effect on the 103-RED pillar pool.
 >>>>>>> Stashed changes
+
+---
+## Task 14-ap/14-aq — the item pool: alignment, harness noise, and the neoforge:obj loader
+
+14-ap (item rig): the item channel spawned identity displays; the block rig's
+GALLERY_TZ correction was never applied to it. Page fit: scale 1.025 about the
+screen centre, err 30 -> 7. Measured (41887969467, 7/8 shards, pages 0 and 8 new
+because s0 now lives): item RED 314 -> 138, p50 75355 -> 24427.
+
+Harness REDs on what was left: truth_rejoin never pressed F1, so s0's pages after
+a crash carried the hotbar, hand and tutorial toast (39 REDs); the last entity page
+was killed inside the first item page's shot window, so death-poof particles landed
+at random on both legs (82 REDs on p3/p4; shards without a mob page had none).
+
+scene-mod did not compile after the ladder merge (MapCodec has no parse;
+MenuType.create takes RegistryFriendlyByteBuf): three straight main galleries died
+in the build step. Fixed in 17507bbf.
+
+14-aq: 39 Create meshes (valve handles, water wheels, flywheels, crushing wheels,
+blaze burners, chain conveyors, track, bogeys) ship as `neoforge:obj`, which has no
+vanilla loader, so those items and blocks were absent from the pack (`no pack CMD`).
+26.3 has CuboidRotation$EulerXYZRotation (rotationZYX, arbitrary origin), so ObjMesh
+emits one single-face element per quad. Rectangles with axis-aligned UVs map
+exactly; triangulated rectangles are rejoined first; other polygons ride a rectangle
+on a generated cutout sprite. from/to are limited to -16..32 BEFORE rotation, so the
+mesh shrinks by a power of two until the elements fit and the wrapper's display.none
+scale undoes it. Variant rotations compose into the Euler rotation (bakeEulerElement).
+
+Verified offline against the real joml Matrix4f.rotationZYX: all 39 meshes, 9313
+faces, position + normal + UV at each face centre, 2197 through the cutout path,
+0 failures. NOT yet verified on a real client: the 26.3 deserializer, the display
+scale path and cutout alpha on the item surface. The gallery measures those.
