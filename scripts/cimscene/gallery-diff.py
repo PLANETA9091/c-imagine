@@ -224,6 +224,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", required=True)
     ap.add_argument("--ours", required=True)
+    ap.add_argument("--truth-self",
+                    help="the SAME leg's second shot of the same page "
+                         "(taken ~2s later) — cells whose SELF pair exceeds "
+                         "the gate are time-varying content (mob idle "
+                         "animations) and demote to the ANIMATED class")
+    ap.add_argument("--ours-self",
+                    help="the ours leg's second shot (same contract)")
     ap.add_argument("--manifest", action="append", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--diff-dir")
@@ -241,6 +248,18 @@ def main():
 
     truth = load(args.truth)
     ours = load(args.ours)
+    # 14-aj SELF-CONSISTENCY frames (the animated-content class): a second
+    # shot of the SAME page on the SAME leg ~2s later. A cell whose own two
+    # shots disagree beyond the gate is time-varying content (the mob idle
+    # animations: bat wing flap, bee buzz, blaze smoke) — its truth-vs-ours
+    # ae measures the animation PHASE, not a channel defect: the legs' shots
+    # happen at different absolute times and no render fix can align them.
+    # The rule is mechanical and symmetric: the SAME measurement on BOTH
+    # legs, manifest-free, zero pixel heuristics — the pixel ae stays in the
+    # report, the verdict joins the dyn family (reported, never silently
+    # green — the gate is the real-client leg M5.6).
+    truth_self = load(args.truth_self) if args.truth_self else None
+    ours_self = load(args.ours_self) if args.ours_self else None
     # PROJECTION GUARD (worklog 12-ac): per-cell verdicts are meaningless on
     # a stale pair or a drifted camera. The threshold is HALF A CELL (24 px
     # at 70 deg): stale pairs / camera teleports miss by hundreds of px,
@@ -267,6 +286,7 @@ def main():
     skipped = 0
     dynamic = 0
     spill = 0
+    animated_n = 0
     cells = 0
     for mf in args.manifest:
         page = pathlib.Path(mf).stem  # gallery-<ns>-p<p>
@@ -357,6 +377,24 @@ def main():
             if vf is not None and vf < v:
                 v, dx, dy, co_used = vf, dxf, dyf, True
             cells += 1
+            # 14-aj self-consistency: the cell's own pair on EACH leg. A cell
+            # that moves against itself is animated content — measured with
+            # the same aligned+normalised machinery, symmetric on both legs.
+            sa_t = sa_o = None
+            if truth_self is not None:
+                st, _ = crop_cell(truth_self, col, row)
+                v1, _, _ = aligned_ae(ct, st)
+                cn2 = normalize_luma(ct, st)[0]
+                v2, _, _ = aligned_ae(ct, cn2)
+                sa_t = min(v1, v2)
+            if ours_self is not None:
+                so, _ = crop_cell(ours_self, col, row)
+                v1, _, _ = aligned_ae(co, so)
+                cn3 = normalize_luma(co, so)[0]
+                v2, _, _ = aligned_ae(co, cn3)
+                sa_o = min(v1, v2)
+            animated = ((sa_t is not None and sa_t > args.gate)
+                        or (sa_o is not None and sa_o > args.gate))
             # 14-ag: spill = a dyn neighbour within its measured reach
             # (manifest-derived, zero pixel heuristics). Only a RED verdict is
             # demoted — a spill neighbour never turns a clean cell RED, and
@@ -367,12 +405,15 @@ def main():
                 dynamic += 1
                 if verdict == "RED":
                     verdict = "DYNAMIC" if dyn else "AIR"
+            elif verdict == "RED" and animated:
+                animated_n += 1
+                verdict = "ANIMATED"
             elif verdict == "RED" and sn:
                 spill += 1
                 verdict = "SPILL"
             elif verdict == "RED":
                 red += 1
-            if verdict in ("RED", "SPILL", "DYNAMIC", "AIR") and args.diff_dir:
+            if verdict in ("RED", "SPILL", "DYNAMIC", "AIR", "ANIMATED") and args.diff_dir:
                 dd = pathlib.Path(args.diff_dir)
                 dd.mkdir(parents=True, exist_ok=True)
                 name = f"{page}_c{col}_r{row}.png"
@@ -384,17 +425,19 @@ def main():
             rows.append({"page": page, "col": col, "row": row, "state": state,
                          "ae": v, "shift": [dx, dy], "verdict": verdict,
                          "luma_norm": luma_norm, "luma_fit": co_used is True,
-                         "luma_scale": round(scale, 3), "dyn_spill": sn})
+                         "luma_scale": round(scale, 3), "dyn_spill": sn,
+                         "self_ae": [sa_t, sa_o]})
 
     report = {
         "cells": cells, "skipped": skipped, "red": red, "dynamic": dynamic,
-        "spill": spill,
+        "spill": spill, "animated": animated_n,
         "gate": args.gate, "verdict": "GREEN" if red == 0 else "RED",
         "rows": rows,
     }
     pathlib.Path(args.out).write_text(json.dumps(report, indent=1))
     print(f"gallery-diff: {report['verdict']} cells={cells} red={red} "
-          f"spill={spill} dynamic={dynamic} skipped={skipped} gate={args.gate} -> {args.out}")
+          f"spill={spill} animated={animated_n} dynamic={dynamic} "
+          f"skipped={skipped} gate={args.gate} -> {args.out}")
     return 0 if red == 0 else 2
 
 

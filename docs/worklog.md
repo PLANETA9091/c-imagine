@@ -5121,3 +5121,49 @@ stairs blockstates carry uvlock:true and 15/40 both-rotated variants) makes
 the stairs pool (~300 REDs) the next lever: the recomputeUVs + the
 getUVLockTransform chain is now extracted and runnable from the real srg
 classes; the port into the bake is mechanical.
+
+---
+## Task 14-aj — the ANIMATED class: mob idle animations measured by
+self-consistency (a second shot of the same page per leg, ~2s apart) —
+bat/bee/blaze demote on the REAL #84 determinism-probe pair, the static
+mobs (allay/armadillo/axolotl) stay honestly RED
+
+Agent: main
+Task: close the last structural gate ceiling class — the mob pages'
+animated subjects (the gate counts join-e*.json REDs; the mobs' idle
+animations differ between the legs' shot instants and no render fix can
+align two independent clocks)
+
+Work Log:
+- MEASURED on #84 shard 0 (join-e0): the mob page's REDs are the animated
+  subjects — bat 964k, bee 304k, blaze 744k (wing-flap/buzz/smoke phase)
+  plus allay 96k, armadillo 113k, axolotl 96k. The first three move
+  against THEMSELVES on both legs; the last three measure identical on
+  the #84 determinism-probe re-shot (the re-placed mobs render
+  pixel-stable) — a real channel difference each, honest backlog.
+- THE RULE (mechanical, symmetric, zero pixel heuristics): every mob page
+  is shot TWICE per leg (~2s apart); a cell whose SELF pair (the same
+  leg's shot 1 vs shot 2, the same aligned+normalised machinery, the
+  same min(raw, norm) hypothesis rule) exceeds the gate on EITHER leg is
+  time-varying content — the truth-vs-ours ae measured the animation
+  PHASE — and demotes RED -> ANIMATED (the dyn family: reported, ae and
+  self-ae kept in the report, never silently green — the gate is the
+  real-client leg M5.6). A self-stable cell NEVER demotes (the
+  identical-frame test measures self-ae = 0 and the REDs stay RED).
+- VALIDATED END-TO-END on the #84 e0 determinism-probe pair (the only
+  real double-shot pair in the artifacts): bat/bee/blaze -> ANIMATED
+  (self-ae 259k/609k, 58k/472k, 920k/909k — the OR rule catches a
+  leg-asymmetric animation too); allay/armadillo/axolotl keep RED with
+  self-ae [0,0]. Six REDs -> three ANIMATED + three honest REDs.
+- IMPLEMENTATION: gallery-diff.py gains optional --truth-self/--ours-self
+  (+ the self_ae per row, the animated counter in the report); the
+  gallery.yml mob walk loops take the second shot and the mob join steps
+  pass the flags — that half lands AFTER the parallel 14-ai edit
+  (rebase-safe, the feature is dormant until then).
+
+Stage Summary:
+- The animated-mob ceiling is measured and the instrument is validated on
+  real data. With 14-ai (the crash containment, ~800 gated garbage REDs)
+  and 14-ah (the uvlock stairs pool), the gate's remaining honest surface
+  after this lands is: the static-mob channel diffs (3 cells on e0 alone),
+  the pillar arms, and whatever the 14-ah run leaves.
