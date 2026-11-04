@@ -852,7 +852,7 @@ jobs:
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery page $NS 0"
               sleep 2
-              java -cp vtools Shot "truth-shots/gal-p-$NS0-again.png"
+              java -cp vtools Shot "truth-shots/gal-p-${NS}0-again.png"
               echo "shot $NS page 0 again"
             done
           fi
@@ -1531,7 +1531,7 @@ jobs:
               sleep 2
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-p-$NS0-again.png"
+              java -cp vtools Shot "ours-shots/ours-gal-p-${NS}0-again.png"
               echo "shot $NS page 0 again"
             done
             # 12-ac/12-ah bisect x2: ONE isolated display per suspect family,
@@ -2111,14 +2111,14 @@ jobs:
               # determinism probes: page 0 ONLY (the -again shots are page 0
               # re-placements); a probe against another page compares different
               # content and is meaningless
-              if [ "$p" = "0" ] && [ -f "truth-shots/gal-p-$NS0-again.png" ]; then
+              if [ "$p" = "0" ] && [ -f "truth-shots/gal-p-${NS}0-again.png" ]; then
                 python3 scripts/cimscene/gallery-diff.py --truth "$T" \
-                  --ours "truth-shots/gal-p-$NS0-again.png" --manifest "$M" \
+                  --ours "truth-shots/gal-p-${NS}0-again.png" --manifest "$M" \
                   --out "gallery-report/determinism-truth-$NS-p0.json" || true
               fi
-              if [ "$p" = "0" ] && [ -f "ours-shots/ours-gal-p-$NS0-again.png" ]; then
+              if [ "$p" = "0" ] && [ -f "ours-shots/ours-gal-p-${NS}0-again.png" ]; then
                 python3 scripts/cimscene/gallery-diff.py --truth "$O" \
-                  --ours "ours-shots/ours-gal-p-$NS0-again.png" --manifest "$M" \
+                  --ours "ours-shots/ours-gal-p-${NS}0-again.png" --manifest "$M" \
                   --out "gallery-report/determinism-ours-$NS-p0.json" || true
               fi
               python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
