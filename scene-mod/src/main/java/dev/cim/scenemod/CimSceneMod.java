@@ -18,6 +18,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -1035,7 +1036,10 @@ public final class CimSceneMod {
             return new ResolvedOptions(simple, null);
         }
         try {
-            DataResult<? extends ParticleOptions> res = type.codec()
+            // NeoForge 1.21.1 patches ParticleType.codec() to return a
+            // MapCodec; MapCodec.codec() lifts it to a Codec so NbtOps
+            // (DynamicOps<Tag>) parses a bare CompoundTag.
+            DataResult<? extends ParticleOptions> res = type.codec().codec()
                     .parse(NbtOps.INSTANCE, new CompoundTag());
             ParticleOptions opts = res.result().orElse(null);
             if (opts != null) {
@@ -1506,7 +1510,12 @@ public final class CimSceneMod {
                 MenuType<?> type = BuiltInRegistries.MENU.get(id);
                 // empty extra data: factories that read block/menu context
                 // throw here (recorded honestly); context-free menus open
-                FriendlyByteBuf extra = new FriendlyByteBuf(Unpooled.buffer());
+                // MenuType.MenuSupplier takes a RegistryFriendlyByteBuf in
+                // 1.21.1 (menu context may resolve registry holders); the
+                // empty buffer is context-free on purpose — factories that
+                // need real context throw and the row records it honestly.
+                RegistryFriendlyByteBuf extra = new RegistryFriendlyByteBuf(
+                        Unpooled.buffer(), viewer.registryAccess());
                 viewer.openMenu(new SimpleMenuProvider(
                         (windowId, inv, player) -> type.create(windowId, inv, extra),
                         Component.literal(id.toString())));

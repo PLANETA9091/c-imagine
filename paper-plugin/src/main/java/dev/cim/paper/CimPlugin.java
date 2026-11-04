@@ -1663,6 +1663,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + mf + ": " + ioe);
             return new int[]{0, 0, -1};
         }
+        final int cellsf = cells;
         callSync(() -> {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
@@ -1681,9 +1682,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
-            return cells;
+            return cellsf;
         });
-        log().warning(LOG_PREFIX + "f2v gallery-gui: " + cells
+        log().warning(LOG_PREFIX + "f2v gallery-gui: " + cellsf
                 + " menu(s) nochannel — Paper cannot instantiate a mod MenuType");
         return new int[]{0, cells, cells};
     }
