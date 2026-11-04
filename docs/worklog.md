@@ -5568,7 +5568,6 @@ Work Log:
   x-pillars (perpendicular to every face) are CT-invisible.
 - NEXT: CI #88 measures the pillar pool (103 REDs + the panes' panes-CT
   residual stays for 14-al).
-<<<<<<< Updated upstream
 ### 14-ao ANALYSIS — the 14-ak "pillar arm" premise is wrong: the pool is connected textures
 
 Static reading of create 6.0.10: `*_pillar` blockstates are 3 plain variants on
@@ -5607,7 +5606,7 @@ meta landed): client died 18:20:33, banned at settle 18:20:35, rejoined 18:21:03
 walk continued. The client log names the sole killer: create:contraption
 (Contraption.readNBT NPE, "Failed to process advanced entity spawn data"). The
 other three banned types were collateral.
-=======
+
 
 ---
 ## 14-ak VERDICT on #91 (48367616, run 41886392721): NO-OP — 98.86% (== #87),
@@ -5619,7 +5618,6 @@ the pack's 284 CT composites never left the zip. FIXED (strip the .tsv
 first); the pack side verified end-to-end locally (the resolved rows, the
 g307 composite uvs, the 28 byte-identical sheets). The next run measures
 the real CT effect on the 103-RED pillar pool.
->>>>>>> Stashed changes
 
 ---
 ## Task 14-ap/14-aq — the item pool: alignment, harness noise, and the neoforge:obj loader
