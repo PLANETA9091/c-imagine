@@ -46,6 +46,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -1162,9 +1165,11 @@ public final class CimSceneMod {
                     }
                 }
                 // (c) the mod's own fluid-tank block, if it registers one
-                // (create's vessel). Contents are NOT filled — the fill API
-                // is mod-specific and unverified from this workspace; the
-                // note records exactly what was attempted.
+                // (create's vessel) — the block is placed AND its contents
+                // filled through NeoForge's BLOCK fluid capability (round
+                // 3b): zero mod imports, the capability surface is the one
+                // create's own tank BE registers; the note records exactly
+                // what the fill accepted.
                 if (channel == null) {
                     ResourceLocation tank = ResourceLocation.fromNamespaceAndPath(
                             id.getNamespace(), "fluid_tank");
@@ -1174,9 +1179,8 @@ public final class CimSceneMod {
                         buildFluidShell(level, x, y, z);
                         level.setBlock(new BlockPos(x, y, z), tankState, 3);
                         channel = "mod-tank";
-                        extra = stateString(tankState, tank);
-                        // the note channel carries the honest limitation
-                        extra = extra + "|contents-unattempted";
+                        extra = stateString(tankState, tank) + "|"
+                                + fillTankContents(level, id, x, y, z);
                     } else {
                         reason = reason.equals("no-bucket") ? "no-bucket-and-no-tank" : reason;
                     }
@@ -1254,6 +1258,46 @@ public final class CimSceneMod {
      * then {@code textures/fluid/<path>_still.png}; the pack builder scans
      * the same tree and strips the same suffixes when deriving the fluid id.
      */
+    /**
+     * THE MOD-TANK CONTENTS FILL (round 3b, 2026-11-04): fill the just
+     * placed tank with the page's fluid through NeoForge's BLOCK fluid
+     * CAPABILITY — the same surface create's own FluidTankBlockEntity
+     * registers (verified against the pinned create 6.0.10 jar's constant
+     * pool: getCapability(BlockCapability, BlockPos, Direction) over
+     * Capabilities$FluidHandler). ZERO create imports: javac needs only
+     * the NeoForge API, so the build needs no ladder jar on its classpath
+     * and no build.gradle change. A lone tank block is its own controller;
+     * the capability resolves (or the note says so). The quota is a fixed
+     * generous 16000 mB; the tank takes what fits and the accepted amount
+     * rides the manifest's extra column — deterministic on the truth
+     * server (create is loaded there); the ours leg renders the tank BLOCK
+     * through the pack channel only (the level is BE-drawn — dyn class,
+     * no red verdict), so the note is the honest pair: truth shows a filled
+     * tank, ours shows the same tank's static model.
+     */
+    private static String fillTankContents(ServerLevel level, ResourceLocation fluidId,
+                                           int x, int y, int z) {
+        try {
+            IFluidHandler handler = level.getCapability(Capabilities.FluidHandler.BLOCK,
+                    new BlockPos(x, y, z), null);
+            if (handler == null) {
+                LOGGER.info("[cimscene] gallery-fluid tank fill: no fluid capability at {},{},{}",
+                        x, y, z);
+                return "contents-no-capability";
+            }
+            int filled = handler.fill(new FluidStack(
+                    BuiltInRegistries.FLUID.get(fluidId), 16000),
+                    IFluidHandler.FluidAction.EXECUTE);
+            LOGGER.info("[cimscene] gallery-fluid tank fill ns-fluid={} at {},{},{} accepted={}",
+                    fluidId, x, y, z, filled);
+            return filled > 0 ? ("contents-filled:" + filled) : "contents-refused";
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery-fluid tank fill failed {}: {}",
+                    fluidId, t.toString());
+            return "contents-threw:" + t.getClass().getName();
+        }
+    }
+
     private static boolean fluidTextureExists(CommandSourceStack src, ResourceLocation fluidId) {
         try {
             var rm = src.getServer().getResourceManager();

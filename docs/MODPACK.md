@@ -120,8 +120,10 @@ features function in the layer, visual diff within contract threshold.
 - **Fluids — the multi-surface ladder**: every fluid gets a manifest row
   and an attempted surface, in order: (a) placeable liquid in the sealed
   glass case, (b) the bucket item rig, (c) the mod's own `fluid_tank` block
-  (placed; contents NOT filled — the fill API is mod-specific and
-  unverified from this workspace, the row note says so), (d) the
+  (placed AND its contents filled through NeoForge's BLOCK fluid
+  capability — round 3b; zero create imports, the note records the
+  accepted amount; the ours leg renders the tank block only, the level is
+  BE-drawn and stays dyn class), (d) the
   texture-model surface — the pack builder synthesizes a flat item model
   from the fluid's still texture (`textures/fluid/*.png`, 400000+i CMD
   space); truth has no native surface there (the join compares honestly,
