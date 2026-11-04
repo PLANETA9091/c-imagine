@@ -5104,3 +5104,20 @@ Work Log (continued):
   run measures the spill rule + the v-mirror on the vanilla-composition base:
   the predicted effect = the spill demotions (RED 1109 -> ~706) + the axis=z
   pillar rows collapsing to green.
+
+### 14-ag VERDICT — #84 (3095a6a, run 41848055305) measured:
+GREEN 14814 / RED 675 / SPILL 384 -> green-share 95.64% (#80: 93.01%) —
++2.63pp in one cycle, the biggest jump since the forceload fix; the spill
+rule delivered the predicted demotions (RED 675 vs the replay's 706) and the
+v-mirror collapsed exactly its predicted surface (p391 axis=z rows:
+112017->47555 GREEN, 129967->50047 GREEN, 128030->58594 GREEN, 130363->52636
+GREEN; the axis=y cells measured UNTOUCHED — the theory's face-level split
+is confirmed cell-by-cell)
+
+The remaining pillar REDs = the ARM-carrying variants (the arms' own faces
+add x-rotated surfaces with their own sub-cause) and the axis=x rows — the
+next pool. The uvlock discovery (recomputeUVs gates on isUvLocked; the
+stairs blockstates carry uvlock:true and 15/40 both-rotated variants) makes
+the stairs pool (~300 REDs) the next lever: the recomputeUVs + the
+getUVLockTransform chain is now extracted and runnable from the real srg
+classes; the port into the bake is mechanical.
