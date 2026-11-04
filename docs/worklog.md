@@ -5019,3 +5019,47 @@ Stage Summary:
   a quarter of the RED mass was BE renders leaving block bounds. The SPILL
   class is the honest fix and lands 95.4% measured on #80's own data. The
   pillar-family channel diff (~300 clean REDs) is now the top target.
+
+### 14-ag ADDENDUM — the pillar pool's root cause: the variant bake composed
+X-first while the spawn transform (and the truth leg) compose Y-first — the
+both-rotated states rendered the WRONG FACE TEXTURES (the x90y90 pillar's
+camera face showed the SIDE/strata texture at 2x the truth's band frequency
+instead of the END cap); fixed in GalleryPack (86c0748), #82 measures it
+
+Work Log (continued):
+- The band-structure FFT on p391's clean cells (away from the turntable)
+  found the frequency signature PER AXIS: axis=x rows (tuff, 11 cells) measure
+  truth f=1.0 vs ours f=2.0 cycles/crop UNIFORMLY; axis=y rows 1.0/1.0;
+  axis=z/veridium rows 1.0-1.5/1.5-3.0. A scale/affine explanation was already
+  refuted (no consistent per-cell affine optimum) — a FREQUENCY doubling
+  points at the face CONTENT, not its mapping.
+- The emitted seed-pack model g21322 (tuff_pillar[axis=x]) carries north =
+  #p0_west — a SIDE texture. The source granite_pillar_horizontal = the
+  cube_column_horizontal parent (side on 4 sides, end caps up/down); the
+  truth's camera-facing face measured the END texture's low-frequency mottle
+  (fT=1.0, visually the cap). The composition order is the discriminator:
+  remapFace(x-first) sends original west -> final north; remapFace(y-first)
+  sends original up -> final north (the END).
+- THE ORDER GROUND TRUTH: the spawn transform the rows ride at is joml
+  rotationXYZ(-x,-y,0) (measured, pixel-verified 14-v) = the matrix
+  R_x(-x)·R_y(-y) — the Y rotation maps the vector FIRST. The blockstate
+  negated-angle rule (run 9) makes the tables R_x(-90)/R_y(-90); composing
+  them Y-first reproduces the measured truth face assignment on the x90y90
+  pillar; X-first does not. create blockstates: 2087 of 7460 variants carry
+  BOTH x and y — the axis=x pillar family among them (the measured ~300-cell
+  clean pillar RED pool). Single-rotation variants are order-invariant.
+- THE FIX (86c0748): GalleryPack bakeVec/remapFace/remapAxis apply the Y
+  mapping first, then X. Verified: mini pack on the real create 6.0.10 jar —
+  the emitted granite_pillar[axis=x] north face now carries #p0_up (the END
+  cap, was #p0_west); the python re-derivation with the corrected order
+  matches the emission 12/12 (geometry + uv + texture per face, incl. the
+  unrotated axis=y control); F2vPack --selftest ALL OK.
+- NOTE ON THE OLD VERIFICATION BLIND SPOT: the 14-ae rig verified the uvs
+  against a re-derivation written to MIRROR the pack (same order) and never
+  compared the TEXTURE REFS per remapped face — the order bug was invisible
+  to it. The new uvfix_check.py compares texture+uv+geometry against the
+  source model chain independently.
+- IN FLIGHT: #81 (26141ce, the SPILL rule) running; #82 (86c0748, spill +
+  the Y-first bake) queued — the pillar family's axis=x rows must collapse
+  (the strata-vs-cap cells), the axis=y/axis=z rows measure the remaining
+  phase/quadrant residual if any.
