@@ -5652,3 +5652,29 @@ Verified offline against the real joml Matrix4f.rotationZYX: all 39 meshes, 9313
 faces, position + normal + UV at each face centre, 2197 through the cutout path,
 0 failures. NOT yet verified on a real client: the 26.3 deserializer, the display
 scale path and cutout alpha on the item surface. The gallery measures those.
+
+### 14-aq ON THE REAL CLIENT — display.none was dead, OBJ renders
+
+Reading the 26.3 client caught a bug the deserializer could not: ItemTransforms has
+no NONE case, so the display.none scale never applied and every shrunk mesh would have
+rendered 2-4x small. The item definition's `transformation` replaces it: it composes
+into the layer's local transform between the display transform and the -0.5 centring.
+
+Rendered on a real 26.3 client (scripts/stand-easton, OpenGL 4.6 Mesa llvmpipe) from a
+test pack: valve handle, both water wheels, blaze burner, flywheel, crushing wheel,
+chain conveyor, mechanical roller, plus rotated block states. All draw with their real
+textures at the right size. Not yet compared to truth: that is the gallery's job.
+
+The local stand's client logs "Failed to create backend OpenGL" and falls back, so its
+pictures do not come from the backend CI uses.
+
+14-ar: mob REDs with self_ae 0 were static mismatches, not animation. Truth set only
+yRot (the client takes body and head from yHeadRot, so mobs stood backwards) and ours
+ran finalizeSpawn (random variants and gear).
+
+The ladder merge landed four boot breakers on main, all fixed: scene-mod compile,
+CimPlugin compile, the SoundPacketCaptureMixin descriptor (no NeoForge server could boot
+with cimscene), and the missing cloth-config and guideme companions.
+
+Partial #41892119307 data shows the CT channel made pillars WORSE (p50 45k -> 53k,
++62 RED, everything else unchanged); the owner of 14-ak has an uncommitted uv fix.
