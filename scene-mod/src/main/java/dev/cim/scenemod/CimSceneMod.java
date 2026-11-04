@@ -17,7 +17,6 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -1035,7 +1034,7 @@ public final class CimSceneMod {
             return new ResolvedOptions(simple, null);
         }
         try {
-            DataResult<? extends ParticleOptions> res = type.codec()
+            DataResult<? extends ParticleOptions> res = type.codec().codec()
                     .parse(NbtOps.INSTANCE, new CompoundTag());
             ParticleOptions opts = res.result().orElse(null);
             if (opts != null) {
@@ -1506,7 +1505,8 @@ public final class CimSceneMod {
                 MenuType<?> type = BuiltInRegistries.MENU.get(id);
                 // empty extra data: factories that read block/menu context
                 // throw here (recorded honestly); context-free menus open
-                FriendlyByteBuf extra = new FriendlyByteBuf(Unpooled.buffer());
+                net.minecraft.network.RegistryFriendlyByteBuf extra = new net.minecraft.network.RegistryFriendlyByteBuf(
+                        Unpooled.buffer(), viewer.server.registryAccess());
                 viewer.openMenu(new SimpleMenuProvider(
                         (windowId, inv, player) -> type.create(windowId, inv, extra),
                         Component.literal(id.toString())));
