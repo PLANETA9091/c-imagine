@@ -5714,3 +5714,18 @@ The next main gallery measures the whole pending collapse: item
 calibration 314 -> ~138 REDs (14-ap, measured on a branch dispatch), the
 5a719206 pillar CT collapse (~103 REDs, pack-verified), 14-ar mob yaw,
 14-aq obj loader meshes.
+
+---
+## 14-ak/14-al VERDICT on #106 (e73581a, run 41903263698): INFRA-BROKEN, not
+a metric — the create green-share 5.45% with the wall-family cells at ae
+30-70M (full-frame diffs = the ours leg rendered NOTHING for stretches; the
+multi-ns ladder run's ours shards died/rejoined mid-walk). The per-ns split
+of the same run: biomesoplenty 10.51%, dynamictrees 14.13% — the new ladder
+namespaces are honest fresh surface (no pack channels yet). The CT verdict
+itself: the cron's 14-al (e73581ab) fixed the two 14-ak implementation bugs
+(the global world's page-coordinate collisions + the null-uv faces riding
+the un-remapped default) — its LOCAL stand measurement on the real 26.3
+client: p20 RED 27 -> 0, p6 11 -> 0, p36 36 -> 6, p391 39 -> 10 (CT rows
+285 -> 463). The next CLEAN run measures the real green-share jump; the
+infra churn (the ladder companions: cloth-config 15.0.140 mine, guideme
+21.1.22 the cron's) is converging.

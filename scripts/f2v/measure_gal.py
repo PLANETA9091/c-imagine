@@ -15,7 +15,12 @@ def main() -> int:
     label = sys.argv[2] if len(sys.argv) > 2 else d
     agg = collections.Counter()
     red_rows = []
-    for jf in sorted(glob.glob(d + "/art-*/join-p*.json")):
+    # the multi-ns ladder (run 106+): joins are join-<ns>-p<N>.json; the
+    # block-page metric covers every ns's p-pages (item/e/fluid stay out)
+    jfs = sorted(glob.glob(d + "/art-*/join-*-p*.json"))
+    jfs = [f for f in jfs
+           if not re.search(r"join-[^/]*-(item|fluid|particle)-", f)]
+    for jf in jfs:
         j = json.load(open(jf))
         for r in j["rows"]:
             agg[r["verdict"]] += 1
