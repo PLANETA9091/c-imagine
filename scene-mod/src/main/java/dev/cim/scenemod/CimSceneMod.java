@@ -1887,6 +1887,11 @@ public final class CimSceneMod {
                 e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
                         GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z + 0.5,
                         180.0f, 0.0f);
+                // moveTo only sets yRot; the client takes body and head from
+                // yHeadRot, so a frozen mob would stand with its back to the
+                // camera while the ours leg's setRotation turns it around
+                e.setYHeadRot(180.0f);
+                e.setYBodyRot(180.0f);
                 e.addTag(GALLERY_TAG);
                 if (isMob) {
                     // NoAI: no movement, no look-at, no AI despawn logic — a

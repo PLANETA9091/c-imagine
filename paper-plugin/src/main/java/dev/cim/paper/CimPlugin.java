@@ -1427,7 +1427,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 org.bukkit.Location at = new org.bukkit.Location(w,
                         x + 0.5, y, z + 0.5, 180.0f, 0.0f);
                 try {
-                    org.bukkit.entity.Entity e = w.spawnEntity(at, type);
+                    // randomizeData=false: no finalizeSpawn, so no random variant or
+                    // gear. The truth leg's type.create() gets the defaults too
+                    org.bukkit.entity.Entity e = w.spawnEntity(at, type, false);
                     if (e instanceof org.bukkit.entity.Mob m) {
                         // NoAI equivalent (paper 26.3 surface): a still mob —
                         // no movement, no look-at, no AI despawn
