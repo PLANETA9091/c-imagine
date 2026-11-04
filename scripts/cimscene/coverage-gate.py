@@ -51,19 +51,38 @@ on that).
 
 SHOT NAME LAW (the false-red fix, worklog 12-ao): the gate joins against
 the shot names the walks ACTUALLY produce, which evolved per leg:
-  block          gal-p{p}.png            (no ns infix — the original walk)
+  block          gal-p-<ns>{p}.png       (gal-p-create0.png — the multi-ns
+                 ladder renamed the bare original gal-p{p}.png, which only
+                 ever served the single-namespace walk; a bare name is kept
+                 for the minecraft control, where no block walk exists)
   entity-mobs    gal-e{p}.png            (minecraft control)
                  gal-emobs-<ns>{p}.png   (mod ns: the series word appears)
   entity-dyn     gal-edyn{p}.png / gal-edyn-<ns>{p}.png
   entity-large   gal-elarge{p}.png / gal-elarge-<ns>{p}.png
-  item           gal-i<ns>{p}.png        (gal-i-create0.png)
-  particle       gal-pa<ns>{p}.png       (gal-pa-create0.png)
-  fluid          gal-fl<ns>{p}.png       (gal-fl-create0.png)
+  item           gal-i-<ns>{p}.png       (gal-i-create0.png)
+  particle       gal-pa-<ns>{p}.png      (gal-pa-create0.png)
+  fluid          gal-fl-<ns>{p}.png      (gal-fl-create0.png)
+  sound          gal-s-<ns>{p}.png       (DIAGNOSTIC class)
+  gui            gal-gui-<ns>{p}.png     (DIAGNOSTIC class)
+  biome          gal-b-<ns>{p}.png       (DIAGNOSTIC class)
+  held           gal-h-<ns>{p}.png       (DIAGNOSTIC class; rides the ITEM
+                 walk's pages — the held shot is taken right after the
+                 item page shot, same manifest, same exhaustion marker)
   ours shots     the same with the ours- prefix
-where <ns> = "" for the minecraft control and "-create" for the mod
+where <ns> = "" for the minecraft control and "-<ns>" for the mod
 namespace. The first committed gate used bare templates for every class
 and would have reported COVERAGE-INCOMPLETE on a perfect exhaustive run —
 a gate must join against what landed, or it lies.
+
+DIAGNOSTIC CLASSES (sound/gui/held/biome, wired 2026-11-04): ledger
+classes whose walks EXIST but whose join is not gate-hard yet — the same
+pattern the entity dyn/large series set. The gate runs the SAME checks
+(exhaustion, manifests, shots, absence notes) and prints DIAG lines so a
+crashed diagnostic walk is VISIBLE, but the verdict is not red. THE FLIP:
+move a class out of DIAGNOSTIC_CLASSES once its channel is measured
+stable — the honest-RED semantics then apply unchanged. The anim liveness
+probe is NOT a ledger class (no pages of its own — its two-frame delta
+join runs per shard in the inline join step, outside this gate).
 
 Usage:
   coverage-gate.py --ns create --index <gallery-<ns>-index.tsv> \
@@ -106,7 +125,26 @@ CLASSES = {
                  "gallery-particle done ns={ns} page={p} cells=0"),
     "fluid": ("gallery-fluid-{ns}-p{p}.tsv", "gal-fl", "ours-gal-fl",
               "gallery-fluid done ns={ns} page={p} cells=0"),
+    # DIAGNOSTIC classes (see the docstring): the manifests + shots exist,
+    # the exhaustion markers exist — but the verdict is not red yet.
+    "sound": ("gallery-sound-{ns}-p{p}.tsv", "gal-s", "ours-gal-s",
+              "gallery-sound done ns={ns} page={p} cells=0"),
+    "gui": ("gallery-gui-{ns}-p{p}.tsv", "gal-gui", "ours-gal-gui",
+            "gallery-gui done ns={ns} page={p} cells=0"),
+    "biome": ("gallery-biome-{ns}-p{p}.tsv", "gal-b", "ours-gal-b",
+              "gallery-biome done ns={ns} page={p} cells=0"),
+    # held rides the ITEM walk: same manifest, same exhaustion marker, its
+    # own shot stem (the first-person held shot after the item page shot)
+    "held": ("gallery-item-{ns}-p{p}.tsv", "gal-h", "ours-gal-h",
+             "gallery-item done ns={ns} page={p} cells=0"),
 }
+
+# Walked-but-diagnostic classes (2026-11-04): the checks run and print,
+# the verdict is never red — THE FLIP is moving a class out of this set
+# once its channel is measured stable (sound needs the packet-capture
+# channel measured, gui the menu-translation channel, held the
+# first-person item channel, biome the tint channel).
+DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome"}
 
 # the series word baked between the stem and the ns infix (SHOT NAME LAW):
 # minecraft's mob walk predates the series naming (gal-e0.png), every mod
@@ -125,10 +163,14 @@ SERIES_WORD = {"entity-mobs": "mobs", "entity-dyn": "dyn",
 # The documented line: worldgen plumbing (features, carvers, loot,
 # predicates, attributes, menus, recipes...) shapes the world or has no
 # per-entry pixel surface — it stays OUTSIDE the world-frame ledger.
-NO_WALK = {"biome", "painting_variant", "wolf_variant", "cat_variant",
+NO_WALK = {"painting_variant", "wolf_variant", "cat_variant",
            "frog_variant", "villager_type", "mob_effect", "trim_material",
            "trim_pattern", "banner_pattern", "decorated_pot_pattern",
            "enchantment", "jukebox_song", "dimension_type"}
+# biome LEFT the no-walk set (2026-11-04): the biome-tint walk exists now
+# (`cimscene gallery biome <ns> <p>` — one biome per page, fillbiome over
+# the wall region, grass/foliage/water tint sample in frame). It starts
+# DIAGNOSTIC (see DIAGNOSTIC_CLASSES).
 
 # per class: manifest skip-row notes that mean the subject is ABSENT from
 # the picture (see the HONEST-RED docstring above). A note matches when it
@@ -140,14 +182,18 @@ ABSENCE_NOTES = {
     "item": ("summon-failed",),
     "particle": ("no-simple-options",),
     "fluid": ("no-channel",),
+    "sound": ("play-failed",),
+    "gui": ("open-failed", "no-viewer"),
+    "biome": ("fillbiome-failed",),
 }
 
 
 def shot_infix(cls, ns):
-    """The namespace infix of the shot file names: none for the block
-    class (the original walk) and none for the minecraft control;
-    -<ns> for mod namespaces on every newer class."""
-    if cls == "block" or ns == "minecraft":
+    """The namespace infix of the shot file names: none for the minecraft
+    control; -<ns> for mod namespaces on every class (the block class gave
+    up its bare original naming when the ladder went multi-namespace —
+    gal-p-create0.png, not gal-p0.png)."""
+    if ns == "minecraft":
         return ""
     return "-" + ns
 
@@ -157,16 +203,6 @@ def shot_stem(base, sub, ns):
     if sub == "entity-mobs" and ns == "minecraft":
         word = ""
     return base + word
-
-
-def shot_present(dirpath, name, listing):
-    """The shot exists on disk, or the dir's shots.txt listing claims it
-    (the SHARD SHOT LISTS contract — the verdict job checks existence
-    without downloading every shard's PNGs; the per-page pixel join in
-    the same shard that wrote the list reads the real files)."""
-    if (dirpath / name).is_file():
-        return True
-    return listing is not None and name in listing
 
 
 def shot_present(dirpath, name, listing):
@@ -287,6 +323,10 @@ def main():
         # recorded skip rows, never coverage)
         series = (["entity-mobs", "entity-dyn", "entity-large"]
                   if cls == "entity" else [cls])
+        # `held` rides the ITEM class: the item ledger row fans it out so
+        # the held shots join against the item pages they were taken on
+        if cls == "item":
+            series = ["item", "held"]
         for sub in series:
             if sub not in CLASSES:
                 raise SystemExit(f"{args.index}: unknown class {sub!r}")
@@ -313,7 +353,14 @@ def main():
             unshown = unshown_rows(scenes, mf_tpl, args.ns, needed, sub)
             if unshown:
                 ok = False
-            note = "OK" if ok else "COVERAGE-INCOMPLETE"
+            # DIAGNOSTIC classes (2026-11-04): the checks above run and
+            # print so a crashed diagnostic walk is VISIBLE, but the
+            # verdict never reds the run — the flip is moving the class
+            # out of DIAGNOSTIC_CLASSES once its channel is measured
+            # stable (the docstring documents each flip's precondition).
+            diagnostic = sub in DIAGNOSTIC_CLASSES
+            note = ("DIAG-OK" if ok else "DIAG-INCOMPLETE") if diagnostic \
+                else ("OK" if ok else "COVERAGE-INCOMPLETE")
             line = (f"{note}\t{sub}\ttotal={total}\tpages_needed={needed} "
                     f"missing_manifests={missing_mf} "
                     f"missing_truth_shots={missing_ts} "
@@ -324,9 +371,11 @@ def main():
                 more = len(unshown) - min(len(unshown), 8)
                 line += (f" unshown={names}"
                          + (f" +{more} more" if more > 0 else "")
-                         + " (subjects absent from the picture are RED)")
+                         + (" (subjects absent from the picture are RED)"
+                            if not diagnostic else
+                            " (diagnostic class — absence reported, not red)"))
             print(line)
-            if not ok:
+            if not ok and not diagnostic:
                 incomplete.append(sub)
 
     if incomplete:

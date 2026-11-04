@@ -23,6 +23,13 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
      (measured #30: all 13 create particles rejected the bare spawn)
   O. fluid manifest skip row no-channel                       -> RED (named)
      (measured #30: 4 of 8 create fluids have no legacy block/bucket)
+  P. shard shot lists (13-b): listing covers -> GREEN; a hole -> RED
+  Q. biome walk (multi-ns block law): walked diagnostic class -> DIAG-OK,
+     run GREEN (2026-11-04: the biome-tint walk exists, not gate-hard yet)
+  R. diagnostic class walk crashed (missing biome manifest)   -> DIAG-INCOMPLETE
+     printed, run GREEN (the hole is VISIBLE, the verdict is not red yet)
+  S. held shots ride the item pages: present -> DIAG-OK; one missing
+     ours held shot -> DIAG-INCOMPLETE, run GREEN (diagnostic flip law)
 """
 import pathlib
 import shutil
@@ -50,7 +57,9 @@ def build_fixture(root, ns="create"):
         "particle\t10\t77\n"
         "fluid\t18\t18\n"
         "blockentity\t3\t0\n"
-        "biome\t0\t0\n"
+        "sound\t0\t77\n"
+        "gui\t0\t1\n"
+        "biome\t0\t1\n"
         "painting_variant\t0\t0\n"
         "wolf_variant\t0\t0\n"
         "cat_variant\t0\t0\n"
@@ -79,8 +88,13 @@ def build_fixture(root, ns="create"):
     (scenes / f"gallery-{ns}-be-uncovered.tsv").write_text("", encoding="utf-8")
 
     def shots(base, prefix):
+        # THE SHOT NAME LAW (multi-ns): the block class carries the ns
+        # infix too (gal-p-create0.png); only the minecraft control keeps
+        # the bare original gal-p{p}.png (no block walk exists for it)
         for p in (0, 1):
-            (base / f"{prefix}gal-p{p}.png").write_bytes(b"x")
+            name = f"{prefix}gal-p-{ns}{p}.png" if ns != "minecraft" \
+                else f"{prefix}gal-p{p}.png"
+            (base / name).write_bytes(b"x")
         # the SHOT NAME LAW: create mob shots carry the series word
         # (gal-emobs-create0.png), minecraft's mob walk predates it
         # (gal-e0.png); dyn/large carry theirs on both
@@ -90,7 +104,9 @@ def build_fixture(root, ns="create"):
                 name = f"{prefix}gal-e{word}-{ns}{p}.png" if ns != "minecraft" \
                     else f"{prefix}gal-e{word}{p}.png"
                 (base / name).write_bytes(b"x")
-        for cls, word in (("item", "i"), ("particle", "pa"), ("fluid", "fl")):
+        for cls, word in (("item", "i"), ("particle", "pa"), ("fluid", "fl"),
+                          ("held", "h"), ("sound", "s"), ("gui", "gui"),
+                          ("biome", "b")):
             name = f"{prefix}gal-{word}-{ns}0.png" if ns != "minecraft" \
                 else f"{prefix}gal-{word}0.png"
             (base / name).write_bytes(b"x")
@@ -241,15 +257,17 @@ def main():
         failures += 0 if ok else 1
 
     # K: a no-walk visual class with entries -> RED, named (12-aq)
+    # (biome LEFT the no-walk set 2026-11-04 — the walk exists, diagnostic;
+    # mob_effect still has no walk, so K rides it now)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
         idx = root / "scenes" / "gallery-create-index.tsv"
         txt = idx.read_text(encoding="utf-8").replace(
-            "biome\t0\t0\n", "biome\t64\t0\n")
+            "mob_effect\t0\t0\n", "mob_effect\t64\t0\n")
         idx.write_text(txt, encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "biome\ttotal=64" in r.stdout \
+        ok = r.returncode == 1 and "mob_effect\ttotal=64" in r.stdout \
             and "no-walk-yet" in r.stdout
         print("K no-walk class RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
@@ -335,11 +353,67 @@ def main():
             (root / d / "shots.txt").write_text("\n".join(lst) + "\n",
                                                 encoding="utf-8")
         (root / "ours-shots" / "shots.txt").write_text(
-            "\n".join(n for n in onames if n != "ours-gal-p1.png") + "\n",
+            "\n".join(n for n in onames if n != "ours-gal-p-create1.png") + "\n",
             encoding="utf-8")
         r = run_gate(root)
         ok = r.returncode == 1 and "missing_ours_shots=1" in r.stdout
         print("P2 shard shot list hole RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # Q: the biome walk (multi-ns law): a walked diagnostic class reports
+    # DIAG-OK and the run stays GREEN — the 2026-11-04 diagnostic-first
+    # contract (the biome-tint channel is the P1 BOP proof surface, not
+    # measured stable yet)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "biome\t0\t1\n", "biome\t3\t1\n")
+        idx.write_text(txt, encoding="utf-8")
+        for p in (0, 1, 2):
+            (root / "scenes" / f"gallery-biome-create-p{p}.tsv").write_text(
+                "cell\tx\ty\tz\tbiome\tnote\n", encoding="utf-8")
+            for d, prefix in (("truth-shots", ""), ("ours-shots", "ours-")):
+                (root / d / f"{prefix}gal-b-create{p}.png").write_bytes(b"x")
+        with open(root / "boot.log", "a", encoding="utf-8") as f:
+            f.write("gallery-biome done ns=create page=3 cells=0 failed=0 "
+                    "exhausted=1\n")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-OK\tbiome\ttotal=3" in r.stdout
+        print("Q walked biome diagnostic DIAG-OK GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # R: a diagnostic walk that CRASHED (missing biome manifest) is
+    # VISIBLE (DIAG-INCOMPLETE) but never reds the run — the honest hole
+    # is printed, the flip law keeps the verdict green until measured
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "biome\t0\t1\n", "biome\t3\t1\n")
+        idx.write_text(txt, encoding="utf-8")
+        (root / "scenes" / "gallery-biome-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tbiome\tnote\n", encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-INCOMPLETE\tbiome" in r.stdout
+        print("R crashed diagnostic walk visible-not-red:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # S: held rides the item pages — a missing held shot is DIAG-INCOMPLETE
+    # (diagnostic), never COVERAGE-INCOMPLETE
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "ours-shots" / "ours-gal-h-create0.png").unlink()
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-INCOMPLETE\theld" in r.stdout \
+            and "missing_ours_shots=1" in r.stdout
+        print("S held rides item pages diagnostic:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     print("SMOKE:", "ALL PASS" if failures == 0 else f"{failures} FAILURES")
