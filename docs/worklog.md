@@ -5678,3 +5678,39 @@ with cimscene), and the missing cloth-config and guideme companions.
 
 Partial #41892119307 data shows the CT channel made pillars WORSE (p50 45k -> 53k,
 +62 RED, everything else unchanged); the owner of 14-ak has an uncommitted uv fix.
+
+---
+## Task 14-as — cloth-config: the combat-roll companion that blocked every server boot
+
+The multi-namespace ladder added combat-roll to the server mods but not its
+required Modrinth dependency cloth-config (project 9s6osm5g): every main
+gallery run since ~18:57Z 2026-11-04 died at the truth-server boot with
+`ModLoadingException: Combat Roll (combat_roll) ... NoClassDefFoundError:
+me/shedaniel/autoconfig/serializer/PartitioningSerializer$GlobalData`. The
+class lives in cloth-config-neoforge (unzip -l: 71 me/shedaniel/autoconfig
+entries). Subtlety worth recording: combat-roll's neoforge.mods.toml
+declares only neoforge/minecraft/playeranimator — the dependency is in the
+Modrinth metadata and in the classpath, not in the toml.
+
+The fix itself is already on main (the parallel session pinned the same
+cloth-config=15.0.140+neoforge — latest matching loaders=["neoforge"]
+game_versions=["1.21.1"], jar cloth-config-15.0.140-neoforge.jar, modId
+cloth_config — in mods.lock and LADDER_SLUGS, plus the guideme companion
+for ae2); this entry adds the independent local verification. Seed key:
+seed-inputs hashes scripts/cimscene/** which includes mods.lock, so the
+new pin invalidated the cached pack and forces one slow seed run.
+fetch-ladder.sh needed no change (already idempotent: cached-file skip +
+lock pin).
+
+Verified locally: fetched all 8 gallery LADDER_SLUGS through the real
+fetch-ladder.sh (locked: cloth-config=15.0.140+neoforge), assembled a
+NeoForge 21.1.265 server from srv/layer1211 with the 10 mods (8
+ladder/companions + cimtest + cimscene), booted on java 21:
+"Done (0.720s)!", 0 "Loading errors", no NoClassDefFoundError, mod list
+shows Cloth Config v15 API 15.0.140 (cloth_config) + Combat Roll
+2.0.6+1.21.1 (combat_roll). gradle build --no-daemon -p scene-mod: clean.
+
+The next main gallery measures the whole pending collapse: item
+calibration 314 -> ~138 REDs (14-ap, measured on a branch dispatch), the
+5a719206 pillar CT collapse (~103 REDs, pack-verified), 14-ar mob yaw,
+14-aq obj loader meshes.
