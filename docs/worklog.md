@@ -4868,3 +4868,85 @@ Stage Summary:
   already correct. The fix is small and mechanical in GalleryPack
   (synthesizeComposite: pre-bake explicit uvs per element face), but its
   acceptance needs the local stand A/B per 14-ad's instrument note.
+
+---
+## Task 14-af — #79 measured (93.02%, the forceload fix grew judged +4.9k), the
+14-ae explicit-default-uv bake SHIPPED and measured a GATE NO-OP (#80: 93.01%),
+the algebra says why the theory's surface never intersected the RED mass, and
+the page-shot forensics exclude shift/subpixel/light/filter/mispairing — the
+pillar residual tracks the TRUTH-side per-position variance (AO/smooth-lighting
+from the multipart arms + wall boundary), the entity channel cannot reproduce it
+
+Agent: main
+Task: continue the GREEN campaign — measure #79, ship 14-ae, measure #80, and
+characterize the pillar/stairs residual with the run's own artifacts
+
+Work Log:
+- #79 (0d9a2e1, run 41705965172) measured CI-natively from the 8 report
+  shards: judged 17161 / RED 1108 / GREEN 14762 / DYNAMIC 1220 / skipped
+  14228 -> green-share 93.02% (#74 FULL: 92.82% on judged 12300). The
+  forceload fix (0d9a2e1) grew the judged set by +4861 cells (the ground
+  fills now place and judge). RED family table: pillar 461 (68.6% red —
+  the family's own cells split 461 red / 211 green), stairs 360 (12.5%),
+  pane 71 (24.6%), wall 33 (0.4%), scaffolding 17, bars 9. The
+  pillar+stairs+pane+wall class = 924 of 1108 RED (83%) — the 14-ae target.
+- The 14-ae fix shipped in GalleryPack (commit 2a6eb1c):
+  writeDefaultUvs() writes defaultFaceUV(ORIGINAL from/to, ORIGINAL
+  direction) into every null-uv face BEFORE bakeRotation, so the 26.3 item
+  channel uses authored uvs verbatim = the decompiled 1.21.1 truth
+  semantics. Emission verified end-to-end: a mini pack build on the real
+  create 6.0.10 jar + a python re-derivation of the whole spec
+  (defaultFaceUV + bakeVec + remapFace) matches the emitted g2
+  (granite_pillar[axis=x] x90y90) 6/6 face-uvs and g5 (stairs y90 uvlock)
+  11/11; F2vPack --selftest ALL OK.
+- #80 (2a6eb1c, run 41792830144) measured: judged 17161 / RED 1109 /
+  GREEN 14760 -> green-share 93.01% — the fix is a MEASURED GATE NO-OP
+  (delta -1 RED, -2 GREEN vs #79). Post-hoc algebra explains it: for the
+  RED families' geometry the two derivations COINCIDE — a full cube's
+  defaultFaceUV is [0,0,16,16] on every face in both conventions, and any
+  axis-aligned box spanning [0..16] in the two axes a y90 rotation swaps
+  derives the same rect as the transported one (the stairs bottom slab and
+  the x/z-symmetric pane posts are exactly such boxes). The 14-ae mismatch
+  surface (null-uv derivation vs rigid transport) only differs on
+  asymmetric sub-boxes — which live mostly in the already-green wall/pane
+  families. The theory was gate-neutral for the RED mass BEFORE it shipped;
+  the run proves it. The code stays: authored-verbatim uv is the correct
+  semantics and protects future asymmetric geometry.
+- The residual forensics (p391's 75 pillar cells, truth+ours page shots of
+  #79, the exact gallery-diff crop math): EXCLUDED by direct measurement —
+  (a) integer shift +-70px: optima scatter ((-56..+66) with no page-global
+  pattern; gains partial, the ae landscape is quasi-periodic in the band
+  texture); (b) subpixel phase (bilinear +-1.5px at 0.25 steps): 1-4%;
+  (c) affine light (the 14-ac ae_fit shape per channel): 175k -> 146k,
+  still over the gate; (d) blur/filter mismatch (ours |grad| is 17-23%
+  HIGHER, not lower; gaussian blur of ours: no gain); (e) cell mispairing
+  (a +-70px sweep would find a 60.5px pitch optimum: none); (f) smooth
+  2D-gain (AO-shaped multiplicative field, order-1/2 poly): 175k -> 100-118k
+  — the largest single absorption, still over the gate.
+- The POSITION-VARIANCE signature (the strongest fact): OURS renders the
+  same state consistently across positions while TRUTH varies — same-state
+  truth-vs-truth ae ~140k (c1r1 vs c4r1, pillar axis=y east+south) vs
+  ours-vs-ours ~0 profile agreement; the cross-leg profile matches land on
+  OTHER positions of the same state (ours c1r1 -> truth c4r1 ncc 0.83 vs
+  same-position 0.4-0.5). The truth wall's per-position field comes from
+  smooth lighting/AO over the REAL neighborhood: the multipart ARMS of the
+  neighbor states are real partial blocks that shade their neighbors, the
+  wall boundary rows see air, the top row sees sky — the item_display
+  entity channel samples ONE light value and has no neighborhood AO at all.
+- INSTRUMENT LIMIT reached: the page shots + shift sweeps cannot resolve
+  the mechanism further (band periodicity aliases every sweep); the
+  decisive instrument is the LOCAL STAND single-state A/B (one isolated
+  pillar, no neighbors, identical cameras — the 14-ad tooling). If the
+  isolated A/B is clean, the residual is 100% neighborhood shading and the
+  campaign's remaining lever is the channel-difference model, not the bake.
+- CI status: #80 gallery failure = the pixel gate (expected while RED>0);
+  ci/integration unchanged; the known-red integration is not a 14-ae
+  regression.
+
+Stage Summary:
+- The campaign's biggest named lever (14-ae) is measured DEAD for the gate
+  with the algebra saying it could never have moved the RED mass. The
+  residual is now localized to the channel-level shading field (truth-side
+  AO/smooth-lighting variance) — 93.02% green-share stands as the honest
+  floor, and the next step is the local-stand single-state A/B to split the
+  last ambiguity (neighborhood shading vs an ours-side texture bug).
