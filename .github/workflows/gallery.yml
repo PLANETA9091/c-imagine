@@ -156,7 +156,11 @@ env:
   # glitchcore + terrablender; a missing required dependency is a server
   # boot CRASH). Their registry namespaces are deliberately NOT ladder
   # namespaces: they are libraries/providers, not gallery content.
-  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator"
+  # cloth-config: UNDECLARED in combat-roll's neoforge.mods.toml but
+  # loaded at construct time (me.shedaniel.autoconfig PartitioningSerializer
+  # — the measured #102 boot crash: NoClassDefFoundError during mod
+  # construction); pinned in mods.lock.
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config"
   LADDER_NS: "create biomesoplenty dynamictrees combat_roll"
 
 jobs:

@@ -50,6 +50,10 @@ jade=15.10.6+neoforge
 # a few config-ish sounds at most; an open question for the owner is
 # whether any companion namespace earns its own ladder row).
 playeranimator=2.0.4+1.21.1-forge
+# cloth-config — combat-roll constructs me.shedaniel.autoconfig classes at
+# boot WITHOUT declaring the dependency (the measured #102 crash); the
+# Modrinth latest-matching for 1.21.1/neoforge pinned deliberately
+cloth-config=15.0.140+neoforge
 sophisticated-core=1.21.1-1.5.28.2458
 glitchcore=2.1.0.2
 terrablender=4.1.0.8
