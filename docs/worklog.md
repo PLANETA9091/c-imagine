@@ -5162,6 +5162,12 @@ Work Log:
   pass the flags — that half lands AFTER the parallel 14-ai edit
   (rebase-safe, the feature is dormant until then).
 
+- 14-aj YML HALF (landed after 14-am): the mob walk loops take the second
+  shot (sleep 2, gal-e$p-self.png on both legs) and the mob join passes
+  --truth-self/--ours-self when the files exist — the ANIMATED class goes
+  live. The e-dyn/e-large series and the create entity walk stay
+  diagnostic/dyn and untouched.
+
 Stage Summary:
 - The animated-mob ceiling is measured and the instrument is validated on
   real data. With 14-ai (the crash containment, ~800 gated garbage REDs)

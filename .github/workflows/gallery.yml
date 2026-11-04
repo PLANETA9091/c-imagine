@@ -866,6 +866,8 @@ jobs:
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-e$p.png"
+            sleep 2   # 14-aj the self-consistency pair: a second shot ~2s later
+            java -cp vtools Shot "truth-shots/gal-e$p-self.png"
             echo "shot mob page $p"
           done
           # DYN + LARGE series (diagnostic, never gated): non-Mobs and
@@ -1497,6 +1499,8 @@ jobs:
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-gal-e$p.png"
+            sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror)
+            java -cp vtools Shot "ours-shots/ours-gal-e$p-self.png"
             echo "shot mob page $p"
           done
           # DYN + LARGE series (diagnostic)
@@ -1717,7 +1721,13 @@ jobs:
                 --out "gallery-report/determinism-ours-e0.json" \
                 --pitch 2 --gate 240000 || true
             fi
-            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+            # 14-aj: the self-consistency pair (each leg's second shot) drives
+            # the ANIMATED class — a cell that moves against ITSELF is a mob
+            # idle animation, never a channel defect
+            SELF_T=""; SELF_O=""
+            [ -f "truth-shots/gal-e$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$p-self.png"
+            [ -f "ours-shots/ours-gal-e$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$p-self.png"
+            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" $SELF_T $SELF_O \
               --manifest "$M" --out "gallery-report/join-e$p.json" \
               --diff-dir "gallery-report/diff-e$p" \
               --pitch 2 --gate 240000 || GATE=1
