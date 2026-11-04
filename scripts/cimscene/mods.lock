@@ -4,5 +4,40 @@
 # pack/manifests from a fresh walk (and the walk itself stops drifting
 # with upstream releases). Bump deliberately: edit, commit, one slow seed
 # run repopulates the cache.
-#   create 6.0.10+mc1.21.1 = the measured #34/#35 walk + pack reference
+#
+# Versions resolved 2026-11-04 from the Modrinth API
+# (project/<slug>/version?game_versions=["1.21.1"]&loaders=["neoforge"],
+# latest matching release at pin time) and cross-checked against each
+# jar's META-INF/neoforge.mods.toml modId (the REGISTRY namespace the
+# gallery walks filter by — see LADDER_NS in gallery.yml):
+#   create                 6.0.10+mc1.21.1      modId create        (the measured #34/#35 walk + pack reference)
+#   biomes-o-plenty        21.1.0.14            modId biomesoplenty
+#   dynamictrees           1.7.2                modId dynamictrees
+#   combat-roll            2.0.6+1.21.1-neoforge modId combat_roll   (jar combat_roll-neoforge-2.0.6+1.21.1.jar)
+#   ae2                    19.2.18              modId ae2
+#   mekanism               10.7.19.85           modId mekanism
+#   sophisticated-backpacks 1.21.1-3.26.20.2244 modId sophisticatedbackpacks
+#   jade                   15.10.6+neoforge     modId jade
+#
+# CLIENT-ONLY / NO-OP-ON-SERVER EXCLUSIONS (honest, from Modrinth metadata,
+# not guessed — the project records' server_side/client_side fields):
+#   jei         server_side=optional, client_side=optional (environment
+#               client_or_server_prefers_both): it LOADS on a dedicated
+#               server but ships no block/item/entity/sound/particle
+#               content to census — a client-side recipe viewer. Excluded
+#               from the server census: there is nothing to census.
+#   journeymap  same metadata shape (server_side=optional, client_side=
+#               optional): client-side mapping UI, no server content.
+#               Excluded from the server census for the same reason.
+# Mods the parity program actually censuses (AE2, Mekanism, Sophisticated
+# Backpacks, Jade) are all server-loadable: server_side=required for the
+# first three, Jade ships server-side data providers (server_side=
+# optional = loads everywhere).
 create=6.0.10+mc1.21.1
+biomes-o-plenty=21.1.0.14
+dynamictrees=1.7.2
+combat-roll=2.0.6+1.21.1-neoforge
+ae2=19.2.18
+mekanism=10.7.19.85
+sophisticated-backpacks=1.21.1-3.26.20.2244
+jade=15.10.6+neoforge

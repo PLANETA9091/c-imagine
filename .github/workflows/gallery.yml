@@ -118,8 +118,21 @@ env:
   #                  under (verified from each jar's neoforge.mods.toml
   #                  modId — the registry namespace is what the walk
   #                  filters registries by, not the Modrinth slug).
-  LADDER_SLUGS: "create"
-  LADDER_NS: "create"
+  #
+  # THE P1 EXTENSION (2026-11-04, owner ladder directive: Create first,
+  # then BOP / Dynamic Trees / Combat Roll): the walk surfaces run for
+  # every namespace below. KNOWN HONEST-RED ABSENCES to expect on the
+  # first multi-ns run (measured on create, expected structurally
+  # identical for the new ns — the channels are the same):
+  #   - particles: every mod particle fails the bare vanilla /particle
+  #     spawn (no-simple-options) on ALL ns (measured #30: all 13 create
+  #     particles);
+  #   - fluids without a legacy block/bucket: no-channel rows (measured
+  #     #30: 4 of 8 create fluids);
+  #   - mod entities/items/blocks with no pack row on ours: nochannel /
+  #     honest pixel REDs until the pack channel covers them.
+  LADDER_SLUGS: "create biomes-o-plenty dynamictrees combat-roll"
+  LADDER_NS: "create biomesoplenty dynamictrees combat_roll"
 
 jobs:
   # ---------------------------------------------------------------- seed --
