@@ -4640,7 +4640,6 @@ Stage Summary:
   root, not at the metric; the missing-CMD hole is measured ZERO. The
   #75 verdict decides: if the bottom-row and debris classes collapse,
   the pillar/stairs near-gate residual is the remaining honest battle.
->>>>>>> 9958b8b (fix(scene): gallery drop guard + ground neutralization — the #74 measured floors)
 
 ---
 
@@ -5569,3 +5568,41 @@ Work Log:
   x-pillars (perpendicular to every face) are CT-invisible.
 - NEXT: CI #88 measures the pillar pool (103 REDs + the panes' panes-CT
   residual stays for 14-al).
+### 14-ao ANALYSIS — the 14-ak "pillar arm" premise is wrong: the pool is connected textures
+
+Static reading of create 6.0.10: `*_pillar` blockstates are 3 plain variants on
+cube_column / cube_column_horizontal. There are NO arm elements. north/south/
+east/west are ConnectedPillarBlock flags feeding RotatedPillarCTBehaviour, and
+c-imagine has no CT implementation. Worklog 5361's element-chain lever is retired.
+
+Measured on the 41880239869 artifacts (17161 rows, RED 180 — #87's count; the
+pillar stratification below covers GREEN/RED/SPILL pillar cells):
+- Hypothesis "RED iff a flag points at a same-block neighbour": REFUTED by the
+  first cut (flag 14.6% RED vs no flag 12.5%).
+- Exact connectsTo (bytecode: along-axis neighbours need no flag, lateral needs
+  the flag on both sides; the axis->flag map read from ConnectedPillarBlock):
+    no connection     n=92  RED 10.9%  p50 43907
+    along only        n=242 RED 11.6%  p50 45073
+    lateral only      n=213 RED 16.9%  p50 46914
+    along + lateral   n=125 RED 16.8%  p50 46732
+  Connection state barely moves the median: neighbour CT is a minor term.
+- The floor: CT replaces the sprite even with ZERO connections. The base PNG
+  matches no sheet tile checked: pillars 16x16 vs a 4x4 sheet, tile 0
+  closest but never equal (andesite 5939 summed abs diff); cap 8x8 sheet likewise.
+  Non-pillar p50 AE is 13550 vs pillar 41313. Likely cause of the floor; NOT yet
+  proven by a shot — an A/B through the gallery is the proof.
+
+GREEN IS NOT IDENTICAL: only 894 of 14965 non-pillar cells are AE 0 (p50 13550,
+gate 60000). The green-share headline is a tolerance metric and must not be read
+as parity.
+
+SUPERSEDED: 4836761 (a parallel agent) landed the CT channel for pillars, so the
+plan drafted here is dropped. Still relevant to it: items render the BASE texture
+on the real client (CT is world-only), so block-channel CT sprites must not
+overwrite the shared PNG.
+
+14-an CONFIRMED IN PRODUCTION (41885361809, cancelled by a later push but s0's
+meta landed): client died 18:20:33, banned at settle 18:20:35, rejoined 18:21:03,
+walk continued. The client log names the sole killer: create:contraption
+(Contraption.readNBT NPE, "Failed to process advanced entity spawn data"). The
+other three banned types were collateral.
