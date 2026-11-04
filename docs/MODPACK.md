@@ -46,9 +46,44 @@ run; the pixel join is red unless 100% of cells match at the calibrated datum an
 the red cells ship as triptych artifacts. Census counts, construct and mixin
 markers are DIAGNOSTICS — they never green a rank (owner directive 2026-10-30).
 
+### Ladder CI wiring status (branch `ci/full-content-coverage`, 2026-11-04 — nothing here is measured GREEN yet)
+
+The gallery walks **four ladder namespaces** (`LADDER_NS` in `gallery.yml`:
+`create biomesoplenty dynamictrees combat_roll` — registry namespaces
+verified from each jar's `neoforge.mods.toml`; pins in
+`scripts/cimscene/mods.lock`). Status per mod (marked honestly — the first
+full multi-ns measurement happens after this branch merges, since PRs do
+not trigger this repo's push-to-main CI):
+
+| Mod | CI wired (branch) | Note |
+|---|---|---|
+| Create | CI wired (branch): the full walk all classes, as on main | the measured baseline |
+| Biomes O' Plenty | CI wired (branch): gallery walk ns=biomesoplenty, all classes + the biome-tint diagnostic; companions glitchcore + terrablender pinned (mandatory deps, checked in the jar) | biome-tint class = DIAGNOSTIC-first proof surface |
+| Dynamic Trees | CI wired (branch): gallery walk ns=dynamictrees, all classes | BE bridge channel proof stays the M5.6 surface |
+| Combat Roll | CI wired (branch): gallery walk ns=combat_roll, all classes; playeranimator companion pinned (mandatory dep) | sound/held diagnostic classes cover its sound/animation surface |
+
+Companion mods (playeranimator, glitchcore, terrablender) ride the server
+but their namespaces are deliberately not ladder namespaces — they are
+libraries/providers, not gallery content.
+
+### The new gallery classes (2026-11-04 — all DIAGNOSTIC-first: walked, reported, never red until the channel is measured stable)
+
+| Class | What it measures | First-run expectation (honest) |
+|---|---|---|
+| `sound` | every registered SoundEvent played in a deterministic page order; the truth capture is a packet-level mixin log (`gallery-sound-<ns>-p<p>.log`), the ours replay writes the same artifact shape; `sound-diff.py` joins the ordered streams | ours empty (no mod-sound channel in the F2V pack/plugin — verified before wiring) → every page named missing |
+| `gui` | one MenuType per page opened for the rig viewer via vanilla `openMenu`; menus needing block context become named `open-failed` rows | truth: context-free menus open, context menus fail honestly; ours: all nochannel (no menu translation) |
+| `held` | the item walk's first manifest item staged into the viewer's hotbar on both legs, the `1` key pressed, first-person shot | item channel's first-person proof; unmeasured yet |
+| `anim` | kinetic block pages (manifest dyn=1 cells) shot twice 2 s apart per leg; `anim-diff.py` joins the frame deltas | a frozen ours kinetic page shows as OURS-STATIC; unmeasured yet |
+| `biome` | one biome per page via the vanilla `fillbiome` surface, fixed grass/leaves tint-sample rig in frame | the P1 BOP tint-channel proof surface; ours all nochannel (Paper cannot set modded biomes) |
+
+The flip law: a class moves out of `coverage-gate.py`'s `DIAGNOSTIC_CLASSES`
+once its channel is measured stable — from then on its absences are RED,
+like every gate-hard class.
+
 ## Tier 2 — third-party (nightly matrix, M7; Tier 0 is the pulled-forward core)
 
-Pinned versions, downloaded by CI into `mods/` next to `cimtest`:
+Pinned versions, downloaded by CI into `mods/` next to `cimtest`
+(`scripts/cimscene/mods.lock`):
 
 | Mod | Why | Known upstream gap (docs/F2V_ANALYSIS.md §3) |
 |---|---|---|
@@ -61,6 +96,21 @@ Pinned versions, downloaded by CI into `mods/` next to `cimtest`:
 
 Acceptance per mod (M7): loads, registries land, no native/JVM crash, top-3 core
 features function in the layer, visual diff within contract threshold.
+
+### Tier 2 CI wiring status (branch `ci/full-content-coverage`, 2026-11-04)
+
+`mod-matrix.yml` gained `tier2-truth` matrix legs for the server-loadable
+set — each boots a real NeoForge 21.1.265 server + the locked mod and
+asserts the mod's namespace lands census rows:
+
+| Mod | CI wired (branch) | Note |
+|---|---|---|
+| AE2 | CI wired (branch): tier2-truth census leg | server_side=required per Modrinth |
+| Mekanism | CI wired (branch): tier2-truth census leg | server_side=required per Modrinth |
+| Sophisticated Backpacks | CI wired (branch): tier2-truth census leg; rides its REQUIRED companion sophisticated-core (checked in the jar) | server_side=required per Modrinth |
+| Jade | CI wired (branch): tier2-truth boot leg, assert-rows=no | a HUD provider registers no content — the rung proves boot + census file, honestly not rows |
+| JEI | NOT wired — excluded from the server census | Modrinth metadata: server_side=optional, ships no server content (nothing to census) |
+| JourneyMap | NOT wired — excluded from the server census | Modrinth metadata: server_side=optional, ships no server content (nothing to census) |
 
 ## Testing loop (project law)
 

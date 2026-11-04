@@ -108,6 +108,12 @@ CI (GitHub Actions):
   boot markers, mod discovery and clean logs.
 - **profiling** — criterion baselines + bare-vs-modded boot/memory budget gate.
 - **visual** — protocol-level visual smoke (F2V v2 groundwork; real-client harness lands in M5).
+- **gallery** — the real-mod pixel gate: real NeoForge 1.21.1 client vs c-imagine on the
+  vanilla 26.3 client, every ladder namespace walked to exhaustion across
+  blocks/entities/items/particles/fluids (gate-hard) plus the sound/gui/held/anim/biome-tint
+  classes (diagnostic-first); coverage gate + per-shard pixel joins.
+- **mod-matrix** — the real-mod ladder: P0 Create census parity (truth vs layer), the P1
+  ladder, and the Tier 2 census legs (AE2, Mekanism, Sophisticated Backpacks, Jade).
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for milestones and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design, including the
