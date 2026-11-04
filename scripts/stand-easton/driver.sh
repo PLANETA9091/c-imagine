@@ -7,6 +7,7 @@ done
 [ "$DISPLAY" = ":77" ] || { echo "ABORT: DISPLAY=$DISPLAY"; exit 99; }
 [ -z "${WAYLAND_DISPLAY:-}" ] || { echo "ABORT: WAYLAND_DISPLAY set"; exit 99; }
 mkdir -p /tmp/xdg; chmod 700 /tmp/xdg
+export LP_NUM_THREADS=4
 export SDL_VIDEODRIVER=x11   # the 26.3 client is SDL-based: never let it pick a driver
 # the client asks for an sRGB framebuffer; this Xvfb's GLX has no such config, Mesa EGL has
 export SDL_VIDEO_FORCE_EGL=1 EGL_PLATFORM=x11
@@ -25,11 +26,14 @@ for i in $(seq 1 240); do grep -q 'Done (' /st/q/paper.out 2>/dev/null && break;
 grep -q 'Done (' /st/q/paper.out || { echo "ABORT: paper did not boot"; tail -5 /st/q/paper.out; exit 97; }
 echo "$(date +%T) paper up"
 cd /home/btw/ci74/clients/v263
-L=$(sed 's/^java /java -Xmx3G /' launch.txt)
-printf 'onboardAccessibility:false\nfov:-0.65\nrenderClouds:false\npreferredGraphicsBackend:opengl\nresourcePacks:["vanilla","file/objtest.zip"]\n' > game/options.txt
+L=$(sed 's/^java /java -Xmx1G /' launch.txt)
+cp /st/q/options.txt game/options.txt
 setsid bash -c "$L > /st/q/client.out 2>&1" </dev/null >/dev/null 2>&1 &
 for i in $(seq 1 180); do $RC list 2>/dev/null | grep -q cimviewer && break; sleep 1; done
 $RC list 2>/dev/null | tail -1
+for i in $(seq 1 60); do [ "$(grep -c 'Reloading ResourceManager' /st/q/client.out)" -ge "${RELOADS:-2}" ] && break; sleep 1; done
+for i in $(seq 1 60); do grep -qE 'Loaded [0-9]+ advancements' /st/q/client.out && break; sleep 1; done
+sleep 8
 echo "$(date +%T) ready; queue /st/q/in"
 # one job = one script dropped in q/in; output in q/out/<name>.out
 while [ ! -e /st/q/stop ]; do
