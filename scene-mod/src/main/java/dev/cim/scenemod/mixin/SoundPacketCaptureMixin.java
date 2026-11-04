@@ -3,6 +3,7 @@ package dev.cim.scenemod.mixin;
 import dev.cim.scenemod.CimSceneMod;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.Connection;
+import net.minecraft.network.PacketSendListener;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
@@ -21,11 +22,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * page manifest; sound-diff.py joins that stream against the ours leg's
  * replay log — the census-style channel proof for the SOUND surface.
  *
- * <p>Injection point: BOTH public {@code send} overloads of
- * {@code Connection} — the vanilla server broadcast path
- * (ServerPlayer.connection.send -> ServerCommonPacketListenerImpl.send)
- * reaches Connection through the two-arg overload, so the single-arg hook
- * alone would undercount. {@code require = 0} ON PURPOSE: a descriptor that
+ * <p>Injection point: the three-arg {@code send} every overload funnels into,
+ * so each packet is recorded once. Two hooks on the outer overloads would count
+ * the one-arg path twice.
+ *
+ * {@code require = 0} ON PURPOSE: a descriptor that
  * does not match this exact 1.21.1 mojmap build must degrade the capture to
  * zero rows (which the diff NAMES as missing rows), never crash the boot of
  * a parity harness — the class is DIAGNOSTIC until the channel is measured
@@ -35,17 +36,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Connection.class)
 public abstract class SoundPacketCaptureMixin {
 
-    @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;)V",
-            at = @At("HEAD"), require = 0)
-    private void cimscene$captureSound(Packet<?> packet, CallbackInfo ci) {
-        cimscene$record(packet);
-    }
-
     @Inject(method = "send(Lnet/minecraft/network/protocol/Packet;"
-            + "Lnet/minecraft/network/PacketSendListener;)V",
+            + "Lnet/minecraft/network/PacketSendListener;Z)V",
             at = @At("HEAD"), require = 0)
-    private void cimscene$captureSoundWithListener(Packet<?> packet,
-                                                   CallbackInfo ci) {
+    private void cimscene$captureSound(Packet<?> packet, PacketSendListener listener,
+                                       boolean flush, CallbackInfo ci) {
         cimscene$record(packet);
     }
 
