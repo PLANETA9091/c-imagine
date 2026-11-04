@@ -78,7 +78,28 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private record F2vState(List<dev.cim.f2v.F2vPack.VisualItem> items,
                             List<dev.cim.f2v.F2vPack.VisualBlock> blocks,
                             List<dev.cim.f2v.GalleryPack.Resolved> gallery,
+                            java.util.Map<String, Float> fluids,
                             String sha1) {
+    }
+
+    /**
+     * The fluid-texture manifest (round 2): fluidId -> pack CMD, written by
+     * the F2vPack build (visual-gallery-fluids.tsv). Read from the f2v dir
+     * in BOTH resolution paths (fast boot and full rebuild write the same
+     * deterministic scan). Missing file = an empty map (the fluid walk's
+     * texture-model rows then replay as nochannel — the honest backlog).
+     */
+    private java.util.Map<String, Float> readFluidTextureMap(Path base) {
+        Path f = base.resolve("visual-gallery-fluids.tsv");
+        if (!Files.isRegularFile(f)) {
+            return java.util.Map.of();
+        }
+        try {
+            return dev.cim.f2v.F2vPack.readFluidManifest(f);
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v fluid manifest read failed " + f + ": " + ioe);
+            return java.util.Map.of();
+        }
     }
 
     /**
@@ -123,7 +144,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 ? dev.cim.f2v.GalleryPack.readResolvedManifest(
                                         base.resolve("visual-gallery.resolved.tsv"))
                                 : List.of();
-                f2v = new F2vState(fastItems, fastBlocks, fastGallery, cachedSha1);
+                f2v = new F2vState(fastItems, fastBlocks, fastGallery,
+                        readFluidTextureMap(base), cachedSha1);
                 int fastPort = Integer.getInteger("cim.f2v.port", 25580);
                 dev.cim.f2v.PackHttp fastHttp =
                         dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
@@ -156,7 +178,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().warning(LOG_PREFIX + "f2v pack: warn " + w);
                 }
             }
-            f2v = new F2vState(result.items(), result.blocks(), result.gallery(), result.sha1());
+            f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
+                    readFluidTextureMap(base), result.sha1());
             int port = Integer.getInteger("cim.f2v.port", 25580);
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
@@ -1776,6 +1799,100 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return new String[]{placed == null ? "no-viewer" : placed, String.valueOf(cmd)};
     }
 
+    /**
+     * The INVENTORY gallery's ours-side fill (round 2, 2026-11-04,
+     * DIAGNOSTIC-first): resolve EVERY manifest row's item through the pack
+     * item channel (the SAME resolution the item replay uses) and set the
+     * viewer's real inventory slots (0..8 hotbar, 9..35 main) to paper+CMD
+     * carriers. The truth leg fills the SAME slots over RCON with the REAL
+     * modded items (read from the SAME manifest) — the open-inventory shot
+     * then compares the GUI ITEMS channel: real modded item models vs the
+     * pack's CMD carriers, both in the vanilla inventory grid. Items with
+     * no pack row count as nochannel (the slot stays empty, the join names
+     * it). The E/ESC key presses and the shot live in the CI walk.
+     *
+     * <p>Returns {@code [placed, nochannel, cells]}; the RCON marker is
+     * {@code gallerypage-inv <ns> p<page> -> placed=N nochannel=K cells=M}.
+     */
+    private int[] galleryPageInv(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-inv-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-inv: manifest missing: " + mf);
+            return new int[]{0, 0, -1};
+        }
+        final java.util.List<String[]> slots = new java.util.ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("slot\t")) {
+                    continue;   // header
+                }
+                if (!line.isBlank()) {
+                    slots.add(line.split("\t", -1));
+                }
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-inv: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0, -1};
+        }
+        // item id -> pack CMD carrier (the resolved visual-items rows carry
+        // BOTH the hand-written manifest and the CI-generated gallery rows)
+        final java.util.Map<String, Float> cmdByItem = new java.util.HashMap<>();
+        if (f2v != null) {
+            for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                cmdByItem.putIfAbsent(r.moddedId(), r.cmd());
+            }
+        }
+        int[] counts = callSync(() -> {
+            int placed = 0, nochannel = 0;
+            org.bukkit.entity.Player viewer =
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer");
+            if (viewer == null) {
+                log().warning(LOG_PREFIX + "f2v gallery-inv: no cimviewer online — fill skipped");
+                return new int[]{0, slots.size(), slots.size()};
+            }
+            for (String[] row : slots) {
+                // slot|item  (slot = hotbar.0..8 | inventory.9..35)
+                if (row.length < 2) {
+                    continue;
+                }
+                String slotName = row[0];
+                String itemId = row[1];
+                Float cmd = cmdByItem.get(itemId);
+                if (cmd == null) {
+                    nochannel++;
+                    log().warning(LOG_PREFIX + "f2v gallery-inv: no pack CMD for "
+                            + itemId + " — slot " + slotName + " left empty (nochannel)");
+                    continue;
+                }
+                int bukkitSlot;
+                if (slotName.startsWith("hotbar.")) {
+                    bukkitSlot = Integer.parseInt(slotName.substring("hotbar.".length()));
+                } else if (slotName.startsWith("inventory.")) {
+                    bukkitSlot = Integer.parseInt(slotName.substring("inventory.".length()));
+                } else {
+                    continue;
+                }
+                if (bukkitSlot < 0 || bukkitSlot > 35) {
+                    continue;
+                }
+                ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
+                final float fcmd = cmd;
+                stack.editMeta(meta -> {
+                    CustomModelDataComponent c = meta.getCustomModelDataComponent();
+                    c.setFloats(List.of(fcmd));
+                    meta.setCustomModelDataComponent(c);
+                });
+                viewer.getInventory().setItem(bukkitSlot, stack);
+                placed++;
+            }
+            viewer.updateInventory();
+            return new int[]{placed, nochannel, slots.size()};
+        });
+        return counts == null ? new int[]{0, 0, -1} : counts;
+    }
+
     private int[] galleryPageParticle(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-particle-" + ns + "-p" + page + ".tsv");
@@ -1820,15 +1937,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /**
      * Replay one truth-leg FLUID gallery page manifest:
      * {@code c-imagine/scenes/gallery-fluid-<ns>-p<page>.tsv} rows
-     * {@code cell|x|y|z|fluid|dyn|channel|extra}. Vanilla-namespace block
-     * rows are placed as REAL liquid states (Bukkit BlockData parsed from
-     * the manifest's state string) inside their glass cases — the vanilla
-     * client renders them through the same liquid surface the truth client
-     * uses, so vanilla fluids can be GREEN. EVERYTHING else (mod fluids,
-     * buckets, states Paper cannot express) is {@code nochannel}: the cell
-     * stays empty and the pixel join names it (honest backlog, never a
-     * silent skip). Skip rows pass through untouched (both legs recorded
-     * them identically).
+     * {@code cell|x|y|z|fluid|dyn|channel|extra}. THE MULTI-SURFACE LADDER's
+     * ours side (round 2, 2026-11-04):
+     * <ul>
+     *   <li>{@code block} — vanilla-namespace rows are placed as REAL liquid
+     *       states (Bukkit BlockData) inside their glass cases — the vanilla
+     *       client renders them through the same liquid surface the truth
+     *       client uses, so vanilla fluids can be GREEN;</li>
+     *   <li>{@code mod-tank} — the recorded tank BLOCK state resolves through
+     *       the pack's gallery map (the tank states are gallery rows; the
+     *       CONTENTS are not rendered — the truth note says the same);</li>
+     *   <li>{@code texture-model} — the fluid id resolves through the pack's
+     *       fluid-texture manifest (visual-gallery-fluids.tsv) to a
+     *       paper+CMD item_display rig; the truth side has NO native surface
+     *       for these cells (the join compares truth-empty vs ours-model
+     *       honestly, dyn class);</li>
+     *   <li>everything else (buckets on cells whose rig the pack lacks,
+     *       states Paper cannot express, bare nochannel) is {@code nochannel}:
+     *       the cell stays empty and the pixel join names it (honest
+     *       backlog, never a silent skip). Skip rows pass through untouched
+     *       (both legs recorded them identically).</li>
+     * </ul>
      *
      * <p>Returns {@code [placed, nochannel, cells]}; the RCON response marker
      * is {@code gallerypage-fluid <ns> p<page> -> placed=N nochannel=K cells=M}
@@ -1877,13 +2006,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 String channel = row.length > 6 ? row[6] : "";
                 String extra = row.length > 7 ? row[7] : "";
-                if (!channel.equals("block") || !extra.startsWith("minecraft:")) {
-                    nochannel++;
-                    log().warning(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
-                            + " channel=" + channel + " — cell " + row[1] + ","
-                            + row[2] + "," + row[3] + " left empty (nochannel)");
-                    continue;
-                }
                 int x, y, z;
                 try {
                     x = Integer.parseInt(row[1]);
@@ -1892,9 +2014,54 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 } catch (NumberFormatException bad) {
                     continue;
                 }
+                // THE MULTI-SURFACE LADDER's ours side (round 2): block rows
+                // replay as real vanilla liquid states (unchanged); mod-tank
+                // rows resolve the recorded BLOCK state through the pack's
+                // gallery map (the tank block states ARE gallery rows — the
+                // block wall walked them); texture-model rows resolve the
+                // fluid id through the pack's fluid-texture manifest
+                // (visual-gallery-fluids.tsv) to a paper+CMD item_display
+                // rig — the truth side has no native surface for those
+                // cells (named in the join, dyn class). Everything else is
+                // nochannel (the honest backlog).
+                Float rigCmd = null;
+                String tankState = null;
+                if (channel.equals("block")) {
+                    if (!extra.startsWith("minecraft:")) {
+                        nochannel++;
+                        log().warning(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
+                                + " channel=block non-vanilla — cell " + row[1]
+                                + "," + row[2] + "," + row[3] + " left empty (nochannel)");
+                        continue;
+                    }
+                    tankState = extra;
+                } else if (channel.equals("mod-tank")) {
+                    // extra = "<state>|contents-unattempted" — the pack
+                    // renders the tank block, NOT the fluid contents (the
+                    // truth note says the same)
+                    int bar = extra.indexOf('|');
+                    tankState = bar >= 0 ? extra.substring(0, bar) : extra;
+                } else if (channel.equals("texture-model")) {
+                    // extra = the fluid id
+                    rigCmd = f2v != null ? f2v.fluids().get(extra) : null;
+                    if (rigCmd == null) {
+                        nochannel++;
+                        log().warning(LOG_PREFIX + "f2v gallery-fluid: no pack fluid-texture row for "
+                                + extra + " — cell " + row[1] + "," + row[2] + ","
+                                + row[3] + " left empty (nochannel)");
+                        continue;
+                    }
+                } else {
+                    nochannel++;
+                    log().warning(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
+                            + " channel=" + channel + " — cell " + row[1] + ","
+                            + row[2] + "," + row[3] + " left empty (nochannel)");
+                    continue;
+                }
                 try {
                     // the glass case first (the same shell the truth leg
-                    // builds), then the liquid — sealed, static pixels
+                    // builds) — the texture-model cells get the case too so
+                    // the rig sits in the SAME framing on both legs
                     org.bukkit.block.data.BlockData glass = Material.GLASS.createBlockData();
                     int[][] faces = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
                             {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
@@ -1905,11 +2072,35 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         }
                         w.getBlockAt(bx, by, bz).setBlockData(glass, false);
                     }
-                    w.getBlockAt(x, y, z).setBlockData(Bukkit.createBlockData(extra), false);
-                    log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
-                            + " cell " + row[1] + "," + row[2] + "," + row[3]
-                            + " fluid=" + row[4] + " state=" + extra);
-                    placed++;
+                    if (rigCmd != null) {
+                        // the texture-model rig: the item_display grammar the
+                        // item walk proved (paper + CMD carrier, fixed
+                        // billboard, pinned brightness)
+                        ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
+                        final float fcmd = rigCmd;
+                        stack.editMeta(meta -> {
+                            CustomModelDataComponent c = meta.getCustomModelDataComponent();
+                            c.setFloats(List.of(fcmd));
+                            meta.setCustomModelDataComponent(c);
+                        });
+                        org.bukkit.Location at = new org.bukkit.Location(w,
+                                x + 0.5, y + 0.5, z + 0.5);
+                        w.spawn(at, org.bukkit.entity.ItemDisplay.class, e -> {
+                            e.setItemStack(stack);
+                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
+                        });
+                        log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
+                                + " cell " + row[1] + "," + row[2] + "," + row[3]
+                                + " fluid=" + row[4] + " texture-model cmd=" + rigCmd);
+                        placed++;
+                    } else if (tankState != null) {
+                        w.getBlockAt(x, y, z).setBlockData(Bukkit.createBlockData(tankState), false);
+                        log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
+                                + " cell " + row[1] + "," + row[2] + "," + row[3]
+                                + " fluid=" + row[4] + " state=" + tankState);
+                        placed++;
+                    }
                 } catch (IllegalArgumentException parseFail) {
                     nochannel++;
                     log().warning(LOG_PREFIX + "f2v gallery-fluid: state " + extra
@@ -2183,6 +2374,25 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             return true;
         }
+        // /cim gallerypage-inv <ns> <page> — the INVENTORY gallery
+        // ours-leg surface (round 2, DIAGNOSTIC-first): fill the viewer's
+        // real inventory slots from the truth manifest (the same rows the
+        // truth leg stages with real items over RCON), each item as the
+        // pack's CMD carrier; the E/ESC key presses + the shot live in the
+        // CI walk on BOTH legs.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-inv")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageInv(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-inv " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-inv: bad page number: " + args[2]);
+            }
+            return true;
+        }
         if (args.length >= 1 && args[0].equalsIgnoreCase("galleryclear")) {
             int removed = galleryClear();
             sender.sendMessage(LOG_PREFIX + "galleryclear -> removed=" + removed);
@@ -2203,7 +2413,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 + "| /cim gallerypage-sound <ns> <page>");
         sender.sendMessage(LOG_PREFIX + "       /cim gallerypage-gui <ns> <page> "
                 + "| /cim gallerypage-biome <ns> <page> "
-                + "| /cim gallerypage-held <ns> <page>");
+                + "| /cim gallerypage-held <ns> <page> "
+                + "| /cim gallerypage-inv <ns> <page>");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

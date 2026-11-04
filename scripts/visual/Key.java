@@ -24,6 +24,7 @@ public class Key {
             case "ESC", "ESCAPE" -> KeyEvent.VK_ESCAPE;
             case "SPACE" -> KeyEvent.VK_SPACE;
             case "ENTER" -> KeyEvent.VK_ENTER;
+            case "E" -> KeyEvent.VK_E;   // the inventory-view leg (round 2): open/close the player inventory screen
             case "1" -> KeyEvent.VK_1;
             case "2" -> KeyEvent.VK_2;
             case "3" -> KeyEvent.VK_3;

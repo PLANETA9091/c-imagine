@@ -68,6 +68,8 @@ the shot names the walks ACTUALLY produce, which evolved per leg:
   held           gal-h-<ns>{p}.png       (DIAGNOSTIC class; rides the ITEM
                  walk's pages — the held shot is taken right after the
                  item page shot, same manifest, same exhaustion marker)
+  inv            gal-inv-<ns>{p}.png     (DIAGNOSTIC class, round 2; own
+                 ledger row, 36 items per page — the open-inventory view)
   ours shots     the same with the ours- prefix
 where <ns> = "" for the minecraft control and "-<ns>" for the mod
 namespace. The first committed gate used bare templates for every class
@@ -137,14 +139,19 @@ CLASSES = {
     # own shot stem (the first-person held shot after the item page shot)
     "held": ("gallery-item-{ns}-p{p}.tsv", "gal-h", "ours-gal-h",
              "gallery-item done ns={ns} page={p} cells=0"),
+    # the inventory view (round 2): own manifest (slot -> item, 36 per
+    # page), own walk, own exhaustion marker
+    "inv": ("gallery-inv-{ns}-p{p}.tsv", "gal-inv", "ours-gal-inv",
+            "gallery-inv done ns={ns} page={p} cells=0"),
 }
 
 # Walked-but-diagnostic classes (2026-11-04): the checks run and print,
 # the verdict is never red — THE FLIP is moving a class out of this set
 # once its channel is measured stable (sound needs the packet-capture
 # channel measured, gui the menu-translation channel, held the
-# first-person item channel, biome the tint channel).
-DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome"}
+# first-person item channel, biome the tint channel, inv the GUI crop
+# geometry — first-run-unmeasured, computed from scale-3 GUI math).
+DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv"}
 
 # the series word baked between the stem and the ns infix (SHOT NAME LAW):
 # minecraft's mob walk predates the series naming (gal-e0.png), every mod
@@ -174,14 +181,17 @@ NO_WALK = {"painting_variant", "wolf_variant", "cat_variant",
 
 # per class: manifest skip-row notes that mean the subject is ABSENT from
 # the picture (see the HONEST-RED docstring above). A note matches when it
-# equals an entry or starts with one (entity failed:<throwable>).
+# equals an entry or starts with one (entity failed:<throwable>). FLUID
+# (round 2): the multi-surface ladder replaced the terminal no-channel with
+# no-truth-surface (nothing renderable on EITHER side — the honest-RED
+# backlog); no-channel still matches for manifests written by older walks.
 ABSENCE_NOTES = {
     "entity-mobs": ("dissolved", "no-instance", "failed"),
     "entity-dyn": ("dissolved", "no-instance", "failed"),
     "entity-large": ("dissolved", "no-instance", "failed"),
     "item": ("summon-failed",),
     "particle": ("no-simple-options",),
-    "fluid": ("no-channel",),
+    "fluid": ("no-channel", "no-truth-surface"),
     "sound": ("play-failed",),
     "gui": ("open-failed", "no-viewer"),
     "biome": ("fillbiome-failed",),

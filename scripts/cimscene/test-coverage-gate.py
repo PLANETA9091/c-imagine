@@ -30,8 +30,23 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
      printed, run GREEN (the hole is VISIBLE, the verdict is not red yet)
   S. held shots ride the item pages: present -> DIAG-OK; one missing
      ours held shot -> DIAG-INCOMPLETE, run GREEN (diagnostic flip law)
+  T. inv walk (round 2): walked diagnostic class -> DIAG-OK, run GREEN;
+     a missing ours inv shot -> DIAG-INCOMPLETE, run GREEN
+  U. fluid no-truth-surface skip row (round 2 ladder exhausted) -> RED named
+  V. particle no-simple-options:<detail> suffix note          -> RED named
+     (round 2: the note carries the programmatic-ladder failure reason;
+     the prefix match must keep working)
+
+THE LOCAL-RUNNER HOLE (round 2, hardening for THIS workspace only): the
+owner's agent sandbox resolves sys.executable to the ZCode desktop AppImage,
+so a naive subprocess.run([sys.executable, GATE, ...]) SPAWNS THE DESKTOP
+APP and every test false-FAILs locally. The harness therefore honours
+PYGATE_PYTHON: PY = os.environ.get("PYGATE_PYTHON") or sys.executable.
+CI is unaffected (no such env var there); local verification here runs
+  PYGATE_PYTHON=/usr/bin/python3 python3 scripts/cimscene/test-coverage-gate.py
 """
 import pathlib
+import os
 import shutil
 import subprocess
 import sys
@@ -39,6 +54,9 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 GATE = HERE / "coverage-gate.py"
+# THE LOCAL-RUNNER HOLE (see the module docstring): an explicit interpreter
+# override for sandboxes where sys.executable is not a plain python3.
+PY = os.environ.get("PYGATE_PYTHON") or sys.executable
 
 
 def build_fixture(root, ns="create"):
@@ -60,6 +78,7 @@ def build_fixture(root, ns="create"):
         "sound\t0\t77\n"
         "gui\t0\t1\n"
         "biome\t0\t1\n"
+        "inv\t0\t36\n"
         "painting_variant\t0\t0\n"
         "wolf_variant\t0\t0\n"
         "cat_variant\t0\t0\n"
@@ -106,6 +125,7 @@ def build_fixture(root, ns="create"):
                 (base / name).write_bytes(b"x")
         for cls, word in (("item", "i"), ("particle", "pa"), ("fluid", "fl"),
                           ("held", "h"), ("sound", "s"), ("gui", "gui"),
+                          ("inv", "inv"),
                           ("biome", "b")):
             name = f"{prefix}gal-{word}-{ns}0.png" if ns != "minecraft" \
                 else f"{prefix}gal-{word}0.png"
@@ -129,7 +149,7 @@ def build_fixture(root, ns="create"):
 
 def run_gate(root, ns="create"):
     return subprocess.run(
-        [sys.executable, str(GATE), "--ns", ns,
+        [PY, str(GATE), "--ns", ns,
          "--index", str(root / "scenes" / f"gallery-{ns}-index.tsv"),
          "--scenes", str(root / "scenes"),
          "--truth-shots", str(root / "truth-shots"),
@@ -413,6 +433,75 @@ def main():
         ok = r.returncode == 0 and "DIAG-INCOMPLETE\theld" in r.stdout \
             and "missing_ours_shots=1" in r.stdout
         print("S held rides item pages diagnostic:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # T: the inv class (round 2) — a walked diagnostic class: present shots
+    # report DIAG-OK; a missing ours inv shot is DIAG-INCOMPLETE, run GREEN
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "inv\t0\t36\n", "inv\t36\t36\n")
+        idx.write_text(txt, encoding="utf-8")
+        (root / "scenes" / "gallery-inv-create-p0.tsv").write_text(
+            "slot\titem\nhotbar.0\tcreate:cog\n", encoding="utf-8")
+        with open(root / "boot.log", "a", encoding="utf-8") as f:
+            f.write("gallery-inv done ns=create page=1 cells=0 exhausted=1\n")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-OK\tinv\ttotal=36" in r.stdout
+        print("T1 inv walked diagnostic DIAG-OK GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "inv\t0\t36\n", "inv\t36\t36\n")
+        idx.write_text(txt, encoding="utf-8")
+        (root / "scenes" / "gallery-inv-create-p0.tsv").write_text(
+            "slot\titem\nhotbar.0\tcreate:cog\n", encoding="utf-8")
+        (root / "ours-shots" / "ours-gal-inv-create0.png").unlink()
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-INCOMPLETE\tinv" in r.stdout \
+            and "missing_ours_shots=1" in r.stdout
+        print("T2 inv missing ours shot visible-not-red:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # U: fluid no-truth-surface skip row (round 2 ladder exhausted) -> RED,
+    # named — the honest-RED note vocabulary extension
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-fluid-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n"
+                     "skip\t-1\t-1\t-1\tcreate:ghost_liquid\t1\t"
+                     "no-truth-surface:no-bucket-and-no-tank:no-fluid-texture\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:ghost_liquid(no-truth-surface:" in r.stdout \
+            and "fluid" in r.stdout
+        print("U fluid no-truth-surface RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V: the particle note carries the programmatic-ladder failure detail
+    # (no-simple-options:<reason>) — the prefix match must keep reding it
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-particle-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tparticle\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:contraption_particle\t1\t"
+                     "no-simple-options:com.mojang.serialization.DynamicOps$1\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:contraption_particle(no-simple-options:" in r.stdout \
+            and "particle" in r.stdout
+        print("V particle detailed note RED:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 

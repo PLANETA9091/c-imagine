@@ -1107,6 +1107,45 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
           done
+          # INVENTORY walk (per ladder ns, to exhaustion — DIAGNOSTIC class,
+          # round 2): the scene writes ONLY the manifest (slot -> ns:id, 36
+          # items per page); the FILL rides plain vanilla surfaces:
+          # `item replace` per manifest row with the REAL modded item, then
+          # the E key opens the inventory, the shot catches the filled grid,
+          # ESC closes. HUD VISIBILITY: the walk pins F1 to the VISIBLE
+          # state first (hideGui also hides the inventory screen) — the same
+          # pin on the ours leg.
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-inv-$NS-p$p"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery inv $NS $p"
+              RC=0; wait_done "gallery-inv-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS inv page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-inv done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+              M="srv-wall/c-imagine/scenes/gallery-inv-$NS-p$p.tsv"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Key F1 || true   # HUD visible: hideGui hides the inventory screen too
+              # THE FILL: one `item replace` per manifest slot (36 RCON
+              # calls — ~free next to the shot window)
+              while IFS=$'\t' read -r slot item; do
+                [ "$slot" = "slot" ] && continue
+                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "item replace entity cimviewer $slot with $item" >/dev/null 2>&1 || true
+              done < "$M"
+              java -cp vtools Key E || true
+              sleep 2   # the inventory screen renders (fixed window, BOTH legs)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "truth-shots/gal-inv-$NS$p.png" \
+                || echo "$NS inv page $p shot failed (diagnostic tolerated)"
+              java -cp vtools Key ESC || true
+            done
+            [ "$EX" = "1" ] || { echo "$NS inv walk hit the MAXP cap without exhausted"; exit 1; }
+          done
           ls truth-shots/ | wc -l
 
       - name: shot listing (the coverage gate joins this, not the bytes)
@@ -1829,6 +1868,32 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "ours $NS biome replay hit the MAXP cap"; exit 1; }
           done
+          # INVENTORY replay (per ladder ns, DIAGNOSTIC): the plugin fills
+          # the viewer's REAL inventory slots from the SAME manifest rows
+          # (each item as the pack's CMD carrier — the item channel), then
+          # the same E/settle/shot/ESC sequence as the truth leg. The F1 pin
+          # mirrors the truth leg (HUD visible).
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              M="srv-wall/c-imagine/scenes/gallery-inv-$NS-p$p.tsv"
+              [ -f "$M" ] || { echo "no manifest for $NS inv page $p — exhausted"; EX=1; break; }
+              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cim gallerypage-inv $NS $p")
+              echo "$OUT" | tee "ours-rcon-inv-$NS$p.log"
+              echo "$OUT" | grep -q "gallerypage-inv $NS p$p -> placed=" \
+                || { echo "$NS inv page $p no placed marker"; exit 1; }
+              java -cp vtools Key F1 || true   # HUD visible (mirror of the truth leg)
+              java -cp vtools Key E || true
+              sleep 2   # the inventory screen renders (fixed window, BOTH legs)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/ours-gal-inv-$NS$p.png" \
+                || echo "$NS inv page $p shot failed (diagnostic tolerated)"
+              java -cp vtools Key ESC || true
+            done
+            [ "$EX" = "1" ] || { echo "ours $NS inv replay hit the MAXP cap"; exit 1; }
+          done
           ls ours-shots/ | wc -l
 
       - name: shot listing
@@ -2042,6 +2107,21 @@ jobs:
                 python3 scripts/cimscene/anim-diff.py --truth-t0 "$T0" --truth-t1 "$T1" \
                   --ours-t0 "$O0" --ours-t1 "$O1" --ns "$NS" --page "$p" \
                   --out "gallery-report/diag-anim-$NS-p$p.json" || true
+              fi
+            done
+          done
+          echo "=== INVENTORY pages: full-frame + per-slot GUI join (DIAGNOSTIC — geometry/gates FIRST-RUN-UNMEASURED, see inv-diff.py) ==="
+          for NS in $LADDER_NS; do
+            for M in $(find truth-meta -name "gallery-inv-$NS-p*.tsv" | sort -V); do
+              B=$(basename "$M" .tsv); p=${B##*-p}
+              T="truth-shots/gal-inv-$NS$p.png"
+              O="ours-shots/ours-gal-inv-$NS$p.png"
+              if [ -f "$T" ] && [ -f "$O" ]; then
+                python3 scripts/cimscene/inv-diff.py --truth "$T" --ours "$O" \
+                  --ns "$NS" --page "$p" \
+                  --out "gallery-report/diag-inv-$NS-p$p.json" || true
+              else
+                echo "$NS inv page $p shots missing (tolerated: diagnostic)"
               fi
             done
           done

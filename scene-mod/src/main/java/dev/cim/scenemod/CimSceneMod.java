@@ -3,6 +3,7 @@ package dev.cim.scenemod;
 import com.mojang.brigadier.ParseResults;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.serialization.DataResult;
 import io.netty.buffer.Unpooled;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
@@ -10,8 +11,12 @@ import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
@@ -289,6 +294,12 @@ public final class CimSceneMod {
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
                                                 .executes(ctx -> galleryBiome(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("inv")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryInv(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
@@ -318,7 +329,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome]|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome|inv]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -620,6 +631,10 @@ public final class CimSceneMod {
                 // DIAGNOSTIC_CLASSES)
                 .append("sound\t").append(sounds).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("gui\t").append(menus).append("\t1\n")
+                // the inventory view (round 2): 36 items per page, the same
+                // sorted item list the item walk paginates at 77 — its OWN
+                // page count, hence its own ledger row
+                .append("inv\t").append(items).append('\t').append(INV_CELLS).append('\n')
                 // biome LEFT the no-walk set (the fillbiome walk exists): one
                 // biome per page
                 .append("biome\t").append(biomes).append("\t1\n")
@@ -875,19 +890,36 @@ public final class CimSceneMod {
     // --- particle gallery (every registered PARTICLE of the namespace) ------
 
     /**
-     * The universal PARTICLE gallery: EVERY {@link net.minecraft.core.particles.ParticleType}
-     * registered by the namespace, sorted by id, one particle per wall cell
-     * spawned through the vanilla {@code /particle} surface (count=1,
-     * delta 0/0/0, speed 0 → a STATIC particle exactly at the cell;
-     * {@code force} so no view-distance rule eats it).
+     * The universal PARTICLE gallery: EVERY {@link ParticleType} registered
+     * by the namespace, sorted by id, one particle per wall cell.
      *
-     * <p>Honesty rules, identical on both stacks (same command strings):
-     * a particle type whose options need DATA (dust colors, item particles,
-     * entity_effect...) fails the argument parse → a recorded skip row
-     * (reason=no-simple-options), never silently dropped. Every spawned
-     * particle is {@code dyn=1} — particles are time-varying by nature
-     * (fade, drift), so the join reports them without a red verdict until
-     * the fixed-shot-window protocol is measured stable (the entity dyn
+     * <p>THE PROGRAMMATIC SPAWN LADDER (round 2, 2026-11-04 — replaces the
+     * vanilla {@code /particle} console surface, whose ARGUMENT parser
+     * rejected every modded particle whose options are not
+     * string-constructible: measured #30, ALL 13 create particles). The
+     * spawn now goes server-side via {@link ServerLevel#sendParticles}
+     * with options built programmatically, no string parsing:
+     * <ol>
+     *   <li>a {@link SimpleParticleType} IS its own {@link ParticleOptions}
+     *       — spawned directly;</li>
+     *   <li>a data-carrying type's options are decoded from an EMPTY
+     *       compound through the type's own codec
+     *       ({@code type.codec().parse(NbtOps.INSTANCE, new CompoundTag())})
+     *       — a type whose defaults are fully derivable this way now
+     *       spawns; whether a specific modded codec accepts empty data is
+     *       FIRST-RUN-measured, not asserted;</li>
+     *   <li>both fail → the recorded skip row KEEPS the
+     *       {@code no-simple-options} note (now carrying the reason) — the
+     *       programmatic spawn itself threw / produced nothing.</li>
+     * </ol>
+     *
+     * <p>Honesty rules, identical on both stacks (the same options object
+     * semantics; the ours leg replays the manifest and its join names what
+     * its channel cannot express — there is NO ClientboundLevelParticles
+     * channel in the pack/plugin today, verified by grep before wiring):
+     * every spawned particle is {@code dyn=1} — particles are time-varying
+     * by nature, so the join reports them without a red verdict until the
+     * fixed-shot-window protocol is measured stable (the entity dyn
      * pattern); the walk still SHOWS every type to the test player.
      *
      * <p>The manifest is written synchronously (a particle is a spawn spec,
@@ -931,18 +963,34 @@ public final class CimSceneMod {
             ResourceLocation id = slice.get(i);
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             int x = GALLERY_X0 + col, y = GALLERY_Y0 + row, z = GALLERY_Z;
-            int rc = runQuiet(src, "particle " + id + " " + (x + 0.5) + " "
-                    + (y + 0.5) + " " + (z + 0.5) + " 0 0 0 0 1 force");
-            if (rc > 0) {
-                spawned++;
-                tsv.append("cell\t").append(x).append('\t').append(y).append('\t').append(z)
-                        .append('\t').append(id).append("\t1\tok\n");
+            ResolvedOptions resolved = resolveParticleOptions(
+                    BuiltInRegistries.PARTICLE_TYPE.get(id));
+            if (resolved.options() != null) {
+                // options resolved (the ladder's step 1 or 2) — send exactly
+                // ONE particle, delta 0/0/0, speed 0: a STATIC particle at
+                // the cell, the same spec the old /particle surface spelled
+                int n = level.sendParticles(resolved.options(), x + 0.5, y + 0.5,
+                        z + 0.5, 1, 0.0, 0.0, 0.0, 0.0);
+                if (n > 0) {
+                    spawned++;
+                    tsv.append("cell\t").append(x).append('\t').append(y).append('\t')
+                            .append(z).append('\t').append(id).append("\t1\tok\n");
+                } else {
+                    failed++;
+                    tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\t")
+                            .append("no-simple-options:empty-broadcast\n");
+                    LOGGER.info("[cimscene] gallery-particle skip ns={} page={} index={} "
+                                    + "reason=no-simple-options detail=empty-broadcast particle={}",
+                            namespace, page, from + i, id);
+                }
             } else {
+                String fail = resolved.failure() == null
+                        ? "no-simple-options:unknown" : resolved.failure();
                 failed++;
-                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\tno-simple-options\n");
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\t").append(fail).append('\n');
                 LOGGER.info("[cimscene] gallery-particle skip ns={} page={} index={} "
-                                + "reason=no-simple-options particle={}",
-                        namespace, page, from + i, id);
+                                + "reason={} particle={}",
+                        namespace, page, from + i, fail, id);
             }
         }
         String manifest = "gallery-particle-" + namespace + "-p" + page + ".tsv";
@@ -959,33 +1007,82 @@ public final class CimSceneMod {
         return spawned;
     }
 
+    /** The programmatic particle ladder's outcome: exactly one of the two. */
+    private record ResolvedOptions(ParticleOptions options, String failure) {
+    }
+
+    /**
+     * THE PROGRAMMATIC PARTICLE-OPTIONS LADDER (no string parsing, no
+     * per-mod code):
+     * <ol>
+     *   <li>a simple particle type (SimpleParticleType) implements
+     *       {@link ParticleOptions} — the type instance IS the options;</li>
+     *   <li>a data-carrying type's options are decoded from an EMPTY
+     *       compound through the type's OWN codec — a codec whose fields
+     *       all carry defaults accepts it; one with required fields
+     *       refuses (the DataResult carries the error, surfaced in the
+     *       note). Whether a given modded codec accepts empty data is
+     *       FIRST-RUN-measured, not asserted.</li>
+     * </ol>
+     */
+    private static ResolvedOptions resolveParticleOptions(ParticleType<?> type) {
+        if (type instanceof ParticleOptions simple) {
+            return new ResolvedOptions(simple, null);
+        }
+        try {
+            DataResult<? extends ParticleOptions> res = type.codec()
+                    .parse(NbtOps.INSTANCE, new CompoundTag());
+            ParticleOptions opts = res.result().orElse(null);
+            if (opts != null) {
+                return new ResolvedOptions(opts, null);
+            }
+            String err = res.error().map(e -> e.message()).orElse("empty-decode");
+            return new ResolvedOptions(null, "no-simple-options:" + err);
+        } catch (Throwable t) {
+            return new ResolvedOptions(null,
+                    "no-simple-options:" + t.getClass().getName());
+        }
+    }
+
     // --- fluid gallery (every registered FLUID of the namespace) -----------
 
     /**
      * The universal FLUID gallery: EVERY {@link Fluid} registered by the
      * namespace, sorted by id, shown one per SEALED glass case on the sparse
-     * pitch-2 grid. The truth leg renders the liquid itself —
-     * {@code defaultFluidState().createLegacyBlock()} placed into the case,
-     * where it cannot flow (all six faces glass, so the pixels are static).
-     * Channel selection, identical on both stacks:
-     * <ul>
+     * pitch-2 grid. THE MULTI-SURFACE FALLBACK LADDER (round 2, 2026-11-04
+     * — a fluid with no legacy block is no longer a bare skip; EVERY fluid
+     * gets a manifest row and an ATTEMPTED surface, in order):
+     * <ol>
      *   <li>{@code block} — the fluid state has a legacy block (every
-     *       vanilla + modded liquid does): placed into the case, the
-     *       manifest row carries the state string so the ours leg can
-     *       replay what it can;</li>
+     *       vanilla + modded liquid does): placed into the sealed case, the
+     *       manifest row carries the state string so the ours leg replays
+     *       it;</li>
      *   <li>{@code bucket} — no legacy block: the fluid's registered
-     *       {@code <path>_bucket} item is shown as an item_display (the
-     *       same rig grammar as the item gallery);</li>
-     *   <li>{@code no-channel} — neither: a recorded skip row, never
-     *       silently dropped.</li>
-     * </ul>
+     *       {@code <path>_bucket} item shown as an item_display (the item
+     *       rig grammar);</li>
+     *   <li>{@code mod-tank} — the mod registers its own fluid-tank block
+     *       ({@code <ns>:fluid_tank} — create's vessel): the block is
+     *       PLACED, its CONTENTS ARE NOT FILLED (the fill API is
+     *       mod-specific and unverified from this workspace — the manifest
+     *       note says so; an open question, not a claimed surface);</li>
+     *   <li>{@code texture-model} — the server resource manager finds the
+     *       fluid's still texture ({@code textures/fluid/<path>.png} or
+     *       {@code <path>_still.png}): the OURS pack builder synthesizes an
+     *       item model from that same texture (same jar-asset walk as the
+     *       pack's block/item synthesis); the TRUTH side has NO native
+     *       surface for such a fluid — the cell stays empty and the row's
+     *       extra names the fluid id for the ours rig; the join compares
+     *       truth-empty vs ours-model honestly (dyn class, no red
+     *       verdict);</li>
+     *   <li>nothing renderable on EITHER side → the recorded skip row
+     *       carries {@code no-truth-surface:<reason>} — the honest-RED
+     *       backlog, named, never silent.</li>
+     * </ol>
      *
-     * <p>All rows carry {@code dyn=1}: liquid textures are ANIMATED
+     * <p>All cell rows carry {@code dyn=1}: liquid textures are ANIMATED
      * (mcmeta frametime), and the two legs' clients are not tick-locked to
      * each other — the same lesson the particle walk measured (fixed shot
-     * window, dyn class). The join diffs and REPORTS every fluid cell; the
-     * red verdict waits for a measured-stable shot protocol (the entity
-     * dyn pattern). The COVERAGE of the class (every fluid walked to
+     * window, dyn class). The COVERAGE of the class (every fluid walked to
      * exhaustion) is still gate-hard via the ledger.
      *
      * <p>Manifest {@code gallery-fluid-<ns>-p<p>.tsv}, rows
@@ -1029,21 +1126,21 @@ public final class CimSceneMod {
             ResourceLocation id = slice.get(i);
             int col = i % FLUID_COLS, row = i / FLUID_COLS;
             int x = GALLERY_X0 + col * FLUID_PITCH, y = GALLERY_Y0 + row * FLUID_PITCH, z = GALLERY_Z;
-            String channel = "no-channel";
+            String channel = null;
             String extra = "";
+            String reason = "unknown";
             try {
                 Fluid fluid = BuiltInRegistries.FLUID.get(id);
                 FluidState fs = fluid.defaultFluidState();
                 BlockState legacy = fs.createLegacyBlock();
+                // (a) the placeable liquid in the sealed case
                 if (!legacy.isAir()) {
                     buildFluidShell(level, x, y, z);
                     level.setBlock(new BlockPos(x, y, z), legacy, 3);
                     channel = "block";
                     extra = stateString(legacy, BuiltInRegistries.BLOCK.getKey(legacy.getBlock()));
-                    placed++;
                 } else {
-                    // no legacy block: show the fluid's bucket item if the
-                    // mod registered one (honest evidence of the visual)
+                    // (b) the bucket item as an item_display rig
                     ResourceLocation bucket = ResourceLocation.fromNamespaceAndPath(
                             id.getNamespace(), id.getPath() + "_bucket");
                     if (BuiltInRegistries.ITEM.containsKey(bucket)) {
@@ -1055,21 +1152,59 @@ public final class CimSceneMod {
                         if (rc > 0) {
                             channel = "bucket";
                             extra = bucket.toString();
-                            placed++;
+                        } else {
+                            reason = "bucket-summon-failed";
                         }
+                    } else {
+                        reason = "no-bucket";
+                    }
+                }
+                // (c) the mod's own fluid-tank block, if it registers one
+                // (create's vessel). Contents are NOT filled — the fill API
+                // is mod-specific and unverified from this workspace; the
+                // note records exactly what was attempted.
+                if (channel == null) {
+                    ResourceLocation tank = ResourceLocation.fromNamespaceAndPath(
+                            id.getNamespace(), "fluid_tank");
+                    if (BuiltInRegistries.BLOCK.containsKey(tank)) {
+                        BlockState tankState = BuiltInRegistries.BLOCK.get(tank)
+                                .defaultBlockState();
+                        buildFluidShell(level, x, y, z);
+                        level.setBlock(new BlockPos(x, y, z), tankState, 3);
+                        channel = "mod-tank";
+                        extra = stateString(tankState, tank);
+                        // the note channel carries the honest limitation
+                        extra = extra + "|contents-unattempted";
+                    } else {
+                        reason = reason.equals("no-bucket") ? "no-bucket-and-no-tank" : reason;
+                    }
+                }
+                // (d) the fluid's still texture: the ours pack synthesizes
+                // an item model from it; the truth side has no native
+                // surface (the cell stays empty; the row IS the attempt and
+                // the join names the truth absence)
+                if (channel == null) {
+                    if (fluidTextureExists(src, id)) {
+                        channel = "texture-model";
+                        extra = id.toString();
+                    } else {
+                        reason = reason.equals("unknown") ? "no-fluid-texture" : reason;
                     }
                 }
             } catch (Throwable t) {
                 LOGGER.info("[cimscene] gallery-fluid fail ns={} page={} index={} fluid={} err={}",
                         namespace, page, from + i, id, t.toString());
+                reason = "threw:" + t.getClass().getName();
             }
-            if (channel.equals("no-channel")) {
+            if (channel == null) {
                 failed++;
-                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\tno-channel\n");
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\tno-truth-surface:")
+                        .append(reason).append('\n');
                 LOGGER.info("[cimscene] gallery-fluid skip ns={} page={} index={} "
-                                + "reason=no-channel fluid={}",
-                        namespace, page, from + i, id);
+                                + "reason=no-truth-surface detail={} fluid={}",
+                        namespace, page, from + i, reason, id);
             } else {
+                placed++;
                 tsv.append("cell\t").append(x).append('\t').append(y).append('\t').append(z)
                         .append('\t').append(id).append("\t1\t").append(channel)
                         .append('\t').append(extra).append('\n');
@@ -1106,6 +1241,32 @@ public final class CimSceneMod {
                 continue; // the floor stays
             }
             level.setBlock(new BlockPos(bx, by, bz), glass, 3);
+        }
+    }
+
+    /**
+     * The texture-model ladder's probe: does the mod ship a still texture
+     * for this fluid? Probed through the SERVER resource manager (a vanilla
+     * surface — the same resource tree the pack builder scans, so both
+     * sides agree on the convention). Probes {@code textures/fluid/<path>.png}
+     * then {@code textures/fluid/<path>_still.png}; the pack builder scans
+     * the same tree and strips the same suffixes when deriving the fluid id.
+     */
+    private static boolean fluidTextureExists(CommandSourceStack src, ResourceLocation fluidId) {
+        try {
+            var rm = src.getServer().getResourceManager();
+            for (String name : new String[]{fluidId.getPath() + ".png",
+                    fluidId.getPath() + "_still.png"}) {
+                if (rm.getResource(ResourceLocation.fromNamespaceAndPath(
+                        fluidId.getNamespace(), "textures/fluid/" + name)).isPresent()) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery-fluid texture probe failed {}: {}",
+                    fluidId, t.toString());
+            return false;
         }
     }
 
@@ -1412,6 +1573,78 @@ public final class CimSceneMod {
                 namespace, page, placed, failed, id);
         writeDoneMarkerFile(biomeStem, false);
         return placed;
+    }
+
+    // --- inventory gallery (round 2, 2026-11-04 — the GUI ITEMS surface,
+    // --- DIAGNOSTIC-first: the open-inventory screen shot on both legs)
+
+    /** The player inventory grid: 9 hotbar + 27 main = 36 items per page. */
+    static final int INV_CELLS = 36;
+
+    /**
+     * The universal INVENTORY gallery: EVERY item of the namespace (the
+     * same sorted registry walk the item gallery runs, {@value #INV_CELLS}
+     * per page) staged into the RIG VIEWER's real player inventory —
+     * hotbar.0..8 then inventory.9..35 — and SCREENSHOTTED as the open
+     * inventory screen on BOTH legs. The scene writes ONLY the manifest
+     * ({@code slot -> ns:id}; the same contract both legs read): the FILL
+     * itself rides plain vanilla surfaces per leg, zero scene-mod code —
+     * truth: {@code /item replace entity cimviewer <slot> with <real item>}
+     * over RCON; ours: the plugin replay resolves the same manifest rows
+     * to the pack's CMD carriers (the item channel's inventory view).
+     * The client harness presses E (open) / ESC (close) around the shot.
+     *
+     * <p>What the join compares: the truth client renders the REAL modded
+     * item models inside the vanilla inventory grid; the ours client
+     * renders the pack's paper+CMD carriers in the same slots — the GUI
+     * ITEMS channel proof surface. DIAGNOSTIC-first: the crop geometry is
+     * computed from scale-3 GUI math and is FIRST-RUN-UNMEASURED
+     * (scripts/cimscene/inv-diff.py takes the geometry as parameters so
+     * the first run calibrates without code edits).
+     */
+    private static int galleryInv(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(level, namespace);
+
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace) && !id.getPath().equals("air")) {
+                entries.add(id);
+            }
+        }
+
+        LOGGER.info("[cimscene] gallery-inv begin ns={} page={} items={} cellsPerPage={}",
+                namespace, page, entries.size(), INV_CELLS);
+        int from = page * INV_CELLS;
+        if (from >= entries.size()) {
+            writeDoneMarkerFile("gallery-inv-" + namespace + "-p" + page, true);
+            LOGGER.info("[cimscene] gallery-inv done ns={} page={} cells=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + INV_CELLS, entries.size());
+        List<ResourceLocation> slice = entries.subList(from, to);
+
+        StringBuilder tsv = new StringBuilder("slot\titem\n");
+        for (int i = 0; i < slice.size(); i++) {
+            // vanilla slot naming: 0..8 = hotbar.N, 9..35 = inventory.N
+            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + i);
+            tsv.append(slot).append('\t').append(slice.get(i)).append('\n');
+        }
+        String manifest = "gallery-inv-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-inv manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-inv done ns={} page={} cells={} first={} last={}",
+                namespace, page, slice.size(), slice.get(0), slice.get(slice.size() - 1));
+        writeDoneMarkerFile("gallery-inv-" + namespace + "-p" + page, false);
+        return slice.size();
     }
 
     // --- entity gallery (owner directive 2026-10-31: mobs 100% identical,

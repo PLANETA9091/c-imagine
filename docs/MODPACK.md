@@ -75,10 +75,18 @@ libraries/providers, not gallery content.
 | `held` | the item walk's first manifest item staged into the viewer's hotbar on both legs, the `1` key pressed, first-person shot | item channel's first-person proof; unmeasured yet |
 | `anim` | kinetic block pages (manifest dyn=1 cells) shot twice 2 s apart per leg; `anim-diff.py` joins the frame deltas | a frozen ours kinetic page shows as OURS-STATIC; unmeasured yet |
 | `biome` | one biome per page via the vanilla `fillbiome` surface, fixed grass/leaves tint-sample rig in frame | the P1 BOP tint-channel proof surface; ours all nochannel (Paper cannot set modded biomes) |
+| `inv` (round 2) | the open-inventory view: 36 items per page staged into the viewer's REAL inventory slots on both legs (truth: real modded items via `item replace`; ours: the pack's CMD carriers), `E` opens, `ESC` closes, `inv-diff.py` joins full-frame + per-slot crops | the GUI items channel proof; the crop geometry is scale-3 GUI math, FIRST-RUN-UNMEASURED (parameters in the script) |
 
 The flip law: a class moves out of `coverage-gate.py`'s `DIAGNOSTIC_CLASSES`
 once its channel is measured stable — from then on its absences are RED,
 like every gate-hard class.
+
+Round-2 status of the diagnostic joins: **sound/gui/held/anim/biome/inv
+compare on EVERY run from now on** (the joins run in every gallery run's
+inline step, not just on demand); each gate flips per the calibration law —
+after its first measured run has pinned the channel's thresholds
+(sound stream shape, gui open-rate, held crop, anim delta datum, biome
+tint delta, inv GUI crop geometry).
 
 ## Tier 2 — third-party (nightly matrix, M7; Tier 0 is the pulled-forward core)
 
@@ -96,6 +104,31 @@ Pinned versions, downloaded by CI into `mods/` next to `cimtest`
 
 Acceptance per mod (M7): loads, registries land, no native/JVM crash, top-3 core
 features function in the layer, visual diff within contract threshold.
+
+### Round 2 changes (branch `ci/full-content-coverage`, 2026-11-04)
+
+- **Particles — the programmatic spawn ladder**: the walk no longer goes
+  through the `/particle` console surface (whose ARGUMENT parser rejected
+  every modded particle whose options are not string-constructible —
+  measured #30, all 13 create particles). The scene spawns server-side via
+  `ServerLevel.sendParticles` with options built programmatically: a
+  SimpleParticleType IS its own options; a data-carrying type's options are
+  decoded from an empty compound through the type's own codec. Whether a
+  specific modded codec accepts empty data is FIRST-RUN-measured; only a
+  particle whose programmatic spawn itself fails keeps the
+  `no-simple-options:<reason>` note.
+- **Fluids — the multi-surface ladder**: every fluid gets a manifest row
+  and an attempted surface, in order: (a) placeable liquid in the sealed
+  glass case, (b) the bucket item rig, (c) the mod's own `fluid_tank` block
+  (placed; contents NOT filled — the fill API is mod-specific and
+  unverified from this workspace, the row note says so), (d) the
+  texture-model surface — the pack builder synthesizes a flat item model
+  from the fluid's still texture (`textures/fluid/*.png`, 400000+i CMD
+  space); truth has no native surface there (the join compares honestly,
+  dyn class). A fluid with NO renderable surface on either side keeps the
+  honest-RED note `no-truth-surface:<reason>`.
+- **The `inv` class** (see the table above): the open-inventory view on
+  both legs.
 
 ### Tier 2 CI wiring status (branch `ci/full-content-coverage`, 2026-11-04)
 

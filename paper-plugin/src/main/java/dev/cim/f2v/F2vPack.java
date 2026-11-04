@@ -86,6 +86,110 @@ public final class F2vPack {
     }
 
     /**
+     * One FLUID TEXTURE row (round 2): the still texture a mod ships for a
+     * fluid, synthesized into a flat item model on the 400000+i CMD space.
+     * The plugin's fluid replay resolves the fluid walk's texture-model
+     * rows through this manifest (fluidId -> cmd).
+     */
+    public record FluidTexture(String fluidId, float cmd, String modelRef) {
+    }
+
+    /** fluid id derivation from the texture file name: strip .png, then a
+     *  trailing {@code _still} or {@code _flow} — the SAME convention the
+     *  scene-mod walk probes (both sides agree by construction). */
+    static String fluidIdFromTexture(String ns, String fileName) {
+        String name = fileName.endsWith(".png")
+                ? fileName.substring(0, fileName.length() - 4) : fileName;
+        if (name.endsWith("_still")) {
+            name = name.substring(0, name.length() - "_still".length());
+        } else if (name.endsWith("_flow")) {
+            name = name.substring(0, name.length() - "_flow".length());
+        }
+        return ns + ":" + name;
+    }
+
+    /**
+     * Scan the jars for still fluid textures and emit the synthesized
+     * sprite models + the copied textures into the pack. Deterministic
+     * (sorted keys, first jar wins per path). The minecraft namespace is
+     * SKIPPED by construction: every vanilla fluid has a legacy block, so
+     * surface (a) covers it and the texture channel never triggers — the
+     * scan only feeds modded fluids.
+     */
+    static List<FluidTexture> scanFluidTextures(List<Path> jars,
+                                                TreeMap<String, byte[]> entries,
+                                                List<String> warnings) throws IOException {
+        java.util.TreeSet<String> paths = new java.util.TreeSet<>();
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                java.util.Enumeration<? extends ZipEntry> en = zf.entries();
+                while (en.hasMoreElements()) {
+                    ZipEntry e = en.nextElement();
+                    String n = e.getName();
+                    if (e.isDirectory() || !n.startsWith("assets/") || !n.endsWith(".png")) {
+                        continue;
+                    }
+                    String rest = n.substring("assets/".length());
+                    int slash = rest.indexOf('/');
+                    if (slash <= 0) {
+                        continue;
+                    }
+                    String ns = rest.substring(0, slash);
+                    if (ns.equals("minecraft")) {
+                        continue;
+                    }
+                    String file = rest.substring(slash + 1);
+                    if (!file.startsWith("textures/fluid/")) {
+                        continue;
+                    }
+                    paths.add(ns + ":" + file);
+                    if (!entries.containsKey(n)) {
+                        entries.put(n, zf.getInputStream(e).readAllBytes());
+                    }
+                }
+            }
+        }
+        List<FluidTexture> out = new ArrayList<>();
+        int i = 0;
+        for (String key : paths) {
+            String ns = key.substring(0, key.indexOf(':'));
+            String file = key.substring(key.indexOf(':') + 1);   // textures/fluid/<name>.png
+            String base = file.substring("textures/fluid/".length());
+            String sprite = base.substring(0, base.length() - 4); // <name> (no .png)
+            String modelPath = "assets/c-imagine/models/fluid/" + ns + "/" + sprite + ".json";
+            if (entries.containsKey(modelPath)) {
+                continue;
+            }
+            String json = "{\"parent\": \"minecraft:item/generated\", "
+                    + "\"textures\": {\"layer0\": \"" + ns + ":fluid/" + sprite + "\"}}";
+            entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
+            out.add(new FluidTexture(fluidIdFromTexture(ns, base),
+                    400000f + i, "c-imagine:models/fluid/" + ns + "/" + sprite));
+            i++;
+        }
+        return out;
+    }
+
+    /** Read the fluid-texture manifest the build wrote (fluidId -> cmd). */
+    public static java.util.Map<String, Float> readFluidManifest(Path tsv) throws IOException {
+        java.util.Map<String, Float> map = new java.util.HashMap<>();
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) {
+                continue;
+            }
+            String[] parts = line.split("\t");
+            if (parts.length >= 2) {
+                try {
+                    map.putIfAbsent(parts[0], Float.parseFloat(parts[1]));
+                } catch (NumberFormatException nfe) {
+                    // a malformed row is skipped, never fatal
+                }
+            }
+        }
+        return map;
+    }
+
+    /**
      * One equipment-asset manifest row (M6 pull-forward — the armor channel
      * of the parity matrix): a 1.21.1-style mod armor texture pair mapped to
      * the 26.3 equipment surface.
@@ -696,6 +800,41 @@ public final class F2vPack {
                             itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
                 }
             }
+        }
+
+        // FLUID TEXTURE channel (round 2, 2026-11-04 — the fluid ladder's
+        // surface (d)): scan the mod jars for still fluid textures
+        // (assets/<ns>/textures/fluid/*.png) and synthesize ONE flat
+        // item-model per texture (item/generated + layer0) riding the SAME
+        // paper range_dispatch as the item/gallery channels, on the fresh
+        // 400000+i CMD space. The scene-mod fluid walk records
+        // channel=texture-model for exactly the fluids whose still texture
+        // exists here (both sides probe the same resource tree, same
+        // suffix-stripping convention) — the ours replay resolves the
+        // manifest's fluid id through THIS manifest. The truth side has no
+        // native surface for such fluids (its cell stays empty; the join
+        // compares honestly, dyn class).
+        List<FluidTexture> fluidTextures =
+                scanFluidTextures(jars, entries, warnings);
+        if (!fluidTextures.isEmpty()) {
+            // re-emit paper.json with items + gallery + fluid rows merged
+            List<Map.Entry<Float, String>> paperEntries =
+                    new ArrayList<>(paperFloatEntries);
+            for (GalleryPack.Resolved r : gallery) {
+                paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+            }
+            for (FluidTexture ft : fluidTextures) {
+                paperEntries.add(Map.entry(ft.cmd(), ft.modelRef()));
+            }
+            paperEntries.sort(Map.Entry.comparingByKey());
+            entries.put("assets/minecraft/items/paper.json",
+                    itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+            StringBuilder fl = new StringBuilder();
+            for (FluidTexture ft : fluidTextures) {
+                fl.append(ft.fluidId()).append('\t').append(ft.cmd()).append('\n');
+            }
+            Files.writeString(outDir.resolve("visual-gallery-fluids.tsv"),
+                    fl.toString(), StandardCharsets.UTF_8);
         }
 
         // block channel (parity matrix "blocks", block-channel-26-3.md):
