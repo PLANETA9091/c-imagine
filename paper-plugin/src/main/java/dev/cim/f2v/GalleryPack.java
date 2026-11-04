@@ -881,51 +881,32 @@ public final class GalleryPack {
     }
 
     /**
-     * 14-ae: write the DEFAULT uv (decompiled 26.3 defaultFaceUV) explicitly
-     * into every null-uv face of the UNROTATED element, before the rotation
-     * bake. The 1.21.1 block bake (truth channel) derives a null-uv face's uv
-     * from the ORIGINAL geometry + ORIGINAL face direction and transports it
-     * rigidly with the rotated quad, while the 26.3 item channel derives it
-     * from the ROTATED geometry + REMAPPED direction. An explicit uv rides
-     * the rotation verbatim on BOTH channels = the truth semantics.
-     *
-     * 14-ag V-MIRROR: the 1.21.1 recomputeUVs runs ONLY for uvlocked variants
-     * (measured from the real srg jar: bakeQuad gates it on
-     * ModelState.isUvLocked, NOT on hasRotation) — a non-uvlocked variant's
-     * uv rides the ROTATED quad's own winding, while this pack's geometry is
-     * canonicalised (sortBoxPair: the rotated box pair re-sorted per axis),
-     * which LOSES the rotated winding. Measured on #80 (run 41792830144):
-     * faces remapped by the X rotation (up/north/down/south under x=90/270)
-     * render V-MIRRORED vs the truth — flipping the ours crop vertically
-     * HALVES their ae (p391 axis=z rows: 116944->58337, 127766->57966 — both
-     * under the 60k gate) while the y-rotation remapped faces (which preserve
-     * the v axis) measure clean. The fix: for the x-remapped faces emit the
-     * default uv with the V PAIR SWAPPED (v1<->v2), which mirrors the texture
-     * vertically on that face and restores the truth's winding.
+     * 14-ae/14-ag/14-ai history of the non-uvlock uv path: 14-ae wrote the
+     * DEFAULT uv explicitly into every null-uv face (the 26.3 item channel
+     * derives it from the ROTATED geometry while the 1.21.1 truth derives it
+     * from the ORIGINAL geometry + direction). 14-ag added the V-mirror on
+     * the x-remapped faces (the canonicalisation loses the rotated winding) —
+     * validated pixel-wise on #84. 14-ai REPLACES the v-swap with the EXACT
+     * winding transport (UvLock.bakePlainFace): the truth's position-rematch
+     * (recalculateWinding carrying the uv with the vertex) puts the raw walk
+     * slot perm[j] at the mapped canonical corner j for EVERY face with a
+     * non-identity transport permutation — the v-swap was exact only for the
+     * reflection-class perms and a U-mirror approximation for the cycle-class
+     * ones (X90_Y0 up, X180_Y0 north, X0_Y90 down, ...) — see
+     * scripts/f2v/uvlock/UvLockVerify.java layer F/G.
      */
-    /** 14-ag: the face directions the X-rotation table actually moves
-     * (up/north/down/south; east/west are x-invariant). */
-    private static boolean xRemapped(String face) {
-        return switch (face) {
-            case "up", "north", "down", "south" -> true;
-            default -> false;
-        };
-    }
-
     /**
-     * 14-ah: the uv processing for one baked element. Non-uvlock variants
-     * keep the 14-ae/14-ag default-uv + v-mirror path. UVLOCKED variants run
-     * the truth's full chain (UvLock): the 1.21.1 block bake recomputes EVERY
-     * face uv of a uvlocked variant (default OR explicit) through
-     * recomputeUVs(uv, face, getUVLockTransform) — the stair/slab/wall pool —
-     * then the measured winding transport relabels the rect corners so the
-     * composite (unrotated, canonical corners) renders like the truth's
-     * rotated quad per physical corner (verified by UvLockVerify, layers B-E
-     * ALL OK against the real classes).
+     * 14-ah/14-ai: the uv processing for one baked element. BOTH branches run
+     * the measured transport machinery (UvLock): UVLOCKED variants recompute
+     * EVERY face uv through the truth's recomputeUVs chain first
+     * (bakeUvlockFace); NON-uvlocked variants ride the raw rect
+     * (default or explicit, with its rotation field) through the same
+     * k-fitted winding relabel (bakePlainFace). Identity-permutation faces
+     * stay verbatim. Verified per-corner-exact by UvLockVerify (layers
+     * B-E for uvlock, G for the plain path — ALL OK vs the real classes).
      */
     private static void applyFaceUvs(JsonObject el, int xRot, int yRot, boolean uvlock) {
-        if (!uvlock) {
-            writeDefaultUvs(el, xRot);
+        if (xRot == 0 && yRot == 0 && !uvlock) {
             return;
         }
         if (!el.has("from") || !el.has("to") || !el.has("faces")) {
@@ -972,7 +953,11 @@ public final class GalleryPack {
                 inRot = ((face.get("rotation").getAsInt() % 360) + 360) % 360;
             }
             float[] out = new float[5];
-            UvLock.bakeUvlockFace(inRect, inRot, f.getKey(), xRot, yRot, out);
+            if (uvlock) {
+                UvLock.bakeUvlockFace(inRect, inRot, f.getKey(), xRot, yRot, out);
+            } else {
+                UvLock.bakePlainFace(inRect, inRot, f.getKey(), xRot, yRot, out);
+            }
             JsonArray arr = new JsonArray();
             for (double d : out) {
                 arr.add(d);
@@ -985,54 +970,6 @@ public final class GalleryPack {
             } else if (face.has("rotation")) {
                 face.remove("rotation");
             }
-            changed = true;
-        }
-        if (changed) {
-            el.add("faces", faces);
-        }
-    }
-
-    private static void writeDefaultUvs(JsonObject el, int xRot) {
-        // 14-ag: the faces the X rotation remaps lose their winding to the
-        // geometry canonicalisation — their default uv needs the V mirror.
-        boolean xFlipsV = xRot == 90 || xRot == 270;
-        if (!el.has("from") || !el.has("to") || !el.has("faces")) {
-            return;
-        }
-        JsonArray from = el.getAsJsonArray("from");
-        JsonArray to = el.getAsJsonArray("to");
-        if (from.size() != 3 || to.size() != 3) {
-            return;
-        }
-        double x1 = from.get(0).getAsDouble();
-        double y1 = from.get(1).getAsDouble();
-        double z1 = from.get(2).getAsDouble();
-        double x2 = to.get(0).getAsDouble();
-        double y2 = to.get(1).getAsDouble();
-        double z2 = to.get(2).getAsDouble();
-        JsonObject faces = el.getAsJsonObject("faces").deepCopy();
-        boolean changed = false;
-        for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
-            JsonObject face = f.getValue().getAsJsonObject();
-            if (face.has("uv") || !face.has("texture")) {
-                continue;
-            }
-            double[] uv = defaultFaceUv(f.getKey(), x1, y1, z1, x2, y2, z2);
-            if (uv == null) {
-                continue;
-            }
-            if (xFlipsV && xRemapped(f.getKey())) {
-                // the V pair swap: the emitted rect (u1,v2,u2,v1) renders the
-                // texture vertically mirrored on this face
-                double t = uv[1];
-                uv[1] = uv[3];
-                uv[3] = t;
-            }
-            JsonArray arr = new JsonArray();
-            for (double d : uv) {
-                arr.add(d);
-            }
-            face.add("uv", arr);
             changed = true;
         }
         if (changed) {

@@ -362,34 +362,17 @@ public final class UvLock {
     }
 
     /**
-     * The FULL uvlock bake for one face: recompute the uv through the truth's
-     * chain, then relabel the rect corners through the measured winding
-     * transport so the composite (unrotated, canonical-corner) render matches
-     * the truth's rotated-quad render per physical corner.
-     *
-     * @param uvs    the face's uv rect (default or explicit), texel units
-     * @param inRot  the face's existing rotation index (0 for defaults)
-     * @param result float[5]: {u1, v1, u2, v2, rot}; rot = the rotation index
-     *               to emit (0 = omit)
+     * The relabel-fitting core shared by the uvlock and the plain paths:
+     * find the (rect, rot) emission whose canonical-corner walk carries the
+     * source walk slot (perm[j] + kOut/90) % 4 to corner j, fitting the
+     * emitted rotation over the 4 values.
      */
-    public static void bakeUvlockFace(float[] uvs, int inRot, String origFace, int xRot, int yRot, float[] result) {
-        int tier = tierIdx(xRot, yRot);
-        int fi = faceIdx(origFace);
-        float[] rec = recomputeUvs(uvs, inRot, tier, fi);
-        int kOut = (int) rec[4];
-        float[] r = {rec[0], rec[1], rec[2], rec[3]};
-        byte[] perm = PERM[tier * 6 + fi];
-        // exact transport: ours corner j must sample the recomputed walk slot
-        // (perm[j] + kOut) % 4 (the truth's position-rematched quad carries the
-        // uv with the vertex). The emitted (rect, rot) renders slot (j + kEm)
-        // at corner j, so the emitted walk slot t must carry the recomputed
-        // walk slot (perm[(t - kEm) % 4] + kOut) % 4. Try the 4 kEm values;
-        // the fitted rotation rides the emission.
+    private static void relabelFit(float[] r, int kOut, byte[] perm, float[] result) {
+        int kS = kOut / 90;              // the source walk SHIFT (slots)
         float eps = 1e-4f;
         for (int tryNo = 0; tryNo < 4; tryNo++) {
             int kEm = (kOut + tryNo * 90) % 360;
-            int kS = kOut / 90;              // the recomputed walk SHIFT (slots)
-            int kE = kEm / 90;               // the emitted walk SHIFT (slots)
+            int kE = kEm / 90;           // the emitted walk SHIFT (slots)
             float[] vx = new float[4];
             float[] vy = new float[4];
             for (int t = 0; t < 4; t++) {
@@ -409,11 +392,56 @@ public final class UvLock {
             }
         }
         // no (rect, rot) represents the relabeled walk exactly (harness-
-        // monitored); the verbatim recomputed rect is the honest fallback
+        // monitored); the verbatim source rect is the honest fallback
         result[0] = r[0];
         result[1] = r[1];
         result[2] = r[2];
         result[3] = r[3];
         result[4] = kOut;
+    }
+
+    /**
+     * The FULL uvlock bake for one face: recompute the uv through the truth's
+     * chain, then relabel the rect corners through the measured winding
+     * transport so the composite (unrotated, canonical-corner) render matches
+     * the truth's rotated-quad render per physical corner.
+     *
+     * @param uvs    the face's uv rect (default or explicit), texel units
+     * @param inRot  the face's existing rotation index (0 for defaults)
+     * @param result float[5]: {u1, v1, u2, v2, rot}; rot = the rotation index
+     *               to emit (0 = omit)
+     */
+    public static void bakeUvlockFace(float[] uvs, int inRot, String origFace, int xRot, int yRot, float[] result) {
+        int tier = tierIdx(xRot, yRot);
+        int fi = faceIdx(origFace);
+        float[] rec = recomputeUvs(uvs, inRot, tier, fi);
+        float[] r = {rec[0], rec[1], rec[2], rec[3]};
+        relabelFit(r, (int) rec[4], PERM[tier * 6 + fi], result);
+    }
+
+    /**
+     * 14-ai: the EXACT plain-path transport for one face of a rotated
+     * NON-uvlocked variant. The truth's raw uv (default or explicit, with its
+     * own rotation index) rides the rotated winding and lands on the mapped
+     * canonical corners through the same measured position-rematch
+     * permutation (kOut = the input rotation, NO recompute). For the
+     * reflection-class perms at rotation 0 this reproduces the 14-ag v-swap
+     * byte-for-byte; for the cycle-class perms (X90_Y0 up, X180_Y0 north,
+     * X0_Y90 down, ...) it is the exact form the v-swap only approximated.
+     * Identity-perm faces stay verbatim.
+     */
+    public static void bakePlainFace(float[] uvs, int inRot, String origFace, int xRot, int yRot, float[] result) {
+        int tier = tierIdx(xRot, yRot);
+        int fi = faceIdx(origFace);
+        byte[] perm = PERM[tier * 6 + fi];
+        if (perm[0] == 0 && perm[1] == 1 && perm[2] == 2 && perm[3] == 3) {
+            result[0] = uvs[0];
+            result[1] = uvs[1];
+            result[2] = uvs[2];
+            result[3] = uvs[3];
+            result[4] = inRot;
+            return;
+        }
+        relabelFit(uvs, inRot, perm, result);
     }
 }

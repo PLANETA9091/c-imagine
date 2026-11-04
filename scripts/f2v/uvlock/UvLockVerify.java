@@ -134,6 +134,30 @@ public class UvLockVerify {
                     }
                 }
 
+                // G. 14-ai EXACT plain-path transport: bakePlainFace must
+                // satisfy the same per-corner invariant for the RAW rect
+                // (no recompute), for every tier/face/rect/input-rotation
+                for (float[] rect : rects) {
+                    for (int inRot : new int[]{0, 90, 180, 270}) {
+                        float[] emitted = new float[5];
+                        UvLock.bakePlainFace(rect, inRot, fnames[fi], x, y, emitted);
+                        int kEm = (int) emitted[4];
+                        for (int j = 0; j < 4; j++) {
+                            int i = perm[j];
+                            float[] truthSample = walkSample(rect, (i + inRot / 90) % 4);
+                            float[] oursSample = walkSample(new float[]{emitted[0], emitted[1], emitted[2], emitted[3]},
+                                    (j + kEm / 90) % 4);
+                            if (Math.abs(truthSample[0] - oursSample[0]) > 1e-4
+                                    || Math.abs(truthSample[1] - oursSample[1]) > 1e-4) {
+                                fails++;
+                                System.out.printf("FAIL G %s %s rect=%s inRot=%d corner j=%d truth=%s ours=%s emitted=%s%n",
+                                        rot.name(), f, Arrays.toString(rect), inRot, j,
+                                        Arrays.toString(truthSample), Arrays.toString(oursSample), Arrays.toString(emitted));
+                            }
+                        }
+                    }
+                }
+
                 // F. plain-path v-swap cross-check (non-uvlock semantics)
                 if ((x == 90 || x == 270) && fi <= 3) {
                     for (float[] rect : rects) {

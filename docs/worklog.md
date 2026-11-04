@@ -5299,3 +5299,29 @@ Stage Summary:
   and 14-ah (the uvlock stairs pool), the gate's remaining honest surface
   after this lands is: the static-mob channel diffs (3 cells on e0 alone),
   the pillar arms, and whatever the 14-ah run leaves.
+
+### 14-ai — the plain path gets the EXACT winding transport too (the
+v-swap retired for the k-fitted relabel)
+
+Work Log:
+- The 14-ah layer-F finding turned into the next lever: the 14-ag v-swap was
+  exact ONLY for the reflection-class transport perms at rotation 0; the
+  cycle-class perms (X90_Y0 up [2,3,0,1], X180_Y0 north/south [2,3,0,1],
+  X0_Y90 down/up [3,0,1,2]/[1,2,3,0], ...) rendered a U-mIRROR of the truth —
+  green only where the texture is near-symmetric (the #84 pillar caps).
+- IMPLEMENTATION: UvLock gains relabelFit (the shared k-fitted relabel core)
+  and bakePlainFace (the raw rect + its rotation field through the same
+  measured PERM relabel; identity-perm faces stay verbatim); GalleryPack's
+  applyFaceUvs unifies both branches (uvlock = recompute + relabel, plain =
+  raw + relabel) and the dead writeDefaultUvs/xRemapped v-swap code is
+  deleted. Explicit-uv faces now get the exact transport too (the truth's
+  winding rematch applies to them equally — the 14-ae "rides verbatim on
+  both" theory predates the 14-ag winding discovery).
+- VERIFICATION: UvLockVerify gains layer G — bakePlainFace satisfies the
+  per-corner invariant for ALL 16 tiers x 6 faces x 8 rects x 4 input
+  rotations (3072/3072 exact); B-E re-run ALL OK after the relabelFit
+  refactor.
+- PREDICTED EFFECT: the cycle-perm faces of the remaining pillar/arm REDs
+  (the axis=x rows) collapse; every reflection-perm face keeps its #84
+  emission byte-for-byte (the fitting's first candidate at rotation 0 IS the
+  v-swap form for reflections).
