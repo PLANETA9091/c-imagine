@@ -151,7 +151,12 @@ env:
   #     #30: 4 of 8 create fluids);
   #   - mod entities/items/blocks with no pack row on ours: nochannel /
   #     honest pixel REDs until the pack channel covers them.
-  LADDER_SLUGS: "create biomes-o-plenty dynamictrees combat-roll"
+  # MANDATORY COMPANIONS ride the slug list (checked in each jar's
+  # neoforge.mods.toml — combat-roll requires playeranimator, BOP requires
+  # glitchcore + terrablender; a missing required dependency is a server
+  # boot CRASH). Their registry namespaces are deliberately NOT ladder
+  # namespaces: they are libraries/providers, not gallery content.
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator"
   LADDER_NS: "create biomesoplenty dynamictrees combat_roll"
 
 jobs:

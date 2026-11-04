@@ -514,3 +514,147 @@ jobs:
           name: create-census-diff-report
           path: create-census-diff.txt
           if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------
+  # TIER 2 CENSUS LEGS (2026-11-04, MODPACK.md Tier 2): the server-loadable
+  # third-party set — AE2, Mekanism, Sophisticated Backpacks, Jade — each
+  # booted on a REAL NeoForge 21.1.265 server exactly like the create-truth
+  # rung, with the cimscene census emitter armed. The gate is the CENSUS:
+  # the mod's namespace must land rows in scene-manifest.tsv (blocks/items/
+  # sounds...) — registration parity is the FIRST gate per mod, visual
+  # rungs ride the gallery later. JEI / JourneyMap are NOT here: per
+  # Modrinth metadata (server_side=optional, no server-side content) there
+  # is nothing for them to census (documented in scripts/cimscene/mods.lock).
+  # Sophisticated Backpacks rides its REQUIRED companion sophisticated-core
+  # (checked in the jar's neoforge.mods.toml — a missing required dep is a
+  # boot crash).
+  # ---------------------------------------------------------------------
+  tier2-truth:
+    name: Tier 2 ${{ matrix.name }} — truth leg (real NeoForge server census)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: AE2
+            slug: ae2
+            ns: ae2
+            extra-slugs: ""
+            assert-rows: "yes"
+          - name: Mekanism
+            slug: mekanism
+            ns: mekanism
+            extra-slugs: ""
+            assert-rows: "yes"
+          - name: Sophisticated Backpacks
+            slug: sophisticated-backpacks
+            ns: sophisticatedbackpacks
+            extra-slugs: "sophisticated-core"
+            assert-rows: "yes"
+          - name: Jade
+            slug: jade
+            ns: jade
+            extra-slugs: ""
+            # Jade is a HUD data provider: it registers no blocks/items/
+            # sounds (the census rows under its namespace are expected
+            # EMPTY) — the rung proves the mod LOADS and the harness
+            # censuses, not content rows. Honest shape, not a weaker gate.
+            assert-rows: "no"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: build cimtest + cimscene
+        run: |
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+
+      - name: restore NeoForge server layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+
+      - name: fetch mod (locked) + required companion
+        run: bash scripts/cimscene/fetch-ladder.sh "mods-${{ matrix.slug }}" "${{ matrix.slug }}" ${{ matrix.extra-slugs }}
+
+      - name: prepare server directory
+        run: |
+          cp -r layer-srv "srv-${{ matrix.slug }}"
+          mkdir -p "srv-${{ matrix.slug }}/mods"
+          cp test-mods/build/libs/cimtest-1.0.0.jar "srv-${{ matrix.slug }}/mods/"
+          cp scene-mod/build/libs/cimscene-1.0.0.jar "srv-${{ matrix.slug }}/mods/"
+          cp "mods-${{ matrix.slug }}"/*.jar "srv-${{ matrix.slug }}/mods/"
+          echo "eula=true" > "srv-${{ matrix.slug }}/eula.txt"
+          cat > "srv-${{ matrix.slug }}/server.properties" <<'PROPS'
+          online-mode=false
+          difficulty=peaceful
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=4
+          simulation-distance=4
+          spawn-protection=0
+          PROPS
+
+      - name: boot real NeoForge + ${{ matrix.name }} (console FIFO)
+        run: |
+          set -euo pipefail
+          cd "srv-${{ matrix.slug }}"
+          mkfifo console.in
+          tail -f console.in | ./run.sh > boot.log 2>&1 &
+          cd ..
+          for i in $(seq 1 240); do
+            grep -q "Done (" "srv-${{ matrix.slug }}/boot.log" 2>/dev/null && break
+            # a mod crash exits the launcher loop early — surface the log
+            if grep -qE "Exception|Caused by" "srv-${{ matrix.slug }}/boot.log" 2>/dev/null; then
+              tail -60 "srv-${{ matrix.slug }}/boot.log"
+              exit 1
+            fi
+            sleep 2
+          done
+          grep -q "Done (" "srv-${{ matrix.slug }}/boot.log" || { tail -60 "srv-${{ matrix.slug }}/boot.log"; exit 1; }
+          grep -q "\[cimscene\] census written scene-manifest.tsv" "srv-${{ matrix.slug }}/boot.log" \
+            || { tail -60 "srv-${{ matrix.slug }}/boot.log"; exit 1; }
+          echo "tier2 ${{ matrix.slug }}: server up + census written"
+
+      - name: assert ${{ matrix.name }} census rows
+        run: |
+          T="srv-${{ matrix.slug }}/c-imagine/scenes/scene-manifest.tsv"
+          test -f "$T" || { echo "census TSV missing"; exit 1; }
+          cat "$T"
+          if [ "${{ matrix.assert-rows }}" = "yes" ]; then
+            # block OR item OR sound rows under the mod's namespace prove
+            # the registration landed on the real server (any content
+            # registry suffices — the census-diff join does the set parity)
+            awk -F'\t' '$2=="${{ matrix.ns }}" && $3>0 {ok=1} END{exit !ok}' "$T" \
+              || { echo "no ${{ matrix.ns }} rows in the truth census (mod loaded? see boot log)"; exit 1; }
+            echo "${{ matrix.slug }}-truth: census rows present for ${{ matrix.ns }}"
+          else
+            echo "${{ matrix.slug }}-truth: content-free provider mod — boot + census-file contract only (no rows expected)"
+          fi
+
+      - name: upload tier2 census + boot log (${{ matrix.name }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-${{ matrix.slug }}-census
+          path: |
+            srv-${{ matrix.slug }}/boot.log
+            srv-${{ matrix.slug }}/c-imagine/scenes/scene-manifest.tsv
+            srv-${{ matrix.slug }}/c-imagine/scenes/scene-manifest-entries.tsv
+          if-no-files-found: ignore
