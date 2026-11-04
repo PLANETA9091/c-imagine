@@ -1186,7 +1186,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // carries one composite PER (state, ctx); the suffixed lookup
         // falls back to the plain state row.
         final java.util.Map<String, String> ctByPos = new java.util.HashMap<>();
-        Path ctxMf = mf.resolveSibling(mf.getFileName() + ".ctx.tsv");
+        // the seed writes gallery-<ns>-p<page>.ctx.tsv (gallery_ct.py) —
+        // strip the manifest's .tsv, don't append (the 14-ak #91 miss: the
+        // appended name never matched and every cell rode the plain row)
+        String mfName = mf.getFileName().toString();
+        String ctxName = (mfName.endsWith(".tsv")
+                ? mfName.substring(0, mfName.length() - 4) : mfName)
+                + ".ctx.tsv";
+        Path ctxMf = mf.resolveSibling(ctxName);
         if (Files.isRegularFile(ctxMf)) {
             try {
                 for (String line : Files.readAllLines(ctxMf, StandardCharsets.UTF_8)) {
