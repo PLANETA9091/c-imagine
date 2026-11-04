@@ -264,8 +264,9 @@ public final class GalleryPack {
 
     // ---- blockstate resolution -----------------------------------------------------
 
-    /** One resolved render part: model ref + the rotation it must carry. */
-    private record Part(String modelRef, int xRot, int yRot) {
+    /** One resolved render part: model ref + the rotation it must carry
+     * (+ the blockstate's uvlock flag, 14-ah). */
+    private record Part(String modelRef, int xRot, int yRot, boolean uvlock) {
     }
 
     /**
@@ -304,9 +305,10 @@ public final class GalleryPack {
                 String model = entry.get("model").getAsString();
                 int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
                 int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y)));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
                 } else {
                     warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
                             + " -> " + model);
@@ -327,9 +329,10 @@ public final class GalleryPack {
                 String model = entry.get("model").getAsString();
                 int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
                 int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y)));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
                 }
                 // a missing multipart part model: recorded, the composite
                 // synthesizes from what resolved (honest partial render)
@@ -640,7 +643,7 @@ public final class GalleryPack {
             for (Map.Entry<String, String> t : mg.textures.entrySet()) {
                 textures.put(prefix + t.getKey(), t.getValue());
             }
-            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot());
+            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot(), p.uvlock());
             for (JsonElement el : baked) {
                 mergedElements.add(renameTextureRefs(
                         inflateDegenerate(el.getAsJsonObject()), prefix));
@@ -864,14 +867,14 @@ public final class GalleryPack {
      * then y). 90-degree steps only; per-element "rotation" origins rotate
      * with the element, axes remap, angles pass through.
      */
-    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot) {
-        if (xRot == 0 && yRot == 0) {
+    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot, boolean uvlock) {
+        if (xRot == 0 && yRot == 0 && !uvlock) {
             return elements;
         }
         JsonArray out = new JsonArray();
         for (JsonElement el : elements) {
             JsonObject e = el.getAsJsonObject().deepCopy();
-            writeDefaultUvs(e, xRot);
+            applyFaceUvs(e, xRot, yRot, uvlock);
             out.add(bakeElement(e, xRot, yRot));
         }
         return out;
@@ -907,6 +910,86 @@ public final class GalleryPack {
             case "up", "north", "down", "south" -> true;
             default -> false;
         };
+    }
+
+    /**
+     * 14-ah: the uv processing for one baked element. Non-uvlock variants
+     * keep the 14-ae/14-ag default-uv + v-mirror path. UVLOCKED variants run
+     * the truth's full chain (UvLock): the 1.21.1 block bake recomputes EVERY
+     * face uv of a uvlocked variant (default OR explicit) through
+     * recomputeUVs(uv, face, getUVLockTransform) — the stair/slab/wall pool —
+     * then the measured winding transport relabels the rect corners so the
+     * composite (unrotated, canonical corners) renders like the truth's
+     * rotated quad per physical corner (verified by UvLockVerify, layers B-E
+     * ALL OK against the real classes).
+     */
+    private static void applyFaceUvs(JsonObject el, int xRot, int yRot, boolean uvlock) {
+        if (!uvlock) {
+            writeDefaultUvs(el, xRot);
+            return;
+        }
+        if (!el.has("from") || !el.has("to") || !el.has("faces")) {
+            return;
+        }
+        JsonArray from = el.getAsJsonArray("from");
+        JsonArray to = el.getAsJsonArray("to");
+        if (from.size() != 3 || to.size() != 3) {
+            return;
+        }
+        double x1 = from.get(0).getAsDouble();
+        double y1 = from.get(1).getAsDouble();
+        double z1 = from.get(2).getAsDouble();
+        double x2 = to.get(0).getAsDouble();
+        double y2 = to.get(1).getAsDouble();
+        double z2 = to.get(2).getAsDouble();
+        JsonObject faces = el.getAsJsonObject("faces").deepCopy();
+        boolean changed = false;
+        for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
+            JsonObject face = f.getValue().getAsJsonObject();
+            if (!face.has("texture")) {
+                continue;
+            }
+            float[] inRect = new float[4];
+            int inRot = 0;
+            if (face.has("uv")) {
+                JsonArray uv = face.getAsJsonArray("uv");
+                if (uv.size() != 4) {
+                    continue;
+                }
+                for (int i = 0; i < 4; i++) {
+                    inRect[i] = uv.get(i).getAsFloat();
+                }
+            } else {
+                double[] def = defaultFaceUv(f.getKey(), x1, y1, z1, x2, y2, z2);
+                if (def == null) {
+                    continue;
+                }
+                for (int i = 0; i < 4; i++) {
+                    inRect[i] = (float) def[i];
+                }
+            }
+            if (face.has("rotation")) {
+                inRot = ((face.get("rotation").getAsInt() % 360) + 360) % 360;
+            }
+            float[] out = new float[5];
+            UvLock.bakeUvlockFace(inRect, inRot, f.getKey(), xRot, yRot, out);
+            JsonArray arr = new JsonArray();
+            for (double d : out) {
+                arr.add(d);
+            }
+            arr.remove(arr.size() - 1);
+            face.add("uv", arr);
+            int rotOut = (int) out[4];
+            if (rotOut != 0) {
+                face.addProperty("rotation", rotOut);
+            } else if (face.has("rotation")) {
+                face.remove("rotation");
+            }
+            changed = true;
+        }
+        if (changed) {
+            el.add("faces", faces);
+        }
     }
 
     private static void writeDefaultUvs(JsonObject el, int xRot) {
