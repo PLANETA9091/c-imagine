@@ -5063,3 +5063,44 @@ Work Log (continued):
   the Y-first bake) queued — the pillar family's axis=x rows must collapse
   (the strata-vs-cap cells), the axis=y/axis=z rows measure the remaining
   phase/quadrant residual if any.
+
+### 14-ag FINAL ADDENDUM — the definitive instrument chain: real-class probes
+on both jars + the pixel prediction renderer nailed the pillar residual to a
+V-MIRROR on the x-rotation-remapped faces; fixed in GalleryPack (3095a6a)
+
+Work Log (continued):
+- #82 (86c0748, the y-first bake) measured: the pillar-family deltas came
+  mostly from the SPILL rule (the granite p202 cells = the gantry spill);
+  the y-first bake REGRESSED 342 stairs/slab/wall cells (the both-rotated
+  geometry wrong) while improving the pillars ~15% — the y-first bake was
+  WRONG overall: the REAL 26.3 class probe (QProbe: Quadrant.fromXYZAngles +
+  OctahedralGroup.rotate on the unobfuscated client jar) and the 1.21.1
+  BlockModelRotation matrix probe BOTH returned the OLD x-first-negated
+  composition (the matrix [[0,1,0],[0,0,1],[1,0,0]] for X90_Y90 = the old
+  bakeVec's product exactly). REVERTED as 3faa501.
+- The REAL 1.21.1 srg jar (nfclient libraries) turned out RUNNABLE with the
+  truth-srv library set: FaceBakery.recomputeUVs is a public static — called
+  DIRECTLY. Ground truth extracted: bakeQuad gates recomputeUVs on
+  ModelState.isUvLocked (NOT hasRotation) — the create pillar variants carry
+  NO uvlock, so the truth's non-uvlock uv rides the ROTATED quad's own
+  winding verbatim. This pack's bake canonicalises the rotated box
+  (sortBoxPair) and loses that winding.
+- THE PIXEL PREDICTION RENDERER (predict_crop.py: the emitted model + the
+  real textures + the exact pinhole camera) put truth | ours | prediction
+  side by side: the truth and ours are the SAME texture V-MIRRORED (the
+  dark band at 45% vs 55% of the cell height).
+- THE LUMA-NORMALISED MIRROR TEST confirmed the split: the axis=z rows
+  (x90-only; the camera face = the original UP, an x-remapped face) HALVE
+  their ae under flipud (116944->58337, 127766->57966 — under the 60k gate);
+  the axis=y (y90-only) and the axis=x camera faces (the original WEST, a
+  y-remapped x-invariant face) show no flip win — exactly the faces the
+  theory predicts.
+- THE FIX (3095a6a): writeDefaultUvs(el, xRot) emits the default uv of the
+  x-remapped faces with the V PAIR SWAPPED ([u1,v2,u2,v1]); the y-remapped
+  faces keep the plain default; geometry and textures untouched. Verified on
+  the mini pack (granite_pillar[axis=x]: the x-remapped faces carry
+  [0,16,16,0], the camera face keeps [0,0,16,16]); F2vPack --selftest ALL OK.
+- IN FLIGHT: the revert (3faa501) + the v-mirror (3095a6a) — the next gallery
+  run measures the spill rule + the v-mirror on the vanilla-composition base:
+  the predicted effect = the spill demotions (RED 1109 -> ~706) + the axis=z
+  pillar rows collapsing to green.
