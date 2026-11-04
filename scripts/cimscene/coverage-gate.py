@@ -185,10 +185,14 @@ NO_WALK = {"painting_variant", "wolf_variant", "cat_variant",
 # (round 2): the multi-surface ladder replaced the terminal no-channel with
 # no-truth-surface (nothing renderable on EITHER side — the honest-RED
 # backlog); no-channel still matches for manifests written by older walks.
+# ENTITY + client-crash-banned (merged round 3, 14-am): a type on the
+# client-crash ban list never reaches the picture (the containment chose
+# the client's life over the spawn) — the named type reds, so the ban can
+# never silently eat content from the verdict.
 ABSENCE_NOTES = {
-    "entity-mobs": ("dissolved", "no-instance", "failed"),
-    "entity-dyn": ("dissolved", "no-instance", "failed"),
-    "entity-large": ("dissolved", "no-instance", "failed"),
+    "entity-mobs": ("dissolved", "no-instance", "failed", "client-crash-banned"),
+    "entity-dyn": ("dissolved", "no-instance", "failed", "client-crash-banned"),
+    "entity-large": ("dissolved", "no-instance", "failed", "client-crash-banned"),
     "item": ("summon-failed",),
     "particle": ("no-simple-options",),
     "fluid": ("no-channel", "no-truth-surface"),

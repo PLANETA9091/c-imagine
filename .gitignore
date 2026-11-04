@@ -15,6 +15,10 @@ java/cim-bootstrap/build/
 # anchored /dist/ and /target/ patterns below.
 !third_party/**/*.class
 
+# CI artifacts and local probe output (AGENTS.md: artifacts only, never committed)
+/ci-artifacts/
+/probe-out/
+
 # Paper / server runtime artifacts (never commit)
 run/
 srv/

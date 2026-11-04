@@ -36,6 +36,9 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
   V. particle no-simple-options:<detail> suffix note          -> RED named
      (round 2: the note carries the programmatic-ladder failure reason;
      the prefix match must keep working)
+  W. entity client-crash-banned row (merged round 3, 14-am)   -> RED named
+     (the ban list saved the client — the banned subject still reds with
+     its name, the ban can never silently eat verdict content)
 
 THE LOCAL-RUNNER HOLE (round 2, hardening for THIS workspace only): the
 owner's agent sandbox resolves sys.executable to the ZCode desktop AppImage,
@@ -502,6 +505,20 @@ def main():
         ok = r.returncode == 1 and "create:contraption_particle(no-simple-options:" in r.stdout \
             and "particle" in r.stdout
         print("V particle detailed note RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # W: the 14-am ban list — a banned type is a NAMED absence
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-entitydyn-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:contraption\t1\tclient-crash-banned\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:contraption(client-crash-banned)" in r.stdout             and "entity-dyn" in r.stdout
+        print("W entity client-crash-banned RED:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 

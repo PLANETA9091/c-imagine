@@ -21,7 +21,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
@@ -53,6 +52,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +60,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -109,6 +110,7 @@ public final class CimSceneMod {
         NeoForge.EVENT_BUS.addListener(this::serverStarted);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
+        NeoForge.EVENT_BUS.addListener(this::onServerTickPost);
         LOGGER.info("[cimscene] mod constructed (ordinary-mod harness, no c-imagine APIs)");
     }
 
@@ -1711,6 +1713,10 @@ public final class CimSceneMod {
     private static int galleryEntity(CommandSourceStack src, String series,
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
+        // Every command (the exhausted early return included) supersedes the
+        // previous page's pending settle: its subjects are about to be
+        // discarded, and a late pass must not relabel them dissolved.
+        final int gen = ++entityPageGen;
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1783,9 +1789,24 @@ public final class CimSceneMod {
         // named notes RED (content absent from the picture is not green).
         final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
         int noInstance = 0, wrongSeries = 0, failed = 0;
+        // 14-ak CLIENT-CRASH BAN READ (at the start of every entity command):
+        // a type on the ban list never spawns — a named skip row
+        // (note=client-crash-banned) mirrors the no-instance machinery
+        // exactly, so a re-run of a crashed page is idempotent and the
+        // killed page stays honest on BOTH parity legs.
+        final java.util.Map<String, String> crashBan = readEntityCrashBan();
+        int bannedPre = 0;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+            if (crashBan.containsKey(id.toString())) {
+                bannedPre++;
+                skipNotes.put(i, "client-crash-banned");
+                LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                                + "reason=client-crash-banned entity={}",
+                        namespace, page, from + i, id);
+                continue;
+            }
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
             Entity e = null;
             try {
@@ -1849,6 +1870,12 @@ public final class CimSceneMod {
             spawnedIdx.add(i);
         }
 
+        if (bannedPre > 0) {
+            LOGGER.info("[cimscene] gallery-entity{} ban-skip ns={} page={} count={} (the entity-crash-ban "
+                            + "file holds types that killed the real client — they are named skip rows this run)",
+                    seriesTag(series), namespace, page, bannedPre);
+        }
+
         // SETTLE PASS (delayed, server thread): re-read every spawn, write
         // the manifest + the done marker. The CI waits for the done marker,
         // so the page is complete before any screenshot fires.
@@ -1862,12 +1889,47 @@ public final class CimSceneMod {
         final java.util.Map<Integer, String> fSkipNotes = skipNotes;
         final int fFrom = from;
         final String fSeries = series;
-        level.getServer().tell(new TickTask(level.getServer().getTickCount()
-                + ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
-                        fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
-                        fNoInstance, fWrongSeries, fFailed, fSkipNotes,
-                        fFrom, fSeries, false)));
+        runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
+                fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
+                fNoInstance, fWrongSeries, fFailed, fSkipNotes,
+                fFrom, fSeries, gen, false));
         return spawned.size();
+    }
+
+    /** Bumped by every entity gallery command; a settle pass holding an older value is superseded. */
+    private static int entityPageGen;
+
+    private record DelayedTask(int dueTick, Runnable task) {}
+
+    /** Server-thread only, like every gallery command and settle pass. */
+    private static final List<DelayedTask> DELAYED_TASKS = new ArrayList<>();
+
+    /**
+     * Runs {@code task} on the server thread after {@code ticks} REAL ticks.
+     * {@code server.tell(new TickTask(now + n, ...))} is NOT a delay:
+     * MinecraftServer.shouldRun is {@code getTick() + 3 < tickCount || haveTime()},
+     * so on an idle server the task runs at once (measured gallery 41880239869:
+     * begin, done and settle-final in the same second, the client death one
+     * tick later and never seen by the settle pass).
+     */
+    private static void runAfterTicks(net.minecraft.server.MinecraftServer server, int ticks, Runnable task) {
+        DELAYED_TASKS.add(new DelayedTask(server.getTickCount() + ticks, task));
+    }
+
+    private void onServerTickPost(ServerTickEvent.Post event) {
+        if (DELAYED_TASKS.isEmpty()) {
+            return;
+        }
+        int now = event.getServer().getTickCount();
+        List<DelayedTask> due = new ArrayList<>();
+        DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
+        for (DelayedTask t : due) {
+            try {
+                t.task().run();
+            } catch (RuntimeException ex) {
+                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString());
+            }
+        }
     }
 
     /** Mob freeze without shadowing the pattern variable. */
@@ -1897,13 +1959,109 @@ public final class CimSceneMod {
      * their terminal markers, and humans grep them.
      */
     private static void writeDoneMarkerFile(String stem, boolean exhausted) {
+        writeMarkerFile(stem + (exhausted ? ".exhausted" : ".done"));
+    }
+
+    private static void writeMarkerFile(String name) {
         try {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
-            Files.writeString(parent.resolve(stem + (exhausted ? ".exhausted" : ".done")),
+            Files.writeString(parent.resolve(name),
                     String.valueOf(System.currentTimeMillis()), StandardCharsets.UTF_8);
         } catch (IOException ioe) {
-            LOGGER.error("[cimscene] done-marker file write failed {}: {}", stem, ioe.toString());
+            LOGGER.error("[cimscene] marker file write failed {}: {}", name, ioe.toString());
+        }
+    }
+
+    // --- entity crash ban (14-ak client-crash containment) -----------------
+
+    /**
+     * The RUN-SCOPED client-crash ban file:
+     * {@code c-imagine/scenes/entity-crash-ban.tsv}, one type per line,
+     * {@code <entity id> TAB <reason>} (reason format:
+     * {@code client-crash page=<p>}).
+     *
+     * <p>MEASURED (#84, run 41848055305, truth shard 0): during the
+     * create-entity DYN walk the REAL client DIED — a bare modded (Create)
+     * entity spawn carries spawn data the client cannot process
+     * ({@code Contraption.readNBT} NPE: "contraption" is null on the
+     * {@code create:contraption} spawn) and the frame became the
+     * "Connection Lost" screen. EVERY truth shot after that point on the
+     * shard was the disconnect screen — the two item pages joined 77/77
+     * garbage RED each and gated the gallery. The ban is the containment:
+     * a type that killed the client never spawns again (this run); the
+     * coverage it loses is recorded as NAMED skip rows, never silent.
+     *
+     * <p>Vanilla-namespace types stay unbanned by the death detector — they
+     * render fine on the stock client; the crash comes from modded spawn
+     * data. Rerun safety: the ban-file read at the start of
+     * {@link #galleryEntity} makes re-running the same page idempotent (the
+     * killer types become skip rows on the retry and cannot kill again).
+     * The file rides the meta artifact ({@code srv-wall/c-imagine/scenes/})
+     * — it IS the audit trail for every page the walk refused to spawn.
+     */
+    static final String ENTITY_CRASH_BAN_FILE = "entity-crash-ban.tsv";
+
+    private static Path entityCrashBanPath() {
+        return Path.of("c-imagine", "scenes", ENTITY_CRASH_BAN_FILE);
+    }
+
+    /** Reads the ban file: id -> reason. Missing file = empty map. */
+    private static java.util.Map<String, String> readEntityCrashBan() {
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        Path file = entityCrashBanPath();
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        try {
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                if (line.isBlank()) continue;
+                int tab = line.indexOf('\t');
+                String id = (tab >= 0 ? line.substring(0, tab) : line).trim();
+                if (id.isEmpty()) continue;
+                String reason = tab >= 0 ? line.substring(tab + 1).trim() : "";
+                out.putIfAbsent(id, reason);
+            }
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] entity-crash-ban read failed {}: {}", file, ioe.toString());
+        }
+        return out;
+    }
+
+    /**
+     * Appends types to the ban file (id TAB reason), deduplicated against
+     * the existing content — re-detection of the same killer type on a
+     * later pass/page must not grow the file. Server-thread only (the
+     * gallery commands and the settle TickTasks all run there).
+     */
+    private static void appendEntityCrashBan(List<String> ids, String reason) {
+        Path file = entityCrashBanPath();
+        try {
+            Files.createDirectories(file.getParent());
+            java.util.Set<String> existing = new HashSet<>();
+            if (Files.isRegularFile(file)) {
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    if (line.isBlank()) continue;
+                    int tab = line.indexOf('\t');
+                    existing.add((tab >= 0 ? line.substring(0, tab) : line).trim());
+                }
+            }
+            StringBuilder out = new StringBuilder();
+            int added = 0;
+            for (String id : ids) {
+                if (!existing.add(id)) continue;
+                out.append(id).append('\t').append(reason).append('\n');
+                added++;
+            }
+            if (added == 0) {
+                return;
+            }
+            Files.writeString(file, out.toString(), StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            LOGGER.info("[cimscene] entity-crash-ban appended {} type(s) reason={} : {}",
+                    added, reason, ids);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] entity-crash-ban write failed {}: {}", file, ioe.toString());
         }
     }
 
@@ -1916,15 +2074,60 @@ public final class CimSceneMod {
                                             List<Entity> spawned, List<Integer> spawnedIdx,
                                             int noInstance, int wrongSeries, int failed,
                                             java.util.Map<Integer, String> skipNotes,
-                                            int from, String series, boolean finalPass) {
+                                            int from, String series, int gen, boolean finalPass) {
         String tag = seriesTag(series);
+        if (gen != entityPageGen) {
+            LOGGER.info("[cimscene] gallery-entity{} settle superseded ns={} page={} finalPass={}",
+                    tag, namespace, page, finalPass);
+            return;
+        }
         String[] rowStr = new String[slice.size()];
         int cells = 0, dyn = 0, dissolved = 0;
+        // 14-ak SERVER-SIDE DEATH DETECTION: the settle pass runs 40 ticks
+        // after the spawn command. If the server has ZERO players online,
+        // the truth client just crashed mid-page (measured #84: a modded
+        // Create entity spawn kills the real client — Contraption.readNBT
+        // NPE on bare ContraptionEntity spawn data; the frame becomes the
+        // "Connection Lost" screen and every later shot on the shard is
+        // garbage). Append EVERY non-vanilla-namespace type PLACED on this
+        // page to the ban file (reason client-crash page=<p>) and write
+        // skip rows for them in the CURRENT manifest; vanilla-namespace
+        // types stay unbanned (they render fine on the stock client — the
+        // crash comes from modded spawn data). Both settle passes run this
+        // (a death the network thread noticed only between them is still
+        // caught); already-banned indices dedup to an empty append and no
+        // second log. NOTE: a deliberately client-less walk (the seed
+        // manifest-generation pass) trips this too — by design its only
+        // effect is the same honest skip-row accounting, and the ours-leg
+        // replay skips non-cell rows identically, so the join loses nothing.
+        if (level.getServer().getPlayerCount() == 0) {
+            List<String> banned = new ArrayList<>();
+            for (int j = 0; j < spawnedIdx.size(); j++) {
+                int idx = spawnedIdx.get(j);
+                ResourceLocation id = slice.get(idx);
+                if (id.getNamespace().equals("minecraft")) continue;
+                if ("client-crash-banned".equals(skipNotes.get(idx))) continue;
+                skipNotes.put(idx, "client-crash-banned");
+                banned.add(id.toString());
+            }
+            if (!banned.isEmpty()) {
+                appendEntityCrashBan(banned, "client-crash page=" + page);
+                LOGGER.info("[cimscene] gallery-entity{} client death detected ns={} page={} banned={}",
+                        tag, namespace, page, banned);
+            }
+        }
         for (int j = 0; j < spawned.size(); j++) {
             Entity e = spawned.get(j);
             int i = spawnedIdx.get(j);
             ResourceLocation id = slice.get(i);
             int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+            // 14-ak: a death-banned cell is NAMED even though the entity is
+            // (still) alive server-side — the client that would have shot it
+            // is dead, and a re-run of the page must re-read it as a skip.
+            if (skipNotes.containsKey(i)) {
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t0\t" + skipNotes.get(i);
+                continue;
+            }
             double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
             double cy = GALLERY_Y0 + row * ENTITY_PITCH;
             double cz = GALLERY_Z + 0.5;
@@ -1978,6 +2181,9 @@ public final class CimSceneMod {
                             + "dissolved={} (manifest rewritten inside the shot window; "
                             + "no done marker)",
                     tag, namespace, page, cells, dyn, dissolved);
+            // not a readiness signal: only for a walk that must not touch the
+            // subjects until this rewrite has read them (the determinism probe)
+            writeMarkerFile("gallery-entity" + tag + "-" + namespace + "-p" + page + ".settled");
             return;
         }
         LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells={} dyn={} "
@@ -1993,11 +2199,10 @@ public final class CimSceneMod {
         // pass 1 — the tick quarantine, a modded subject's own
         // self-discard — while still inside the CI shot window, and rewrite
         // the manifest so the gate reads the state the SHOT will show.
-        level.getServer().tell(new TickTask(level.getServer().getTickCount()
-                + ENTITY_FINAL_TICKS, () -> settleGalleryEntity(
-                        level, namespace, page, slice, spawned, spawnedIdx,
-                        noInstance, wrongSeries, failed, skipNotes,
-                        from, series, true)));
+        runAfterTicks(level.getServer(), ENTITY_FINAL_TICKS, () -> settleGalleryEntity(
+                level, namespace, page, slice, spawned, spawnedIdx,
+                noInstance, wrongSeries, failed, skipNotes,
+                from, series, gen, true));
     }
 
     /** Canonical state string {@code ns:path[k=v,...]} (properties in

@@ -196,7 +196,20 @@ public final class GalleryPack {
         for (Input in : seen.values()) {
             String state = in.stateId();
             try {
-                StateRef s = parseState(state);
+                // 14-ak CT rows: {@code state#i0,i1,...,i5} — the per-face
+                // CT tile indices the seed computed (gallery_ct.py, verified
+                // against the real create classes by CTProbe 515/515). The
+                // suffix NEVER reaches parseState — it rides the Resolved
+                // row so the replay's suffixed lookup matches.
+                String ctCtx = null;
+                String bareState = state;
+                int hash = state.indexOf('#');
+                if (hash >= 0) {
+                    ctCtx = state.substring(hash + 1).trim();
+                    bareState = state.substring(0, hash);
+                    parseCtCtx(ctCtx); // validate early — a bad ctx drops the row
+                }
+                StateRef s = parseState(bareState);
                 List<Part> parts = resolveStateParts(jars, s, entries, warnings);
                 if (parts.isEmpty()) {
                     warnings.add("gallery: no matching model for " + state + " — row dropped");
@@ -216,8 +229,8 @@ public final class GalleryPack {
                 // blockstate rotation bakes into the elements, exactly the
                 // measured composite behaviour; the spawning entity carries
                 // 0/0).
-                String ref = synthesizeComposite(jars, state, parts,
-                        compositeIdx, entries, warnings);
+                String ref = synthesizeComposite(jars, bareState, parts,
+                        compositeIdx, entries, warnings, ctCtx);
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
@@ -264,8 +277,9 @@ public final class GalleryPack {
 
     // ---- blockstate resolution -----------------------------------------------------
 
-    /** One resolved render part: model ref + the rotation it must carry. */
-    private record Part(String modelRef, int xRot, int yRot) {
+    /** One resolved render part: model ref + the rotation it must carry
+     * (+ the blockstate's uvlock flag, 14-ah). */
+    private record Part(String modelRef, int xRot, int yRot, boolean uvlock) {
     }
 
     /**
@@ -304,9 +318,10 @@ public final class GalleryPack {
                 String model = entry.get("model").getAsString();
                 int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
                 int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y)));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
                 } else {
                     warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
                             + " -> " + model);
@@ -327,9 +342,10 @@ public final class GalleryPack {
                 String model = entry.get("model").getAsString();
                 int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
                 int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y)));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
                 }
                 // a missing multipart part model: recorded, the composite
                 // synthesizes from what resolved (honest partial render)
@@ -624,7 +640,7 @@ public final class GalleryPack {
      */
     private static String synthesizeComposite(List<Path> jars, String state, List<Part> parts,
                                               int idx, TreeMap<String, byte[]> entries,
-                                              List<String> warnings) throws IOException {
+                                              List<String> warnings, String ctCtx) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
         int partNo = 0;
@@ -640,7 +656,7 @@ public final class GalleryPack {
             for (Map.Entry<String, String> t : mg.textures.entrySet()) {
                 textures.put(prefix + t.getKey(), t.getValue());
             }
-            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot());
+            JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot(), p.uvlock());
             for (JsonElement el : baked) {
                 mergedElements.add(renameTextureRefs(
                         inflateDegenerate(el.getAsJsonObject()), prefix));
@@ -649,6 +665,11 @@ public final class GalleryPack {
         }
         if (mergedElements.size() == 0) {
             return null;
+        }
+        int[] ctIndices = ctCtx == null ? null : parseCtCtx(ctCtx);
+        if (ctIndices != null) {
+            applyCtRemap(jars, mergedElements, textures, ctIndices, entries, warnings,
+                    state);
         }
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
@@ -662,6 +683,142 @@ public final class GalleryPack {
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
         return WRAPPER_REF_PREFIX + idx;
+    }
+
+    // ---- 14-ak: the Create connected-texture channel -------------------------
+
+    /** The per-face CT tile indices, in the vanilla Direction.values()
+     *  order (down,up,north,south,west,east) — the ctx string the seed's
+     *  gallery_ct.py emits (computed per WORLD face of the REAL block;
+     *  the composite's post-bake face keys are the same world directions). */
+    private static final String[] CT_FACE_ORDER = {
+            "down", "up", "north", "south", "west", "east"};
+
+    /** Parse {@code i0,i1,...,i5} — side faces carry 0..15 (RECTANGLE 4x4),
+     *  cap faces 0..63 (OMNIDIRECTIONAL 8x8); a loose 0..63 bound here. */
+    private static int[] parseCtCtx(String ctx) {
+        String[] parts = ctx.split(",");
+        if (parts.length != 6) {
+            throw new IllegalArgumentException("bad CT ctx: " + ctx);
+        }
+        int[] out = new int[6];
+        for (int i = 0; i < 6; i++) {
+            out[i] = Integer.parseInt(parts[i].trim());
+            if (out[i] < 0 || out[i] > 63) {
+                throw new IllegalArgumentException("CT index out of range: " + ctx);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Remap the composite's faces into the Create CT sheets (14-ak).
+     * MEASURED chain: the real client's CTModel.getQuads remaps every quad
+     * whose sprite == the shift entry's original; catnip un-interpolates
+     * the vertex uv to a FRACTION (getUnInterpolatedU = (u-u0)/(u1-u0)) and
+     * 1.21.1 TextureAtlasSprite.getU (real bytecode: u0 + (u1-u0)*u) takes
+     * that fraction — the tile offset lands at off*16 px of the sheet. In
+     * model uv units ([0,16] over the whole texture) the remap is
+     * {@code u' = (u + tileX*16)/sheetSize}, v likewise — an affine that
+     * commutes with the face rotation's corner permutation (verified:
+     * the isolated side tile (0,3) of the pillar sheet is BYTE-IDENTICAL
+     * to the plain texture; the index semantics verified 515/515 against
+     * the real RotatedPillarCTBehaviour by CTProbe).
+     *
+     * <p>The connected sheets ship from the create jar on first use (the
+     * block/ path auto-atlases; the sheets are referenced by NO model json
+     * — only the runtime shifter — so no existing pack walk copies them).
+     */
+    private static void applyCtRemap(List<Path> jars, JsonArray elements,
+                                     Map<String, String> textures, int[] ctIndices,
+                                     TreeMap<String, byte[]> entries,
+                                     List<String> warnings, String state) throws IOException {
+        int ctKey = 0;
+        for (JsonElement elE : elements) {
+            JsonObject el = elE.getAsJsonObject();
+            if (!el.has("faces")) {
+                continue;
+            }
+            JsonObject faces = el.getAsJsonObject("faces").deepCopy();
+            boolean changed = false;
+            for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
+                int faceIdx = ctFaceIndex(f.getKey());
+                if (faceIdx < 0 || !f.getValue().isJsonObject()) {
+                    continue;
+                }
+                JsonObject face = f.getValue().getAsJsonObject();
+                if (!face.has("texture") || !face.get("texture").getAsString().startsWith("#")) {
+                    continue;
+                }
+                String texKey = face.get("texture").getAsString().substring(1);
+                String sprite = textures.get(texKey);
+                if (sprite == null) {
+                    continue;
+                }
+                int sheet = ctSheetSize(sprite);
+                if (sheet < 0) {
+                    continue; // not a CT-textured face
+                }
+                int tileIdx = ctIndices[faceIdx];
+                int tileX = tileIdx % sheet;
+                int tileY = tileIdx / sheet;
+                String connected = sprite + "_connected";
+                String png = spritePathPng(connected);
+                if (!entries.containsKey(png) && readPngFromJars(jars, png) == null) {
+                    warnings.add("gallery ct: connected sheet missing: " + connected
+                            + " (" + state + ")");
+                    continue;
+                }
+                if (!entries.containsKey(png)) {
+                    entries.put(png, readPngFromJars(jars, png));
+                }
+                String newKey = texKey + "Ct" + (ctKey++);
+                textures.put(newKey, connected);
+                face.addProperty("texture", "#" + newKey);
+                if (face.has("uv") && face.getAsJsonArray("uv").size() == 4) {
+                    JsonArray uv = face.getAsJsonArray("uv");
+                    JsonArray out = new JsonArray();
+                    for (int i = 0; i < 4; i++) {
+                        double u = uv.get(i).getAsDouble();
+                        double off = (i % 2 == 0 ? tileX : tileY) * 16.0;
+                        out.add((u + off) / sheet);
+                    }
+                    face.add("uv", out);
+                }
+                // the rotation field survives: the affine is uniform over
+                // the tile box and commutes with the corner permutation
+                changed = true;
+            }
+            if (changed) {
+                el.add("faces", faces);
+            }
+        }
+    }
+
+    /** The sheet size for a CT-textured sprite, or -1: the pillar side
+     *  sprite (RECTANGLE 4x4) or the cap sprite (OMNIDIRECTIONAL 8x8) of
+     *  the create palette family. The match is by PATH SHAPE, not by a
+     *  stone list — a stone without a connected sheet fails the png read
+     *  above and stays verbatim (fail-safe). */
+    private static int ctSheetSize(String sprite) {
+        if (sprite.startsWith("create:block/palettes/stone_types/pillar/")
+                && sprite.endsWith("_cut_pillar")) {
+            return 4;
+        }
+        if (sprite.startsWith("create:block/palettes/stone_types/cap/")
+                && sprite.endsWith("_cut_cap")) {
+            return 8;
+        }
+        return -1;
+    }
+
+    private static int ctFaceIndex(String face) {
+        for (int i = 0; i < CT_FACE_ORDER.length; i++) {
+            if (CT_FACE_ORDER[i].equals(face)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
@@ -864,55 +1021,48 @@ public final class GalleryPack {
      * then y). 90-degree steps only; per-element "rotation" origins rotate
      * with the element, axes remap, angles pass through.
      */
-    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot) {
-        if (xRot == 0 && yRot == 0) {
+    static JsonArray bakeRotation(JsonArray elements, int xRot, int yRot, boolean uvlock) {
+        if (xRot == 0 && yRot == 0 && !uvlock) {
             return elements;
         }
         JsonArray out = new JsonArray();
         for (JsonElement el : elements) {
             JsonObject e = el.getAsJsonObject().deepCopy();
-            writeDefaultUvs(e, xRot);
+            applyFaceUvs(e, xRot, yRot, uvlock);
             out.add(bakeElement(e, xRot, yRot));
         }
         return out;
     }
 
     /**
-     * 14-ae: write the DEFAULT uv (decompiled 26.3 defaultFaceUV) explicitly
-     * into every null-uv face of the UNROTATED element, before the rotation
-     * bake. The 1.21.1 block bake (truth channel) derives a null-uv face's uv
-     * from the ORIGINAL geometry + ORIGINAL face direction and transports it
-     * rigidly with the rotated quad, while the 26.3 item channel derives it
-     * from the ROTATED geometry + REMAPPED direction. An explicit uv rides
-     * the rotation verbatim on BOTH channels = the truth semantics.
-     *
-     * 14-ag V-MIRROR: the 1.21.1 recomputeUVs runs ONLY for uvlocked variants
-     * (measured from the real srg jar: bakeQuad gates it on
-     * ModelState.isUvLocked, NOT on hasRotation) — a non-uvlocked variant's
-     * uv rides the ROTATED quad's own winding, while this pack's geometry is
-     * canonicalised (sortBoxPair: the rotated box pair re-sorted per axis),
-     * which LOSES the rotated winding. Measured on #80 (run 41792830144):
-     * faces remapped by the X rotation (up/north/down/south under x=90/270)
-     * render V-MIRRORED vs the truth — flipping the ours crop vertically
-     * HALVES their ae (p391 axis=z rows: 116944->58337, 127766->57966 — both
-     * under the 60k gate) while the y-rotation remapped faces (which preserve
-     * the v axis) measure clean. The fix: for the x-remapped faces emit the
-     * default uv with the V PAIR SWAPPED (v1<->v2), which mirrors the texture
-     * vertically on that face and restores the truth's winding.
+     * 14-ae/14-ag/14-ai history of the non-uvlock uv path: 14-ae wrote the
+     * DEFAULT uv explicitly into every null-uv face (the 26.3 item channel
+     * derives it from the ROTATED geometry while the 1.21.1 truth derives it
+     * from the ORIGINAL geometry + direction). 14-ag added the V-mirror on
+     * the x-remapped faces (the canonicalisation loses the rotated winding) —
+     * validated pixel-wise on #84. 14-ai REPLACES the v-swap with the EXACT
+     * winding transport (UvLock.bakePlainFace): the truth's position-rematch
+     * (recalculateWinding carrying the uv with the vertex) puts the raw walk
+     * slot perm[j] at the mapped canonical corner j for EVERY face with a
+     * non-identity transport permutation — the v-swap was exact only for the
+     * reflection-class perms and a U-mirror approximation for the cycle-class
+     * ones (X90_Y0 up, X180_Y0 north, X0_Y90 down, ...) — see
+     * scripts/f2v/uvlock/UvLockVerify.java layer F/G.
      */
-    /** 14-ag: the face directions the X-rotation table actually moves
-     * (up/north/down/south; east/west are x-invariant). */
-    private static boolean xRemapped(String face) {
-        return switch (face) {
-            case "up", "north", "down", "south" -> true;
-            default -> false;
-        };
-    }
-
-    private static void writeDefaultUvs(JsonObject el, int xRot) {
-        // 14-ag: the faces the X rotation remaps lose their winding to the
-        // geometry canonicalisation — their default uv needs the V mirror.
-        boolean xFlipsV = xRot == 90 || xRot == 270;
+    /**
+     * 14-ah/14-ai: the uv processing for one baked element. BOTH branches run
+     * the measured transport machinery (UvLock): UVLOCKED variants recompute
+     * EVERY face uv through the truth's recomputeUVs chain first
+     * (bakeUvlockFace); NON-uvlocked variants ride the raw rect
+     * (default or explicit, with its rotation field) through the same
+     * k-fitted winding relabel (bakePlainFace). Identity-permutation faces
+     * stay verbatim. Verified per-corner-exact by UvLockVerify (layers
+     * B-E for uvlock, G for the plain path — ALL OK vs the real classes).
+     */
+    private static void applyFaceUvs(JsonObject el, int xRot, int yRot, boolean uvlock) {
+        if (xRot == 0 && yRot == 0 && !uvlock) {
+            return;
+        }
         if (!el.has("from") || !el.has("to") || !el.has("faces")) {
             return;
         }
@@ -931,25 +1081,49 @@ public final class GalleryPack {
         boolean changed = false;
         for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
             JsonObject face = f.getValue().getAsJsonObject();
-            if (face.has("uv") || !face.has("texture")) {
+            if (!face.has("texture")) {
                 continue;
             }
-            double[] uv = defaultFaceUv(f.getKey(), x1, y1, z1, x2, y2, z2);
-            if (uv == null) {
-                continue;
+            float[] inRect = new float[4];
+            int inRot = 0;
+            if (face.has("uv")) {
+                JsonArray uv = face.getAsJsonArray("uv");
+                if (uv.size() != 4) {
+                    continue;
+                }
+                for (int i = 0; i < 4; i++) {
+                    inRect[i] = uv.get(i).getAsFloat();
+                }
+            } else {
+                double[] def = defaultFaceUv(f.getKey(), x1, y1, z1, x2, y2, z2);
+                if (def == null) {
+                    continue;
+                }
+                for (int i = 0; i < 4; i++) {
+                    inRect[i] = (float) def[i];
+                }
             }
-            if (xFlipsV && xRemapped(f.getKey())) {
-                // the V pair swap: the emitted rect (u1,v2,u2,v1) renders the
-                // texture vertically mirrored on this face
-                double t = uv[1];
-                uv[1] = uv[3];
-                uv[3] = t;
+            if (face.has("rotation")) {
+                inRot = ((face.get("rotation").getAsInt() % 360) + 360) % 360;
+            }
+            float[] out = new float[5];
+            if (uvlock) {
+                UvLock.bakeUvlockFace(inRect, inRot, f.getKey(), xRot, yRot, out);
+            } else {
+                UvLock.bakePlainFace(inRect, inRot, f.getKey(), xRot, yRot, out);
             }
             JsonArray arr = new JsonArray();
-            for (double d : uv) {
+            for (double d : out) {
                 arr.add(d);
             }
+            arr.remove(arr.size() - 1);
             face.add("uv", arr);
+            int rotOut = (int) out[4];
+            if (rotOut != 0) {
+                face.addProperty("rotation", rotOut);
+            } else if (face.has("rotation")) {
+                face.remove("rotation");
+            }
             changed = true;
         }
         if (changed) {
