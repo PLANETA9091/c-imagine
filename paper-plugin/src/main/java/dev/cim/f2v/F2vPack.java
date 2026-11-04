@@ -638,6 +638,7 @@ public final class F2vPack {
                                List<Path> extraAssets)
             throws IOException {
         List<String> warnings = new ArrayList<>();
+        GalleryPack.resetModelScales();
         List<VisualItem> baseResolved = assignCmds(manifestRows);
 
         // PALETTE variant rows (M6 palette channel): one synthetic VisualItem
@@ -1324,6 +1325,15 @@ public final class F2vPack {
      * custom_model_data float property with the vanilla look as fallback.
      * Entries arrive sorted by threshold (vanilla defs list ascending).
      */
+    /** The row's transformation (a row-major matrix) when its mesh shrank to fit. */
+    private static String scaleField(String modelRef) {
+        double k = GalleryPack.modelScale(modelRef);
+        if (k == 1) {
+            return "";
+        }
+        return ", \"transformation\": [" + k + ",0,0,0, 0," + k + ",0,0, 0,0," + k + ",0, 0,0,0,1]";
+    }
+
     static String itemDef(String hostPath, List<Map.Entry<Float, String>> entries) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n  \"model\": {\n")
@@ -1334,7 +1344,7 @@ public final class F2vPack {
             Map.Entry<Float, String> e = entries.get(i);
             sb.append("      {\"threshold\": ").append(e.getKey())
               .append(", \"model\": {\"type\": \"minecraft:model\", \"model\": \"")
-              .append(e.getValue()).append("\"}}");
+              .append(e.getValue()).append('"').append(scaleField(e.getValue())).append("}}");
             sb.append(i + 1 < entries.size() ? ",\n" : "\n");
         }
         sb.append("    ],\n")
@@ -1363,7 +1373,7 @@ public final class F2vPack {
             Map.Entry<String, String> e = cases.get(i);
             sb.append("      {\"when\": \"").append(e.getKey())
               .append("\", \"model\": {\"type\": \"minecraft:model\", \"model\": \"")
-              .append(e.getValue()).append("\"}}");
+              .append(e.getValue()).append('"').append(scaleField(e.getValue())).append("}}");
             sb.append(i + 1 < cases.size() ? ",\n" : "\n");
         }
         sb.append("    ],\n")

@@ -600,7 +600,7 @@ public final class GalleryPack {
         }
         wrapper.add("textures", texObj);
         wrapper.add("elements", mg.elements.deepCopy());
-        addDisplayScale(wrapper, mg.displayScale());
+        recordScale(WRAPPER_NS + ":items/i" + itemNo, mg.displayScale());
         String file = "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json";
         entries.put(file, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         return WRAPPER_NS + ":items/i" + itemNo;
@@ -684,7 +684,7 @@ public final class GalleryPack {
         }
         wrapper.add("textures", texObj);
         wrapper.add("elements", mergedElements);
-        addDisplayScale(wrapper, displayScale);
+        recordScale(WRAPPER_REF_PREFIX + idx, displayScale);
         String file = WRAPPER_PREFIX + idx + ".json";
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
@@ -890,7 +890,7 @@ public final class GalleryPack {
 
     /** A resolved model: concrete texture map + the nearest elements array. */
     /** {@code displayScale}: the shrink an oversized OBJ mesh took to fit the
-     *  element limits, undone by the wrapper's display transform. */
+     *  element limits, undone by the item definition's transformation. */
     private record ModelGraph(Map<String, String> textures, JsonArray elements,
                               double displayScale) {
     }
@@ -940,20 +940,27 @@ public final class GalleryPack {
                 WRAPPER_NS, entries, warnings);
     }
 
-    /** Undo the OBJ fit shrink: the wrapper renders scaled back up about the block centre. */
-    private static void addDisplayScale(JsonObject wrapper, double k) {
-        if (k == 1) {
-            return;
+    /**
+     * Model refs whose OBJ mesh shrank to fit, and by how much. The wrapper's
+     * display transforms cannot undo it: the item_display NONE context reads
+     * ItemTransform.NO_TRANSFORM (ItemTransforms.getTransform has no NONE case),
+     * so {@link F2vPack#itemDef} restores it in the item definition instead.
+     */
+    private static final Map<String, Double> MODEL_SCALE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    static void resetModelScales() {
+        MODEL_SCALE.clear();
+    }
+
+    /** The item definition's scale for a model ref (1 for all but oversized meshes). */
+    static double modelScale(String ref) {
+        return MODEL_SCALE.getOrDefault(ref, 1.0);
+    }
+
+    private static void recordScale(String ref, double k) {
+        if (k != 1) {
+            MODEL_SCALE.put(ref, k);
         }
-        JsonArray scale = new JsonArray();
-        scale.add(k);
-        scale.add(k);
-        scale.add(k);
-        JsonObject none = new JsonObject();
-        none.add("scale", scale);
-        JsonObject display = new JsonObject();
-        display.add("none", none);
-        wrapper.add("display", display);
     }
 
     /**
