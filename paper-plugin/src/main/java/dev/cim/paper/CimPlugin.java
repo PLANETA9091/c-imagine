@@ -1519,9 +1519,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                            // identity transform — the truth leg carries no
-                            // transformation NBT, so this leg must not either
-                            // (both render the item model in the NONE context)
+                            // the block rig's calibration, not identity: the
+                            // 26.3 item-display path renders the geometry
+                            // ~0.20 blocks nearer than the truth leg's (see
+                            // GALLERY_TZ). Identity zoomed every item page
+                            // 1.025x about the screen centre (gallery 41880239869)
+                            e.setTransformation(new org.bukkit.util.Transformation(
+                                    new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
+                                    new org.joml.Quaternionf(),
+                                    new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
+                                    new org.joml.Quaternionf()));
                             e.setBrightness(new org.bukkit.entity.Display.Brightness(
                                     15, 15));
                         });
