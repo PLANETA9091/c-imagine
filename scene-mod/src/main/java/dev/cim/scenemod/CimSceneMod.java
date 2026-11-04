@@ -46,6 +46,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -1200,9 +1201,24 @@ public final class CimSceneMod {
         // named notes RED (content absent from the picture is not green).
         final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
         int noInstance = 0, wrongSeries = 0, failed = 0;
+        // 14-ak CLIENT-CRASH BAN READ (at the start of every entity command):
+        // a type on the ban list never spawns — a named skip row
+        // (note=client-crash-banned) mirrors the no-instance machinery
+        // exactly, so a re-run of a crashed page is idempotent and the
+        // killed page stays honest on BOTH parity legs.
+        final java.util.Map<String, String> crashBan = readEntityCrashBan();
+        int bannedPre = 0;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+            if (crashBan.containsKey(id.toString())) {
+                bannedPre++;
+                skipNotes.put(i, "client-crash-banned");
+                LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                                + "reason=client-crash-banned entity={}",
+                        namespace, page, from + i, id);
+                continue;
+            }
             EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(id);
             Entity e = null;
             try {
@@ -1266,6 +1282,12 @@ public final class CimSceneMod {
             spawnedIdx.add(i);
         }
 
+        if (bannedPre > 0) {
+            LOGGER.info("[cimscene] gallery-entity{} ban-skip ns={} page={} count={} (the entity-crash-ban "
+                            + "file holds types that killed the real client — they are named skip rows this run)",
+                    seriesTag(series), namespace, page, bannedPre);
+        }
+
         // SETTLE PASS (delayed, server thread): re-read every spawn, write
         // the manifest + the done marker. The CI waits for the done marker,
         // so the page is complete before any screenshot fires.
@@ -1324,6 +1346,98 @@ public final class CimSceneMod {
         }
     }
 
+    // --- entity crash ban (14-ak client-crash containment) -----------------
+
+    /**
+     * The RUN-SCOPED client-crash ban file:
+     * {@code c-imagine/scenes/entity-crash-ban.tsv}, one type per line,
+     * {@code <entity id> TAB <reason>} (reason format:
+     * {@code client-crash page=<p>}).
+     *
+     * <p>MEASURED (#84, run 41848055305, truth shard 0): during the
+     * create-entity DYN walk the REAL client DIED — a bare modded (Create)
+     * entity spawn carries spawn data the client cannot process
+     * ({@code Contraption.readNBT} NPE: "contraption" is null on the
+     * {@code create:contraption} spawn) and the frame became the
+     * "Connection Lost" screen. EVERY truth shot after that point on the
+     * shard was the disconnect screen — the two item pages joined 77/77
+     * garbage RED each and gated the gallery. The ban is the containment:
+     * a type that killed the client never spawns again (this run); the
+     * coverage it loses is recorded as NAMED skip rows, never silent.
+     *
+     * <p>Vanilla-namespace types stay unbanned by the death detector — they
+     * render fine on the stock client; the crash comes from modded spawn
+     * data. Rerun safety: the ban-file read at the start of
+     * {@link #galleryEntity} makes re-running the same page idempotent (the
+     * killer types become skip rows on the retry and cannot kill again).
+     * The file rides the meta artifact ({@code srv-wall/c-imagine/scenes/})
+     * — it IS the audit trail for every page the walk refused to spawn.
+     */
+    static final String ENTITY_CRASH_BAN_FILE = "entity-crash-ban.tsv";
+
+    private static Path entityCrashBanPath() {
+        return Path.of("c-imagine", "scenes", ENTITY_CRASH_BAN_FILE);
+    }
+
+    /** Reads the ban file: id -> reason. Missing file = empty map. */
+    private static java.util.Map<String, String> readEntityCrashBan() {
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        Path file = entityCrashBanPath();
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        try {
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                if (line.isBlank()) continue;
+                int tab = line.indexOf('\t');
+                String id = (tab >= 0 ? line.substring(0, tab) : line).trim();
+                if (id.isEmpty()) continue;
+                String reason = tab >= 0 ? line.substring(tab + 1).trim() : "";
+                out.putIfAbsent(id, reason);
+            }
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] entity-crash-ban read failed {}: {}", file, ioe.toString());
+        }
+        return out;
+    }
+
+    /**
+     * Appends types to the ban file (id TAB reason), deduplicated against
+     * the existing content — re-detection of the same killer type on a
+     * later pass/page must not grow the file. Server-thread only (the
+     * gallery commands and the settle TickTasks all run there).
+     */
+    private static void appendEntityCrashBan(List<String> ids, String reason) {
+        Path file = entityCrashBanPath();
+        try {
+            Files.createDirectories(file.getParent());
+            java.util.Set<String> existing = new HashSet<>();
+            if (Files.isRegularFile(file)) {
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    if (line.isBlank()) continue;
+                    int tab = line.indexOf('\t');
+                    existing.add((tab >= 0 ? line.substring(0, tab) : line).trim());
+                }
+            }
+            StringBuilder out = new StringBuilder();
+            int added = 0;
+            for (String id : ids) {
+                if (!existing.add(id)) continue;
+                out.append(id).append('\t').append(reason).append('\n');
+                added++;
+            }
+            if (added == 0) {
+                return;
+            }
+            Files.writeString(file, out.toString(), StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            LOGGER.info("[cimscene] entity-crash-ban appended {} type(s) reason={} : {}",
+                    added, reason, ids);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] entity-crash-ban write failed {}: {}", file, ioe.toString());
+        }
+    }
+
     /** Settle pass body: re-read spawns, emit the settled manifest + marker.
      *  Pass 2 ({@code finalPass}) rewrites the manifest with the final
      *  subject states (quarantines/self-discards after pass 1 reclassify to
@@ -1337,11 +1451,51 @@ public final class CimSceneMod {
         String tag = seriesTag(series);
         String[] rowStr = new String[slice.size()];
         int cells = 0, dyn = 0, dissolved = 0;
+        // 14-ak SERVER-SIDE DEATH DETECTION: the settle pass runs 40 ticks
+        // after the spawn command. If the server has ZERO players online,
+        // the truth client just crashed mid-page (measured #84: a modded
+        // Create entity spawn kills the real client — Contraption.readNBT
+        // NPE on bare ContraptionEntity spawn data; the frame becomes the
+        // "Connection Lost" screen and every later shot on the shard is
+        // garbage). Append EVERY non-vanilla-namespace type PLACED on this
+        // page to the ban file (reason client-crash page=<p>) and write
+        // skip rows for them in the CURRENT manifest; vanilla-namespace
+        // types stay unbanned (they render fine on the stock client — the
+        // crash comes from modded spawn data). Both settle passes run this
+        // (a death the network thread noticed only between them is still
+        // caught); already-banned indices dedup to an empty append and no
+        // second log. NOTE: a deliberately client-less walk (the seed
+        // manifest-generation pass) trips this too — by design its only
+        // effect is the same honest skip-row accounting, and the ours-leg
+        // replay skips non-cell rows identically, so the join loses nothing.
+        if (level.getServer().getPlayerCount() == 0) {
+            List<String> banned = new ArrayList<>();
+            for (int j = 0; j < spawnedIdx.size(); j++) {
+                int idx = spawnedIdx.get(j);
+                ResourceLocation id = slice.get(idx);
+                if (id.getNamespace().equals("minecraft")) continue;
+                if ("client-crash-banned".equals(skipNotes.get(idx))) continue;
+                skipNotes.put(idx, "client-crash-banned");
+                banned.add(id.toString());
+            }
+            if (!banned.isEmpty()) {
+                appendEntityCrashBan(banned, "client-crash page=" + page);
+                LOGGER.info("[cimscene] gallery-entity{} client death detected ns={} page={} banned={}",
+                        tag, namespace, page, banned);
+            }
+        }
         for (int j = 0; j < spawned.size(); j++) {
             Entity e = spawned.get(j);
             int i = spawnedIdx.get(j);
             ResourceLocation id = slice.get(i);
             int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+            // 14-ak: a death-banned cell is NAMED even though the entity is
+            // (still) alive server-side — the client that would have shot it
+            // is dead, and a re-run of the page must re-read it as a skip.
+            if (skipNotes.containsKey(i)) {
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t0\t" + skipNotes.get(i);
+                continue;
+            }
             double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
             double cy = GALLERY_Y0 + row * ENTITY_PITCH;
             double cz = GALLERY_Z + 0.5;

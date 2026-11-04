@@ -788,6 +788,69 @@ jobs:
             done
             echo "no done marker file: $1"; return 2
           }
+          # 14-ak CLIENT-CRASH CONTAINMENT (measured #84, run 41848055305
+          # truth shard 0: during the create-entity DYN walk the REAL client
+          # DIED — a bare create:contraption spawn carries spawn data the
+          # client cannot process (Contraption.readNBT NPE, "contraption" is
+          # null) and the frame became the "Connection Lost" screen; EVERY
+          # truth shot after that point on the shard was the disconnect
+          # screen — the two item pages joined 77/77 garbage RED each and
+          # gated the gallery). After each page's wait_done the walk asserts
+          # the client is alive (rcon "list" must carry cimviewer); on death:
+          # rejoin (the camera-pins launch snippet), RE-RUN the same page
+          # command once more — the scene's entity-crash-ban.tsv now holds
+          # the killer types as named skip rows (the scene's settle pass
+          # bans them when it sees zero players online) so the re-run cannot
+          # kill again — and re-shoot. Bounded: max 2 rejoins per page, then
+          # the shard FAILS loudly with the page id (the coverage gate stays
+          # honest — no silent gaps). The item/particle/fluid walks run the
+          # same liveness check (they follow the entity walk; their content
+          # is not modded-entity spawns — item_display rigs are vanilla
+          # types — so no ban is expected, but the rejoin + re-run applies).
+          client_alive() {
+            local L
+            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            case "$L" in *cimviewer*) return 0;; *) return 1;; esac
+          }
+          truth_rejoin() {
+            echo "client death detected — rejoining the truth client"
+            pkill -f "truth-client/game" 2>/dev/null || true   # the dead JVM stays on the disconnect screen; free the window + heap
+            sleep 2
+            LAUNCH=$(cat truth-client/launch.txt)
+            setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
+            local L=""
+            for i in $(seq 1 90); do
+              L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+              case "$L" in *cimviewer*) break;; esac
+              sleep 1
+            done
+            case "$L" in *cimviewer*) ;;
+              *) echo "truth client FAILED to rejoin"; tail -30 truth-client/client.out; return 1;; esac
+            for i in $(seq 1 30); do
+              grep -qE "Loaded [0-9]+ advancements" truth-client/client.out 2>/dev/null && break
+              sleep 1
+            done
+            sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
+            echo "truth client rejoined: $L"
+          }
+          ensure_alive_rerun() { # $1=stem $2=page label $3=page; $4..=the page's rcon words (re-run verbatim)
+            local STEM="$1" LABEL="$2" P="$3" RC ATTEMPTS=0
+            shift 3
+            while ! client_alive; do
+              ATTEMPTS=$((ATTEMPTS+1))
+              if [ "$ATTEMPTS" -gt 2 ]; then
+                echo "CLIENT-DEATH-UNCONTAINED after page $LABEL — 2 rejoins spent, failing the shard honestly"
+                exit 1
+              fi
+              truth_rejoin || exit 1
+              base_of "$STEM"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "$@" >/dev/null 2>&1 || true
+              RC=0; wait_done "$STEM" "$V0D" "$V0E" || RC=$?
+              if [ "$RC" = "2" ]; then
+                echo "page $LABEL re-run no done marker"; tail -10 srv-wall/boot.log; exit 1
+              fi
+            done
+          }
           # MOB series (the gate): frozen NoAI subjects on the wall. The
           # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq $SI $K $((EPAGES-1))); do
@@ -797,6 +860,8 @@ jobs:
             RC=0; wait_done "gallery-entity-minecraft-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
+            ensure_alive_rerun "gallery-entity-minecraft-p$p" "minecraft mobs page $p" "$p" \
+              "cimscene gallery entity mobs minecraft $p"
             sleep 4   # section rebuild (wall -> air) + entity render under llvmpipe
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -814,6 +879,8 @@ jobs:
               RC=0; wait_done "gallery-$TAG-minecraft-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
+              ensure_alive_rerun "gallery-$TAG-minecraft-p$p" "minecraft $SERIES page $p" "$p" \
+                "cimscene gallery entity $SERIES minecraft $p"
               sleep 4
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -847,6 +914,12 @@ jobs:
               [ "$RC" = "2" ] && { echo "create $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-$TAG done ns=create page=$p " srv-wall/boot.log | tail -1 || true
+              # 14-ak THE KILLER LOOP (#84 shard 0): the create-dyn spawn walk
+              # killed the real client here; the containment below rejoins,
+              # re-runs the same page (the scene's entity-crash-ban.tsv now
+              # holds the killer types as skip rows) and re-shoots.
+              ensure_alive_rerun "gallery-$TAG-create-p$p" "create $SERIES page $p" "$p" \
+                "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
               sleep 4
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -866,6 +939,8 @@ jobs:
             [ "$RC" = "2" ] && { echo "item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-item done ns=create page=$p " srv-wall/boot.log | tail -1 || true
+            ensure_alive_rerun "gallery-item-create-p$p" "item create page $p" "$p" \
+              "kill @e[type=!player]" "cimscene gallery item create $p"
             sleep 1   # static item displays settle like the block pages
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -887,6 +962,8 @@ jobs:
             [ "$RC" = "2" ] && { echo "particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-particle done ns=create page=$p " srv-wall/boot.log | tail -1 || true
+            ensure_alive_rerun "gallery-particle-create-p$p" "particle create page $p" "$p" \
+              "cimscene gallery particle create $p"
             sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -909,6 +986,8 @@ jobs:
             [ "$RC" = "2" ] && { echo "fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             if [ "$RC" = "1" ]; then EX=1; break; fi
             grep "gallery-fluid done ns=create page=$p " srv-wall/boot.log | tail -1 || true
+            ensure_alive_rerun "gallery-fluid-create-p$p" "fluid create page $p" "$p" \
+              "cimscene gallery fluid create $p"
             sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -1337,6 +1416,16 @@ jobs:
             done
           fi
           ls ours-shots/ | head -5 || true
+          # 14-ak OURS-LIVENESS ASSERT (mirror of the truth leg's containment,
+          # assert-only): the ours client must NEVER die mid-walk — its
+          # content is vanilla-type rigs (item_display) and the pack channel,
+          # no modded-entity spawns; a death means the harness itself broke
+          # and the shard fails loudly instead of shooting garbage.
+          ours_alive() {
+            local L
+            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            case "$L" in *cimviewer*) return 0;; *) return 1;; esac
+          }
           EXHAUSTED=0
           for p in $(seq $SI $K $MAXP); do
             M="srv-wall/c-imagine/scenes/gallery-create-p$p.tsv"
@@ -1347,6 +1436,7 @@ jobs:
             echo "$OUT" | tee "ours-rcon-p$p.log"
             echo "$OUT" | grep -q "gallerypage create p$p -> placed=" \
               || { echo "page $p no placed marker in the RCON response"; exit 1; }
+            ours_alive || { echo "ours client died on block page $p — the ours leg must never die"; exit 1; }
             sleep 1   # section rebuild (the measured fixed-window protocol)
             # 14-aa OURS RENDER-SETTLE (mirror of the truth-leg 14-y fix):
             # heavy sections (p391 = 68 pillar cells) place + rasterise
@@ -1382,6 +1472,14 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
+          # 14-ak OURS-LIVENESS ASSERT (assert-only mirror of the truth leg's
+          # containment): the ours client must NEVER die mid-walk — a death
+          # means the harness itself broke and the shard fails loudly.
+          ours_alive() {
+            local L
+            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            case "$L" in *cimviewer*) return 0;; *) return 1;; esac
+          }
           # SAME difficulty pin as the truth leg (hostile mobs must survive)
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
@@ -1394,6 +1492,7 @@ jobs:
             echo "$OUT" | tee "ours-rcon-e$p.log"
             echo "$OUT" | grep -q "gallerypage-entity minecraft p$p -> placed=" \
               || { echo "mob page $p no placed marker in the RCON response"; exit 1; }
+            ours_alive || { echo "ours client died on mob page $p — the ours leg must never die"; exit 1; }
             sleep 5   # section rebuild + entity render under llvmpipe
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -1409,6 +1508,7 @@ jobs:
               echo "$OUT" | tee "ours-rcon-e$SERIES$p.log"
               echo "$OUT" | grep -q "gallerypage-entity minecraft p$p $SERIES -> placed=" \
                 || { echo "$SERIES page $p no placed marker in the RCON response"; exit 1; }
+              ours_alive || { echo "ours client died on $SERIES page $p — the ours leg must never die"; exit 1; }
               sleep 5
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -1447,6 +1547,7 @@ jobs:
               STAG=$([ "$SERIES" = mobs ] && echo "" || echo " $SERIES")
               echo "$OUT" | grep -q "gallerypage-entity create p$p$STAG -> placed=" \
                 || { echo "create $SERIES page $p no placed marker"; exit 1; }
+              ours_alive || { echo "ours client died on create $SERIES page $p — the ours leg must never die"; exit 1; }
               sleep 4
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -1468,6 +1569,7 @@ jobs:
             echo "$OUT" | tee "ours-rcon-i$p.log"
             echo "$OUT" | grep -q "gallerypage-item create p$p -> placed=" \
               || { echo "item page $p no placed marker"; exit 1; }
+            ours_alive || { echo "ours client died on item page $p — the ours leg must never die"; exit 1; }
             sleep 1   # static item displays settle like the block pages
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -1490,6 +1592,7 @@ jobs:
             echo "$OUT" | tee "ours-rcon-pa$p.log"
             echo "$OUT" | grep -q "gallerypage-particle create p$p -> placed=" \
               || { echo "particle page $p no placed marker"; exit 1; }
+            ours_alive || { echo "ours client died on particle page $p — the ours leg must never die"; exit 1; }
             sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
@@ -1512,6 +1615,7 @@ jobs:
             echo "$OUT" | tee "ours-rcon-fl$p.log"
             echo "$OUT" | grep -q "gallerypage-fluid create p$p -> placed=" \
               || { echo "fluid page $p no placed marker"; exit 1; }
+            ours_alive || { echo "ours client died on fluid page $p — the ours leg must never die"; exit 1; }
             sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1

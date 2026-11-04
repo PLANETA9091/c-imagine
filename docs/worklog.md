@@ -5357,3 +5357,90 @@ static comparison of create 6.0.10's pillar blockstate/model against the
 bake (the arm variants carry their own x-rotations; check their uvlock
 flags first — the 14-ah chain may already cover them, the residual then
 is geometry, not uv).
+
+---
+## Task 14-am — client-crash containment: ban the client-killing entity
+types (scene-mod entity-crash-ban.tsv + zero-player settle detection), rejoin
+and re-shoot the dead pages (workflow liveness checks) — the #84 truth client
+death measured 154 gated garbage REDs on shard 0 and blinded every page shot
+after the create-entity DYN walk
+
+Agent: subagent (parallel)
+Task: 14-ai "client-crash containment" (renumbered 14-am; 14-ah/14-ai are the
+parallel uvlock landing and the atlas NEXT-LEVER line claims 14-ak for the
+pillar arm chain) — the biggest honest lever the pixel gate cannot see
+past: a dead truth client poisons every later shot on the shard into the
+"Connection Lost" screen and the gate counts those pixels as channel REDs
+
+Work Log:
+- MEASURED from #84 (run 41848055305) artifacts, truth shard 0: at 14:33:37,
+  during the create-entity DYN walk, the REAL client DIED — the create-dyn p0
+  command placed 4 dyn entities (create:contraption, create:potato_projectile,
+  create:seat, create:super_glue; 5 more failed-create server-side) and a bare
+  ContraptionEntity spawn carries spawn data the client cannot process
+  (Contraption.readNBT NPE, "contraption" is null — read off the actual
+  disconnect screen in wall-truth-shots-0). The server never noticed beyond
+  "cimviewer lost connection": the walk continued and EVERY later shot on the
+  shard is the disconnect screen — gal-edyn-create0 (4 cells, absorbed by the
+  DYNAMIC class at ae 1.6-2.6M), gal-emobs/elarge-create0 (0 cells, vacuous),
+  gal-i-create0 77/77 RED, gal-i-create8 77/77 RED, gal-pa-create0 (0 cells),
+  gal-fl-create0 (4 cells, DYNAMIC absorbed). Measured GARBAGE gating the
+  gallery: 154 REDs (the two item pages). The atlas number confirms: the item
+  family carries 470 REDs total across 8 shards — 154 disconnect garbage
+  (s0's p0+p8) + 316 REAL item mismatches (s1-s7; verified gal-i-create1.png
+  is a real item wall — those shards' clients never died, their strides never
+  touch create-entity p0; s1's create-entity walk exhausted at p1 with 0
+  spawns). The containment removes the 154 and makes the remaining 316
+  measurable honestly for the first time.
+- SCENE-MOD (CimSceneMod): the run-scoped ban file
+  c-imagine/scenes/entity-crash-ban.tsv (lines <entity id> TAB <reason>) —
+  read at the start of EVERY galleryEntity command (a banned type writes a
+  named skip row, note=client-crash-banned, through the existing skipNotes
+  settle machinery and is NEVER spawned); server-side death detection in the
+  entity settle pass — zero players online at settle time (the truth client
+  just crashed mid-page) appends EVERY non-vanilla-namespace type PLACED on
+  this page to the ban file (reason client-crash page=<p>), writes their skip
+  rows into the CURRENT manifest (both settle passes; pass-2 catches a death
+  the network thread noticed between the passes) and logs
+  "[cimscene] gallery-entity{} client death detected ns= page= banned=".
+  Vanilla-namespace types stay unbanned (they render fine on the stock
+  client). Rerun safety: the ban-file read makes re-running the crashed page
+  idempotent — the killer types are skip rows on the retry and cannot kill
+  again. Quarantine/dissolve behaviour untouched.
+- WORKFLOW (gallery.yml, walk loops only, joins untouched): the truth leg's
+  entity/item/particle/fluid walks assert client liveness after each page's
+  wait_done (rcon "list" must carry cimviewer); on death: rejoin (the
+  camera-pins launch snippet verbatim: pkill the dead JVM, setsid relaunch,
+  poll rcon 90s, the advancements wait + 8s first-chunk render), RE-RUN the
+  same page command once (the ban file is in force) and re-shoot; a second
+  death on the same page gets one more rejoin + re-run, bounded at 2 rejoins
+  per page then the shard FAILS loudly with the page id (CLIENT-DEATH-
+  UNCONTAINED) — the coverage gate stays honest. The ours leg mirrors the
+  check as an ASSERT ONLY (ours must never die — its content is vanilla-type
+  rigs and the pack channel): block + entity + item + particle + fluid
+  replays.
+- VERIFICATION: gradle build --no-daemon -p scene-mod OK (jar fresh); YAML
+  valid + bash -n over all 31 embedded run scripts; the ensure_alive_rerun
+  loop probed 4/4 with the function extracted VERBATIM from the workflow
+  (die-once -> 1 rejoin + 1 re-run + rc0; die-twice -> 2+2 + rc0; alive ->
+  zero overhead; never-recovers -> the loud fail rc1); the ban-file round
+  trip probed idempotent (dedup: the pass-2 re-detection appends 0 rows;
+  the re-run read marks exactly the 4 killer types); the skip-row shape
+  hand-verified against the consumers — gallery-diff.py reports any
+  parts[0]=="skip" row as verdict=skipped (never red), coverage-gate.py's
+  absence-note prefixes (dissolved/no-instance/failed) deliberately do NOT
+  match client-crash-banned (the ban file in the meta artifact is the audit
+  trail, not a coverage red), and the ours-leg plugin replay spawns nothing
+  for non-cell rows (both legs stay consistent).
+
+Stage Summary:
+- The truth leg now survives its own client: one killer page costs its page's
+  types as named skip rows (the honest record rides the meta artifact), not
+  the ~14 pages of disconnect-screen garbage a single death used to produce.
+  Expected effect on the next run: s0's 154 garbage REDs leave the gate and
+  its item pages join with REAL content for the first time (the 316 real
+  item REDs on s1-s7 become the item channel's honest baseline). The seed
+  manifest-generation walk (deliberately client-less) trips the zero-player
+  detection by design — its only effect is the same honest skip-row
+  accounting on its own entitydiag manifests, which the ours replay and the
+  join handle as skips identically.
