@@ -1716,13 +1716,18 @@ public final class F2vPack {
                     ("{\"parent\": \"block/block\", "
                     + "\"textures\": {\"particle\": \"#down\"}, "
                     + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], "
-                    + "\"faces\": {\"down\": {\"uv\": [0,0,16,16], \"texture\": \"#down\", \"cullface\": \"down\"}, "
-                    + "\"up\": {\"uv\": [0,0,16,16], \"texture\": \"#up\", \"cullface\": \"up\"}, "
-                    + "\"north\": {\"uv\": [0,0,16,16], \"texture\": \"#north\", \"cullface\": \"north\"}, "
-                    + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#south\", \"cullface\": \"south\"}, "
-                    + "\"west\": {\"uv\": [0,0,16,16], \"texture\": \"#west\", \"cullface\": \"west\"}, "
-                    + "\"east\": {\"uv\": [0,0,16,16], \"texture\": \"#east\", \"cullface\": \"east\"}}}]}")
-                    .getBytes(StandardCharsets.UTF_8));
+                    // 14-al: the faces carry NO explicit uv — the MEASURED
+                    // 26.3 client's cube.json shape (#91 pack bytes, g11061:
+                    // the granite axis=y composite rode null-uv faces). The
+                    // CT remap must derive + write the translated default
+                    // itself; the asserted tile uvs below lock exactly that.
+                    + "\"faces\": {\"down\": {\"texture\": \"#down\", \"cullface\": \"down\"}, "
+                    + "\"up\": {\"texture\": \"#up\", \"cullface\": \"up\"}, "
+                    + "\"north\": {\"texture\": \"#north\", \"cullface\": \"north\"}, "
+                    + "\"south\": {\"texture\": \"#south\", \"cullface\": \"south\"}, "
+                    + "\"west\": {\"texture\": \"#west\", \"cullface\": \"west\"}, "
+                    + "\"east\": {\"texture\": \"#east\", \"cullface\": \"east\"}}}]}")
+                            .getBytes(StandardCharsets.UTF_8));
             vanillaEntries.put("assets/minecraft/models/block/block.json",
                     "{\"gui_light\": \"side\"}".getBytes(StandardCharsets.UTF_8));
             // 14-ak: the cube_column parent the CT fixture's chain rides
@@ -1836,7 +1841,12 @@ public final class F2vPack {
                 // side faces carry the isolated RECTANGLE tile (0,3) —
                 // uv [(0+0)/4, (0+48)/4, (16+0)/4, (16+48)/4] = [0,12,4,16]
                 // — and the caps the isolated OMNIDIRECTIONAL tile (0,0) —
-                // uv [0,0,2,2] (/8); the connected png ships in the pack
+                // uv [0,0,2,2] (/8); the connected png ships in the pack.
+                // 14-al: the fixture chain rides the MEASURED uv-less 26.3
+                // cube stub, so these uvs come out through the null-uv
+                // default derivation (defaultFaceUv on the post-bake box) —
+                // a remap that only repointed the texture would render the
+                // whole sheet and emit NO uv array, failing these asserts.
                 GalleryPack.Resolved ctRow = g.stream()
                         .filter(r -> r.stateId().endsWith("#0,0,12,12,12,12"))
                         .findFirst().orElse(null);

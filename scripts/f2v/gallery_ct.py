@@ -402,9 +402,18 @@ CELL_RE = re.compile(r"^cell\t(-?\d+)\t(-?\d+)\t(-?\d+)\t([^\t]+)")
 
 
 def read_scenes(scenes_dir, ns):
-    """All pages -> {page -> [(x,y,z,state)]}, the global World."""
+    """All pages -> {page -> [(x,y,z,state)]}.
+
+    14-al: the world is PER PAGE. Every gallery page reuses the SAME wall
+    coordinates (GALLERY_X0..5 / GALLERY_Y0..-54 / Z=9), and the truth leg
+    clears + rebuilds the wall per page — cross-page neighbours never
+    coexist. The previous global World let the LAST page's cells overwrite
+    every earlier page's neighbourhood (measured: p202's granite axis=y
+    east=true cell computed its north-face context against p218's ochrum
+    cells and emitted the fully-isolated tile 12 where the per-page wall
+    connects), silently isolating every non-final page's CT context.
+    """
     pages = {}
-    world = World()
     for p in sorted(pathlib.Path(scenes_dir).glob(f"gallery-{ns}-p*.tsv")):
         page = int(p.name.rsplit("-p", 1)[1].split(".")[0])
         rows = []
@@ -415,16 +424,24 @@ def read_scenes(scenes_dir, ns):
             x, y, z, state = int(m.group(1)), int(m.group(2)), \
                 int(m.group(3)), m.group(4).strip()
             rows.append((x, y, z, state))
-            world.add(x, y, z, state)
         pages[page] = rows
-    return pages, world
+    return pages
 
 
-def write_side_files(pages, world, scenes_dir, ns):
+def world_for_page(rows):
+    """The page's own wall world (the manifest's placed cells = the world)."""
+    world = World()
+    for (x, y, z, state) in rows:
+        world.add(x, y, z, state)
+    return world
+
+
+def write_side_files(pages, scenes_dir, ns):
     """gallery-<ns>-p<page>.ctx.tsv: x<TAB>y<TAB>z<TAB>i0,i1,...,i5."""
     out_dir = pathlib.Path(scenes_dir)
     written = 0
     for page, rows in sorted(pages.items()):
+        world = world_for_page(rows)
         lines = ["# 14-ak CT tile indices per face (down,up,north,south,west,east)"]
         for (x, y, z, state) in sorted(rows):
             if not is_pillar_state(state):
@@ -438,11 +455,12 @@ def write_side_files(pages, world, scenes_dir, ns):
     return written
 
 
-def suffixed_states(pages, world):
+def suffixed_states(pages):
     """The distinct state#ctx rows replacing plain pillar rows."""
     seen = set()
     rows = []
     for page, cells in sorted(pages.items()):
+        world = world_for_page(cells)
         for (x, y, z, state) in cells:
             if not is_pillar_state(state):
                 continue
@@ -463,9 +481,9 @@ def main(argv):
         print("       gallery_ct.py --selftest")
         return 2
     scenes_dir, ns, tsv = argv[1], argv[2], pathlib.Path(argv[3])
-    pages, world = read_scenes(scenes_dir, ns)
-    n_ctx = write_side_files(pages, world, scenes_dir, ns)
-    rows = suffixed_states(pages, world)
+    pages = read_scenes(scenes_dir, ns)
+    n_ctx = write_side_files(pages, scenes_dir, ns)
+    rows = suffixed_states(pages)
 
     # enrich the gallery tsv: the plain pillar rows STAY (the replay's
     # fallback when a ctx side file is missing) and the suffixed

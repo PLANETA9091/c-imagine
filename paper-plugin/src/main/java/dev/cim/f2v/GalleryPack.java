@@ -778,19 +778,54 @@ public final class GalleryPack {
                 if (!entries.containsKey(png)) {
                     entries.put(png, readPngFromJars(jars, png));
                 }
+                // 14-al: the remap MUST land an explicit uv on the face. The
+                // 26.3 item channel derives a null-uv face's rect from the
+                // geometry ACROSS THE WHOLE FACE SPRITE — repointing the
+                // texture at the 64x64/128x128 _connected sheet without
+                // writing the uv would spread the ENTIRE sheet grid over the
+                // face (the unrotated axis=y pillar composites carry
+                // null-uv faces: the vanilla cube parent of the 26.3 client
+                // ships no explicit uvs, and applyFaceUvs early-returns at
+                // 0/0 — measured on the #91 pack bytes, g11061). The default
+                // rect rides defaultFaceUv on the POST-BAKE element box +
+                // the POST-BAKE face key (exact for the unrotated case,
+                // where original == baked; the rotated variants already
+                // carry explicit uvs from applyFaceUvs).
+                double[] inRect = null;
+                if (face.has("uv") && face.getAsJsonArray("uv").size() == 4) {
+                    JsonArray uv = face.getAsJsonArray("uv");
+                    inRect = new double[4];
+                    for (int i = 0; i < 4; i++) {
+                        inRect[i] = uv.get(i).getAsDouble();
+                    }
+                } else if (el.has("from") && el.has("to")
+                        && el.getAsJsonArray("from").size() == 3
+                        && el.getAsJsonArray("to").size() == 3) {
+                    JsonArray from = el.getAsJsonArray("from");
+                    JsonArray to = el.getAsJsonArray("to");
+                    inRect = defaultFaceUv(f.getKey(),
+                            from.get(0).getAsDouble(), from.get(1).getAsDouble(),
+                            from.get(2).getAsDouble(),
+                            to.get(0).getAsDouble(), to.get(1).getAsDouble(),
+                            to.get(2).getAsDouble());
+                }
+                if (inRect == null) {
+                    // no explicit uv and no derivable default — repointing
+                    // would render the whole sheet; the face stays verbatim
+                    warnings.add("gallery ct: no uv derivable for face " + f.getKey()
+                            + " (" + state + ") — plain texture stays");
+                    continue;
+                }
                 String newKey = texKey + "Ct" + (ctKey++);
                 textures.put(newKey, connected);
                 face.addProperty("texture", "#" + newKey);
-                if (face.has("uv") && face.getAsJsonArray("uv").size() == 4) {
-                    JsonArray uv = face.getAsJsonArray("uv");
-                    JsonArray out = new JsonArray();
-                    for (int i = 0; i < 4; i++) {
-                        double u = uv.get(i).getAsDouble();
-                        double off = (i % 2 == 0 ? tileX : tileY) * 16.0;
-                        out.add((u + off) / sheet);
-                    }
-                    face.add("uv", out);
+                JsonArray out = new JsonArray();
+                for (int i = 0; i < 4; i++) {
+                    double u = inRect[i];
+                    double off = (i % 2 == 0 ? tileX : tileY) * 16.0;
+                    out.add((u + off) / sheet);
                 }
+                face.add("uv", out);
                 // the rotation field survives: the affine is uniform over
                 // the tile box and commutes with the corner permutation
                 changed = true;
