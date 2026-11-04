@@ -870,9 +870,80 @@ public final class GalleryPack {
         }
         JsonArray out = new JsonArray();
         for (JsonElement el : elements) {
-            out.add(bakeElement(el.getAsJsonObject(), xRot, yRot));
+            JsonObject e = el.getAsJsonObject().deepCopy();
+            writeDefaultUvs(e);
+            out.add(bakeElement(e, xRot, yRot));
         }
         return out;
+    }
+
+    /**
+     * 14-ae: write the DEFAULT uv (decompiled 26.3 defaultFaceUV) explicitly
+     * into every null-uv face of the UNROTATED element, before the rotation
+     * bake. The 1.21.1 block bake (truth channel) derives a null-uv face's uv
+     * from the ORIGINAL geometry + ORIGINAL face direction and transports it
+     * rigidly with the rotated quad (FaceBakery.bakeQuad -> recomputeUVs),
+     * while the 26.3 item channel derives it from the ROTATED geometry +
+     * REMAPPED direction — a mirrored U axis on every variant-rotated model
+     * (the measured pillar/stairs/pane RED families). An explicit uv rides
+     * the rotation verbatim on BOTH channels = the truth semantics.
+     */
+    private static void writeDefaultUvs(JsonObject el) {
+        if (!el.has("from") || !el.has("to") || !el.has("faces")) {
+            return;
+        }
+        JsonArray from = el.getAsJsonArray("from");
+        JsonArray to = el.getAsJsonArray("to");
+        if (from.size() != 3 || to.size() != 3) {
+            return;
+        }
+        double x1 = from.get(0).getAsDouble();
+        double y1 = from.get(1).getAsDouble();
+        double z1 = from.get(2).getAsDouble();
+        double x2 = to.get(0).getAsDouble();
+        double y2 = to.get(1).getAsDouble();
+        double z2 = to.get(2).getAsDouble();
+        JsonObject faces = el.getAsJsonObject("faces").deepCopy();
+        boolean changed = false;
+        for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
+            JsonObject face = f.getValue().getAsJsonObject();
+            if (face.has("uv") || !face.has("texture")) {
+                continue;
+            }
+            double[] uv = defaultFaceUv(f.getKey(), x1, y1, z1, x2, y2, z2);
+            if (uv == null) {
+                continue;
+            }
+            JsonArray arr = new JsonArray();
+            for (double d : uv) {
+                arr.add(d);
+            }
+            face.add("uv", arr);
+            changed = true;
+        }
+        if (changed) {
+            el.add("faces", faces);
+        }
+    }
+
+    /**
+     * Decompiled 26.3 FaceBakery.defaultFaceUV (uv units are texels 0..16,
+     * x1..z2 = the UNROTATED from/to):
+     * DOWN [x1,16-z2,x2,16-z1]; UP [x1,z1,x2,z2];
+     * NORTH [16-x2,16-y2,16-x1,16-y1]; SOUTH [x1,16-y2,x2,16-y1];
+     * WEST [z1,16-y2,z2,16-y1]; EAST [16-z2,16-y2,16-z1,16-y1].
+     */
+    private static double[] defaultFaceUv(String face, double x1, double y1, double z1,
+                                          double x2, double y2, double z2) {
+        return switch (face) {
+            case "down" -> new double[]{x1, 16 - z2, x2, 16 - z1};
+            case "up" -> new double[]{x1, z1, x2, z2};
+            case "north" -> new double[]{16 - x2, 16 - y2, 16 - x1, 16 - y1};
+            case "south" -> new double[]{x1, 16 - y2, x2, 16 - y1};
+            case "west" -> new double[]{z1, 16 - y2, z2, 16 - y1};
+            case "east" -> new double[]{16 - z2, 16 - y2, 16 - z1, 16 - y1};
+            default -> null;
+        };
     }
 
     private static JsonObject bakeElement(JsonObject el, int xRot, int yRot) {
