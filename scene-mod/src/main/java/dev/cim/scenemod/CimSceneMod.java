@@ -1211,7 +1211,7 @@ public final class CimSceneMod {
     /**
      * THE SOUND-CAPTURE WINDOW (the static holder the mixin writes into —
      * an ORDINARY vanilla-surface probe, zero c-imagine APIs). Armed by the
-     * sound gallery command, recorded by {@link SoundPacketCaptureMixin}
+     * sound gallery command, recorded by the sound-packet capture mixin
      * (every outgoing clientbound sound packet's event id, in arrival
      * order), disarmed by the command which then owns the collected stream.
      * Server-thread confined: the RCON command and the packet broadcast run
