@@ -5325,3 +5325,35 @@ Work Log:
   (the axis=x rows) collapse; every reflection-perm face keeps its #84
   emission byte-for-byte (the fitting's first candidate at rotation 0 IS the
   v-swap form for reflections).
+
+---
+## 14-ah/14-ai VERDICT — #87 (b4ff304, run 41871314506) measured:
+GREEN 15624 / RED 180 / SPILL 265 -> green-share 98.86% (#84: 95.64%) —
++3.22pp in one cycle, the BIGGEST jump of the campaign; RED 675 -> 180
+(-73%). The worklog formula reproduced byte-for-byte on the #84 artifacts
+first (rows verdicts over join-p* only: 14814/675/384 exact match) — the
+comparison is apples-to-apples, same 425 pages, same 17161 block cells
+(item-p 699 and e 46 cells stay OUTSIDE the metric, reported only).
+
+The 14-ah uvlock pool collapsed as predicted (DYN 1218 -> 1023, the
+stairs/slab/wall strata cells went GREEN) and 14-ai's k-fitted winding
+transport collapsed the cycle-perm plain faces. SPILL 384 -> 265 (the
+demoted near-gate cells now genuinely fit).
+
+THE REMAINING 180 REDs (block pages only):
+- create:*_pillar + brackets: 103 cells, ae 8.4M — the ARM-carrying
+  variants, all three axes (x 25 / y 37 / z 33 of the pillar part);
+  worst: ochrum_pillar[axis=x,south+west] p218 c6r5 ae=254853. The
+  triptychs show a STRUCTURAL difference in the arm zones (ours renders
+  the horizontal arm beam where the truth's is absent/shifted) — this is
+  the 14-ag-predicted "arms' own faces" pool, NOT a uv/winding residual.
+- window panes ~13, copper stairs/slab ~8, walls ~10, scaffold/latch/
+  misc ~19, vanilla-ish tail ~30 across 61 blocks.
+- item-p (470 RED, item frames) and e (20 RED, 3 static mobs) remain
+  honest backlog OUTSIDE the metric.
+
+NEXT LEVER (14-ak): the pillar ARM element chain — element-by-element
+static comparison of create 6.0.10's pillar blockstate/model against the
+bake (the arm variants carry their own x-rotations; check their uvlock
+flags first — the 14-ah chain may already cover them, the residual then
+is geometry, not uv).
