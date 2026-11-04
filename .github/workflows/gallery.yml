@@ -812,8 +812,13 @@ jobs:
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
+          DEATHS=0
           truth_rejoin() {
             echo "client death detected — rejoining the truth client"
+            DEATHS=$((DEATHS+1))
+            mkdir -p truth-client-deaths
+            cp truth-client/client.out "truth-client-deaths/client-$DEATHS.out" 2>/dev/null || true
+            cp -r truth-client/game/crash-reports "truth-client-deaths/crash-reports-$DEATHS" 2>/dev/null || true
             pkill -f "truth-client/game" 2>/dev/null || true   # the dead JVM stays on the disconnect screen; free the window + heap
             sleep 2
             LAUNCH=$(cat truth-client/launch.txt)
@@ -862,7 +867,7 @@ jobs:
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             ensure_alive_rerun "gallery-entity-minecraft-p$p" "minecraft mobs page $p" "$p" \
               "cimscene gallery entity mobs minecraft $p"
-            sleep 4   # section rebuild (wall -> air) + entity render under llvmpipe
+            sleep 2   # + the 2s settle before done = ~4s spawn->shot: section rebuild (wall -> air) + entity render under llvmpipe
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-e$p.png"
@@ -883,7 +888,7 @@ jobs:
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
               ensure_alive_rerun "gallery-$TAG-minecraft-p$p" "minecraft $SERIES page $p" "$p" \
                 "cimscene gallery entity $SERIES minecraft $p"
-              sleep 4
+              sleep 2   # + the 2s settle before done
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "truth-shots/gal-e$SERIES$p.png"
@@ -892,6 +897,8 @@ jobs:
           done
           # determinism probe (shard 0 owns mob page 0)
           if [ "$SI" = "0" ]; then
+            SETTLED=srv-wall/c-imagine/scenes/gallery-entity-minecraft-p0.settled
+            S0=$(cat "$SETTLED" 2>/dev/null || echo 0)
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" \
               "cimscene gallery entity mobs minecraft 0"
@@ -900,6 +907,12 @@ jobs:
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "truth-shots/gal-e0-again.png"
             echo "shot mob page 0 again"
+            # the next walk's kill must not land before the final settle
+            # rewrites this page's manifest: every subject would read dissolved
+            for i in $(seq 1 120); do
+              [ "$(cat "$SETTLED" 2>/dev/null || echo 0)" != "$S0" ] && break
+              sleep 0.25
+            done
           fi
           # MOD-NAMESPACE entity walk (create): the same series split, to
           # exhaustion. Modded types replay as nochannel on ours (the honest
@@ -922,7 +935,7 @@ jobs:
               # holds the killer types as skip rows) and re-shoots.
               ensure_alive_rerun "gallery-$TAG-create-p$p" "create $SERIES page $p" "$p" \
                 "kill @e[type=!player]" "cimscene gallery entity $SERIES create $p"
-              sleep 4
+              sleep 2   # + the 2s settle before done
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "truth-shots/gal-e$SERIES-create$p.png"
@@ -1023,6 +1036,7 @@ jobs:
             truth-pins.log
             ground-fill.log
             truth-shots/shots.txt
+            truth-client-deaths/
           if-no-files-found: warn
 
   # ------------------------------------------------------------ wall-ours --

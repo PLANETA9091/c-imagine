@@ -5450,3 +5450,48 @@ Stage Summary:
   detection by design — its only effect is the same honest skip-row
   accounting on its own entitydiag manifests, which the ours replay and the
   join handle as skips identically.
+
+---
+## Task 14-an — the settle pass never settled: `server.tell(TickTask)` is not a delay
+
+Gallery 41880239869 (071ff6d): truth s0 failed CLIENT-DEATH-UNCONTAINED at
+`create dyn page 0`, 2 rejoins spent — the 14-am containment did not contain.
+No entity-crash-ban.tsv existed in the shard meta: nothing was ever banned, so
+each re-run spawned the same killers.
+
+ROOT CAUSE (bytecode of the 21.1.265 merged jar): `MinecraftServer.shouldRun`
+is `getTick() + 3 < tickCount || haveTime()`. The tick number is not a delay;
+on an idle server the task runs at once. boot.log agrees: begin, done and
+settle-final share one second, then `cimviewer lost connection` a tick later.
+So `getPlayerCount() == 0` could never be true at settle with a real client.
+The 14-am probe simulated the death BEFORE settle, the one order that never
+occurs. The same bug means the 12-as final-rewrite pass never saw anything
+either: 0 dissolved rows in the whole shard log.
+
+FIX:
+- runAfterTicks + ServerTickEvent.Post: a real tick-counted delay. Pass 1 at
+  +40 ticks, pass 2 at +80.
+- entityPageGen: every entity command supersedes the pending settle of the
+  previous page, else a late pass reads the discarded subjects as dissolved.
+- Pass 2 writes `<stem>.settled`; the truth determinism probe polls it, because
+  its following `kill` would land before pass 2 and dissolve all of mob page 0.
+- Truth entity walks: post-done `sleep 4` -> `sleep 2`, spawn->shot age stays ~4s.
+- truth_rejoin keeps client.out + crash-reports in truth-client-deaths/ (meta
+  artifact), so the killer type gets named from the client's own log.
+
+VERIFIED on a real NeoForge 21.1.265 server + Create 6.0.10 (client-less,
+throwaway, ports 35565/35575): done +2283ms, settled +4302ms; ban written at
+settle and honoured on re-run; next page right after done logs `settle
+superseded`, rows stay ok; a bare kill before pass 2 does give 10/10 dissolved,
+so the probe wait is load-bearing. NOT yet verified: the rejoin path with a real
+dying client — that needs the gallery run.
+
+EXPECTED ON THE NEXT RUN:
+- dissolved rows become real. coverage-gate.py treats dissolved as RED for
+  entity-*, so non-frozen dyn subjects may newly surface as named coverage REDs.
+  That is the 12-as honesty rule finally running, not a regression.
+- The ban is BLUNT: every non-vanilla type alive on the page, innocents included
+  (create:seat, create:super_glue, create:potato_projectile share the page with
+  the suspected create:contraption). Banned types are not content parity; a bare
+  ContraptionEntity has no contraption data, so the real answer is spawning
+  assembled contraptions. Open, needs the named killer from truth-client-deaths.

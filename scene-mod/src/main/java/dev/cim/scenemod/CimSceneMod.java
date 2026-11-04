@@ -14,7 +14,6 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -39,6 +38,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
+import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,6 +96,7 @@ public final class CimSceneMod {
         NeoForge.EVENT_BUS.addListener(this::serverStarted);
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
+        NeoForge.EVENT_BUS.addListener(this::onServerTickPost);
         LOGGER.info("[cimscene] mod constructed (ordinary-mod harness, no c-imagine APIs)");
     }
 
@@ -1129,6 +1130,10 @@ public final class CimSceneMod {
     private static int galleryEntity(CommandSourceStack src, String series,
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
+        // Every command (the exhausted early return included) supersedes the
+        // previous page's pending settle: its subjects are about to be
+        // discarded, and a late pass must not relabel them dissolved.
+        final int gen = ++entityPageGen;
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1301,12 +1306,47 @@ public final class CimSceneMod {
         final java.util.Map<Integer, String> fSkipNotes = skipNotes;
         final int fFrom = from;
         final String fSeries = series;
-        level.getServer().tell(new TickTask(level.getServer().getTickCount()
-                + ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
-                        fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
-                        fNoInstance, fWrongSeries, fFailed, fSkipNotes,
-                        fFrom, fSeries, false)));
+        runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
+                fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
+                fNoInstance, fWrongSeries, fFailed, fSkipNotes,
+                fFrom, fSeries, gen, false));
         return spawned.size();
+    }
+
+    /** Bumped by every entity gallery command; a settle pass holding an older value is superseded. */
+    private static int entityPageGen;
+
+    private record DelayedTask(int dueTick, Runnable task) {}
+
+    /** Server-thread only, like every gallery command and settle pass. */
+    private static final List<DelayedTask> DELAYED_TASKS = new ArrayList<>();
+
+    /**
+     * Runs {@code task} on the server thread after {@code ticks} REAL ticks.
+     * {@code server.tell(new TickTask(now + n, ...))} is NOT a delay:
+     * MinecraftServer.shouldRun is {@code getTick() + 3 < tickCount || haveTime()},
+     * so on an idle server the task runs at once (measured gallery 41880239869:
+     * begin, done and settle-final in the same second, the client death one
+     * tick later and never seen by the settle pass).
+     */
+    private static void runAfterTicks(net.minecraft.server.MinecraftServer server, int ticks, Runnable task) {
+        DELAYED_TASKS.add(new DelayedTask(server.getTickCount() + ticks, task));
+    }
+
+    private void onServerTickPost(ServerTickEvent.Post event) {
+        if (DELAYED_TASKS.isEmpty()) {
+            return;
+        }
+        int now = event.getServer().getTickCount();
+        List<DelayedTask> due = new ArrayList<>();
+        DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
+        for (DelayedTask t : due) {
+            try {
+                t.task().run();
+            } catch (RuntimeException ex) {
+                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString());
+            }
+        }
     }
 
     /** Mob freeze without shadowing the pattern variable. */
@@ -1336,13 +1376,17 @@ public final class CimSceneMod {
      * their terminal markers, and humans grep them.
      */
     private static void writeDoneMarkerFile(String stem, boolean exhausted) {
+        writeMarkerFile(stem + (exhausted ? ".exhausted" : ".done"));
+    }
+
+    private static void writeMarkerFile(String name) {
         try {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
-            Files.writeString(parent.resolve(stem + (exhausted ? ".exhausted" : ".done")),
+            Files.writeString(parent.resolve(name),
                     String.valueOf(System.currentTimeMillis()), StandardCharsets.UTF_8);
         } catch (IOException ioe) {
-            LOGGER.error("[cimscene] done-marker file write failed {}: {}", stem, ioe.toString());
+            LOGGER.error("[cimscene] marker file write failed {}: {}", name, ioe.toString());
         }
     }
 
@@ -1447,8 +1491,13 @@ public final class CimSceneMod {
                                             List<Entity> spawned, List<Integer> spawnedIdx,
                                             int noInstance, int wrongSeries, int failed,
                                             java.util.Map<Integer, String> skipNotes,
-                                            int from, String series, boolean finalPass) {
+                                            int from, String series, int gen, boolean finalPass) {
         String tag = seriesTag(series);
+        if (gen != entityPageGen) {
+            LOGGER.info("[cimscene] gallery-entity{} settle superseded ns={} page={} finalPass={}",
+                    tag, namespace, page, finalPass);
+            return;
+        }
         String[] rowStr = new String[slice.size()];
         int cells = 0, dyn = 0, dissolved = 0;
         // 14-ak SERVER-SIDE DEATH DETECTION: the settle pass runs 40 ticks
@@ -1549,6 +1598,9 @@ public final class CimSceneMod {
                             + "dissolved={} (manifest rewritten inside the shot window; "
                             + "no done marker)",
                     tag, namespace, page, cells, dyn, dissolved);
+            // not a readiness signal: only for a walk that must not touch the
+            // subjects until this rewrite has read them (the determinism probe)
+            writeMarkerFile("gallery-entity" + tag + "-" + namespace + "-p" + page + ".settled");
             return;
         }
         LOGGER.info("[cimscene] gallery-entity{} done ns={} page={} cells={} dyn={} "
@@ -1564,11 +1616,10 @@ public final class CimSceneMod {
         // pass 1 — the tick quarantine, a modded subject's own
         // self-discard — while still inside the CI shot window, and rewrite
         // the manifest so the gate reads the state the SHOT will show.
-        level.getServer().tell(new TickTask(level.getServer().getTickCount()
-                + ENTITY_FINAL_TICKS, () -> settleGalleryEntity(
-                        level, namespace, page, slice, spawned, spawnedIdx,
-                        noInstance, wrongSeries, failed, skipNotes,
-                        from, series, true)));
+        runAfterTicks(level.getServer(), ENTITY_FINAL_TICKS, () -> settleGalleryEntity(
+                level, namespace, page, slice, spawned, spawnedIdx,
+                noInstance, wrongSeries, failed, skipNotes,
+                from, series, gen, true));
     }
 
     /** Canonical state string {@code ns:path[k=v,...]} (properties in
