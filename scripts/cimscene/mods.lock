@@ -57,3 +57,7 @@ cloth-config=15.0.140+neoforge
 sophisticated-core=1.21.1-1.5.28.2458
 glitchcore=2.1.0.2
 terrablender=4.1.0.8
+# guideme — ae2 requires "guideme 21.1.1 or above" WITHOUT shipping it
+# (measured run 41896212806: the AE2 truth leg died in FML loading, not a
+# census row); pinned deliberately
+guideme=21.1.22

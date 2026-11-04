@@ -540,7 +540,10 @@ jobs:
           - name: AE2
             slug: ae2
             ns: ae2
-            extra-slugs: ""
+            # MEASURED run 41896212806: "Mod ae2 requires guideme 21.1.1 or
+            # above" — a missing required dep is an FML boot crash, not a
+            # census row; guideme rides the fetch (pinned in mods.lock).
+            extra-slugs: "guideme"
             assert-rows: "yes"
           - name: Mekanism
             slug: mekanism
