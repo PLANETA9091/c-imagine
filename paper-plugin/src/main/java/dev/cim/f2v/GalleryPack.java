@@ -982,39 +982,28 @@ public final class GalleryPack {
         return f;
     }
 
-    /** Rotate one XYZ point (block space 0..16, center 8) by y then x —
-     * 14-ag: the composition order of the variant bake. The spawn transform
-     * (measured 14-v, pixel-verified) is joml rotationXYZ(-x,-y,0) = the
-     * matrix R_x(-x)·R_y(-y), i.e. the Y rotation maps the vector FIRST and
-     * the X rotation SECOND. The old x-first order disagreed with it on every
-     * both-rotated variant (create blockstates: 2087 of 7460 carry x AND y —
-     * the whole *_pillar[axis=x] family among them): the measured truth leg
-     * renders the x90y90 pillar's camera-facing face with the END texture
-     * (original up/down) while the x-first bake put the SIDE texture there
-     * (#80 p391: the ours channel rendered the strata at 2x the truth's band
-     * frequency — the pillar RED pool). Single-rotation variants are
-     * order-invariant and render identically before/after. */
+    /** Rotate one XYZ point (block space 0..16, center 8) by x then y. */
     private static JsonArray bakeVec(JsonArray v, int xRot, int yRot) {
         double x = v.get(0).getAsDouble();
         double y = v.get(1).getAsDouble();
         double z = v.get(2).getAsDouble();
-        double nx = x, nz = z;
-        switch (yRot) {
-            case 90 -> { nx = 16 - z; nz = x; }
-            case 180 -> { nx = 16 - x; nz = 16 - z; }
-            case 270 -> { nx = z; nz = 16 - x; }
+        double ny = y, nz = z;
+        switch (xRot) {
+            case 90 -> { ny = z; nz = 16 - y; }
+            case 180 -> { ny = 16 - y; nz = 16 - z; }
+            case 270 -> { ny = 16 - z; nz = y; }
             default -> { }
         }
-        double ny2 = y, nz2 = nz;
-        switch (xRot) {
-            case 90 -> { ny2 = nz; nz2 = 16 - y; }
-            case 180 -> { ny2 = 16 - y; nz2 = 16 - nz; }
-            case 270 -> { ny2 = 16 - nz; nz2 = y; }
+        double nx2 = x, nz2 = nz;
+        switch (yRot) {
+            case 90 -> { nx2 = 16 - nz; nz2 = x; }
+            case 180 -> { nx2 = 16 - x; nz2 = 16 - nz; }
+            case 270 -> { nx2 = nz; nz2 = 16 - x; }
             default -> { }
         }
         JsonArray out = new JsonArray();
-        out.add(nx);
-        out.add(ny2);
+        out.add(nx2);
+        out.add(ny);
         out.add(nz2);
         return out;
     }
@@ -1041,26 +1030,9 @@ public final class GalleryPack {
         }
     }
 
-    /** Face-direction remap under the y-then-x rotation (14-ag: the same
-     * fixed composition order as bakeVec — the Y table maps the direction
-     * FIRST, the X table second; see bakeVec's comment for the measurement). */
+    /** Face-direction remap under x-then-y rotation. */
     private static String remapFace(String face, int xRot, int yRot) {
         String f = face;
-        switch (yRot) {
-            case 90 -> f = switch (f) {
-                case "north" -> "east"; case "east" -> "south"; case "south" -> "west";
-                case "west" -> "north"; default -> f;
-            };
-            case 180 -> f = switch (f) {
-                case "north" -> "south"; case "south" -> "north"; case "east" -> "west";
-                case "west" -> "east"; default -> f;
-            };
-            case 270 -> f = switch (f) {
-                case "north" -> "west"; case "west" -> "south"; case "south" -> "east";
-                case "east" -> "north"; default -> f;
-            };
-            default -> { }
-        }
         switch (xRot) {
             case 90 -> f = switch (f) {
                 case "up" -> "north"; case "north" -> "down"; case "down" -> "south";
@@ -1076,17 +1048,32 @@ public final class GalleryPack {
             };
             default -> { }
         }
+        switch (yRot) {
+            case 90 -> f = switch (f) {
+                case "north" -> "east"; case "east" -> "south"; case "south" -> "west";
+                case "west" -> "north"; default -> f;
+            };
+            case 180 -> f = switch (f) {
+                case "north" -> "south"; case "south" -> "north"; case "east" -> "west";
+                case "west" -> "east"; default -> f;
+            };
+            case 270 -> f = switch (f) {
+                case "north" -> "west"; case "west" -> "south"; case "south" -> "east";
+                case "east" -> "north"; default -> f;
+            };
+            default -> { }
+        }
         return f;
     }
 
-    /** Rotation-axis remap under the y-then-x rotation (unsigned axes). */
+    /** Rotation-axis remap under x-then-y rotation (unsigned axes). */
     private static String remapAxis(String axis, int xRot, int yRot) {
         String a = axis;
-        if (yRot == 90 || yRot == 270) {
-            a = switch (a) { case "x" -> "z"; case "z" -> "x"; default -> a; };
-        }
         if (xRot == 90 || xRot == 270) {
             a = switch (a) { case "y" -> "z"; case "z" -> "y"; default -> a; };
+        }
+        if (yRot == 90 || yRot == 270) {
+            a = switch (a) { case "x" -> "z"; case "z" -> "x"; default -> a; };
         }
         return a;
     }
