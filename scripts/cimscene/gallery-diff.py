@@ -74,6 +74,12 @@ ALIGN = 3           # per-cell alignment search radius (px; the calibrated chann
 PITCH = 1           # cell pitch in blocks (the ENTITY grid uses 2: sparse,
                     # zero bbox overlap — CimSceneMod ENTITY_PITCH); the crop
                     # half-width scales with it so pitch-2 cells never bleed
+SPILL_RADIUS = 2    # 14-ag dyn-spill reach for MACHINE cells (a dyn cell that
+                    # has another dyn cell in its 3x3 — gantry contraptions,
+                    # whistles): the BE channel draws outside block bounds and
+                    # measured on #80 those cells go RED at 3.0x the clean
+                    # rate. A LONE dyn cell (a turntable disc) measured a
+                    # ~1-cell overhang, so lone dyn neighbours reach 1.
 
 
 def load(p):
@@ -260,11 +266,54 @@ def main():
     red = 0
     skipped = 0
     dynamic = 0
+    spill = 0
     cells = 0
     for mf in args.manifest:
         page = pathlib.Path(mf).stem  # gallery-<ns>-p<p>
-        for line in pathlib.Path(mf).read_text().splitlines()[1:]:
+        lines = pathlib.Path(mf).read_text().splitlines()[1:]
+        # 14-ag DYN-SPILL pass 1: the manifest's dyn grid for this page. The
+        # BE channel's renders LEAVE the block bounds (the gantry beam spans
+        # the whole connected contraption, the steam whistle stacks 8 cells,
+        # the funnel nozzle hangs out) — a NEIGHBOUR cell's crop catches the
+        # neighbour's BlockEntityRenderer output, which the vanilla-client
+        # pack channel structurally cannot reproduce. Measured on run #80:
+        # cells with a dyn cell within Chebyshev radius 2 go RED at 3.0x the
+        # clean rate (15.4% vs 5.1%) and their RED ae averages 1.7x the
+        # clean REDs' — the spill, not the cell's own channel. Those cells
+        # keep their pixel ae in the report but join the dyn class: reported,
+        # never silently green — their gate is the real-client leg (M5.6).
+        page_cells = []
+        dyn_grid = {}
+        for line in lines:
             parts = line.split("\t")
+            if parts[0] != "cell":
+                continue
+            x, y = int(parts[1]), int(parts[2])
+            dyn_grid[(x, y)] = len(parts) > 5 and parts[5].strip() == "1"
+            page_cells.append(parts)
+        # machine cells: dyn cells that are part of a dyn CLUSTER (another dyn
+        # in their 3x3) — their BE render belongs to a contraption whose
+        # extent is unbounded; a lone dyn cell measured a ~1-cell overhang.
+        machine = {}
+        for (mx, my), d in dyn_grid.items():
+            if not d:
+                continue
+            near = any(dd and (dx, dy) != (mx, my)
+                       for (dx, dy), dd in dyn_grid.items()
+                       if abs(dx - mx) <= 1 and abs(dy - my) <= 1)
+            machine[(mx, my)] = near
+
+        def spill_near(cx, cy):
+            for ddx in range(-SPILL_RADIUS, SPILL_RADIUS + 1):
+                for ddy in range(-SPILL_RADIUS, SPILL_RADIUS + 1):
+                    reach = max(abs(ddx), abs(ddy))
+                    if reach == 0:
+                        continue
+                    d = dyn_grid.get((cx + ddx, cy + ddy), False)
+                    if d and (machine.get((cx + ddx, cy + ddy)) or reach == 1):
+                        return True
+            return False
+        for parts in page_cells:
             kind, x, y, z, state = parts[:5]
             # dyn=1 (6th column, scene-mod >= 2026-10-30): the block carries a
             # BlockEntity — part of its picture is drawn by the mod's
@@ -308,14 +357,22 @@ def main():
             if vf is not None and vf < v:
                 v, dx, dy, co_used = vf, dxf, dyf, True
             cells += 1
+            # 14-ag: spill = a dyn neighbour within its measured reach
+            # (manifest-derived, zero pixel heuristics). Only a RED verdict is
+            # demoted — a spill neighbour never turns a clean cell RED, and
+            # never un-greens one.
+            sn = spill_near(int(x), int(y))
             verdict = "GREEN" if v <= args.gate else "RED"
             if dyn or air:
                 dynamic += 1
                 if verdict == "RED":
                     verdict = "DYNAMIC" if dyn else "AIR"
+            elif verdict == "RED" and sn:
+                spill += 1
+                verdict = "SPILL"
             elif verdict == "RED":
                 red += 1
-            if verdict in ("RED", "DYNAMIC", "AIR") and args.diff_dir:
+            if verdict in ("RED", "SPILL", "DYNAMIC", "AIR") and args.diff_dir:
                 dd = pathlib.Path(args.diff_dir)
                 dd.mkdir(parents=True, exist_ok=True)
                 name = f"{page}_c{col}_r{row}.png"
@@ -327,16 +384,17 @@ def main():
             rows.append({"page": page, "col": col, "row": row, "state": state,
                          "ae": v, "shift": [dx, dy], "verdict": verdict,
                          "luma_norm": luma_norm, "luma_fit": co_used is True,
-                         "luma_scale": round(scale, 3)})
+                         "luma_scale": round(scale, 3), "dyn_spill": sn})
 
     report = {
         "cells": cells, "skipped": skipped, "red": red, "dynamic": dynamic,
+        "spill": spill,
         "gate": args.gate, "verdict": "GREEN" if red == 0 else "RED",
         "rows": rows,
     }
     pathlib.Path(args.out).write_text(json.dumps(report, indent=1))
     print(f"gallery-diff: {report['verdict']} cells={cells} red={red} "
-          f"dynamic={dynamic} skipped={skipped} gate={args.gate} -> {args.out}")
+          f"spill={spill} dynamic={dynamic} skipped={skipped} gate={args.gate} -> {args.out}")
     return 0 if red == 0 else 2
 
 
