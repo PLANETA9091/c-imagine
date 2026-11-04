@@ -1,8 +1,0 @@
-cell	x	y	z	entity	dyn	note
-cell	-3	-60	9	minecraft:horse	0	ok
-cell	-1	-60	9	minecraft:husk	0	ok
-cell	1	-60	9	minecraft:illusioner	0	ok
-cell	5	-58	9	minecraft:llama	0	ok
-cell	-3	-56	9	minecraft:magma_cube	0	ok
-cell	3	-56	9	minecraft:mooshroom	0	ok
-cell	5	-56	9	minecraft:mule	0	ok

@@ -1,7 +1,0 @@
-cell	x	y	z	entity	dyn	note
-cell	-1	-58	9	minecraft:fox	0	ok
-cell	1	-58	9	minecraft:frog	0	ok
-cell	-1	-56	9	minecraft:glow_squid	0	ok
-cell	1	-56	9	minecraft:goat	0	ok
-cell	3	-56	9	minecraft:guardian	0	ok
-cell	5	-56	9	minecraft:hoglin	0	ok

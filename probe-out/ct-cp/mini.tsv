@@ -1,1 +1,0 @@
-create:tuff_pillar[axis=x,east=false,north=false,south=false,west=true]	0,-1,0=create:tuff_pillar[axis=x,east=true,north=false,south=false,west=false]

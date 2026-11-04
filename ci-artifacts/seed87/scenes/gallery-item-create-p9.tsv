@@ -1,7 +1,0 @@
-cell	x	y	z	item	dyn	note
-cell	-5	-60	9	create:yellow_toolbox	0	ok
-cell	-4	-60	9	create:yellow_valve_handle	0	ok
-cell	-3	-60	9	create:zinc_block	0	ok
-cell	-2	-60	9	create:zinc_ingot	0	ok
-cell	-1	-60	9	create:zinc_nugget	0	ok
-cell	0	-60	9	create:zinc_ore	0	ok

@@ -1,7 +1,0 @@
-cell	x	y	z	entity	dyn	note
-cell	-5	-60	9	minecraft:chest_minecart	1	ok
-cell	1	-60	9	minecraft:command_block_minecart	1	ok
-cell	-1	-58	9	minecraft:dragon_fireball	1	ok
-cell	3	-58	9	minecraft:egg	1	ok
-cell	-5	-56	9	minecraft:end_crystal	1	ok
-cell	-1	-56	9	minecraft:ender_pearl	1	ok
