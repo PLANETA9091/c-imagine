@@ -844,6 +844,10 @@ jobs:
               sleep 1
             done
             sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
+            # a fresh client boots with the HUD on: without this every later
+            # shot carries the hotbar, the hand and the tutorial toast
+            java -cp vtools Key F1
+            sleep 1
             echo "truth client rejoined: $L"
           }
           ensure_alive_rerun() { # $1=stem $2=page label $3=page; $4..=the page's rcon words (re-run verbatim)
@@ -951,6 +955,12 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "create $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
           done
+          # the last entity page is still standing here. Kill it NOW and let
+          # its death-poof particles expire: killed at the first item page,
+          # they land inside the shot at random positions on either leg
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "kill @e[type=!player]" >/dev/null 2>&1
+          sleep 3
           # ITEM walk (create): every registered item, one item_display per
           # cell carrying the REAL modded item, to exhaustion.
           EX=0
@@ -1583,6 +1593,12 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "ours create $SERIES replay hit the MAXP cap"; exit 1; }
           done
+          # the last entity page is still standing here. Kill it NOW and let
+          # its death-poof particles expire: killed at the first item page,
+          # they land inside the shot at random positions on either leg
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "kill @e[type=!player]" >/dev/null 2>&1
+          sleep 3
           # ITEM replay (create): the pack's item channel carries every item;
           # missing pack rows count as nochannel and the join names them.
           EX=0
