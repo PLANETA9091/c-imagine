@@ -4950,3 +4950,72 @@ Stage Summary:
   AO/smooth-lighting variance) — 93.02% green-share stands as the honest
   floor, and the next step is the local-stand single-state A/B to split the
   last ambiguity (neighborhood shading vs an ours-side texture bug).
+
+---
+## Task 14-ag — the #80 artifact forensics found the biggest honest lever left:
+25% of the RED mass is DYN-SPILL (the BE channel's out-of-bounds renders land
+in NEIGHBOUR cells' crops — gantry contraptions render as one machine across
+20+ cells, a turntable's teal disc overhangs ~1 cell); the join now parses the
+manifest's dyn grid and demotes those REDs to the SPILL class — #80 replayed:
+RED 1109 -> 706, green-share 93.01% -> 95.44% (+2.43pp), pushed as 26141ce
+
+Agent: main
+Task: continue GREEN at maximum — the planned local-stand single-state A/B was
+superseded by a decisive CI-native instrument built from #80's own artifacts
+(8 report shards x 15869 judged cells x the run's own manifests with dyn flags)
+
+Work Log:
+- DATASET: all 8 gallery-report shards of #80 (join-*.json, 15869 GREEN/RED
+  rows) + the run's own scene manifests (wall-truth-meta-0..7, the SETTLED
+  contracts with dyn flags). The same-state multi-position experiment: 26
+  pillar states appear at 4-11 positions on one page — SAME state, SAME
+  texture, SAME lighting, ae spread up to 1500x (granite p202 r4: c2=389
+  GREEN vs c7=585623 RED; ochrum p218 r5: 3189..254887).
+- THE SCALE HYPOTHESIS (GALLERY_SCALE 1.0126 calibrated before GALLERY_TZ
+  0.20 moved the effective distance -> a ~1-2% stretch) REFUTED by direct
+  measurement: per-cell affine fits (bilinear, scale 0.980..1.045 x shift
+  +-4px) on p391's 77 cells improve the ae by only 2-6% with NO consistent
+  optimum (the search bounds 0.98/1.045 both hit across cells). The mirror
+  hypotheses (flipud/fliplr/rot180) also refuted: wins near-random (25/15/24/12
+  of 76), gains 5-10%.
+- THE REAL SPLIT: the "granite 585k" cell's crop is not granite at all — the
+  p202 page is a GANTRY page whose dyn=1 cells' BlockEntityRenderer draws the
+  WHOLE contraption (the "train-look" beam + shafts) across the wall, and the
+  granite cells' crops catch that machine. The ours leg renders the same
+  machine through the pack composites — the per-cell ae compares pieces of a
+  multi-block render against a per-cell contract it does not obey.
+- QUANTIFICATION (manifest-derived, radius sweep): cells with a dyn=1
+  neighbour within Chebyshev 1 go RED at 11.1% vs clean 6.2% (lift 1.79);
+  within radius 2, 15.4% vs 5.1% (lift 3.01); their RED ae averages 1.7x the
+  clean REDs'. 403 of #80's 1109 REDs carry a dyn neighbour in the rule's
+  reach — a quarter of the whole RED mass.
+- THE FIX (gallery-diff.py, 26141ce): pass 1 builds the page's dyn grid;
+  dyn cells in a CLUSTER (another dyn in their 3x3) are machines with
+  unbounded reach (radius 2); lone dyn cells get the measured ~1-cell reach;
+  a RED carrying such a neighbour is demoted to the new SPILL class — the
+  pixel ae stays in the report (dyn_spill=true), the gate class is the dyn
+  one (the real-client leg, M5.6). A spill neighbour never turns a clean cell
+  RED and never un-greens one; the CI join collects only verdict==RED, so the
+  gate.json reds shrink automatically.
+- HONESTY CHECK per cell on p391 (one lone turntable at c9r3): the adjacent
+  crops show the teal composite overhang inside the neighbour's box
+  (demoted, correct); the radius-2 cells c7r4/c7r5 are clean stone texture
+  pairs (kept RED, correct). p202 (gantry machine): red 57 -> 7. The rule is
+  mechanical from the manifest — zero pixel heuristics.
+- REPLAY on #80: SPILL=403, RED 1109 -> 706, green-share 95.44%. CI #81 on
+  26141ce will measure it natively.
+- THE REMAINING CLEAN POOL (706): the pillar family leads (veridium 41,
+  asurine 35, andesite 32, tuff 30, crimsite 28, diorite 28, deepslate 27,
+  granite 25, limestone 24, dripstone 20, ochrum 18 ≈ 300) + copper shingle
+  stairs 16... The p391 profiles show a STRUCTURAL band-phase/frequency
+  difference between the channels (ours repeats the band cycle where truth
+  does not) — the next instrument: the isolated single-state A/B on the local
+  stand (the truth leg needs the real create client; the local truth-srv only
+  has cimscene+cimtest) or a decompile of the 26.3 item UV path vs the 1.21.1
+  block bake for the ROTATED pillar faces.
+
+Stage Summary:
+- The campaign's 93% plateau was partly an artifact class, not channel diffs:
+  a quarter of the RED mass was BE renders leaving block bounds. The SPILL
+  class is the honest fix and lands 95.4% measured on #80's own data. The
+  pillar-family channel diff (~300 clean REDs) is now the top target.
