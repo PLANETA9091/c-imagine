@@ -1521,6 +1521,261 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * marker is {@code gallerypage-particle <ns> p<page> -> placed=0
      * nochannel=N cells=M} (cells=-1 prints as {@code cells=missing}).
      */
+    /**
+     * Replay one truth-leg SOUND gallery page manifest (2026-11-04,
+     * DIAGNOSTIC-first). The truth leg's capture is a packet-level ordered
+     * event-id stream; the replay writes the SAME artifact shape
+     * (one event id per line, in played order) for every sound THIS side
+     * actually sends. This plugin has NO sound rewrite path (verified
+     * before wiring: no ClientboundSound handling anywhere in the plugin),
+     * so the stream stays EMPTY and every cell counts as nochannel — the
+     * join names the whole page as missing ids. The empty file is the
+     * honest measurement of the channel's absence, never a missing file
+     * (a missing file would be indistinguishable from a crashed walk).
+     *
+     * <p>Returns {@code [placed=0, nochannel=N, cells=N]}; the RCON marker
+     * is {@code gallerypage-sound <ns> p<page> -> placed=0 nochannel=N cells=M}.
+     */
+    private int[] galleryPageSound(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-sound-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-sound: manifest missing: " + mf);
+            return new int[]{0, 0, -1};
+        }
+        int cells = 0;
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t")) {
+                    cells++;
+                }
+                // header / skip rows
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-sound: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0, -1};
+        }
+        // THE CAPTURE LOG (empty by the no-channel contract above — the
+        // write is unconditional so sound-diff.py always has the artifact)
+        Path cap = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-sound-" + ns + "-p" + page + ".log");
+        try {
+            Files.writeString(cap, "", StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-sound: capture log write failed "
+                    + cap + ": " + ioe);
+        }
+        log().warning(LOG_PREFIX + "f2v gallery-sound: " + cells
+                + " cell(s) nochannel — Paper has no mod-sound channel "
+                + "(no F2V sound rewrite; the capture stream stays empty)");
+        return new int[]{0, cells, cells};
+    }
+
+    /**
+     * Replay one truth-leg GUI (MENU) gallery page manifest (2026-11-04,
+     * DIAGNOSTIC-first). Paper cannot instantiate a mod MenuType (the
+     * menu classes live in the mod jar; no menu translation exists in the
+     * layer/plugin), so every row counts as nochannel. The viewer's open
+     * inventory is closed for determinism (the truth leg opens the menu
+     * AFTER its manifest write; this leg closes whatever was open) — the
+     * shot shows the honestly closed screen.
+     *
+     * <p>Returns {@code [placed=0, nochannel=N, cells=N]}; the RCON marker
+     * is {@code gallerypage-gui <ns> p<page> -> placed=0 nochannel=N cells=M}.
+     */
+    private int[] galleryPageGui(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-gui-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-gui: manifest missing: " + mf);
+            return new int[]{0, 0, -1};
+        }
+        int cells = 0;
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t")) {
+                    cells++;
+                }
+                // header / skip rows (open-failed notes pass through — the
+                // join reads them from the manifest, not from here)
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-gui: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0, -1};
+        }
+        callSync(() -> {
+            org.bukkit.entity.Player viewer =
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer");
+            if (viewer != null) {
+                viewer.closeInventory();
+            }
+            World w = world(worldName());
+            for (int bx = -6; bx <= 6; bx++) {
+                for (int by = -60; by <= -53; by++) {
+                    for (int bz = 8; bz <= 10; bz++) {
+                        try {
+                            w.getBlockAt(bx, by, bz).setType(Material.AIR, false);
+                        } catch (Exception clearFail) {
+                            // unloaded corner: forceload covers the region
+                        }
+                    }
+                }
+            }
+            return cells;
+        });
+        log().warning(LOG_PREFIX + "f2v gallery-gui: " + cells
+                + " menu(s) nochannel — Paper cannot instantiate a mod MenuType");
+        return new int[]{0, cells, cells};
+    }
+
+    /**
+     * Replay one truth-leg BIOME-TINT gallery page manifest (2026-11-04,
+     * DIAGNOSTIC-first). The tint sample rig (grass_block + oak_leaves, the
+     * same cells the truth rig uses) IS placeable on Paper — placed as real
+     * blocks so the shot compares the SAME surfaces. The biome itself is
+     * not: a modded biome id is not in the Paper registry (the layer that
+     * registers it does not run in the gallery ours leg), so every row
+     * counts as nochannel and the shot shows the honestly untinted rig.
+     *
+     * <p>Returns {@code [placed, nochannel, cells]}; the RCON marker is
+     * {@code gallerypage-biome <ns> p<page> -> placed=N nochannel=K cells=M}.
+     */
+    private int[] galleryPageBiome(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-biome-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-biome: manifest missing: " + mf);
+            return new int[]{0, 0, -1};
+        }
+        final java.util.List<String[]> rows = new java.util.ArrayList<>();
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t") || line.startsWith("skip\t")) {
+                    rows.add(line.split("\t", -1));
+                }
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-biome: manifest read failed "
+                    + mf + ": " + ioe);
+            return new int[]{0, 0, -1};
+        }
+        int[] counts = callSync(() -> {
+            int placed = 0, nochannel = 0;
+            World w = world(worldName());
+            for (int bx = -6; bx <= 6; bx++) {
+                for (int by = -60; by <= -53; by++) {
+                    for (int bz = 8; bz <= 10; bz++) {
+                        try {
+                            w.getBlockAt(bx, by, bz).setType(Material.AIR, false);
+                        } catch (Exception clearFail) {
+                            // unloaded corner: forceload covers the region
+                        }
+                    }
+                }
+            }
+            // the SAME tint-sample rig the truth page places (real vanilla
+            // blocks — placeable on both stacks; the TINT is the channel)
+            try {
+                w.getBlockAt(-5, -60, 9).setType(Material.GRASS_BLOCK, false);
+                w.getBlockAt(-4, -60, 9).setType(Material.OAK_LEAVES, false);
+            } catch (Exception rigFail) {
+                // unloaded corner: forceload covers the region
+            }
+            for (String[] row : rows) {
+                // cell|x|y|z|biome|note
+                if (row.length < 5 || row[0].equals("skip")) {
+                    continue;
+                }
+                // no biome translation: a modded id cannot be applied by
+                // Paper (the vanilla surface fails by construction here —
+                // the honest nochannel the join names)
+                nochannel++;
+            }
+            return new int[]{placed, nochannel};
+        });
+        int cells = rows.size();
+        log().warning(LOG_PREFIX + "f2v gallery-biome: " + (counts == null ? cells : counts[1])
+                + " biome(s) nochannel — Paper has no modded-biome surface "
+                + "(the sample rig is placed; the tint is not)");
+        return new int[]{0, counts == null ? cells : counts[1], cells};
+    }
+
+    /**
+     * The HELD leg of the ITEM gallery (2026-11-04, DIAGNOSTIC-first):
+     * stage the page's FIRST item row into the viewer's hotbar slot 0 as
+     * the pack's CMD carrier (the same resolution the item replay uses),
+     * so the first-person shot (taken after the "1" hotbar key on BOTH
+     * legs) proves the item channel in the hand. The item id comes from the
+     * SAME manifest row the truth leg stages over RCON
+     * ({@code item replace entity cimviewer hotbar.0 with <item>}) — the
+     * two legs read the identical contract.
+     *
+     * <p>Returns {@code [itemId, cmd]} where cmd is the pack CMD number or
+     * {@code nochannel}; the RCON marker is
+     * {@code gallerypage-held <ns> p<page> -> held=<item> cmd=<n|nochannel>}.
+     */
+    private String[] galleryPageHeld(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-item-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v gallery-held: manifest missing: " + mf);
+            return new String[]{"missing", "nochannel"};
+        }
+        String itemId = null;
+        try {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                if (line.startsWith("cell\t")) {
+                    String[] row = line.split("\t", -1);
+                    if (row.length >= 5) {
+                        itemId = row[4];
+                        break;
+                    }
+                }
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-held: manifest read failed "
+                    + mf + ": " + ioe);
+            return new String[]{"missing", "nochannel"};
+        }
+        if (itemId == null) {
+            return new String[]{"none", "nochannel"};
+        }
+        Float cmd = null;
+        if (f2v != null) {
+            for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                if (r.moddedId().equals(itemId)) {
+                    cmd = r.cmd();
+                    break;
+                }
+            }
+        }
+        if (cmd == null) {
+            log().warning(LOG_PREFIX + "f2v gallery-held: no pack CMD for " + itemId
+                    + " — the hand stays empty (nochannel)");
+            return new String[]{itemId, "nochannel"};
+        }
+        final float fcmd = cmd;
+        final String fid = itemId;
+        String placed = callSync(() -> {
+            org.bukkit.entity.Player viewer =
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer");
+            if (viewer == null) {
+                return "no-viewer";
+            }
+            ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
+            stack.editMeta(meta -> {
+                CustomModelDataComponent c = meta.getCustomModelDataComponent();
+                c.setFloats(List.of(fcmd));
+                meta.setCustomModelDataComponent(c);
+            });
+            viewer.getInventory().setItem(0, stack);
+            return fid;
+        });
+        return new String[]{placed == null ? "no-viewer" : placed, String.valueOf(cmd)};
+    }
+
     private int[] galleryPageParticle(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-particle-" + ns + "-p" + page + ".tsv");
@@ -1853,6 +2108,81 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         // /cim galleryclear — despawn every ItemDisplay + tagged gallery
         // entity (page swaps).
+        // /cim gallerypage-sound <ns> <page> — the SOUND gallery ours-leg
+        // surface (2026-11-04, DIAGNOSTIC-first): replay the truth-leg
+        // sound manifest. Paper has NO mod-sound channel (no F2V sound
+        // rewrite exists in this plugin — verified before wiring), so every
+        // cell counts as nochannel and the page writes its own replay log
+        // (the same artifact shape the truth leg's packet capture emits —
+        // the file sound-diff.py joins). The empty stream is the honest
+        // measurement of the channel's absence, never a silence.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-sound")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageSound(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-sound " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-sound: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim gallerypage-gui <ns> <page> — the GUI (MENU) gallery
+        // ours-leg surface (2026-11-04, DIAGNOSTIC-first): replay the
+        // truth-leg gui manifest. Paper cannot instantiate a mod MenuType
+        // (no menu translation in the layer/plugin), so every row counts as
+        // nochannel — the shot shows the honestly closed screen.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-gui")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageGui(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-gui " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-gui: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim gallerypage-biome <ns> <page> — the BIOME-TINT gallery
+        // ours-leg surface (2026-11-04, DIAGNOSTIC-first): replay the
+        // truth-leg biome manifest. Paper cannot set a modded biome
+        // (the ids are not in the Paper registry without the layer), so
+        // every row counts as nochannel — the shot shows the honestly
+        // untinted sample rig.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-biome")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int[] counts = galleryPageBiome(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-biome " + args[1]
+                        + " p" + page + " -> placed=" + counts[0]
+                        + " nochannel=" + counts[1]
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-biome: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim gallerypage-held <ns> <page> — the HELD (first-person) leg of
+        // the ITEM gallery (2026-11-04, DIAGNOSTIC-first): take the page's
+        // FIRST item row (the same manifest row the truth leg stages into
+        // the viewer's hotbar over RCON), resolve its pack CMD carrier, and
+        // put it into the viewer's hotbar slot 0 — the shot (after the
+        // "1" hotbar key) proves the item channel in first person.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage-held")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                String[] res = galleryPageHeld(args[1], page);
+                sender.sendMessage(LOG_PREFIX + "gallerypage-held " + args[1]
+                        + " p" + page + " -> held=" + res[0] + " cmd=" + res[1]);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "gallerypage-held: bad page number: " + args[2]);
+            }
+            return true;
+        }
         if (args.length >= 1 && args[0].equalsIgnoreCase("galleryclear")) {
             int removed = galleryClear();
             sender.sendMessage(LOG_PREFIX + "galleryclear -> removed=" + removed);
@@ -1869,7 +2199,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 + "| /cim gallerypage-entity <ns> <page> | /cim galleryclear");
         sender.sendMessage(LOG_PREFIX + "       /cim gallerypage-item <ns> <page> "
                 + "| /cim gallerypage-particle <ns> <page> "
-                + "| /cim gallerypage-fluid <ns> <page>");
+                + "| /cim gallerypage-fluid <ns> <page> "
+                + "| /cim gallerypage-sound <ns> <page>");
+        sender.sendMessage(LOG_PREFIX + "       /cim gallerypage-gui <ns> <page> "
+                + "| /cim gallerypage-biome <ns> <page> "
+                + "| /cim gallerypage-held <ns> <page>");
         for (String line : readStatusLines()) {
             sender.sendMessage(LOG_PREFIX + line);
         }

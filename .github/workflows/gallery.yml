@@ -75,6 +75,26 @@ name: gallery
 #          block wall's real EntityBlock placement; the scene reconciles
 #          every BE type against the wall's placeable predicate and the
 #          gate turns a non-empty reconciliation file into COVERAGE red
+# THE 2026-11-04 CLASSES (all DIAGNOSTIC-first — walked, reported, never
+# red until their channel is measured stable; the flip law lives in
+# coverage-gate.py DIAGNOSTIC_CLASSES):
+#   sound: every registered SoundEvent played in order per page window;
+#          the truth capture is a packet-level mixin log
+#          (gallery-sound-<ns>-p<p>.log), the ours replay writes the same
+#          artifact shape (empty — no mod-sound channel yet); sound-diff.py
+#          joins the ordered streams
+#   gui:   one MenuType per page opened for the rig viewer; menus needing
+#          block context throw on the empty extra-data buffer (named
+#          open-failed rows); Paper cannot instantiate mod menus (nochannel)
+#   held:  rides the ITEM pages — the page's first item staged into the
+#          viewer's hotbar, the "1" key pressed, first-person shot on both
+#          legs (the item channel's first-person proof surface)
+#   anim:  kinetic block pages (manifest dyn=1 cells) shot twice 2s apart
+#          per leg; anim-diff.py joins the frame DELTAS (ours frozen while
+#          truth moves = the named divergence)
+#   biome: one biome per page through the vanilla fillbiome surface, the
+#          fixed grass/leaves tint-sample rig in frame (the P1 BOP channel
+#          proof surface; Paper cannot set modded biomes — nochannel)
 # Per-page settles follow the measured fixed-window protocol (particles/
 # fluids = 1s; blocks/items = 1s; mob pages 4-5s) — NEVER trimmed for
 # speed; the polls around them were (1s RCON granularity -> 0.25s).
@@ -790,6 +810,18 @@ jobs:
               done
               rm -f "truth-shots/.settle-$NS-p$p.png"
               java -cp vtools Shot "truth-shots/gal-p-$NS$p.png"
+              # ANIM liveness probe (DIAGNOSTIC): kinetic pages only — a
+              # page whose manifest carries dyn=1 cells (manifest-driven,
+              # zero hardcode; the static pages stay one-shot). Two frames
+              # 2s apart per leg; anim-diff.py joins the DELTAS (a
+              # static-but-should-rotate divergence shows as ours-delta ~ 0
+              # while truth-delta > threshold).
+              DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "srv-wall/c-imagine/scenes/gallery-$NS-p$p.tsv")
+              if [ "${DYNC:-0}" -gt 0 ]; then
+                java -cp vtools Shot "truth-shots/gal-p-$NS$p-t0.png"
+                sleep 2
+                java -cp vtools Shot "truth-shots/gal-p-$NS$p-t1.png"
+              fi
               echo "shot $NS page $p"
             done
             [ "$EXHAUSTED" = "1" ] || { echo "$NS block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
@@ -931,6 +963,25 @@ jobs:
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "truth-shots/gal-i-$NS$p.png"
+              # HELD leg (DIAGNOSTIC, 2026-11-04): stage the page's FIRST
+              # item into the viewer's hotbar slot 0 over RCON (the SAME
+              # manifest row the ours plugin replay reads), restore the HUD
+              # (the walk pressed F1 to hide it), press the "1" hotbar key,
+              # shoot first-person. The held shot is the item channel's
+              # first-person proof surface.
+              FIRST_ITEM=$(awk -F'\t' '$1=="cell"{print $5; exit}' "srv-wall/c-imagine/scenes/gallery-item-$NS-p$p.tsv")
+              if [ -n "$FIRST_ITEM" ]; then
+                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "item replace entity cimviewer hotbar.0 with $FIRST_ITEM" >/dev/null 2>&1 || true
+                java -cp vtools Key F1 || true
+                java -cp vtools Key 1 || true
+                sleep 1
+                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                java -cp vtools Shot "truth-shots/gal-h-$NS$p.png" \
+                  || echo "$NS held page $p shot failed (diagnostic tolerated)"
+                java -cp vtools Key F1 || true   # hide the HUD again for the wall pages
+              fi
               echo "shot $NS item page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS item walk hit the MAXP cap without exhausted"; exit 1; }
@@ -981,6 +1032,75 @@ jobs:
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS fluid walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # SOUND walk (per ladder ns, to exhaustion — DIAGNOSTIC class):
+          # every registered SoundEvent played in order inside one page
+          # window; the scene-mod sound-packet mixin captures the outgoing
+          # ClientboundSound* ids into gallery-sound-<ns>-p<p>.log next to
+          # the manifest. No shot: the page's picture IS the stream (the
+          # join is sound-diff.py, below).
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-sound-$NS-p$p"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery sound $NS $p"
+              RC=0; wait_done "gallery-sound-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS sound page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-sound done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+            done
+            [ "$EX" = "1" ] || { echo "$NS sound walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # GUI walk (per ladder ns, to exhaustion — DIAGNOSTIC class): ONE
+          # MenuType per page opened for the rig viewer through the vanilla
+          # openMenu surface; menus that need block context throw on the
+          # empty extra-data buffer and become named open-failed rows (the
+          # honest measured surface). Screenshot 2s after the marker (the
+          # screen renders on the next client tick).
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-gui-$NS-p$p"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery gui $NS $p"
+              RC=0; wait_done "gallery-gui-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS gui page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-gui done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+              sleep 2   # the client screen renders
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "truth-shots/gal-gui-$NS$p.png" \
+                || echo "$NS gui page $p shot failed (diagnostic tolerated)"
+              # ESC closes the open screen before the next page (the next
+              # command also closeContainer()s server-side — belt, braces)
+              java -cp vtools Key ESC || true
+            done
+            [ "$EX" = "1" ] || { echo "$NS gui walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # BIOME-TINT walk (per ladder ns, to exhaustion — DIAGNOSTIC
+          # class; the P1 BOP channel proof surface): ONE biome per page,
+          # the fillbiome surface re-biomes the wall region, the fixed
+          # grass/leaves sample rig carries the tint. The scene places the
+          # rig; the shot needs the same 1s settle as the block pages.
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-biome-$NS-p$p"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery biome $NS $p"
+              RC=0; wait_done "gallery-biome-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS biome page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-biome done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+              sleep 1   # biome sync + tint render (fixed window)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "truth-shots/gal-b-$NS$p.png" \
+                || echo "$NS biome page $p shot failed (diagnostic tolerated)"
+            done
+            [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
           done
           ls truth-shots/ | wc -l
 
@@ -1455,6 +1575,15 @@ jobs:
               done
               rm -f "ours-shots/.settle-$NS-p$p.png"
               java -cp vtools Shot "ours-shots/ours-gal-p-$NS$p.png"
+              # ANIM liveness probe (truth-leg mirror, DIAGNOSTIC): the
+              # SAME manifest drives the decision — identical kinetic-page
+              # selection on both legs, two frames 2s apart
+              DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "$M")
+              if [ "${DYNC:-0}" -gt 0 ]; then
+                java -cp vtools Shot "ours-shots/ours-gal-p-$NS$p-t0.png"
+                sleep 2
+                java -cp vtools Shot "ours-shots/ours-gal-p-$NS$p-t1.png"
+              fi
               test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
               echo "shot $NS page $p"
             done
@@ -1564,6 +1693,21 @@ jobs:
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-gal-i-$NS$p.png"
+              # HELD replay (truth-leg mirror, DIAGNOSTIC): the plugin
+              # stages the SAME manifest row's item as the pack CMD carrier
+              # into hotbar slot 0; restore the HUD, press "1", shoot
+              # first-person (held=<item> cmd=<n|nochannel> names the row)
+              HOUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cim gallerypage-held $NS $p")
+              echo "$HOUT" | tee "ours-rcon-held-$NS$p.log" || true
+              java -cp vtools Key F1 || true
+              java -cp vtools Key 1 || true
+              sleep 1
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/ours-gal-h-$NS$p.png" \
+                || echo "$NS held page $p shot failed (diagnostic tolerated)"
+              java -cp vtools Key F1 || true   # hide the HUD again
               test -s "ours-shots/ours-gal-i-$NS$p.png" || { echo "$NS item page $p shot missing"; exit 1; }
               echo "shot $NS item page $p"
             done
@@ -1617,6 +1761,68 @@ jobs:
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "ours $NS fluid replay hit the MAXP cap"; exit 1; }
+          done
+          # SOUND replay (per ladder ns, DIAGNOSTIC): the plugin writes the
+          # SAME capture-log artifact shape the truth mixin writes — empty
+          # (no mod-sound channel), which is the honest measurement, never
+          # a missing file. The join is sound-diff.py in the inline step.
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              M="srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.tsv"
+              [ -f "$M" ] || { echo "no manifest for $NS sound page $p — exhausted"; EX=1; break; }
+              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cim gallerypage-sound $NS $p")
+              echo "$OUT" | tee "ours-rcon-s-$NS$p.log"
+              echo "$OUT" | grep -q "gallerypage-sound $NS p$p -> placed=" \
+                || { echo "$NS sound page $p no placed marker"; exit 1; }
+              echo "replayed $NS sound page $p (no shot: the stream IS the picture)"
+            done
+            [ "$EX" = "1" ] || { echo "ours $NS sound replay hit the MAXP cap"; exit 1; }
+          done
+          # GUI replay (per ladder ns, DIAGNOSTIC): the plugin closes the
+          # viewer's inventory and counts every menu nochannel (Paper
+          # cannot instantiate a mod MenuType); the shot shows the honestly
+          # closed screen.
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv"
+              [ -f "$M" ] || { echo "no manifest for $NS gui page $p — exhausted"; EX=1; break; }
+              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cim gallerypage-gui $NS $p")
+              echo "$OUT" | tee "ours-rcon-gui-$NS$p.log"
+              echo "$OUT" | grep -q "gallerypage-gui $NS p$p -> placed=" \
+                || { echo "$NS gui page $p no placed marker"; exit 1; }
+              sleep 2   # the screen-settle window (mirror of the truth leg)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/ours-gal-gui-$NS$p.png" \
+                || echo "$NS gui page $p shot failed (diagnostic tolerated)"
+              java -cp vtools Key ESC || true
+            done
+            [ "$EX" = "1" ] || { echo "ours $NS gui replay hit the MAXP cap"; exit 1; }
+          done
+          # BIOME-TINT replay (per ladder ns, DIAGNOSTIC): the plugin places
+          # the SAME sample rig (real vanilla blocks) and counts every
+          # modded biome nochannel; the shot shows the honestly untinted rig.
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              M="srv-wall/c-imagine/scenes/gallery-biome-$NS-p$p.tsv"
+              [ -f "$M" ] || { echo "no manifest for $NS biome page $p — exhausted"; EX=1; break; }
+              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cim gallerypage-biome $NS $p")
+              echo "$OUT" | tee "ours-rcon-b-$NS$p.log"
+              echo "$OUT" | grep -q "gallerypage-biome $NS p$p -> placed=" \
+                || { echo "$NS biome page $p no placed marker"; exit 1; }
+              sleep 1   # the biome-sync window (mirror of the truth leg)
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Shot "ours-shots/ours-gal-b-$NS$p.png" \
+                || echo "$NS biome page $p shot failed (diagnostic tolerated)"
+            done
+            [ "$EX" = "1" ] || { echo "ours $NS biome replay hit the MAXP cap"; exit 1; }
           done
           ls ours-shots/ | wc -l
 
@@ -1802,6 +2008,36 @@ jobs:
                 --manifest "$M" --out "gallery-report/join-fluid-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-fluid-$NS-p$p" \
                 --pitch 2 --gate 240000 || GATE=1
+            done
+          done
+          echo "=== SOUND pages: census-style stream join (DIAGNOSTIC — the flip law lives in coverage-gate.py) ==="
+          for NS in $LADDER_NS; do
+            for M in $(find truth-meta -name "gallery-sound-$NS-p*.tsv" | sort -V); do
+              B=$(basename "$M" .tsv); p=${B##*-p}
+              TL="truth-meta/srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.log"
+              OL="srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.log"
+              if [ -f "$TL" ] && [ -f "$OL" ]; then
+                python3 scripts/cimscene/sound-diff.py --truth "$TL" --ours "$OL" \
+                  --ns "$NS" --page "$p" \
+                  --out "gallery-report/diag-sound-$NS-p$p.json" || true
+              else
+                echo "$NS sound page $p capture logs missing (tolerated: diagnostic)"
+              fi
+            done
+          done
+          echo "=== ANIM liveness probe join (DIAGNOSTIC — kinetic pages only, manifest-driven) ==="
+          for NS in $LADDER_NS; do
+            for M in $(find truth-meta -name "gallery-$NS-p*.tsv" | sort -V); do
+              B=$(basename "$M" .tsv); p=${B##*-p}
+              T0="truth-shots/gal-p-$NS$p-t0.png"
+              O0="ours-shots/ours-gal-p-$NS$p-t0.png"
+              T1="truth-shots/gal-p-$NS$p-t1.png"
+              O1="ours-shots/ours-gal-p-$NS$p-t1.png"
+              if [ -f "$T0" ] && [ -f "$T1" ] && [ -f "$O0" ] && [ -f "$O1" ]; then
+                python3 scripts/cimscene/anim-diff.py --truth-t0 "$T0" --truth-t1 "$T1" \
+                  --ours-t0 "$O0" --ours-t1 "$O1" --ns "$NS" --page "$p" \
+                  --out "gallery-report/diag-anim-$NS-p$p.json" || true
+              fi
             done
           done
           echo "=== per-page verdicts (this shard) ==="

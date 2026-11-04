@@ -3,6 +3,7 @@ package dev.cim.scenemod;
 import com.mojang.brigadier.ParseResults;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import io.netty.buffer.Unpooled;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -11,11 +12,19 @@ import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.TickTask;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
@@ -262,6 +271,24 @@ public final class CimSceneMod {
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
                                                 .executes(ctx -> galleryFluid(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("sound")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> gallerySound(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("gui")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryGui(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("biome")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryBiome(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
@@ -291,7 +318,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid]|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -526,6 +553,7 @@ public final class CimSceneMod {
             }
         }
         long entities = 0, items = 0, particles = 0, fluids = 0, blockEntities = 0;
+        long sounds = 0, menus = 0;
         for (ResourceLocation id : BuiltInRegistries.ENTITY_TYPE.keySet()) {
             if (id.getNamespace().equals(namespace)) entities++;
         }
@@ -541,15 +569,22 @@ public final class CimSceneMod {
         for (ResourceLocation id : BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet()) {
             if (id.getNamespace().equals(namespace)) blockEntities++;
         }
+        for (ResourceLocation id : BuiltInRegistries.SOUND_EVENT.keySet()) {
+            if (id.getNamespace().equals(namespace)) sounds++;
+        }
+        for (ResourceLocation id : BuiltInRegistries.MENU.keySet()) {
+            if (id.getNamespace().equals(namespace)) menus++;
+        }
         // THE REST OF THE VISUAL SURFACE (12-aq): the world-frame ledger
-        // counts EVERY registry whose entries alter a rendered frame — the
-        // mod's biomes (BOP's whole identity), paintings, entity texture
-        // variants, mob effects (particle overlays), armor trims, banner
-        // patterns, decorated-pot patterns, enchantments (item glint),
-        // jukebox songs, dimension types (sky/fog). These classes have NO
-        // gallery walk yet — the gate reports them COVERAGE-INCOMPLETE
-        // reason=no-walk-yet: the ledger SEES the hole, the red is the
-        // named backlog. Worldgen plumbing (features, loot, predicates,
+        // counts EVERY registry whose entries alter a rendered frame —
+        // paintings, entity texture variants, mob effects (particle
+        // overlays), armor trims, banner patterns, decorated-pot patterns,
+        // enchantments (item glint), jukebox songs, dimension types
+        // (sky/fog). These classes have NO gallery walk yet — the gate
+        // reports them COVERAGE-INCOMPLETE reason=no-walk-yet: the ledger
+        // SEES the hole, the red is the named backlog. (The biome row
+        // graduated 2026-11-04: the fillbiome tint walk exists,
+        // DIAGNOSTIC-first.) Worldgen plumbing (features, loot, predicates,
         // attributes...) shapes the world, not a gallery cell, and stays
         // outside the world-frame ledger (documented line, challengeable).
         RegistryAccess access = level.registryAccess();
@@ -577,10 +612,20 @@ public final class CimSceneMod {
                 // block wall (real EntityBlock placement); the gate checks the
                 // reconciliation file below instead of page counts
                 .append("blockentity\t").append(blockEntities).append('\t').append(0).append('\n')
+                // the 2026-11-04 classes: sound (the packet-stream channel,
+                // one page = 77 events played in order), gui (one MenuType
+                // per page), biome (one biome per page — the tint channel).
+                // All three walk DIAGNOSTIC-first; the gate flips each when
+                // its channel is measured stable (coverage-gate.py
+                // DIAGNOSTIC_CLASSES)
+                .append("sound\t").append(sounds).append('\t').append(GALLERY_CELLS).append('\n')
+                .append("gui\t").append(menus).append("\t1\n")
+                // biome LEFT the no-walk set (the fillbiome walk exists): one
+                // biome per page
+                .append("biome\t").append(biomes).append("\t1\n")
                 // the no-walk classes (12-aq): counted, not walked yet — a
                 // negative total means the dynamic registry itself could not
-                // be READ at index time (the gate reds that too, honestly)
-                .append("biome\t").append(biomes).append("\t0\n")
+                // be READ at index time (the gate reds that honestly)
                 .append("painting_variant\t").append(paintingVariants).append("\t0\n")
                 .append("wolf_variant\t").append(wolfVariants).append("\t0\n")
                 .append("cat_variant\t").append(catVariants).append("\t0\n")
@@ -634,13 +679,13 @@ public final class CimSceneMod {
             LOGGER.error("[cimscene] gallery-index write failed ns={}: {}", namespace, ioe.toString());
         }
         LOGGER.info("[cimscene] gallery-index ns={} block-states={} entities={} items={} "
-                        + "particles={} fluids={} block-entities={} be-uncovered={} "
-                        + "biomes={} paintings={} effects={} enchantments={} trims={}/{} "
-                        + "banners={} pot-patterns={} variants={}/{}/{} villager={} songs={} "
-                        + "dimension-types={}",
+                        + "particles={} fluids={} block-entities={} sounds={} menus={} "
+                        + "be-uncovered={} biomes={} paintings={} effects={} enchantments={} "
+                        + "trims={}/{} banners={} pot-patterns={} variants={}/{}/{} "
+                        + "villager={} songs={} dimension-types={}",
                 namespace, states, entities, items, particles, fluids, blockEntities,
-                beUncovered.size(), biomes, paintingVariants, mobEffects, enchantments,
-                trimMaterials, trimPatterns, bannerPatterns, potPatterns,
+                sounds, menus, beUncovered.size(), biomes, paintingVariants, mobEffects,
+                enchantments, trimMaterials, trimPatterns, bannerPatterns, potPatterns,
                 wolfVariants, catVariants, frogVariants, villagerTypes, jukeboxSongs,
                 dimensionTypes);
     }
@@ -1062,6 +1107,311 @@ public final class CimSceneMod {
             }
             level.setBlock(new BlockPos(bx, by, bz), glass, 3);
         }
+    }
+
+    // --- sound gallery (the SOUND channel census, 2026-11-04 — DIAGNOSTIC
+    // --- first, like the entity dyn series: reported, never silently green)
+
+    /**
+     * The universal SOUND gallery: EVERY {@link SoundEvent} registered by
+     * the namespace, sorted by id, PLAYED in one deterministic sequence
+     * inside one page window ({@code ServerLevel.playSound} at the wall
+     * cell, MASTER, volume 1, pitch 1). The picture is not pixels — it is
+     * the ordered event-id STREAM the client receives: while the page plays,
+     * the sound-packet capture mixin records every outgoing
+     * {@code ClientboundSoundPacket}/{@code ClientboundSoundEntityPacket}
+     * into {@code SoundCapture}, and the page writes that stream to
+     * {@code gallery-sound-<ns>-p<p>.log} next to the manifest. The ours leg
+     * (Paper + plugin) replays the SAME manifest through its own surface and
+     * writes its own log; sound-diff.py joins the two streams per page
+     * (exact ordered equality, census-style).
+     *
+     * <p>HONESTY: there is no sound translation in the c-imagine pack
+     * channel (verified 2026-11-04: the paper-plugin has no
+     * ClientboundSound handling), so the ours log is expected to record
+     * nochannel per row until the channel is implemented — the join reports
+     * that, DIAGNOSTIC-first (never a red verdict, never a silent green).
+     * A play that throws on the server (an event id without a valid sound
+     * registration) is a recorded skip row (note=play-failed), identical on
+     * both stacks — the same commands run on both.
+     */
+    private static int gallerySound(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(level, namespace);
+        String soundStem = "gallery-sound-" + namespace + "-p" + page;
+
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.SOUND_EVENT.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-sound begin ns={} page={} sounds={} cellsPerPage={}",
+                namespace, page, entries.size(), GALLERY_CELLS);
+        int from = page * GALLERY_CELLS;
+        if (from >= entries.size()) {
+            writeDoneMarkerFile(soundStem, true);
+            LOGGER.info("[cimscene] gallery-sound done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        int to = Math.min(from + GALLERY_CELLS, entries.size());
+        List<ResourceLocation> slice = entries.subList(from, to);
+
+        clearWall(level);
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tsound\tnote\n");
+        int played = 0, failed = 0;
+        // THE CAPTURE WINDOW: armed before the first play, disarmed after
+        // the last — playSound broadcasts synchronously on the server
+        // thread, so the window holds exactly this page's outgoing packets
+        List<String> heard = SoundCapture.begin();
+        for (int i = 0; i < slice.size(); i++) {
+            ResourceLocation id = slice.get(i);
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            int x = GALLERY_X0 + col, y = GALLERY_Y0 + row, z = GALLERY_Z;
+            try {
+                SoundEvent ev = BuiltInRegistries.SOUND_EVENT.get(id);
+                level.playSound(null, x + 0.5, y + 0.5, z + 0.5, ev,
+                        SoundSource.MASTER, 1.0f, 1.0f);
+                played++;
+                tsv.append("cell\t").append(x).append('\t').append(y).append('\t')
+                        .append(z).append('\t').append(id).append("\tok\n");
+            } catch (Throwable t) {
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tplay-failed")
+                        .append(':').append(t.getClass().getName()).append('\n');
+                LOGGER.info("[cimscene] gallery-sound skip ns={} page={} index={} "
+                                + "reason=play-failed sound={} err={}",
+                        namespace, page, from + i, id, t.toString());
+            }
+        }
+        List<String> stream = SoundCapture.end(heard);
+        String manifest = "gallery-sound-" + namespace + "-p" + page + ".tsv";
+        String capture = "gallery-sound-" + namespace + "-p" + page + ".log";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+            Files.writeString(parent.resolve(capture),
+                    stream.isEmpty() ? "" : String.join("\n", stream) + "\n",
+                    StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-sound write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-sound done ns={} page={} cells={} failed={} "
+                        + "captured={} first={} last={}",
+                namespace, page, played, failed, stream.size(), slice.get(0),
+                slice.get(slice.size() - 1));
+        writeDoneMarkerFile(soundStem, false);
+        return played;
+    }
+
+    /**
+     * THE SOUND-CAPTURE WINDOW (the static holder the mixin writes into —
+     * an ORDINARY vanilla-surface probe, zero c-imagine APIs). Armed by the
+     * sound gallery command, recorded by {@link SoundPacketCaptureMixin}
+     * (every outgoing clientbound sound packet's event id, in arrival
+     * order), disarmed by the command which then owns the collected stream.
+     * Server-thread confined: the RCON command and the packet broadcast run
+     * on the same thread, so a plain static field is the whole contract.
+     */
+    public static final class SoundCapture {
+        private static List<String> stream = null;
+
+        /** Arms the capture and returns the list to pass back to end(). */
+        public static List<String> begin() {
+            List<String> fresh = new ArrayList<>();
+            stream = fresh;
+            return fresh;
+        }
+
+        /** Disarms and returns the recorded stream (ordered event ids). */
+        public static List<String> end(List<String> expected) {
+            stream = null;
+            return expected;
+        }
+
+        /** Called by the sound-packet mixin; no-op while disarmed. */
+        public static void record(String soundId) {
+            List<String> s = stream;
+            if (s != null) {
+                s.add(soundId);
+            }
+        }
+    }
+
+    // --- gui gallery (the MENU channel census, 2026-11-04 — DIAGNOSTIC
+    // --- first: one menu per page, the open attempt IS the measurement)
+
+    /**
+     * The universal GUI gallery: EVERY {@link MenuType} registered by the
+     * namespace, sorted by id, ONE per page — the server opens the menu for
+     * the gallery viewer ({@code cimviewer}, the rig player both legs name)
+     * through the vanilla {@code openMenu} surface with an empty extra-data
+     * buffer, and the client screenshot shows whatever rendered. Menus that
+     * need their block context (machines read the BE from the extra data)
+     * throw on the empty buffer — a recorded note (open-failed:&lt;class&gt;),
+     * identical on both stacks, never a silent skip. Menus that open without
+     * context render on the truth client (which HAS the mod) — the pixel
+     * surface the ours leg must match.
+     *
+     * <p>HONESTY: the c-imagine pack channel has no menu translation
+     * (verified 2026-11-04), so the ours replay records nochannel per row
+     * until the channel exists — the join reports it, DIAGNOSTIC-first.
+     */
+    private static int galleryGui(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(level, namespace);
+        String guiStem = "gallery-gui-" + namespace + "-p" + page;
+
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-gui begin ns={} page={} menus={} cellsPerPage=1",
+                namespace, page, entries.size());
+        if (page >= entries.size()) {
+            writeDoneMarkerFile(guiStem, true);
+            LOGGER.info("[cimscene] gallery-gui done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        ResourceLocation id = entries.get(page);
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+        int placed = 0, failed = 0;
+        ServerPlayer viewer = level.getServer().getPlayerList().getPlayerByName("cimviewer");
+        if (viewer == null) {
+            // the rig player is the contract of the CI legs (both name it
+            // cimviewer); a no-viewer page is a NAMED row, not a silence
+            failed++;
+            tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tno-viewer\n");
+            LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=no-viewer menu={}",
+                    namespace, page, id);
+        } else {
+            viewer.closeContainer();   // the previous page's screen, if any
+            try {
+                MenuType<?> type = BuiltInRegistries.MENU.get(id);
+                // empty extra data: factories that read block/menu context
+                // throw here (recorded honestly); context-free menus open
+                FriendlyByteBuf extra = new FriendlyByteBuf(Unpooled.buffer());
+                viewer.openMenu(new SimpleMenuProvider(
+                        (windowId, inv, player) -> type.create(windowId, inv, extra),
+                        Component.literal(id.toString())));
+                placed++;
+                tsv.append("cell\t").append(GALLERY_X0).append('\t')
+                        .append(GALLERY_Y0).append('\t').append(GALLERY_Z)
+                        .append('\t').append(id).append("\tok\n");
+            } catch (Throwable t) {
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id)
+                        .append("\topen-failed:").append(t.getClass().getName()).append('\n');
+                LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed "
+                                + "menu={} err={}", namespace, page, id, t.toString());
+            }
+        }
+        String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-gui manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-gui done ns={} page={} cells={} failed={} menu={}",
+                namespace, page, placed, failed, id);
+        writeDoneMarkerFile(guiStem, false);
+        return placed;
+    }
+
+    // --- biome-tint gallery (the BOP P1 channel proof surface, 2026-11-04
+    // --- — DIAGNOSTIC first; one biome per page, the vanilla /fillbiome
+    // --- surface, zero per-mod code)
+
+    /**
+     * The universal BIOME-TINT gallery: EVERY biome registered by the
+     * namespace in the server's datapack biome registry, sorted by id, ONE
+     * per page. The page places a fixed tint-sample rig on the wall (a
+     * grass_block — the GRASS color channel — and an oak_leaves — the
+     * FOLIAGE color channel) and re-biomes the wall region through the
+     * vanilla {@code /fillbiome} command via the proven quiet dispatcher:
+     * the biome at the camera applies its tint to those blocks on BOTH
+     * stacks through the same client surface. Deterministic in the flat
+     * seed world (no biome locating — the region IS the wall's own).
+     *
+     * <p>HONESTY: the ours leg does not load mods, so a modded biome id
+     * fails the fillbiome replay (nochannel in the plugin's replay log) and
+     * the shot shows the honestly untinted wall — the join names it.
+     * DIAGNOSTIC-first: the P1 BOP tint channel is the proof surface, the
+     * gate flips when measured stable.
+     */
+    private static int galleryBiome(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        writeGalleryIndex(level, namespace);
+        String biomeStem = "gallery-biome-" + namespace + "-p" + page;
+
+        Registry<Biome> biomes = level.registryAccess().registryOrThrow(Registries.BIOME);
+        List<ResourceLocation> ids = new ArrayList<>(biomes.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-biome begin ns={} page={} biomes={} cellsPerPage=1",
+                namespace, page, entries.size());
+        if (page >= entries.size()) {
+            writeDoneMarkerFile(biomeStem, true);
+            LOGGER.info("[cimscene] gallery-biome done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        ResourceLocation id = entries.get(page);
+
+        clearWall(level);
+        // the tint sample rig: grass_block (grass color) + oak_leaves
+        // (foliage color) on the wall's first cells — the fixed surface the
+        // camera already frames
+        level.setBlock(new BlockPos(GALLERY_X0, GALLERY_Y0, GALLERY_Z),
+                Blocks.GRASS_BLOCK.defaultBlockState(), 3);
+        level.setBlock(new BlockPos(GALLERY_X0 + 1, GALLERY_Y0, GALLERY_Z),
+                Blocks.OAK_LEAVES.defaultBlockState(), 3);
+        // re-biome the wall region through the vanilla surface (the SAME
+        // command grammar both stacks run; y values are accepted but the
+        // biome applies column-wide)
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tbiome\tnote\n");
+        int placed = 0, failed = 0;
+        int rc = runQuiet(src, "fillbiome " + GALLERY_X0 + " " + GALLERY_Y0 + " "
+                + (GALLERY_Z - 1) + " " + (GALLERY_X0 + GALLERY_COLS) + " "
+                + (GALLERY_Y0 + GALLERY_ROWS) + " " + (GALLERY_Z + 1) + " " + id);
+        if (rc > 0) {
+            placed++;
+            tsv.append("cell\t").append(GALLERY_X0).append('\t')
+                    .append(GALLERY_Y0).append('\t').append(GALLERY_Z)
+                    .append('\t').append(id).append("\tok\n");
+        } else {
+            failed++;
+            tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tfillbiome-failed\n");
+            LOGGER.info("[cimscene] gallery-biome skip ns={} page={} reason=fillbiome-failed biome={}",
+                    namespace, page, id);
+        }
+        String manifest = "gallery-biome-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-biome manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        LOGGER.info("[cimscene] gallery-biome done ns={} page={} cells={} failed={} biome={}",
+                namespace, page, placed, failed, id);
+        writeDoneMarkerFile(biomeStem, false);
+        return placed;
     }
 
     // --- entity gallery (owner directive 2026-10-31: mobs 100% identical,
