@@ -1,0 +1,8 @@
+cell	x	y	z	entity	dyn	note
+cell	-3	-60	9	minecraft:area_effect_cloud	1	ok
+cell	1	-60	9	minecraft:armor_stand	1	ok
+cell	3	-60	9	minecraft:arrow	1	ok
+cell	1	-58	9	minecraft:block_display	1	ok
+cell	3	-58	9	minecraft:boat	1	ok
+cell	-3	-56	9	minecraft:breeze_wind_charge	1	ok
+cell	5	-56	9	minecraft:chest_boat	1	ok

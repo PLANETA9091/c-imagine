@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:mechanical_drill[facing=down,waterlogged=false]	1
+skip	-1	-1	-1	create:mechanical_harvester[facing=north,waterlogged=true]
+cell	-3	-60	9	create:mechanical_harvester[facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:mechanical_harvester[facing=south,waterlogged=true]
+cell	-1	-60	9	create:mechanical_harvester[facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:mechanical_harvester[facing=west,waterlogged=true]
+cell	1	-60	9	create:mechanical_harvester[facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:mechanical_harvester[facing=east,waterlogged=true]
+cell	3	-60	9	create:mechanical_harvester[facing=east,waterlogged=false]	1
+cell	4	-60	9	create:mechanical_mixer	1
+cell	5	-60	9	create:mechanical_piston[axis_along_first=true,facing=north,state=RETRACTED]	1
+cell	-5	-59	9	create:mechanical_piston[axis_along_first=true,facing=north,state=MOVING]	1
+cell	-4	-59	9	create:mechanical_piston[axis_along_first=true,facing=north,state=EXTENDED]	1
+cell	-3	-59	9	create:mechanical_piston[axis_along_first=true,facing=east,state=RETRACTED]	1
+cell	-2	-59	9	create:mechanical_piston[axis_along_first=true,facing=east,state=MOVING]	1
+cell	-1	-59	9	create:mechanical_piston[axis_along_first=true,facing=east,state=EXTENDED]	1
+cell	0	-59	9	create:mechanical_piston[axis_along_first=true,facing=south,state=RETRACTED]	1
+cell	1	-59	9	create:mechanical_piston[axis_along_first=true,facing=south,state=MOVING]	1
+cell	2	-59	9	create:mechanical_piston[axis_along_first=true,facing=south,state=EXTENDED]	1
+cell	3	-59	9	create:mechanical_piston[axis_along_first=true,facing=west,state=RETRACTED]	1
+cell	4	-59	9	create:mechanical_piston[axis_along_first=true,facing=west,state=MOVING]	1
+cell	5	-59	9	create:mechanical_piston[axis_along_first=true,facing=west,state=EXTENDED]	1
+cell	-5	-58	9	create:mechanical_piston[axis_along_first=true,facing=up,state=RETRACTED]	1
+cell	-4	-58	9	create:mechanical_piston[axis_along_first=true,facing=up,state=MOVING]	1
+cell	-3	-58	9	create:mechanical_piston[axis_along_first=true,facing=up,state=EXTENDED]	1
+cell	-2	-58	9	create:mechanical_piston[axis_along_first=true,facing=down,state=RETRACTED]	1
+cell	-1	-58	9	create:mechanical_piston[axis_along_first=true,facing=down,state=MOVING]	1
+cell	0	-58	9	create:mechanical_piston[axis_along_first=true,facing=down,state=EXTENDED]	1
+cell	1	-58	9	create:mechanical_piston[axis_along_first=false,facing=north,state=RETRACTED]	1
+cell	2	-58	9	create:mechanical_piston[axis_along_first=false,facing=north,state=MOVING]	1
+cell	3	-58	9	create:mechanical_piston[axis_along_first=false,facing=north,state=EXTENDED]	1
+cell	4	-58	9	create:mechanical_piston[axis_along_first=false,facing=east,state=RETRACTED]	1
+cell	5	-58	9	create:mechanical_piston[axis_along_first=false,facing=east,state=MOVING]	1
+cell	-5	-57	9	create:mechanical_piston[axis_along_first=false,facing=east,state=EXTENDED]	1
+cell	-4	-57	9	create:mechanical_piston[axis_along_first=false,facing=south,state=RETRACTED]	1
+cell	-3	-57	9	create:mechanical_piston[axis_along_first=false,facing=south,state=MOVING]	1
+cell	-2	-57	9	create:mechanical_piston[axis_along_first=false,facing=south,state=EXTENDED]	1
+cell	-1	-57	9	create:mechanical_piston[axis_along_first=false,facing=west,state=RETRACTED]	1
+cell	0	-57	9	create:mechanical_piston[axis_along_first=false,facing=west,state=MOVING]	1
+cell	1	-57	9	create:mechanical_piston[axis_along_first=false,facing=west,state=EXTENDED]	1
+cell	2	-57	9	create:mechanical_piston[axis_along_first=false,facing=up,state=RETRACTED]	1
+cell	3	-57	9	create:mechanical_piston[axis_along_first=false,facing=up,state=MOVING]	1
+cell	4	-57	9	create:mechanical_piston[axis_along_first=false,facing=up,state=EXTENDED]	1
+cell	5	-57	9	create:mechanical_piston[axis_along_first=false,facing=down,state=RETRACTED]	1
+cell	-5	-56	9	create:mechanical_piston[axis_along_first=false,facing=down,state=MOVING]	1
+cell	-4	-56	9	create:mechanical_piston[axis_along_first=false,facing=down,state=EXTENDED]	1
+skip	-1	-1	-1	create:mechanical_piston_head[facing=north,type=normal,waterlogged=true]
+cell	-2	-56	9	create:mechanical_piston_head[facing=north,type=normal,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=north,type=sticky,waterlogged=true]
+cell	0	-56	9	create:mechanical_piston_head[facing=north,type=sticky,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=east,type=normal,waterlogged=true]
+cell	2	-56	9	create:mechanical_piston_head[facing=east,type=normal,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=east,type=sticky,waterlogged=true]
+cell	4	-56	9	create:mechanical_piston_head[facing=east,type=sticky,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=south,type=normal,waterlogged=true]
+cell	-5	-55	9	create:mechanical_piston_head[facing=south,type=normal,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=south,type=sticky,waterlogged=true]
+cell	-3	-55	9	create:mechanical_piston_head[facing=south,type=sticky,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=west,type=normal,waterlogged=true]
+cell	-1	-55	9	create:mechanical_piston_head[facing=west,type=normal,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=west,type=sticky,waterlogged=true]
+cell	1	-55	9	create:mechanical_piston_head[facing=west,type=sticky,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=up,type=normal,waterlogged=true]
+cell	3	-55	9	create:mechanical_piston_head[facing=up,type=normal,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=up,type=sticky,waterlogged=true]
+cell	5	-55	9	create:mechanical_piston_head[facing=up,type=sticky,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=down,type=normal,waterlogged=true]
+cell	-4	-54	9	create:mechanical_piston_head[facing=down,type=normal,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_piston_head[facing=down,type=sticky,waterlogged=true]
+cell	-2	-54	9	create:mechanical_piston_head[facing=down,type=sticky,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_plough[facing=north,waterlogged=true]
+cell	0	-54	9	create:mechanical_plough[facing=north,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_plough[facing=south,waterlogged=true]
+cell	2	-54	9	create:mechanical_plough[facing=south,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_plough[facing=west,waterlogged=true]
+cell	4	-54	9	create:mechanical_plough[facing=west,waterlogged=false]	0
+skip	-1	-1	-1	create:mechanical_plough[facing=east,waterlogged=true]

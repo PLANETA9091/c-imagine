@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:track[shape=CR_O,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_O,turn=false,waterlogged=true]
+cell	-3	-60	9	create:track[shape=CR_O,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_D,turn=true,waterlogged=true]
+cell	-1	-60	9	create:track[shape=CR_D,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_D,turn=false,waterlogged=true]
+cell	1	-60	9	create:track[shape=CR_D,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_PDX,turn=true,waterlogged=true]
+cell	3	-60	9	create:track[shape=CR_PDX,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_PDX,turn=false,waterlogged=true]
+cell	5	-60	9	create:track[shape=CR_PDX,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_PDZ,turn=true,waterlogged=true]
+cell	-4	-59	9	create:track[shape=CR_PDZ,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_PDZ,turn=false,waterlogged=true]
+cell	-2	-59	9	create:track[shape=CR_PDZ,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_NDX,turn=true,waterlogged=true]
+cell	0	-59	9	create:track[shape=CR_NDX,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_NDX,turn=false,waterlogged=true]
+cell	2	-59	9	create:track[shape=CR_NDX,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_NDZ,turn=true,waterlogged=true]
+cell	4	-59	9	create:track[shape=CR_NDZ,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_NDZ,turn=false,waterlogged=true]
+cell	-5	-58	9	create:track[shape=CR_NDZ,turn=false,waterlogged=false]	1
+cell	-4	-58	9	create:track_observer[powered=true]	1
+cell	-3	-58	9	create:track_observer[powered=false]	1
+cell	-2	-58	9	create:track_signal[powered=true,type=ENTRY_SIGNAL]	1
+cell	-1	-58	9	create:track_signal[powered=true,type=CROSS_SIGNAL]	1
+cell	0	-58	9	create:track_signal[powered=false,type=ENTRY_SIGNAL]	1
+cell	1	-58	9	create:track_signal[powered=false,type=CROSS_SIGNAL]	1
+skip	-1	-1	-1	create:track_station[assembling=true,waterlogged=true]
+cell	3	-58	9	create:track_station[assembling=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track_station[assembling=false,waterlogged=true]
+cell	5	-58	9	create:track_station[assembling=false,waterlogged=false]	1
+cell	-5	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=true,powered=true,visible=true]	1
+cell	-4	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=true,powered=true,visible=false]	1
+cell	-3	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=true,powered=true,visible=false]	1
+cell	-2	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=true,powered=false,visible=false]	1
+cell	-1	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=false,powered=false,visible=true]	1
+cell	0	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=false,powered=false,visible=false]	1
+cell	1	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=false,powered=false,visible=true]	1
+cell	2	-57	9	create:train_door[facing=north,half=upper,hinge=left,open=false,powered=false,visible=false]	1
+cell	3	-57	9	create:train_door[facing=north,half=upper,hinge=right,open=false,powered=false,visible=true]	1
+cell	4	-57	9	create:train_door[facing=north,half=upper,hinge=right,open=false,powered=false,visible=false]	1
+cell	5	-57	9	create:train_door[facing=north,half=upper,hinge=right,open=true,powered=false,visible=true]	1
+cell	-5	-56	9	create:train_door[facing=north,half=upper,hinge=right,open=true,powered=false,visible=false]	1
+cell	-4	-56	9	create:train_door[facing=north,half=upper,hinge=right,open=false,powered=true,visible=true]	1
+cell	-3	-56	9	create:train_door[facing=north,half=upper,hinge=right,open=false,powered=false,visible=false]	1
+cell	-2	-56	9	create:train_door[facing=north,half=upper,hinge=right,open=false,powered=false,visible=true]	1
+cell	-1	-56	9	create:train_door[facing=north,half=upper,hinge=right,open=false,powered=false,visible=false]	1
+cell	0	-56	9	minecraft:air	0
+cell	1	-56	9	minecraft:air	0
+cell	2	-56	9	minecraft:air	0
+cell	3	-56	9	minecraft:air	0
+cell	4	-56	9	minecraft:air	0
+cell	5	-56	9	create:train_door[facing=south,half=lower,hinge=left,open=true,powered=true,visible=true]	1
+cell	-5	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=true,powered=true,visible=false]	1
+cell	-4	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=true,powered=false,visible=true]	1
+cell	-3	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=true,powered=false,visible=false]	1
+cell	-2	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=false,powered=true,visible=true]	1
+cell	-1	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=false,powered=true,visible=false]	1
+cell	0	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=false,powered=false,visible=true]	1
+cell	1	-55	9	create:train_door[facing=south,half=lower,hinge=left,open=false,powered=false,visible=false]	1
+cell	2	-55	9	create:train_door[facing=south,half=lower,hinge=right,open=true,powered=true,visible=true]	1
+cell	3	-55	9	create:train_door[facing=south,half=lower,hinge=right,open=true,powered=true,visible=false]	1
+cell	4	-55	9	create:train_door[facing=south,half=lower,hinge=right,open=true,powered=false,visible=true]	1
+cell	5	-55	9	create:train_door[facing=south,half=upper,hinge=left,open=true,powered=true,visible=true]	1
+cell	-5	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=true,powered=true,visible=false]	1
+cell	-4	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=true,powered=false,visible=true]	1
+cell	-3	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=true,powered=false,visible=false]	1
+cell	-2	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=false,powered=true,visible=true]	1
+cell	-1	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=false,powered=true,visible=false]	1
+cell	0	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=false,powered=false,visible=true]	1
+cell	1	-54	9	create:train_door[facing=south,half=upper,hinge=left,open=false,powered=false,visible=false]	1
+cell	2	-54	9	create:train_door[facing=south,half=upper,hinge=right,open=true,powered=true,visible=true]	1
+cell	3	-54	9	create:train_door[facing=south,half=upper,hinge=right,open=true,powered=true,visible=false]	1
+cell	4	-54	9	create:train_door[facing=south,half=upper,hinge=right,open=true,powered=false,visible=true]	1
+cell	5	-54	9	create:train_door[facing=south,half=upper,hinge=right,open=true,powered=false,visible=false]	1

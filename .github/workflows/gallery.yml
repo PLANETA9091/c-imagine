@@ -392,6 +392,14 @@ jobs:
              scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv seed-pack/f2v/
           python3 scripts/f2v/gallery-manifest.py \
             seed-pack/scenes create seed-pack/f2v/visual-gallery.tsv
+          # 14-ak CT: the per-cell tile indices for the Create connected
+          # textures (the pillar family) — the ctx side files ride the
+          # scenes (the replay reads them), the suffixed (state,ctx) rows
+          # ride the gallery manifest (the pack emits one composite each).
+          # The port is verified against the real create classes by
+          # scripts/f2v/ct/CTProbe (515/515 exact, see the worklog).
+          python3 scripts/f2v/gallery_ct.py \
+            seed-pack/scenes create seed-pack/f2v/visual-gallery.tsv
           python3 scripts/f2v/gallery-items-manifest.py \
             seed-pack/scenes create seed-pack/f2v/visual-gallery-items.tsv
           cat scripts/f2v/visual-items.tsv seed-pack/f2v/visual-gallery-items.tsv \

@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:brass_funnel[extracting=true,facing=up,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=true,facing=down,powered=true,waterlogged=true]
+cell	-3	-60	9	create:brass_funnel[extracting=true,facing=down,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=true,facing=down,powered=false,waterlogged=true]
+cell	-1	-60	9	create:brass_funnel[extracting=true,facing=down,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=north,powered=true,waterlogged=true]
+cell	1	-60	9	create:brass_funnel[extracting=false,facing=north,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=north,powered=false,waterlogged=true]
+cell	3	-60	9	create:brass_funnel[extracting=false,facing=north,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=east,powered=true,waterlogged=true]
+cell	5	-60	9	create:brass_funnel[extracting=false,facing=east,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=east,powered=false,waterlogged=true]
+cell	-4	-59	9	create:brass_funnel[extracting=false,facing=east,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=south,powered=true,waterlogged=true]
+cell	-2	-59	9	create:brass_funnel[extracting=false,facing=south,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=south,powered=false,waterlogged=true]
+cell	0	-59	9	create:brass_funnel[extracting=false,facing=south,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=west,powered=true,waterlogged=true]
+cell	2	-59	9	create:brass_funnel[extracting=false,facing=west,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=west,powered=false,waterlogged=true]
+cell	4	-59	9	create:brass_funnel[extracting=false,facing=west,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=up,powered=true,waterlogged=true]
+cell	-5	-58	9	create:brass_funnel[extracting=false,facing=up,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=up,powered=false,waterlogged=true]
+cell	-3	-58	9	create:brass_funnel[extracting=false,facing=up,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=down,powered=true,waterlogged=true]
+cell	-1	-58	9	create:brass_funnel[extracting=false,facing=down,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_funnel[extracting=false,facing=down,powered=false,waterlogged=true]
+cell	1	-58	9	create:brass_funnel[extracting=false,facing=down,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:brass_ladder[facing=north,waterlogged=true]
+cell	3	-58	9	create:brass_ladder[facing=north,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_ladder[facing=south,waterlogged=true]
+cell	5	-58	9	create:brass_ladder[facing=south,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_ladder[facing=west,waterlogged=true]
+cell	-4	-57	9	create:brass_ladder[facing=west,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_ladder[facing=east,waterlogged=true]
+cell	-2	-57	9	create:brass_ladder[facing=east,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=0,waterlogged=true]
+cell	0	-57	9	create:brass_scaffolding[bottom=true,distance=0,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=1,waterlogged=true]
+cell	2	-57	9	create:brass_scaffolding[bottom=true,distance=1,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=2,waterlogged=true]
+cell	4	-57	9	create:brass_scaffolding[bottom=true,distance=2,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=3,waterlogged=true]
+cell	-5	-56	9	create:brass_scaffolding[bottom=true,distance=3,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=4,waterlogged=true]
+cell	-3	-56	9	create:brass_scaffolding[bottom=true,distance=4,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=5,waterlogged=true]
+cell	-1	-56	9	create:brass_scaffolding[bottom=true,distance=5,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=6,waterlogged=true]
+cell	1	-56	9	create:brass_scaffolding[bottom=true,distance=6,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=true,distance=7,waterlogged=true]
+cell	3	-56	9	create:brass_scaffolding[bottom=true,distance=7,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=0,waterlogged=true]
+cell	5	-56	9	create:brass_scaffolding[bottom=false,distance=0,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=1,waterlogged=true]
+cell	-4	-55	9	create:brass_scaffolding[bottom=false,distance=1,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=2,waterlogged=true]
+cell	-2	-55	9	create:brass_scaffolding[bottom=false,distance=2,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=3,waterlogged=true]
+cell	0	-55	9	create:brass_scaffolding[bottom=false,distance=3,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=4,waterlogged=true]
+cell	2	-55	9	create:brass_scaffolding[bottom=false,distance=4,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=5,waterlogged=true]
+cell	4	-55	9	create:brass_scaffolding[bottom=false,distance=5,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=6,waterlogged=true]
+cell	-5	-54	9	create:brass_scaffolding[bottom=false,distance=6,waterlogged=false]	0
+skip	-1	-1	-1	create:brass_scaffolding[bottom=false,distance=7,waterlogged=true]
+cell	-3	-54	9	create:brass_scaffolding[bottom=false,distance=7,waterlogged=false]	0
+cell	-2	-54	9	create:brass_table_cloth[entity=true]	1
+cell	-1	-54	9	create:brass_table_cloth[entity=false]	1
+cell	0	-54	9	create:brass_tunnel[axis=x,shape=STRAIGHT]	1
+cell	1	-54	9	create:brass_tunnel[axis=x,shape=WINDOW]	1
+cell	2	-54	9	create:brass_tunnel[axis=x,shape=CLOSED]	1
+cell	3	-54	9	create:brass_tunnel[axis=x,shape=WINDOW]	1
+cell	4	-54	9	create:brass_tunnel[axis=x,shape=WINDOW]	1
+cell	5	-54	9	create:brass_tunnel[axis=x,shape=CROSS]	1

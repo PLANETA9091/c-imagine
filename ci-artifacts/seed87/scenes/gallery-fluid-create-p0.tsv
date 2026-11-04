@@ -1,0 +1,9 @@
+cell	x	y	z	fluid	dyn	channel	extra
+cell	-5	-60	9	create:chocolate	1	block	create:chocolate[level=0]
+cell	-3	-60	9	create:flowing_chocolate	1	block	create:chocolate[level=9]
+cell	-1	-60	9	create:flowing_honey	1	block	create:honey[level=9]
+skip	-1	-1	-1	create:flowing_potion	1	no-channel
+skip	-1	-1	-1	create:flowing_tea	1	no-channel
+cell	5	-60	9	create:honey	1	block	create:honey[level=0]
+skip	-1	-1	-1	create:potion	1	no-channel
+skip	-1	-1	-1	create:tea	1	no-channel

@@ -1,0 +1,1179 @@
+{
+ "cells": 73,
+ "skipped": 0,
+ "red": 2,
+ "dynamic": 61,
+ "spill": 0,
+ "gate": 60000,
+ "verdict": "RED",
+ "rows": [
+  {
+   "page": "gallery-create-p300",
+   "col": 0,
+   "row": 0,
+   "state": "create:portable_storage_interface[facing=down]",
+   "ae": 152198,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.913,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=true,powered_side=true,powering=true]",
+   "ae": 13061,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.909,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 2,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=true,powered_side=true,powering=false]",
+   "ae": 12533,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.909,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=true,powered_side=false,powering=true]",
+   "ae": 102515,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.913,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 4,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=true,powered_side=false,powering=false]",
+   "ae": 11781,
+   "shift": [
+    -2,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.915,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=false,powered_side=true,powering=true]",
+   "ae": 11685,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.911,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=false,powered_side=true,powering=false]",
+   "ae": 51843,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.915,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=false,powered_side=false,powering=true]",
+   "ae": 23653,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.909,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 0,
+   "state": "create:powered_latch[facing=north,powered=false,powered_side=false,powering=false]",
+   "ae": 12174,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.909,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 0,
+   "state": "create:powered_latch[facing=south,powered=true,powered_side=true,powering=true]",
+   "ae": 22853,
+   "shift": [
+    -3,
+    2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.909,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 0,
+   "state": "create:powered_latch[facing=south,powered=true,powered_side=true,powering=false]",
+   "ae": 93834,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.911,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 0,
+   "row": 1,
+   "state": "create:powered_latch[facing=south,powered=true,powered_side=false,powering=true]",
+   "ae": 36016,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.9,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 35681,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 2,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 36480,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 36428,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 4,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 37578,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 36983,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 37571,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 36419,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 36471,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 35701,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 1,
+   "state": "minecraft:air",
+   "ae": 36005,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.9,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 0,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 2,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 4,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 2,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 3,
+   "state": "create:powered_shaft[axis=x,waterlogged=false]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 3,
+   "state": "create:powered_shaft[axis=y,waterlogged=false]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 3,
+   "state": "create:powered_shaft[axis=z,waterlogged=false]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 3,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 3,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 3,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 3,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 3,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 0,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 158,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 2,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 389,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 1014,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 4,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 1980,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 17398,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.918,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 1965,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 999,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 382,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 153,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 4,
+   "state": "minecraft:air",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 5,
+   "state": "create:pulley_magnet[waterlogged=false]",
+   "ae": 13814,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 2,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 21455,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.92,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 3189,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 4,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 1464,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 5581,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 1491,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 3518,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 14723,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 13807,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 5,
+   "state": "minecraft:air",
+   "ae": 13169,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 0,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 14481,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 1,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 13550,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 2,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 12992,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 3,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 11959,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 4,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 11155,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 5,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 10288,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 6,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 11168,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 7,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 11973,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 8,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 13010,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 9,
+   "row": 6,
+   "state": "minecraft:air",
+   "ae": 13561,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p300",
+   "col": 10,
+   "row": 6,
+   "state": "create:pulse_extender[facing=west,inverted=true,powered=false,powering=false]",
+   "ae": 14492,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  }
+ ]
+}

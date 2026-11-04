@@ -1,0 +1,651 @@
+{
+ "cells": 40,
+ "skipped": 0,
+ "red": 2,
+ "dynamic": 2,
+ "spill": 1,
+ "gate": 60000,
+ "verdict": "RED",
+ "rows": [
+  {
+   "page": "gallery-create-p404",
+   "col": 1,
+   "row": 0,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 53992,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.962,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 3,
+   "row": 0,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 32448,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.003,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 5,
+   "row": 0,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 38557,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.924,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 7,
+   "row": 0,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 31812,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.175,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 9,
+   "row": 0,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 40728,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.91,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 0,
+   "row": 1,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 10295,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 2,
+   "row": 1,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 36480,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 4,
+   "row": 1,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 18912,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 6,
+   "row": 1,
+   "state": "create:weathered_copper_tile_stairs[facing=west,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 20800,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 8,
+   "row": 1,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=top,shape=straight,waterlogged=false]",
+   "ae": 36471,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 10,
+   "row": 1,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 48519,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 1,
+   "row": 2,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 4404,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.039,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 3,
+   "row": 2,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 8326,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.919,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 5,
+   "row": 2,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 41157,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.82,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 7,
+   "row": 2,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 3810,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.964,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 9,
+   "row": 2,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 26700,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 0,
+   "row": 3,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 9697,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.056,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 2,
+   "row": 3,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 47839,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.025,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 4,
+   "row": 3,
+   "state": "create:weathered_copper_tile_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 17759,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.977,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 5,
+   "row": 3,
+   "state": "create:weathered_copper_tiles",
+   "ae": 39727,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 6,
+   "row": 3,
+   "state": "create:weathered_iron_block",
+   "ae": 18606,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 7,
+   "row": 3,
+   "state": "create:weathered_iron_window",
+   "ae": 4185,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.943,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 10,
+   "row": 3,
+   "state": "create:weathered_iron_window_pane[east=true,north=true,south=true,waterlogged=false,west=true]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 0,
+   "row": 4,
+   "state": "create:weathered_iron_window_pane[east=true,north=true,south=true,waterlogged=false,west=false]",
+   "ae": 20009,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 3,
+   "row": 4,
+   "state": "create:weathered_iron_window_pane[east=true,north=true,south=false,waterlogged=false,west=true]",
+   "ae": 18170,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 4,
+   "row": 4,
+   "state": "create:weathered_iron_window_pane[east=true,north=true,south=false,waterlogged=false,west=false]",
+   "ae": 8021,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 7,
+   "row": 4,
+   "state": "create:weathered_iron_window_pane[east=true,north=false,south=true,waterlogged=false,west=true]",
+   "ae": 8203,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.984,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 8,
+   "row": 4,
+   "state": "create:weathered_iron_window_pane[east=true,north=false,south=true,waterlogged=false,west=false]",
+   "ae": 90473,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.178,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 0,
+   "row": 5,
+   "state": "create:weathered_iron_window_pane[east=true,north=false,south=false,waterlogged=false,west=true]",
+   "ae": 13221,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 1,
+   "row": 5,
+   "state": "create:weathered_iron_window_pane[east=true,north=false,south=false,waterlogged=false,west=false]",
+   "ae": 47757,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.071,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 4,
+   "row": 5,
+   "state": "create:weathered_iron_window_pane[east=true,north=true,south=true,waterlogged=false,west=true]",
+   "ae": 38914,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.976,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 5,
+   "row": 5,
+   "state": "create:weathered_iron_window_pane[east=false,north=true,south=true,waterlogged=false,west=true]",
+   "ae": 12155,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 8,
+   "row": 5,
+   "state": "create:weathered_iron_window_pane[east=true,north=true,south=false,waterlogged=false,west=true]",
+   "ae": 54153,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.178,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 9,
+   "row": 5,
+   "state": "create:weathered_iron_window_pane[east=false,north=true,south=false,waterlogged=false,west=true]",
+   "ae": 65418,
+   "shift": [
+    1,
+    0
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.178,
+   "dyn_spill": true
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 1,
+   "row": 6,
+   "state": "create:weathered_iron_window_pane[east=true,north=false,south=true,waterlogged=false,west=true]",
+   "ae": 29677,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.027,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 2,
+   "row": 6,
+   "state": "create:weathered_iron_window_pane[east=false,north=false,south=true,waterlogged=false,west=true]",
+   "ae": 123361,
+   "shift": [
+    -1,
+    -3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.368,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 5,
+   "row": 6,
+   "state": "create:weathered_iron_window_pane[east=true,north=false,south=false,waterlogged=false,west=true]",
+   "ae": 3401,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.089,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 6,
+   "row": 6,
+   "state": "create:weathered_iron_window_pane[east=false,north=false,south=false,waterlogged=false,west=true]",
+   "ae": 11168,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 8,
+   "row": 6,
+   "state": "create:weighted_ejector[facing=north,waterlogged=false]",
+   "ae": 106347,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.165,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p404",
+   "col": 10,
+   "row": 6,
+   "state": "create:weighted_ejector[facing=south,waterlogged=false]",
+   "ae": 229901,
+   "shift": [
+    1,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": false
+  }
+ ]
+}

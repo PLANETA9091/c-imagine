@@ -1,0 +1,14 @@
+cell	x	y	z	particle	dyn	note
+skip	-1	-1	-1	create:air	1	no-simple-options
+skip	-1	-1	-1	create:air_flow	1	no-simple-options
+skip	-1	-1	-1	create:basin_fluid	1	no-simple-options
+skip	-1	-1	-1	create:cube	1	no-simple-options
+skip	-1	-1	-1	create:fluid_drip	1	no-simple-options
+skip	-1	-1	-1	create:fluid_particle	1	no-simple-options
+skip	-1	-1	-1	create:rotation_indicator	1	no-simple-options
+skip	-1	-1	-1	create:soul	1	no-simple-options
+skip	-1	-1	-1	create:soul_base	1	no-simple-options
+skip	-1	-1	-1	create:soul_expanding_perimeter	1	no-simple-options
+skip	-1	-1	-1	create:soul_perimeter	1	no-simple-options
+skip	-1	-1	-1	create:steam_jet	1	no-simple-options
+skip	-1	-1	-1	create:wifi	1	no-simple-options

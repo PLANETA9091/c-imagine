@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:deployer[axis_along_first=false,facing=down]	1
+skip	-1	-1	-1	create:depot[waterlogged=true]
+cell	-3	-60	9	create:depot[waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=north,powered=true,waterlogged=true]
+cell	-1	-60	9	create:desk_bell[facing=north,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=north,powered=false,waterlogged=true]
+cell	1	-60	9	create:desk_bell[facing=north,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=east,powered=true,waterlogged=true]
+cell	3	-60	9	create:desk_bell[facing=east,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=east,powered=false,waterlogged=true]
+cell	5	-60	9	create:desk_bell[facing=east,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=south,powered=true,waterlogged=true]
+cell	-4	-59	9	create:desk_bell[facing=south,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=south,powered=false,waterlogged=true]
+cell	-2	-59	9	create:desk_bell[facing=south,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=west,powered=true,waterlogged=true]
+cell	0	-59	9	create:desk_bell[facing=west,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=west,powered=false,waterlogged=true]
+cell	2	-59	9	create:desk_bell[facing=west,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=up,powered=true,waterlogged=true]
+cell	4	-59	9	create:desk_bell[facing=up,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=up,powered=false,waterlogged=true]
+cell	-5	-58	9	create:desk_bell[facing=up,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=down,powered=true,waterlogged=true]
+cell	-3	-58	9	create:desk_bell[facing=down,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:desk_bell[facing=down,powered=false,waterlogged=true]
+cell	-1	-58	9	create:desk_bell[facing=down,powered=false,waterlogged=false]	1
+cell	0	-58	9	create:diorite_pillar[axis=x,east=false,north=false,south=true,west=false]	0
+cell	1	-58	9	create:diorite_pillar[axis=x,east=false,north=false,south=true,west=false]	0
+cell	2	-58	9	create:diorite_pillar[axis=x,east=false,north=false,south=true,west=false]	0
+cell	3	-58	9	create:diorite_pillar[axis=x,east=false,north=false,south=true,west=false]	0
+cell	4	-58	9	create:diorite_pillar[axis=x,east=false,north=false,south=true,west=false]	0
+cell	5	-58	9	create:diorite_pillar[axis=x,east=false,north=false,south=true,west=false]	0
+cell	-5	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-4	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-3	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-2	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-1	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	0	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	1	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	2	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	3	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	4	-57	9	create:diorite_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	5	-57	9	create:diorite_pillar[axis=y,east=false,north=true,south=false,west=false]	0
+cell	-5	-56	9	create:diorite_pillar[axis=y,east=false,north=false,south=true,west=true]	0
+cell	-4	-56	9	create:diorite_pillar[axis=y,east=true,north=false,south=true,west=false]	0
+cell	-3	-56	9	create:diorite_pillar[axis=y,east=false,north=false,south=false,west=true]	0
+cell	-2	-56	9	create:diorite_pillar[axis=y,east=false,north=false,south=false,west=false]	0
+cell	-1	-56	9	create:diorite_pillar[axis=y,east=true,north=false,south=true,west=false]	0
+cell	0	-56	9	create:diorite_pillar[axis=y,east=false,north=false,south=false,west=true]	0
+cell	1	-56	9	create:diorite_pillar[axis=y,east=true,north=false,south=false,west=false]	0
+cell	2	-56	9	create:diorite_pillar[axis=y,east=false,north=true,south=true,west=true]	0
+cell	3	-56	9	create:diorite_pillar[axis=y,east=true,north=true,south=true,west=false]	0
+cell	4	-56	9	create:diorite_pillar[axis=y,east=false,north=true,south=false,west=true]	0
+cell	5	-56	9	create:diorite_pillar[axis=y,east=false,north=true,south=false,west=false]	0
+cell	-5	-55	9	create:diorite_pillar[axis=y,east=false,north=false,south=true,west=true]	0
+cell	-4	-55	9	create:diorite_pillar[axis=y,east=true,north=false,south=true,west=false]	0
+cell	-3	-55	9	create:diorite_pillar[axis=y,east=false,north=false,south=false,west=true]	0
+cell	-2	-55	9	create:diorite_pillar[axis=y,east=false,north=false,south=false,west=false]	0
+cell	-1	-55	9	create:diorite_pillar[axis=z,east=true,north=true,south=true,west=false]	0
+cell	0	-55	9	create:diorite_pillar[axis=z,east=true,north=false,south=true,west=false]	0
+cell	1	-55	9	create:diorite_pillar[axis=z,east=true,north=false,south=false,west=false]	0
+cell	2	-55	9	create:diorite_pillar[axis=z,east=true,north=true,south=false,west=false]	0
+cell	3	-55	9	create:diorite_pillar[axis=z,east=true,north=true,south=true,west=false]	0
+cell	4	-55	9	create:diorite_pillar[axis=z,east=true,north=false,south=true,west=false]	0
+cell	5	-55	9	create:diorite_pillar[axis=z,east=true,north=false,south=false,west=false]	0
+cell	-5	-54	9	create:diorite_pillar[axis=z,east=true,north=true,south=false,west=false]	0
+cell	-4	-54	9	create:diorite_pillar[axis=z,east=false,north=true,south=true,west=true]	0
+cell	-3	-54	9	create:diorite_pillar[axis=z,east=false,north=false,south=true,west=false]	0
+cell	-2	-54	9	create:diorite_pillar[axis=z,east=false,north=false,south=false,west=true]	0
+cell	-1	-54	9	create:diorite_pillar[axis=z,east=false,north=true,south=false,west=false]	0
+cell	0	-54	9	create:diorite_pillar[axis=z,east=false,north=true,south=true,west=true]	0
+cell	1	-54	9	create:diorite_pillar[axis=z,east=false,north=false,south=true,west=false]	0
+cell	2	-54	9	create:diorite_pillar[axis=z,east=false,north=false,south=false,west=true]	0
+cell	3	-54	9	create:diorite_pillar[axis=z,east=false,north=false,south=false,west=false]	0
+skip	-1	-1	-1	create:display_board[down=true,facing=north,up=true,waterlogged=true]
+cell	5	-54	9	create:display_board[down=false,facing=north,up=true,waterlogged=false]	1

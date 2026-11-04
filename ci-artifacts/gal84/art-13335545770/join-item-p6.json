@@ -1,0 +1,1243 @@
+{
+ "cells": 77,
+ "skipped": 0,
+ "red": 40,
+ "dynamic": 0,
+ "spill": 0,
+ "gate": 60000,
+ "verdict": "RED",
+ "rows": [
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 0,
+   "state": "create:polished_cut_ochrum",
+   "ae": 39168,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 0,
+   "state": "create:polished_cut_ochrum_slab",
+   "ae": 48113,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.116,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 0,
+   "state": "create:polished_cut_ochrum_stairs",
+   "ae": 54130,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.004,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 0,
+   "state": "create:polished_cut_ochrum_wall",
+   "ae": 23435,
+   "shift": [
+    -3,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.889,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 0,
+   "state": "create:polished_cut_scorchia",
+   "ae": 30767,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.962,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 0,
+   "state": "create:polished_cut_scorchia_slab",
+   "ae": 14271,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.921,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 0,
+   "state": "create:polished_cut_scorchia_stairs",
+   "ae": 14762,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.957,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 0,
+   "state": "create:polished_cut_scorchia_wall",
+   "ae": 14144,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.123,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 0,
+   "state": "create:polished_cut_scoria",
+   "ae": 39612,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.957,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 0,
+   "state": "create:polished_cut_scoria_slab",
+   "ae": 91475,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.961,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 0,
+   "state": "create:polished_cut_scoria_stairs",
+   "ae": 31172,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.959,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 1,
+   "state": "create:polished_cut_scoria_wall",
+   "ae": 85908,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.974,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 1,
+   "state": "create:polished_cut_tuff",
+   "ae": 78216,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.975,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 1,
+   "state": "create:polished_cut_tuff_slab",
+   "ae": 51255,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.975,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 1,
+   "state": "create:polished_cut_tuff_stairs",
+   "ae": 29256,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.977,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 1,
+   "state": "create:polished_cut_tuff_wall",
+   "ae": 50031,
+   "shift": [
+    -2,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.05,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 1,
+   "state": "create:polished_cut_veridium",
+   "ae": 9179,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.969,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 1,
+   "state": "create:polished_cut_veridium_slab",
+   "ae": 11135,
+   "shift": [
+    1,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.972,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 1,
+   "state": "create:polished_cut_veridium_stairs",
+   "ae": 29130,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.986,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 1,
+   "state": "create:polished_cut_veridium_wall",
+   "ae": 33190,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.026,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 1,
+   "state": "create:polished_rose_quartz",
+   "ae": 105009,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.908,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 1,
+   "state": "create:portable_fluid_interface",
+   "ae": 58400,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.026,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 2,
+   "state": "create:portable_storage_interface",
+   "ae": 103211,
+   "shift": [
+    -3,
+    1
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.872,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 2,
+   "state": "create:potato_cannon",
+   "ae": 133023,
+   "shift": [
+    -3,
+    1
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.912,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 2,
+   "state": "create:powdered_obsidian",
+   "ae": 79721,
+   "shift": [
+    -3,
+    1
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.977,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 2,
+   "state": "create:powered_latch",
+   "ae": 46144,
+   "shift": [
+    -3,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.977,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 2,
+   "state": "create:powered_toggle_latch",
+   "ae": 29108,
+   "shift": [
+    -1,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.004,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 2,
+   "state": "create:precision_mechanism",
+   "ae": 40425,
+   "shift": [
+    0,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 2,
+   "state": "create:propeller",
+   "ae": 25401,
+   "shift": [
+    2,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.368,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 2,
+   "state": "create:pulp",
+   "ae": 17450,
+   "shift": [
+    3,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.967,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 2,
+   "state": "create:pulse_extender",
+   "ae": 40454,
+   "shift": [
+    3,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.051,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 2,
+   "state": "create:pulse_repeater",
+   "ae": 148837,
+   "shift": [
+    3,
+    1
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.975,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 2,
+   "state": "create:pulse_timer",
+   "ae": 116646,
+   "shift": [
+    3,
+    1
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.976,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 3,
+   "state": "create:purple_postbox",
+   "ae": 77844,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.984,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 3,
+   "state": "create:purple_seat",
+   "ae": 116013,
+   "shift": [
+    -3,
+    2
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.007,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 3,
+   "state": "create:purple_table_cloth",
+   "ae": 5729,
+   "shift": [
+    0,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 3,
+   "state": "create:purple_toolbox",
+   "ae": 65328,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.973,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 3,
+   "state": "create:purple_valve_handle",
+   "ae": 25277,
+   "shift": [
+    -1,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.135,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 3,
+   "state": "create:radial_chassis",
+   "ae": 47245,
+   "shift": [
+    0,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.868,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 3,
+   "state": "create:railway_casing",
+   "ae": 16300,
+   "shift": [
+    1,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.03,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 3,
+   "state": "create:rare_creeper_package",
+   "ae": 24835,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.967,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 3,
+   "state": "create:rare_darcy_package",
+   "ae": 54577,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.177,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 3,
+   "state": "create:rare_evan_package",
+   "ae": 73536,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.974,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 3,
+   "state": "create:rare_jinx_package",
+   "ae": 14128,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 4,
+   "state": "create:rare_kryppers_package",
+   "ae": 52740,
+   "shift": [
+    -3,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.979,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 4,
+   "state": "create:rare_simi_package",
+   "ae": 130837,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.96,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 4,
+   "state": "create:rare_starlotte_package",
+   "ae": 83161,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.05,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 4,
+   "state": "create:rare_thunder_package",
+   "ae": 655301,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 4,
+   "state": "create:rare_up_package",
+   "ae": 415164,
+   "shift": [
+    -1,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.985,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 4,
+   "state": "create:rare_vector_package",
+   "ae": 39891,
+   "shift": [
+    0,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.971,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 4,
+   "state": "create:raw_zinc",
+   "ae": 32468,
+   "shift": [
+    2,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.976,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 4,
+   "state": "create:raw_zinc_block",
+   "ae": 23554,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.955,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 4,
+   "state": "create:red_postbox",
+   "ae": 36379,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.982,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 4,
+   "state": "create:red_sand_paper",
+   "ae": 139458,
+   "shift": [
+    3,
+    2
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 4,
+   "state": "create:red_seat",
+   "ae": 108126,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.981,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 5,
+   "state": "create:red_table_cloth",
+   "ae": 92408,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 5,
+   "state": "create:red_toolbox",
+   "ae": 124105,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.072,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 5,
+   "state": "create:red_valve_handle",
+   "ae": 92281,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.326,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 5,
+   "state": "create:redstone_contact",
+   "ae": 90681,
+   "shift": [
+    -2,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.566,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 5,
+   "state": "create:redstone_link",
+   "ae": 81127,
+   "shift": [
+    -1,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.074,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 5,
+   "state": "create:redstone_requester",
+   "ae": 83060,
+   "shift": [
+    0,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.03,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 5,
+   "state": "create:refined_radiance",
+   "ae": 121967,
+   "shift": [
+    1,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 5,
+   "state": "create:refined_radiance_casing",
+   "ae": 165508,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.11,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 5,
+   "state": "create:repackager",
+   "ae": 149581,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.004,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 5,
+   "state": "create:rope_pulley",
+   "ae": 171093,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.132,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 5,
+   "state": "create:rose_quartz",
+   "ae": 103059,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.023,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 0,
+   "row": 6,
+   "state": "create:rose_quartz_block",
+   "ae": 110265,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.984,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 1,
+   "row": 6,
+   "state": "create:rose_quartz_lamp",
+   "ae": 144574,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.982,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 2,
+   "row": 6,
+   "state": "create:rose_quartz_tiles",
+   "ae": 233684,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.983,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 3,
+   "row": 6,
+   "state": "create:rotation_speed_controller",
+   "ae": 156907,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.966,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 4,
+   "row": 6,
+   "state": "create:sail_frame",
+   "ae": 124785,
+   "shift": [
+    -1,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.053,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 5,
+   "row": 6,
+   "state": "create:sand_paper",
+   "ae": 291403,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.154,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 6,
+   "row": 6,
+   "state": "create:schedule",
+   "ae": 162490,
+   "shift": [
+    1,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.973,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 7,
+   "row": 6,
+   "state": "create:schematic",
+   "ae": 275468,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 8,
+   "row": 6,
+   "state": "create:schematic_and_quill",
+   "ae": 154240,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.98,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 9,
+   "row": 6,
+   "state": "create:schematic_table",
+   "ae": 155019,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "RED",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.832,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-item-create-p6",
+   "col": 10,
+   "row": 6,
+   "state": "create:schematicannon",
+   "ae": 37161,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.962,
+   "dyn_spill": false
+  }
+ ]
+}

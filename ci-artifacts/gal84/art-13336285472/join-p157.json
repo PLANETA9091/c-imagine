@@ -1,0 +1,635 @@
+{
+ "cells": 39,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 0,
+ "spill": 0,
+ "gate": 60000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-create-p157",
+   "col": 1,
+   "row": 0,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 17083,
+   "shift": [
+    -1,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 2,
+   "row": 0,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 25295,
+   "shift": [
+    -1,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.984,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 3,
+   "row": 0,
+   "state": "create:cut_scoria_brick_wall[east=none,north=tall,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 24818,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.934,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 7,
+   "row": 0,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 11461,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.909,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 8,
+   "row": 0,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 21364,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.724,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 9,
+   "row": 0,
+   "state": "create:cut_scoria_brick_wall[east=none,north=tall,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 20816,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.885,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 2,
+   "row": 1,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 12624,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.071,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 3,
+   "row": 1,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=low,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 6000,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 4,
+   "row": 1,
+   "state": "create:cut_scoria_brick_wall[east=none,north=low,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 31724,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.981,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 8,
+   "row": 1,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 36471,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 9,
+   "row": 1,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=low,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 34550,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.906,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 10,
+   "row": 1,
+   "state": "create:cut_scoria_brick_wall[east=none,north=low,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 11490,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 3,
+   "row": 2,
+   "state": "create:cut_scoria_brick_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 10202,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 4,
+   "row": 2,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 6922,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 5,
+   "row": 2,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 8324,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 9,
+   "row": 2,
+   "state": "create:cut_scoria_brick_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 642,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.089,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 10,
+   "row": 2,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 3329,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.929,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 0,
+   "row": 3,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 4,
+   "row": 3,
+   "state": "create:cut_scoria_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 10543,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 5,
+   "row": 3,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 8996,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 6,
+   "row": 3,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 9645,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.969,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 10,
+   "row": 3,
+   "state": "create:cut_scoria_brick_wall[east=low,north=none,south=low,up=false,waterlogged=false,west=none]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 0,
+   "row": 4,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 1,
+   "row": 4,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 158,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 5,
+   "row": 4,
+   "state": "create:cut_scoria_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 5538,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 6,
+   "row": 4,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 9221,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 7,
+   "row": 4,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 9025,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 0,
+   "row": 5,
+   "state": "create:cut_scoria_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 13186,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 1,
+   "row": 5,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 13814,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 2,
+   "row": 5,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 14732,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 6,
+   "row": 5,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 9951,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 7,
+   "row": 5,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 9419,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 8,
+   "row": 5,
+   "state": "create:cut_scoria_brick_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 21529,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.967,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 1,
+   "row": 6,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 5113,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.989,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 2,
+   "row": 6,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 12992,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 3,
+   "row": 6,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=none,up=false,waterlogged=false,west=tall]",
+   "ae": 11959,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 7,
+   "row": 6,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 7242,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 8,
+   "row": 6,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]",
+   "ae": 6067,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p157",
+   "col": 9,
+   "row": 6,
+   "state": "create:cut_scoria_brick_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]",
+   "ae": 12170,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.978,
+   "dyn_spill": false
+  }
+ ]
+}

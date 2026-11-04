@@ -1,0 +1,832 @@
+{
+ "cells": 41,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 5,
+ "spill": 1,
+ "animated": 0,
+ "gate": 60000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-create-p193",
+   "col": 0,
+   "row": 0,
+   "state": "create:encased_fluid_pipe[down=false,east=false,north=false,south=true,up=false,west=false]",
+   "ae": 34685,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.035,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 1,
+   "row": 0,
+   "state": "create:encased_fluid_pipe[down=false,east=false,north=false,south=false,up=true,west=true]",
+   "ae": 95552,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.973,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 2,
+   "row": 0,
+   "state": "create:encased_fluid_pipe[down=false,east=false,north=false,south=false,up=true,west=false]",
+   "ae": 68179,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.856,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 3,
+   "row": 0,
+   "state": "create:encased_fluid_pipe[down=false,east=false,north=false,south=false,up=false,west=true]",
+   "ae": 55188,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.948,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 4,
+   "row": 0,
+   "state": "create:encased_fluid_pipe[down=false,east=false,north=false,south=false,up=false,west=false]",
+   "ae": 125208,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.122,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 5,
+   "row": 0,
+   "state": "create:experience_block",
+   "ae": 315531,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.086,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 7,
+   "row": 0,
+   "state": "create:exposed_copper_shingle_slab[type=top,waterlogged=false]",
+   "ae": 35603,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.167,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 9,
+   "row": 0,
+   "state": "create:exposed_copper_shingle_slab[type=bottom,waterlogged=false]",
+   "ae": 42748,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.98,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 0,
+   "row": 1,
+   "state": "create:exposed_copper_shingle_slab[type=double,waterlogged=false]",
+   "ae": 10738,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 2,
+   "row": 1,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=top,shape=straight,waterlogged=false]",
+   "ae": 36480,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 4,
+   "row": 1,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 42472,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 6,
+   "row": 1,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 40693,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.059,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 8,
+   "row": 1,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 36471,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 10,
+   "row": 1,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 36964,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 1,
+   "row": 2,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 31626,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 3,
+   "row": 2,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 15306,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.118,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 5,
+   "row": 2,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 19276,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 7,
+   "row": 2,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 15287,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.075,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 9,
+   "row": 2,
+   "state": "create:exposed_copper_shingle_stairs[facing=north,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 29541,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.055,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 0,
+   "row": 3,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=top,shape=straight,waterlogged=false]",
+   "ae": 14984,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.179,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 2,
+   "row": 3,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 11458,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 4,
+   "row": 3,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 17544,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.045,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 6,
+   "row": 3,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 12168,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 8,
+   "row": 3,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 14334,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.997,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 10,
+   "row": 3,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 2220,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.926,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 1,
+   "row": 4,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 26395,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.159,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 3,
+   "row": 4,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 16906,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.055,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 5,
+   "row": 4,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 2885,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 7,
+   "row": 4,
+   "state": "create:exposed_copper_shingle_stairs[facing=south,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 32337,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.041,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 9,
+   "row": 4,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=top,shape=straight,waterlogged=false]",
+   "ae": 34062,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.092,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 0,
+   "row": 5,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 18141,
+   "shift": [
+    -1,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.114,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 2,
+   "row": 5,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 24774,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.092,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 4,
+   "row": 5,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 43201,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.056,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 6,
+   "row": 5,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 42355,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.055,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 8,
+   "row": 5,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 24170,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.092,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 10,
+   "row": 5,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 18412,
+   "shift": [
+    1,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.052,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 1,
+   "row": 6,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 13319,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.052,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 3,
+   "row": 6,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 13490,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.184,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 5,
+   "row": 6,
+   "state": "create:exposed_copper_shingle_stairs[facing=west,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 14641,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.055,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 7,
+   "row": 6,
+   "state": "create:exposed_copper_shingle_stairs[facing=east,half=top,shape=straight,waterlogged=false]",
+   "ae": 9336,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.153,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p193",
+   "col": 9,
+   "row": 6,
+   "state": "create:exposed_copper_shingle_stairs[facing=east,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 19680,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.045,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  }
+ ]
+}

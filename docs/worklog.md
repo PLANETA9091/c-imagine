@@ -5122,7 +5122,6 @@ the stairs pool (~300 REDs) the next lever: the recomputeUVs + the
 getUVLockTransform chain is now extracted and runnable from the real srg
 classes; the port into the bake is mechanical.
 
-<<<<<<< HEAD
 ---
 ## Task 14-aj — the ANIMATED class: mob idle animations measured by
 self-consistency (a second shot of the same page per leg, ~2s apart) —
@@ -5174,7 +5173,7 @@ Stage Summary:
   and 14-ah (the uvlock stairs pool), the gate's remaining honest surface
   after this lands is: the static-mob channel diffs (3 cells on e0 alone),
   the pillar arms, and whatever the 14-ah run leaves.
-=======
+
 ### 14-ah — the uvlock/stairs pool: the real 1.21.1 uvlock chain ported into
 the bake (UvLock.java) — measured tables + verified transport
 
@@ -5241,7 +5240,6 @@ Stage Summary:
   the real classes at four layers. The predicted effect: the uvlock pool's
   strata/phase cells collapse to green; the plain-path cycle-perm faces
   (the exact-transport lever) stay for 14-ai.
->>>>>>> bb7990c (fix(f2v): 14-ah the uvlock chain ported into the bake — measured 96 UVL matrices + 96 transport perms, recomputeUvs verbatim, exact k-fitted winding relabel; UvLockVerify B-E ALL OK vs the real 1.21.1 classes)
 
 ### 14-ag VERDICT — #84 (3095a6a, run 41848055305) measured:
 GREEN 14814 / RED 675 / SPILL 384 -> green-share 95.64% (#80: 93.01%) —
@@ -5495,3 +5493,79 @@ EXPECTED ON THE NEXT RUN:
   the suspected create:contraption). Banned types are not content parity; a bare
   ContraptionEntity has no contraption data, so the real answer is spawning
   assembled contraptions. Open, needs the named killer from truth-client-deaths.
+
+## 14-ak — the Create CT channel: the pillar family's connected textures
+ported (the seed computes per-face tile indices from the layout, the pack
+remaps into the `*_connected` sheets, the replay resolves state#ctx)
+
+Task: close the biggest remaining block-page pool — 103 of the 180 REDs
+(create:*_pillar + brackets, ae 8.4M) — the 14-ag-predicted "ARM-carrying
+variants". ROOT CAUSE (measured this stage): ConnectedPillarBlock renders
+through RotatedPillarCTBehaviour + CTModel — the REAL client remaps every
+quad's UVs into a connected sheet (`*_cut_pillar_connected` RECTANGLE 4x4,
+`*_cut_cap_connected` OMNIDIRECTIONAL 8x8) per an 8-neighbourhood tile
+index; our pack emitted the plain sprite — the missing channel (no
+"connected"/sprite-shift handling anywhere in the bake).
+
+Work Log:
+- THE UV MATH (measured, not assumed): catnip SpriteShiftEntry
+  .getUnInterpolatedU = (u-u0)/(u1-u0) — a FRACTION (decompiled from the
+  ponder jarjar inside create 6.0.10); 1.21.1 TextureAtlasSprite.getU
+  (REAL BYTECODE via nfclient javap): `u0 + (u1-u0)*u` — also a fraction.
+  So the tile offset = off*16 px of the sheet and the model-space remap is
+  u' = (u + tileX*16)/sheetSize. CONFIRMED NUMERICALLY: the side sheet's
+  isolated tile (index 0+3*4) is BYTE-IDENTICAL to the plain texture
+  (ae=0) and the cap sheet's (0,0) near-plain (ae 1535) — the index
+  semantics verified against the sheet pixels.
+- THE PROP TRAP (measured from the decompile): ConnectedPillarBlock
+  .connection() maps directions NON-compass for rotated axes — axis=X:
+  UP->east, DOWN->west; axis=Z: UP->west, DOWN->east, EAST->north,
+  WEST->south, N/S->null. A plain-compass reading mis-derives every
+  non-y pillar's prop gates.
+- THE OCCLUSION RULE (measured via CTProbe divergence): the base
+  isBeingBlocked RECURSES — a same-block pillar at candidate+face (in
+  front of the neighbour as seen through the face) KILLS the connection
+  (the 6-arg connectsTo chain walks +face until air); only the
+  axis-parallel faces block (the RotatedPillar override).
+- THE PORT: scripts/f2v/gallery_ct.py — the single context
+  implementation (buildContext + the RotatedPillar getUp/getRight/
+  reverseUVs overrides + connectsTo with the prop mapping + the
+  RECTANGLE/OMNIDIRECTIONAL index formulas + the recursive
+  isBeingBlocked). VERIFIED AGAINST THE REAL CLASSES:
+  scripts/f2v/ct/CTProbe.java runs the REAL RotatedPillarCTBehaviour
+  .buildContext + the REAL AllCTTypes index formulas (headless: the FML
+  LoadingModList shim + the Create.asResource shim + the deferred
+  Bootstrap; the per-stone ConnectedPillarBlock instances keep the
+  block-identity gate honest) on 515 cases (14 hand cases + 500 random
+  mixed-axis/mixed-props/8-way batteries): 515/515 EXACT.
+- THE PIPELINE: the seed (gallery_ct.py, wired into the workflow seed
+  step) reads ALL scene manifests -> pos->state -> per pillar cell the 6
+  tile indices -> `gallery-<ns>-p<page>.ctx.tsv` side files (ride the
+  seed-pack scenes) + `state#i0,...,i5` suffixed rows APPENDED to
+  visual-gallery.tsv (plain rows stay = the fallback; idempotent).
+  GalleryPack.build strips the suffix (never reaches parseState),
+  synthesizeComposite applies applyCtRemap after the bake: per final face
+  (the face keys ARE the world directions post-rotation) the sprite
+  matches by PATH SHAPE (`stone_types/pillar/*_cut_pillar` -> sheet 4,
+  `cap/*_cut_cap` -> sheet 8) -> tileX=idx%sheet, tileY=idx/sheet ->
+  uv' = (u + tileX*16)/sheet, rotation preserved (the affine commutes
+  with the corner permutation) -> the connected sheets ship from the
+  create jar on first use (28 pngs, byte-identical). CimPlugin
+  .galleryPage reads the side file, resolves state#ctx with the plain
+  fallback.
+- VERIFICATION: F2vPack --selftest gains the CT fixture (a fake pillar
+  whose palette sprites ride the create namespace) — the suffixed row
+  resolves, the composite remaps (side uv [0,12,4,16] = the isolated
+  tile (0,3); cap uv [0,0,2,2] = (0,0)), the sheets ship: ALL OK. The
+  seed pass on the REAL #87 scenes: 408 pages, 672 ctx rows, 284
+  distinct (state,ctx) variants, deterministic + idempotent; the full
+  offline pack build: 22786 gallery states (+284), ZERO "gallery ct:"
+  warnings, the CT composites byte-verified in pack.zip (g307: the caps
+  uv [0,0,2,2]/[2,2,0,0]+rot180, the sides [0,12,4,16]+rot90 — exactly
+  the isolated tiles the all-false context predicts).
+- NOTE: the axis-parallel neighbours the PROPS don't encode (the row
+  along the pillar axis) ARE visible to the CT (the same-block+axis
+  in-plane tests) — the p391 solo-prop REDs explained; the stacked
+  x-pillars (perpendicular to every face) are CT-invisible.
+- NEXT: CI #88 measures the pillar pool (103 REDs + the panes' panes-CT
+  residual stays for 14-al).

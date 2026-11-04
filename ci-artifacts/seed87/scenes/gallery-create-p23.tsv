@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+skip	-1	-1	-1	create:clipboard[face=FLOOR,facing=south,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=FLOOR,facing=south,waterlogged=true,written=false]
+cell	-3	-60	9	create:clipboard[face=FLOOR,facing=south,waterlogged=false,written=true]	1
+cell	-2	-60	9	create:clipboard[face=FLOOR,facing=south,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=FLOOR,facing=west,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=FLOOR,facing=west,waterlogged=true,written=false]
+cell	1	-60	9	create:clipboard[face=FLOOR,facing=west,waterlogged=false,written=true]	1
+cell	2	-60	9	create:clipboard[face=FLOOR,facing=west,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=FLOOR,facing=east,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=FLOOR,facing=east,waterlogged=true,written=false]
+cell	5	-60	9	create:clipboard[face=FLOOR,facing=east,waterlogged=false,written=true]	1
+cell	-5	-59	9	create:clipboard[face=FLOOR,facing=east,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=north,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=north,waterlogged=true,written=false]
+cell	-2	-59	9	create:clipboard[face=WALL,facing=north,waterlogged=false,written=true]	1
+cell	-1	-59	9	create:clipboard[face=WALL,facing=north,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=south,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=south,waterlogged=true,written=false]
+cell	2	-59	9	create:clipboard[face=WALL,facing=south,waterlogged=false,written=true]	1
+cell	3	-59	9	create:clipboard[face=WALL,facing=south,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=west,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=west,waterlogged=true,written=false]
+cell	-5	-58	9	create:clipboard[face=WALL,facing=west,waterlogged=false,written=true]	1
+cell	-4	-58	9	create:clipboard[face=WALL,facing=west,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=east,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=WALL,facing=east,waterlogged=true,written=false]
+cell	-1	-58	9	create:clipboard[face=WALL,facing=east,waterlogged=false,written=true]	1
+cell	0	-58	9	create:clipboard[face=WALL,facing=east,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=north,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=north,waterlogged=true,written=false]
+cell	3	-58	9	create:clipboard[face=CEILING,facing=north,waterlogged=false,written=true]	1
+cell	4	-58	9	create:clipboard[face=CEILING,facing=north,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=south,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=south,waterlogged=true,written=false]
+cell	-4	-57	9	create:clipboard[face=CEILING,facing=south,waterlogged=false,written=true]	1
+cell	-3	-57	9	create:clipboard[face=CEILING,facing=south,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=west,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=west,waterlogged=true,written=false]
+cell	0	-57	9	create:clipboard[face=CEILING,facing=west,waterlogged=false,written=true]	1
+cell	1	-57	9	create:clipboard[face=CEILING,facing=west,waterlogged=false,written=false]	1
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=east,waterlogged=true,written=true]
+skip	-1	-1	-1	create:clipboard[face=CEILING,facing=east,waterlogged=true,written=false]
+cell	4	-57	9	create:clipboard[face=CEILING,facing=east,waterlogged=false,written=true]	1
+cell	5	-57	9	create:clipboard[face=CEILING,facing=east,waterlogged=false,written=false]	1
+cell	-5	-56	9	create:clockwork_bearing[facing=north]	1
+cell	-4	-56	9	create:clockwork_bearing[facing=east]	1
+cell	-3	-56	9	create:clockwork_bearing[facing=south]	1
+cell	-2	-56	9	create:clockwork_bearing[facing=west]	1
+cell	-1	-56	9	create:clockwork_bearing[facing=up]	1
+cell	0	-56	9	create:clockwork_bearing[facing=down]	1
+cell	1	-56	9	create:clutch[axis=x,powered=false]	1
+cell	2	-56	9	create:clutch[axis=x,powered=false]	1
+cell	3	-56	9	create:clutch[axis=y,powered=true]	1
+cell	4	-56	9	create:clutch[axis=y,powered=true]	1
+cell	5	-56	9	create:clutch[axis=z,powered=false]	1
+cell	-5	-55	9	create:clutch[axis=z,powered=false]	1
+skip	-1	-1	-1	create:cogwheel[axis=x,waterlogged=true]
+cell	-3	-55	9	create:cogwheel[axis=x,waterlogged=false]	1
+skip	-1	-1	-1	create:cogwheel[axis=y,waterlogged=true]
+cell	-1	-55	9	create:cogwheel[axis=y,waterlogged=false]	1
+skip	-1	-1	-1	create:cogwheel[axis=z,waterlogged=true]
+cell	1	-55	9	create:cogwheel[axis=z,waterlogged=false]	1
+cell	2	-55	9	create:content_observer[facing=north,powered=true,target=FLOOR]	1
+cell	3	-55	9	create:content_observer[facing=north,powered=true,target=WALL]	1
+cell	4	-55	9	create:content_observer[facing=north,powered=true,target=CEILING]	1
+cell	5	-55	9	create:content_observer[facing=north,powered=false,target=FLOOR]	1
+cell	-5	-54	9	create:content_observer[facing=north,powered=false,target=WALL]	1
+cell	-4	-54	9	create:content_observer[facing=north,powered=false,target=CEILING]	1
+cell	-3	-54	9	create:content_observer[facing=south,powered=true,target=FLOOR]	1
+cell	-2	-54	9	create:content_observer[facing=south,powered=true,target=WALL]	1
+cell	-1	-54	9	create:content_observer[facing=south,powered=true,target=CEILING]	1
+cell	0	-54	9	create:content_observer[facing=south,powered=false,target=FLOOR]	1
+cell	1	-54	9	create:content_observer[facing=south,powered=false,target=WALL]	1
+cell	2	-54	9	create:content_observer[facing=south,powered=false,target=CEILING]	1
+cell	3	-54	9	create:content_observer[facing=west,powered=true,target=FLOOR]	1
+cell	4	-54	9	create:content_observer[facing=west,powered=true,target=WALL]	1
+cell	5	-54	9	create:content_observer[facing=west,powered=true,target=CEILING]	1

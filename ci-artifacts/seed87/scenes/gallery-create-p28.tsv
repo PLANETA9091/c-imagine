@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=6,shape=ascending_east,waterlogged=true]
+cell	-3	-60	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=6,shape=ascending_west,waterlogged=true]
+cell	-1	-60	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=6,shape=ascending_north,waterlogged=true]
+cell	1	-60	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=6,shape=ascending_south,waterlogged=true]
+cell	3	-60	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=7,shape=north_south,waterlogged=true]
+cell	5	-60	9	create:controller_rail[backwards=false,power=0,shape=east_west,waterlogged=false]	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=7,shape=east_west,waterlogged=true]
+cell	-4	-59	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=7,shape=ascending_east,waterlogged=true]
+cell	-2	-59	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=7,shape=ascending_west,waterlogged=true]
+cell	0	-59	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=7,shape=ascending_north,waterlogged=true]
+cell	2	-59	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=7,shape=ascending_south,waterlogged=true]
+cell	4	-59	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=8,shape=north_south,waterlogged=true]
+cell	-5	-58	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=8,shape=east_west,waterlogged=true]
+cell	-3	-58	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=8,shape=ascending_east,waterlogged=true]
+cell	-1	-58	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=8,shape=ascending_west,waterlogged=true]
+cell	1	-58	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=8,shape=ascending_north,waterlogged=true]
+cell	3	-58	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=8,shape=ascending_south,waterlogged=true]
+cell	5	-58	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=9,shape=north_south,waterlogged=true]
+cell	-4	-57	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=9,shape=east_west,waterlogged=true]
+cell	-2	-57	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=9,shape=ascending_east,waterlogged=true]
+cell	0	-57	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=9,shape=ascending_west,waterlogged=true]
+cell	2	-57	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=9,shape=ascending_north,waterlogged=true]
+cell	4	-57	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=9,shape=ascending_south,waterlogged=true]
+cell	-5	-56	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=10,shape=north_south,waterlogged=true]
+cell	-3	-56	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=10,shape=east_west,waterlogged=true]
+cell	-1	-56	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=10,shape=ascending_east,waterlogged=true]
+cell	1	-56	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=10,shape=ascending_west,waterlogged=true]
+cell	3	-56	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=10,shape=ascending_north,waterlogged=true]
+cell	5	-56	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=10,shape=ascending_south,waterlogged=true]
+cell	-4	-55	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=11,shape=north_south,waterlogged=true]
+cell	-2	-55	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=11,shape=east_west,waterlogged=true]
+cell	0	-55	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=11,shape=ascending_east,waterlogged=true]
+cell	2	-55	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=11,shape=ascending_west,waterlogged=true]
+cell	4	-55	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=11,shape=ascending_north,waterlogged=true]
+cell	-5	-54	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=11,shape=ascending_south,waterlogged=true]
+cell	-3	-54	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=12,shape=north_south,waterlogged=true]
+cell	-1	-54	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=12,shape=east_west,waterlogged=true]
+cell	1	-54	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=12,shape=ascending_east,waterlogged=true]
+cell	3	-54	9	minecraft:air	0
+skip	-1	-1	-1	create:controller_rail[backwards=false,power=12,shape=ascending_west,waterlogged=true]
+cell	5	-54	9	minecraft:air	0

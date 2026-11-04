@@ -1,0 +1,15 @@
+cell	x	y	z	entity	dyn	note
+cell	-5	-60	9	minecraft:ocelot	0	ok
+cell	1	-60	9	minecraft:panda	0	ok
+cell	3	-60	9	minecraft:parrot	0	ok
+cell	5	-60	9	minecraft:phantom	0	ok
+cell	-5	-58	9	minecraft:pig	0	ok
+cell	-3	-58	9	minecraft:piglin	0	ok
+cell	-1	-58	9	minecraft:piglin_brute	0	ok
+cell	1	-58	9	minecraft:pillager	0	ok
+skip	-1	-1	-1	minecraft:player	0	no-instance
+cell	5	-58	9	minecraft:polar_bear	0	ok
+cell	-3	-56	9	minecraft:pufferfish	0	ok
+cell	-1	-56	9	minecraft:rabbit	0	ok
+cell	3	-56	9	minecraft:salmon	0	ok
+cell	5	-56	9	minecraft:sheep	0	ok

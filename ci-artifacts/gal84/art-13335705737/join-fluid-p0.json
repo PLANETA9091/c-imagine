@@ -1,0 +1,75 @@
+{
+ "cells": 4,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 4,
+ "spill": 0,
+ "gate": 240000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-fluid-create-p0",
+   "col": 0,
+   "row": 0,
+   "state": "create:chocolate",
+   "ae": 2270151,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-fluid-create-p0",
+   "col": 1,
+   "row": 0,
+   "state": "create:flowing_chocolate",
+   "ae": 2627572,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-fluid-create-p0",
+   "col": 2,
+   "row": 0,
+   "state": "create:flowing_honey",
+   "ae": 1701160,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.6,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-fluid-create-p0",
+   "col": 5,
+   "row": 0,
+   "state": "create:honey",
+   "ae": 1646102,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": false
+  }
+ ]
+}

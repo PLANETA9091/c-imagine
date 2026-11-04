@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:copper_valve_handle[facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:copper_valve_handle[facing=west,waterlogged=true]
+cell	-3	-60	9	create:copper_valve_handle[facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:copper_valve_handle[facing=up,waterlogged=true]
+cell	-1	-60	9	create:copper_valve_handle[facing=up,waterlogged=false]	1
+skip	-1	-1	-1	create:copper_valve_handle[facing=down,waterlogged=true]
+cell	1	-60	9	create:copper_valve_handle[facing=down,waterlogged=false]	1
+cell	2	-60	9	create:copycat_bars[facing=north]	0
+cell	3	-60	9	create:copycat_bars[facing=east]	0
+cell	4	-60	9	create:copycat_bars[facing=south]	0
+cell	5	-60	9	create:copycat_bars[facing=west]	0
+cell	-5	-59	9	create:copycat_bars[facing=up]	0
+cell	-4	-59	9	create:copycat_bars[facing=down]	0
+cell	-3	-59	9	create:copycat_base	0
+skip	-1	-1	-1	create:copycat_panel[facing=north,waterlogged=true]
+cell	-1	-59	9	create:copycat_panel[facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_panel[facing=east,waterlogged=true]
+cell	1	-59	9	create:copycat_panel[facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_panel[facing=south,waterlogged=true]
+cell	3	-59	9	create:copycat_panel[facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_panel[facing=west,waterlogged=true]
+cell	5	-59	9	create:copycat_panel[facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_panel[facing=up,waterlogged=true]
+cell	-4	-58	9	create:copycat_panel[facing=up,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_panel[facing=down,waterlogged=true]
+cell	-2	-58	9	create:copycat_panel[facing=down,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=north,half=top,waterlogged=true]
+cell	0	-58	9	create:copycat_step[facing=north,half=top,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=north,half=bottom,waterlogged=true]
+cell	2	-58	9	create:copycat_step[facing=north,half=bottom,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=south,half=top,waterlogged=true]
+cell	4	-58	9	create:copycat_step[facing=south,half=top,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=south,half=bottom,waterlogged=true]
+cell	-5	-57	9	create:copycat_step[facing=south,half=bottom,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=west,half=top,waterlogged=true]
+cell	-3	-57	9	create:copycat_step[facing=west,half=top,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=west,half=bottom,waterlogged=true]
+cell	-1	-57	9	create:copycat_step[facing=west,half=bottom,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=east,half=top,waterlogged=true]
+cell	1	-57	9	create:copycat_step[facing=east,half=top,waterlogged=false]	1
+skip	-1	-1	-1	create:copycat_step[facing=east,half=bottom,waterlogged=true]
+cell	3	-57	9	create:copycat_step[facing=east,half=bottom,waterlogged=false]	1
+cell	4	-57	9	create:creative_crate[facing=north]	1
+cell	5	-57	9	create:creative_crate[facing=east]	1
+cell	-5	-56	9	create:creative_crate[facing=south]	1
+cell	-4	-56	9	create:creative_crate[facing=west]	1
+cell	-3	-56	9	create:creative_crate[facing=up]	1
+cell	-2	-56	9	create:creative_crate[facing=down]	1
+cell	-1	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	0	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	1	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	2	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	3	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	4	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	5	-56	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	-5	-55	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	-4	-55	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	-3	-55	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	-2	-55	9	create:creative_fluid_tank[bottom=true,shape=WINDOW,top=false]	1
+cell	-1	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=false]	1
+cell	0	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=false]	1
+cell	1	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	2	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	3	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	4	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	5	-55	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	-5	-54	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	-4	-54	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	-3	-54	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	-2	-54	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	-1	-54	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	0	-54	9	create:creative_fluid_tank[bottom=false,shape=WINDOW,top=true]	1
+cell	1	-54	9	create:creative_motor[facing=north]	1
+cell	2	-54	9	create:creative_motor[facing=east]	1
+cell	3	-54	9	create:creative_motor[facing=south]	1
+cell	4	-54	9	create:creative_motor[facing=west]	1
+cell	5	-54	9	create:creative_motor[facing=up]	1

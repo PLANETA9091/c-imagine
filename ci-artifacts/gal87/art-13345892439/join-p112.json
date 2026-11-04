@@ -1,0 +1,812 @@
+{
+ "cells": 40,
+ "skipped": 0,
+ "red": 1,
+ "dynamic": 0,
+ "spill": 0,
+ "animated": 0,
+ "gate": 60000,
+ "verdict": "RED",
+ "rows": [
+  {
+   "page": "gallery-create-p112",
+   "col": 1,
+   "row": 0,
+   "state": "create:cut_dripstone_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 54335,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.925,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 2,
+   "row": 0,
+   "state": "create:cut_dripstone_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]",
+   "ae": 67299,
+   "shift": [
+    -1,
+    -3
+   ],
+   "verdict": "RED",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.921,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 3,
+   "row": 0,
+   "state": "create:cut_dripstone_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]",
+   "ae": 23140,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.915,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 4,
+   "row": 0,
+   "state": "create:cut_granite",
+   "ae": 44158,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 6,
+   "row": 0,
+   "state": "create:cut_granite_brick_slab[type=top,waterlogged=false]",
+   "ae": 49437,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.944,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 8,
+   "row": 0,
+   "state": "create:cut_granite_brick_slab[type=bottom,waterlogged=false]",
+   "ae": 29227,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.922,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 10,
+   "row": 0,
+   "state": "create:cut_granite_brick_slab[type=double,waterlogged=false]",
+   "ae": 14243,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.909,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 1,
+   "row": 1,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=top,shape=straight,waterlogged=false]",
+   "ae": 14416,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 3,
+   "row": 1,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 43061,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.904,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 5,
+   "row": 1,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 4498,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 7,
+   "row": 1,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 42779,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.906,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 9,
+   "row": 1,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 46801,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 0,
+   "row": 2,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 15025,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 2,
+   "row": 2,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 4411,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.93,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 4,
+   "row": 2,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 25879,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 6,
+   "row": 2,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 24614,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.925,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 8,
+   "row": 2,
+   "state": "create:cut_granite_brick_stairs[facing=north,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 3456,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.864,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 10,
+   "row": 2,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=top,shape=straight,waterlogged=false]",
+   "ae": 14826,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 1,
+   "row": 3,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 23529,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.016,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 3,
+   "row": 3,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 6838,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 5,
+   "row": 3,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 3186,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.914,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 7,
+   "row": 3,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 1579,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.995,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 9,
+   "row": 3,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 0,
+   "row": 4,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 1942,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.033,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 2,
+   "row": 4,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 36358,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 4,
+   "row": 4,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 7436,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.939,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 6,
+   "row": 4,
+   "state": "create:cut_granite_brick_stairs[facing=south,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 14961,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.915,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 8,
+   "row": 4,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=top,shape=straight,waterlogged=false]",
+   "ae": 40690,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.915,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 10,
+   "row": 4,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 2109,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.033,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 1,
+   "row": 5,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 30304,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 3,
+   "row": 5,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 16229,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.989,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 5,
+   "row": 5,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 11925,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 7,
+   "row": 5,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 15504,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.989,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 9,
+   "row": 5,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 30783,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 0,
+   "row": 6,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 18412,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.988,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 2,
+   "row": 6,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 5420,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.051,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 4,
+   "row": 6,
+   "state": "create:cut_granite_brick_stairs[facing=west,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 38302,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.988,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 6,
+   "row": 6,
+   "state": "create:cut_granite_brick_stairs[facing=east,half=top,shape=straight,waterlogged=false]",
+   "ae": 31216,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.925,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 8,
+   "row": 6,
+   "state": "create:cut_granite_brick_stairs[facing=east,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 6437,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.051,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p112",
+   "col": 10,
+   "row": 6,
+   "state": "create:cut_granite_brick_stairs[facing=east,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 10483,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  }
+ ]
+}

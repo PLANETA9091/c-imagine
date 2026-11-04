@@ -1,0 +1,1012 @@
+{
+ "cells": 50,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 22,
+ "spill": 10,
+ "animated": 0,
+ "gate": 60000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-create-p207",
+   "col": 0,
+   "row": 0,
+   "state": "create:item_hatch[facing=north,open=false,waterlogged=false]",
+   "ae": 99288,
+   "shift": [
+    -1,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.898,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 2,
+   "row": 0,
+   "state": "create:item_hatch[facing=south,open=true,waterlogged=false]",
+   "ae": 44404,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.94,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 4,
+   "row": 0,
+   "state": "create:item_hatch[facing=south,open=false,waterlogged=false]",
+   "ae": 214208,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.879,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 6,
+   "row": 0,
+   "state": "create:item_hatch[facing=west,open=true,waterlogged=false]",
+   "ae": 146570,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.683,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 8,
+   "row": 0,
+   "state": "create:item_hatch[facing=west,open=false,waterlogged=false]",
+   "ae": 12174,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.909,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 10,
+   "row": 0,
+   "state": "create:item_hatch[facing=east,open=true,waterlogged=false]",
+   "ae": 23148,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.909,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 1,
+   "row": 1,
+   "state": "create:item_hatch[facing=east,open=false,waterlogged=false]",
+   "ae": 190476,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.989,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 2,
+   "row": 1,
+   "state": "create:item_vault[axis=x,large=false]",
+   "ae": 66014,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.989,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 3,
+   "row": 1,
+   "state": "create:item_vault[axis=x,large=false]",
+   "ae": 249244,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 4,
+   "row": 1,
+   "state": "create:item_vault[axis=z,large=true]",
+   "ae": 239674,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 5,
+   "row": 1,
+   "state": "create:item_vault[axis=z,large=false]",
+   "ae": 4001,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.984,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 6,
+   "row": 1,
+   "state": "create:jungle_window",
+   "ae": 36662,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.006,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 9,
+   "row": 1,
+   "state": "create:jungle_window_pane[east=true,north=true,south=true,waterlogged=false,west=true]",
+   "ae": 35701,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 10,
+   "row": 1,
+   "state": "create:jungle_window_pane[east=true,north=true,south=true,waterlogged=false,west=false]",
+   "ae": 36005,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.9,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 2,
+   "row": 2,
+   "state": "create:jungle_window_pane[east=true,north=true,south=false,waterlogged=false,west=true]",
+   "ae": 70263,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.938,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 3,
+   "row": 2,
+   "state": "create:jungle_window_pane[east=true,north=true,south=false,waterlogged=false,west=false]",
+   "ae": 106886,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 6,
+   "row": 2,
+   "state": "create:jungle_window_pane[east=true,north=false,south=true,waterlogged=false,west=true]",
+   "ae": 40556,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.806,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 7,
+   "row": 2,
+   "state": "create:jungle_window_pane[east=true,north=false,south=true,waterlogged=false,west=false]",
+   "ae": 40420,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.802,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 10,
+   "row": 2,
+   "state": "create:jungle_window_pane[east=true,north=false,south=false,waterlogged=false,west=true]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 0,
+   "row": 3,
+   "state": "create:jungle_window_pane[east=true,north=false,south=false,waterlogged=false,west=false]",
+   "ae": 56151,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.993,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 3,
+   "row": 3,
+   "state": "create:jungle_window_pane[east=true,north=true,south=true,waterlogged=false,west=true]",
+   "ae": 5663,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.888,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 4,
+   "row": 3,
+   "state": "create:jungle_window_pane[east=false,north=true,south=true,waterlogged=false,west=true]",
+   "ae": 0,
+   "shift": [
+    -2,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 7,
+   "row": 3,
+   "state": "create:jungle_window_pane[east=true,north=true,south=false,waterlogged=false,west=true]",
+   "ae": 41070,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.901,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 8,
+   "row": 3,
+   "state": "create:jungle_window_pane[east=false,north=true,south=false,waterlogged=false,west=true]",
+   "ae": 182571,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.189,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 0,
+   "row": 4,
+   "state": "create:jungle_window_pane[east=true,north=false,south=true,waterlogged=false,west=true]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 1,
+   "row": 4,
+   "state": "create:jungle_window_pane[east=false,north=false,south=true,waterlogged=false,west=true]",
+   "ae": 26748,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.82,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 4,
+   "row": 4,
+   "state": "create:jungle_window_pane[east=true,north=false,south=false,waterlogged=false,west=true]",
+   "ae": 2012,
+   "shift": [
+    -2,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 5,
+   "row": 4,
+   "state": "create:jungle_window_pane[east=false,north=false,south=false,waterlogged=false,west=true]",
+   "ae": 2885,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 7,
+   "row": 4,
+   "state": "create:large_bogey[axis=x,waterlogged=false]",
+   "ae": 766422,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.888,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 9,
+   "row": 4,
+   "state": "create:large_bogey[axis=z,waterlogged=false]",
+   "ae": 361835,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 0,
+   "row": 5,
+   "state": "create:large_cogwheel[axis=x,waterlogged=false]",
+   "ae": 13186,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 2,
+   "row": 5,
+   "state": "create:large_cogwheel[axis=y,waterlogged=false]",
+   "ae": 45913,
+   "shift": [
+    -1,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.949,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 4,
+   "row": 5,
+   "state": "create:large_cogwheel[axis=z,waterlogged=false]",
+   "ae": 191048,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.894,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 5,
+   "row": 5,
+   "state": "create:large_water_wheel[axis=x,extension=true]",
+   "ae": 34475,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.893,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 6,
+   "row": 5,
+   "state": "create:large_water_wheel[axis=x,extension=false]",
+   "ae": 635982,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 7,
+   "row": 5,
+   "state": "create:large_water_wheel[axis=y,extension=true]",
+   "ae": 969717,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.923,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 8,
+   "row": 5,
+   "state": "create:large_water_wheel[axis=y,extension=false]",
+   "ae": 483492,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.883,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 9,
+   "row": 5,
+   "state": "create:large_water_wheel[axis=z,extension=true]",
+   "ae": 390713,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.69,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 10,
+   "row": 5,
+   "state": "create:large_water_wheel[axis=z,extension=false]",
+   "ae": 338898,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 0,
+   "row": 6,
+   "state": "create:layered_andesite",
+   "ae": 14481,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 1,
+   "row": 6,
+   "state": "create:layered_asurine",
+   "ae": 13550,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 2,
+   "row": 6,
+   "state": "create:layered_calcite",
+   "ae": 11853,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.82,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 3,
+   "row": 6,
+   "state": "create:layered_crimsite",
+   "ae": 67911,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "SPILL",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.921,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 4,
+   "row": 6,
+   "state": "create:layered_deepslate",
+   "ae": 80234,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "SPILL",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.874,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 5,
+   "row": 6,
+   "state": "create:layered_diorite",
+   "ae": 30905,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.893,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 6,
+   "row": 6,
+   "state": "create:layered_dripstone",
+   "ae": 244646,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 7,
+   "row": 6,
+   "state": "create:layered_granite",
+   "ae": 547034,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.24,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 8,
+   "row": 6,
+   "state": "create:layered_limestone",
+   "ae": 335797,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.121,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 9,
+   "row": 6,
+   "state": "create:layered_ochrum",
+   "ae": 401159,
+   "shift": [
+    -3,
+    1
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.268,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p207",
+   "col": 10,
+   "row": 6,
+   "state": "create:layered_scorchia",
+   "ae": 561290,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "SPILL",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  }
+ ]
+}

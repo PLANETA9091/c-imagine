@@ -1,0 +1,43 @@
+{
+ "cells": 2,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 0,
+ "spill": 0,
+ "gate": 240000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-entitylarge-minecraft-p2",
+   "col": 5,
+   "row": 1,
+   "state": "minecraft:ghast",
+   "ae": 114067,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.931,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitylarge-minecraft-p2",
+   "col": 0,
+   "row": 2,
+   "state": "minecraft:giant",
+   "ae": 91583,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.889,
+   "dyn_spill": false
+  }
+ ]
+}

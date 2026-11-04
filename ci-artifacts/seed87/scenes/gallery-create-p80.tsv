@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:cut_crimsite_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]	0
+cell	-4	-60	9	create:cut_crimsite_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]	0
+cell	-3	-60	9	create:cut_deepslate	0
+skip	-1	-1	-1	create:cut_deepslate_brick_slab[type=top,waterlogged=true]
+cell	-1	-60	9	create:cut_deepslate_brick_slab[type=top,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_slab[type=bottom,waterlogged=true]
+cell	1	-60	9	create:cut_deepslate_brick_slab[type=bottom,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_slab[type=double,waterlogged=true]
+cell	3	-60	9	create:cut_deepslate_brick_slab[type=double,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=straight,waterlogged=true]
+cell	5	-60	9	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=inner_left,waterlogged=true]
+cell	-4	-59	9	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=inner_right,waterlogged=true]
+cell	-2	-59	9	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=outer_left,waterlogged=true]
+cell	0	-59	9	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=outer_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=outer_right,waterlogged=true]
+cell	2	-59	9	create:cut_deepslate_brick_stairs[facing=north,half=top,shape=outer_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=true]
+cell	4	-59	9	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=inner_left,waterlogged=true]
+cell	-5	-58	9	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=inner_right,waterlogged=true]
+cell	-3	-58	9	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=true]
+cell	-1	-58	9	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=outer_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=outer_right,waterlogged=true]
+cell	1	-58	9	create:cut_deepslate_brick_stairs[facing=north,half=bottom,shape=outer_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=straight,waterlogged=true]
+cell	3	-58	9	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=inner_left,waterlogged=true]
+cell	5	-58	9	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=inner_right,waterlogged=true]
+cell	-4	-57	9	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=outer_left,waterlogged=true]
+cell	-2	-57	9	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=outer_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=outer_right,waterlogged=true]
+cell	0	-57	9	create:cut_deepslate_brick_stairs[facing=south,half=top,shape=outer_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=true]
+cell	2	-57	9	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=inner_left,waterlogged=true]
+cell	4	-57	9	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=inner_right,waterlogged=true]
+cell	-5	-56	9	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=outer_left,waterlogged=true]
+cell	-3	-56	9	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=outer_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=outer_right,waterlogged=true]
+cell	-1	-56	9	create:cut_deepslate_brick_stairs[facing=south,half=bottom,shape=outer_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=straight,waterlogged=true]
+cell	1	-56	9	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=inner_left,waterlogged=true]
+cell	3	-56	9	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=inner_right,waterlogged=true]
+cell	5	-56	9	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=outer_left,waterlogged=true]
+cell	-4	-55	9	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=outer_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=outer_right,waterlogged=true]
+cell	-2	-55	9	create:cut_deepslate_brick_stairs[facing=west,half=top,shape=outer_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=straight,waterlogged=true]
+cell	0	-55	9	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=inner_left,waterlogged=true]
+cell	2	-55	9	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=inner_right,waterlogged=true]
+cell	4	-55	9	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=outer_left,waterlogged=true]
+cell	-5	-54	9	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=outer_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=outer_right,waterlogged=true]
+cell	-3	-54	9	create:cut_deepslate_brick_stairs[facing=west,half=bottom,shape=outer_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=straight,waterlogged=true]
+cell	-1	-54	9	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=straight,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=inner_left,waterlogged=true]
+cell	1	-54	9	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=inner_left,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=inner_right,waterlogged=true]
+cell	3	-54	9	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=inner_right,waterlogged=false]	0
+skip	-1	-1	-1	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=outer_left,waterlogged=true]
+cell	5	-54	9	create:cut_deepslate_brick_stairs[facing=east,half=top,shape=outer_left,waterlogged=false]	0

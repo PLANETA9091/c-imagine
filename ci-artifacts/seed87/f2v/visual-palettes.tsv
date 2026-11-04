@@ -1,0 +1,18 @@
+# c-imagine F2V 2.0 palette manifest (M6 palette channel, measured surface)
+#
+# Format (TSV): modded_item <TAB> base_sprite <TAB> palette_key_png <TAB> separator <TAB> variants
+#   - the 26.3-native recolor surface: paletted_permutations is an ATLAS
+#     SOURCE (standalone file format removed — decompiled
+#     PalettedPermutations; f2v2-pack-synthesis-26-3.md §12). F2vPack emits
+#     assets/minecraft/atlases/items.json with THIS source — pack atlas json
+#     APPENDS to the vanilla source stack (SpriteSourceList.load =
+#     getResourceStack + addAll), so vanilla trims keep working.
+#   - modded_item: the base items-manifest row id; its variant rows
+#     (<id>@<suffix>) ride the SAME host range_dispatch at cmd base+1+i.
+#   - base_sprite: the TEXTURE sprite id the permutations recolor.
+#   - palette_key_png / perm PNGs: FULL jar resource paths; copied at
+#     original textures/ paths (the palette matcher is EXACT ARGB per pixel).
+#   - separator: permutation sprite-name separator (vanilla default "_").
+#   - variants: suffix=perm_png[;suffix2=perm_png2] (sorted, deterministic).
+#   - only rows listed here enter the pack (manifest-driven).
+cimtest:test_gem	cimtest:item/test_gem	cimtest:textures/palettes/gem_key.png	_	red=cimtest:textures/palettes/gem_red.png

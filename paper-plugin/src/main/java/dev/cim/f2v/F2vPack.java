@@ -1466,7 +1466,16 @@ public final class F2vPack {
             + "fakemod:rock\n"
             + "fakemod:rock[facing=north]\n"
             + "fakemod:zmotor\n"
-            + "fakemod:zcomp\n";
+            + "fakemod:zcomp\n"
+            // 14-ak: the CT row — a synthetic create-namespace pillar state
+            // (the fixtures below ship its palette sprites + connected
+            // sheets); the ctx = the isolated-pillar indices (caps 0, the
+            // RECTANGLE isolated tile 0+3*4=12)
+            // the STATE rides the fakemod namespace (so the sorted order
+            // of the existing index-based assertions holds); the CT remap
+            // matches the SPRITE path shape (create:block/palettes/...)
+            + "fakemod:stone_pillar[axis=y,east=false,north=false,south=false,"
+            + "west=false]#0,0,12,12,12,12\n";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -1513,6 +1522,25 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/textures/block/post_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/side_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
+            // 14-ak CT fixture: a synthetic create-namespace pillar — the
+            // blockstate + the cube_column model + the palette sprites AND
+            // the connected sheets (the remap reads them from the jars)
+            jarEntries.put("assets/fakemod/blockstates/stone_pillar.json",
+                    "{\"variants\": {\"axis=y\": {\"model\": \"fakemod:block/stone_pillar\"}}}"
+                            .getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/stone_pillar.json",
+                    ("{\"parent\": \"minecraft:block/cube_column\", "
+                    + "\"textures\": {\"end\": \"create:block/palettes/stone_types/cap/tuff_cut_cap\", "
+                    + "\"side\": \"create:block/palettes/stone_types/pillar/tuff_cut_pillar\", "
+                    + "\"particle\": \"#side\"}}")
+                            .getBytes(StandardCharsets.UTF_8));
+            for (String p : new String[]{
+                    "assets/create/textures/block/palettes/stone_types/cap/tuff_cut_cap.png",
+                    "assets/create/textures/block/palettes/stone_types/cap/tuff_cut_cap_connected.png",
+                    "assets/create/textures/block/palettes/stone_types/pillar/tuff_cut_pillar.png",
+                    "assets/create/textures/block/palettes/stone_types/pillar/tuff_cut_pillar_connected.png"}) {
+                jarEntries.put(p, testPng());
+            }
             writeJar(jar, jarEntries);
 
             // -- vanilla stub jar (stands in for the 26.3 client jar) -----------
@@ -1548,6 +1576,13 @@ public final class F2vPack {
                     .getBytes(StandardCharsets.UTF_8));
             vanillaEntries.put("assets/minecraft/models/block/block.json",
                     "{\"gui_light\": \"side\"}".getBytes(StandardCharsets.UTF_8));
+            // 14-ak: the cube_column parent the CT fixture's chain rides
+            vanillaEntries.put("assets/minecraft/models/block/cube_column.json",
+                    ("{\"parent\": \"block/cube\", "
+                    + "\"textures\": {\"particle\": \"#side\", \"down\": \"#end\", "
+                    + "\"up\": \"#end\", \"north\": \"#side\", \"south\": \"#side\", "
+                    + "\"west\": \"#side\", \"east\": \"#side\"}}")
+                            .getBytes(StandardCharsets.UTF_8));
             writeJar(vanillaJar, vanillaEntries);
 
             // -- manifest ---------------------------------------------------------
@@ -1612,9 +1647,9 @@ public final class F2vPack {
             // composite — including the vanilla-parent shape (own textures,
             // elements from the client jar's block/cube_all), which the old
             // direct path rendered as NOTHING (measured run 41126658261)
-            expect(failures, r1.gallery().size() == 6,
-                    "gallery: 6 state rows resolved, got " + r1.gallery().size());
-            if (r1.gallery().size() == 6) {
+            expect(failures, r1.gallery().size() == 7,
+                    "gallery: 7 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 7) {
                 List<GalleryPack.Resolved> g = r1.gallery();
                 // pane[north=false] = composite of the unconditional parts
                 // (post + the y90 side) — multipart rows are ALWAYS composites
@@ -1647,10 +1682,39 @@ public final class F2vPack {
                         .findFirst().orElse(null);
                 expect(failures, zrow != null && zrow.composite(),
                         "gallery: zcomp = composite flattened from the neoforge:composite children");
+                // 14-ak: the CT row — the suffixed stateId rides Resolved,
+                // the composite remaps into the connected sheets: the
+                // side faces carry the isolated RECTANGLE tile (0,3) —
+                // uv [(0+0)/4, (0+48)/4, (16+0)/4, (16+48)/4] = [0,12,4,16]
+                // — and the caps the isolated OMNIDIRECTIONAL tile (0,0) —
+                // uv [0,0,2,2] (/8); the connected png ships in the pack
+                GalleryPack.Resolved ctRow = g.stream()
+                        .filter(r -> r.stateId().endsWith("#0,0,12,12,12,12"))
+                        .findFirst().orElse(null);
+                expect(failures, ctRow != null && ctRow.composite()
+                                && ctRow.modelRef().startsWith("c-imagine:gallery/g"),
+                        "gallery: the CT row resolves with its ctx suffix");
+                if (ctRow != null) {
+                    String ctModel = ctRow.modelRef().substring(
+                            ctRow.modelRef().indexOf(':') + 1);
+                    TreeMap<String, byte[]> packZip = readZip(
+                            out.resolve("pack.zip"));
+                    String ctJson = str(packZip,
+                            "assets/c-imagine/models/" + ctModel + ".json");
+                    expect(failures, ctJson.contains("tuff_cut_pillar_connected")
+                                    && ctJson.contains("tuff_cut_cap_connected")
+                                    && ctJson.contains("[0.0,12.0,4.0,16.0]")
+                                    && ctJson.contains("[0.0,0.0,2.0,2.0]"),
+                            "gallery: the CT composite remaps into the connected sheets");
+                    expect(failures, packZip.containsKey(
+                            "assets/create/textures/block/palettes/stone_types/"
+                            + "pillar/tuff_cut_pillar_connected.png"),
+                            "gallery: the connected sheet ships in the pack");
+                }
             }
             expect(failures, r1.gallery().stream()
-                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 6,
-                    "gallery: cmds unique (100000..100005)");
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 7,
+                    "gallery: cmds unique (100000..100006)");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));

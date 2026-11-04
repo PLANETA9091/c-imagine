@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=none,north=tall,south=tall,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=none,north=tall,south=tall,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=none,north=tall,south=tall,up=false,waterlogged=true,west=tall]
+cell	-2	-60	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]	0
+cell	-1	-60	9	create:small_andesite_brick_wall[east=tall,north=low,south=low,up=true,waterlogged=false,west=low]	0
+cell	0	-60	9	create:small_andesite_brick_wall[east=none,north=low,south=low,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=none,up=true,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=none,up=true,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=none,up=true,waterlogged=true,west=tall]
+cell	4	-60	9	create:small_andesite_brick_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]	0
+cell	5	-60	9	create:small_andesite_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]	0
+cell	-5	-59	9	create:small_andesite_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=none,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=none,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=none,up=false,waterlogged=true,west=tall]
+cell	-1	-59	9	create:small_andesite_brick_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]	0
+cell	0	-59	9	create:small_andesite_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]	0
+cell	1	-59	9	create:small_andesite_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=true,west=tall]
+cell	5	-59	9	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]	0
+cell	-5	-58	9	create:small_andesite_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]	0
+cell	-4	-58	9	create:small_andesite_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=low,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=low,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=low,up=false,waterlogged=true,west=tall]
+cell	0	-58	9	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]	0
+cell	1	-58	9	create:small_andesite_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]	0
+cell	2	-58	9	create:small_andesite_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=tall,up=true,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=tall,up=true,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=tall,up=true,waterlogged=true,west=tall]
+cell	-5	-57	9	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]	0
+cell	-4	-57	9	create:small_andesite_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=low]	0
+cell	-3	-57	9	create:small_andesite_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=tall,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=tall,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=none,south=tall,up=false,waterlogged=true,west=tall]
+cell	1	-57	9	create:small_andesite_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]	0
+cell	2	-57	9	create:small_andesite_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=low]	0
+cell	3	-57	9	create:small_andesite_brick_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=none,up=true,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=none,up=true,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=none,up=true,waterlogged=true,west=tall]
+cell	-4	-56	9	create:small_andesite_brick_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]	0
+cell	-3	-56	9	create:small_andesite_brick_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=low]	0
+cell	-2	-56	9	create:small_andesite_brick_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=none,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=none,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=none,up=false,waterlogged=true,west=tall]
+cell	2	-56	9	create:small_andesite_brick_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]	0
+cell	3	-56	9	create:small_andesite_brick_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=low]	0
+cell	4	-56	9	create:small_andesite_brick_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=true,west=tall]
+cell	-3	-55	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]	0
+cell	-2	-55	9	create:small_andesite_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=low]	0
+cell	-1	-55	9	create:small_andesite_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=low,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=low,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=low,up=false,waterlogged=true,west=tall]
+cell	3	-55	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]	0
+cell	4	-55	9	create:small_andesite_brick_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=low]	0
+cell	5	-55	9	create:small_andesite_brick_wall[east=tall,north=tall,south=tall,up=false,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=true,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=true,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=true,waterlogged=true,west=tall]
+cell	-2	-54	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]	0
+cell	-1	-54	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]	0
+cell	0	-54	9	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=true,waterlogged=false,west=tall]	0
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=false,waterlogged=true,west=none]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=false,waterlogged=true,west=low]
+skip	-1	-1	-1	create:small_andesite_brick_wall[east=low,north=low,south=tall,up=false,waterlogged=true,west=tall]
+cell	4	-54	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]	0
+cell	5	-54	9	create:small_andesite_brick_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]	0

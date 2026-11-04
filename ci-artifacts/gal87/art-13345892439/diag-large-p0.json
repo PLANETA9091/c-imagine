@@ -1,0 +1,32 @@
+{
+ "cells": 1,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 0,
+ "spill": 0,
+ "animated": 0,
+ "gate": 240000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-entitylarge-minecraft-p0",
+   "col": 2,
+   "row": 2,
+   "state": "minecraft:camel",
+   "ae": 155604,
+   "shift": [
+    2,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  }
+ ]
+}

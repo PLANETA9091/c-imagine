@@ -1,0 +1,792 @@
+{
+ "cells": 39,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 39,
+ "spill": 0,
+ "animated": 0,
+ "gate": 60000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-create-p8",
+   "col": 0,
+   "row": 0,
+   "state": "create:belt[casing=true,facing=north,part=PULLEY,slope=UPWARD,waterlogged=false]",
+   "ae": 735590,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 2,
+   "row": 0,
+   "state": "create:belt[casing=true,facing=north,part=PULLEY,slope=DOWNWARD,waterlogged=false]",
+   "ae": 107639,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.919,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 4,
+   "row": 0,
+   "state": "create:belt[casing=true,facing=north,part=PULLEY,slope=VERTICAL,waterlogged=false]",
+   "ae": 162373,
+   "shift": [
+    2,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.925,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 6,
+   "row": 0,
+   "state": "create:belt[casing=true,facing=north,part=PULLEY,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 99543,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.919,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 8,
+   "row": 0,
+   "state": "create:belt[casing=true,facing=south,part=START,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 275299,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.98,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 10,
+   "row": 0,
+   "state": "create:belt[casing=true,facing=south,part=START,slope=UPWARD,waterlogged=false]",
+   "ae": 76808,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.915,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 1,
+   "row": 1,
+   "state": "create:belt[casing=true,facing=south,part=START,slope=DOWNWARD,waterlogged=false]",
+   "ae": 706345,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 3,
+   "row": 1,
+   "state": "create:belt[casing=true,facing=south,part=START,slope=VERTICAL,waterlogged=false]",
+   "ae": 68747,
+   "shift": [
+    3,
+    0
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.904,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 5,
+   "row": 1,
+   "state": "create:belt[casing=true,facing=south,part=START,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 766488,
+   "shift": [
+    0,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 7,
+   "row": 1,
+   "state": "create:belt[casing=true,facing=south,part=MIDDLE,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 110998,
+   "shift": [
+    -3,
+    0
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.904,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 9,
+   "row": 1,
+   "state": "create:belt[casing=true,facing=south,part=MIDDLE,slope=UPWARD,waterlogged=false]",
+   "ae": 491567,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 0,
+   "row": 2,
+   "state": "create:belt[casing=true,facing=south,part=MIDDLE,slope=DOWNWARD,waterlogged=false]",
+   "ae": 207103,
+   "shift": [
+    -2,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 2,
+   "row": 2,
+   "state": "create:belt[casing=true,facing=south,part=MIDDLE,slope=VERTICAL,waterlogged=false]",
+   "ae": 55008,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 4,
+   "row": 2,
+   "state": "create:belt[casing=true,facing=south,part=MIDDLE,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 64850,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 6,
+   "row": 2,
+   "state": "create:belt[casing=true,facing=south,part=END,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 793887,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 8,
+   "row": 2,
+   "state": "create:belt[casing=true,facing=south,part=END,slope=UPWARD,waterlogged=false]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 10,
+   "row": 2,
+   "state": "create:belt[casing=true,facing=south,part=END,slope=DOWNWARD,waterlogged=false]",
+   "ae": 390038,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 1,
+   "row": 3,
+   "state": "create:belt[casing=true,facing=south,part=END,slope=VERTICAL,waterlogged=false]",
+   "ae": 457399,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 3,
+   "row": 3,
+   "state": "create:belt[casing=true,facing=south,part=END,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 488823,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 5,
+   "row": 3,
+   "state": "create:belt[casing=true,facing=south,part=PULLEY,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 297949,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 7,
+   "row": 3,
+   "state": "create:belt[casing=true,facing=south,part=PULLEY,slope=UPWARD,waterlogged=false]",
+   "ae": 486675,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 9,
+   "row": 3,
+   "state": "create:belt[casing=true,facing=south,part=PULLEY,slope=DOWNWARD,waterlogged=false]",
+   "ae": 923216,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 0,
+   "row": 4,
+   "state": "create:belt[casing=true,facing=south,part=PULLEY,slope=VERTICAL,waterlogged=false]",
+   "ae": 0,
+   "shift": [
+    1,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 2,
+   "row": 4,
+   "state": "create:belt[casing=true,facing=south,part=PULLEY,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 479765,
+   "shift": [
+    3,
+    -1
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 4,
+   "row": 4,
+   "state": "create:belt[casing=true,facing=west,part=START,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 327985,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 6,
+   "row": 4,
+   "state": "create:belt[casing=true,facing=west,part=START,slope=UPWARD,waterlogged=false]",
+   "ae": 313015,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 8,
+   "row": 4,
+   "state": "create:belt[casing=true,facing=west,part=START,slope=DOWNWARD,waterlogged=false]",
+   "ae": 377582,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 10,
+   "row": 4,
+   "state": "create:belt[casing=true,facing=west,part=START,slope=VERTICAL,waterlogged=false]",
+   "ae": 4517,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 1,
+   "row": 5,
+   "state": "create:belt[casing=true,facing=west,part=START,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 430874,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 3,
+   "row": 5,
+   "state": "create:belt[casing=true,facing=west,part=MIDDLE,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 877705,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 5,
+   "row": 5,
+   "state": "create:belt[casing=true,facing=west,part=MIDDLE,slope=UPWARD,waterlogged=false]",
+   "ae": 6707,
+   "shift": [
+    3,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 7,
+   "row": 5,
+   "state": "create:belt[casing=true,facing=west,part=MIDDLE,slope=DOWNWARD,waterlogged=false]",
+   "ae": 852138,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 9,
+   "row": 5,
+   "state": "create:belt[casing=true,facing=west,part=MIDDLE,slope=VERTICAL,waterlogged=false]",
+   "ae": 1126037,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 0,
+   "row": 6,
+   "state": "create:belt[casing=true,facing=west,part=MIDDLE,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 919490,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 2,
+   "row": 6,
+   "state": "create:belt[casing=true,facing=west,part=END,slope=HORIZONTAL,waterlogged=false]",
+   "ae": 199972,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 4,
+   "row": 6,
+   "state": "create:belt[casing=true,facing=west,part=END,slope=UPWARD,waterlogged=false]",
+   "ae": 739841,
+   "shift": [
+    3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 6,
+   "row": 6,
+   "state": "create:belt[casing=true,facing=west,part=END,slope=DOWNWARD,waterlogged=false]",
+   "ae": 511986,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.6,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 8,
+   "row": 6,
+   "state": "create:belt[casing=true,facing=west,part=END,slope=VERTICAL,waterlogged=false]",
+   "ae": 1089580,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p8",
+   "col": 10,
+   "row": 6,
+   "state": "create:belt[casing=true,facing=west,part=END,slope=SIDEWAYS,waterlogged=false]",
+   "ae": 921736,
+   "shift": [
+    -3,
+    3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": true,
+   "self_ae": [
+    null,
+    null
+   ]
+  }
+ ]
+}

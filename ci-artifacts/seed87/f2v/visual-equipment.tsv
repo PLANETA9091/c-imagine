@@ -1,0 +1,13 @@
+# c-imagine F2V 2.0 equipment manifest (M6 pull-forward, measured surface)
+#
+# Format (TSV): asset_id <TAB> legacy_layer1_path [<TAB> legacy_layer2_path]
+#   - asset_id is the 26.3 equipment asset key ("cimtest:test_armor") the
+#     item's `equippable` component (asset_id) points at.
+#   - paths are RELATIVE to assets/<ns>/ inside a mod jar at the LEGACY
+#     1.21.1 locations (textures/models/armor/<name>_layer_N.png); the pack
+#     builder maps them to the 26.3 canonical locations:
+#       layer_1 -> textures/entity/equipment/humanoid/<ns>/<name>.png
+#       layer_2 -> textures/entity/equipment/humanoid_leggings/<ns>/<name>.png
+#   - emits equipment/<ns>/<name>.json with humanoid + humanoid_leggings
+#     layers (vanilla iron.json schema, measured from the 26.3 client jar).
+cimtest:test_armor	textures/models/armor/test_armor_layer_1.png	textures/models/armor/test_armor_layer_2.png

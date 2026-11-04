@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=true,distance=6,waterlogged=true]
+cell	-4	-60	9	create:andesite_scaffolding[bottom=true,distance=6,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=true,distance=7,waterlogged=true]
+cell	-2	-60	9	create:andesite_scaffolding[bottom=true,distance=7,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=0,waterlogged=true]
+cell	0	-60	9	create:andesite_scaffolding[bottom=false,distance=0,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=1,waterlogged=true]
+cell	2	-60	9	create:andesite_scaffolding[bottom=false,distance=1,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=2,waterlogged=true]
+cell	4	-60	9	create:andesite_scaffolding[bottom=false,distance=2,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=3,waterlogged=true]
+cell	-5	-59	9	create:andesite_scaffolding[bottom=false,distance=3,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=4,waterlogged=true]
+cell	-3	-59	9	create:andesite_scaffolding[bottom=false,distance=4,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=5,waterlogged=true]
+cell	-1	-59	9	create:andesite_scaffolding[bottom=false,distance=5,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=6,waterlogged=true]
+cell	1	-59	9	create:andesite_scaffolding[bottom=false,distance=6,waterlogged=false]	0
+skip	-1	-1	-1	create:andesite_scaffolding[bottom=false,distance=7,waterlogged=true]
+cell	3	-59	9	create:andesite_scaffolding[bottom=false,distance=7,waterlogged=false]	0
+cell	4	-59	9	create:andesite_table_cloth[entity=true]	1
+cell	5	-59	9	create:andesite_table_cloth[entity=false]	1
+cell	-5	-58	9	create:andesite_tunnel[axis=x,shape=STRAIGHT]	1
+cell	-4	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	-3	-58	9	create:andesite_tunnel[axis=x,shape=CLOSED]	1
+cell	-2	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	-1	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	0	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	1	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	2	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	3	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	4	-58	9	create:andesite_tunnel[axis=x,shape=WINDOW]	1
+cell	5	-58	9	create:andesite_tunnel[axis=x,shape=STRAIGHT]	1
+cell	-5	-57	9	create:andesite_tunnel[axis=x,shape=STRAIGHT]	1
+cell	-4	-57	9	create:asurine	0
+cell	-3	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	-2	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	-1	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	0	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	1	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	2	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	3	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	4	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	5	-57	9	create:asurine_pillar[axis=x,east=false,north=true,south=true,west=true]	0
+cell	-5	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-4	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-3	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-2	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	-1	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	0	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	1	-56	9	create:asurine_pillar[axis=x,east=false,north=false,south=false,west=false]	0
+cell	2	-56	9	create:asurine_pillar[axis=y,east=true,north=true,south=false,west=false]	0
+cell	3	-56	9	create:asurine_pillar[axis=y,east=false,north=false,south=true,west=true]	0
+cell	4	-56	9	create:asurine_pillar[axis=y,east=true,north=false,south=true,west=false]	0
+cell	5	-56	9	create:asurine_pillar[axis=y,east=false,north=false,south=false,west=true]	0
+cell	-5	-55	9	create:asurine_pillar[axis=y,east=false,north=false,south=false,west=false]	0
+cell	-4	-55	9	create:asurine_pillar[axis=y,east=true,north=false,south=true,west=false]	0
+cell	-3	-55	9	create:asurine_pillar[axis=y,east=false,north=false,south=false,west=true]	0
+cell	-2	-55	9	create:asurine_pillar[axis=y,east=true,north=false,south=false,west=false]	0
+cell	-1	-55	9	create:asurine_pillar[axis=y,east=false,north=true,south=true,west=true]	0
+cell	0	-55	9	create:asurine_pillar[axis=y,east=true,north=true,south=true,west=false]	0
+cell	1	-55	9	create:asurine_pillar[axis=y,east=false,north=true,south=false,west=true]	0
+cell	2	-55	9	create:asurine_pillar[axis=y,east=true,north=true,south=false,west=false]	0
+cell	3	-55	9	create:asurine_pillar[axis=y,east=false,north=false,south=true,west=true]	0
+cell	4	-55	9	create:asurine_pillar[axis=y,east=true,north=false,south=true,west=false]	0
+cell	5	-55	9	create:asurine_pillar[axis=y,east=false,north=false,south=false,west=true]	0
+cell	-5	-54	9	create:asurine_pillar[axis=y,east=false,north=false,south=false,west=false]	0
+cell	-4	-54	9	create:asurine_pillar[axis=z,east=true,north=true,south=true,west=true]	0
+cell	-3	-54	9	create:asurine_pillar[axis=z,east=true,north=false,south=true,west=false]	0
+cell	-2	-54	9	create:asurine_pillar[axis=z,east=true,north=false,south=false,west=true]	0
+cell	-1	-54	9	create:asurine_pillar[axis=z,east=true,north=true,south=false,west=false]	0
+cell	0	-54	9	create:asurine_pillar[axis=z,east=true,north=true,south=true,west=true]	0
+cell	1	-54	9	create:asurine_pillar[axis=z,east=true,north=false,south=true,west=false]	0
+cell	2	-54	9	create:asurine_pillar[axis=z,east=true,north=false,south=false,west=true]	0
+cell	3	-54	9	create:asurine_pillar[axis=z,east=true,north=true,south=false,west=false]	0
+cell	4	-54	9	create:asurine_pillar[axis=z,east=false,north=true,south=true,west=true]	0
+cell	5	-54	9	create:asurine_pillar[axis=z,east=false,north=true,south=true,west=false]	0

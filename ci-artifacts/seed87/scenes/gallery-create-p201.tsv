@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=south,half=top,open=false,powered=false,waterlogged=true]
+cell	-4	-60	9	create:framed_glass_trapdoor[facing=south,half=top,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=south,half=bottom,open=true,powered=true,waterlogged=true]
+cell	-2	-60	9	create:framed_glass_trapdoor[facing=south,half=bottom,open=true,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=south,half=bottom,open=true,powered=false,waterlogged=true]
+cell	0	-60	9	create:framed_glass_trapdoor[facing=south,half=bottom,open=true,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=south,half=bottom,open=false,powered=true,waterlogged=true]
+cell	2	-60	9	create:framed_glass_trapdoor[facing=south,half=bottom,open=false,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=true]
+cell	4	-60	9	create:framed_glass_trapdoor[facing=south,half=bottom,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=top,open=true,powered=true,waterlogged=true]
+cell	-5	-59	9	create:framed_glass_trapdoor[facing=west,half=top,open=true,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=top,open=true,powered=false,waterlogged=true]
+cell	-3	-59	9	create:framed_glass_trapdoor[facing=west,half=top,open=true,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=top,open=false,powered=true,waterlogged=true]
+cell	-1	-59	9	create:framed_glass_trapdoor[facing=west,half=top,open=false,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=top,open=false,powered=false,waterlogged=true]
+cell	1	-59	9	create:framed_glass_trapdoor[facing=west,half=top,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=bottom,open=true,powered=true,waterlogged=true]
+cell	3	-59	9	create:framed_glass_trapdoor[facing=west,half=bottom,open=true,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=bottom,open=true,powered=false,waterlogged=true]
+cell	5	-59	9	create:framed_glass_trapdoor[facing=west,half=bottom,open=true,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=bottom,open=false,powered=true,waterlogged=true]
+cell	-4	-58	9	create:framed_glass_trapdoor[facing=west,half=bottom,open=false,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=west,half=bottom,open=false,powered=false,waterlogged=true]
+cell	-2	-58	9	create:framed_glass_trapdoor[facing=west,half=bottom,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=top,open=true,powered=true,waterlogged=true]
+cell	0	-58	9	create:framed_glass_trapdoor[facing=east,half=top,open=true,powered=true,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=top,open=true,powered=false,waterlogged=true]
+cell	2	-58	9	create:framed_glass_trapdoor[facing=east,half=top,open=true,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=top,open=false,powered=true,waterlogged=true]
+cell	4	-58	9	create:framed_glass_trapdoor[facing=east,half=top,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=top,open=false,powered=false,waterlogged=true]
+cell	-5	-57	9	create:framed_glass_trapdoor[facing=east,half=top,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=bottom,open=true,powered=true,waterlogged=true]
+cell	-3	-57	9	create:framed_glass_trapdoor[facing=east,half=bottom,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=bottom,open=true,powered=false,waterlogged=true]
+cell	-1	-57	9	create:framed_glass_trapdoor[facing=east,half=bottom,open=true,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=bottom,open=false,powered=true,waterlogged=true]
+cell	1	-57	9	create:framed_glass_trapdoor[facing=east,half=bottom,open=false,powered=false,waterlogged=false]	0
+skip	-1	-1	-1	create:framed_glass_trapdoor[facing=east,half=bottom,open=false,powered=false,waterlogged=true]
+cell	3	-57	9	create:framed_glass_trapdoor[facing=east,half=bottom,open=false,powered=false,waterlogged=false]	0
+cell	4	-57	9	create:gantry_carriage[axis_along_first=true,facing=north]	1
+cell	5	-57	9	create:gantry_carriage[axis_along_first=true,facing=east]	1
+cell	-5	-56	9	create:gantry_carriage[axis_along_first=true,facing=south]	1
+cell	-4	-56	9	minecraft:air	0
+cell	-3	-56	9	create:gantry_carriage[axis_along_first=true,facing=up]	1
+cell	-2	-56	9	create:gantry_carriage[axis_along_first=true,facing=down]	1
+cell	-1	-56	9	create:gantry_carriage[axis_along_first=false,facing=north]	1
+cell	0	-56	9	create:gantry_carriage[axis_along_first=false,facing=east]	1
+cell	1	-56	9	create:gantry_carriage[axis_along_first=false,facing=south]	1
+cell	2	-56	9	minecraft:air	0
+cell	3	-56	9	create:gantry_carriage[axis_along_first=false,facing=up]	1
+cell	4	-56	9	create:gantry_carriage[axis_along_first=false,facing=down]	1
+cell	5	-56	9	create:gantry_shaft[facing=north,part=START,powered=false]	1
+cell	-5	-55	9	create:gantry_shaft[facing=north,part=START,powered=false]	1
+cell	-4	-55	9	create:gantry_shaft[facing=north,part=MIDDLE,powered=false]	1
+cell	-3	-55	9	create:gantry_shaft[facing=north,part=MIDDLE,powered=false]	1
+cell	-2	-55	9	create:gantry_shaft[facing=north,part=END,powered=false]	1
+cell	-1	-55	9	create:gantry_shaft[facing=north,part=END,powered=false]	1
+cell	0	-55	9	create:gantry_shaft[facing=north,part=SINGLE,powered=false]	1
+cell	1	-55	9	create:gantry_shaft[facing=north,part=SINGLE,powered=false]	1
+cell	2	-55	9	create:gantry_shaft[facing=east,part=START,powered=false]	1
+cell	3	-55	9	create:gantry_shaft[facing=east,part=MIDDLE,powered=false]	1
+cell	4	-55	9	create:gantry_shaft[facing=east,part=MIDDLE,powered=false]	1
+cell	5	-55	9	create:gantry_shaft[facing=east,part=MIDDLE,powered=false]	1
+cell	-5	-54	9	create:gantry_shaft[facing=east,part=MIDDLE,powered=false]	1
+cell	-4	-54	9	create:gantry_shaft[facing=east,part=MIDDLE,powered=false]	1
+cell	-3	-54	9	create:gantry_shaft[facing=east,part=MIDDLE,powered=false]	1
+cell	-2	-54	9	create:gantry_shaft[facing=east,part=END,powered=false]	1
+cell	-1	-54	9	create:gantry_shaft[facing=south,part=START,powered=false]	1
+cell	0	-54	9	create:gantry_shaft[facing=south,part=START,powered=false]	1
+cell	1	-54	9	create:gantry_shaft[facing=south,part=MIDDLE,powered=false]	1
+cell	2	-54	9	create:gantry_shaft[facing=south,part=MIDDLE,powered=false]	1
+cell	3	-54	9	create:gantry_shaft[facing=south,part=END,powered=false]	1
+cell	4	-54	9	create:gantry_shaft[facing=south,part=END,powered=false]	1
+cell	5	-54	9	create:gantry_shaft[facing=south,part=SINGLE,powered=true]	1

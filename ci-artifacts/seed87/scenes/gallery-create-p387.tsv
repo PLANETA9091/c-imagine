@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+skip	-1	-1	-1	create:tiled_glass_pane[east=true,north=false,south=true,waterlogged=true,west=true]
+skip	-1	-1	-1	create:tiled_glass_pane[east=true,north=false,south=true,waterlogged=true,west=false]
+cell	-3	-60	9	create:tiled_glass_pane[east=true,north=false,south=true,waterlogged=false,west=true]	0
+cell	-2	-60	9	create:tiled_glass_pane[east=true,north=false,south=true,waterlogged=false,west=false]	0
+skip	-1	-1	-1	create:tiled_glass_pane[east=true,north=false,south=false,waterlogged=true,west=true]
+skip	-1	-1	-1	create:tiled_glass_pane[east=true,north=false,south=false,waterlogged=true,west=false]
+cell	1	-60	9	create:tiled_glass_pane[east=true,north=false,south=false,waterlogged=false,west=true]	0
+cell	2	-60	9	create:tiled_glass_pane[east=true,north=false,south=false,waterlogged=false,west=false]	0
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=true,south=true,waterlogged=true,west=true]
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=true,south=true,waterlogged=true,west=false]
+cell	5	-60	9	create:tiled_glass_pane[east=false,north=true,south=true,waterlogged=false,west=true]	0
+cell	-5	-59	9	create:tiled_glass_pane[east=false,north=true,south=true,waterlogged=false,west=false]	0
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=true,south=false,waterlogged=true,west=true]
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=true,south=false,waterlogged=true,west=false]
+cell	-2	-59	9	create:tiled_glass_pane[east=true,north=true,south=false,waterlogged=false,west=true]	0
+cell	-1	-59	9	create:tiled_glass_pane[east=false,north=true,south=false,waterlogged=false,west=true]	0
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=false,south=true,waterlogged=true,west=true]
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=false,south=true,waterlogged=true,west=false]
+cell	2	-59	9	create:tiled_glass_pane[east=true,north=false,south=true,waterlogged=false,west=true]	0
+cell	3	-59	9	create:tiled_glass_pane[east=false,north=false,south=true,waterlogged=false,west=true]	0
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=false,south=false,waterlogged=true,west=true]
+skip	-1	-1	-1	create:tiled_glass_pane[east=false,north=false,south=false,waterlogged=true,west=false]
+cell	-5	-58	9	create:tiled_glass_pane[east=true,north=false,south=false,waterlogged=false,west=true]	0
+cell	-4	-58	9	create:tiled_glass_pane[east=false,north=false,south=false,waterlogged=false,west=true]	0
+skip	-1	-1	-1	create:track[shape=NONE,turn=true,waterlogged=true]
+cell	-2	-58	9	create:track[shape=NONE,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=NONE,turn=false,waterlogged=true]
+cell	0	-58	9	create:track[shape=NONE,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=ZO,turn=true,waterlogged=true]
+cell	2	-58	9	create:track[shape=ZO,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=ZO,turn=false,waterlogged=true]
+cell	4	-58	9	create:track[shape=ZO,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=XO,turn=true,waterlogged=true]
+cell	-5	-57	9	create:track[shape=XO,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=XO,turn=false,waterlogged=true]
+cell	-3	-57	9	create:track[shape=XO,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=PD,turn=true,waterlogged=true]
+cell	-1	-57	9	create:track[shape=PD,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=PD,turn=false,waterlogged=true]
+cell	1	-57	9	create:track[shape=PD,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=ND,turn=true,waterlogged=true]
+cell	3	-57	9	create:track[shape=ND,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=ND,turn=false,waterlogged=true]
+cell	5	-57	9	create:track[shape=ND,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AN,turn=true,waterlogged=true]
+cell	-4	-56	9	create:track[shape=AN,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AN,turn=false,waterlogged=true]
+cell	-2	-56	9	create:track[shape=AN,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AS,turn=true,waterlogged=true]
+cell	0	-56	9	create:track[shape=AS,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AS,turn=false,waterlogged=true]
+cell	2	-56	9	create:track[shape=AS,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AE,turn=true,waterlogged=true]
+cell	4	-56	9	create:track[shape=AE,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AE,turn=false,waterlogged=true]
+cell	-5	-55	9	create:track[shape=AE,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AW,turn=true,waterlogged=true]
+cell	-3	-55	9	create:track[shape=AW,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=AW,turn=false,waterlogged=true]
+cell	-1	-55	9	create:track[shape=AW,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TN,turn=true,waterlogged=true]
+cell	1	-55	9	create:track[shape=TN,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TN,turn=false,waterlogged=true]
+cell	3	-55	9	create:track[shape=TN,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TS,turn=true,waterlogged=true]
+cell	5	-55	9	create:track[shape=TS,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TS,turn=false,waterlogged=true]
+cell	-4	-54	9	create:track[shape=TS,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TE,turn=true,waterlogged=true]
+cell	-2	-54	9	create:track[shape=TE,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TE,turn=false,waterlogged=true]
+cell	0	-54	9	create:track[shape=TE,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TW,turn=true,waterlogged=true]
+cell	2	-54	9	create:track[shape=TW,turn=true,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=TW,turn=false,waterlogged=true]
+cell	4	-54	9	create:track[shape=TW,turn=false,waterlogged=false]	1
+skip	-1	-1	-1	create:track[shape=CR_O,turn=true,waterlogged=true]

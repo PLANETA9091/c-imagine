@@ -1,0 +1,6 @@
+down OMNIDIRECTIONAL up=false down=false left=true right=false tl=false tr=false bl=false br=false
+up OMNIDIRECTIONAL up=false down=false left=false right=false tl=false tr=false bl=false br=false
+north RECTANGLE up=false down=false left=false right=true tl=false tr=false bl=false br=false
+south RECTANGLE up=false down=false left=true right=false tl=false tr=false bl=false br=false
+west RECTANGLE up=false down=false left=false right=false tl=false tr=false bl=false br=false
+east RECTANGLE up=false down=false left=false right=false tl=false tr=false bl=false br=false

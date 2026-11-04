@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:metal_girder[axis=z,bottom=true,top=true,waterlogged=false,x=false,z=false]	0
+cell	-4	-60	9	create:metal_girder[axis=z,bottom=true,top=true,waterlogged=false,x=false,z=true]	0
+cell	-3	-60	9	create:metal_girder[axis=z,bottom=true,top=true,waterlogged=false,x=false,z=false]	0
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=true,x=true,z=true]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=true,x=true,z=false]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=true,x=false,z=true]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=true,x=false,z=false]
+cell	2	-60	9	create:metal_girder[axis=z,bottom=true,top=true,waterlogged=false,x=true,z=true]	0
+cell	3	-60	9	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=false,x=true,z=false]	0
+cell	4	-60	9	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=false,x=true,z=true]	0
+cell	5	-60	9	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=false,x=true,z=false]	0
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=true,x=true,z=true]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=true,x=true,z=false]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=true,x=false,z=true]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=true,x=false,z=false]
+cell	-1	-59	9	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=false,x=true,z=true]	0
+cell	0	-59	9	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=false,x=true,z=false]	0
+cell	1	-59	9	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=false,x=true,z=true]	0
+cell	2	-59	9	create:metal_girder[axis=z,bottom=true,top=false,waterlogged=false,x=true,z=false]	0
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=false,waterlogged=true,x=true,z=true]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=false,waterlogged=true,x=true,z=false]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=false,waterlogged=true,x=false,z=true]
+skip	-1	-1	-1	create:metal_girder[axis=z,bottom=false,top=false,waterlogged=true,x=false,z=false]
+cell	-4	-58	9	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=false,x=true,z=true]	0
+cell	-3	-58	9	create:metal_girder[axis=z,bottom=false,top=false,waterlogged=false,x=true,z=false]	0
+cell	-2	-58	9	create:metal_girder[axis=z,bottom=false,top=true,waterlogged=false,x=true,z=true]	0
+cell	-1	-58	9	create:metal_girder[axis=z,bottom=false,top=false,waterlogged=false,x=true,z=false]	0
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=x,bottom=true,top=true,waterlogged=true]
+cell	1	-58	9	create:metal_girder_encased_shaft[axis=x,bottom=true,top=true,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=x,bottom=true,top=false,waterlogged=true]
+cell	3	-58	9	create:metal_girder_encased_shaft[axis=x,bottom=true,top=false,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=x,bottom=false,top=true,waterlogged=true]
+cell	5	-58	9	create:metal_girder_encased_shaft[axis=x,bottom=false,top=true,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=x,bottom=false,top=false,waterlogged=true]
+cell	-4	-57	9	create:metal_girder_encased_shaft[axis=x,bottom=true,top=false,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=z,bottom=true,top=true,waterlogged=true]
+cell	-2	-57	9	create:metal_girder_encased_shaft[axis=z,bottom=true,top=true,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=z,bottom=true,top=false,waterlogged=true]
+cell	0	-57	9	create:metal_girder_encased_shaft[axis=z,bottom=true,top=false,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=z,bottom=false,top=true,waterlogged=true]
+cell	2	-57	9	create:metal_girder_encased_shaft[axis=z,bottom=false,top=true,waterlogged=false]	1
+skip	-1	-1	-1	create:metal_girder_encased_shaft[axis=z,bottom=false,top=false,waterlogged=true]
+cell	4	-57	9	create:metal_girder_encased_shaft[axis=z,bottom=false,top=false,waterlogged=false]	1
+cell	5	-57	9	create:millstone	1
+cell	-5	-56	9	create:minecart_anchor[axis=x]	0
+cell	-4	-56	9	create:minecart_anchor[axis=z]	0
+cell	-3	-56	9	create:mysterious_cuckoo_clock[facing=north]	1
+cell	-2	-56	9	create:mysterious_cuckoo_clock[facing=south]	1
+cell	-1	-56	9	create:mysterious_cuckoo_clock[facing=west]	1
+cell	0	-56	9	create:mysterious_cuckoo_clock[facing=east]	1
+skip	-1	-1	-1	create:netherite_backtank[facing=north,waterlogged=true]
+cell	2	-56	9	create:netherite_backtank[facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:netherite_backtank[facing=south,waterlogged=true]
+cell	4	-56	9	create:netherite_backtank[facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:netherite_backtank[facing=west,waterlogged=true]
+cell	-5	-55	9	create:netherite_backtank[facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:netherite_backtank[facing=east,waterlogged=true]
+cell	-3	-55	9	create:netherite_backtank[facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=FLOOR,facing=north,waterlogged=true]
+cell	-1	-55	9	create:nixie_tube[double_face=FLOOR,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=FLOOR,facing=south,waterlogged=true]
+cell	1	-55	9	create:nixie_tube[double_face=FLOOR,facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=FLOOR,facing=west,waterlogged=true]
+cell	3	-55	9	create:nixie_tube[double_face=FLOOR,facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=FLOOR,facing=east,waterlogged=true]
+cell	5	-55	9	create:nixie_tube[double_face=FLOOR,facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=WALL,facing=north,waterlogged=true]
+cell	-4	-54	9	create:nixie_tube[double_face=WALL,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=WALL,facing=south,waterlogged=true]
+cell	-2	-54	9	create:nixie_tube[double_face=WALL,facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=WALL,facing=west,waterlogged=true]
+cell	0	-54	9	create:nixie_tube[double_face=WALL,facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=WALL,facing=east,waterlogged=true]
+cell	2	-54	9	create:nixie_tube[double_face=WALL,facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=WALL_REVERSED,facing=north,waterlogged=true]
+cell	4	-54	9	create:nixie_tube[double_face=WALL_REVERSED,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:nixie_tube[double_face=WALL_REVERSED,facing=south,waterlogged=true]

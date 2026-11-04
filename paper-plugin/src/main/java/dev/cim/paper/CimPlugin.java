@@ -1181,6 +1181,28 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().warning(LOG_PREFIX + "f2v gallery: manifest read failed " + mf + ": " + ioe);
             return 0;
         }
+        // 14-ak CT: the seed's per-cell tile indices (gallery_ct.py,
+        // verified against the real create classes 515/515) — the pack
+        // carries one composite PER (state, ctx); the suffixed lookup
+        // falls back to the plain state row.
+        final java.util.Map<String, String> ctByPos = new java.util.HashMap<>();
+        Path ctxMf = mf.resolveSibling(mf.getFileName() + ".ctx.tsv");
+        if (Files.isRegularFile(ctxMf)) {
+            try {
+                for (String line : Files.readAllLines(ctxMf, StandardCharsets.UTF_8)) {
+                    if (line.isBlank() || line.startsWith("#")) {
+                        continue;
+                    }
+                    String[] parts = line.split("\t", -1);
+                    if (parts.length >= 4) {
+                        ctByPos.put(parts[0] + "," + parts[1] + "," + parts[2], parts[3]);
+                    }
+                }
+            } catch (IOException ioe) {
+                log().warning(LOG_PREFIX + "f2v gallery: ctx read failed " + ctxMf
+                        + ": " + ioe + " — plain states ride");
+            }
+        }
         final java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> map = byState;
         Integer placed = callSync(() -> {
             int n = 0;
@@ -1198,12 +1220,18 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
                 String state = row[4];
-                dev.cim.f2v.GalleryPack.Resolved r = map.get(state);
-                if (r == null) {
+                String ctKey = ctByPos.get(row[1] + "," + row[2] + "," + row[3]);
+                dev.cim.f2v.GalleryPack.Resolved picked = ctKey == null ? null
+                        : map.get(state + "#" + ctKey);
+                if (picked == null) {
+                    picked = map.get(state);
+                }
+                if (picked == null) {
                     log().warning(LOG_PREFIX + "f2v gallery: no pack CMD for " + state
                             + " — cell " + row[1] + "," + row[2] + "," + row[3] + " skipped");
                     continue;
                 }
+                final dev.cim.f2v.GalleryPack.Resolved r = picked;
                 String bare = "paper";
                 Material material = Material.matchMaterial(bare);
                 ItemStack stack = new ItemStack(material);

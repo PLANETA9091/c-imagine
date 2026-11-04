@@ -1,0 +1,635 @@
+{
+ "cells": 39,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 0,
+ "spill": 0,
+ "gate": 60000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-create-p269",
+   "col": 0,
+   "row": 0,
+   "state": "create:polished_cut_limestone_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 36751,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.952,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 1,
+   "row": 0,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 32059,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.979,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 2,
+   "row": 0,
+   "state": "create:polished_cut_limestone_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 26537,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.924,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 6,
+   "row": 0,
+   "state": "create:polished_cut_limestone_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 19134,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.911,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 7,
+   "row": 0,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 25625,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.93,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 8,
+   "row": 0,
+   "state": "create:polished_cut_limestone_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 42397,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.956,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 1,
+   "row": 1,
+   "state": "create:polished_cut_limestone_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 12421,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 2,
+   "row": 1,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 30663,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.002,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 3,
+   "row": 1,
+   "state": "create:polished_cut_limestone_wall[east=none,north=none,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 36428,
+   "shift": [
+    -3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 7,
+   "row": 1,
+   "state": "create:polished_cut_limestone_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 36419,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.902,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 8,
+   "row": 1,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 28718,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 9,
+   "row": 1,
+   "state": "create:polished_cut_limestone_wall[east=none,north=none,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 11702,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 2,
+   "row": 2,
+   "state": "create:polished_cut_limestone_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 16500,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.971,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 3,
+   "row": 2,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 13717,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 4,
+   "row": 2,
+   "state": "create:polished_cut_limestone_wall[east=none,north=none,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 8843,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 8,
+   "row": 2,
+   "state": "create:polished_cut_limestone_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 5341,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.982,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 9,
+   "row": 2,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 13979,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.111,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 10,
+   "row": 2,
+   "state": "create:polished_cut_limestone_wall[east=none,north=none,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 11430,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.002,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 3,
+   "row": 3,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 13674,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.038,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 4,
+   "row": 3,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=tall,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 14536,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 5,
+   "row": 3,
+   "state": "create:polished_cut_limestone_wall[east=none,north=tall,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 12959,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.137,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 9,
+   "row": 3,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 11448,
+   "shift": [
+    1,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.111,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 10,
+   "row": 3,
+   "state": "create:polished_cut_limestone_wall[east=none,north=tall,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 7289,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 0,
+   "row": 4,
+   "state": "create:polished_cut_limestone_wall[east=none,north=tall,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 4,
+   "row": 4,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 19649,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 5,
+   "row": 4,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 4860,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.002,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 6,
+   "row": 4,
+   "state": "create:polished_cut_limestone_wall[east=none,north=tall,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 1965,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 10,
+   "row": 4,
+   "state": "create:polished_cut_limestone_wall[east=none,north=low,south=low,up=false,waterlogged=false,west=none]",
+   "ae": 0,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 0,
+   "row": 5,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=tall,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 13186,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 1,
+   "row": 5,
+   "state": "create:polished_cut_limestone_wall[east=none,north=tall,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 6321,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 5,
+   "row": 5,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 9968,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 6,
+   "row": 5,
+   "state": "create:polished_cut_limestone_wall[east=tall,north=tall,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 29062,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.997,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 7,
+   "row": 5,
+   "state": "create:polished_cut_limestone_wall[east=none,north=tall,south=low,up=true,waterlogged=false,west=tall]",
+   "ae": 24085,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 0,
+   "row": 6,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 14481,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 1,
+   "row": 6,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=low,up=false,waterlogged=false,west=low]",
+   "ae": 13550,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 2,
+   "row": 6,
+   "state": "create:polished_cut_limestone_wall[east=none,north=low,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 12992,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 6,
+   "row": 6,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 9425,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 1.005,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 7,
+   "row": 6,
+   "state": "create:polished_cut_limestone_wall[east=low,north=low,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 6923,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 1.002,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-create-p269",
+   "col": 8,
+   "row": 6,
+   "state": "create:polished_cut_limestone_wall[east=none,north=low,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 20647,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.137,
+   "dyn_spill": false
+  }
+ ]
+}

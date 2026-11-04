@@ -1,0 +1,123 @@
+{
+ "cells": 7,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 7,
+ "spill": 0,
+ "gate": 240000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 1,
+   "row": 0,
+   "state": "minecraft:area_effect_cloud",
+   "ae": 893275,
+   "shift": [
+    -3,
+    -1
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.906,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 3,
+   "row": 0,
+   "state": "minecraft:armor_stand",
+   "ae": 162114,
+   "shift": [
+    2,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.919,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 4,
+   "row": 0,
+   "state": "minecraft:arrow",
+   "ae": 107914,
+   "shift": [
+    3,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.906,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 3,
+   "row": 1,
+   "state": "minecraft:block_display",
+   "ae": 14052,
+   "shift": [
+    2,
+    1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.971,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 4,
+   "row": 1,
+   "state": "minecraft:boat",
+   "ae": 933148,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "DYNAMIC",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 1,
+   "row": 2,
+   "state": "minecraft:breeze_wind_charge",
+   "ae": 13862,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  },
+  {
+   "page": "gallery-entitydyn-minecraft-p0",
+   "col": 5,
+   "row": 2,
+   "state": "minecraft:chest_boat",
+   "ae": 16113,
+   "shift": [
+    3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false
+  }
+ ]
+}

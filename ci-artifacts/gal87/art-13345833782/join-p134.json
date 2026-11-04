@@ -1,0 +1,792 @@
+{
+ "cells": 39,
+ "skipped": 0,
+ "red": 0,
+ "dynamic": 0,
+ "spill": 0,
+ "animated": 0,
+ "gate": 60000,
+ "verdict": "GREEN",
+ "rows": [
+  {
+   "page": "gallery-create-p134",
+   "col": 0,
+   "row": 0,
+   "state": "create:cut_ochrum_brick_stairs[facing=south,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 32975,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.952,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 2,
+   "row": 0,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=top,shape=straight,waterlogged=false]",
+   "ae": 32416,
+   "shift": [
+    -1,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.957,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 4,
+   "row": 0,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 53975,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.968,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 6,
+   "row": 0,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 50143,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": false,
+   "luma_scale": 0.947,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 8,
+   "row": 0,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 31543,
+   "shift": [
+    1,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.94,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 10,
+   "row": 0,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 31275,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.952,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 1,
+   "row": 1,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 13152,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 3,
+   "row": 1,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 35767,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.906,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 5,
+   "row": 1,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 4964,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 7,
+   "row": 1,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 34819,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.906,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 9,
+   "row": 1,
+   "state": "create:cut_ochrum_brick_stairs[facing=west,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 13015,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.949,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 0,
+   "row": 2,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=top,shape=straight,waterlogged=false]",
+   "ae": 16483,
+   "shift": [
+    0,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.944,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 2,
+   "row": 2,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=top,shape=inner_left,waterlogged=false]",
+   "ae": 7387,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.929,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 4,
+   "row": 2,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=top,shape=inner_right,waterlogged=false]",
+   "ae": 26499,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.926,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 6,
+   "row": 2,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=top,shape=outer_left,waterlogged=false]",
+   "ae": 890,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.003,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 8,
+   "row": 2,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=top,shape=outer_right,waterlogged=false]",
+   "ae": 6368,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.892,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 10,
+   "row": 2,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=bottom,shape=straight,waterlogged=false]",
+   "ae": 19252,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": true,
+   "luma_fit": true,
+   "luma_scale": 0.957,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 1,
+   "row": 3,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=bottom,shape=inner_left,waterlogged=false]",
+   "ae": 17071,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.065,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 3,
+   "row": 3,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=bottom,shape=inner_right,waterlogged=false]",
+   "ae": 5302,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 5,
+   "row": 3,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=bottom,shape=outer_left,waterlogged=false]",
+   "ae": 5360,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.031,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 7,
+   "row": 3,
+   "state": "create:cut_ochrum_brick_stairs[facing=east,half=bottom,shape=outer_right,waterlogged=false]",
+   "ae": 4875,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 0,
+   "row": 4,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 5097,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.085,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 1,
+   "row": 4,
+   "state": "create:cut_ochrum_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 10682,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 2,
+   "row": 4,
+   "state": "create:cut_ochrum_brick_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 14473,
+   "shift": [
+    -1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 6,
+   "row": 4,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=none,up=true,waterlogged=false,west=none]",
+   "ae": 4933,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 7,
+   "row": 4,
+   "state": "create:cut_ochrum_brick_wall[east=tall,north=none,south=none,up=true,waterlogged=false,west=low]",
+   "ae": 5093,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 8,
+   "row": 4,
+   "state": "create:cut_ochrum_brick_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=tall]",
+   "ae": 11311,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 1,
+   "row": 5,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 28951,
+   "shift": [
+    -1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.914,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 2,
+   "row": 5,
+   "state": "create:cut_ochrum_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 9904,
+   "shift": [
+    -1,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 3,
+   "row": 5,
+   "state": "create:cut_ochrum_brick_wall[east=none,north=none,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 4041,
+   "shift": [
+    0,
+    0
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.098,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 7,
+   "row": 5,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 18277,
+   "shift": [
+    1,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.905,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 8,
+   "row": 5,
+   "state": "create:cut_ochrum_brick_wall[east=tall,north=none,south=tall,up=true,waterlogged=false,west=low]",
+   "ae": 27976,
+   "shift": [
+    0,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 9,
+   "row": 5,
+   "state": "create:cut_ochrum_brick_wall[east=none,north=none,south=tall,up=true,waterlogged=false,west=tall]",
+   "ae": 17137,
+   "shift": [
+    2,
+    -2
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.996,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 2,
+   "row": 6,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 11968,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 1.213,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 3,
+   "row": 6,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 11959,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 4,
+   "row": 6,
+   "state": "create:cut_ochrum_brick_wall[east=none,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 11155,
+   "shift": [
+    -3,
+    -3
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 1.0,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 8,
+   "row": 6,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=none]",
+   "ae": 7080,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.993,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 9,
+   "row": 6,
+   "state": "create:cut_ochrum_brick_wall[east=low,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 9296,
+   "shift": [
+    0,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": false,
+   "luma_scale": 0.997,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  },
+  {
+   "page": "gallery-create-p134",
+   "col": 10,
+   "row": 6,
+   "state": "create:cut_ochrum_brick_wall[east=none,north=none,south=low,up=true,waterlogged=false,west=low]",
+   "ae": 4974,
+   "shift": [
+    1,
+    -1
+   ],
+   "verdict": "GREEN",
+   "luma_norm": false,
+   "luma_fit": true,
+   "luma_scale": 0.993,
+   "dyn_spill": false,
+   "self_ae": [
+    null,
+    null
+   ]
+  }
+ ]
+}

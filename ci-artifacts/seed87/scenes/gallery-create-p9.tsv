@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+skip	-1	-1	-1	create:belt[casing=true,facing=west,part=PULLEY,slope=HORIZONTAL,waterlogged=true]
+cell	-4	-60	9	create:belt[casing=true,facing=west,part=PULLEY,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=west,part=PULLEY,slope=UPWARD,waterlogged=true]
+cell	-2	-60	9	create:belt[casing=true,facing=west,part=PULLEY,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=west,part=PULLEY,slope=DOWNWARD,waterlogged=true]
+cell	0	-60	9	create:belt[casing=true,facing=west,part=PULLEY,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=west,part=PULLEY,slope=VERTICAL,waterlogged=true]
+cell	2	-60	9	create:belt[casing=true,facing=west,part=PULLEY,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=west,part=PULLEY,slope=SIDEWAYS,waterlogged=true]
+cell	4	-60	9	create:belt[casing=true,facing=west,part=PULLEY,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=START,slope=HORIZONTAL,waterlogged=true]
+cell	-5	-59	9	create:belt[casing=true,facing=east,part=START,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=START,slope=UPWARD,waterlogged=true]
+cell	-3	-59	9	create:belt[casing=true,facing=east,part=START,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=START,slope=DOWNWARD,waterlogged=true]
+cell	-1	-59	9	create:belt[casing=true,facing=east,part=START,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=START,slope=VERTICAL,waterlogged=true]
+cell	1	-59	9	create:belt[casing=true,facing=east,part=START,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=START,slope=SIDEWAYS,waterlogged=true]
+cell	3	-59	9	create:belt[casing=true,facing=east,part=START,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=MIDDLE,slope=HORIZONTAL,waterlogged=true]
+cell	5	-59	9	create:belt[casing=true,facing=east,part=MIDDLE,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=MIDDLE,slope=UPWARD,waterlogged=true]
+cell	-4	-58	9	create:belt[casing=true,facing=east,part=MIDDLE,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=MIDDLE,slope=DOWNWARD,waterlogged=true]
+cell	-2	-58	9	create:belt[casing=true,facing=east,part=MIDDLE,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=MIDDLE,slope=VERTICAL,waterlogged=true]
+cell	0	-58	9	create:belt[casing=true,facing=east,part=MIDDLE,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=MIDDLE,slope=SIDEWAYS,waterlogged=true]
+cell	2	-58	9	create:belt[casing=true,facing=east,part=MIDDLE,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=END,slope=HORIZONTAL,waterlogged=true]
+cell	4	-58	9	create:belt[casing=true,facing=east,part=END,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=END,slope=UPWARD,waterlogged=true]
+cell	-5	-57	9	create:belt[casing=true,facing=east,part=END,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=END,slope=DOWNWARD,waterlogged=true]
+cell	-3	-57	9	create:belt[casing=true,facing=east,part=END,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=END,slope=VERTICAL,waterlogged=true]
+cell	-1	-57	9	create:belt[casing=true,facing=east,part=END,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=END,slope=SIDEWAYS,waterlogged=true]
+cell	1	-57	9	create:belt[casing=true,facing=east,part=END,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=PULLEY,slope=HORIZONTAL,waterlogged=true]
+cell	3	-57	9	create:belt[casing=true,facing=east,part=PULLEY,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=PULLEY,slope=UPWARD,waterlogged=true]
+cell	5	-57	9	create:belt[casing=true,facing=east,part=PULLEY,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=PULLEY,slope=DOWNWARD,waterlogged=true]
+cell	-4	-56	9	create:belt[casing=true,facing=east,part=PULLEY,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=PULLEY,slope=VERTICAL,waterlogged=true]
+cell	-2	-56	9	create:belt[casing=true,facing=east,part=PULLEY,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=true,facing=east,part=PULLEY,slope=SIDEWAYS,waterlogged=true]
+cell	0	-56	9	create:belt[casing=true,facing=east,part=PULLEY,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=START,slope=HORIZONTAL,waterlogged=true]
+cell	2	-56	9	create:belt[casing=false,facing=north,part=START,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=START,slope=UPWARD,waterlogged=true]
+cell	4	-56	9	create:belt[casing=false,facing=north,part=START,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=START,slope=DOWNWARD,waterlogged=true]
+cell	-5	-55	9	create:belt[casing=false,facing=north,part=START,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=START,slope=VERTICAL,waterlogged=true]
+cell	-3	-55	9	create:belt[casing=false,facing=north,part=START,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=START,slope=SIDEWAYS,waterlogged=true]
+cell	-1	-55	9	create:belt[casing=false,facing=north,part=START,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=MIDDLE,slope=HORIZONTAL,waterlogged=true]
+cell	1	-55	9	create:belt[casing=false,facing=north,part=MIDDLE,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=MIDDLE,slope=UPWARD,waterlogged=true]
+cell	3	-55	9	create:belt[casing=false,facing=north,part=MIDDLE,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=MIDDLE,slope=DOWNWARD,waterlogged=true]
+cell	5	-55	9	create:belt[casing=false,facing=north,part=MIDDLE,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=MIDDLE,slope=VERTICAL,waterlogged=true]
+cell	-4	-54	9	create:belt[casing=false,facing=north,part=MIDDLE,slope=VERTICAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=MIDDLE,slope=SIDEWAYS,waterlogged=true]
+cell	-2	-54	9	create:belt[casing=false,facing=north,part=MIDDLE,slope=SIDEWAYS,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=END,slope=HORIZONTAL,waterlogged=true]
+cell	0	-54	9	create:belt[casing=false,facing=north,part=END,slope=HORIZONTAL,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=END,slope=UPWARD,waterlogged=true]
+cell	2	-54	9	create:belt[casing=false,facing=north,part=END,slope=UPWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=END,slope=DOWNWARD,waterlogged=true]
+cell	4	-54	9	create:belt[casing=false,facing=north,part=END,slope=DOWNWARD,waterlogged=false]	1
+skip	-1	-1	-1	create:belt[casing=false,facing=north,part=END,slope=VERTICAL,waterlogged=true]

@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=west,state=RETRACTED]	1
+cell	-4	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=west,state=MOVING]	1
+cell	-3	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=west,state=EXTENDED]	1
+cell	-2	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=up,state=RETRACTED]	1
+cell	-1	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=up,state=MOVING]	1
+cell	0	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=up,state=EXTENDED]	1
+cell	1	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=down,state=RETRACTED]	1
+cell	2	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=down,state=MOVING]	1
+cell	3	-60	9	create:sticky_mechanical_piston[axis_along_first=false,facing=down,state=EXTENDED]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=north,powered=true,waterlogged=true]
+cell	5	-60	9	create:stock_link[face=FLOOR,facing=north,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=north,powered=false,waterlogged=true]
+cell	-4	-59	9	create:stock_link[face=FLOOR,facing=north,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=south,powered=true,waterlogged=true]
+cell	-2	-59	9	create:stock_link[face=FLOOR,facing=south,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=south,powered=false,waterlogged=true]
+cell	0	-59	9	create:stock_link[face=FLOOR,facing=south,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=west,powered=true,waterlogged=true]
+cell	2	-59	9	create:stock_link[face=FLOOR,facing=west,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=west,powered=false,waterlogged=true]
+cell	4	-59	9	create:stock_link[face=FLOOR,facing=west,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=east,powered=true,waterlogged=true]
+cell	-5	-58	9	create:stock_link[face=FLOOR,facing=east,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=FLOOR,facing=east,powered=false,waterlogged=true]
+cell	-3	-58	9	create:stock_link[face=FLOOR,facing=east,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=north,powered=true,waterlogged=true]
+cell	-1	-58	9	create:stock_link[face=WALL,facing=north,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=north,powered=false,waterlogged=true]
+cell	1	-58	9	create:stock_link[face=WALL,facing=north,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=south,powered=true,waterlogged=true]
+cell	3	-58	9	create:stock_link[face=WALL,facing=south,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=south,powered=false,waterlogged=true]
+cell	5	-58	9	create:stock_link[face=WALL,facing=south,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=west,powered=true,waterlogged=true]
+cell	-4	-57	9	create:stock_link[face=WALL,facing=west,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=west,powered=false,waterlogged=true]
+cell	-2	-57	9	create:stock_link[face=WALL,facing=west,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=east,powered=true,waterlogged=true]
+cell	0	-57	9	create:stock_link[face=WALL,facing=east,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=WALL,facing=east,powered=false,waterlogged=true]
+cell	2	-57	9	create:stock_link[face=WALL,facing=east,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=north,powered=true,waterlogged=true]
+cell	4	-57	9	create:stock_link[face=CEILING,facing=north,powered=true,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=north,powered=false,waterlogged=true]
+cell	-5	-56	9	create:stock_link[face=CEILING,facing=north,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=south,powered=true,waterlogged=true]
+cell	-3	-56	9	create:stock_link[face=CEILING,facing=south,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=south,powered=false,waterlogged=true]
+cell	-1	-56	9	create:stock_link[face=CEILING,facing=south,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=west,powered=true,waterlogged=true]
+cell	1	-56	9	create:stock_link[face=CEILING,facing=west,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=west,powered=false,waterlogged=true]
+cell	3	-56	9	create:stock_link[face=CEILING,facing=west,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=east,powered=true,waterlogged=true]
+cell	5	-56	9	create:stock_link[face=CEILING,facing=east,powered=false,waterlogged=false]	1
+skip	-1	-1	-1	create:stock_link[face=CEILING,facing=east,powered=false,waterlogged=true]
+cell	-4	-55	9	create:stock_link[face=CEILING,facing=east,powered=false,waterlogged=false]	1
+cell	-3	-55	9	create:stock_ticker[facing=north]	1
+cell	-2	-55	9	create:stock_ticker[facing=south]	1
+cell	-1	-55	9	create:stock_ticker[facing=west]	1
+cell	0	-55	9	create:stock_ticker[facing=east]	1
+cell	1	-55	9	create:stockpile_switch[facing=north,level=0,target=FLOOR]	1
+cell	2	-55	9	create:stockpile_switch[facing=north,level=0,target=WALL]	1
+cell	3	-55	9	create:stockpile_switch[facing=north,level=0,target=CEILING]	1
+cell	4	-55	9	create:stockpile_switch[facing=north,level=1,target=FLOOR]	1
+cell	5	-55	9	create:stockpile_switch[facing=north,level=1,target=WALL]	1
+cell	-5	-54	9	create:stockpile_switch[facing=north,level=1,target=CEILING]	1
+cell	-4	-54	9	create:stockpile_switch[facing=north,level=2,target=FLOOR]	1
+cell	-3	-54	9	create:stockpile_switch[facing=north,level=2,target=WALL]	1
+cell	-2	-54	9	create:stockpile_switch[facing=north,level=2,target=CEILING]	1
+cell	-1	-54	9	create:stockpile_switch[facing=north,level=3,target=FLOOR]	1
+cell	0	-54	9	create:stockpile_switch[facing=north,level=3,target=WALL]	1
+cell	1	-54	9	create:stockpile_switch[facing=north,level=3,target=CEILING]	1
+cell	2	-54	9	create:stockpile_switch[facing=north,level=4,target=FLOOR]	1
+cell	3	-54	9	create:stockpile_switch[facing=north,level=4,target=WALL]	1
+cell	4	-54	9	create:stockpile_switch[facing=north,level=4,target=CEILING]	1
+cell	5	-54	9	create:stockpile_switch[facing=north,level=5,target=FLOOR]	1

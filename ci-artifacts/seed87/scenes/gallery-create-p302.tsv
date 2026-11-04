@@ -1,0 +1,78 @@
+cell	x	y	z	state	dyn
+cell	-5	-60	9	create:purple_nixie_tube[double_face=FLOOR,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=FLOOR,facing=south,waterlogged=true]
+cell	-3	-60	9	create:purple_nixie_tube[double_face=FLOOR,facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=FLOOR,facing=west,waterlogged=true]
+cell	-1	-60	9	create:purple_nixie_tube[double_face=FLOOR,facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=FLOOR,facing=east,waterlogged=true]
+cell	1	-60	9	create:purple_nixie_tube[double_face=FLOOR,facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL,facing=north,waterlogged=true]
+cell	3	-60	9	create:purple_nixie_tube[double_face=WALL,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL,facing=south,waterlogged=true]
+cell	5	-60	9	create:purple_nixie_tube[double_face=WALL,facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL,facing=west,waterlogged=true]
+cell	-4	-59	9	create:purple_nixie_tube[double_face=WALL,facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL,facing=east,waterlogged=true]
+cell	-2	-59	9	create:purple_nixie_tube[double_face=WALL,facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=north,waterlogged=true]
+cell	0	-59	9	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=south,waterlogged=true]
+cell	2	-59	9	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=west,waterlogged=true]
+cell	4	-59	9	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=east,waterlogged=true]
+cell	-5	-58	9	create:purple_nixie_tube[double_face=WALL_REVERSED,facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=CEILING,facing=north,waterlogged=true]
+cell	-3	-58	9	create:purple_nixie_tube[double_face=CEILING,facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=CEILING,facing=south,waterlogged=true]
+cell	-1	-58	9	create:purple_nixie_tube[double_face=CEILING,facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=CEILING,facing=west,waterlogged=true]
+cell	1	-58	9	create:purple_nixie_tube[double_face=CEILING,facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_nixie_tube[double_face=CEILING,facing=east,waterlogged=true]
+cell	3	-58	9	create:purple_nixie_tube[double_face=CEILING,facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=north,open=true,waterlogged=true]
+cell	5	-58	9	create:purple_postbox[facing=north,open=true,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=north,open=false,waterlogged=true]
+cell	-4	-57	9	create:purple_postbox[facing=north,open=false,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=south,open=true,waterlogged=true]
+cell	-2	-57	9	create:purple_postbox[facing=south,open=true,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=south,open=false,waterlogged=true]
+cell	0	-57	9	create:purple_postbox[facing=south,open=false,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=west,open=true,waterlogged=true]
+cell	2	-57	9	create:purple_postbox[facing=west,open=true,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=west,open=false,waterlogged=true]
+cell	4	-57	9	create:purple_postbox[facing=west,open=false,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=east,open=true,waterlogged=true]
+cell	-5	-56	9	create:purple_postbox[facing=east,open=true,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_postbox[facing=east,open=false,waterlogged=true]
+cell	-3	-56	9	create:purple_postbox[facing=east,open=false,waterlogged=false]	1
+cell	-2	-56	9	create:purple_sail[facing=north]	0
+cell	-1	-56	9	create:purple_sail[facing=east]	0
+cell	0	-56	9	create:purple_sail[facing=south]	0
+cell	1	-56	9	create:purple_sail[facing=west]	0
+cell	2	-56	9	create:purple_sail[facing=up]	0
+cell	3	-56	9	create:purple_sail[facing=down]	0
+skip	-1	-1	-1	create:purple_seat[waterlogged=true]
+cell	5	-56	9	create:purple_seat[waterlogged=false]	0
+cell	-5	-55	9	create:purple_table_cloth[entity=true]	1
+cell	-4	-55	9	create:purple_table_cloth[entity=false]	1
+skip	-1	-1	-1	create:purple_toolbox[facing=north,waterlogged=true]
+cell	-2	-55	9	create:purple_toolbox[facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_toolbox[facing=south,waterlogged=true]
+cell	0	-55	9	create:purple_toolbox[facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_toolbox[facing=west,waterlogged=true]
+cell	2	-55	9	create:purple_toolbox[facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_toolbox[facing=east,waterlogged=true]
+cell	4	-55	9	create:purple_toolbox[facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_valve_handle[facing=north,waterlogged=true]
+cell	-5	-54	9	create:purple_valve_handle[facing=north,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_valve_handle[facing=east,waterlogged=true]
+cell	-3	-54	9	create:purple_valve_handle[facing=east,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_valve_handle[facing=south,waterlogged=true]
+cell	-1	-54	9	create:purple_valve_handle[facing=south,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_valve_handle[facing=west,waterlogged=true]
+cell	1	-54	9	create:purple_valve_handle[facing=west,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_valve_handle[facing=up,waterlogged=true]
+cell	3	-54	9	create:purple_valve_handle[facing=up,waterlogged=false]	1
+skip	-1	-1	-1	create:purple_valve_handle[facing=down,waterlogged=true]
+cell	5	-54	9	create:purple_valve_handle[facing=down,waterlogged=false]	1

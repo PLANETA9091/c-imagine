@@ -196,7 +196,20 @@ public final class GalleryPack {
         for (Input in : seen.values()) {
             String state = in.stateId();
             try {
-                StateRef s = parseState(state);
+                // 14-ak CT rows: {@code state#i0,i1,...,i5} — the per-face
+                // CT tile indices the seed computed (gallery_ct.py, verified
+                // against the real create classes by CTProbe 515/515). The
+                // suffix NEVER reaches parseState — it rides the Resolved
+                // row so the replay's suffixed lookup matches.
+                String ctCtx = null;
+                String bareState = state;
+                int hash = state.indexOf('#');
+                if (hash >= 0) {
+                    ctCtx = state.substring(hash + 1).trim();
+                    bareState = state.substring(0, hash);
+                    parseCtCtx(ctCtx); // validate early — a bad ctx drops the row
+                }
+                StateRef s = parseState(bareState);
                 List<Part> parts = resolveStateParts(jars, s, entries, warnings);
                 if (parts.isEmpty()) {
                     warnings.add("gallery: no matching model for " + state + " — row dropped");
@@ -216,8 +229,8 @@ public final class GalleryPack {
                 // blockstate rotation bakes into the elements, exactly the
                 // measured composite behaviour; the spawning entity carries
                 // 0/0).
-                String ref = synthesizeComposite(jars, state, parts,
-                        compositeIdx, entries, warnings);
+                String ref = synthesizeComposite(jars, bareState, parts,
+                        compositeIdx, entries, warnings, ctCtx);
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
@@ -627,7 +640,7 @@ public final class GalleryPack {
      */
     private static String synthesizeComposite(List<Path> jars, String state, List<Part> parts,
                                               int idx, TreeMap<String, byte[]> entries,
-                                              List<String> warnings) throws IOException {
+                                              List<String> warnings, String ctCtx) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
         int partNo = 0;
@@ -653,6 +666,11 @@ public final class GalleryPack {
         if (mergedElements.size() == 0) {
             return null;
         }
+        int[] ctIndices = ctCtx == null ? null : parseCtCtx(ctCtx);
+        if (ctIndices != null) {
+            applyCtRemap(jars, mergedElements, textures, ctIndices, entries, warnings,
+                    state);
+        }
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         JsonObject texObj = new JsonObject();
@@ -665,6 +683,142 @@ public final class GalleryPack {
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
         return WRAPPER_REF_PREFIX + idx;
+    }
+
+    // ---- 14-ak: the Create connected-texture channel -------------------------
+
+    /** The per-face CT tile indices, in the vanilla Direction.values()
+     *  order (down,up,north,south,west,east) — the ctx string the seed's
+     *  gallery_ct.py emits (computed per WORLD face of the REAL block;
+     *  the composite's post-bake face keys are the same world directions). */
+    private static final String[] CT_FACE_ORDER = {
+            "down", "up", "north", "south", "west", "east"};
+
+    /** Parse {@code i0,i1,...,i5} — side faces carry 0..15 (RECTANGLE 4x4),
+     *  cap faces 0..63 (OMNIDIRECTIONAL 8x8); a loose 0..63 bound here. */
+    private static int[] parseCtCtx(String ctx) {
+        String[] parts = ctx.split(",");
+        if (parts.length != 6) {
+            throw new IllegalArgumentException("bad CT ctx: " + ctx);
+        }
+        int[] out = new int[6];
+        for (int i = 0; i < 6; i++) {
+            out[i] = Integer.parseInt(parts[i].trim());
+            if (out[i] < 0 || out[i] > 63) {
+                throw new IllegalArgumentException("CT index out of range: " + ctx);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Remap the composite's faces into the Create CT sheets (14-ak).
+     * MEASURED chain: the real client's CTModel.getQuads remaps every quad
+     * whose sprite == the shift entry's original; catnip un-interpolates
+     * the vertex uv to a FRACTION (getUnInterpolatedU = (u-u0)/(u1-u0)) and
+     * 1.21.1 TextureAtlasSprite.getU (real bytecode: u0 + (u1-u0)*u) takes
+     * that fraction — the tile offset lands at off*16 px of the sheet. In
+     * model uv units ([0,16] over the whole texture) the remap is
+     * {@code u' = (u + tileX*16)/sheetSize}, v likewise — an affine that
+     * commutes with the face rotation's corner permutation (verified:
+     * the isolated side tile (0,3) of the pillar sheet is BYTE-IDENTICAL
+     * to the plain texture; the index semantics verified 515/515 against
+     * the real RotatedPillarCTBehaviour by CTProbe).
+     *
+     * <p>The connected sheets ship from the create jar on first use (the
+     * block/ path auto-atlases; the sheets are referenced by NO model json
+     * — only the runtime shifter — so no existing pack walk copies them).
+     */
+    private static void applyCtRemap(List<Path> jars, JsonArray elements,
+                                     Map<String, String> textures, int[] ctIndices,
+                                     TreeMap<String, byte[]> entries,
+                                     List<String> warnings, String state) throws IOException {
+        int ctKey = 0;
+        for (JsonElement elE : elements) {
+            JsonObject el = elE.getAsJsonObject();
+            if (!el.has("faces")) {
+                continue;
+            }
+            JsonObject faces = el.getAsJsonObject("faces").deepCopy();
+            boolean changed = false;
+            for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
+                int faceIdx = ctFaceIndex(f.getKey());
+                if (faceIdx < 0 || !f.getValue().isJsonObject()) {
+                    continue;
+                }
+                JsonObject face = f.getValue().getAsJsonObject();
+                if (!face.has("texture") || !face.get("texture").getAsString().startsWith("#")) {
+                    continue;
+                }
+                String texKey = face.get("texture").getAsString().substring(1);
+                String sprite = textures.get(texKey);
+                if (sprite == null) {
+                    continue;
+                }
+                int sheet = ctSheetSize(sprite);
+                if (sheet < 0) {
+                    continue; // not a CT-textured face
+                }
+                int tileIdx = ctIndices[faceIdx];
+                int tileX = tileIdx % sheet;
+                int tileY = tileIdx / sheet;
+                String connected = sprite + "_connected";
+                String png = spritePathPng(connected);
+                if (!entries.containsKey(png) && readPngFromJars(jars, png) == null) {
+                    warnings.add("gallery ct: connected sheet missing: " + connected
+                            + " (" + state + ")");
+                    continue;
+                }
+                if (!entries.containsKey(png)) {
+                    entries.put(png, readPngFromJars(jars, png));
+                }
+                String newKey = texKey + "Ct" + (ctKey++);
+                textures.put(newKey, connected);
+                face.addProperty("texture", "#" + newKey);
+                if (face.has("uv") && face.getAsJsonArray("uv").size() == 4) {
+                    JsonArray uv = face.getAsJsonArray("uv");
+                    JsonArray out = new JsonArray();
+                    for (int i = 0; i < 4; i++) {
+                        double u = uv.get(i).getAsDouble();
+                        double off = (i % 2 == 0 ? tileX : tileY) * 16.0;
+                        out.add((u + off) / sheet);
+                    }
+                    face.add("uv", out);
+                }
+                // the rotation field survives: the affine is uniform over
+                // the tile box and commutes with the corner permutation
+                changed = true;
+            }
+            if (changed) {
+                el.add("faces", faces);
+            }
+        }
+    }
+
+    /** The sheet size for a CT-textured sprite, or -1: the pillar side
+     *  sprite (RECTANGLE 4x4) or the cap sprite (OMNIDIRECTIONAL 8x8) of
+     *  the create palette family. The match is by PATH SHAPE, not by a
+     *  stone list — a stone without a connected sheet fails the png read
+     *  above and stays verbatim (fail-safe). */
+    private static int ctSheetSize(String sprite) {
+        if (sprite.startsWith("create:block/palettes/stone_types/pillar/")
+                && sprite.endsWith("_cut_pillar")) {
+            return 4;
+        }
+        if (sprite.startsWith("create:block/palettes/stone_types/cap/")
+                && sprite.endsWith("_cut_cap")) {
+            return 8;
+        }
+        return -1;
+    }
+
+    private static int ctFaceIndex(String face) {
+        for (int i = 0; i < CT_FACE_ORDER.length; i++) {
+            if (CT_FACE_ORDER[i].equals(face)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /**
