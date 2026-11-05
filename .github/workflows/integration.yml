@@ -424,7 +424,7 @@ jobs:
           # M2: real-FML mod execution over the composite mod set (real mods +
           # cimtest) inside the live Paper JVM
           grep -q "\[c-imagine\] mod execution ok" srv/boot.log || fail "M2 mod execution FAILED"
-          for m in appleskin neoforge cimtest ferritecore jade jei spark; do
+          for m in appleskin neoforge cimtest cimtest-net cimtest-cap ferritecore jade jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
           done
           # shadow-space log pipeline: first-party mod markers must reach the
@@ -434,6 +434,25 @@ jobs:
             || fail "shadow log pipeline broken: [cimtest] constructed marker missing"
           grep -q "\[cim-layer\].*\[cimtest\] common setup ok" srv/boot.log \
             || fail "shadow log pipeline broken: [cimtest] common setup marker missing"
+          # Tier-1 net leg (cimtest-net, same jar): the payload wire codecs
+          # round trip through the layer's common setup — the deterministic
+          # part of the net pipeline the layer's FmlHost lifecycle reaches.
+          # (The RegisterPayloadHandlersEvent marker CANNOT fire in the layer
+          # yet — FmlHost does not run NetworkRegistry.setup; documented gap
+          # in docs/MODPACK.md, real-stack assertions live in the parity jobs.)
+          grep -q "\[cim-layer\].*\[cimtest-net\] s2c codec round-trip ok (token=4242 decoded=4242)" srv/boot.log \
+            || fail "cimtest-net s2c codec round-trip missing in the layer"
+          grep -q "\[cim-layer\].*\[cimtest-net\] c2s codec round-trip ok (token=4242 decoded=4242)" srv/boot.log \
+            || fail "cimtest-net c2s codec round-trip missing in the layer"
+          # Tier-1 cap leg (cimtest-cap, same jar): component registration +
+          # the server-side write/read + codec round trips through the
+          # layer's registry/common-setup stack
+          grep -q "\[cim-layer\].*\[cimtest-cap\] data component registered (cimtest-cap:charge)" srv/boot.log \
+            || fail "cimtest-cap component registration missing in the layer"
+          grep -q "\[cim-layer\].*\[cimtest-cap\] data component round-trip ok (item=cimtest:test_block set=7 got=7)" srv/boot.log \
+            || fail "cimtest-cap component round-trip missing in the layer"
+          grep -q "\[cim-layer\].*\[cimtest-cap\] component codec round-trip ok (charge=7)" srv/boot.log \
+            || fail "cimtest-cap codec round-trip missing in the layer"
           # M3.1 kernel state bridge: place via layer -> Paper sees it; break
           # via Paper -> the layer facade observes it; modded id -> stand-in
           grep -q "\[c-imagine\] bridge: plugin instance resolved" srv/boot.log \
@@ -607,7 +626,7 @@ jobs:
           L=out/harness.log
           grep -q "mod execution ok" $L || fail "mod execution FAILED (see harness.log)"
           # every real mod + layer + cimtest constructed through real FML
-          for m in appleskin neoforge cimtest ferritecore jade mezz_config jei spark; do
+          for m in appleskin neoforge cimtest cimtest-net cimtest-cap ferritecore jade mezz_config jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" $L || fail "mod $m not constructed"
           done
           # cimtest registrations went through the real RegisterEvent pipeline
@@ -628,6 +647,16 @@ jobs:
             || fail "shadow log pipeline broken: [cimtest] constructed marker missing"
           grep -q "\[cim-layer\].*\[cimtest\] common setup ok" $L \
             || fail "shadow log pipeline broken: [cimtest] common setup marker missing"
+          # Tier-1 net/cap legs ride the same FmlHost flow (construct →
+          # registration → common setup) through the real-FML pipeline
+          grep -q "\[cim-layer\].*\[cimtest-net\] s2c codec round-trip ok (token=4242 decoded=4242)" $L \
+            || fail "cimtest-net s2c codec round-trip missing (M2 harness)"
+          grep -q "\[cim-layer\].*\[cimtest-net\] c2s codec round-trip ok (token=4242 decoded=4242)" $L \
+            || fail "cimtest-net c2s codec round-trip missing (M2 harness)"
+          grep -q "\[cim-layer\].*\[cimtest-cap\] data component round-trip ok (item=cimtest:test_block set=7 got=7)" $L \
+            || fail "cimtest-cap component round-trip missing (M2 harness)"
+          grep -q "\[cim-layer\].*\[cimtest-cap\] component codec round-trip ok (charge=7)" $L \
+            || fail "cimtest-cap codec round-trip missing (M2 harness)"
           echo "M2 real-mod markers: all present"
 
       - name: report + upload logs
@@ -728,6 +757,26 @@ jobs:
             || fail "cimscene census marker missing on real server"
           grep -q "\[cimscene\] commands registered" $L \
             || fail "cimscene commands marker missing on real server"
+          # Tier-1 net leg — REAL NeoForge network registry: the
+          # RegisterPayloadHandlersEvent marker FIRES here (it cannot in the
+          # c-imagine layer — documented gap), plus both codec round trips
+          grep -q "\[cimtest-net\] payloads registered (c2s=cimtest-net:echo s2c=cimtest-net:hello)" $L \
+            || fail "cimtest-net payload registration missing on real server"
+          grep -q "\[cimtest-net\] s2c codec round-trip ok (token=4242 decoded=4242)" $L \
+            || fail "cimtest-net s2c codec round-trip missing on real server"
+          grep -q "\[cimtest-net\] c2s codec round-trip ok (token=4242 decoded=4242)" $L \
+            || fail "cimtest-net c2s codec round-trip missing on real server"
+          # Tier-1 cap leg — REAL NeoForge: RegisterCapabilitiesEvent +
+          # FMLLoadCompleteEvent fire here (not in the layer yet), plus the
+          # component legs as the both-stack parity contract
+          grep -q "\[cimtest-cap\] capabilities registered (item=cimtest:test_block cap=energy)" $L \
+            || fail "cimtest-cap capability registration missing on real server"
+          grep -q "\[cimtest-cap\] capability round-trip ok (cap=energy item=cimtest:test_block set=42 got=42)" $L \
+            || fail "cimtest-cap capability round-trip missing on real server"
+          grep -q "\[cimtest-cap\] data component round-trip ok (item=cimtest:test_block set=7 got=7)" $L \
+            || fail "cimtest-cap component round-trip missing on real server"
+          grep -q "\[cimtest-cap\] component codec round-trip ok (charge=7)" $L \
+            || fail "cimtest-cap codec round-trip missing on real server"
           echo "real NeoForge 21.1.265 parity markers: all present"
 
       - name: report + upload logs
