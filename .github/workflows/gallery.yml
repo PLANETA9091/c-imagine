@@ -2455,6 +2455,28 @@ jobs:
               fi
             done
           done
+          echo "=== HELD/GUI/BIOME pages: full-frame framediff join (DIAGNOSTIC — the classes are shot on both legs with no per-cell contract; framediff.py measures the whole frame, EMPTY names the dead side) ==="
+          for KLASS in held gui biome; do
+            case "$KLASS" in
+              held)  STEM="h";   MAN="item" ;;   # held rides the item pages
+              gui)   STEM="gui"; MAN="gui" ;;
+              biome) STEM="b";   MAN="biome" ;;
+            esac
+            for NS in $LADDER_NS; do
+              for M in $(find truth-meta -name "gallery-$MAN-$NS-p*.tsv" | sort -V); do
+                B=$(basename "$M" .tsv); p=${B##*-p}
+                T="truth-shots/gal-$STEM-$NS$p.png"
+                O="ours-shots/ours-gal-$STEM-$NS$p.png"
+                if [ -f "$T" ] && [ -f "$O" ]; then
+                  python3 scripts/cimscene/framediff.py --truth "$T" --ours "$O" \
+                    --ns "$NS" --page "$p" --class-name "$KLASS" \
+                    --out "gallery-report/diag-$KLASS-$NS-p$p.json" || true
+                else
+                  echo "$NS $KLASS page $p shots missing (tolerated: diagnostic)"
+                fi
+              done
+            done
+          done
           echo "=== per-page verdicts (this shard) ==="
           python3 - <<'PY'
           import glob, json
