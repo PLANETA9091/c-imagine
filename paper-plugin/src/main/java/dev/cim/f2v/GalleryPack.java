@@ -461,6 +461,18 @@ public final class GalleryPack {
      * {@code path} — namespace defaults to the BLOCKSTATE's namespace) plus
      * its parent graph and textures into the pack at original paths. Returns
      * the fully-qualified model ref, or null when missing.
+     *
+     * <p>14-ay MINECRAFT FALLBACK: a bare ref resolves under the state's
+     * namespace FIRST (the measured create chain rule) and under
+     * {@code minecraft:} SECOND (the vanilla resource-location rule). The
+     * single-namespace lookups split the ladder: create's bare parents
+     * (create-side jsons) resolved, but BOP's bare parents point at VANILLA
+     * templates ({@code block/cube_all}, {@code block/template_fence_gate},
+     * {@code block/cross}...) — under {@code assets/biomesoplenty/models/}
+     * they miss and 5609 of 7174 BOP states dropped out of the pack (the
+     * #114 fence/fence-gate/stairs/trapdoor/door/leaves/plant walls rendered
+     * EMPTY; the same census the 14-ax worklog parked: "no pack CMD for 103
+     * BOP stairs, 55 branches, 51 fences, 47 leaves").
      */
     static String copyModelGraph(List<Path> jars, String stateNs, String modelRef,
                                  TreeMap<String, byte[]> entries,
@@ -469,7 +481,13 @@ public final class GalleryPack {
         int colon = ref.indexOf(':');
         String ns = ref.substring(0, colon);
         String path = ref.substring(colon + 1);
-        String[] candidates = {"assets/" + ns + "/models/" + path + ".json"};
+        // candidates in priority order: the ref's own namespace, then the
+        // minecraft fallback for a bare ref (vanilla semantics own it)
+        List<String> cands = new ArrayList<>(List.of("assets/" + ns + "/models/" + path + ".json"));
+        if (!ns.equals("minecraft") && !modelRef.contains(":")) {
+            cands.add("assets/minecraft/models/" + path + ".json");
+        }
+        String[] candidates = cands.toArray(String[]::new);
         for (Path jar : jars) {
             ZipFile zf = jarCache(jars).zip(jar);
             for (String cand : candidates) {
@@ -483,7 +501,12 @@ public final class GalleryPack {
                 // F2vPack item path does the same putIfAbsent dance)
                 entries.putIfAbsent(cand, modelBytes);
                 F2vPack.copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
-                return ns + ":" + path;
+                // report the namespace the model was actually FOUND under
+                // (a minecraft fallback hit re-anchors the returned ref so
+                // the composite walk starts at the right chain)
+                String foundNs = cand.startsWith("assets/minecraft/")
+                        ? "minecraft" : ns;
+                return foundNs + ":" + path;
             }
         }
         return null;
@@ -520,6 +543,13 @@ public final class GalleryPack {
             ns = hopNs;
             String file = "assets/" + ns + "/models/" + hopPath + ".json";
             JsonObject json = readJsonFromJars(jars, file);
+            if (json == null && !ns.equals("minecraft")) {
+                // 14-ay MINECRAFT FALLBACK (see copyModelGraph)
+                json = readJsonFromJars(jars, "assets/minecraft/models/" + hopPath + ".json");
+                if (json != null) {
+                    ns = "minecraft";
+                }
+            }
             if (json == null) {
                 return false;
             }
@@ -1173,6 +1203,17 @@ public final class GalleryPack {
             ns = hopNs;
             String file = "assets/" + hopNs + "/models/" + hopPath + ".json";
             JsonObject json = readJsonFromJars(jars, file);
+            if (json == null && !hopNs.equals("minecraft")) {
+                // 14-ay MINECRAFT FALLBACK (see copyModelGraph): a bare hop
+                // tries the carried namespace first, then minecraft: — BOP's
+                // bare vanilla parents (block/cube_all, block/template_fence_gate,
+                // block/cross...) only exist under assets/minecraft/models/.
+                String vfile = "assets/minecraft/models/" + hopPath + ".json";
+                json = readJsonFromJars(jars, vfile);
+                if (json != null) {
+                    ns = "minecraft"; // the found level re-anchors bare hops below it
+                }
+            }
             if (json == null) {
                 warnings.add("gallery: model missing in jar chain: " + file);
                 break;
