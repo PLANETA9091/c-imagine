@@ -219,9 +219,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v2-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v1-
+            gallery-seed-v2-
 
       - name: seed payload verify (freshness gate)
         id: seed-verify
@@ -452,6 +452,44 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS fluid walk hit the MAXP cap without exhausted"; exit 1; }
           done
+          # SOUND walk (per ladder ns, to exhaustion) — the ours replay
+          # gates on THE SEED's manifest (the replay must run parallel to
+          # the truth shards, before truth-meta lands), so the seed must
+          # write the sound manifests itself; measured run 42070701695:
+          # without this walk the ours replay found no manifests and the
+          # whole sound channel stayed silent on ours
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq 0 $MAXP); do
+              base_of "gallery-sound-$NS-p$p"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery sound $NS $p"
+              RC=0; wait_done "gallery-sound-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS sound page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-sound done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+            done
+            [ "$EX" = "1" ] || { echo "$NS sound walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # BIOME walk (per ladder ns, to exhaustion) — same seed-manifest
+          # contract as sound; the rig is server-side placeable (grass_block
+          # + oak_leaves samples), no viewer needed for the MANIFEST
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq 0 $MAXP); do
+              base_of "gallery-biome-$NS-p$p"
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery biome $NS $p"
+              RC=0; wait_done "gallery-biome-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS biome page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-biome done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+            done
+            [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # gui/inv stay OUT of the seed walk on purpose: both scenes need
+          # a joined viewer (openMenu / inventory fill), the seed walks
+          # headless — their manifests come from the truth shards' walks
           ls srv-wall/c-imagine/scenes/ | wc -l
 
       # THE QUAD DUMP: a static pack model cannot know what a dynamic model
@@ -583,7 +621,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v2-${{ steps.seed-inputs.outputs.hash }}
 
       - name: upload seed-pack artifact (cache-eviction fallback)
         if: success() && steps.seed-verify.outputs.hit != 'true'
@@ -1409,9 +1447,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v1-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v2-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v1-
+            gallery-seed-v2-
 
       - name: seed payload freshness (stale prefix hit -> the artifact)
         id: seed-verify
