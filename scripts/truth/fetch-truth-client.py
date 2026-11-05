@@ -58,6 +58,7 @@ import json
 import pathlib
 import shutil
 import sys
+import time
 import urllib.request
 
 VANILLA_JSON = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
@@ -66,6 +67,7 @@ NFC_VERSION = "21.1.265"
 NFC_ID = f"neoforge-{NFC_VERSION}"
 MC_ID = "1.21.1"
 MCP_TS = "20240808.144430"  # the NeoForm timestamp in the maven paths (measured)
+INSTALL_ATTEMPTS = 3
 NFC_MAVEN = ("https://maven.neoforged.net/releases/net/neoforged/neoforge/"
              f"{NFC_VERSION}/neoforge-{NFC_VERSION}-installer.jar")
 
@@ -164,14 +166,21 @@ def main() -> int:
         installer = nfc / "nf-installer.jar"
         fetch_to(NFC_MAVEN, installer)
         import subprocess
-        r = subprocess.run(
-            ["java", "-jar", str(installer), "--installClient", str(nfc)],
-            capture_output=True, text=True, timeout=900)
-        print(r.stdout[-1200:])
-        if r.returncode != 0 or "Successfully installed" not in r.stdout:
+        # the installer pulls the Mojang client itself; a cut connection
+        # surfaces as "invalid checksum" and costs a whole gallery run
+        for attempt in range(1, INSTALL_ATTEMPTS + 1):
+            r = subprocess.run(
+                ["java", "-jar", str(installer), "--installClient", str(nfc)],
+                capture_output=True, text=True, timeout=900)
+            print(r.stdout[-1200:])
+            if r.returncode == 0 and "Successfully installed" in r.stdout:
+                break
             print(r.stderr[-1200:])
-            print("ERROR: neoforge installer failed", file=sys.stderr)
-            return 1
+            print(f"neoforge installer attempt {attempt}/{INSTALL_ATTEMPTS} failed", file=sys.stderr)
+            if attempt == INSTALL_ATTEMPTS:
+                print("ERROR: neoforge installer failed", file=sys.stderr)
+                return 1
+            time.sleep(15 * attempt)
 
     nf_json = json.loads((nfc / "versions" / NFC_ID / f"{NFC_ID}.json").read_text())
     manifest = json.loads(http_get(VANILLA_JSON))
