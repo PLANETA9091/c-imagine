@@ -6597,3 +6597,44 @@ Next publish this fix with the required author, first fetching/rebasing
 any concurrent main changes, then record the resulting commit and new CI
 run IDs. Continue collecting the already running gallery's complete
 truth/shard evidence without canceling it.
+
+### 14-be — the crop darkening decoded: the dead shade:false on 26.3 (verified on the client jar)
+- THE KEYING IS CLEAN: the #129 seed-pack artifacts re-downloaded (run 42070701695) show the
+  state->quad mapping is consistent — high_grass ages cycle with period 11 (age mod 11 =
+  BOP's own visual-stage count), every state maps to exactly ONE q-hash, and the p40 ctx
+  rows (x y z q<hash>) match the rows.tsv mapping cell for cell. The suspected per-cell
+  keying bug is NOT there. The decisive counter-example: age=15 GREEN while age=4 and
+  age=14 RED — all three are stage 4, the SAME synthesized model; one model cannot be both
+  right and wrong, so the red is per-CELL, not per-mesh.
+- THE PIXEL SIGNATURE (the #129 report-0 crops, join-biomesoplenty-p40): every pixel of the
+  red crops differs (the sky itself is 152,189,255 vs 153,190,255 — a +1 skew), and the
+  content pixels darken by a NEARLY CONSTANT MULTIPLIER: ours = truth x ~0.80 in R and G,
+  x ~0.83-0.86 in B, uniform across the brightness buckets. A per-face constant factor is
+  directional shading, not AO (AO varies per vertex corner) and not tint (not green-biased).
+- THE MECHANISM, VERIFIED ON THE 26.3 CLIENT JAR (piston-data e877b6a0, 41.5 MB):
+  (a) the QuadDump capture runs on 1.21.1 where shade:false WORKS, so unshaded quads bake
+  brightness 1.0 into the rgb; (b) GalleryPack.synthesizeQuadModel re-emits that as the
+  element property "shade":false; (c) javap/strings of 26.3's
+  net/minecraft/client/resources/model/cuboid/CuboidModelElement$Deserializer reads ONLY
+  "light_emission" and "shade_direction_override" (-> Direction.byName) — the 1.21.1
+  boolean is NOT in the class at all; (d) so the 26.3 client applies its DEFAULT
+  directional shade to those elements: both cross quads' normals snap south (Direction
+  nearest-axis tie-break) = 0.8 — the measured x0.80 exactly; (e) vanilla's own migration
+  proves the mapping: 1.21.1 assets/minecraft/models/block/cross.json "shade":false ->
+  26.3 cross.json "shade_direction_override":"up" (UP = brightness 1.0).
+- THE 14-bd A/B NO-OP EXPLAINED: the variant pack presumably wrote the javap'd JAVA field
+  name (shadeDirectionOverride, camelCase) while the deserializer's Gson key is the
+  snake_case "shade_direction_override" — an unknown key is silently ignored, and a
+  byte-identical render follows. The new A/B verdict stands (that variant changed
+  nothing); the mechanism was right, the spelling was not.
+- THE FIX (landed): synthesizeQuadModel emits BOTH wordings on flag-0 elements —
+  "shade":false (1.21.1 wording, ignored on 26.3) AND "shade_direction_override":"up"
+  (26.3 wording = no directional shade = the captured 1.0 brightness stands). Only the
+  quad channel emits shade properties (single site, GalleryPack.java). Cell.replace keeps
+  element-level properties through materialize (verified: it overwrites only
+  from/to/rotation/faces), so the override survives the sheet bake. The tintindex guard
+  stays untouched (poly elements lose their faces object in materialize, which is CORRECT
+  — the captured rgb already carries the tint; a second tintindex would double it).
+- EXPECTED ON THE NEXT GALLERY RUN: the BOP crop/plant class (~102-127 reds at ae
+  62-120k) collapses toward the gate; the sky +1 skew (152,189,255 vs 153,190,255)
+  remains a separate lever if the class does not fully clear.

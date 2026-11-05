@@ -850,7 +850,17 @@ public final class GalleryPack {
         for (int i = 0; i < elements.size() && i < flags.size(); i++) {
             JsonObject el = elements.get(i).getAsJsonObject();
             if (flags.get(i)[0] == 0) {
+                // 1.21.1 said shade:false (no directional shading). The 26.3
+                // element deserializer (CuboidModelElement$Deserializer) reads
+                // ONLY "shade_direction_override" -> Direction.byName; the old
+                // boolean is dead there, so the client re-applied its default
+                // south-snap shade (x0.8) on top of the captured colors — the
+                // measured BOP crop darkening. Mojang's own migration maps
+                // shade:false -> override "up" (= brightness 1.0), so both
+                // wordings ride along: 26.3 reads the override, anything that
+                // still understands the boolean ignores the unknown key.
                 el.addProperty("shade", false);
+                el.addProperty("shade_direction_override", "up");
             }
             if (flags.get(i)[1] >= 0 && el.has("faces")) {
                 el.getAsJsonObject("faces").getAsJsonObject("south").addProperty("tintindex", flags.get(i)[1]);
