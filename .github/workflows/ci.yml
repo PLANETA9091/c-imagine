@@ -14,6 +14,8 @@ on:
       - "test-mods/**"
       - "tools/**"
       - "scripts/cimscene/**"
+      - "scripts/fetch-visual-client.py"
+      - "scripts/visual/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -30,6 +32,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: report schema regressions
         run: python3 scripts/cimscene/test-flip-report.py
+      - name: client download recovery
+        run: python3 scripts/visual/test-fetch-client.py
       - name: embedded shell syntax
         run: python3 scripts/audit_runblocks.py
 

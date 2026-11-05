@@ -18,10 +18,13 @@ Usage:
 + local light checks).
 """
 import argparse
+import http.client
 import json
 import os
 import pathlib
 import sys
+import time
+import urllib.error
 import urllib.request
 
 MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
@@ -30,8 +33,21 @@ RESOURCES = "https://resources.download.minecraft.net"
 
 def http_get(url: str) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": "c-imagine-visual-harness/1.0"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        return r.read()
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                return r.read()
+        except (urllib.error.URLError, http.client.HTTPException,
+                ConnectionError, TimeoutError) as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code not in (
+                    408, 429, 500, 502, 503, 504):
+                raise
+            if attempt == 3:
+                raise
+            delay = 2 ** attempt
+            print(f"fetch retry {attempt + 1}/3 in {delay}s: {url}: {error}",
+                  file=sys.stderr)
+            time.sleep(delay)
 
 
 def fetch_to(url: str, path: pathlib.Path) -> int:

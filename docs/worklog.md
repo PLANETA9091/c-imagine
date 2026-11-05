@@ -6446,3 +6446,154 @@ before restoring #129 pack.zip, pack.sha1 and server.properties. Both
 profiling runs still have Criterion SUCCESS / boot-RSS IN_PROGRESS.
 Gallery 42082255137 is still PENDING, without jobs yet. Proceeding with the
 planned docs-only checkpoint commit/push, then monitoring those runs.
+
+Audit follow-up (18:17 UTC): docs checkpoint 879c67d2 pushed successfully;
+working tree was clean afterward. Read profiling.yml's budget implementation:
+each bare/modded leg deliberately runs timeout 360, explaining the pending
+status; baseline B started 18:11:58 UTC. No timeout was shortened. The old
+cached-client gallery run still has one ours shard in flight; the corrected
+4d556391 gallery remains pending behind it. Refreshed ignored review HTML
+with both shade/light probe screenshot links and JSONs, explicit NO-OP
+outcomes, and confirmation that the #129 stand baseline was restored.
+Next planned batch remains collecting profiling results and following the
+corrected gallery; append outcomes here before any new implementation.
+
+18:18 UTC monitoring checkpoint: baseline/after Criterion jobs remain
+SUCCESS, both boot/RSS jobs remain IN_PROGRESS, corrected gallery remains
+PENDING. Continuing observation at approximately one-minute intervals;
+no further code or thresholds changed. Performance interpretation must
+state profiling.yml's scope: bare Paper versus the module boot, not a
+Create rendering/tick benchmark; do not claim unmeasured real-mod speedups.
+
+Profiling evidence collected (18:20 UTC):
+- BEFORE 42080726515: bare Done=15.849 s, peak RSS=967340 KiB;
+  module Done=6.883 s, peak RSS=933196 KiB. Reported boot ratio 0.43,
+  RSS delta -33 MiB; budget SUCCESS.
+- AFTER 42080943943: bare Done=13.450 s, peak RSS=945936 KiB;
+  module Done=10.210 s, peak RSS=1213096 KiB. Reported boot ratio 0.76,
+  RSS delta +260 MiB; budget SUCCESS (limits 1.25 and +400 MiB).
+- Absolute module samples increased between these separate CI runs; bare
+  samples also changed. These runs establish the existing budget gates,
+  not a causal speed/memory improvement or real-Create tick/render parity.
+  Keep that limitation visible. Raw artifacts and full job logs retained;
+  extracted numbers in /tmp/cim-green-129/profiling-comparison.json.
+- A detailed gallery s0 status query is still waiting on GitHub's response;
+  no failure or completed handshake has been inferred from that delay.
+Next: collect that query, continue corrected gallery monitoring, and append
+its actual handshake/pixel/coverage outcomes. No new renderer code planned
+until the complete current evidence is available.
+
+Next monitoring batch: diagnose the unusually long read-only gh status
+request using a narrowly filtered process listing; stop only that stalled
+query if necessary, and retry gallery status with an explicit 30-second
+command timeout. Do not cancel CI runs or change networking/services.
+
+Monitoring diagnosis: the narrowly filtered listing showed only the gh
+status child PID 843912 stalled for ~90 seconds. Sent TERM to that read-only
+query (not to any workflow/server); its parent shell can finish the queued
+worklog append. A separate status-only retry is running with timeout 30.
+
+18:19 UTC results: BEFORE profiling 42080726515 and AFTER profiling
+42080943943 both completed SUCCESS, including Criterion and bare/module
+boot-RSS gates. Started downloading both profiling-logs artifacts and full
+job logs to /tmp/cim-green-129/profile-before* and profile-after* to extract
+numbers. Gallery 42082255137 has now STARTED: seed SUCCESS, all eight truth
+and all eight ours legs IN_PROGRESS. The immediately preceding user status
+message still described it as pending, based on the previous checkpoint;
+this entry records the new state. Next inspect s0's current step to verify
+that the repaired client handshake actually reached the wall walk.
+
+Status-only retry succeeded at 18:21:37 UTC: corrected gallery is
+IN_PROGRESS. Next retrieve the bounded jobs API directly (30-second
+command timeout), selecting truth/ours s0's active or failed steps; this
+avoids the stalled gh run view jobs expansion. Also copy the collected
+profiling numbers into the ignored review artifact.
+
+Direct jobs query completed without printing an s0 match; this is not
+proof that the handshake passed. The profiling JSON was copied into the
+ignored review artifact successfully. Next inspect the actual job names /
+count without a name filter, and compare the two clients' smooth_stone
+texture pixels as a control for the sole Create pane's floor background.
+Expected: equal source texture pixels exclude an asset-version mismatch;
+no renderer/rig change will be made from an unverified hypothesis.
+
+---
+## Session continuation after owner interruption (18:24 UTC, 2026-11-05)
+
+Recovered local main at 879c67d2; only docs/worklog.md has uncommitted
+follow-up notes. Re-read the recorded next actions and recent history.
+The last control finished before interruption: smooth_stone RGBA pixels
+are byte-identical in the real 1.21.1 and 26.3 client jars, both SHA256
+ e31212c36db7e8d0023d6fb2b577de272cbf78f55110ec35611e02a19977736c.
+Thus a changed smooth-stone source asset is excluded for the Create pane.
+The preceding composite shell command masked its gh query timeout with
+later successful Python output; no job-status claim is based on it.
+
+Next batch: query corrected gallery 42082255137 and the GitHub API rate
+status independently with explicit command timeouts and capture each exit
+code. Reconfirm current run evidence before deciding the next fix. All
+prior plans and the unchanged gate remain in effect. Record each result.
+
+18:24 continuation query results: rate-limit endpoint succeeded (core
+remaining 4996/5000); no rate-limit exhaustion is established. Bounded
+gh run view succeeded: corrected gallery is IN_PROGRESS; seed SUCCESS,
+truth s4 and s7 SUCCESS (the repaired client handshake reached complete
+walks), ours s1 FAILURE, other shards still running. Metadata and a
+per_page=1 jobs API request are pending separately.
+Next retrieve the failing ours s1 step and its report/log artifact. A new
+non-pixel failure takes priority over residual model work; a pixel RED is
+measured against fresh truth, never resolved by raising the gate.
+
+18:25 checkpoint: gallery-report-1 downloaded successfully, but contains
+only gate.json: gate=1, join_pages=0, reds=[]. This is an early harness
+failure, not measured pixel REDs. Both direct metadata/per_page jobs API
+requests and the filtered failure-step query timed out (exit 124); retain
+that uncertainty. Next download ours-meta-1 and query the run-attempt jobs
+endpoint with a timeout to locate the early failure from actual logs.
+
+Failure located: attempt-specific jobs API succeeded. Ours s1 job
+127440990676 failed in "launch Paper (background, FAST BOOT) + prepare the
+client while it boots", before replay/join. Downloaded wall-ours-meta-1;
+Paper boot.log reaches Done (13.271s), so do not attribute this to server
+startup. Next inspect the captured client.out and that completed job's
+raw step log to identify the exact failing command.
+
+### Next blocker: transient asset fetch aborts the entire ours shard
+
+Actual s1 job log 127440990676 (18:20:11) shows fetch-visual-client.py
+failing at assets object fetch_to -> http_get -> urllib.urlopen/read with
+http.client.RemoteDisconnected: remote end closed connection without
+response. Paper had already reached Done. Captured client.out has old
+22:10 timestamps from the fetched runtime directory and is NOT this run's
+client execution; its old GLX/401 messages are not the current failure.
+The launch step exited before starting this client's capture session.
+
+Analysis before implementation: http_get currently performs exactly one
+GET, so a transient CDN disconnect kills a complete shard. This changes no
+NeoForge rendering or protocol behavior; upstream evidence is the real CI
+trace and Python's existing urllib/http.client exception hierarchy.
+Expected observable behavior: retry at most four times with bounded
+1/2/4-second backoff for transport/read failures and retryable HTTP status
+408/429/500/502/503/504. Permanent HTTP errors (e.g. 404) fail immediately;
+exhaustion propagates the actual failure; partial response data is never
+written as a successful asset. No test gates are softened.
+
+Next implementation/test batch: add the bounded retry only to the failing
+vanilla fetch helper; add deterministic stdlib tests for disconnect/read
+recovery, transient HTTP recovery, permanent-error fail-fast, exhausted
+attempts and keeping an existing file unchanged on failed fetch. Wire them
+into the existing harness-contract CI job, run them and the shell audit,
+then publish the smallest fix and run the gallery again. Preserve the
+current in-flight run and collect its other complete shards for analysis.
+
+Asset-fetch implementation results: http_get now retries transient
+transport/read failures and the selected HTTP statuses up to four total
+attempts; permanent HTTP errors still propagate immediately. Four offline
+recovery tests PASS (including partial reads and preserving an existing
+asset after exhaustion); all eight report-schema regressions PASS; every
+workflow run block passes bash -n; git diff --check passes. No NeoForge,
+renderer, scene, pixel threshold or runtime hot path changed.
+Next publish this fix with the required author, first fetching/rebasing
+any concurrent main changes, then record the resulting commit and new CI
+run IDs. Continue collecting the already running gallery's complete
+truth/shard evidence without canceling it.
