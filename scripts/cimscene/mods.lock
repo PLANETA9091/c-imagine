@@ -15,6 +15,7 @@
 #   dynamictrees           1.7.2                modId dynamictrees
 #   combat-roll            2.0.6+1.21.1-neoforge modId combat_roll   (jar combat_roll-neoforge-2.0.6+1.21.1.jar)
 #   ae2                    19.2.18              modId ae2
+#   applied-energistics-2  19.2.18              modId ae2          (jar appliedenergistics2-19.2.18.jar; modId verified from neoforge.mods.toml 2026-11-05)
 #   mekanism               10.7.19.85           modId mekanism
 #   sophisticated-backpacks 1.21.1-3.26.20.2244 modId sophisticatedbackpacks
 #   jade                   15.10.6+neoforge     modId jade
@@ -38,6 +39,7 @@ biomes-o-plenty=21.1.0.14
 dynamictrees=1.7.2
 combat-roll=2.0.6+1.21.1-neoforge
 ae2=19.2.18
+applied-energistics-2=19.2.18
 mekanism=10.7.19.85
 sophisticated-backpacks=1.21.1-3.26.20.2244
 jade=15.10.6+neoforge
