@@ -354,6 +354,38 @@ final class QuadDump {
         LOGGER.info("[cimscene] quad dump items={} empty={} failed={} foreign_quads={}", items, empty, failed, foreign);
     }
 
+    private static final class Discard implements VertexConsumer {
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int r, int g, int b, int a) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
+    }
+
     /** A buffer source whose every buffer records: baked quads whole, hand-drawn geometry vertex by vertex. */
     private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
         final StringBuilder out = new StringBuilder();
@@ -368,9 +400,12 @@ final class QuadDump {
             this.sprites = sprites;
         }
 
+        /** Foil wraps two buffers and rejects a duplicate; the glint is an overlay, not geometry. */
+        private final VertexConsumer discard = new Discard();
+
         @Override
         public VertexConsumer getBuffer(RenderType type) {
-            return this;
+            return type.toString().contains("glint") ? discard : this;
         }
 
         @Override
