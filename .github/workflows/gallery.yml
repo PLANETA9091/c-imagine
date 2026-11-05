@@ -80,8 +80,16 @@ name: gallery
 # coverage-gate.py DIAGNOSTIC_CLASSES):
 #   sound: every registered SoundEvent played in order per page window;
 #          the truth capture is a packet-level mixin log
-#          (gallery-sound-<ns>-p<p>.log), the ours replay writes the same
-#          artifact shape (empty — no mod-sound channel yet); sound-diff.py
+#          (gallery-sound-<ns>-p<p>.log), the ours replay sends one REAL
+#          ClientboundSoundPacket per cell through the visual-sounds.tsv
+#          rewrite and records the post-rewrite id the vanilla client
+#          received (same artifact shape); sound-diff.py joins the ordered
+#          streams (--map previews the mapped comparison, report-only)
+#   particles (stream): every registered ParticleType spawned in order per
+#          page window; same capture shape (the packet-capture mixin's
+#          particle branch) and same replay shape (visual-particles.tsv
+#          rewrite; simple default options by contract — data-carrying
+#          options degrade to the simple lookalike); particle-diff.py
 #          joins the ordered streams
 #   gui:   one MenuType per page opened for the rig viewer; menus needing
 #          block context throw on the empty extra-data buffer (named
@@ -536,6 +544,19 @@ jobs:
           python3 scripts/f2v/entity-remap.py "$EXTRA" scripts/f2v/entity-uv-map.tsv seed-pack/f2v/overlay
           cat scripts/f2v/visual-items.tsv seed-pack/f2v/visual-gallery-items.tsv \
             > seed-pack/f2v/visual-items.tsv
+          # THE SOUND+PARTICLE CHANNEL MAPS (2026-11-05, DIAGNOSTIC-first):
+          # deterministic vanilla stand-ins for every modded sound/particle
+          # the truth walk recorded — the plugin's replays resolve through
+          # these (and validate the target against Paper's LIVE registry,
+          # so a drifted candidate degrades to the documented default at
+          # replay time, never to silence). They ride the f2v dir to the
+          # ours shards like the other visual-*.tsv files.
+          python3 scripts/f2v/gallery-sounds-mapping.py \
+            seed-pack/scenes seed-pack/f2v/visual-sounds.tsv
+          python3 scripts/f2v/gallery-particles-mapping.py \
+            seed-pack/scenes seed-pack/f2v/visual-particles.tsv
+          test -f seed-pack/f2v/visual-sounds.tsv
+          test -f seed-pack/f2v/visual-particles.tsv
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
@@ -1160,6 +1181,10 @@ jobs:
           # WINDOW is pinned: 1s after the spawn command on BOTH legs (the
           # particle is a client-side spec — a fixed age is the only fair
           # comparison; the manifest rows are dyn=1, diagnostics, never red).
+          # 2026-11-05: the walk ALSO writes the ordered particle-type
+          # stream (gallery-particle-<ns>-p<p>.log, the packet-capture
+          # mixin's particle branch) — the PARTICLE-STREAM channel's truth
+          # artifact; particle-diff.py joins it against the ours replay.
           for NS in $LADDER_NS; do
             EX=0
             for p in $(seq $SI $K $MAXP); do
@@ -2073,10 +2098,13 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "ours $NS fluid replay hit the MAXP cap"; exit 1; }
           done
-          # SOUND replay (per ladder ns, DIAGNOSTIC): the plugin writes the
-          # SAME capture-log artifact shape the truth mixin writes — empty
-          # (no mod-sound channel), which is the honest measurement, never
-          # a missing file. The join is sound-diff.py in the inline step.
+          # SOUND replay (per ladder ns, DIAGNOSTIC): the plugin sends one
+          # REAL ClientboundSoundPacket per manifest cell through the
+          # visual-sounds.tsv rewrite (a stale seed without the mapping
+          # file keeps the honestly-empty log) and records the post-rewrite
+          # id the vanilla client received — the SAME artifact shape the
+          # truth mixin writes. The join is sound-diff.py in the inline
+          # step.
           for NS in $LADDER_NS; do
             EX=0
             for p in $(seq $SI $K $MAXP); do
@@ -2366,11 +2394,32 @@ jobs:
               TL="truth-meta/srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.log"
               OL="srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.log"
               if [ -f "$TL" ] && [ -f "$OL" ]; then
+                # --map: the REPORT-ONLY flip preview (the truth names the
+                # modded ids, ours names the post-rewrite vanilla ids —
+                # raw equality stays the verdict until the channel is
+                # measured stable and the flip lands)
                 python3 scripts/cimscene/sound-diff.py --truth "$TL" --ours "$OL" \
                   --ns "$NS" --page "$p" \
+                  --map "srv-wall/c-imagine/f2v/visual-sounds.tsv" \
                   --out "gallery-report/diag-sound-$NS-p$p.json" || true
               else
                 echo "$NS sound page $p capture logs missing (tolerated: diagnostic)"
+              fi
+            done
+          done
+          echo "=== PARTICLE-STREAM pages: census-style stream join (DIAGNOSTIC — the sound flip law, same shape) ==="
+          for NS in $LADDER_NS; do
+            for M in $(find truth-meta -name "gallery-particle-$NS-p*.tsv" | sort -V); do
+              B=$(basename "$M" .tsv); p=${B##*-p}
+              TL="truth-meta/srv-wall/c-imagine/scenes/gallery-particle-$NS-p$p.log"
+              OL="srv-wall/c-imagine/scenes/gallery-particle-$NS-p$p.log"
+              if [ -f "$TL" ] && [ -f "$OL" ]; then
+                python3 scripts/cimscene/particle-diff.py --truth "$TL" --ours "$OL" \
+                  --ns "$NS" --page "$p" \
+                  --map "srv-wall/c-imagine/f2v/visual-particles.tsv" \
+                  --out "gallery-report/diag-pstream-$NS-p$p.json" || true
+              else
+                echo "$NS particle-stream page $p capture logs missing (tolerated: diagnostic)"
               fi
             done
           done
@@ -2471,6 +2520,9 @@ jobs:
             ground-fill.log
             visual-client/client.out
             ours-shots/shots.txt
+            # the stream logs (sound + particle capture): the census-style
+            # joins read them inline, the artifacts keep them inspectable
+            srv-wall/c-imagine/scenes/
           if-no-files-found: warn
 
       - name: upload shard report s${{ matrix.shard }} (joins + triptychs + gate)

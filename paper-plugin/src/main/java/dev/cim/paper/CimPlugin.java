@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
@@ -1566,19 +1567,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * nochannel=N cells=M} (cells=-1 prints as {@code cells=missing}).
      */
     /**
-     * Replay one truth-leg SOUND gallery page manifest (2026-11-04,
-     * DIAGNOSTIC-first). The truth leg's capture is a packet-level ordered
-     * event-id stream; the replay writes the SAME artifact shape
-     * (one event id per line, in played order) for every sound THIS side
-     * actually sends. This plugin has NO sound rewrite path (verified
-     * before wiring: no ClientboundSound handling anywhere in the plugin),
-     * so the stream stays EMPTY and every cell counts as nochannel — the
-     * join names the whole page as missing ids. The empty file is the
-     * honest measurement of the channel's absence, never a missing file
-     * (a missing file would be indistinguishable from a crashed walk).
+     * Replay one truth-leg SOUND gallery page manifest (2026-11-05, the F2V
+     * SOUND channel — DIAGNOSTIC-first, first measurement). The truth leg's
+     * capture is a packet-level ordered event-id stream; the replay sends
+     * one REAL {@code ClientboundSoundPacket} per manifest cell to the rig
+     * viewer and records the POST-rewrite id the vanilla 26.3 client
+     * actually receives (one id per line, send order — the same artifact
+     * shape the truth capture writes).
      *
-     * <p>Returns {@code [placed=0, nochannel=N, cells=N]}; the RCON marker
-     * is {@code gallerypage-sound <ns> p<page> -> placed=0 nochannel=N cells=M}.
+     * <p>THE REWRITE: Paper's SOUND_EVENT registry holds no modded ids (a
+     * modded {@code Holder} cannot even be constructed on this side), so the
+     * replay resolves every cell through {@code c-imagine/f2v/
+     * visual-sounds.tsv} (the pack-side mapping,
+     * gallery-sounds-mapping.py): the mapped target is validated against the
+     * LIVE registry and an absent target (drift) falls back to the
+     * documented {@code minecraft:block.wood.place}, counted and logged as
+     * {@code unmapped-fallback} — the stream records what actually played,
+     * never a silence. A missing mapping file keeps the old honestly-empty
+     * log (the channel is ABSENT, not empty).
+     *
+     * <p>Returns {@code [placed=N, nochannel=K, cells=M]}; the RCON marker
+     * is {@code gallerypage-sound <ns> p<page> -> placed=N nochannel=K cells=M}.
      */
     private int[] galleryPageSound(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -1587,11 +1596,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().warning(LOG_PREFIX + "f2v gallery-sound: manifest missing: " + mf);
             return new int[]{0, 0, -1};
         }
-        int cells = 0;
+        // cell rows in file order: {x, y, z, soundId} (the truth plays them
+        // in this order; the stream join is an ORDERED compare)
+        java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
-                if (line.startsWith("cell\t")) {
-                    cells++;
+                String[] p = line.split("\t");
+                if (p.length >= 5 && p[0].equals("cell")) {
+                    cells.add(new String[]{p[1], p[2], p[3], p[4]});
                 }
                 // header / skip rows
             }
@@ -1600,20 +1612,279 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + mf + ": " + ioe);
             return new int[]{0, 0, -1};
         }
-        // THE CAPTURE LOG (empty by the no-channel contract above — the
-        // write is unconditional so sound-diff.py always has the artifact)
-        Path cap = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
-                "gallery-sound-" + ns + "-p" + page + ".log");
+        Map<String, String> mapping = readVisualMapping("visual-sounds.tsv");
+        if (mapping == null) {
+            // NO MAPPING FILE = no channel (a stale seed): the empty log is
+            // the honest measurement of the channel's absence, never a
+            // missing file (indistinguishable from a crashed walk otherwise)
+            writeEmptyCapture("gallery-sound-" + ns + "-p" + page + ".log");
+            log().warning(LOG_PREFIX + "f2v gallery-sound: " + cells.size()
+                    + " cell(s) nochannel — no visual-sounds.tsv (no F2V sound"
+                    + " rewrite on this seed; the capture stream stays empty)");
+            return new int[]{0, cells.size(), cells.size()};
+        }
+        final String nsf = ns;
+        final int pagef = page;
+        Integer sent = callSync(() -> {
+            Player viewer = Bukkit.getPlayerExact("cimviewer");
+            if (viewer == null) {
+                log().warning(LOG_PREFIX + "f2v gallery-sound: no cimviewer online — "
+                        + cells.size() + " cell(s) nochannel (the stream needs the rig)");
+                return Integer.valueOf(-1);
+            }
+            try {
+                Object handle = viewer.getClass().getMethod("getHandle").invoke(viewer);
+                Object listener = NetWatch.connectionField(handle.getClass(), "connection").get(handle);
+                java.util.List<String> stream = new java.util.ArrayList<>();
+                int fallbacks = 0;
+                int misses = 0;
+                for (String[] cell : cells) {
+                    String target = mapping.get(cell[3]);
+                    if (target == null) {
+                        target = DEFAULT_SOUND_TARGET;
+                        fallbacks++;
+                    }
+                    Object holder = soundHolder(target);
+                    if (holder == null && !target.equals(DEFAULT_SOUND_TARGET)) {
+                        fallbacks++;
+                        target = DEFAULT_SOUND_TARGET;
+                        holder = soundHolder(target);
+                    }
+                    if (holder == null) {
+                        misses++;
+                        continue;
+                    }
+                    Object id = makeIdentifier(identifierClass(), target);
+                    Object packet = clientboundSoundPacket(holder,
+                            Double.parseDouble(cell[0]) + 0.5,
+                            Double.parseDouble(cell[1]) + 0.5,
+                            Double.parseDouble(cell[2]) + 0.5);
+                    if (packet == null) {
+                        misses++;
+                        continue;
+                    }
+                    sendToConnection(listener, packet);
+                    stream.add(target);
+                }
+                writeCapture("gallery-sound-" + nsf + "-p" + pagef + ".log", stream);
+                log().warning(LOG_PREFIX + "f2v gallery-sound: page " + pagef
+                        + " sent=" + stream.size() + " unmapped-fallback=" + fallbacks
+                        + " miss=" + misses
+                        + " (the post-rewrite stream the vanilla client received)");
+                return Integer.valueOf(stream.size());
+            } catch (Throwable t) {
+                log().warning(LOG_PREFIX + "f2v gallery-sound: replay failed: " + t);
+                return Integer.valueOf(-2);
+            }
+        });
+        if (sent == null || sent.intValue() < 0) {
+            // viewer offline / reflection failure: no stream, honest nochannel
+            writeEmptyCapture("gallery-sound-" + nsf + "-p" + pagef + ".log");
+            return new int[]{0, cells.size(), cells.size()};
+        }
+        int placed = sent.intValue();
+        return new int[]{placed, cells.size() - placed, cells.size()};
+    }
+
+    /** The documented last-resort stand-in of the SOUND channel. */
+    private static final String DEFAULT_SOUND_TARGET = "minecraft:block.wood.place";
+
+    /** The documented last-resort stand-in of the PARTICLE channel. */
+    private static final String DEFAULT_PARTICLE_TARGET = "minecraft:poof";
+
+    /**
+     * Read one F2V visual mapping ({@code visual-sounds.tsv} /
+     * {@code visual-particles.tsv}): {@code modded_id <TAB> target <TAB>
+     * heuristic}. Returns null when the file is absent (the channel is
+     * absent — callers keep their no-channel contract).
+     */
+    private static Map<String, String> readVisualMapping(String fileName) {
+        Path f = Path.of(System.getProperty("user.dir"), "c-imagine", "f2v", fileName);
+        if (!Files.isRegularFile(f)) {
+            return null;
+        }
+        Map<String, String> out = new java.util.HashMap<>();
         try {
-            Files.writeString(cap, "", StandardCharsets.UTF_8);
+            for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
+                if (line.isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                String[] p = line.split("\t");
+                if (p.length >= 2 && !p[0].isEmpty() && !p[1].isEmpty()) {
+                    out.putIfAbsent(p[0], p[1]);
+                }
+            }
         } catch (IOException ioe) {
-            log().warning(LOG_PREFIX + "f2v gallery-sound: capture log write failed "
+            return null;
+        }
+        return out;
+    }
+
+    /** The f2v mapping class (26.3 renamed ResourceLocation -> Identifier). */
+    private static Class<?> identifierClass() throws ClassNotFoundException {
+        try {
+            return Class.forName("net.minecraft.resources.Identifier");
+        } catch (ClassNotFoundException older) {
+            return Class.forName("net.minecraft.resources.ResourceLocation");
+        }
+    }
+
+    /**
+     * Resolve a vanilla sound id to its registry {@code Holder} on the live
+     * Paper registry (javap-verified 26.3 surface: BuiltInRegistries.
+     * SOUND_EVENT, ResourceKey.create(Registries.SOUND_EVENT, id),
+     * HolderGetter.get(key) -> Optional<Holder.Reference>). Null when the
+     * id is not registered.
+     */
+    private static Object soundHolder(String target) {
+        try {
+            Class<?> registries = Class.forName("net.minecraft.core.registries.BuiltInRegistries");
+            Object registry = NetWatch.connectionField(registries, "SOUND_EVENT").get(null);
+            Class<?> regKeys = Class.forName("net.minecraft.core.registries.Registries");
+            Object regKey = NetWatch.connectionField(regKeys, "SOUND_EVENT").get(null);
+            Class<?> rk = Class.forName("net.minecraft.resources.ResourceKey");
+            Object key = rk.getMethod("create", regKey.getClass(),
+                    identifierClass()).invoke(null, regKey,
+                    makeIdentifier(identifierClass(), target));
+            for (Method m : registry.getClass().getMethods()) {
+                if (m.getName().equals("get") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInstance(key)) {
+                    Object v = m.invoke(registry, key);
+                    if (v instanceof java.util.Optional<?> opt) {
+                        return opt.orElse(null);
+                    }
+                    return v;
+                }
+            }
+        } catch (Throwable t) {
+            // fall through: unregistered / surface drift
+        }
+        return null;
+    }
+
+    /** Build the 26.3 {@code ClientboundSoundPacket} (MASTER, v1 p1, seed 0). */
+    private static Object clientboundSoundPacket(Object holder,
+                                                 double x, double y, double z) {
+        try {
+            Class<?> source = Class.forName("net.minecraft.sounds.SoundSource");
+            Object master = source.getField("MASTER").get(null);
+            Class<?> pkt = Class.forName(
+                    "net.minecraft.network.protocol.game.ClientboundSoundPacket");
+            for (java.lang.reflect.Constructor<?> c : pkt.getConstructors()) {
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 8 && pt[0].isInstance(holder) && pt[1].isInstance(master)
+                        && pt[2] == double.class && pt[5] == float.class && pt[7] == long.class) {
+                    return c.newInstance(holder, master, x, y, z, 1.0f, 1.0f, 0L);
+                }
+            }
+        } catch (Throwable t) {
+            // fall through
+        }
+        return null;
+    }
+
+    /** Reflective one-arg send on the player's Connection (the NetWatch path). */
+    private static void sendToConnection(Object listener, Object packet) throws Exception {
+        for (Method m : listener.getClass().getMethods()) {
+            if (m.getName().equals("send") && m.getParameterCount() == 1
+                    && m.getParameterTypes()[0].isInstance(packet)) {
+                m.invoke(listener, packet);
+                return;
+            }
+        }
+        throw new IllegalStateException("no Connection.send(Object) surface");
+    }
+
+    /** One resolved particle send: the id that will PLAY + its SIMPLE options. */
+    private record ResolvedParticle(String id, Object options) {
+    }
+
+    /**
+     * Resolve a vanilla particle id to SIMPLE options on the live registry:
+     * the registry ParticleType when it is a ParticleOptions (a
+     * SimpleParticleType is), else the documented {@code minecraft:poof}
+     * default; null when even the default is unavailable. The returned id
+     * is always what the client will actually receive (the stream records
+     * it, never the failed candidate).
+     */
+    private static ResolvedParticle resolveParticle(String target) {
+        try {
+            Class<?> registries = Class.forName("net.minecraft.core.registries.BuiltInRegistries");
+            Object registry = NetWatch.connectionField(registries, "PARTICLE_TYPE").get(null);
+            Class<?> rl = identifierClass();
+            Object id = makeIdentifier(rl, target);
+            Object value = null;
+            for (Method m : registry.getClass().getMethods()) {
+                if (m.getName().equals("getValue") && m.getParameterCount() == 1
+                        && m.getParameterTypes()[0].isInstance(id)) {
+                    value = m.invoke(registry, id);
+                    break;
+                }
+            }
+            Class<?> options = Class.forName("net.minecraft.core.particles.ParticleOptions");
+            if (options.isInstance(value)) {
+                return new ResolvedParticle(target, value);
+            }
+        } catch (Throwable t) {
+            // fall through: unregistered / surface drift
+        }
+        Object poof = particleTypeField(DEFAULT_PARTICLE_TARGET);
+        return poof == null ? null : new ResolvedParticle(DEFAULT_PARTICLE_TARGET, poof);
+    }
+
+    /** A ParticleTypes.* constant by 26.3 field name (SCREAMING path). */
+    private static Object particleTypeField(String target) {
+        try {
+            String path = target.contains(":")
+                    ? target.substring(target.indexOf(':') + 1) : target;
+            Class<?> types = Class.forName("net.minecraft.core.particles.ParticleTypes");
+            return types.getField(path.toUpperCase(Locale.ROOT)).get(null);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Build the 26.3 {@code ClientboundLevelParticlesPacket} (the 11-arg ctor). */
+    private static Object clientboundLevelParticlesPacket(Object options,
+                                                          double x, double y, double z) {
+        try {
+            Class<?> pkt = Class.forName(
+                    "net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket");
+            for (java.lang.reflect.Constructor<?> c : pkt.getConstructors()) {
+                Class<?>[] pt = c.getParameterTypes();
+                if (pt.length == 11 && pt[0].isInstance(options)
+                        && pt[1] == boolean.class && pt[3] == double.class
+                        && pt[6] == float.class && pt[10] == int.class) {
+                    // overrideLimiter=false, alwaysShow=true (the broadcast
+                    // shape of the truth leg's ServerLevel.sendParticles),
+                    // deltas 0/0/0 speed 0 count 1 — one STATIC particle
+                    return c.newInstance(options, false, true, x, y, z,
+                            0.0f, 0.0f, 0.0f, 0.0f, 1);
+                }
+            }
+        } catch (Throwable t) {
+            // fall through
+        }
+        return null;
+    }
+
+    /** Write an EMPTY capture log (the no-channel contract artifact). */
+    private void writeEmptyCapture(String name) {
+        writeCapture(name, java.util.List.of());
+    }
+
+    /** Write one capture log: one id per line, arrival order. */
+    private void writeCapture(String name, java.util.List<String> stream) {
+        Path cap = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes", name);
+        try {
+            Files.createDirectories(cap.getParent());
+            Files.writeString(cap,
+                    stream.isEmpty() ? "" : String.join("\n", stream) + "\n",
+                    StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v capture log write failed "
                     + cap + ": " + ioe);
         }
-        log().warning(LOG_PREFIX + "f2v gallery-sound: " + cells
-                + " cell(s) nochannel — Paper has no mod-sound channel "
-                + "(no F2V sound rewrite; the capture stream stays empty)");
-        return new int[]{0, cells, cells};
     }
 
     /**
@@ -1915,6 +2186,30 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return counts == null ? new int[]{0, 0, -1} : counts;
     }
 
+    /**
+     * Replay one truth-leg PARTICLE gallery page manifest (2026-11-05, the
+     * F2V PARTICLE channel — DIAGNOSTIC-first, first measurement). The truth
+     * leg spawned one static particle per cell; the replay sends one REAL
+     * {@code ClientboundLevelParticlesPacket} per manifest cell to the rig
+     * viewer and records the POST-rewrite particle id the vanilla 26.3
+     * client receives (one id per line, send order —
+     * {@code gallery-particle-<ns>-p<page>.log}, the stream-diff artifact
+     * shape; the pixel shots stay what they are, the stream is the new
+     * channel proof).
+     *
+     * <p>THE OPTIONS CONTRACT (documented, gallery-particles-mapping.py): a
+     * modded particle's serialized options bytes are NOT portable, so the
+     * mapped vanilla type is sent as its SIMPLE default options (the
+     * registry ParticleType when it is a SimpleParticleType) carrying the
+     * original count/speed/offsets — data-carrying options DEGRADE to the
+     * simple lookalike. An exact-name candidate absent from the live Paper
+     * registry falls back to the documented {@code minecraft:poof}. A
+     * missing mapping file keeps the old honestly-empty log (the channel is
+     * ABSENT, not empty).
+     *
+     * <p>Returns {@code [placed=N, nochannel=K, cells=M]}; the RCON marker
+     * is {@code gallerypage-particle <ns> p<page> -> placed=N nochannel=K cells=M}.
+     */
     private int[] galleryPageParticle(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-particle-" + ns + "-p" + page + ".tsv");
@@ -1922,11 +2217,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().warning(LOG_PREFIX + "f2v gallery-particle: manifest missing: " + mf);
             return new int[]{0, 0, -1};
         }
-        int cells = 0;
+        // cell rows in file order: {x, y, z, particleId} (the truth spawned
+        // them in this order; the stream join is an ORDERED compare)
+        java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
-                if (line.startsWith("cell\t")) {
-                    cells++;
+                String[] p = line.split("\t");
+                if (p.length >= 5 && p[0].equals("cell")) {
+                    cells.add(new String[]{p[1], p[2], p[3], p[4]});
                 }
                 // header / skip rows
             }
@@ -1935,8 +2233,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + mf + ": " + ioe);
             return new int[]{0, 0, -1};
         }
-        final int cellsf = cells;
-        callSync(() -> {
+        Map<String, String> mapping = readVisualMapping("visual-particles.tsv");
+        if (mapping == null) {
+            // NO MAPPING FILE = no channel (a stale seed): the empty log is
+            // the honest measurement of the channel's absence
+            writeEmptyCapture("gallery-particle-" + ns + "-p" + page + ".log");
+            log().warning(LOG_PREFIX + "f2v gallery-particle: " + cells.size()
+                    + " cell(s) nochannel — no visual-particles.tsv (no F2V"
+                    + " particle channel on this seed; the capture stream stays empty)");
+            return new int[]{0, cells.size(), cells.size()};
+        }
+        final String nsf = ns;
+        final int pagef = page;
+        Integer sent = callSync(() -> {
             World w = world(worldName());
             for (int bx = -6; bx <= 6; bx++) {
                 for (int by = -60; by <= -53; by++) {
@@ -1949,11 +2258,61 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
-            return cellsf;
+            Player viewer = Bukkit.getPlayerExact("cimviewer");
+            if (viewer == null) {
+                log().warning(LOG_PREFIX + "f2v gallery-particle: no cimviewer online — "
+                        + cells.size() + " cell(s) nochannel (the stream needs the rig)");
+                return Integer.valueOf(-1);
+            }
+            try {
+                Object handle = viewer.getClass().getMethod("getHandle").invoke(viewer);
+                Object listener = NetWatch.connectionField(handle.getClass(), "connection").get(handle);
+                java.util.List<String> stream = new java.util.ArrayList<>();
+                int fallbacks = 0;
+                int misses = 0;
+                for (String[] cell : cells) {
+                    String target = mapping.get(cell[3]);
+                    if (target == null) {
+                        target = DEFAULT_PARTICLE_TARGET;
+                        fallbacks++;
+                    }
+                    ResolvedParticle resolved = resolveParticle(target);
+                    if (resolved == null) {
+                        misses++;
+                        continue;
+                    }
+                    if (!resolved.id().equals(target)) {
+                        fallbacks++;
+                    }
+                    Object packet = clientboundLevelParticlesPacket(resolved.options(),
+                            Double.parseDouble(cell[0]) + 0.5,
+                            Double.parseDouble(cell[1]) + 0.5,
+                            Double.parseDouble(cell[2]) + 0.5);
+                    if (packet == null) {
+                        misses++;
+                        continue;
+                    }
+                    sendToConnection(listener, packet);
+                    stream.add(resolved.id());
+                }
+                writeCapture("gallery-particle-" + nsf + "-p" + pagef + ".log", stream);
+                log().warning(LOG_PREFIX + "f2v gallery-particle: page " + pagef
+                        + " sent=" + stream.size() + " unmapped-fallback=" + fallbacks
+                        + " miss=" + misses
+                        + " (the post-rewrite stream the vanilla client received)");
+                return Integer.valueOf(stream.size());
+            } catch (Throwable t) {
+                log().warning(LOG_PREFIX + "f2v gallery-particle: replay failed: " + t);
+                return Integer.valueOf(-2);
+            }
         });
-        log().warning(LOG_PREFIX + "f2v gallery-particle: " + cellsf
-                + " cell(s) nochannel — Paper has no mod-particle channel");
-        return new int[]{0, cellsf, cellsf};
+        if (sent == null || sent.intValue() < 0) {
+            // viewer offline / reflection failure: no stream, honest nochannel
+            writeEmptyCapture("gallery-particle-" + nsf + "-p" + pagef + ".log");
+            return new int[]{0, cells.size(), cells.size()};
+        }
+        int placed = sent.intValue();
+        return new int[]{placed, cells.size() - placed, cells.size()};
     }
 
     /**
