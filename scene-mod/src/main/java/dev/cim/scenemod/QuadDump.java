@@ -1,9 +1,13 @@
 package dev.cim.scenemod;
 
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.BiomeColors;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
@@ -16,12 +20,15 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.ColorResolver;
-import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.FoliageColor;
+import net.minecraft.world.level.GrassColor;
+import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.material.FluidState;
+import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import net.neoforged.neoforge.common.NeoForge;
@@ -47,12 +54,13 @@ import java.util.stream.Stream;
  * know a dynamic model's answer (connected textures, neighbour-aware meshes),
  * so {@code -Dcim.quaddump=<scenes dir>} reads every block manifest at the
  * first tick after loading, rebuilds each page's neighbourhood and dumps the real baked
- * quads of every cell whose picture differs from its static model. No mod
- * is special-cased: this asks each model through its own getModelData/getQuads.
+ * of every cell through the real block renderer. No mod is special-cased:
+ * whatever a model does, this captures what it finally draws.
  *
  * <p>Writes, beside the manifests: {@code gallery-<ns>-p<p>.ctx.tsv} rows
  * {@code x y z q<hash>}; {@code quads/<hash>.tsv}, one quad per line (sprite,
- * shade, tint, then x y z u v per vertex; model units, sprite-local 0..16 UVs);
+ * shade, tint, x y z u v per vertex, then r g b per vertex; model units,
+ * sprite-local 0..16 UVs, colour = ambient occlusion x tint);
  * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
  */
 final class QuadDump {
@@ -161,43 +169,77 @@ final class QuadDump {
                 cells, dumped, rows.size(), failed);
     }
 
-    /** The cell's real mesh, or null when its static model already draws the same picture. */
+    /**
+     * The cell through the real block renderer: its checkSides culling, its
+     * ambient occlusion, its tint and offset, all captured at the one point
+     * they reach the vertex buffer. Null when the renderer draws nothing.
+     */
     private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
-        BakedModel model = Minecraft.getInstance().getBlockRenderer().getBlockModel(state);
+        Minecraft mc = Minecraft.getInstance();
+        BakedModel model = mc.getBlockRenderer().getBlockModel(state);
         ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
-        String plain = mesh(model, page, pos, state, ModelData.EMPTY, false, sprites);
-        String real = mesh(model, page, pos, state, data, false, sprites);
-        // a solid neighbour hides an opaque face on both stacks; only a see-through
-        // block shows the face the real client culls and an item display does not
-        String culled = state.isSolidRender(page, pos) ? real : mesh(model, page, pos, state, data, true, sprites);
-        return plain.equals(culled) ? null : culled;
-    }
-
-    private static String mesh(BakedModel model, Page page, BlockPos pos, BlockState state, ModelData data,
-                               boolean cull, List<TextureAtlasSprite> sprites) {
         RandomSource random = RandomSource.create();
         long seed = state.getSeed(pos);
-        StringBuilder sb = new StringBuilder();
         random.setSeed(seed);
+        Capture capture = new Capture(sprites, state.getOffset(page, pos));
+        PoseStack pose = new PoseStack();
         for (RenderType type : model.getRenderTypes(state, random, data)) {
-            for (Direction side : Direction.values()) {
-                if (cull && !Block.shouldRenderFace(state, page, pos, side, pos.relative(side))) {
-                    continue;
-                }
-                random.setSeed(seed);
-                for (BakedQuad q : model.getQuads(state, side, random, data, type)) {
-                    appendQuad(sb, q, sprites);
-                }
-            }
-            random.setSeed(seed);
-            for (BakedQuad q : model.getQuads(state, null, random, data, type)) {
-                appendQuad(sb, q, sprites);
-            }
+            mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
+                    random, seed, OverlayTexture.NO_OVERLAY, data, type);
         }
-        return sb.toString();
+        return capture.out.length() == 0 ? null : capture.out.toString();
     }
 
-    private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites) {
+    /** Records each quad the renderer emits; everything per-vertex arrives in putBulkData. */
+    private static final class Capture implements VertexConsumer {
+        final StringBuilder out = new StringBuilder();
+        final List<TextureAtlasSprite> sprites;
+        final Vec3 offset;
+
+        Capture(List<TextureAtlasSprite> sprites, Vec3 offset) {
+            this.sprites = sprites;
+            this.offset = offset;
+        }
+
+        @Override
+        public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
+                                float a, int[] light, int overlay, boolean readAlpha) {
+            appendQuad(out, q, sprites, offset, brightness, r, g, b);
+        }
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int r, int g, int b, int a) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
+    }
+
+    private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites, Vec3 off,
+                                   float[] brightness, float r, float g, float b) {
         int[] v = q.getVertices();
         float cu = 0;
         float cv = 0;
@@ -222,8 +264,12 @@ final class QuadDump {
             float u = (Float.intBitsToFloat(v[o + UV]) - sprite.getU0()) / (sprite.getU1() - sprite.getU0()) * 16;
             float w = (Float.intBitsToFloat(v[o + UV + 1]) - sprite.getV0()) / (sprite.getV1() - sprite.getV0()) * 16;
             sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
-                    Float.intBitsToFloat(v[o]) * 16, Float.intBitsToFloat(v[o + 1]) * 16,
-                    Float.intBitsToFloat(v[o + 2]) * 16, u, w));
+                    (Float.intBitsToFloat(v[o]) + off.x) * 16, (Float.intBitsToFloat(v[o + 1]) + off.y) * 16,
+                    (Float.intBitsToFloat(v[o + 2]) + off.z) * 16, u, w));
+        }
+        for (int i = 0; i < 4; i++) {
+            sb.append(String.format(Locale.ROOT, "\t%.3f\t%.3f\t%.3f", brightness[i] * r, brightness[i] * g,
+                    brightness[i] * b));
         }
         sb.append('\n');
     }
@@ -266,7 +312,7 @@ final class QuadDump {
 
         @Override
         public float getShade(Direction side, boolean shade) {
-            return 1;
+            return 1; // the ours client applies its own directional light; only AO + tint are baked
         }
 
         @Override
@@ -275,8 +321,25 @@ final class QuadDump {
         }
 
         @Override
+        public int getBrightness(LightLayer layer, BlockPos pos) {
+            return 15;
+        }
+
+        @Override
+        public int getRawBrightness(BlockPos pos, int darkening) {
+            return 15;
+        }
+
+        @Override
         public int getBlockTint(BlockPos pos, ColorResolver resolver) {
-            return -1;
+            // the gallery world is flat plains: temperature 0.8, downfall 0.4
+            if (resolver == BiomeColors.GRASS_COLOR_RESOLVER) {
+                return GrassColor.get(0.8, 0.4);
+            }
+            if (resolver == BiomeColors.FOLIAGE_COLOR_RESOLVER) {
+                return FoliageColor.get(0.8, 0.4);
+            }
+            return resolver == BiomeColors.WATER_COLOR_RESOLVER ? 0x3F76E4 : -1;
         }
 
         @Override

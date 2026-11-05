@@ -52,7 +52,24 @@ final class ObjMesh {
     record Vert(double[] p, double[] uv, int pi, int ti) {
     }
 
-    record Face(List<Vert> verts, String tex) {
+    /** {@code colors}: per-vertex rgb multipliers (ambient occlusion x tint), or null. */
+    record Face(List<Vert> verts, String tex, float[][] colors) {
+        Face(List<Vert> verts, String tex) {
+            this(verts, tex, null);
+        }
+
+        boolean colored() {
+            if (colors != null) {
+                for (float[] c : colors) {
+                    for (float v : c) {
+                        if (v < 0.995f) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
     }
 
     /** {@code newmtl} name -> texture ref ({@code map_Kd #3} -> {@code #3}). */
@@ -158,7 +175,7 @@ final class ObjMesh {
         return true;
     }
 
-    /** A polygon's rectangle is never farther from its centre than its bounding sphere. */
+    /** The rectangle's box stays within its bounding sphere about the centroid, plus the rect margin. */
     private static boolean polyInLimits(JsonArray pts) {
         double[][] p = new double[pts.size()][3];
         double[] c = new double[3];
@@ -173,7 +190,7 @@ final class ObjMesh {
             r = Math.max(r, len(sub(q, c)));
         }
         for (double d : c) {
-            if (d - 2 * r < MIN || d + 2 * r > MAX) {
+            if (d - r < MIN || d + r > MAX) {
                 return false;
             }
         }
@@ -189,12 +206,14 @@ final class ObjMesh {
                 double[] p = {8 + (v.p()[0] - 8) / k, 8 + (v.p()[1] - 8) / k, 8 + (v.p()[2] - 8) / k};
                 vs.add(new Vert(p, v.uv(), v.pi(), v.ti()));
             }
-            faces.add(new Face(vs, f.tex()));
+            faces.add(new Face(vs, f.tex(), f.colors()));
         }
         JsonArray out = new JsonArray();
         List<Face> tris = new ArrayList<>();
         for (Face f : faces) {
-            if (f.verts().size() == 3) {
+            if (f.colored()) {
+                out.add(polyElement(f.verts(), f.tex(), f.colors()));
+            } else if (f.verts().size() == 3) {
                 tris.add(f);
             } else {
                 emit(out, f.verts(), f.tex());
@@ -412,6 +431,10 @@ final class ObjMesh {
     }
 
     private static JsonObject polyElement(List<Vert> q, String tex) {
+        return polyElement(q, tex, null);
+    }
+
+    private static JsonObject polyElement(List<Vert> q, String tex, float[][] colors) {
         JsonObject el = new JsonObject();
         JsonObject poly = new JsonObject();
         poly.addProperty("tex", tex);
@@ -426,6 +449,17 @@ final class ObjMesh {
         }
         poly.add("p", pts);
         poly.add("uv", uvs);
+        if (colors != null) {
+            JsonArray cs = new JsonArray();
+            for (float[] c : colors) {
+                JsonArray rgb = new JsonArray();
+                for (float v : c) {
+                    rgb.add(v);
+                }
+                cs.add(rgb);
+            }
+            poly.add("c", cs);
+        }
         el.add(POLY, poly);
         return el;
     }
@@ -436,88 +470,111 @@ final class ObjMesh {
     }
 
     /**
-     * Replace every polygon marker with a rectangle on a generated cutout
-     * sprite. One sprite per distinct polygon set: colour variants of a mesh
-     * sample different sources, so the id hashes the sources too.
-     *
-     * @return the new texture key, or null when the mesh had no polygons
+     * Replace every polygon marker with a rectangle on a shared baked sheet:
+     * the polygon's pixels, multiplied by its per-vertex colour, transparent
+     * outside the shape. Identical tiles are stored once across the whole pack.
      */
-    static String materialize(JsonArray elements, Map<String, String> textures, SpriteReader reader,
-                              String spriteNs, Map<String, byte[]> entries,
-                              List<String> warnings) throws IOException {
-        List<JsonObject> polys = new ArrayList<>();
+    static void materialize(JsonArray elements, Map<String, String> textures, SpriteReader reader,
+                            String spriteNs, Map<String, byte[]> entries,
+                            List<String> warnings) throws IOException {
         for (int i = 0; i < elements.size(); i++) {
             JsonObject el = elements.get(i).getAsJsonObject();
-            if (el.has(POLY)) {
-                polys.add(el);
+            if (!el.has(POLY)) {
+                continue;
             }
-        }
-        if (polys.isEmpty()) {
-            return null;
-        }
-        Map<String, BufferedImage> sources = new LinkedHashMap<>();
-        StringBuilder id = new StringBuilder();
-        for (JsonObject el : polys) {
-            String ref = el.getAsJsonObject(POLY).get("tex").getAsString();
-            String key = ref.startsWith("#") ? ref.substring(1) : ref;
-            String sprite = textures.get(key);
-            if (sprite != null && !sources.containsKey(sprite)) {
-                byte[] png = reader.read(sprite);
-                if (png == null) {
-                    warnings.add("obj: sprite missing: " + sprite);
-                    sources.put(sprite, null);
-                } else {
-                    sources.put(sprite, ImageIO.read(new java.io.ByteArrayInputStream(png)));
-                }
-            }
-            id.append(sprite).append(el.getAsJsonObject(POLY)).append('\n');
-        }
-        // shelf-pack one cell per polygon
-        List<Cell> cells = new ArrayList<>();
-        int x = 0;
-        int y = 0;
-        int shelf = 0;
-        for (JsonObject el : polys) {
             JsonObject poly = el.getAsJsonObject(POLY);
             String ref = poly.get("tex").getAsString();
             String sprite = textures.get(ref.startsWith("#") ? ref.substring(1) : ref);
-            Cell cell = new Cell(el, poly, sources.get(sprite));
-            if (x + cell.pw + 2 > ATLAS_WIDTH) {
+            BufferedImage src = BAKER.image(sprite, reader, warnings);
+            Cell cell = new Cell(el, poly, src);
+            int[] at = BAKER.place(cell.render(), cell.pw, cell.ph);
+            String key = "cimcut" + at[0];
+            textures.put(key, spriteNs + ":block/" + Baker.SHEET + at[0]);
+            cell.x = at[1];
+            cell.y = at[2];
+            cell.replace(key, Baker.SIZE, Baker.SIZE);
+        }
+    }
+
+    private static final Baker BAKER = new Baker();
+
+    static void resetBaker() {
+        BAKER.reset();
+    }
+
+    /** Writes the baked sheets into the pack; call once, after every model is emitted. */
+    static void flushBaker(String spriteNs, Map<String, byte[]> entries) throws IOException {
+        BAKER.flush(spriteNs, entries);
+    }
+
+    /** Shared tile sheets with exact-tile dedupe. */
+    private static final class Baker {
+        static final int SIZE = 1024;
+        static final String SHEET = "objcut/sheet";
+        private final List<BufferedImage> sheets = new ArrayList<>();
+        private final Map<String, int[]> tiles = new HashMap<>();
+        private final Map<String, BufferedImage> images = new HashMap<>();
+        private int x;
+        private int y;
+        private int shelf;
+
+        void reset() {
+            sheets.clear();
+            tiles.clear();
+            images.clear();
+            x = 0;
+            y = 0;
+            shelf = 0;
+        }
+
+        BufferedImage image(String sprite, SpriteReader reader, List<String> warnings) throws IOException {
+            if (sprite == null) {
+                return null;
+            }
+            if (!images.containsKey(sprite)) {
+                byte[] png = reader.read(sprite);
+                if (png == null) {
+                    warnings.add("obj: sprite missing: " + sprite);
+                }
+                images.put(sprite, png == null ? null : ImageIO.read(new java.io.ByteArrayInputStream(png)));
+            }
+            return images.get(sprite);
+        }
+
+        /** {sheet, x, y} of the tile, storing it when new. */
+        int[] place(int[] argb, int w, int h) {
+            String key = w + "x" + h + ":" + java.util.Arrays.hashCode(argb) + ":"
+                    + java.util.Arrays.hashCode(java.util.Arrays.copyOf(argb, argb.length / 2));
+            int[] hit = tiles.get(key);
+            if (hit != null) {
+                return hit;
+            }
+            if (sheets.isEmpty() || x + w + 2 > SIZE) {
                 x = 0;
                 y += shelf;
                 shelf = 0;
             }
-            cell.x = x + 1;
-            cell.y = y + 1;
-            x += cell.pw + 2;
-            shelf = Math.max(shelf, cell.ph + 2);
-            cells.add(cell);
-        }
-        int height = Math.max(16, ((y + shelf + 15) / 16) * 16);
-        BufferedImage atlas = new BufferedImage(ATLAS_WIDTH, height, BufferedImage.TYPE_INT_ARGB);
-        String name = "objcut/" + sha(id.toString());
-        String key = "cimcut";
-        for (Cell cell : cells) {
-            cell.paint(atlas);
-            cell.replace(key, ATLAS_WIDTH, height);
-        }
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        ImageIO.write(atlas, "png", bytes);
-        entries.put("assets/" + spriteNs + "/textures/block/" + name + ".png", bytes.toByteArray());
-        textures.put(key, spriteNs + ":block/" + name);
-        return key;
-    }
-
-    private static String sha(String s) {
-        try {
-            byte[] d = MessageDigest.getInstance("SHA-1").digest(s.getBytes(StandardCharsets.UTF_8));
-            StringBuilder out = new StringBuilder();
-            for (int i = 0; i < 8; i++) {
-                out.append(String.format("%02x", d[i]));
+            if (sheets.isEmpty() || y + h + 2 > SIZE) {
+                sheets.add(new BufferedImage(SIZE, SIZE, BufferedImage.TYPE_INT_ARGB));
+                x = 0;
+                y = 0;
+                shelf = 0;
             }
-            return out.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
+            int sheet = sheets.size() - 1;
+            int[] at = {sheet, x + 1, y + 1};
+            sheets.get(sheet).setRGB(at[1], at[2], w, h, argb, 0, w);
+            x += w + 2;
+            shelf = Math.max(shelf, h + 2);
+            tiles.put(key, at);
+            return at;
+        }
+
+        void flush(String spriteNs, Map<String, byte[]> entries) throws IOException {
+            for (int i = 0; i < sheets.size(); i++) {
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                ImageIO.write(sheets.get(i), "png", bytes);
+                entries.put("assets/" + spriteNs + "/textures/block/" + SHEET + i + ".png", bytes.toByteArray());
+            }
         }
     }
 
@@ -537,6 +594,7 @@ final class ObjMesh {
         final int pw;
         final int ph;
         final String tex;
+        final float[][] colors;
         int x;
         int y;
 
@@ -546,6 +604,7 @@ final class ObjMesh {
             tex = poly.get("tex").getAsString();
             JsonArray p = poly.getAsJsonArray("p");
             JsonArray u = poly.getAsJsonArray("uv");
+            colors = poly.has("c") ? readColors(poly.getAsJsonArray("c")) : null;
             pts = new double[p.size()][3];
             uvs = new double[p.size()][2];
             List<Vert> vs = new ArrayList<>();
@@ -589,9 +648,21 @@ final class ObjMesh {
             ph = Math.max(2, Math.min(120, (int) Math.ceil((b1 - b0) * texels * 2)));
         }
 
-        void paint(BufferedImage atlas) {
+        private static float[][] readColors(JsonArray cs) {
+            float[][] out = new float[cs.size()][3];
+            for (int i = 0; i < out.length; i++) {
+                for (int k = 0; k < 3; k++) {
+                    out[i][k] = cs.get(i).getAsJsonArray().get(k).getAsFloat();
+                }
+            }
+            return out;
+        }
+
+        /** The tile: the polygon's texels times its interpolated colour, split as the GPU splits a quad. */
+        int[] render() {
+            int[] out = new int[pw * ph];
             if (src == null) {
-                return;
+                return out;
             }
             int w = src.getWidth();
             double[][] flat = new double[pts.length][];
@@ -611,11 +682,23 @@ final class ObjMesh {
                         double v = l[0] * uvs[0][1] + l[1] * uvs[t][1] + l[2] * uvs[t + 1][1];
                         int tx = Math.floorMod((int) Math.floor(u / 16 * w), w);
                         int ty = Math.floorMod((int) Math.floor(v / 16 * w), w); // frame 0 of an animation
-                        atlas.setRGB(x + i, y + j, src.getRGB(tx, ty));
+                        int argb = src.getRGB(tx, ty);
+                        if (colors != null) {
+                            int rgb = 0;
+                            for (int c = 0; c < 3; c++) {
+                                double m = l[0] * colors[0][c] + l[1] * colors[t][c] + l[2] * colors[t + 1][c];
+                                int shift = 16 - 8 * c;
+                                int value = (int) Math.round(((argb >> shift) & 255) * m);
+                                rgb |= Math.min(255, value) << shift;
+                            }
+                            argb = (argb & 0xFF000000) | rgb;
+                        }
+                        out[j * pw + i] = argb;
                         break;
                     }
                 }
             }
+            return out;
         }
 
         void replace(String key, int atlasW, int atlasH) {

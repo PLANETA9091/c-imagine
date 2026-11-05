@@ -794,7 +794,14 @@ public final class GalleryPack {
                 verts.add(new ObjMesh.Vert(p, uv, vertex, vertex));
                 vertex++;
             }
-            faces.add(new ObjMesh.Face(verts, "#" + key));
+            float[][] colors = null;
+            if (c.length >= 35) {
+                colors = new float[4][3];
+                for (int i = 0; i < 12; i++) {
+                    colors[i / 3][i % 3] = Float.parseFloat(c[23 + i]);
+                }
+            }
+            faces.add(new ObjMesh.Face(verts, "#" + key, colors));
             flags.add(new int[]{Integer.parseInt(c[1]), Integer.parseInt(c[2])});
         }
         if (faces.isEmpty()) {

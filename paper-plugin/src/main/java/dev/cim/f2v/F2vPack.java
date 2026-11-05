@@ -640,6 +640,7 @@ public final class F2vPack {
         List<String> warnings = new ArrayList<>();
         GalleryPack.resetModelScales();
         GalleryPack.resetJarCache();
+        ObjMesh.resetBaker();
         GalleryPack.setQuadDir(outDir.resolve("quads"));
         List<VisualItem> baseResolved = assignCmds(manifestRows);
 
@@ -884,6 +885,7 @@ public final class F2vPack {
         // stay byte-identical (the pack sha1 moves only with real fixes).
         sanitizeFaceUvs(entries, warnings);
 
+        ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
         byte[] zip = zip(entries);
         String sha1 = sha1Hex(zip);
         Files.createDirectories(outDir);
@@ -1333,7 +1335,11 @@ public final class F2vPack {
         if (k == 1) {
             return "";
         }
-        return ", \"transformation\": [" + k + ",0,0,0, 0," + k + ",0,0, 0,0," + k + ",0, 0,0,0,1]";
+        // the layer's local transform works on 0..1 model space: scale about the
+        // block centre, not its corner (measured: a bare scale lands k=2 meshes half a block off)
+        double t = (1 - k) / 2;
+        return ", \"transformation\": [" + k + ",0,0," + t + ", 0," + k + ",0," + t + ", 0,0," + k + "," + t
+                + ", 0,0,0,1]";
     }
 
     static String itemDef(String hostPath, List<Map.Entry<Float, String>> entries) {
