@@ -5896,3 +5896,69 @@ Work Log:
   for the largest component — validated on a synthetic 1280x720 frame:
   reproduces the sane bbox w=78 h=79 x=496..573 y=438..516 exactly).
   #111 = the first run with the live datum.
+
+---
+## Task 14-av — THE GREEN COLLAPSE ROOT CAUSE: the ours 26.3 client renders
+## ~1.47x off-contract because the -0.65 fov pin was calibrated against a
+## self-inconsistent reference (runs #95-#110, the 2.09% era)
+
+Work Log:
+- The chain that opened it: (1) the #110 all-8-shards bash parse error
+  (14-au) masked the real gate numbers; (2) with the parse fixed, the #110
+  reports aggregate to 2.09% green (25257 cells, 18470 red, 5319 dynamic,
+  941 spill) — the #107 state, not a new regression; (3) the pack-diff
+  #95 vs #110 proves the composites IDENTICAL (acacia_window g0/g1565,
+  andesite_casing g147/g1712, cut_scoria_brick_wall g8507/g10195 —
+  elements + display byte-equal), so the pack channel is clean;
+  (4) the ISOLATE_SCALE datum on the downloaded #110 isolate frame:
+  casing 78x79 @ x496..573 — the isolate pipeline byte-stable since #95;
+  (5) the per-cell join shifts are FLAT vs radial distance (mean |d| 3.8-4.1
+  px at every radius) — NO about-centre grid scaling inside the pages.
+- THE DECISIVE MEASUREMENT (page_blobs.py over the downloaded shard-0
+  frames, create p0): ours #110 content span 979 px; truth #110 span 623 px
+  (= the 70-deg contract 665 px within blob-edge noise); ours #95 span 979
+  px (pixel-identical to ours #110); truth #95 span 976 px. CONCLUSION: the
+  OURS leg never changed (#95 -> #110) — the TRUTH leg moved to the
+  contract in the ladder window, leaving ours at ~1.47x. The #95-era "both
+  legs aligned" was both legs TOGETHER at 1.47x — the gate was green at the
+  wrong scale, and every calibration chained onto it.
+- The 1.47x origin: the ours client fov. The 2026-11-01 probe-fov.sh fit
+  ("fov:-0.65 renders 70 deg on 26.3, fov:0.0 renders ~99") compared the
+  LOCAL ours frames against the CI TRUTH frame of that era — which was
+  itself at 1.47x — so the fitted "law 99 + 44.6*v" was garbage-in.
+- THE DECISIVE A/B (scripts/probe-14av.sh, the local stand, the CI-exact
+  rig): REAL iron blocks placed by setblock at the wall contract cells
+  (x -2..0, y -58, z 9), camera tp 0.5 -60 0.5 0 0, one shot per options
+  fov value, the block px width measured off the frame:
+    fov:-0.65 -> 310 px / 3 blocks = 103 px/block (~43 deg)
+    fov:-0.45 -> 258 px / 3 blocks =  86 px/block (~49 deg)
+    fov: 0.00 -> 181 px / 3 blocks =  60.3 px/block = THE CONTRACT 60.5
+  The 26.3 slider maps IDENTICALLY to 1.21.1 (fov = 70 + 40*v, exactly as
+  gallery-diff.py's 12-ac note says). The same frames show the composite
+  displays rendering 1:1 with real blocks (the empty display section +
+  block/block parent; the "26.3 fixed-0.5 no longer applies" probe note
+  means the composite renders 1.0 unit = the real-block size, NOT 2x).
+- THE FIX: the ours options.txt pin fov:-0.65 -> fov:0.0 (the truth leg
+  already pins 0.0). Both legs now render the same 70-deg geometry and the
+  join's contract crops (60.5 px cells) land on BOTH frames. The
+  ISOLATE_SCALE reference updated: the casing must DROP 78x79 -> ~56x57
+  (78 * 514.1/712) — the first run printing ~56x57 confirms the pin end to
+  end, anything still ~78 means the options file is not being read.
+- Predictions for the next clean run: ours page span 979 -> ~665 px; the
+  per-cell ae floods collapse; the green share returns to the #80-era
+  band (93%+) IF the truth leg is truly on-contract (its 623 px span says
+  yes within 6%); the create walls / BOP barnacles red mass was the scale
+  mismatch, not pack gaps.
+- Open questions parked: (a) what EXACTLY moved the truth leg to contract
+  between #95 and #110 (same cache v4, same options line — suspect the
+  14-am rejoin path booting the client with different window geometry);
+  (b) the join gate threshold 60000 was calibrated on the 1.47x era —
+  with both legs on-contract the ae distribution shifts down and the
+  threshold may need re-tightening (a GOOD problem).
+
+### 14-av verification on CI (#112 pending)
+- Watch: (1) ours s0 step log ISOLATE_SCALE ~56x57; (2) the join gate
+  verdicts (the per-page RED floods should evaporate); (3) if the share
+  jumps to the 90% band, the 14-au + 14-av pair is the whole story; if it
+  stays low with SMALL per-cell ae, the next lever is per-cell content
+  (the composites at the correct scale but wrong pixels).

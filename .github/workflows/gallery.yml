@@ -1441,14 +1441,19 @@ jobs:
           wc -c visual-client/classpath.txt visual-client/launch.txt
           sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
           mkdir -p visual-client/game
-          # THE 26.3 FOV PIN (task 14, measured locally 2026-11-01, probe-fov.sh):
-          # the 26.3 client no longer maps the slider as fov = 70 + 40*v (the
-          # 1.21.1 rule, measured 12-ac). At fov:0.0 it renders ~99 deg — the
-          # same scene fits the truth frame at scale 0.60 (global-alignment
-          # error 126 -> 56 on the fit; both legs' FULL frames, probe-fov.sh).
-          # fov:-0.65 fits at scale 1.00 (err 64) — that is the 70-deg pin the
-          # wall contract needs. The truth leg (1.21.1) keeps fov:0.0 = 70.
-          printf 'onboardAccessibility:false\nfov:-0.65\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          # THE 26.3 FOV PIN (14-av, re-measured locally 2026-11-05, probe-14av.sh):
+          # the old -0.65 pin was calibrated (2026-11-01) against a CI truth
+          # frame that was ITSELF rendered off-contract (the whole #95-era
+          # matched both legs at ~1.47x the 70-deg geometry) — the fit chain
+          # was self-consistent at the wrong scale. The decisive A/B places
+          # REAL iron blocks at the contract rig (camera 0.5,-60,0.5, wall
+          # z=9) and measures their px width on the raw 26.3 client:
+          # fov:-0.65 -> 103 px/block (~43 deg), fov:-0.45 -> 86 px/block,
+          # fov:0.0 -> 60.3 px/block = THE CONTRACT 60.5 (70 deg, F=514.1).
+          # The 26.3 slider maps IDENTICALLY to 1.21.1 (fov = 70 + 40*v) and
+          # both legs now pin the same fov:0.0 = 70. Expected ISOLATE_SCALE
+          # after the fix: the casing drops 78x79 -> ~56x57 (78*514/712).
+          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)
@@ -1606,7 +1611,7 @@ jobs:
                   best = (n, minx, maxx, miny, maxy)
           if best:
               _, x0, x1, y0, y1 = best
-              print(f"ISOLATE_SCALE casing w={x1 - x0 + 1} h={y1 - y0 + 1} x={x0}..{x1} y={y0}..{y1} (sane run: w=78 h=79 x=496..573 y=438..516)")
+              print(f"ISOLATE_SCALE casing w={x1 - x0 + 1} h={y1 - y0 + 1} x={x0}..{x1} y={y0}..{y1} (14-av fov:0.0 pin: ~56x57 near x=496..573 y=438..516; pre-14av -0.65 era: 78x79)")
           else:
               print("ISOLATE_SCALE MISSING — no casing-sized object in the isolate frame")
           PY
