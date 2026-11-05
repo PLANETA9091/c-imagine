@@ -6677,3 +6677,37 @@ Next preserve these audit notes in a docs checkpoint, then retry a normal
 push with a 60-second bound. A non-fast-forward rejection must be resolved
 by fetching/rebasing; never force. Retry the truth screenshot transfer and
 obtain the newly finished s0/s2/s4 reports after checking availability.
+
+Next read-only transport check (while the bounded normal push finishes):
+compare HTTPS reachability of public github.com and api.github.com with
+explicit short IPv4 curl timeouts. This diagnoses Git transport versus
+API access without printing credentials, changing proxies/routes/VPN,
+opening a GUI or altering any network service. Record each exit code.
+Also re-query attempt-specific gallery jobs to collect the remaining
+completed report names. No runtime change will be made from a timeout.
+
+18:33 results: public api.github.com HTTPS check succeeded (200); the
+bounded push reached GitHub and was REJECTED as non-fast-forward, so
+remote main advanced. Publication of our retry fix is not yet confirmed.
+Per the recorded plan, next fetch main, inspect incoming changes, preserve
+this audit note in a checkpoint and rebase before normal push. Never force.
+Fresh attempt API confirms s0/s2 now completed at pixel RED; s4 is the
+only unfinished ours shard. All eight truth shards and seed remain green.
+Next download reports s0/s2 to the same run-specific dataset and retry the
+truth-screenshot transfer into a clean separate destination.
+
+Remote state resolved: fetched main is 07ff9a7a, whose parent IS our retry
+fix 0ce41628. Thus 0ce41628 was published by the earlier push despite its
+missing local acknowledgement; the later non-fast-forward rejection came
+from a concurrent incoming renderer commit. Do not duplicate that code
+commit or claim it is still local-only. c82f54ce and newer audit notes
+remain local and will be rebased/pushed normally.
+
+Incoming 07ff9a7a adds shade_direction_override:"up" beside shade:false.
+Its worklog PRESUMES our 14-bd variant used camelCase; that presumption
+contradicts the exact generated variant script/zip retained locally, which
+used the snake_case key from the start. Next inspect and count the actual
+variant's keys, record the correction with its known SHA1, then integrate
+incoming work without reverting it. Treat the incoming rendering benefit
+as UNMEASURED until its real gallery/Easton results arrive. Preserve both
+histories and obtain the incoming commit's CI run IDs for validation.
