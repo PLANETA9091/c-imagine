@@ -1559,6 +1559,34 @@ jobs:
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             java -cp vtools Shot "ours-shots/ours-isolated-pane-casing.png"
             echo "shot isolated pane+casing"
+            # 14-at SCALE DATUM (diagnostic, never gated): the isolate layout
+            # is byte-stable across runs when the display pipeline is sane
+            (#95 and #107 render the identical 78x79 casing at x 496-573) —
+            print the casing bbox every run so a page-scale magnification
+            regression announces itself in the log, not in a RED flood.
+          python3 - <<'PY' || true
+          import numpy as np
+          from PIL import Image
+          from scipy import ndimage
+          a = np.asarray(Image.open("ours-shots/ours-isolated-pane-casing.png").convert("RGB")).astype(int)
+          r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
+          obj = ~(((abs(r - g) < 14) & (abs(g - b) < 14)) | (b > r + 25))
+          obj[:390, :] = False
+          obj[560:, :] = False
+          lab, n = ndimage.label(obj)
+          best = None
+          for i in range(1, n + 1):
+              ys, xs = np.where(lab == i)
+              if len(xs) < 1000:
+                  continue
+              if best is None or len(xs) > best[0]:
+                  best = (len(xs), xs.min(), xs.max(), ys.min(), ys.max())
+          if best:
+              _, x0, x1, y0, y1 = best
+              print(f"ISOLATE_SCALE casing w={x1 - x0 + 1} h={y1 - y0 + 1} x={x0}..{x1} y={y0}..{y1} (sane run: w=78 h=79 x=496..573 y=438..516)")
+          else:
+              print("ISOLATE_SCALE MISSING — no casing-sized object in the isolate frame")
+          PY
             # 14-g/h SUSPECT ISOLATES v2 (diagnostic, not gated): the v1 batch
             # shot (8 summons in one frame) rendered a MIRRORED/STRETCHED
             # layout — geometrically impossible for any camera pose, so the
