@@ -30,6 +30,7 @@ def main() -> int:
         pages = sorted(
             int(p.name.rsplit("-p", 1)[1].split(".")[0])
             for p in scenes.glob(f"gallery-{ns}-p*.tsv")
+            if not p.name.endswith(".ctx.tsv")
         )
     states = set()
     cells = 0

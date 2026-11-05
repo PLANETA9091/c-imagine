@@ -1,0 +1,292 @@
+package dev.cim.scenemod;
+
+import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.level.BlockAndTintGetter;
+import net.minecraft.world.level.ColorResolver;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.lighting.LevelLightEngine;
+import net.minecraft.world.level.material.FluidState;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.model.data.ModelData;
+import net.neoforged.neoforge.common.NeoForge;
+import org.slf4j.Logger;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+/**
+ * Ask the real client what each wall cell draws. A static pack model cannot
+ * know a dynamic model's answer (connected textures, neighbour-aware meshes),
+ * so {@code -Dcim.quaddump=<scenes dir>} reads every block manifest at the
+ * first tick after loading, rebuilds each page's neighbourhood and dumps the real baked
+ * quads of every cell whose picture differs from its static model. No mod
+ * is special-cased: this asks each model through its own getModelData/getQuads.
+ *
+ * <p>Writes, beside the manifests: {@code gallery-<ns>-p<p>.ctx.tsv} rows
+ * {@code x y z q<hash>}; {@code quads/<hash>.tsv}, one quad per line (sprite,
+ * shade, tint, then x y z u v per vertex; model units, sprite-local 0..16 UVs);
+ * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
+ */
+final class QuadDump {
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final Pattern MANIFEST = Pattern.compile("gallery-(.+)-p(\\d+)\\.tsv");
+    /** The bottom wall row stands on this floor (GALLERY_Y0 - 1). */
+    private static final int FLOOR_Y = -61;
+    /** DefaultVertexFormat.BLOCK: 8 ints per vertex; position at 0, uv at 4. */
+    private static final int STRIDE = 8;
+    private static final int UV = 4;
+
+    private static boolean started;
+
+    private QuadDump() {
+    }
+
+    static void register() {
+        NeoForge.EVENT_BUS.addListener(QuadDump::onTick);
+    }
+
+    /** Models are ready once the loading overlay is gone, whichever screen follows it. */
+    private static void onTick(ClientTickEvent.Post event) {
+        if (started || Minecraft.getInstance().getOverlay() != null) {
+            return;
+        }
+        started = true;
+        Path scenes = Path.of(System.getProperty("cim.quaddump"));
+        try {
+            run(scenes);
+            Files.writeString(scenes.resolve("quads").resolve("done"), "ok\n");
+        } catch (Throwable t) {
+            LOGGER.error("[cimscene] quad dump failed", t);
+        }
+        Runtime.getRuntime().halt(0);
+    }
+
+    private static void run(Path scenes) throws Exception {
+        Path out = scenes.resolve("quads");
+        Files.createDirectories(out);
+        TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);
+        List<TextureAtlasSprite> sprites = new ArrayList<>(atlas.getTextures().values());
+        TreeSet<String> rows = new TreeSet<>();
+        int cells = 0;
+        int dumped = 0;
+        int failed = 0;
+        List<Path> manifests;
+        try (Stream<Path> s = Files.list(scenes)) {
+            manifests = s.filter(p -> MANIFEST.matcher(p.getFileName().toString()).matches()).sorted().toList();
+        }
+        for (Path mf : manifests) {
+            List<String> lines = Files.readAllLines(mf, StandardCharsets.UTF_8);
+            if (lines.isEmpty() || !lines.get(0).startsWith("cell\tx\ty\tz\tstate")) {
+                continue;
+            }
+            Page page = new Page();
+            Map<BlockPos, String> names = new HashMap<>();
+            for (String line : lines.subList(1, lines.size())) {
+                String[] c = line.split("\t");
+                if (c.length < 5 || !c[0].equals("cell")) {
+                    continue;
+                }
+                BlockPos pos = new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]), Integer.parseInt(c[3]));
+                try {
+                    // manifests print some enum values by constant name (part=PULLEY);
+                    // the parser takes the serialized name, and ids are lowercase anyway
+                    page.cells.put(pos, BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK.asLookup(),
+                                    c[4].toLowerCase(Locale.ROOT), false)
+                            .blockState());
+                    names.put(pos, c[4]);
+                } catch (Exception bad) {
+                    failed++;
+                    LOGGER.info("[cimscene] quad dump skip {}: {}", c[4], bad.toString());
+                }
+            }
+            StringBuilder ctx = new StringBuilder();
+            for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
+                cells++;
+                try {
+                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites);
+                    if (mesh == null) {
+                        continue;
+                    }
+                    String hash = sha(mesh);
+                    Path file = out.resolve(hash + ".tsv");
+                    if (!Files.exists(file)) {
+                        Files.writeString(file, mesh, StandardCharsets.UTF_8);
+                    }
+                    BlockPos p = e.getKey();
+                    ctx.append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ())
+                            .append("\tq").append(hash).append('\n');
+                    rows.add(names.get(p) + "#q" + hash);
+                    dumped++;
+                } catch (Throwable t) {
+                    failed++;
+                    LOGGER.info("[cimscene] quad dump skip {}: {}", names.get(e.getKey()), t.toString());
+                }
+            }
+            if (ctx.length() > 0) {
+                String name = mf.getFileName().toString();
+                Files.writeString(mf.resolveSibling(name.substring(0, name.length() - 4) + ".ctx.tsv"),
+                        ctx.toString(), StandardCharsets.UTF_8);
+            }
+        }
+        Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
+        LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={}",
+                cells, dumped, rows.size(), failed);
+    }
+
+    /** The cell's real mesh, or null when its static model already draws the same picture. */
+    private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
+        BakedModel model = Minecraft.getInstance().getBlockRenderer().getBlockModel(state);
+        ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
+        String plain = mesh(model, page, pos, state, ModelData.EMPTY, false, sprites);
+        String real = mesh(model, page, pos, state, data, false, sprites);
+        // a solid neighbour hides an opaque face on both stacks; only a see-through
+        // block shows the face the real client culls and an item display does not
+        String culled = state.isSolidRender(page, pos) ? real : mesh(model, page, pos, state, data, true, sprites);
+        return plain.equals(culled) ? null : culled;
+    }
+
+    private static String mesh(BakedModel model, Page page, BlockPos pos, BlockState state, ModelData data,
+                               boolean cull, List<TextureAtlasSprite> sprites) {
+        RandomSource random = RandomSource.create();
+        long seed = state.getSeed(pos);
+        StringBuilder sb = new StringBuilder();
+        random.setSeed(seed);
+        for (RenderType type : model.getRenderTypes(state, random, data)) {
+            for (Direction side : Direction.values()) {
+                if (cull && !Block.shouldRenderFace(state, page, pos, side, pos.relative(side))) {
+                    continue;
+                }
+                random.setSeed(seed);
+                for (BakedQuad q : model.getQuads(state, side, random, data, type)) {
+                    appendQuad(sb, q, sprites);
+                }
+            }
+            random.setSeed(seed);
+            for (BakedQuad q : model.getQuads(state, null, random, data, type)) {
+                appendQuad(sb, q, sprites);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites) {
+        int[] v = q.getVertices();
+        float cu = 0;
+        float cv = 0;
+        for (int i = 0; i < 4; i++) {
+            cu += Float.intBitsToFloat(v[i * STRIDE + UV]) / 4;
+            cv += Float.intBitsToFloat(v[i * STRIDE + UV + 1]) / 4;
+        }
+        // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
+        TextureAtlasSprite sprite = q.getSprite();
+        if (!contains(sprite, cu, cv)) {
+            for (TextureAtlasSprite s : sprites) {
+                if (contains(s, cu, cv)) {
+                    sprite = s;
+                    break;
+                }
+            }
+        }
+        ResourceLocation name = sprite.contents().name();
+        sb.append(name).append('\t').append(q.isShade() ? 1 : 0).append('\t').append(q.getTintIndex());
+        for (int i = 0; i < 4; i++) {
+            int o = i * STRIDE;
+            float u = (Float.intBitsToFloat(v[o + UV]) - sprite.getU0()) / (sprite.getU1() - sprite.getU0()) * 16;
+            float w = (Float.intBitsToFloat(v[o + UV + 1]) - sprite.getV0()) / (sprite.getV1() - sprite.getV0()) * 16;
+            sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
+                    Float.intBitsToFloat(v[o]) * 16, Float.intBitsToFloat(v[o + 1]) * 16,
+                    Float.intBitsToFloat(v[o + 2]) * 16, u, w));
+        }
+        sb.append('\n');
+    }
+
+    private static boolean contains(TextureAtlasSprite s, float u, float v) {
+        return u >= s.getU0() && u <= s.getU1() && v >= s.getV0() && v <= s.getV1();
+    }
+
+    private static String sha(String s) throws Exception {
+        byte[] d = MessageDigest.getInstance("SHA-1").digest(s.getBytes(StandardCharsets.UTF_8));
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < 8; i++) {
+            out.append(String.format("%02x", d[i]));
+        }
+        return out.toString();
+    }
+
+    /** A page's wall on its floor; the truth world holds nothing else near it. */
+    private static final class Page implements BlockAndTintGetter {
+        final Map<BlockPos, BlockState> cells = new HashMap<>();
+
+        @Override
+        public BlockState getBlockState(BlockPos pos) {
+            BlockState s = cells.get(pos);
+            if (s != null) {
+                return s;
+            }
+            return pos.getY() == FLOOR_Y ? Blocks.SMOOTH_STONE.defaultBlockState() : Blocks.AIR.defaultBlockState();
+        }
+
+        @Override
+        public FluidState getFluidState(BlockPos pos) {
+            return getBlockState(pos).getFluidState();
+        }
+
+        @Override
+        public BlockEntity getBlockEntity(BlockPos pos) {
+            return null;
+        }
+
+        @Override
+        public float getShade(Direction side, boolean shade) {
+            return 1;
+        }
+
+        @Override
+        public LevelLightEngine getLightEngine() {
+            return null;
+        }
+
+        @Override
+        public int getBlockTint(BlockPos pos, ColorResolver resolver) {
+            return -1;
+        }
+
+        @Override
+        public int getHeight() {
+            return 384;
+        }
+
+        @Override
+        public int getMinBuildHeight() {
+            return -64;
+        }
+    }
+}

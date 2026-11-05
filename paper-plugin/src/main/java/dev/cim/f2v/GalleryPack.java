@@ -207,7 +207,21 @@ public final class GalleryPack {
                 if (hash >= 0) {
                     ctCtx = state.substring(hash + 1).trim();
                     bareState = state.substring(0, hash);
-                    parseCtCtx(ctCtx); // validate early — a bad ctx drops the row
+                    if (!ctCtx.startsWith("q")) {
+                        parseCtCtx(ctCtx); // validate early — a bad ctx drops the row
+                    }
+                }
+                if (ctCtx != null && ctCtx.startsWith("q")) {
+                    String quadRef = synthesizeQuadComposite(jars, ctCtx.substring(1), compositeIdx,
+                            entries, warnings);
+                    if (quadRef == null) {
+                        warnings.add("gallery: quad mesh failed for " + state + " — row dropped");
+                        continue;
+                    }
+                    compositeIdx++;
+                    out.add(new Resolved(state, cmd, quadRef, 0, 0, true));
+                    cmd += 1.0f;
+                    continue;
                 }
                 StateRef s = parseState(bareState);
                 List<Part> parts = resolveStateParts(jars, s, entries, warnings);
@@ -689,6 +703,113 @@ public final class GalleryPack {
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
         return WRAPPER_REF_PREFIX + idx;
+    }
+
+    // ---- the real-client quad channel ---------------------------------------
+
+    private static Path quadDir;
+
+    /** Where the seed's QuadDump meshes live ({@code quads/<hash>.tsv}). */
+    static void setQuadDir(Path dir) {
+        quadDir = dir;
+    }
+
+    /**
+     * A cell's model from the quads the real client baked for it: connected
+     * textures, neighbour-aware meshes and culled see-through faces arrive
+     * already resolved, whichever mod produced them.
+     */
+    private static String synthesizeQuadComposite(List<Path> jars, String hash, int idx,
+                                                  TreeMap<String, byte[]> entries,
+                                                  List<String> warnings) throws IOException {
+        Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
+        if (file == null || !java.nio.file.Files.isRegularFile(file)) {
+            warnings.add("gallery: quad mesh missing: " + hash);
+            return null;
+        }
+        List<ObjMesh.Face> faces = new ArrayList<>();
+        List<int[]> flags = new ArrayList<>();
+        Map<String, String> textures = new LinkedHashMap<>();
+        Map<String, String> keyOf = new LinkedHashMap<>();
+        int vertex = 0;
+        for (String line : java.nio.file.Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String[] c = line.split("\t");
+            if (c.length < 23) {
+                continue;
+            }
+            String key = keyOf.get(c[0]);
+            if (key == null) {
+                key = "q" + keyOf.size();
+                keyOf.put(c[0], key);
+                textures.put(key, hostSprite(jars, c[0], entries, warnings));
+            }
+            List<ObjMesh.Vert> verts = new ArrayList<>();
+            for (int i = 0; i < 4; i++) {
+                int o = 3 + i * 5;
+                double[] p = {Double.parseDouble(c[o]), Double.parseDouble(c[o + 1]), Double.parseDouble(c[o + 2])};
+                double[] uv = {Double.parseDouble(c[o + 3]), Double.parseDouble(c[o + 4])};
+                verts.add(new ObjMesh.Vert(p, uv, vertex, vertex));
+                vertex++;
+            }
+            faces.add(new ObjMesh.Face(verts, "#" + key));
+            flags.add(new int[]{Integer.parseInt(c[1]), Integer.parseInt(c[2])});
+        }
+        if (faces.isEmpty()) {
+            return null;
+        }
+        double k = ObjMesh.fitElements(faces);
+        JsonArray elements = ObjMesh.toElements(faces, k);
+        for (int i = 0; i < elements.size() && i < flags.size(); i++) {
+            JsonObject el = elements.get(i).getAsJsonObject();
+            if (flags.get(i)[0] == 0) {
+                el.addProperty("shade", false);
+            }
+            if (flags.get(i)[1] >= 0 && el.has("faces")) {
+                el.getAsJsonObject("faces").getAsJsonObject("south").addProperty("tintindex", flags.get(i)[1]);
+            }
+        }
+        ObjMesh.materialize(elements, textures, sprite -> readPngFromJars(jars, spritePathPng(sprite)),
+                WRAPPER_NS, entries, warnings);
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("parent", "minecraft:block/block");
+        JsonObject texObj = new JsonObject();
+        for (Map.Entry<String, String> t : textures.entrySet()) {
+            texObj.addProperty(t.getKey(), t.getValue());
+        }
+        wrapper.add("textures", texObj);
+        wrapper.add("elements", elements);
+        recordScale(WRAPPER_REF_PREFIX + idx, k);
+        entries.put(WRAPPER_PREFIX + idx + ".json", wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        return WRAPPER_REF_PREFIX + idx;
+    }
+
+    /**
+     * A sprite the pack can bake against the blocks atlas: mod block/ sprites
+     * ship at their own path (with any animation metadata), everything else is
+     * re-hosted under block/ (see THE ATLAS OWNERSHIP RULE).
+     */
+    private static String hostSprite(List<Path> jars, String sprite, TreeMap<String, byte[]> entries,
+                                     List<String> warnings) throws IOException {
+        if (sprite.startsWith("minecraft:block/")) {
+            return sprite;
+        }
+        String png = spritePathPng(sprite);
+        byte[] bytes = readPngFromJars(jars, png);
+        if (bytes == null) {
+            warnings.add("gallery: quad sprite missing: " + sprite);
+            return sprite;
+        }
+        if (spritePathOf(sprite).startsWith("block/")) {
+            entries.putIfAbsent(png, bytes);
+            byte[] meta = readPngFromJars(jars, png + ".mcmeta");
+            if (meta != null) {
+                entries.putIfAbsent(png + ".mcmeta", meta);
+            }
+            return sprite;
+        }
+        String key = "items/" + sprite.replace(':', '_').replace('/', '_');
+        entries.put("assets/" + WRAPPER_NS + "/textures/block/" + key + ".png", bytes);
+        return WRAPPER_NS + ":block/" + key;
     }
 
     // ---- 14-ak: the Create connected-texture channel -------------------------

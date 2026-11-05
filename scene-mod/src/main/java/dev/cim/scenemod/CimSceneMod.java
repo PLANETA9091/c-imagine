@@ -113,6 +113,10 @@ public final class CimSceneMod {
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
         NeoForge.EVENT_BUS.addListener(this::onServerTickPost);
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()
+                && System.getProperty("cim.quaddump") != null) {
+            QuadDump.register();
+        }
         LOGGER.info("[cimscene] mod constructed (ordinary-mod harness, no c-imagine APIs)");
     }
 

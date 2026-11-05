@@ -441,6 +441,51 @@ jobs:
           done
           ls srv-wall/c-imagine/scenes/ | wc -l
 
+      # THE QUAD DUMP: a static pack model cannot know what a dynamic model
+      # draws (connected textures, neighbour-aware meshes, culled see-through
+      # faces), so the real NeoForge client answers per wall cell, for every mod
+      # alike. Models need no server, so it runs once at the end of client
+      # loading and exits. Writes the ctx side files + quads/ into the scenes.
+      - name: restore NeoForge client runtime for the quad dump (cache miss)
+        if: steps.seed-verify.outputs.hit != 'true'
+        id: nfc-cache-seed
+        uses: actions/cache@v4
+        with:
+          path: |
+            nfc
+            truth-client
+          key: neoforge-truth-client-1211-v4
+
+      - name: fetch the NeoForge client runtime (client cache miss)
+        if: steps.seed-verify.outputs.hit != 'true' && steps.nfc-cache-seed.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets
+          sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
+
+      - name: quad dump on the real client (cache miss)
+        if: steps.seed-verify.outputs.hit != 'true'
+        run: |
+          set -euo pipefail
+          NEED=""
+          for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6 xvfb; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
+          done
+          if [ -n "${NEED:-}" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq $NEED
+          fi
+          Xvfb :98 -screen 0 1280x720x24 +extension GLX +render -noreset &
+          sleep 1
+          export DISPLAY=:98 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          mkdir -p truth-client/game/mods truth-client/assets/indexes truth-client/assets/objects
+          cp srv-wall/mods/*.jar truth-client/game/mods/
+          printf 'onboardAccessibility:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          SCENES="$PWD/srv-wall/c-imagine/scenes"
+          LAUNCH=$(sed "s#^java #java -Dcim.quaddump=$SCENES #" truth-client/launch.txt)
+          (cd truth-client && timeout 900 bash -c "$LAUNCH" > client-dump.out 2>&1) || true
+          grep "quad dump done" truth-client/client-dump.out || { tail -40 truth-client/client-dump.out; exit 1; }
+          test -f "$SCENES/quads/done"
+
       - name: build plugin (maven) + F2vPack pack (cache miss)
         if: steps.seed-verify.outputs.hit != 'true'
         env:
@@ -468,24 +513,20 @@ jobs:
           # 300000+i) over the concatenated rows in order, and the plugin
           # resolves by state string, so the ns union is just more rows
           rm -f seed-pack/f2v/visual-gallery.tsv seed-pack/f2v/visual-gallery-items.tsv
+          ITEM_CMD=300000   # one CMD space across the namespaces: a restart per ns collides
           for NS in $LADDER_NS; do
             python3 scripts/f2v/gallery-manifest.py \
               seed-pack/scenes $NS seed-pack/f2v/visual-gallery-$NS.tsv
             python3 scripts/f2v/gallery-items-manifest.py \
-              seed-pack/scenes $NS seed-pack/f2v/visual-gallery-items-$NS.tsv
+              seed-pack/scenes $NS seed-pack/f2v/visual-gallery-items-$NS.tsv $ITEM_CMD
+            ITEM_CMD=$((ITEM_CMD + $(grep -vc '^#' seed-pack/f2v/visual-gallery-items-$NS.tsv || true)))
             cat seed-pack/f2v/visual-gallery-$NS.tsv >> seed-pack/f2v/visual-gallery.tsv
             cat seed-pack/f2v/visual-gallery-items-$NS.tsv >> seed-pack/f2v/visual-gallery-items.tsv
           done
-          # 14-ak CT (merged round 3): the per-cell tile indices for the
-          # Create connected textures (the pillar family) — the ctx side
-          # files ride the scenes (the replay reads them), the suffixed
-          # (state,ctx) rows APPEND to the assembled gallery manifest (the
-          # plain pillar rows stay; the pack emits one composite each).
-          # CREATE-SCOPED BY DESIGN: the port is verified against the real
-          # create classes by scripts/f2v/ct/CTProbe (515/515 exact, see the
-          # worklog) — parameterizing its ns is not trivial and not wanted.
-          python3 scripts/f2v/gallery_ct.py \
-            seed-pack/scenes create seed-pack/f2v/visual-gallery.tsv
+          # the quad dump's rows: one composite per distinct real mesh. The plain
+          # rows stay, for the cells whose static model already draws the same.
+          cat seed-pack/scenes/quads/rows.tsv >> seed-pack/f2v/visual-gallery.tsv
+          mv seed-pack/scenes/quads seed-pack/f2v/quads
           cat scripts/f2v/visual-items.tsv seed-pack/f2v/visual-gallery-items.tsv \
             > seed-pack/f2v/visual-items.tsv
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
@@ -493,6 +534,7 @@ jobs:
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets visual-client/client.jar 2>&1 | tee pack-build.log
+          rm -rf seed-pack/f2v/quads   # baked into the pack; the ctx files ride the scenes
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
