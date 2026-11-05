@@ -5999,3 +5999,31 @@ Work Log:
   the truth crops (the pack bake for plants may need the CT/uvlock
   treatment the walls got); (3) re-tighten the 60000 gate on the new ae
   distribution once the walls calm down.
+
+---
+## Task 14-aw/14-ax — the camera regime's fallout: the rig constants, the CMD collision, and the real-client quad channel
+
+14-aw: with the fov pin on the contract, every old rig constant works backwards.
+Gallery 42036584838 fits ours at scale 0.978 and 1 px low on every page, the exact
+footprint of GALLERY_TZ=+0.20 at distance 9 and GALLERY_TY=-0.0184. It pinned the join's
+alignment at its +-3 limit on most RED cells (shift (-3,-3) x3057, (3,-3) x2623). Zeroed.
+An identity display is the rig. Note: every pre-14-av crop was misaligned too (the join
+crops assume 60.5 px/cell while both frames sat at ~99), so the old 98.86% is not
+comparable with anything after it.
+
+Item CMD collision: gallery-items-manifest restarted at 300000 per namespace, so with the
+ladder 435 BOP items overwrote Create rows in the range_dispatch. On the page: BOP planks
+and flowers inside a Create item wall. That is the "different object" class of item REDs.
+
+14-ax: instead of porting 12+ CT behaviours and 8 CT types per mod, ask the real client.
+QuadDump (scene-mod, -Dcim.quaddump=<scenes>) rebuilds each page as a BlockAndTintGetter
+at the first tick after loading and asks every model through its own
+getModelData/getQuads, with Block.shouldRenderFace for see-through blocks. It runs with no
+server and exits by itself. Full ladder: 24035 cells, 6845 distinct meshes, 0 failures, about
+a minute. A shifted quad keeps its original sprite field, so the dump finds the sprite that
+actually owns the UVs. GalleryPack rebuilds those cells through ObjMesh (q<hash> ctx rows,
+same ctx side files the replay already reads). Generic by construction: no mod is special-cased.
+
+Open: `no pack CMD` for 103 BOP stairs, 55 branches, 51 fences, 47 leaves in the CI seed.
+The stand builds from the truth manifests, which will show whether that is a seed-vs-truth
+manifest difference.
