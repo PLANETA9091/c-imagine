@@ -107,6 +107,36 @@ Companion mods (playeranimator, glitchcore, terrablender) ride the server
 but their namespaces are deliberately not ladder namespaces — they are
 libraries/providers, not gallery content.
 
+### Identity pipelines re-armed for the modern contract (branch `feat/parity-modern`, 2026-11-05 — NOTHING here is measured GREEN yet)
+
+The two dispatch-only identity pipelines last ran 2026-10-28 and still tested the
+pre-ladder, cimtest-only contract. They now ride the same reality the gallery walks:
+
+- **visual.yml** (stock vanilla 26.3 client, the calibrated manual harness — STAYS
+  dispatch-only): an optional `gallery_run_id` input stages a gallery seed-pack's seed v2
+  manifests; the ladder legs then walk page 0 of every `LADDER_NS` namespace through the
+  same replay surfaces the gallery ours leg uses — per-ns hotbar/first-person/inventory
+  parity shots (`gal-item/gal-held/gal-inv-<ns>.png`) plus the ordered sound replay logs
+  the plugin records post-rewrite. Without the input the job runs exactly the calibrated
+  cimtest harness. Item CMD carriers are assigned by the seed's own law (300000+i over
+  the concatenated rows, `a83ec48f`); the cimtest pack defs resolve identically
+  (self-contained graphs; `--assets` only adds the 14-ay vanilla fallback).
+- **parity-diff.yml** (real NeoForge 1.21.1 client truth): the truth side now also builds
+  cimscene, carries the locked ladder jars, re-walks item/sound page 0 per ladder ns, and
+  shoots the real-client mirror shots (`t-item/t-held-<ns>.png`) plus the SoundCapture
+  windows (`cimscene gallery sound`, the packet-capture mixin). The identity-diff job
+  measures per channel — ladder item hotbar crops (pairing-guarded by both sides'
+  manifest first rows), held first-person full-frame joins (`framediff.py`), and the
+  ordered sound-stream identity (`sound-diff.py --map`) — all REPORT-FIRST: no new gate
+  is locked until a dispatch measured the datum.
+
+Honest status: the calibrated datums are preserved byte-identically (the icon sanity
+gates, the camera-lock appearance gates, the luminance-normalized block identity datum —
+measured 1531, gate 2500, region 545,170,190,115 tol 4). The new per-channel numbers do
+not exist yet; the first post-merge dispatch produces them, and the sound channel is
+expected to name missing rows on the ours side until the F2V sound rewrite resolves
+beyond the stand-in mapping. Nothing in this section is a green claim.
+
 ### The new gallery classes (2026-11-04 — all DIAGNOSTIC-first: walked, reported, never red until the channel is measured stable)
 
 | Class | What it measures | First-run expectation (honest) |
