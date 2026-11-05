@@ -447,7 +447,6 @@ public final class CimSceneMod {
         // reds (worklog 12-ac: the truth leg showed the settled east-arm
         // pane while ours showed the placed full cross). The manifest
         // therefore carries the RE-READ states; mutated cells are logged.
-        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\n");
         int placed = 0, skipFluid = 0, skipInvisible = 0, mutated = 0;
         List<BlockPos> placedPos = new ArrayList<>();
         List<Integer> placedIndex = new ArrayList<>();
@@ -503,16 +502,65 @@ public final class CimSceneMod {
                     + settled + '\t'
                     + (now.getBlock() instanceof EntityBlock ? 1 : 0);
         }
-        for (int i = 0; i < slice.size(); i++) {
-            if (rowStr[i] != null) {
-                tsv.append(rowStr[i]).append('\n');
+        // the world keeps moving after this tick: the manifest is written by the
+        // delayed pass, which reads what the shot will actually show
+        final int fPlaced = placed;
+        final int fMutated = mutated;
+        final int fSkipFluid = skipFluid;
+        final int fSkipInvisible = skipInvisible;
+        runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, slice,
+                rowStr, blockStem, fPlaced, fMutated, fSkipFluid, fSkipInvisible, 0));
+        return placed;
+    }
+
+    /** One real settle before the manifest; falling blocks extend it until they land. */
+    static final int BLOCK_SETTLE_TICKS = 10;
+    private static final int BLOCK_SETTLE_RETRIES = 8;
+
+    /**
+     * Rewrite the page from what the wall holds now. Placed blocks fall, pop off
+     * unsupported or turn into something else over the following ticks, and a
+     * falling block can land on a cell that was empty. A cell the world emptied
+     * becomes a named skip; a cell the world filled becomes a cell.
+     */
+    private static void settleBlockPage(ServerLevel level, String namespace, int page, List<BlockState> slice,
+                                        String[] rowStr, String blockStem, int placed, int mutated,
+                                        int skipFluid, int skipInvisible, int tries) {
+        AABB wall = new AABB(GALLERY_X0 - 1, GALLERY_Y0 - 1, GALLERY_Z - 1,
+                GALLERY_X0 + GALLERY_COLS + 1, GALLERY_Y0 + GALLERY_ROWS + 3, GALLERY_Z + 2);
+        if (tries < BLOCK_SETTLE_RETRIES
+                && !level.getEntitiesOfClass(net.minecraft.world.entity.item.FallingBlockEntity.class, wall).isEmpty()) {
+            runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, slice,
+                    rowStr, blockStem, placed, mutated, skipFluid, skipInvisible, tries + 1));
+            return;
+        }
+        int dissolved = 0;
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\n");
+        for (int i = 0; i < GALLERY_CELLS; i++) {
+            int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+            BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+            BlockState now = level.getBlockState(pos);
+            String was = i < rowStr.length ? rowStr[i] : null;
+            boolean cell = was != null && was.startsWith("cell\t");
+            if (now.isAir()) {
+                if (cell) {
+                    dissolved++;
+                    String gone = was.split("\t")[4];
+                    tsv.append("skip\t-1\t-1\t-1\t").append(gone).append("\t0\tdissolved\n");
+                    LOGGER.info("[cimscene] gallery settle ns={} page={} reason=dissolved state={}",
+                            namespace, page, gone);
+                } else if (was != null) {
+                    tsv.append(was).append('\n');
+                }
+                continue;
             }
+            tsv.append("cell\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
+                    .append(pos.getZ()).append('\t')
+                    .append(stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))).append('\t')
+                    .append(now.getBlock() instanceof EntityBlock ? 1 : 0).append('\n');
         }
 
-        // End-of-command drop sweep: pops that fired synchronously during the
-        // placement loop (updateShape chains) spawned their ItemEntities
-        // already — discard them before the manifest/done marker, so the page
-        // shot (>=1s later) shows exactly the manifest's cells and nothing else.
+        // drops from the settle window are not page content
         int sweptEnd = sweepGalleryDrops(level);
         if (sweptEnd > 0) {
             LOGGER.info("[cimscene] gallery drop-sweep end ns={} page={} removed={}",
@@ -528,14 +576,13 @@ public final class CimSceneMod {
             LOGGER.error("[cimscene] gallery manifest write failed {}: {}", manifest, ioe.toString());
         }
 
-        LOGGER.info("[cimscene] gallery done ns={} page={} cells={} mutated={} skipped_fluid={} "
+        LOGGER.info("[cimscene] gallery done ns={} page={} cells={} mutated={} dissolved={} skipped_fluid={} "
                         + "skipped_invisible={} first={} last={}",
-                namespace, page, placed, mutated, skipFluid, skipInvisible,
+                namespace, page, placed, mutated, dissolved, skipFluid, skipInvisible,
                 stateString(slice.get(0), BuiltInRegistries.BLOCK.getKey(slice.get(0).getBlock())),
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
         writeDoneMarkerFile(blockStem, false);
-        return placed;
     }
 
     // --- coverage ledger (owner directive 2026-10-31: the verdict must SEE

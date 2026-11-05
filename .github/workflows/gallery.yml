@@ -338,6 +338,8 @@ jobs:
             done
             echo "no done marker file: $1"; return 2
           }
+          # no leaf decay or random growth: the seed must settle like the truth walk
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" >/dev/null
           # BLOCK pages (to exhaustion — the coverage law), one loop per
           # ladder namespace (LADDER_NS is the single source of the ns list)
           for NS in $LADDER_NS; do
@@ -775,7 +777,7 @@ jobs:
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
-            "gamerule doMobSpawning false" | tee truth-pins.log
+            "gamerule doMobSpawning false" "gamerule randomTickSpeed 0" | tee truth-pins.log
           LAUNCH=$(cat truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do

@@ -5,6 +5,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.BiomeColors;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -18,6 +20,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.ColorResolver;
 import net.minecraft.world.level.FoliageColor;
@@ -32,6 +36,7 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import net.neoforged.neoforge.common.NeoForge;
+import org.joml.Vector3f;
 import org.slf4j.Logger;
 
 import java.io.IOException;
@@ -72,7 +77,9 @@ final class QuadDump {
     private static final int STRIDE = 8;
     private static final int UV = 4;
 
+    private static final int JOIN_TICKS = 600;
     private static boolean started;
+    private static int waited;
 
     private QuadDump() {
     }
@@ -83,7 +90,12 @@ final class QuadDump {
 
     /** Models are ready once the loading overlay is gone, whichever screen follows it. */
     private static void onTick(ClientTickEvent.Post event) {
-        if (started || Minecraft.getInstance().getOverlay() != null) {
+        Minecraft mc = Minecraft.getInstance();
+        if (started || mc.getOverlay() != null) {
+            return;
+        }
+        // some item renderers read the local player: give a reachable server time to admit it
+        if (mc.player == null && ++waited < JOIN_TICKS) {
             return;
         }
         started = true;
@@ -165,6 +177,7 @@ final class QuadDump {
             }
         }
         Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
+        dumpItems(scenes, out, sprites);
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={}",
                 cells, dumped, rows.size(), failed);
     }
@@ -241,15 +254,31 @@ final class QuadDump {
     private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites, Vec3 off,
                                    float[] brightness, float r, float g, float b) {
         int[] v = q.getVertices();
-        float cu = 0;
-        float cv = 0;
+        float[][] pos = new float[4][3];
+        float[][] uv = new float[4][2];
+        float[][] rgb = new float[4][3];
         for (int i = 0; i < 4; i++) {
-            cu += Float.intBitsToFloat(v[i * STRIDE + UV]) / 4;
-            cv += Float.intBitsToFloat(v[i * STRIDE + UV + 1]) / 4;
+            int o = i * STRIDE;
+            pos[i][0] = Float.intBitsToFloat(v[o]) + (float) off.x;
+            pos[i][1] = Float.intBitsToFloat(v[o + 1]) + (float) off.y;
+            pos[i][2] = Float.intBitsToFloat(v[o + 2]) + (float) off.z;
+            uv[i][0] = Float.intBitsToFloat(v[o + UV]);
+            uv[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
+            rgb[i][0] = brightness[i] * r;
+            rgb[i][1] = brightness[i] * g;
+            rgb[i][2] = brightness[i] * b;
         }
+        writeQuad(sb, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), pos, uv, rgb);
+    }
+
+    /** Positions in 0..1 block space, UVs in atlas space; a null sprite is looked up by UV. */
+    private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
+                                     boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb) {
+        float cu = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) / 4;
+        float cv = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) / 4;
         // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
-        TextureAtlasSprite sprite = q.getSprite();
-        if (!contains(sprite, cu, cv)) {
+        TextureAtlasSprite sprite = hint;
+        if (sprite == null || !contains(sprite, cu, cv)) {
             for (TextureAtlasSprite s : sprites) {
                 if (contains(s, cu, cv)) {
                     sprite = s;
@@ -257,21 +286,172 @@ final class QuadDump {
                 }
             }
         }
-        ResourceLocation name = sprite.contents().name();
-        sb.append(name).append('\t').append(q.isShade() ? 1 : 0).append('\t').append(q.getTintIndex());
+        if (sprite == null) {
+            return false;
+        }
+        sb.append(sprite.contents().name()).append('\t').append(shade ? 1 : 0).append('\t').append(tint);
         for (int i = 0; i < 4; i++) {
-            int o = i * STRIDE;
-            float u = (Float.intBitsToFloat(v[o + UV]) - sprite.getU0()) / (sprite.getU1() - sprite.getU0()) * 16;
-            float w = (Float.intBitsToFloat(v[o + UV + 1]) - sprite.getV0()) / (sprite.getV1() - sprite.getV0()) * 16;
+            float u = (uv[i][0] - sprite.getU0()) / (sprite.getU1() - sprite.getU0()) * 16;
+            float w = (uv[i][1] - sprite.getV0()) / (sprite.getV1() - sprite.getV0()) * 16;
             sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
-                    (Float.intBitsToFloat(v[o]) + off.x) * 16, (Float.intBitsToFloat(v[o + 1]) + off.y) * 16,
-                    (Float.intBitsToFloat(v[o + 2]) + off.z) * 16, u, w));
+                    pos[i][0] * 16, pos[i][1] * 16, pos[i][2] * 16, u, w));
         }
         for (int i = 0; i < 4; i++) {
-            sb.append(String.format(Locale.ROOT, "\t%.3f\t%.3f\t%.3f", brightness[i] * r, brightness[i] * g,
-                    brightness[i] * b));
+            sb.append(String.format(Locale.ROOT, "\t%.3f\t%.3f\t%.3f", rgb[i][0], rgb[i][1], rgb[i][2]));
         }
         sb.append('\n');
+        return true;
+    }
+
+    /**
+     * Every item of every item page through the real ItemRenderer. Item colours,
+     * layered models and whatever a custom renderer draws from the block atlas all
+     * arrive here. Geometry on other textures (entity model parts) cannot ride
+     * an atlas sprite and is counted, not guessed.
+     */
+    private static void dumpItems(Path scenes, Path out, List<TextureAtlasSprite> sprites) throws Exception {
+        List<Path> manifests;
+        try (Stream<Path> s = Files.list(scenes)) {
+            manifests = s.filter(p -> p.getFileName().toString().matches("gallery-item-.+-p\\d+\\.tsv")).sorted().toList();
+        }
+        StringBuilder rows = new StringBuilder();
+        int items = 0;
+        int empty = 0;
+        int failed = 0;
+        long foreign = 0;
+        for (Path mf : manifests) {
+            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                String[] c = line.split("\t");
+                if (c.length < 5 || !c[0].equals("cell")) {
+                    continue;
+                }
+                items++;
+                try {
+                    ResourceLocation id = ResourceLocation.parse(c[4]);
+                    ItemCapture capture = new ItemCapture(sprites);
+                    Minecraft.getInstance().getItemRenderer().renderStatic(
+                            new ItemStack(BuiltInRegistries.ITEM.get(id)), ItemDisplayContext.NONE,
+                            LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, new PoseStack(), capture, null, 0);
+                    foreign += capture.foreign;
+                    if (capture.out.length() == 0) {
+                        empty++;
+                        continue;
+                    }
+                    String mesh = capture.out.toString();
+                    String hash = sha(mesh);
+                    Path file = out.resolve(hash + ".tsv");
+                    if (!Files.exists(file)) {
+                        Files.writeString(file, mesh, StandardCharsets.UTF_8);
+                    }
+                    rows.append(c[4]).append('\t').append(hash).append('\n');
+                } catch (Throwable t) {
+                    failed++;
+                    LOGGER.info("[cimscene] quad dump item skip {}: {}", c[4], t.toString());
+                }
+            }
+        }
+        Files.writeString(out.resolve("items.tsv"), rows.toString(), StandardCharsets.UTF_8);
+        LOGGER.info("[cimscene] quad dump items={} empty={} failed={} foreign_quads={}", items, empty, failed, foreign);
+    }
+
+    /** A buffer source whose every buffer records: baked quads whole, hand-drawn geometry vertex by vertex. */
+    private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
+        final StringBuilder out = new StringBuilder();
+        final List<TextureAtlasSprite> sprites;
+        final float[][] pos = new float[4][3];
+        final float[][] uv = new float[4][2];
+        final float[][] rgb = new float[4][3];
+        int n = -1;
+        long foreign;
+
+        ItemCapture(List<TextureAtlasSprite> sprites) {
+            this.sprites = sprites;
+        }
+
+        @Override
+        public VertexConsumer getBuffer(RenderType type) {
+            return this;
+        }
+
+        @Override
+        public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
+                                float a, int[] light, int overlay, boolean readAlpha) {
+            int[] v = q.getVertices();
+            float[][] p = new float[4][3];
+            float[][] t = new float[4][2];
+            float[][] c = new float[4][3];
+            Vector3f at = new Vector3f();
+            for (int i = 0; i < 4; i++) {
+                int o = i * STRIDE;
+                pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
+                        Float.intBitsToFloat(v[o + 2]), at);
+                p[i][0] = at.x + 0.5f; // the renderer centres the model on the origin
+                p[i][1] = at.y + 0.5f;
+                p[i][2] = at.z + 0.5f;
+                t[i][0] = Float.intBitsToFloat(v[o + UV]);
+                t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
+                c[i][0] = brightness[i] * r;
+                c[i][1] = brightness[i] * g;
+                c[i][2] = brightness[i] * b;
+            }
+            writeQuad(out, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), p, t, c);
+        }
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            flushIfFull();
+            n++;
+            pos[n][0] = x + 0.5f;
+            pos[n][1] = y + 0.5f;
+            pos[n][2] = z + 0.5f;
+            rgb[n][0] = 1;
+            rgb[n][1] = 1;
+            rgb[n][2] = 1;
+            return this;
+        }
+
+        private void flushIfFull() {
+            if (n == 3) {
+                if (!writeQuad(out, null, sprites, true, -1, pos, uv, rgb)) {
+                    foreign++;
+                }
+                n = -1;
+            }
+        }
+
+        @Override
+        public VertexConsumer setColor(int r, int g, int b, int a) {
+            if (n >= 0) {
+                rgb[n][0] = r / 255f;
+                rgb[n][1] = g / 255f;
+                rgb[n][2] = b / 255f;
+            }
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            if (n >= 0) {
+                uv[n][0] = u;
+                uv[n][1] = v;
+            }
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
     }
 
     private static boolean contains(TextureAtlasSprite s, float u, float v) {

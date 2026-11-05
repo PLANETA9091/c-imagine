@@ -727,8 +727,13 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
-                String found = resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings,
-                        paletteByVariantId);
+                String quadModel = GalleryPack.synthesizeItemQuads(jars, row.moddedId(), itemCompositeNo,
+                        entries, warnings);
+                if (quadModel != null) {
+                    itemCompositeNo++;
+                }
+                String found = quadModel != null ? quadModel
+                        : resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings, paletteByVariantId);
                 // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see
                 // GalleryPack.synthesizeItemComposite): block-geometry item
                 // models ride a standalone composite (inline elements, all
@@ -736,7 +741,7 @@ public final class F2vPack {
                 // vanilla-sprite reference aborts the whole host def bake at
                 // CuboidItemModelWrapper.validateAtlasUsage. Sprite-driven
                 // item models (item/generated chains) stay vanilla-shaped.
-                if (found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
+                if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
                     String comp = GalleryPack.synthesizeItemComposite(
                             jars, found, itemCompositeNo++, entries, warnings);
                     if (comp != null) {

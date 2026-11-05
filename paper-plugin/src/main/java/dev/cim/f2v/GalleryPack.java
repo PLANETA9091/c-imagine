@@ -755,6 +755,7 @@ public final class GalleryPack {
     /** Where the seed's QuadDump meshes live ({@code quads/<hash>.tsv}). */
     static void setQuadDir(Path dir) {
         quadDir = dir;
+        itemQuadMap = null;
     }
 
     /**
@@ -765,6 +766,43 @@ public final class GalleryPack {
     private static String synthesizeQuadComposite(List<Path> jars, String hash, int idx,
                                                   TreeMap<String, byte[]> entries,
                                                   List<String> warnings) throws IOException {
+        return synthesizeQuadModel(jars, hash, WRAPPER_PREFIX + idx + ".json", WRAPPER_REF_PREFIX + idx,
+                entries, warnings);
+    }
+
+    /** The item's mesh from the real ItemRenderer, when the dump captured one. */
+    static String synthesizeItemQuads(List<Path> jars, String itemId, int itemNo,
+                                      TreeMap<String, byte[]> entries,
+                                      List<String> warnings) throws IOException {
+        String hash = itemQuads().get(itemId);
+        if (hash == null) {
+            return null;
+        }
+        return synthesizeQuadModel(jars, hash, "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json",
+                WRAPPER_NS + ":items/i" + itemNo, entries, warnings);
+    }
+
+    private static Map<String, String> itemQuadMap;
+
+    private static Map<String, String> itemQuads() throws IOException {
+        if (itemQuadMap == null) {
+            itemQuadMap = new java.util.HashMap<>();
+            Path file = quadDir == null ? null : quadDir.resolve("items.tsv");
+            if (file != null && java.nio.file.Files.isRegularFile(file)) {
+                for (String line : java.nio.file.Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    String[] c = line.split("\\t");
+                    if (c.length == 2) {
+                        itemQuadMap.put(c[0], c[1]);
+                    }
+                }
+            }
+        }
+        return itemQuadMap;
+    }
+
+    private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
+                                              TreeMap<String, byte[]> entries,
+                                              List<String> warnings) throws IOException {
         Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
             warnings.add("gallery: quad mesh missing: " + hash);
@@ -828,9 +866,9 @@ public final class GalleryPack {
         }
         wrapper.add("textures", texObj);
         wrapper.add("elements", elements);
-        recordScale(WRAPPER_REF_PREFIX + idx, k);
-        entries.put(WRAPPER_PREFIX + idx + ".json", wrapper.toString().getBytes(StandardCharsets.UTF_8));
-        return WRAPPER_REF_PREFIX + idx;
+        recordScale(ref, k);
+        entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        return ref;
     }
 
     /**
