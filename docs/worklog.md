@@ -6059,3 +6059,38 @@ in pixels (horses, tropical fish, camel, ghast, magma cube). Parrot and fox REDs
 animation phase, not art.
 
 scripts/stand-easton is the fast loop: dump + pack + 12 pages + join in about 5 minutes.
+
+### Round-5 lane — the sound + particle STREAM channels, and an independent 14-ay verification
+
+The sound and particle channels were census-only: the truth capture wrote rows, the ours
+replay wrote an honest empty log. Both ours legs now send REAL packets: the sound replay
+one ClientboundSoundPacket per manifest cell, the particle replay one
+ClientboundLevelParticlesPacket per cell, each resolved through a pack-side mapping
+(visual-sounds.tsv / visual-particles.tsv, generated at seed from the truth manifests,
+deterministic: exact-name -> category table -> documented default) and validated against
+Paper's LIVE registry before send, so a drifted candidate degrades to the default
+(counted unmapped-fallback) instead of a kick. The capture logs record the POST-rewrite
+id the vanilla 26.3 client received — sound-diff.py joins two real ordered streams for
+the first time, particle-diff.py (new) does the same for particles. Descriptors were
+javap-verified against the real Paper 26.3 build 241 NMS before a line was written.
+Both classes stay DIAGNOSTIC; sound-diff's --map is a report-only preview of the flip
+(mapped-position coverage), never a verdict. FIRST-RUN: no channel numbers exist until
+the next gallery run.
+
+Particle truth capture: the particle branch rides the PROVEN sound-capture mixin
+injection point (same three-arg Connection.send descriptor) — no new mixin descriptor
+to pin. Contract documented in gallery-particles-mapping.py: modded options bytes are
+not portable, the mapped type rides as its SIMPLE default options (data-carrying
+options degrade to the lookalike, the stream names the rewrite).
+
+Independent verification of the 14-ay minecraft-fallback (a3bdfd38), fresh clone, real
+BOP 21.1.0.14 jar + the 26.3 client jar, 13 states from #114's red families
+(stairs x2, fence_gate, trapdoor, fence, wall, webbing, barnacles, slab, pressure_plate,
+door, hanging_sign): 12 resolve on current main, only the hanging_sign drops (client BE
+geometry, correctly skipped). The first repro accidentally ran the PRE-14-ay jar and
+dropped the same 7 vanilla-template families #114 rendered empty — a clean A/B of the
+fix. One residue named: F2vPack.copyParentGraph still walks parents in the SINGLE jar
+that carried the entry model, so bare vanilla parents warn "parent model missing in
+jar" there (27 warnings on the 13-state repro) — cosmetic while every gallery row
+emits a self-contained composite (resolveModelGraph walks all jars + the fallback),
+but the build report noise hides real signals.
