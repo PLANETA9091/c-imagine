@@ -6944,3 +6944,55 @@ Additional preserved crop diagnosis: baseline truth/Easton pane crop
 all shift(0,0). Crop visually differs at the right bar endpoints, so
 brightness-only hypothesis is insufficient. No production renderer change
 was made from this observation. Initial review-copy failure is corrected.
+
+2026-11-05T19:02:32.843877+00:00 published: merge fdafaba6 pushed successfully, including AE2 correction
+and both worklog histories. Merged workflow shell audit zero failures.
+Fresh concurrent edits now also touch gallery.yml; do not absorb them.
+Acacia connected sprite decoded RGBA is identical between seeded pack and
+real Create jar; SHA256
+b385cda3629a5ad0daca9f44d13747936827b2cb683854282808d9c070b8c75b,
+alpha levels only0/255. Thus source texture corruption is excluded.
+Plan: read native client class bytecode remotely using javap only (no
+client/server launch), retain it in ignored local artifacts, trace item
+quad alpha/material classification and UV bake. Monitor new main CI and
+mandatory fetch beyond AE2; do not declare GREEN from helper tests alone.
+
+2026-11-05T19:03:32.381038+00:00 live CI progress: fdafaba6 gallery42089995725 has passed mandatory
+mod fetching in seed and every truth shard; s3 reached real server camera
+pins/client join. This proves the corrected slug clears the prior fetch
+blocker; full new-mod boot/render proof remains pending.
+Native bytecode read first used wrong ItemQuads package; corrected to
+resources.model.geometry with set-e. ItemQuads splits by material render
+type hasBlending; FaceBakery infers transparency from sprite UV region or
+explicit Material.forceTranslucent. Native material CODEC accepts
+{sprite:<id>,force_translucent:true}. No shade/gui-light workaround applied.
+
+Next controlled Easton hypothesis: force translucent ONLY for q1 texture
+in the actual pane model g12607, changing one model/one material; all14
+elements/UVs unchanged. This tests whether cutout sampling/material handling
+causes the observed broken bar endpoints. Expected if hypothesis correct:
+endpoints visibly approach truth and pane AE falls below baseline60365;
+otherwise reject. Generate deterministic ZIP locally AND remotely from
+verified #129 baseline, require equal SHA1, launch only inactive private
+stand, capture Create0 twice plus unchanged BOP40 control. Retain served
+hash/reload proof, stop our stand and restore baseline after capture. No
+production source change or gate adjustment from this unproven hypothesis.
+
+2026-11-05T19:04:38.928914+00:00 controlled material probe generated and staged safely: local AND remote
+ZIP SHA1 66f29f8b722ddca8a7e26b7be89196f9eee8b280 match. Inactive
+service and empty queue verified before replacing inputs. Private capped
+sandbox started, job green129-material queued; only model g12607 q1 has
+force_translucent. Collection must stop our service and restore baseline.
+New main standard CI42089996073 SUCCESS. Expanded truth s3 now walking
+pages, seed walking all manifests; AE2 correction cleared mod-fetch and
+real NeoForge server boot. Full rendered new-mod coverage remains pending.
+
+Re-analysis of Create's apparent +3 GREEN blocks: exactly three rows
+changed DYNAMIC -> GREEN (two powered gantry_shaft states on p201 and
+magenta_nixie_tube on p212). This is excluded dynamic content varying
+relative to the threshold, not newly demonstrated static parity.
+Current four Create item REDs: experience_block65094,
+experience_nugget62695, mangrove_window_pane71618, refined_radiance63497.
+Next collect material probe, compare complete RGB frames + unchanged gate
+joins against the same truth; inspect bar-end geometry visually, retain
+negative evidence if no gain. Publish only a proven production fix.
