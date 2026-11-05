@@ -487,9 +487,48 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
           done
-          # gui/inv stay OUT of the seed walk on purpose: both scenes need
-          # a joined viewer (openMenu / inventory fill), the seed walks
-          # headless — their manifests come from the truth shards' walks
+          # gui stays OUT of the seed walk on purpose: openMenu needs a
+          # joined viewer, the seed walks headless — its manifests come
+          # from the truth shards' walks. INV is different: the inv
+          # manifest is a pure SLOT RE-LABELLING of the item manifest
+          # (row order -> hotbar.0-8 / inventory.9-35), so the seed
+          # derives it server-side and the ours inv replay (which gates
+          # on THE SEED's scenes, running parallel to the truth shards)
+          # fires. Measured gap: without this derivation the ours inv
+          # replay never found manifests and the inventory channel
+          # stayed ours-empty on every run.
+          python3 - <<'PY'
+          import glob, re
+          # item pages carry 77 cells but an inventory holds 36 slots, so
+          # the derivation CHUNKS the ns's whole ordered item stream into
+          # 36-slot inv pages — page-aligned with the truth inv walk
+          # (create: 699 items = 10 item pages = 20 inv pages, measured)
+          n = 0
+          item_files = sorted(glob.glob('srv-wall/c-imagine/scenes/gallery-item-*-p*.tsv'))
+          ns_files = {}
+          for mf in item_files:
+              ns = re.search(r'gallery-item-(.+)-p(\d+)\.tsv$', mf).group(1)
+              ns_files.setdefault(ns, []).append(mf)
+          for ns, files in ns_files.items():
+              files.sort(key=lambda m: int(re.search(r'-p(\d+)\.tsv$', m).group(1)))
+              ordered = []
+              for mf in files:
+                  for line in open(mf, encoding='utf-8'):
+                      p = line.rstrip('\n').split('\t')
+                      if len(p) >= 5 and p[0] == 'cell' and p[1].lstrip('-').isdigit():
+                          ordered.append(p[4])
+              chunk = 36
+              for pi in range(0, len(ordered), chunk):
+                  out = f'srv-wall/c-imagine/scenes/gallery-inv-{ns}-p{pi // chunk}.tsv'
+                  with open(out, 'w', encoding='utf-8') as f:
+                      f.write('slot\titem\n')
+                      for i, item in enumerate(ordered[pi:pi + chunk]):
+                          slot = f'hotbar.{i}' if i < 9 else f'inventory.{i}'
+                          f.write(f'{slot}\t{item}\n')
+                  n += 1
+              print(f'inv {ns}: {len(ordered)} items')
+          print(f'inv manifests derived: {n}')
+          PY
           ls srv-wall/c-imagine/scenes/ | wc -l
 
       # THE QUAD DUMP: a static pack model cannot know what a dynamic model
