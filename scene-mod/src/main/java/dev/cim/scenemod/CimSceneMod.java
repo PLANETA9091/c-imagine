@@ -1014,6 +1014,12 @@ public final class CimSceneMod {
 
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tparticle\tdyn\tnote\n");
         int spawned = 0, failed = 0;
+        // THE CAPTURE WINDOW (2026-11-05, the PARTICLE-STREAM channel —
+        // DIAGNOSTIC-first): armed before the first spawn, disarmed after
+        // the last — sendParticles broadcasts synchronously on the server
+        // thread, so the window holds exactly this page's outgoing packets
+        // (the sound-packet capture mixin's particle branch records them)
+        List<String> heard = ParticleCapture.begin();
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
@@ -1048,16 +1054,25 @@ public final class CimSceneMod {
                         namespace, page, from + i, fail, id);
             }
         }
+        List<String> stream = ParticleCapture.end(heard);
         String manifest = "gallery-particle-" + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
             Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+            // the ordered particle-type stream (one id per line) — the
+            // truth leg's artifact of the particle-stream channel join
+            Files.writeString(parent.resolve("gallery-particle-" + namespace
+                            + "-p" + page + ".log"),
+                    stream.isEmpty() ? "" : String.join("\n", stream) + "\n",
+                    StandardCharsets.UTF_8);
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] gallery-particle manifest write failed {}: {}", manifest, ioe.toString());
         }
-        LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells={} failed={} first={} last={}",
-                namespace, page, spawned, failed, slice.get(0), slice.get(slice.size() - 1));
+        LOGGER.info("[cimscene] gallery-particle done ns={} page={} cells={} failed={} "
+                        + "captured={} first={} last={}",
+                namespace, page, spawned, failed, stream.size(), slice.get(0),
+                slice.get(slice.size() - 1));
         writeDoneMarkerFile(particleStem, false);
         return spawned;
     }
@@ -1495,6 +1510,41 @@ public final class CimSceneMod {
             List<String> s = stream;
             if (s != null) {
                 s.add(soundId);
+            }
+        }
+    }
+
+    /**
+     * THE PARTICLE-CAPTURE WINDOW (2026-11-05 — the PARTICLE-STREAM channel,
+     * DIAGNOSTIC-first, rides the same packet-capture mixin as the sound
+     * window): armed by the particle gallery command, recorded by the
+     * sound-packet capture mixin's particle branch (every outgoing
+     * ClientboundLevelParticlesPacket's particle-type id, in arrival order),
+     * disarmed by the command which then owns the collected stream.
+     * Server-thread confined: the RCON command and the packet broadcast run
+     * on the same thread, so a plain static field is the whole contract.
+     */
+    public static final class ParticleCapture {
+        private static List<String> stream = null;
+
+        /** Arms the capture and returns the list to pass back to end(). */
+        public static List<String> begin() {
+            List<String> fresh = new ArrayList<>();
+            stream = fresh;
+            return fresh;
+        }
+
+        /** Disarms and returns the recorded stream (ordered particle ids). */
+        public static List<String> end(List<String> expected) {
+            stream = null;
+            return expected;
+        }
+
+        /** Called by the sound-packet mixin's particle branch; no-op while disarmed. */
+        public static void record(String particleId) {
+            List<String> s = stream;
+            if (s != null) {
+                s.add(particleId);
             }
         }
     }
