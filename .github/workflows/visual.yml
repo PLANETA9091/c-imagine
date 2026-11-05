@@ -5,12 +5,31 @@ name: visual
 # M5 (roadmap): real vanilla client under xvfb with screenshot diffing
 # against NeoForge-rendered ground truth.
 # Actions policy (owner directive, updated 2026-10-26): minutes nearly
-# exhausted — dispatch-only.
+# exhausted — dispatch-only. STAYS dispatch-only: its role is the
+# calibrated manual harness (the push-wired pixel gate is gallery.yml).
+#
+# 2026-11-05 re-arm (feat/parity-modern): the vanilla-client contract legs
+# ride the SEED V2 contract — an optional gallery_run_id input stages the
+# gallery seed-pack manifests and the ladder legs walk page 0 of EVERY
+# LADDER_NS namespace through the same replay surfaces the gallery ours
+# leg uses (items/held/inv parity shots + the ordered sound stream).
+# Without the input the job stays exactly the calibrated cimtest harness.
 on:
   workflow_dispatch:
+    inputs:
+      gallery_run_id:
+        description: "optional gallery.yml run id — its seed-pack artifact seeds the ladder parity legs (items/held/inv/sound page 0 per LADDER_NS). Empty = cimtest-only harness"
+        required: false
+        type: string
+        default: ""
 
 env:
   CARGO_TERM_COLOR: always
+  # THE LADDER mirror (gallery.yml is the single source of these lists —
+  # keep the two in sync when the ladder grows; the registry namespaces,
+  # not the Modrinth slugs, are what the walks filter by)
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config"
+  LADDER_NS: "create biomesoplenty dynamictrees combat_roll"
 
 jobs:
   protocol-smoke:
@@ -48,9 +67,12 @@ jobs:
   # a CMD item and a plain paper item must render DIFFERENTLY in the hotbar
   # (the pack's range_dispatch override is what makes them differ).
   vanilla-client-visual:
-    name: vanilla 26.3 client visual contract (M5.3)
+    name: vanilla 26.3 client visual contract (M5.3 + ladder parity legs)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # the ladder legs add: the ladder fetch + the item-row pack build
+    # (+1-3 min), and 4 ns x (held/inv shots + one sound page) (+~3 min) —
+    # the join budget itself is unchanged (12 min llvmpipe window)
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -65,6 +87,33 @@ jobs:
       - name: build plugin
         working-directory: paper-plugin
         run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+      # --- SEED V2 MANIFESTS (optional, gallery_run_id) ---------------------
+      # The seed-pack artifact of a gallery.yml run carries the TRUTH-side
+      # walk manifests (gallery-item/sound/biome/... per LADDER_NS) the
+      # ladder legs replay against. Only MANIFESTS ride over — the pack is
+      # built from THIS checkout's builder; the seed never ships pack bytes
+      # into this job (the parity side must render what this commit builds).
+      - name: download gallery seed-pack (seed v2 manifests)
+        if: inputs.gallery_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: seed-pack
+          path: seed-pack
+          run-id: ${{ inputs.gallery_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: verify the seed payload (ladder manifests present)
+        if: inputs.gallery_run_id != ''
+        run: |
+          set -euo pipefail
+          N=0
+          for NS in $LADDER_NS; do
+            [ -f "seed-pack/scenes/gallery-sound-$NS-p0.tsv" ] && N=$((N+1)) \
+              || echo "NOTE: $NS sound manifest p0 missing from the seed"
+            [ -f "seed-pack/scenes/gallery-item-$NS-p0.tsv" ] \
+              || echo "NOTE: $NS item manifest p0 missing from the seed (its item/held/inv legs will be skipped honestly)"
+          done
+          [ "$N" -gt 0 ] || { echo "the seed carries NO sound manifests — a pre-seed-v2 gallery run cannot arm the ladder legs"; exit 1; }
+          echo "seed verified: $N/$(echo $LADDER_NS | wc -w) sound manifests staged"
       - name: fetch visual client runtime (piston-meta, with assets)
         run: |
           python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
@@ -105,14 +154,45 @@ jobs:
           (cd test-mods/src/main/resources && zip -qr /tmp/cimtest-assets.jar assets)
           cp /tmp/cimtest-assets.jar srv/mods/cimtest-1.0.0.jar
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv srv/c-imagine/f2v/
+          # --- SEED V2 LADDER AWARENESS (only when a seed was staged) ------
+          # The ladder item rows ride the pack: the CMD space is assigned
+          # from the TRUTH-side item manifests (gallery-item-<ns>-p*.tsv)
+          # exactly per the seed's law — 300000+i over the CONCATENATED rows
+          # (a per-ns restart collides the thresholds, measured a83ec48f).
+          # The ladder jars join the build so the item model graphs resolve
+          # from the SAME locked jars the seed walked (mods.lock pins them).
+          # The sound channel map is regenerated from the staged sound
+          # manifests (pure function of them) — the plugin's sound replay
+          # resolves through it and records the post-rewrite ids.
+          if [ -d seed-pack/scenes ]; then
+            mkdir -p srv/c-imagine/scenes
+            cp seed-pack/scenes/gallery-item-*.tsv srv/c-imagine/scenes/ 2>/dev/null || true
+            cp seed-pack/scenes/gallery-sound-*.tsv srv/c-imagine/scenes/ 2>/dev/null || true
+            bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
+            cp mods-ladder/*.jar srv/mods/
+            ITEM_CMD=300000
+            for NS in $LADDER_NS; do
+              python3 scripts/f2v/gallery-items-manifest.py \
+                srv/c-imagine/scenes $NS /tmp/visual-gallery-items-$NS.tsv $ITEM_CMD
+              ITEM_CMD=$((ITEM_CMD + $(grep -vc '^#' /tmp/visual-gallery-items-$NS.tsv || true)))
+              cat /tmp/visual-gallery-items-$NS.tsv >> srv/c-imagine/f2v/visual-items.tsv
+            done
+            python3 scripts/f2v/gallery-sounds-mapping.py \
+              srv/c-imagine/scenes srv/c-imagine/f2v/visual-sounds.tsv
+          fi
           # the standalone builder needs the plugin's runtime deps (gson for
           # the model-graph JSON walk) — same classpath rule as the gallery
           # seed and the integration pre-boot build
           (cd paper-plugin && mvn -q -B dependency:build-classpath \
             -Dmdep.outputFile=target/selftest-cp.txt)
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
+          # --assets: the vanilla-parent fallback must ride the SAME client
+          # that renders the pack (measured run 41126658261; the 14-ay rule
+          # — BOP bare parents point at vanilla templates). The cimtest
+          # graphs are self-contained and resolve identically either way,
+          # so the calibrated cimtest legs' pixels are unaffected.
           java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
-            --build srv/mods srv/c-imagine/f2v
+            --build srv/mods srv/c-imagine/f2v --assets visual-client/client.jar
           SHA1=$(cat srv/c-imagine/f2v/pack.sha1)
           echo "eula=true" > srv/eula.txt
           cat > srv/server.properties <<PROPS
@@ -129,10 +209,46 @@ jobs:
           simulation-distance=4
           spawn-protection=0
           max-players=5
+          # the ladder legs read the replay markers from the command OUTPUT
+          # (rcon.py) — the console FIFO stays for the cimtest legs
+          enable-rcon=true
+          rcon.port=25575
+          rcon.password=cimgate
           resource-pack=http://127.0.0.1:25580/cim-f2v-pack.zip
           resource-pack-sha1=$SHA1
           PROPS
           cat srv/server.properties
+      # DERIVED INV MANIFESTS (seed v2 legs only): the inv class is TRUTH-
+      # WALK-ONLY (a viewer fills the slots; the seed walks headless), so
+      # the seed cannot carry inv manifests — derive them deterministically
+      # from the item manifests (the first 36 rows of page 0, the scene
+      # walk's exact slot naming: hotbar.0..8, inventory.9..35). The same
+      # file feeds the parity-diff pairing guard.
+      - name: derive inv manifests from the seed item pages
+        if: inputs.gallery_run_id != ''
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          scenes = pathlib.Path("srv/c-imagine/scenes")
+          for ns in "create biomesoplenty dynamictrees combat_roll".split():
+              mf = scenes / f"gallery-item-{ns}-p0.tsv"
+              if not mf.is_file():
+                  print(f"derived inv manifest {ns}: skipped (no item manifest p0)")
+                  continue
+              items = []
+              for line in mf.read_text(encoding="utf-8").splitlines():
+                  p = line.split("\t")
+                  if len(p) >= 5 and p[0] == "cell" and p[4].strip():
+                      items.append(p[4].strip())
+              items = items[:36]
+              rows = ["slot\titem"]
+              rows += [f"{'hotbar.' if i < 9 else 'inventory.'}{i}\t{it}"
+                       for i, it in enumerate(items)]
+              (scenes / f"gallery-inv-{ns}-p0.tsv").write_text(
+                  "\n".join(rows) + "\n", encoding="utf-8")
+              print(f"derived inv manifest {ns}: {len(items)} slot(s)")
+          PY
       - name: boot server (bare Paper + plugin, console FIFO)
         run: |
           set -euo pipefail
@@ -375,6 +491,105 @@ jobs:
           echo "give cimviewer amethyst_shard[minecraft:custom_model_data={floats:[1101.0]}] 1" > srv/console.in
           sleep 4
           java -cp vtools Shot shots/16-gem-red.png
+          # ----------------------------------------------------------------
+          # LADDER PARITY LEGS (seed v2 — armed only when a seed was staged;
+          # the cimtest stand-ins above stay the calibrated harness). Per
+          # ladder namespace, page 0 of the truth-side manifests, the SAME
+          # replay surfaces the gallery ours leg uses — here as PARITY
+          # SHOTS for the parity-diff.yml identity join:
+          #   gal-item-<ns>.png  hotbar slot-0 pack carrier (the icon crop)
+          #   gal-held-<ns>.png  first-person held carrier ("1" pressed)
+          #   gal-inv-<ns>.png   the open-inventory view (E / ESC)
+          #   gallery-sound-<ns>-p0.log  the ordered POST-REWRITE sound
+          #                      stream the plugin recorded (no shot — the
+          #                      stream IS the picture, sound-diff.py joins)
+          # Camera pinned to the gallery held-class convention (0.5 -60 0.5
+          # yaw 0 pitch 0). The namespace walks headless on the truth side
+          # of the seed — here the viewer gives them their GUI surfaces.
+          if [ -d srv/c-imagine/scenes ]; then
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null || true
+            for NS in $LADDER_NS; do
+              echo "=== ladder parity leg: $NS ==="
+              FIRST=""
+              if [ -f "srv/c-imagine/scenes/gallery-item-$NS-p0.tsv" ]; then
+                FIRST=$(awk -F'\t' '$1=="cell"{print $5; exit}' \
+                  "srv/c-imagine/scenes/gallery-item-$NS-p0.tsv")
+              fi
+              if [ -z "$FIRST" ]; then
+                echo "[ladder] $NS: no item rows on manifest page 0 (registry empty for the class — combat_roll case) — item/held/inv legs skipped, honest absence"
+              else
+                echo "clear cimviewer" > srv/console.in
+                sleep 2
+                HOUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "cim gallerypage-held $NS 0")
+                echo "$HOUT"
+                echo "$HOUT" | grep -q "gallerypage-held $NS p0 -> held=" \
+                  || { echo "[ladder] $NS: gallerypage-held marker missing (the replay surface did not answer)"; exit 1; }
+                if echo "$HOUT" | grep -q "cmd=nochannel"; then
+                  echo "[ladder] $NS: the pack channel dropped the first item row ($FIRST) — nochannel is a NAMED FAILURE (the pack is built from these very rows)"
+                  exit 1
+                fi
+                sleep 2   # the carrier renders into slot 0
+                java -cp vtools Shot "shots/gal-item-$NS.png"
+                AEI=$(java -cp vtools PixelDiff shots/00-baseline.png "shots/gal-item-$NS.png" 375 663 48 48)
+                echo "AE(baseline,gal-item-$NS)=$AEI (slot-0 icon crop)"
+                [ "$AEI" != "0" ] || { echo "[ladder] $NS: the pack carrier never appeared in the hotbar"; exit 1; }
+                java -cp vtools Key 1
+                sleep 1
+                java -cp vtools Shot "shots/gal-held-$NS.png"
+              fi
+              # INV leg: the derived manifest fills the real inventory slots
+              # through the pack carriers; the open-inventory shot is the
+              # GUI-items surface (inv-diff.py's geometry joins it later).
+              if [ -f "srv/c-imagine/scenes/gallery-inv-$NS-p0.tsv" ] \
+                 && [ "$(grep -vc '^#' "srv/c-imagine/scenes/gallery-inv-$NS-p0.tsv")" -gt 0 ]; then
+                IOUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "cim gallerypage-inv $NS 0")
+                echo "$IOUT"
+                echo "$IOUT" | grep -q "gallerypage-inv $NS p0 -> placed=" \
+                  || { echo "[ladder] $NS: gallerypage-inv marker missing"; exit 1; }
+                java -cp vtools Key E
+                sleep 2   # the inventory screen renders (fixed window, both legs)
+                java -cp vtools Shot "shots/gal-inv-$NS.png"
+                java -cp vtools Key ESC
+              else
+                echo "[ladder] $NS: no inv rows derived — inv leg skipped"
+              fi
+              # SOUND replay: the plugin sends one REAL ClientboundSoundPacket
+              # per manifest cell through the visual-sounds.tsv rewrite and
+              # records the post-rewrite id the vanilla client received into
+              # gallery-sound-<ns>-p0.log — the parity-diff truth side walks
+              # the SAME page on the real modded client and sound-diff.py
+              # joins the two ordered streams.
+              if [ -f "srv/c-imagine/scenes/gallery-sound-$NS-p0.tsv" ]; then
+                SOUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "cim gallerypage-sound $NS 0")
+                echo "$SOUT"
+                echo "$SOUT" | grep -q "gallerypage-sound $NS p0 -> placed=" \
+                  || { echo "[ladder] $NS: gallerypage-sound marker missing"; exit 1; }
+                test -s "srv/c-imagine/scenes/gallery-sound-$NS-p0.log" \
+                  || echo "[ladder] $NS: sound capture log EMPTY (the honest nochannel stream — sound-diff names every row)"
+              fi
+              # GUI awareness: the seed v2 does NOT carry gui manifests (the
+              # class is truth-walk-only — a viewer must open the menus; the
+              # seed walks headless). Named, never silent; when a future
+              # seed stages them the replay runs here.
+              if [ -f "srv/c-imagine/scenes/gallery-gui-$NS-p0.tsv" ]; then
+                GOUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "cim gallerypage-gui $NS 0")
+                echo "$GOUT"
+                java -cp vtools Key E || true
+                sleep 2
+                java -cp vtools Shot "shots/gal-gui-$NS.png" || true
+                java -cp vtools Key ESC || true
+              else
+                echo "[ladder] $NS: no gui manifest in the seed (expected — gui is truth-walk-only; the gui parity leg needs a truth-shard artifact)"
+              fi
+            done
+          else
+            echo "[ladder] no seed staged (no gallery_run_id) — the calibrated cimtest-only harness ran, ladder legs skipped"
+          fi
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
       - name: assert visual contract + upload evidence
@@ -440,6 +655,9 @@ jobs:
           echo "AE(gem,gem-red)=$AE1516"
           [ "$AE1516" -gt "500" ] || fail "palette recolor not visible (AE=$AE1516) — the paletted_permutations source did not resolve"
           echo "M5.3 visual contract: pack applied + range_dispatch + select + postfx + equipment + block-in-world + display-rig + camera-lock + palette all render on the stock client"
+          if [ -d srv/c-imagine/scenes ]; then
+            echo "ladder parity legs: per-ns hotbar/first-person/inventory shots + the ordered sound replay logs recorded for parity-diff (seed v2, page 0 per LADDER_NS)"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -450,6 +668,14 @@ jobs:
             visual-client/game/logs/latest.log
             visual-client/client.out
             visual-client/game/servers.dat
+            # the ladder parity surfaces (seed v2 legs): the ordered sound
+            # replay logs the plugin wrote, the item manifests the identity
+            # pairing guards against, the derived inv manifests, and the
+            # sound channel map sound-diff.py's --map preview resolves
+            srv/c-imagine/scenes/gallery-sound-*.log
+            srv/c-imagine/scenes/gallery-item-*-p0.tsv
+            srv/c-imagine/scenes/gallery-inv-*-p0.tsv
+            srv/c-imagine/f2v/visual-sounds.tsv
           if-no-files-found: warn
 
   # Placeholder naming the future job so the intent is visible in the UI.
