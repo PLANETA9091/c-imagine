@@ -219,9 +219,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v2-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v3-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v2-
+            gallery-seed-v3-
 
       - name: seed payload verify (freshness gate)
         id: seed-verify
@@ -621,7 +621,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: seed-pack
-          key: gallery-seed-v2-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v3-${{ steps.seed-inputs.outputs.hash }}
 
       - name: upload seed-pack artifact (cache-eviction fallback)
         if: success() && steps.seed-verify.outputs.hit != 'true'
@@ -1455,9 +1455,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v2-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v3-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v2-
+            gallery-seed-v3-
 
       - name: seed payload freshness (stale prefix hit -> the artifact)
         id: seed-verify

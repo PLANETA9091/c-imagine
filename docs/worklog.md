@@ -6894,3 +6894,53 @@ included in SEED_INPUTS at both seed and ours steps. Therefore the incoming
 cache-bump commit's explanation that plugin source is absent from the key
 is not established by current workflow. A fresh rebuild remains useful,
 but it does not override measured exact-both-keys no-op Easton evidence.
+### 14-be measurement on #136 — the pack rides the seed cache; the fix needs the v3 bump
+- #136 (07ff9a7) ran the FULL pipeline: seed hit, truth s0-s7 success, ours s0-s7 tripped
+  the pixel-join gate (the expected red signal), s4 still finishing. The shard reports
+  came back and the verdict is unambiguous: the high_grass ae values are BYTE-IDENTICAL
+  to #129 (76902/95423/74375/... the whole table) — the rendered pack did not change.
+- ROOT CAUSE: the ours shards serve the SEEDED pack (`-Dcim.f2v.fastBoot=true`); the pack
+  (quads baked in, `rm -rf f2v/quads` after the bake) and the plugin jar are built ONCE in
+  the seed job and cached under `gallery-seed-v2-<SEED_INPUTS>`. SEED_INPUTS hashes the
+  mod/asset inputs, NOT the plugin source — a GalleryPack change is invisible to the key.
+  (The same class of staleness fd01f61 fixed by bumping v1->v2.)
+- FIX: the cache key bumps v2 -> v3 (5 refs in gallery.yml, audit_runblocks clean). The
+  next gallery run pays one slow seed (full walk + quad dump + pack bake) and then serves
+  a pack whose unshaded elements carry shade_direction_override:"up".
+- KEEP THE EXPECTATION HONEST: the class reds on #136 shard0 = 37 (lumaloop 19,
+  high_grass 11, bramble_leaves 2, anomaly/barley/waterlily/white_lavender/pane 1 each),
+  shard1 = 9 (rose_quartz_bud 3, high_grass 2, icy_iris/glowflower/glowshroom/black_sand
+  1 each). These are the numbers to beat; the shade mechanism predicts a near-total
+  collapse, any surviving red is the next lever (the sky +1 skew, the pane's connection
+  mesh, black_sand).
+
+### 14-be correction — the camelCase presumption is disproven; the no-op A/B stands as measured
+- The Easton session's retained variant ZIP (SHA1 7ec10d7543f573b25f7c785ee6a4e921c57caeab)
+  contains 5759 shade_direction_override entries (snake_case, 744 pre-existing + 5015
+  translated) and ZERO camelCase entries. The 14-bd A/B used the correct key, so my
+  "camelCase explains the no-op" explanation is WITHDRAWN. The measured no-op stands:
+  a pack that REPLACED shade:false with shade_direction_override:"up" rendered the same
+  three pages byte-identically on Easton.
+- What survives: the x0.80 darkening measurement and the deserializer bytecode (26.3's
+  CuboidModelElement$Deserializer reads light_emission + shade_direction_override, not
+  shade). The tension between the bytecode and the Easton no-op is unresolved; candidate
+  explanations: the Easton probe served the variant but the client rendered a stale pack
+  (the same trap #136 just demonstrated on CI), or the override does not reach the
+  brightness path for elements whose faces carry an element rotation. The planned
+  both-keys A/B (SHA1 0e231bd6..., 1795 models / 5015 elements, byte-identical to the
+  landed synthesis output) is the right arbitrator; the next full gallery (P2 seed
+  rebuild) measures the landed fix on real CI either way.
+- #136's cache finding remains valid and is the reason the landed fix is still UNMEASURED
+  on CI: the ours shards serve the seeded pack, and gallery-seed-v2-<SEED_INPUTS> did not
+  see the plugin-source change. The key is bumped to v3.
+
+2026-11-05T19:02:09.312821+00:00 merge audit: dad83b5e records the proven AE2 slug fix. Normal merge of
+ceb23484 auto-merged workflow; append-only worklog conflict resolved by
+retaining BOTH complete sections, then adding this audit. Other writer's
+gallery-diff.py remains unstaged. Next verify merged workflow still uses
+ae2, v3 cache, source fingerprint; audit shell syntax; commit merge/push.
+Additional preserved crop diagnosis: baseline truth/Easton pane crop
+(672,399,728,455) is56x56; raw AE83742, normalized60365, linear-fit78140,
+all shift(0,0). Crop visually differs at the right bar endpoints, so
+brightness-only hypothesis is insufficient. No production renderer change
+was made from this observation. Initial review-copy failure is corrected.
