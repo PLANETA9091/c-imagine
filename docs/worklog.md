@@ -5882,3 +5882,17 @@ Work Log:
   anything ~1.35x/1.70x (106/135 px) reproduces the magnification in a
   SINGLE-display frame and collapses the page-context suspects;
   plus wall-ours-shots 0-7 back up; plus the join gate verdict.
+
+### 14-au addendum — #110 verification + the datum never printed (numpy)
+- #110 (b4e2fbd, the parse fix): ours s0 wall-replay PASSED (the step
+  now runs to the INLINE pixel join, which decided gate-red as in
+  #108) — the syntax-error class is CLOSED. But ISOLATE_SCALE never
+  printed: the heredoc died `ModuleNotFoundError: No module named
+  numpy` at <stdin> line 1 — the runner python has no numpy/Pillow
+  until the JOIN step pip-installs them, and the `|| true` swallowed
+  the crash by design. Measured from job 127231115910 log line 858.
+- FIX: guarded `pip install -q numpy pillow` (reuses the JOIN step's
+  proven PyPI access) + the heredoc rewritten scipy-free (deque BFS
+  for the largest component — validated on a synthetic 1280x720 frame:
+  reproduces the sane bbox w=78 h=79 x=496..573 y=438..516 exactly).
+  #111 = the first run with the live datum.

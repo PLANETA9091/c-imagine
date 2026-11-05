@@ -1564,23 +1564,46 @@ jobs:
             # (#95 and #107 render the identical 78x79 casing at x 496-573) —
             # print the casing bbox every run so a page-scale magnification
             # regression announces itself in the log, not in a RED flood.
+          # 14-au: the runner python has no numpy/Pillow until the JOIN step
+          # installs them — the datum must not depend on step order (measured
+          # #110: ModuleNotFoundError, the || true swallowed it, no datum).
+          python3 -c "import numpy, PIL" 2>/dev/null \
+            || pip install -q numpy pillow || true
           python3 - <<'PY' || true
           import numpy as np
           from PIL import Image
-          from scipy import ndimage
+          from collections import deque
           a = np.asarray(Image.open("ours-shots/ours-isolated-pane-casing.png").convert("RGB")).astype(int)
           r, g, b = a[:, :, 0], a[:, :, 1], a[:, :, 2]
           obj = ~(((abs(r - g) < 14) & (abs(g - b) < 14)) | (b > r + 25))
           obj[:390, :] = False
           obj[560:, :] = False
-          lab, n = ndimage.label(obj)
+          # no scipy on the runner — deque BFS for the largest component
+          seen = np.zeros_like(obj, dtype=bool)
           best = None
-          for i in range(1, n + 1):
-              ys, xs = np.where(lab == i)
-              if len(xs) < 1000:
+          ys, xs = np.where(obj)
+          for sy, sx in zip(ys.tolist(), xs.tolist()):
+              if seen[sy, sx]:
                   continue
-              if best is None or len(xs) > best[0]:
-                  best = (len(xs), xs.min(), xs.max(), ys.min(), ys.max())
+              q = deque([(sy, sx)])
+              seen[sy, sx] = True
+              n = 0
+              minx = maxx = sx
+              miny = maxy = sy
+              while q:
+                  y, x = q.popleft()
+                  n += 1
+                  if x < minx: minx = x
+                  if x > maxx: maxx = x
+                  if y < miny: miny = y
+                  if y > maxy: maxy = y
+                  for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                      ny, nx = y + dy, x + dx
+                      if 0 <= ny < obj.shape[0] and 0 <= nx < obj.shape[1] and obj[ny, nx] and not seen[ny, nx]:
+                          seen[ny, nx] = True
+                          q.append((ny, nx))
+              if n >= 1000 and (best is None or n > best[0]):
+                  best = (n, minx, maxx, miny, maxy)
           if best:
               _, x0, x1, y0, y1 = best
               print(f"ISOLATE_SCALE casing w={x1 - x0 + 1} h={y1 - y0 + 1} x={x0}..{x1} y={y0}..{y1} (sane run: w=78 h=79 x=496..573 y=438..516)")
