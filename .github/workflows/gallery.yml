@@ -126,12 +126,14 @@ env:
                # states = 408 pages at 77/page; the walk ALWAYS breaks on the
                # scene's exhausted marker first, and the coverage gate in
                # wall-verdict re-checks the ledger against what landed)
-  EPAGES: "5"  # entity gate scope: MOB pages 0..EPAGES-1 of the minecraft
+  # Vanilla entities are out of the gallery (owner decision 2026-11-05): 26.3
+  # and 1.21.1 ship different vanilla mobs, a difference no pack can reach.
+  EPAGES: "0"  # entity gate scope: MOB pages 0..EPAGES-1 of the minecraft
                # CONTROL namespace on the SPARSE 6x3 grid (18 cells/page,
                # pitch 2 — zero bbox overlap so no subject can ever push
                # another; measured 16d62f0). Each LADDER_NS mod namespace
                # walks ALL THREE series to exhaustion separately
-  EDPAGES: "3"
+  EDPAGES: "0"
   K: "8"       # THE SHARD COUNT (13-b): pages i, i+K, ... per shard. The
                # free-plan runner pool is 20 concurrent jobs — 8+8 shards +
                # seed + verdict = 18. Raising K: extend BOTH matrices and
@@ -1126,25 +1128,6 @@ jobs:
               echo "shot $SERIES page $p"
             done
           done
-          # determinism probe (shard 0 owns mob page 0)
-          if [ "$SI" = "0" ]; then
-            SETTLED=srv-wall/c-imagine/scenes/gallery-entity-minecraft-p0.settled
-            S0=$(cat "$SETTLED" 2>/dev/null || echo 0)
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" \
-              "cimscene gallery entity mobs minecraft 0"
-            sleep 2
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            bash scripts/visual/shot.sh "truth-shots/gal-e0-again.png"
-            echo "shot mob page 0 again"
-            # the next walk's kill must not land before the final settle
-            # rewrites this page's manifest: every subject would read dissolved
-            for i in $(seq 1 1000); do
-              [ "$(cat "$SETTLED" 2>/dev/null || echo 0)" != "$S0" ] && break
-              sleep 0.03
-            done
-          fi
           # MOD-NAMESPACE entity walk (per ladder ns): the same series
           # split, to exhaustion. Modded types replay as nochannel on ours
           # (the honest backlog the join names); a mod that registers real
@@ -2011,16 +1994,6 @@ jobs:
               echo "shot $SERIES page $p"
             done
           done
-          # determinism probe (shard 0 owns mob page 0)
-          if [ "$SI" = "0" ]; then
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "kill @e[type=!player]" "cim galleryclear" "cim gallerypage-entity minecraft 0"
-            sleep 6
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            bash scripts/visual/shot.sh "ours-shots/ours-gal-e0-again.png"
-            echo "shot mob page 0 again"
-          fi
           # MOD-NAMESPACE entity replay (per ladder ns): the staged
           # manifests are the page set; modded types count as nochannel
           # (honest backlog the join names) — the replay still runs + shoots
@@ -2327,7 +2300,7 @@ jobs:
               fi
               python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-$NS-p$p.json" \
-                --diff-dir "gallery-report/diff-$NS-p$p" || GATE=1
+                --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn || GATE=1
             done
           done
           echo "=== ENTITY pages: the same gate, no channel excuses ==="

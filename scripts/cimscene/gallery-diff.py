@@ -54,7 +54,9 @@ are identical non-content on both legs, never counted red.
 Verdict classes (14-bf): the manifest dyn=1 demotion to DYNAMIC is
 NAMESPACE-SCOPED — a modded-namespace dyn row keeps DYNAMIC (its picture
 rides the mod's BlockEntityRenderer, the pack channel's structural gap;
-gate = M5.6's real-client leg), while a minecraft-namespace dyn row is
+gate = M5.6's real-client leg) unless --gate-dyn is set: block pages pass it
+(owner directive 2026-11-05), so a block entity that differs is RED and is
+never excused by a dyn neighbour. A minecraft-namespace dyn row is
 gate-hard comparable content: both legs render the same vanilla entity
 through the same renderer, a RED counts, and a RED whose own per-leg
 second-shot pair moved (ANIMATED, the 14-aj rule) is the animation-phase
@@ -238,6 +240,23 @@ def global_alignment(truth, ours, radius=20, step=2):
     return best[0], best[1], bestv
 
 
+def classify(over, dyn, gated_dyn, air, animated, spill_near):
+    """One cell's verdict. over = its AE exceeds the gate. A gated dyn cell is
+    not excused by a dyn neighbour: those neighbours are the same unmeasured
+    surface, and SPILL would hide exactly what --gate-dyn exposes."""
+    if not over:
+        return "GREEN"
+    if dyn and not gated_dyn:
+        return "DYNAMIC"
+    if air:
+        return "AIR"
+    if animated:
+        return "ANIMATED"
+    if spill_near and not gated_dyn:
+        return "SPILL"
+    return "RED"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--truth", required=True)
@@ -252,6 +271,8 @@ def main():
     ap.add_argument("--manifest", action="append", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--diff-dir")
+    ap.add_argument("--gate-dyn", action="store_true",
+                    help="modded dyn=1 rows gate: a differing cell is RED, not DYNAMIC")
     ap.add_argument("--gate", type=int, default=60000,
                     help="per-cell AE datum after alignment + luminance "
                          "normalisation (calibrated on the run-9 identity "
@@ -447,22 +468,14 @@ def main():
             # are caught by the ANIMATED self-pair rule below — the walk
             # shoots every gated page twice per leg for exactly this.
             row_ns = state.split(":", 1)[0] if ":" in state else "minecraft"
-            vanilla_dyn = dyn and row_ns == "minecraft"
-            verdict = "GREEN" if v <= args.gate else "RED"
-            if dyn and not vanilla_dyn:
+            gated_dyn = dyn and (row_ns == "minecraft" or args.gate_dyn)
+            verdict = classify(v > args.gate, dyn, gated_dyn, air, animated, sn)
+            if dyn or air:
                 dynamic += 1
-                if verdict == "RED":
-                    verdict = "DYNAMIC"
-            elif air:
-                dynamic += 1
-                if verdict == "RED":
-                    verdict = "AIR"
-            elif verdict == "RED" and animated:
+            if verdict == "ANIMATED":
                 animated_n += 1
-                verdict = "ANIMATED"
-            elif verdict == "RED" and sn:
+            elif verdict == "SPILL":
                 spill += 1
-                verdict = "SPILL"
             elif verdict == "RED":
                 red += 1
             if verdict in ("RED", "SPILL", "DYNAMIC", "AIR", "ANIMATED") and args.diff_dir:

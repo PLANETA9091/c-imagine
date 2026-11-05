@@ -7225,3 +7225,15 @@ Residual list from the last healthy run (42085254497), for whoever picks up:
 Create pane 1; items create:experience_block, experience_nugget,
 refined_radiance, mangrove_window_pane; biomesoplenty:anomaly; BOP 116 blocks
 (lumaloop 32, glowworm_silk 19, high_grass 13, hanging_cobweb 13, ...).
+
+2026-11-05T20:30:00+00:00 OWNER DECISIONS (2026-11-05):
+1. Vanilla entities are REMOVED from the gallery: EPAGES/EDPAGES 0, both
+   mob-page determinism probes deleted. Supersedes 0876bc16's vanilla dyn/large
+   gate and closes the rabbit question. Mod-namespace entities are unchanged.
+2. Block entity cells GATE: block pages pass --gate-dyn, so a differing dyn
+   cell is RED, and a dyn neighbour cannot demote it to SPILL. EXPECTED: the
+   gallery goes RED on these cells. That is the point: they were hidden, and
+   fixing them is the next work (the owner assigns it here or to another
+   agent). Do NOT restore the demotion to get green.
+Scope: --gate-dyn is block pages only; fluids, particles and mod entity pages
+use dyn for other reasons and keep their classes. Static cells keep SPILL.
