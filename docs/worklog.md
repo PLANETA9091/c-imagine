@@ -7138,3 +7138,39 @@ FOR THE OWNER OF THE UNCOMMITTED 14-aw2 block-display WIP (not touched):
    spawn at x+.5 with zero translation looks half a block off.
 3. VERIFY: block displays skip the item definition scale (F2vPack k), so
    any carrier mesh with k != 1 would render shrunk.
+
+### 14-bf — the #141 catastrophe autopsied: one boundary graze unbaked all 72k cells (fixed with a clamp)
+- #141 (fdafaba, the P2 seed rebuild) rendered EVERY pack block page as the missing-texture
+  cube (class-summary: create 0.382%, BOP 0.08%, ae2 0.406% green) while truth/entity/biome
+  legs stayed sane — a whole-gate regression, not a shade effect.
+- THE CHAIN, verified end to end on the run artifacts: (1) 24 gallery composite models
+  (g70942..g70973, exactly the client's 24 'Failed to load model' lines) violate the 26.3
+  element boundary — 'from' x=-16.02 / 'to' x=32.02, CuboidModelElement.getPosition
+  hard-rejects anything outside [-16, 32] — a JsonParseException per model; (2)
+  'Unable to bake item model: minecraft:paper' — the carrier definition's range_dispatch
+  (74711 entries, every gallery model) needs ALL referenced models, so 24 holes unbake the
+  whole carrier; (3) every wall cell is an item_display rendering paper+CMD -> ALL 72720
+  cells render the missing model; the pixel gate sees a magenta wall.
+- WHY THE BOUNDARY CHECK MISSED IT: fitElements grows k until inLimits passes, but
+  inLimits validates the PRE-materialize geometry (poly elements by centroid+radius
+  spheres, rects directly); materialize/Cell.replace then emits NEW rects (with the DEPTH
+  extension and the re-based plane offset) that are never re-validated. The 0.02 overshoot
+  appeared with the P2 seed's new geometry.
+- THE FIX: clampLimit() at the single from/to emission point (ObjMesh.element) — every
+  rect path (rectElement, mergeTriangles, Cell.replace, item wrappers) funnels through
+  element(). Verified on the real #141 pack: 4107438 coordinate components checked, 144
+  violating components across exactly 24 models, every overshoot exactly 0.02 units =
+  0.076 px at the 60.5 px/block contract scale — invisible to the gate. Offline build
+  green.
+- ALSO SETTLED THIS SESSION: the 14-be shade mechanism is DEAD as a crop lever — the
+  Easton both-keys A/B (SHA1 0e231bd6, served+reload confirmed) rendered
+  changed_pixels=0/AE=0/max_delta=0 vs baseline, matching the snake-only variant; and my
+  in-package deserializer probe (real CuboidModelElement$Deserializer from the 26.3 jar,
+  gson+paper libs classpath) proves the key PARSES (shade:false -> override=null;
+  both-keys -> Direction.UP) but the render does not move. The x0.80 crop darkening is
+  real but is NOT a shade_direction_override-shaped lever. The #136 cache finding stands
+  (pack + plugin ride the seed cache; plugin-source changes need a key bump — v3 now).
+- NEXT: the clamp rides the next seed rebuild (SEED_INPUTS changed by P2 anyway; the v3
+  key is already bumped), then the crop-class question returns to the measured data —
+  the surviving levers are the tint-bake channel (feat/tint-bake), the pane connection
+  mesh, and the sky +1 skew.

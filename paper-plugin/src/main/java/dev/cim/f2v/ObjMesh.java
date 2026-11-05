@@ -408,8 +408,18 @@ final class ObjMesh {
     private static JsonObject element(double[] c, double[] ex, double[] ey, double[] n,
                                       double w, double h, String tex, double[] uv) {
         JsonObject el = new JsonObject();
-        el.add("from", vec(c[0] - w / 2, c[1] - h / 2, c[2] - DEPTH));
-        el.add("to", vec(c[0] + w / 2, c[1] + h / 2, c[2]));
+        // The 26.3 element deserializer hard-rejects from/to outside [-16, 32]
+        // (CuboidModelElement.getPosition -> 'from'/'to' specifier exceeds the
+        // allowed boundaries), and ONE rejected model fails the whole carrier
+        // bake: the paper.json range_dispatch references every gallery model,
+        // so a single boundary graze unbaked ALL 72k cells into missing cubes
+        // (#141: 'to' x=32.02 / 'from' x=-16.02 — the materialize-replaced
+        // rects were never re-checked; fitElements only validates the
+        // pre-replace poly geometry). Clamp at the single emission point: the
+        // clamp moves the offending edge by <= 0.02 units = 0.076 px at the
+        // contract scale, far under any gate-visible threshold.
+        el.add("from", vec(clampLimit(c[0] - w / 2), clampLimit(c[1] - h / 2), clampLimit(c[2] - DEPTH)));
+        el.add("to", vec(clampLimit(c[0] + w / 2), clampLimit(c[1] + h / 2), clampLimit(c[2])));
         double[] e = eulerOf(new double[][]{ex, ey, n});
         JsonObject rot = new JsonObject();
         rot.add("origin", vec(c[0], c[1], c[2]));
@@ -763,6 +773,11 @@ final class ObjMesh {
 
     private static double round(double d) {
         return Math.round(d * 100000.0) / 100000.0;
+    }
+
+    /** The 26.3 element boundary: from/to outside [-16, 32] kill the whole model. */
+    private static double clampLimit(double d) {
+        return d < MIN ? MIN : d > MAX ? MAX : d;
     }
 
     private static JsonArray vec(double a, double b, double c) {
