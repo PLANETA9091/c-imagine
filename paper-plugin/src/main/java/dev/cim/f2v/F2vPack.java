@@ -258,6 +258,26 @@ public final class F2vPack {
     public static final int PACK_FORMAT_MINOR = 1;
     /** First auto-assigned custom_model_data float (manifest may override). */
     public static final float CMD_BASE = 1000.0f;
+
+    /**
+     * THE GALLERY-ITEMS CMD SPACE (scripts/f2v/gallery-items-manifest.py
+     * CMD_BASE): that generator assigns 300000+i over each namespace's OWN
+     * sorted rows, and the CI pack step CONCATENATES the per-ns files into
+     * one visual-items.tsv — every namespace's i-th item then collides on
+     * the same cmd (measured #114 forensics, reproduced by a local
+     * F2vPack build over the real jars: create+bop+dynamictrees produced 77
+     * duplicated thresholds in one range_dispatch, and the client renders
+     * ONE arbitrary winner per cmd — create:analog_lever measured rendering
+     * dynamictrees:item/azalea_seed, create:acacia_window_pane rendering
+     * dynamictrees:item/acacia_seed — the item wall was a per-index
+     * lottery). The space is OWNED by the generated rows: {@link #assignCmds}
+     * re-assigns it sequentially over the concatenated (moddedId-sorted)
+     * rows; pinned rows below the base keep their explicit cmds, and the
+     * fluid channel's space (400000+i) sits above the range.
+     */
+    public static final float GALLERY_ITEM_CMD_BASE = 300_000f;
+    /** Exclusive end of the re-assigned gallery space (the fluid channel's base). */
+    public static final float GALLERY_ITEM_CMD_END = 400_000f;
     /** DOS/zip epoch (1980-01-01) — the earliest representable zip time. */
     private static final long FIXED_EPOCH = 315532800000L;
 
@@ -371,12 +391,27 @@ public final class F2vPack {
         Files.writeString(tsv, sb.toString(), StandardCharsets.UTF_8);
     }
 
-    /** Assign commands: explicit values pass through; the rest get 1000+i. */
+    /**
+     * Assign commands: explicit values pass through EXCEPT the gallery-items
+     * space [{@link #GALLERY_ITEM_CMD_BASE}, {@link #GALLERY_ITEM_CMD_END})
+     * which is re-assigned sequentially over the concatenated rows (see the
+     * base constant's javadoc — the per-ns manifests each start at 300000
+     * and collide when concatenated, #114); the rest get 1000+i. Rows arrive
+     * moddedId-sorted ({@link #readManifest}), so the re-assignment is
+     * deterministic and the icon legs' pinned cmds (&lt; 300000) never shift.
+     */
     static List<VisualItem> assignCmds(List<VisualItem> rows) {
         List<VisualItem> out = new ArrayList<>();
         int next = 0;
+        int galleryNext = 0;
         for (VisualItem r : rows) {
-            float cmd = r.cmd() >= 0f ? r.cmd() : CMD_BASE + next;
+            float cmd;
+            if (r.cmd() >= GALLERY_ITEM_CMD_BASE && r.cmd() < GALLERY_ITEM_CMD_END) {
+                cmd = GALLERY_ITEM_CMD_BASE + galleryNext;
+                galleryNext++;
+            } else {
+                cmd = r.cmd() >= 0f ? r.cmd() : CMD_BASE + next;
+            }
             next++;
             out.add(new VisualItem(r.moddedId(), r.hostItem(), cmd, r.selectValue()));
         }
@@ -684,11 +719,33 @@ public final class F2vPack {
                 paletteByVariantId.put(vid, pr);
                 variantRows.add(new VisualItem(vid, base.hostItem(), vcmd, null));
             }
-            if (clean) {
-                rows.addAll(variantRows);
-                validPalettes.add(pr);
-            }
+        if (clean) {
+            rows.addAll(variantRows);
+            validPalettes.add(pr);
         }
+    }
+
+    // CMD-COLLISION GUARD (#114 forensics): a cmd claimed by TWO rows renders
+    // ONE arbitrary winner on the client — never both, and the loser's item
+    // shows the winner's model (the cross-wired item wall). assignCmds
+    // re-owns the gallery-items space uniquely; any REMAINING duplicate (a
+    // pinned row landing in another row's space, a palette variant riding a
+    // gallery base, a hand-written overlap) drops the LATER row WHOLE — the
+    // honest backlog (the join names the empty cell) instead of a
+    // cross-wired render.
+    Map<String, java.util.Set<Float>> seenCmds = new HashMap<>();
+    List<VisualItem> deduped = new ArrayList<>(rows.size());
+    for (VisualItem r : rows) {
+        String key = r.hostItem() + "\t" + (r.isFloatDispatch() ? "float" : "select");
+        java.util.Set<Float> used = seenCmds.computeIfAbsent(key, k -> new java.util.HashSet<>());
+        if (!used.add(r.cmd())) {
+            warnings.add("cmd collision on host " + r.hostItem() + ": " + r.cmd()
+                    + " — later row dropped: " + r.moddedId());
+            continue;
+        }
+        deduped.add(r);
+    }
+    rows = deduped;
 
         TreeMap<String, byte[]> entries = new TreeMap<>();
         entries.put("pack.mcmeta", packMcmeta().getBytes(StandardCharsets.UTF_8));
@@ -1789,6 +1846,29 @@ public final class F2vPack {
                     || r1.items().get(1).cmd() != 2000.0f) {
                 failures.add("cmd assignment wrong: " + r1.items());
             }
+            // #114 ITEM-CHANNEL CMD COLLISION: the per-ns gallery-items
+            // manifests each assign 300000+i; CONCATENATED, every ns's i-th
+            // row collides on one cmd and the client renders ONE arbitrary
+            // winner (measured: create:analog_lever rendering
+            // dynamictrees:item/azalea_seed). assignCmds re-owns the space
+            // sequentially over the concatenated rows; pinned rows and the
+            // legacy 1000+i auto space never shift.
+            List<VisualItem> collided = List.of(
+                    new VisualItem("fakemod:alpha", "minecraft:paper", 300000f, null),
+                    new VisualItem("fakemod:bravo", "minecraft:paper", 300000f, null),
+                    new VisualItem("fakemod:charlie", "minecraft:paper", 300001f, null),
+                    new VisualItem("fakemod:pinned", "minecraft:paper", 1100f, null),
+                    new VisualItem("fakemod:auto", "minecraft:paper", -1f, null));
+            List<VisualItem> owned = assignCmds(collided);
+            expect(failures,
+                    owned.get(0).cmd() == 300000f && owned.get(1).cmd() == 300001f
+                            && owned.get(2).cmd() == 300002f,
+                    "gallery-item cmd space re-assigned uniquely over colliding rows: "
+                            + owned);
+            expect(failures, owned.get(3).cmd() == 1100f,
+                    "pinned cmd below the gallery space never shifts");
+            expect(failures, owned.get(4).cmd() == CMD_BASE + 4,
+                    "implicit row keeps the legacy 1000+i assignment");
             // PALETTE channel (M6): the variant row rides the base host at
             // cmd = base + 1 (zip-content asserts live below, after readZip)
             expect(failures, r1.items().stream()
