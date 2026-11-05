@@ -1561,9 +1561,9 @@ jobs:
             echo "shot isolated pane+casing"
             # 14-at SCALE DATUM (diagnostic, never gated): the isolate layout
             # is byte-stable across runs when the display pipeline is sane
-            (#95 and #107 render the identical 78x79 casing at x 496-573) —
-            print the casing bbox every run so a page-scale magnification
-            regression announces itself in the log, not in a RED flood.
+            # (#95 and #107 render the identical 78x79 casing at x 496-573) —
+            # print the casing bbox every run so a page-scale magnification
+            # regression announces itself in the log, not in a RED flood.
           python3 - <<'PY' || true
           import numpy as np
           from PIL import Image

@@ -5830,3 +5830,55 @@ Work Log:
   magnification (k=1.70) remains the open lever, with the bisect plan and
   the new ISOLATE_SCALE step-log datum (first prints in #109) recorded
   above.
+
+---
+## Task 14-au — the #109 autopsy: ALL 8 ours shards died in a BASH SYNTAX
+## ERROR inside the wall-replay step, not in the gate (run 42011537965, 45d64f6)
+
+Work Log:
+- #109's shape: truth legs s0-s7 all SUCCESS (wall-truth-shots 0-7 up),
+  all 8 ours legs FAILURE at the step "wall replay — STRIDE (blocks +
+  probes + isolated displays)", exit code 2, ZERO wall-ours-shots
+  artifacts, gallery-report-N stubs (187 bytes). #108 by contrast has
+  wall-ours-shots 0-7 up — the replay step PASSED there.
+- The job log (ours s0, job 127191952146): the step ran its preamble
+  (rcon kill+tp 10:35:55.748, sleep 5, Key F1 10:36:01.86 — matching
+  wall-replay lines 1519-1527) and then:
+  `6577e8f4-...sh: line 226: syntax error near unexpected token 'fi'`
+  → exit 2 at 10:36:02.955, BEFORE any isolate summon, before the
+  determinism probe, before page 0. A parse error, not a render/gate one.
+- THE ARITHMETIC: .sh line 226 = YAML line 1744 (1744 - 1519 + 1 = 226) —
+  exactly the `fi` that closes the `if [ "$SI" = "0" ]; then` block
+  (opened at 1536). And commit 45d64f6 (the ISOLATE_SCALE datum, #109's
+  own sha) added a 5-line comment block at 1562-1566 but prefixed only
+  the first TWO lines with `#`:
+  `(#95 and #107 render the identical 78x79 casing at x 496-573) —` /
+  `print the casing bbox every run ...` / `regression announces ...`.
+  The leading `(` opens a SUBSHELL; the `#` at `(#95` begins a comment
+  (the `573)` that would close it is INSIDE the comment), so the subshell
+  swallows the rest of the if-block and bash chokes on the orphan `fi`.
+- REPRODUCED LOCALLY: extracted the run block (dedented by the block
+  scalar's 10-space indent), `bash -n` →
+  `/tmp/runblock.sh: line 226: syntax error near unexpected token 'fi'`
+  — byte-identical to the CI error. After the fix (comment the three
+  bare lines), `bash -n` → rc 0. Why bash -n never saw this before the
+  push: nothing in the repo runs bash -n over the workflow run blocks —
+  the scripts/local-check.sh gate does not cover YAML-embedded shell.
+- THE SWEEP: audited EVERY `run: |` block in ALL 8 workflows (ci,
+  gallery, ground-truth, integration, mod-matrix, parity-diff,
+  profiling, visual) with bash -n after dedent — 0 failures besides
+  this one. scripts/audit_runblocks.py is the reusable checker (the
+  first version's "58 failures" were its own splitlines() newline bug —
+  fixed, then all green).
+- FIX: gallery.yml 1564-1566 get their `#` prefixes. #110 must restore
+  the #108 shape (wall-ours-shots 0-7 up, the inline join gate deciding
+  red) PLUS the first ISOLATE_SCALE prints in the ours s0 step log —
+  the casing bbox that makes a k-regression visible without a RED flood.
+
+### 14-au verification on CI (#110 pending)
+- Push (fix commit): watch the run's ours s0 step log for
+  "ISOLATE_SCALE casing w= h= x= y= (sane run: w=78 h=79 x=496..573
+  y=438..516)" — w/h at 78x79 means the isolate pipeline is still sane,
+  anything ~1.35x/1.70x (106/135 px) reproduces the magnification in a
+  SINGLE-display frame and collapses the page-context suspects;
+  plus wall-ours-shots 0-7 back up; plus the join gate verdict.
