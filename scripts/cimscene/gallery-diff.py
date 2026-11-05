@@ -314,6 +314,17 @@ def main():
         dyn_grid = {}
         for line in lines:
             parts = line.split("\t")
+            if parts[0] == "skip":
+                # a NAMED skip row (no-instance | failed:* | dissolved |
+                # client-crash-banned | wrong-series:<kind>): the docstring's
+                # law — reported as skipped, never dropped. Measured #114:
+                # this pre-filter swallowed every skip row (the kind=="skip"
+                # branch below was unreachable), so create's nine banned /
+                # failed entity rows surfaced nowhere and a mod-ns mobs page
+                # read as a silent 0-cell GREEN. The -1/-1 position never
+                # enters the dyn grid.
+                page_cells.append(parts)
+                continue
             if parts[0] != "cell":
                 continue
             x, y = int(parts[1]), int(parts[2])
@@ -360,7 +371,11 @@ def main():
             air = state == "minecraft:air"
             if kind == "skip":
                 skipped += 1
-                rows.append({"page": page, "state": state, "verdict": "skipped"})
+                # the note IS the name (failed:<t> | dissolved |
+                # client-crash-banned | wrong-series:<kind> | ...): the join
+                # must carry it, or a banned/failed subject stays silent
+                rows.append({"page": page, "state": state, "verdict": "skipped",
+                             "note": parts[6].strip() if len(parts) > 6 else ""})
                 continue
             col = (int(x) - GALLERY_X0) // PITCH
             row = (int(y) - GALLERY_Y0) // PITCH
