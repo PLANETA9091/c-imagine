@@ -1602,7 +1602,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
-                if (p.length >= 5 && p[0].equals("cell")) {
+                // MEASURED (run 42085254497 ours boot log): the HEADER row is
+                // "cell\tx\ty\tz\tsound\tnote" — it starts with "cell" too,
+                // so a bare p[0] check admitted it and the send loop died on
+                // Integer.parseInt("x") per page (empty capture logs, the
+                // whole channel silent on ours). A data row carries a
+                // NUMERIC second field; the header carries the literal "x".
+                if (p.length >= 5 && p[0].equals("cell")
+                        && p[1].matches("-?\\d+")) {
                     cells.add(new String[]{p[1], p[2], p[3], p[4]});
                 }
                 // header / skip rows
@@ -2223,7 +2230,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
-                if (p.length >= 5 && p[0].equals("cell")) {
+                // MEASURED (run 42085254497 ours boot log): the HEADER row is
+                // "cell\tx\ty\tz\tsound\tnote" — it starts with "cell" too,
+                // so a bare p[0] check admitted it and the send loop died on
+                // Integer.parseInt("x") per page (empty capture logs, the
+                // whole channel silent on ours). A data row carries a
+                // NUMERIC second field; the header carries the literal "x".
+                if (p.length >= 5 && p[0].equals("cell")
+                        && p[1].matches("-?\\d+")) {
                     cells.add(new String[]{p[1], p[2], p[3], p[4]});
                 }
                 // header / skip rows
