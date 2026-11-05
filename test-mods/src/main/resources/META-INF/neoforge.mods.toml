@@ -27,3 +27,64 @@ type = "required"
 versionRange = "[1.21.1,]"
 ordering = "NONE"
 side = "BOTH"
+
+# --- Tier-1 net leg: same jar (multi-mod), its own modId ---------------------
+[[mods]]
+modId = "cimtest-net"
+version = "1.0.0"
+displayName = "CIM Test Mod — Net"
+authors = "PLANETA9091"
+description = '''
+Tier-1 net leg: custom payload/channel both directions (1.21.1
+PayloadRegistrar/StreamCodec) with a deterministic token echo round trip.
+Server-side safe (no client classes) — the S2C echo handler is inert on
+dedicated servers.
+'''
+
+[[dependencies.cimtest-net]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.cimtest-net]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,]"
+ordering = "NONE"
+side = "BOTH"
+
+# --- Tier-1 cap leg: same jar (multi-mod), its own modId ---------------------
+[[mods]]
+modId = "cimtest-cap"
+version = "1.0.0"
+displayName = "CIM Test Mod — Cap"
+authors = "PLANETA9091"
+description = '''
+Tier-1 cap leg: custom DataComponent (cimtest-cap:charge) + item capability
+(RegisterCapabilitiesEvent) registered and round-tripped server-side through
+the layer.
+'''
+
+[[dependencies.cimtest-cap]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.cimtest-cap]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,]"
+ordering = "NONE"
+side = "BOTH"
+
+# rides cimtest's registered test item for the round trips
+[[dependencies.cimtest-cap]]
+modId = "cimtest"
+type = "required"
+versionRange = "[1.0.0,)"
+ordering = "AFTER"
+side = "BOTH"

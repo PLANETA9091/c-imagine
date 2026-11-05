@@ -175,6 +175,25 @@ jobs:
           # let the chunks stream in under llvmpipe (the run 3 stall shot
           # proved the world RENDERS — the HUD was alive at +90s)
           sleep 45
+          # TIER-1 NET ROUND TRIP (cimtest-net — the same jar rides both
+          # sides): the client joined, the server responded S2C (hello on
+          # cimtest-net:hello), the CLIENT MOD echoed it back C2S
+          # (cimtest-net:echo) and the server logged the receipt — the FULL
+          # payload round trip through the net pipeline. Token equality
+          # (4242) is the expect/actual pair proof.
+          grep -q "\[cimtest-net\] s2c hello sent player=cimviewer token=4242" srv-truth/boot.log \
+            || { echo "cimtest-net s2c hello never sent (S2C send leg broken)"; tail -30 srv-truth/boot.log; exit 1; }
+          grep -q "\[cimtest-net\] s2c hello received token=4242 (client echo follows)" truth-client/client.out \
+            || { echo "cimtest-net hello never reached the client (S2C inbound leg broken)"; tail -40 truth-client/client.out; exit 1; }
+          grep -q "\[cimtest-net\] c2s echo received player=cimviewer token=4242 (round-trip ok)" srv-truth/boot.log \
+            || { echo "cimtest-net echo never returned (C2S leg broken — round trip open)"; tail -30 srv-truth/boot.log; exit 1; }
+          # Tier-1 cap leg rides the same boot: capability registration +
+          # round trip fired at load-complete on the real server
+          grep -q "\[cimtest-cap\] capabilities registered (item=cimtest:test_block cap=energy)" srv-truth/boot.log \
+            || { echo "cimtest-cap capability registration missing"; tail -30 srv-truth/boot.log; exit 1; }
+          grep -q "\[cimtest-cap\] capability round-trip ok (cap=energy item=cimtest:test_block set=42 got=42)" srv-truth/boot.log \
+            || { echo "cimtest-cap capability round-trip missing"; tail -30 srv-truth/boot.log; exit 1; }
+          echo "cimtest-net round trip closed (hello -> client -> echo -> receipt, token=4242)"
           # pin the client-side daylight too (the client renders its own sky)
           java -cp vtools Shot shots/t00-baseline.png
           # hotbar item ground truth: the REAL modded BlockItem in slot 0

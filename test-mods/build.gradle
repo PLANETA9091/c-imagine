@@ -20,6 +20,13 @@ neoForge {
         cimtest {
             sourceSet sourceSets.main
         }
+        // multi-mod jar: cimtest-net + cimtest-cap ride the same cimtest jar
+        'cimtest-net' {
+            sourceSet sourceSets.main
+        }
+        'cimtest-cap' {
+            sourceSet sourceSets.main
+        }
     }
 }
 
