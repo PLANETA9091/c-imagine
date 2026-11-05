@@ -424,7 +424,7 @@ jobs:
           # M2: real-FML mod execution over the composite mod set (real mods +
           # cimtest) inside the live Paper JVM
           grep -q "\[c-imagine\] mod execution ok" srv/boot.log || fail "M2 mod execution FAILED"
-          for m in appleskin neoforge cimtest cimtest-net cimtest-cap ferritecore jade jei spark; do
+          for m in appleskin neoforge cimtest cimtest_net cimtest_cap ferritecore jade jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
           done
           # shadow-space log pipeline: first-party mod markers must reach the
@@ -447,7 +447,7 @@ jobs:
           # Tier-1 cap leg (cimtest-cap, same jar): component registration +
           # the server-side write/read + codec round trips through the
           # layer's registry/common-setup stack
-          grep -q "\[cim-layer\].*\[cimtest-cap\] data component registered (cimtest-cap:charge)" srv/boot.log \
+          grep -q "\[cim-layer\].*\[cimtest-cap\] data component registered (cimtest_cap:charge)" srv/boot.log \
             || fail "cimtest-cap component registration missing in the layer"
           grep -q "\[cim-layer\].*\[cimtest-cap\] data component round-trip ok (item=cimtest:test_block set=7 got=7)" srv/boot.log \
             || fail "cimtest-cap component round-trip missing in the layer"
@@ -626,7 +626,7 @@ jobs:
           L=out/harness.log
           grep -q "mod execution ok" $L || fail "mod execution FAILED (see harness.log)"
           # every real mod + layer + cimtest constructed through real FML
-          for m in appleskin neoforge cimtest cimtest-net cimtest-cap ferritecore jade mezz_config jei spark; do
+          for m in appleskin neoforge cimtest cimtest_net cimtest_cap ferritecore jade mezz_config jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" $L || fail "mod $m not constructed"
           done
           # cimtest registrations went through the real RegisterEvent pipeline
@@ -760,7 +760,7 @@ jobs:
           # Tier-1 net leg — REAL NeoForge network registry: the
           # RegisterPayloadHandlersEvent marker FIRES here (it cannot in the
           # c-imagine layer — documented gap), plus both codec round trips
-          grep -q "\[cimtest-net\] payloads registered (c2s=cimtest-net:echo s2c=cimtest-net:hello)" $L \
+          grep -q "\[cimtest-net\] payloads registered (c2s=cimtest_net:echo s2c=cimtest_net:hello)" $L \
             || fail "cimtest-net payload registration missing on real server"
           grep -q "\[cimtest-net\] s2c codec round-trip ok (token=4242 decoded=4242)" $L \
             || fail "cimtest-net s2c codec round-trip missing on real server"

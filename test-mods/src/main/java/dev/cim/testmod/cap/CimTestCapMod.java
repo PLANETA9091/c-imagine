@@ -41,7 +41,7 @@ import org.slf4j.LoggerFactory;
  * docs/MODPACK.md §Tier-1 marker contracts):
  * <ol>
  *   <li>{@code [cimtest-cap] mod constructed} — every boot, both stacks;</li>
- *   <li>{@code [cimtest-cap] data component registered (cimtest-cap:charge)}
+ *   <li>{@code [cimtest-cap] data component registered (cimtest_cap:charge)}
  *       — the component type resolved from the registry (common setup);</li>
  *   <li>{@code [cimtest-cap] data component round-trip ok (item=cimtest:test_block set=7 got=7)}
  *       — server-side component write/read round trip (common setup);</li>
@@ -58,7 +58,7 @@ import org.slf4j.LoggerFactory;
 @Mod(CimTestCapMod.MOD_ID)
 public final class CimTestCapMod {
 
-    public static final String MOD_ID = "cimtest-cap";
+    public static final String MOD_ID = "cimtest_cap";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /** Deterministic values for the marker pairs (no per-boot nondeterminism). */

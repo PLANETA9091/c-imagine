@@ -17,9 +17,9 @@ import net.minecraft.server.level.ServerPlayer;
  *
  * <p>Both directions on ONE channel namespace ({@code cimtest-net}):
  * <ul>
- *   <li>{@code cimtest-net:hello} — S2C, server → client on player login
+ *   <li>{@code cimtest_net:hello} — S2C, server → client on player login
  *       (handled client-side, which echoes it back);</li>
- *   <li>{@code cimtest-net:echo} — C2S, client → server (the round-trip
+ *   <li>{@code cimtest_net:echo} — C2S, client → server (the round-trip
  *       closer, handled server-side).</li>
  * </ul>
  *
@@ -75,7 +75,7 @@ public final class CimNetPayloads {
         registrar.playToServer(EchoPayload.TYPE, EchoPayload.STREAM_CODEC,
                 CimNetPayloads::handleEchoOnServer);
         CimTestNetMod.LOGGER.info(
-                "[cimtest-net] payloads registered (c2s=cimtest-net:echo s2c=cimtest-net:hello)");
+                "[cimtest-net] payloads registered (c2s=cimtest_net:echo s2c=cimtest_net:hello)");
     }
 
     /**

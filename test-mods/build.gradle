@@ -20,11 +20,11 @@ neoForge {
         cimtest {
             sourceSet sourceSets.main
         }
-        // multi-mod jar: cimtest-net + cimtest-cap ride the same cimtest jar
-        'cimtest-net' {
+        // multi-mod jar: cimtest_net + cimtest_cap ride the same cimtest jar
+        'cimtest_net' {
             sourceSet sourceSets.main
         }
-        'cimtest-cap' {
+        'cimtest_cap' {
             sourceSet sourceSets.main
         }
     }
@@ -32,4 +32,22 @@ neoForge {
 
 repositories {
     mavenCentral()
+}
+
+// FML validates these at discovery, before any @Mod class is constructed.
+tasks.register('verifyModIds') {
+    def metadata = layout.projectDirectory.file('src/main/resources/META-INF/neoforge.mods.toml')
+    inputs.file(metadata)
+    doLast {
+        def ids = metadata.asFile.text =~ /(?m)^modId\s*=\s*"([^"]+)"/
+        ids.each { match ->
+            if (!(match[1] ==~ /[a-z][a-z0-9_]{1,63}/)) {
+                throw new GradleException("Invalid NeoForge mod ID: ${match[1]}")
+            }
+        }
+    }
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyModIds')
 }

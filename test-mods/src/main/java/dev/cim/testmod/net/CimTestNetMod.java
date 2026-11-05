@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory;
  *       setup);</li>
  *   <li>{@code [cimtest-net] c2s codec round-trip ok (token=4242 decoded=4242)}
  *       — same for the C2S payload;</li>
- *   <li>{@code [cimtest-net] payloads registered (c2s=cimtest-net:echo s2c=cimtest-net:hello)}
+ *   <li>{@code [cimtest-net] payloads registered (c2s=cimtest_net:echo s2c=cimtest_net:hello)}
  *       — {@link RegisterPayloadHandlersEvent} fired (real stacks; the layer's
  *       FmlHost does not run NetworkRegistry.setup yet — absence is the
  *       honest measurement);</li>
@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
 @Mod(CimTestNetMod.MOD_ID)
 public final class CimTestNetMod {
 
-    public static final String MOD_ID = "cimtest-net";
+    public static final String MOD_ID = "cimtest_net";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     /**

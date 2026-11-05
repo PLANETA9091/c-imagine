@@ -177,8 +177,8 @@ jobs:
           sleep 45
           # TIER-1 NET ROUND TRIP (cimtest-net — the same jar rides both
           # sides): the client joined, the server responded S2C (hello on
-          # cimtest-net:hello), the CLIENT MOD echoed it back C2S
-          # (cimtest-net:echo) and the server logged the receipt — the FULL
+          # cimtest_net:hello), the CLIENT MOD echoed it back C2S
+          # (cimtest_net:echo) and the server logged the receipt — the FULL
           # payload round trip through the net pipeline. Token equality
           # (4242) is the expect/actual pair proof.
           grep -q "\[cimtest-net\] s2c hello sent player=cimviewer token=4242" srv-truth/boot.log \

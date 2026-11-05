@@ -11,9 +11,10 @@ pinned by version.
 |---|---|---|
 | `cimtest` | registration (block/item/BE/entity), lifecycle events, login hooks, custom mods.toml metadata, dependency declarations | M0 ✔ (source) / M2 (layer execution) |
 | `cimtest-net` | custom payload/channel both directions (1.21.1 `PayloadRegistrar`/`StreamCodec`): wire-codec round trips, S2C hello on player login, C2S echo from the client | source ✔; codec legs asserted in the layer boot + M2 harness; registration + full wire round trip asserted on real stacks (parity-real-neoforge / parity-diff) |
-| `cimtest-cap` | custom DataComponent (`cimtest-cap:charge`) + item capability (`RegisterCapabilitiesEvent`, 21.1 API — AttachCapabilitiesEvent is removed in 1.21) | source ✔; component legs asserted in the layer boot + M2 harness; capability legs asserted on real stacks (parity-real-neoforge / parity-diff) |
+| `cimtest-cap` | custom DataComponent (`cimtest_cap:charge`) + item capability (`RegisterCapabilitiesEvent`, 21.1 API — AttachCapabilitiesEvent is removed in 1.21) | source ✔; component legs asserted in the layer boot + M2 harness; capability legs asserted on real stacks (parity-real-neoforge / parity-diff) |
 
-Layout note: `cimtest-net` and `cimtest-cap` ride the SAME
+Layout note: `cimtest-net` and `cimtest-cap` use the runtime mod IDs
+`cimtest_net` and `cimtest_cap` (NeoForge forbids hyphens in mod IDs) and ride the SAME
 `cimtest-1.0.0.jar` (multi-mod jar — one `[[mods]]` entry each in
 `test-mods/src/main/resources/META-INF/neoforge.mods.toml`, `@Mod` class per
 modId). Integration staging stays single-jar
@@ -42,12 +43,12 @@ their absence in a layer boot.log is the honest measurement of that layer gap
 | `[cimtest-net] mod constructed (payload handlers armed)` | layer boot + M2 harness + every real boot | the mod constructs through real FML in both stacks | — |
 | `[cimtest-net] s2c codec round-trip ok (token=4242 decoded=4242)` | layer boot + M2 harness + real server | the S2C payload's StreamCodec encode/decode round trips — the deterministic net-pipeline leg the layer reaches | `decoded=4242` == `token=4242` |
 | `[cimtest-net] c2s codec round-trip ok (token=4242 decoded=4242)` | same | same, for the C2S payload | `decoded=4242` == `token=4242` |
-| `[cimtest-net] payloads registered (c2s=cimtest-net:echo s2c=cimtest-net:hello)` | real server (parity-real-neoforge, parity-diff) — NOT in the layer yet | `RegisterPayloadHandlersEvent` fired: both directions registered through the 21.1 network registry | — |
+| `[cimtest-net] payloads registered (c2s=cimtest_net:echo s2c=cimtest_net:hello)` | real server (parity-real-neoforge, parity-diff) — NOT in the layer yet | `RegisterPayloadHandlersEvent` fired: both directions registered through the 21.1 network registry | — |
 | `[cimtest-net] s2c hello sent player=cimviewer token=4242` | real server with a join (parity-diff) | the S2C send leg fired on player login | EXPECT: `token=4242` |
 | `[cimtest-net] s2c hello received token=4242 (client echo follows)` | truth client (`client.out`, parity-diff) | the payload crossed the net pipeline inbound to the modded client | the EXPECT token re-read client-side |
 | `[cimtest-net] c2s echo received player=cimviewer token=4242 (round-trip ok)` | real server with a join (parity-diff) | the C2S leg closed the loop through the net pipeline | ACTUAL: `token=4242` == expect → round trip |
 | `[cimtest-cap] mod constructed (component/capability queues armed)` | layer boot + M2 harness + every real boot | constructs through real FML | — |
-| `[cimtest-cap] data component registered (cimtest-cap:charge)` | layer boot + M2 harness + real server | the DataComponentType resolved from the registry (registry phase ran in the layer) | — |
+| `[cimtest-cap] data component registered (cimtest_cap:charge)` | layer boot + M2 harness + real server | the DataComponentType resolved from the registry (registry phase ran in the layer) | — |
 | `[cimtest-cap] data component round-trip ok (item=cimtest:test_block set=7 got=7)` | layer boot + M2 harness + real server | server-side component write/read round trip | `got=7` == `set=7` |
 | `[cimtest-cap] component codec round-trip ok (charge=7)` | layer boot + M2 harness + real server | the persistent codec (the serialization the §4.4 bridge marshalling rides) round trips through NBT | `charge=7` decoded == encoded |
 | `[cimtest-cap] capabilities registered (item=cimtest:test_block cap=energy)` | real server — NOT in the layer yet | `RegisterCapabilitiesEvent.registerItem` (21.1 API) | — |

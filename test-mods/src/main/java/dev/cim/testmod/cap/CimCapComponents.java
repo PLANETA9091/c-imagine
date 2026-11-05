@@ -9,7 +9,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
  * The cimtest-cap registered surfaces: a custom {@link DataComponentType}
- * ({@code cimtest-cap:charge}) — the data-components half of the Tier-1 cap
+ * ({@code cimtest_cap:charge}) — the data-components half of the Tier-1 cap
  * leg (docs/MODPACK.md).
  *
  * <p>The component's persistent codec is the serialization the state-bridge

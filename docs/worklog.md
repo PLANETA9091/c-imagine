@@ -6163,3 +6163,41 @@ Analysis before implementation (2026-11-05):
   dump of a different (taller) plant. NEXT: verify hash(c1_r5) against the p40 ctx
   side file and the quads/<hash>.tsv mesh bounds; if confirmed, the fix is in the
   dump's per-cell keying, and the whole crop-growth class (~110 cells) collapses.
+14-bc Easton verification (exact #129 seed, private Xvfb/bwrap):
+- create p0: global shift (0,0); the same sole RED pane AE 60365
+  (CI 60293); 61 cells / 1 RED / 44 dynamic / 16 skipped.
+- BOP p40: 43 cells / 11 RED; high_grass AE values exactly reproduce CI
+  (age=1 76902). BOP p48: 77 cells / 19 RED; lumaloop age=15 lit=true
+  AE 109979 (CI 109987). Repeat shots stay stable; no animation exemption.
+- Service MemoryPeak 2640121856 bytes; CPUUsageNSec 257574572000
+  (whole stand lifetime, including startup, not a hot-path benchmark).
+  Captures + joins + resource sample: /tmp/cim-green-129/easton/.
+
+14-bd analysis before implementation — cross-model shading format:
+- Real 1.21.1 client.jar assets/minecraft/models/block/cross.json sets
+  shade:false on its two rotated elements; the real 26.3 client.jar sets
+  shade_direction_override:"up" instead. javap of 26.3's
+  CuboidModelElement and its Deserializer confirms shadeDirectionOverride
+  replaces the old shade boolean; the parser reads the new field.
+- GalleryPack.synthesizeQuadModel still emits shade:false for unshaded
+  captured quads, so the 26.3 client silently applies directional shading
+  to those plant faces. Hypothesis: this explains the brighter truth
+  high_grass/lumaloop crops while geometry and repeat shots are stable.
+- Expected observable behavior: translate unshaded quads to the 26.3
+  field, preserving all other model data. Test an otherwise byte-identical
+  #129 pack with only this field translated on Easton against the SAME
+  NeoForge truth frames; keep the pixel gate and alignment unchanged.
+
+### Integration blocker discovered during 14-bd
+- Fresh aabd2e02 CI passed all jobs, but integration failed identically on
+  both stacks after the incoming Tier-1 merge 6e7bac97. Real NeoForge's
+  ModInfo rejects `cimtest-net` (and `cimtest-cap`) as invalid mod IDs:
+  `^[a-z][a-z0-9_]{1,63}$`. The shadow layer rejects the same jar for the
+  same reason, before any mod constructs; this is not a shading regression.
+- Rechecked the cached upstream FML 4.0.45 ModInfo bytecode and both CI
+  boot logs. Fix the new runtime mod IDs to cimtest_net/cimtest_cap, their
+  resource namespaces, dependency keys and matching CI assertions. Preserve
+  the existing human-facing deterministic [cimtest-net]/[cimtest-cap]
+  marker labels. Expected: both stacks construct all three test mods and
+  reach the codec/component assertions. Rendering work stays parked until
+  this integration regression is fixed.
