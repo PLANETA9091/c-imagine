@@ -7174,3 +7174,14 @@ FOR THE OWNER OF THE UNCOMMITTED 14-aw2 block-display WIP (not touched):
   key is already bumped), then the crop-class question returns to the measured data —
   the surviving levers are the tint-bake channel (feat/tint-bake), the pane connection
   mesh, and the sky +1 skew.
+
+### 14-bf correction — #136 DID rebuild the pack; the shade no-op is real, the cache never hid it
+- Pulled the #136 seed job log (job 127449874380): "seed payload STALE or missing → full
+  rebuild" fired at 18:35:27 (payload inputs 83866e42... != want f64bad36...), and the
+  build finished "seed built: sha1=ac6b8a19de7b65b007ef5ea44d818f6f0fa82c92" — a pack
+  DIFFERENT from #129's 2cbfa75104052c3e2acee645eda6c0bfba083481. The GalleryPack shade
+  change WAS baked into #136's pack, and the rendered high_grass ae values still matched
+  #129 byte-for-byte. The hashFiles seed key already covers paper-plugin/src/**, so no
+  cache bump was ever needed for plugin-source changes; the v3 bump is harmless but
+  redundant. THE RENDER NO-OP IS THE REAL VERDICT — consistent with the Easton both-keys
+  proof. The 14-be cache narrative is withdrawn.
