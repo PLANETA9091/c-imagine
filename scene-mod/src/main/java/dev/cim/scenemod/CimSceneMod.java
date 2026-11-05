@@ -1844,6 +1844,13 @@ public final class CimSceneMod {
      *       {@code skip} row (reason=dissolved/moved, logged). The manifest
      *       carries what the world HOLDS, not what was placed (the 12-ac
      *       law, same as the block wall's settle pass);</li>
+     *   <li>SERIES OWNERSHIP (measured #114): an entry whose classify-kind
+     *       (mob / non-Mob=dyn / large Mob) belongs to ANOTHER series is a
+     *       named {@code skip} row ({@code note=wrong-series:<kind>}) in the
+     *       CURRENT series' manifest — a namespace whose every entity is
+     *       non-Mob (create) must never produce a silent header-only mobs
+     *       manifest. Not an absence note: the owning series carries the
+     *       coverage;</li>
      *   <li>the manifest + the done marker are written by the settle pass,
      *       so the page is complete before any screenshot can be taken.</li>
      * </ul>
@@ -1977,6 +1984,18 @@ public final class CimSceneMod {
                     : (e.getBbWidth() <= 2.0f && e.getBbHeight() <= 2.0f ? "mobs" : "large");
             if (!kind.equals(series)) {
                 wrongSeries++;
+                // THE ROW IS THE HONESTY CHANNEL (measured gallery #114): a
+                // wrong-series subject belongs to ANOTHER series' gate, but
+                // the CURRENT series' manifest must still NAME it — the
+                // coverage-gate contract ("wrong-series entries are recorded
+                // skip rows, not coverage") said so and the walk never did.
+                // create registers nine entities, every one non-Mob, so its
+                // mobs manifest was written header-only and the mod-ns mobs
+                // joins read as silent cells=0 GREENs. note=wrong-series:<kind>
+                // is NOT an absence note (the gate keeps it green — the
+                // owning series carries the coverage); the pixel join, fed
+                // by the same manifest, surfaces the named rows.
+                skipNotes.put(i, "wrong-series:" + kind);
                 LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
                         + "reason=wrong-series kind={} entity={}", namespace, page,
                         from + i, kind, id);

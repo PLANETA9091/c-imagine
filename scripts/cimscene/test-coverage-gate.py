@@ -39,6 +39,9 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
   W. entity client-crash-banned row (merged round 3, 14-am)   -> RED named
      (the ban list saved the client — the banned subject still reds with
      its name, the ban can never silently eat verdict content)
+  X. mobs manifest: cells + wrong-series:<kind> rows together -> GREEN
+     (measured #114: the walk records series ownership as named skip rows;
+     ownership is not absence — the owning series reds its own absences)
 
 THE LOCAL-RUNNER HOLE (round 2, hardening for THIS workspace only): the
 owner's agent sandbox resolves sys.executable to the ZCode desktop AppImage,
@@ -519,6 +522,54 @@ def main():
         r = run_gate(root)
         ok = r.returncode == 1 and "create:contraption(client-crash-banned)" in r.stdout             and "entity-dyn" in r.stdout
         print("W entity client-crash-banned RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # X: the #114 post-fix mobs manifest shape (measured gallery #114, the
+    # mod-ns mob pages): cell rows AND wrong-series:<kind> skip rows in the
+    # SAME manifest — the walk now records series ownership as named rows
+    # (create's nine dyn-classified entities in the mobs walk). Series
+    # ownership is NOT absence: the gate stays GREEN and names nothing;
+    # the owning series' own manifest carries the absences.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        p = root / "scenes" / "gallery-entity-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "cell\t-5\t-60\t9\tminecraft:allay\t0\tok\n"
+                     "skip\t-1\t-1\t-1\tcreate:carriage_contraption\t0\twrong-series:dyn\n"
+                     "skip\t-1\t-1\t-1\tcreate:contraption\t0\twrong-series:dyn\n"
+                     "skip\t-1\t-1\t-1\tcreate:super_glue\t0\twrong-series:dyn\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "unshown=" not in r.stdout
+        print("X mixed cells + wrong-series rows GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # X2: the same shape must keep REDDING the owning series' true
+    # absences — wrong-series rows on the mobs manifest plus the dyn
+    # manifest's banned/failed rows: only the dyn series reds.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-entity-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tentity\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tcreate:contraption\t0\twrong-series:dyn\n",
+            encoding="utf-8")
+        p = root / "scenes" / "gallery-entitydyn-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tentity\tdyn\tnote\n"
+                     "skip\t-1\t-1\t-1\tcreate:contraption\t0\tclient-crash-banned\n"
+                     "skip\t-1\t-1\t-1\tcreate:package\t0\t"
+                     "failed:io.netty.handler.codec.EncoderException\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "entity-dyn" in r.stdout \
+            and "create:contraption(client-crash-banned)" in r.stdout \
+            and "create:package(failed:" in r.stdout \
+            and "wrong-series" not in r.stdout
+        print("X2 dyn absences RED, mobs wrong-series silent:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
