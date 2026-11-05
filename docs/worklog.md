@@ -7185,3 +7185,22 @@ FOR THE OWNER OF THE UNCOMMITTED 14-aw2 block-display WIP (not touched):
   cache bump was ever needed for plugin-source changes; the v3 bump is harmless but
   redundant. THE RENDER NO-OP IS THE REAL VERDICT — consistent with the Easton both-keys
   proof. The 14-be cache narrative is withdrawn.
+
+2026-11-05T19:50:00+00:00 CORRECTION to e0e455c3 (14-bf): a rejected element only loses THAT model
+("Missing block model"); it did not unbake paper. The client's single bake
+error in #141 is "Multiple atlases used in model" from the trims sprite on
+mekanism:scuba_mask, fixed in 4650891e. Keep BOTH fixes; do not revert the
+hostSprite placeholder on the belief the clamp alone cured the walk.
+
+QuadDump: mekanism item quads were garbage because writeQuad looks foreign
+UVs up in the block atlas. Item capture now reads the bound RenderType's
+texture and records it with whole-texture UVs; hostSprite re-hosts the PNG,
+so custom item renderers need no pack change. Also fixed: the LAST
+hand-drawn quad of every item was never flushed. Unproven until a gallery
+item page shows mekanism:flamethrower. Winding under negative-scale poses is
+the first thing to check if its faces come out inside-out.
+
+HONESTY NOTE on "green": mekanism and sophisticatedbackpacks block pages are
+GREEN because every cell is DYNAMIC (block entity) and left ungated: 861 and
+384 cells, 0 gated. Across all block pages DYNAMIC is ~5,750 cells. Those
+pages prove nothing about parity yet and must not be quoted as coverage.

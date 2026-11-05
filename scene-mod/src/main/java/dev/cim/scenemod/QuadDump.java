@@ -289,25 +289,37 @@ final class QuadDump {
         if (sprite == null) {
             return false;
         }
-        sb.append(sprite.contents().name()).append('\t').append(shade ? 1 : 0).append('\t').append(tint);
+        float[][] local = new float[4][2];
         for (int i = 0; i < 4; i++) {
-            float u = (uv[i][0] - sprite.getU0()) / (sprite.getU1() - sprite.getU0()) * 16;
-            float w = (uv[i][1] - sprite.getV0()) / (sprite.getV1() - sprite.getV0()) * 16;
+            local[i][0] = (uv[i][0] - sprite.getU0()) / (sprite.getU1() - sprite.getU0());
+            local[i][1] = (uv[i][1] - sprite.getV0()) / (sprite.getV1() - sprite.getV0());
+        }
+        appendRow(sb, sprite.contents().name().toString(), shade, tint, pos, local, rgb);
+        return true;
+    }
+
+    /** One quad row; {@code uv} is 0..1 across the named sprite or texture. */
+    private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
+                                  float[][] pos, float[][] uv, float[][] rgb) {
+        sb.append(sprite).append('\t').append(shade ? 1 : 0).append('\t').append(tint);
+        for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
-                    pos[i][0] * 16, pos[i][1] * 16, pos[i][2] * 16, u, w));
+                    pos[i][0] * 16, pos[i][1] * 16, pos[i][2] * 16, uv[i][0] * 16, uv[i][1] * 16));
         }
         for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.3f\t%.3f\t%.3f", rgb[i][0], rgb[i][1], rgb[i][2]));
         }
         sb.append('\n');
-        return true;
     }
 
     /**
      * Every item of every item page through the real ItemRenderer. Item colours,
-     * layered models and whatever a custom renderer draws from the block atlas all
-     * arrive here. Geometry on other textures (entity model parts) cannot ride
-     * an atlas sprite and is counted, not guessed.
+     * layered models and whatever a custom renderer draws all arrive here.
+     * Geometry on a texture outside the block atlas (entity model parts) is
+     * recorded against that texture with whole-texture UVs: the pack hosts any
+     * readable PNG. Its UVs mean nothing in block-atlas space — looked up there
+     * they land on unrelated sprites (measured: mekanism:flamethrower came out
+     * wearing ae2 monitors and a shulker box).
      */
     private static void dumpItems(Path scenes, Path out, List<TextureAtlasSprite> sprites) throws Exception {
         List<Path> manifests;
@@ -332,6 +344,7 @@ final class QuadDump {
                     Minecraft.getInstance().getItemRenderer().renderStatic(
                             new ItemStack(BuiltInRegistries.ITEM.get(id)), ItemDisplayContext.NONE,
                             LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, new PoseStack(), capture, null, 0);
+                    capture.flush();
                     foreign += capture.foreign;
                     if (capture.out.length() == 0) {
                         empty++;
@@ -388,6 +401,10 @@ final class QuadDump {
 
     /** A buffer source whose every buffer records: baked quads whole, hand-drawn geometry vertex by vertex. */
     private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
+        /** A RenderType prints its texture shard as {@code Optional[ns:textures/path.png]}. */
+        private static final Pattern TEXTURE =
+                Pattern.compile("Optional\\[([a-z0-9_.-]+):textures/([a-z0-9_./-]+)\\.png\\]");
+
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
         final float[][] pos = new float[4][3];
@@ -395,6 +412,8 @@ final class QuadDump {
         final float[][] rgb = new float[4][3];
         int n = -1;
         long foreign;
+        /** The bound buffer's texture when it is not the block atlas. */
+        String texture;
 
         ItemCapture(List<TextureAtlasSprite> sprites) {
             this.sprites = sprites;
@@ -405,7 +424,14 @@ final class QuadDump {
 
         @Override
         public VertexConsumer getBuffer(RenderType type) {
-            return type.toString().contains("glint") ? discard : this;
+            String state = type.toString();
+            if (state.contains("glint")) {
+                return discard;
+            }
+            flush(); // a pending quad belongs to the previous buffer's texture
+            Matcher m = TEXTURE.matcher(state);
+            texture = m.find() && !m.group(2).equals("atlas/blocks") ? m.group(1) + ":" + m.group(2) : null;
+            return this;
         }
 
         @Override
@@ -429,12 +455,16 @@ final class QuadDump {
                 c[i][1] = brightness[i] * g;
                 c[i][2] = brightness[i] * b;
             }
-            writeQuad(out, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), p, t, c);
+            if (texture != null) {
+                appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
+            } else {
+                writeQuad(out, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), p, t, c);
+            }
         }
 
         @Override
         public VertexConsumer addVertex(float x, float y, float z) {
-            flushIfFull();
+            flush();
             n++;
             pos[n][0] = x + 0.5f;
             pos[n][1] = y + 0.5f;
@@ -445,9 +475,12 @@ final class QuadDump {
             return this;
         }
 
-        private void flushIfFull() {
+        /** Vertices only complete a quad on the next one, so the last needs a push. */
+        void flush() {
             if (n == 3) {
-                if (!writeQuad(out, null, sprites, true, -1, pos, uv, rgb)) {
+                if (texture != null) {
+                    appendRow(out, texture, true, -1, pos, uv, rgb);
+                } else if (!writeQuad(out, null, sprites, true, -1, pos, uv, rgb)) {
                     foreign++;
                 }
                 n = -1;
