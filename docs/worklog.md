@@ -6220,3 +6220,22 @@ Analysis before implementation (2026-11-05):
   each container independently; count both namespaces in census. No
   packet path or registration loop changes. A pure Java fixture will
   exercise entrypoint ownership and dist filtering before real-stack CI.
+
+### Gallery cache blocker exposed by required net channels
+- a0317bb8 gallery truth s0 (job 127431988509) failed the join handshake:
+  `cimtest_net:echo` and `cimtest_net:hello` are required on the server but
+  missing on the client (client log 18:05:44). The server booted correctly.
+- gallery.yml copied fresh server mods, options.txt and servers.dat BEFORE
+  actions/cache restored `nfc` + `truth-client`. That restored stale mod
+  jars over the current inputs; the classpath-only guard could not see it.
+  The new required net channels exposed the existing stale-client bug.
+- Expected: restore/fetch the runtime first, then replace generated client
+  mod jars with the server's exact current set, assert byte equality, and
+  pin options/servers.dat last. Seed quad-dump and parity-diff already stage
+  mods after runtime restore. Keep the required channels and handshake
+  assertions intact. Ship client input hashes and client.out with truth meta.
+- 14-bd shading A/B is a measured NO-OP, not landed: variant pack SHA1
+  7ec10d7543f573b25f7c785ee6a4e921c57caeab was served and reloaded by
+  Easton's 26.3 client; all three pages' RED AEs exactly match baseline.
+  Block-light 0/15 also leaves the same RED counts. Horizontal/vertical
+  flips worsen the 117 BOP red crops. Do not pursue these levers further.

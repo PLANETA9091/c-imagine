@@ -760,13 +760,6 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
-          mkdir -p truth-client/game/mods
-          cp srv-wall/mods/*.jar truth-client/game/mods/   # registry sync needs them
-          # fov:0.0 renders 70 deg (options value maps LINEARLY, fov =
-          # 70 + 40*v — MEASURED 12-ac: -0.625 rendered 45 deg and pushed the
-          # wall's upper rows off-frame, breaking the cell projection)
-          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\n' > truth-client/game/options.txt
-          python3 scripts/visual/make_servers_dat.py truth-client/game
 
       - name: restore NeoForge truth client runtime (cache)
         id: nfc-cache
@@ -814,6 +807,19 @@ jobs:
       - name: camera pins (RCON after the server settles) + client joins
         run: |
           set -euo pipefail
+          # Runtime caches include game/: fresh inputs MUST be staged after
+          # restore, or old jars overwrite the server's current mod/channel set.
+          mkdir -p truth-client/game/mods
+          find truth-client/game/mods -maxdepth 1 -type f -name '*.jar' -delete
+          cp srv-wall/mods/*.jar truth-client/game/mods/
+          for JAR in srv-wall/mods/*.jar; do
+            cmp "$JAR" "truth-client/game/mods/$(basename "$JAR")"
+          done
+          sha256sum truth-client/game/mods/*.jar > truth-client-mods.sha256
+          cat truth-client-mods.sha256
+          # options value maps linearly: 70 + 40*v on both client versions.
+          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\n' > truth-client/game/options.txt
+          python3 scripts/visual/make_servers_dat.py truth-client/game
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
@@ -1404,6 +1410,8 @@ jobs:
             srv-wall/boot.log
             truth-pins.log
             ground-fill.log
+            truth-client-mods.sha256
+            truth-client/client.out
             truth-shots/shots.txt
             truth-client-deaths/
           if-no-files-found: warn
