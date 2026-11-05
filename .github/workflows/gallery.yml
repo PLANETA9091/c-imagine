@@ -117,7 +117,9 @@ on:
 
 concurrency:
   group: gallery-${{ github.ref }}
-  cancel-in-progress: true
+  # several agents push to main: cancelling starved the gate, killing runs in their last
+  # stage. A started run finishes; the group keeps only the newest pending one behind it.
+  cancel-in-progress: false
 
 env:
   MAXP: "460"  # exhaustive-walk safety cap (create measured 31,389 block
