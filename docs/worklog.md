@@ -6127,3 +6127,39 @@ Analysis before implementation (2026-11-05):
   every workflow's embedded shell passes bash -n. Local fmt, clippy with
   -D warnings, and workspace tests pass (installed the missing clippy
   component for the existing Rust 1.93 toolchain).
+
+### 14-bb verification on CI (#128, 2fd4a41) — 28.33% -> 83.97% green
+- THE STACK THAT RAN: the 14-ay minecraft-fallback pack (a3bdfd3) + the 14-az
+  real-renderer meshes + the 14-bb join ALIGN 6 px / margin 8 (15cc5b9) + the mob-page
+  walk fix (2fd4a41). #128 (run 42069529024) is the first CLEAN measurable run of that
+  union (its gallery-report-N artifacts collapsed 6-7 MB -> 0.5-1 MB — the diff-PNG
+  flood evaporated).
+- THE METRIC (all 8 shards' reports, the same aggregator, 21538 cells):
+  red 12142 -> **102**, dynamic 3330, spill 20 -> TOTAL green **83.97%** (was 28.33%).
+  Per ns: biomesoplenty/blocks 14.24 -> **97.95%** (89 reds), create/blocks -> 84.20%
+  (1 red! 2248 dyn + 20 spill excluded), create/item-blocks 99.68%,
+  dynamictrees/item-blocks 100%, dynamictrees/blocks 34.79% (5 reds, 1069 dyn — the
+  tree-sway class, honestly excluded), entity pages 70-100%.
+- THE 102 REDS ARE ONE CLASS: BOP crop/plant growth states (high_grass[age=N],
+  lumaloop[age=N,lit=B], waterlily, white_lavender, barley[alf=lower]...) — 1 cell each
+  at ae 62-120k, i.e. growth-ANIMATION phase differences between the legs' shots, plus
+  3 e1 entity cells and 5 dynamictrees cells. The #114 wall family (5233 cells) is GONE
+  — the 14-bb A/B prediction (the +-3 cap saturating on a 4-6 px residual) measured TRUE.
+- PARKED: the 60000 gate recalibration for the margin-8 area (~0.83x ae scale — the
+  compared area is 48->40 px/cell). The ae histogram of the 102 reds sits at 62-120k,
+  so a recalibrated gate would flip a slice of them — but that is a GATE-SEMANTICS
+  decision, do it on the #129 ae distribution, not by want.
+
+### 14-bb addendum — the #129 reproduction (f44639f) and the crop-class anatomy
+- #129 (run 42070701695, the same stack + flip-report.py): TOTAL green 83.23%
+  (24643 cells, red 127, dyn 3982, spill 24) — the #128 83.97% reproduces on a
+  different tree; the stack is STABLE at the 83-84% band.
+- THE 127 REDS' ANATOMY (the #128 crop pixels, biomesoplenty-p40 c1_r5
+  high_grass[age=1] ae 76902, shift [0,0]): NOT the alpha-render-layer story — the
+  near-black census is 0/0, the ours "holes" are SKY (152,189,255 vs truth 153,190,255).
+  The ours plant renders ~25% MORE content (truth 2159 px vs ours 2702 px, less sky
+  visible) and slightly darker — a WRONG/NEIGHBOUR-MESH signature, not a texture one:
+  the suspected mechanism is the cell->q<hash> ctx mapping handing a cell the quad
+  dump of a different (taller) plant. NEXT: verify hash(c1_r5) against the p40 ctx
+  side file and the quads/<hash>.tsv mesh bounds; if confirmed, the fix is in the
+  dump's per-cell keying, and the whole crop-growth class (~110 cells) collapses.
