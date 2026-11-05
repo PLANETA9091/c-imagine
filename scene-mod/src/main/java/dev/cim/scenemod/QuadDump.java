@@ -10,6 +10,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
@@ -28,6 +29,8 @@ import net.minecraft.world.level.FoliageColor;
 import net.minecraft.world.level.GrassColor;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.EntityBlock;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.lighting.LevelLightEngine;
@@ -79,6 +82,9 @@ final class QuadDump {
 
     private static final int JOIN_TICKS = 600;
     private static boolean started;
+    private static int berDrawn;
+    private static int berFailed;
+    private static int berNoLevel;
     private static int waited;
 
     private QuadDump() {
@@ -178,8 +184,9 @@ final class QuadDump {
         }
         Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
         dumpItems(scenes, out, sprites);
-        LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={}",
-                cells, dumped, rows.size(), failed);
+        LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
+                        + "block_entities drawn={} failed={} no_level={}",
+                cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel);
     }
 
     /**
@@ -200,7 +207,50 @@ final class QuadDump {
             mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
                     random, seed, OverlayTexture.NO_OVERLAY, data, type);
         }
+        if (state.hasBlockEntity()) {
+            appendBlockEntity(pos, state, sprites, capture.out);
+        }
         return capture.out.length() == 0 ? null : capture.out.toString();
+    }
+
+    /**
+     * What the cell's BlockEntityRenderer draws on top of its block model: for
+     * a Create door that is the whole door. A fresh block entity stands in for
+     * the wall's, so state a mod only sets at runtime is not reflected. Mod
+     * code can fail here in any way; that costs this cell its renderer, never
+     * the dump, and the final log line counts it.
+     */
+    private static void appendBlockEntity(BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites,
+                                          StringBuilder out) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            berNoLevel++;
+            return;
+        }
+        try {
+            if (!(state.getBlock() instanceof EntityBlock block)) {
+                return;
+            }
+            BlockEntity be = block.newBlockEntity(pos, state);
+            if (be == null) {
+                return;
+            }
+            be.setLevel(mc.level);
+            BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
+            if (renderer == null) {
+                return;
+            }
+            ItemCapture capture = new ItemCapture(sprites, 0);
+            renderer.render(be, 0, new PoseStack(), capture, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            capture.flush();
+            out.append(capture.out);
+            if (capture.out.length() > 0) {
+                berDrawn++;
+            }
+        } catch (Throwable t) {
+            berFailed++;
+            LOGGER.info("[cimscene] quad dump block entity skip {}: {}", state.getBlock(), t.toString());
+        }
     }
 
     /** Records each quad the renderer emits; everything per-vertex arrives in putBulkData. */
@@ -340,7 +390,7 @@ final class QuadDump {
                 items++;
                 try {
                     ResourceLocation id = ResourceLocation.parse(c[4]);
-                    ItemCapture capture = new ItemCapture(sprites);
+                    ItemCapture capture = new ItemCapture(sprites, 0.5f);
                     Minecraft.getInstance().getItemRenderer().renderStatic(
                             new ItemStack(BuiltInRegistries.ITEM.get(id)), ItemDisplayContext.NONE,
                             LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, new PoseStack(), capture, null, 0);
@@ -415,8 +465,12 @@ final class QuadDump {
         /** The bound buffer's texture when it is not the block atlas. */
         String texture;
 
-        ItemCapture(List<TextureAtlasSprite> sprites) {
+        /** Item renderers centre the model on the origin; block entities draw from the corner. */
+        final float origin;
+
+        ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
             this.sprites = sprites;
+            this.origin = origin;
         }
 
         /** Foil wraps two buffers and rejects a duplicate; the glint is an overlay, not geometry. */
@@ -446,9 +500,9 @@ final class QuadDump {
                 int o = i * STRIDE;
                 pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
                         Float.intBitsToFloat(v[o + 2]), at);
-                p[i][0] = at.x + 0.5f; // the renderer centres the model on the origin
-                p[i][1] = at.y + 0.5f;
-                p[i][2] = at.z + 0.5f;
+                p[i][0] = at.x + origin;
+                p[i][1] = at.y + origin;
+                p[i][2] = at.z + origin;
                 t[i][0] = Float.intBitsToFloat(v[o + UV]);
                 t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
                 c[i][0] = brightness[i] * r;
@@ -466,9 +520,9 @@ final class QuadDump {
         public VertexConsumer addVertex(float x, float y, float z) {
             flush();
             n++;
-            pos[n][0] = x + 0.5f;
-            pos[n][1] = y + 0.5f;
-            pos[n][2] = z + 0.5f;
+            pos[n][0] = x + origin;
+            pos[n][1] = y + origin;
+            pos[n][2] = z + origin;
             rgb[n][0] = 1;
             rgb[n][1] = 1;
             rgb[n][2] = 1;

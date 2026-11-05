@@ -7237,3 +7237,13 @@ refined_radiance, mangrove_window_pane; biomesoplenty:anomaly; BOP 116 blocks
    agent). Do NOT restore the demotion to get green.
 Scope: --gate-dyn is block pages only; fluids, particles and mod entity pages
 use dyn for other reasons and keep their classes. Static cells keep SPILL.
+
+2026-11-05T20:45:00+00:00 Block entity cells: QuadDump now runs each cell's BlockEntityRenderer through
+the same capture as custom item renderers, so what the renderer draws joins
+the cell's mesh. This is the general attack on the --gate-dyn REDs (top of
+the list: Create doors, drawn wholly by their renderer). UNPROVEN until a
+seed rebuild. Read the "quad dump done ... block_entities drawn= failed=
+no_level=" line first: no_level>0 means the dump had no level, and drawn near
+0 would point at Flywheel making Create renderers bail. Limits: a FRESH block
+entity stands in, so runtime state is not reflected, and any moving part
+freezes at partialTick 0.
