@@ -40,7 +40,12 @@ def load_all(dirs, pattern):
 
 
 def ns_of(name):
-    m = re.search(r'-(create|biomesoplenty|dynamictrees|combat_roll|minecraft)', name)
+    # Read the producer's filename contract, not a fixed mod allowlist.
+    # Entity pages use -N; block/item and diagnostic pages use -pN.
+    m = re.fullmatch(
+        r'(?:join-(?:(?:item|fluid|particle|e(?:-(?:dyn|large))?)-)?'
+        r'|diag-(?:sound|pstream|held|gui|biome|inv)-)'
+        r'([a-z0-9_.-]+?)-p?\d+\.json', name)
     return m.group(1) if m else "minecraft"
 
 

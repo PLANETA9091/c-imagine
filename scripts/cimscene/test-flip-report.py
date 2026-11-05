@@ -74,6 +74,26 @@ class FlipReportTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("invalid report", result.stderr)
 
+    def test_expanded_ladder_namespaces_across_producer_classes(self):
+        for ns in ("ae2", "mekanism", "sophisticatedbackpacks", "jade",
+                   "combat_roll", "future.mod-name", "create_extension"):
+            with self.subTest(namespace=ns):
+                pixels = {"rows": [{"verdict": "RED"}]}
+                table = self.report({
+                    f"join-{ns}-p0.json": pixels,
+                    f"join-item-{ns}-p1.json": pixels,
+                    f"join-e-{ns}-0.json": pixels,
+                    f"diag-sound-{ns}-p0.json": {"verdict": "ARTIFACT-MISSING"},
+                    f"diag-held-{ns}-p0.json": {"verdict": "CONTENT"},
+                })
+                self.assertEqual(set(table), {(cls, ns) for cls in
+                                             ("block", "item", "e", "sound", "held")})
+                self.assertEqual(table[("block", ns)]["red"], 1)
+
+    def test_legacy_entity_pages_use_minecraft(self):
+        table = self.report({"join-e0.json": {"rows": [{"verdict": "GREEN"}]}})
+        self.assertEqual(set(table), {("e", "minecraft")})
+
 
 if __name__ == "__main__":
     unittest.main()

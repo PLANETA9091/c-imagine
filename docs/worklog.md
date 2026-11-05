@@ -6771,3 +6771,37 @@ Final gallery-verdict artifact exists (2828 bytes); s4 report downloaded.
 Next save the final verdict, aggregate all seven measured shards plus the
 explicit missing s1 join, and publish the worklog corrections before
 starting the verified Easton variant.
+
+19:03 UTC analysis found a reporting blocker introduced by the expanded
+ladder: flip-report.ns_of hard-codes the original five namespaces. Every
+AE2/Mekanism/Backpacks/Jade result would be silently attributed to minecraft.
+Read actual workflow producers (join-NS-pN, join-item-NS-pN,
+join-e-NS-N, diag-CLASS-NS-pN) and existing eight regression tests.
+Expected behavior: extract the complete namespace from the producer filename,
+including underscores/dots/hyphens; legacy join-e0 remains minecraft.
+No rendering or gate behavior changes. Plan: smallest parser replacement,
+regressions for the incoming four namespaces across block/item/entity and
+stream/frame reports, plus legacy and namespace-prefix collision controls;
+run existing report and coverage/asset helper checks before publishing.
+This is a reporting bug fix required before interpreting expanded runs.
+
+Artifact retry for report-0 succeeded. Its sole Create block remains the
+same pane, AE60293 exactly: incoming shading change did not fix it.
+All seven completed ours shards failed specifically at the pixel join;
+s4 remains running. No new client startup/download failure is observed.
+A broad filename search over /home/btw emitted unrelated profile directory
+permission errors; no contents were read. Further searches stay scoped to
+the repo, known stand artifact directories and explicit client jars.
+
+19:07 UTC implementation/validation: namespace parser now reads the actual
+producer filename suffix and class prefix instead of a fixed allowlist.
+Ten report regression tests PASS (including seven namespaces across five
+producer classes and legacy join-e0), four asset retry tests PASS; coverage
+gate smoke ALL PASS; embedded workflow shell audit zero failures;
+git diff --check clean. No runtime/hot path or pixel threshold changed.
+Next publish this reporting fix with the complete current worklog; inspect
+latest visual run 42088316659's failed seed-payload check before resuming
+renderer diagnosis. Concurrent P2 CI 42088264167 SUCCESS; integration and
+mod-matrix running. P2 gallery 42088395686 pending behind the older active
+run. Manual e52257fa mod-matrix 42087141443 SUCCESS. No runs canceled by us.
+Individual report-0/report-3 retries succeeded after the artifact 503.
