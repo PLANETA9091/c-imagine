@@ -33,7 +33,9 @@ jobs:
       - name: report schema regressions
         run: python3 scripts/cimscene/test-flip-report.py
       - name: gallery verdict classes
-        run: python3 scripts/cimscene/test-gallery-diff.py
+        run: |
+          pip install -q numpy pillow
+          python3 scripts/cimscene/test-gallery-diff.py
       - name: client download recovery
         run: python3 scripts/visual/test-fetch-client.py
       - name: embedded shell syntax
