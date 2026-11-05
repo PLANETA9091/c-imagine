@@ -4,6 +4,9 @@
 ![integration](https://github.com/PLANETA9091/c-imagine/actions/workflows/integration.yml/badge.svg)
 ![profiling](https://github.com/PLANETA9091/c-imagine/actions/workflows/profiling.yml/badge.svg)
 ![visual](https://github.com/PLANETA9091/c-imagine/actions/workflows/visual.yml/badge.svg)
+![gallery](https://github.com/PLANETA9091/c-imagine/actions/workflows/gallery.yml/badge.svg)
+![parity-diff](https://github.com/PLANETA9091/c-imagine/actions/workflows/parity-diff.yml/badge.svg)
+![mod-matrix](https://github.com/PLANETA9091/c-imagine/actions/workflows/mod-matrix.yml/badge.svg)
 
 **Run NeoForge 1.21.1 mods inside Paper 26.3 — one process, one server, one world.**
 
@@ -107,11 +110,20 @@ CI (GitHub Actions):
 - **integration** — real Paper 26.3 + CRUSSTY + this module + `cimtest` mod; asserts
   boot markers, mod discovery and clean logs.
 - **profiling** — criterion baselines + bare-vs-modded boot/memory budget gate.
-- **visual** — protocol-level visual smoke (F2V v2 groundwork; real-client harness lands in M5).
+- **visual** — the calibrated manual harness (dispatch-only): the stock vanilla 26.3
+  client renders the pack under xvfb and the pixel contract asserts per channel
+  (range_dispatch, select, postfx, equipment, block-in-world, display rig, camera-lock,
+  palette) — with the optional seed-v2 ladder legs (items/held/inv + the sound stream per
+  ladder namespace).
 - **gallery** — the real-mod pixel gate: real NeoForge 1.21.1 client vs c-imagine on the
-  vanilla 26.3 client, every ladder namespace walked to exhaustion across
-  blocks/entities/items/particles/fluids (gate-hard) plus the sound/gui/held/anim/biome-tint
-  classes (diagnostic-first); coverage gate + per-shard pixel joins.
+  vanilla 26.3 client, every ladder namespace walked to exhaustion across the 12-class
+  coverage ladder — block, entity (mobs/dyn/large), item, held, particle, fluid, sound,
+  gui, biome, inv (gate-hard + diagnostic-first per class); coverage gate + per-shard
+  pixel joins.
+- **parity-diff** — the F2F identity proof (dispatch-only): a real modded client capture
+  pixel-diffed against the same scene on the stock client — the calibrated icon and
+  camera-lock block identity datums, plus the seed-v2 per-channel identity (ladder item
+  crops, held first-person, the ordered sound stream via sound-diff.py).
 - **mod-matrix** — the real-mod ladder: P0 Create census parity (truth vs layer), the P1
   ladder, and the Tier 2 census legs (AE2, Mekanism, Sophisticated Backpacks, Jade).
 
