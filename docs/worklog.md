@@ -6088,3 +6088,42 @@ scripts/stand-easton is the fast loop: dump + pack + 12 pages + join in about 5 
 - Not done here: the 60000 gate recalibration for the margin-8 area (~0.83x ae scale)
   — measure the NEW ae distribution on the next clean run first (the 14-av parked
   question (b) stands).
+
+---
+## Task 14-bc — resume GREEN from gallery #129 and Easton
+
+Analysis before implementation (2026-11-05):
+- Gallery #129 (`42070701695`, f44639f6) completed: all truth legs and
+  seed succeeded; all ours legs reached the pixel join and failed there.
+  Integration and mod-matrix on the same SHA succeeded. Easton's
+  `cim-stand` service was inactive; the existing jobs finished previously.
+- Direct join row counts, excluding diagnostic entity series: Create
+  blocks GREEN 15629 / RED 1 / SPILL 24 / DYNAMIC 894 / skipped 14841;
+  BOP blocks GREEN 4916 / RED 116; Dynamic Trees GREEN 1815 / RED 5.
+  The remaining Create block is acacia_window_pane on p0, c4/r0,
+  AE 60293 against the unchanged 60000 datum. Create items have two REDs
+  (mangrove_window_pane and refined_radiance).
+- Reporting blockers: gallery-diff increments `cells` only for cell rows,
+  while `skipped` is a separate population. flip-report subtracts both
+  skipped and dynamic from cells, drops whole pages when this goes negative,
+  and labels namespaces' item/fluid/particle pages as blocks. Its stream
+  reader also expects fields that sound-diff/particle-diff never write.
+  A CONTENT frame means the legs contain content, not that pixels match.
+- Expected observable behavior: the class report counts explicit GREEN/RED
+  rows, preserves diagnostic/excluded counts, reads the actual stream/GUI
+  schemas, and never promotes CONTENT-only frames to flip candidates.
+  The final coverage/shard verdict must run after failed dependencies and
+  publish its red summary. No renderer or NeoForge behavior changes here;
+  the upstream comparison remains the real #129 NeoForge captures.
+
+14-bc implementation and local verification:
+- Counts now come from explicit row verdicts; item/fluid/particle classes
+  use their actual filename prefixes; all-skipped pages remain visible.
+  Stream metrics read mapped_preview, inventory consumes GREEN/RED, and
+  CONTENT-only frames require calibration. Malformed JSON fails closed.
+- The final verdict job runs even after a failed shard and writes a class
+  summary plus links to both stacks' captures to the Actions summary.
+- Eight schema regression tests pass, coverage-gate smoke tests all pass,
+  every workflow's embedded shell passes bash -n. Local fmt, clippy with
+  -D warnings, and workspace tests pass (installed the missing clippy
+  component for the existing Rust 1.93 toolchain).

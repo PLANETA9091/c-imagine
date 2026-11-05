@@ -15,10 +15,9 @@ Usage:
   flip-report.py --json <out.json> <dir> ...        # machine-readable
 
 Every diagnostic class reports its own measured metric; the RECOMMENDATION
-column is mechanical (the law lives in the owner's head + worklog): a class
-is FLIP-CANDIDATE only when it measured on >=1 run with no EMPTY/BROKEN
-rows and its metric band is stated in the run summary — this tool names the
-numbers, the owner flips.
+column is mechanical: pixel/stream classes with measured content and zero
+failures are candidates for review. Frame CONTENT only proves presence;
+those classes still require calibration. This tool never flips a gate.
 """
 import argparse
 import glob
@@ -26,7 +25,7 @@ import json
 import os
 import re
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 
 def load_all(dirs, pattern):
@@ -35,8 +34,8 @@ def load_all(dirs, pattern):
         for f in glob.glob(os.path.join(d, pattern)):
             try:
                 out.append((f, json.load(open(f))))
-            except Exception:
-                out.append((f, None))
+            except (OSError, ValueError) as error:
+                raise SystemExit(f"invalid report {f}: {error}") from error
     return out
 
 
@@ -60,19 +59,22 @@ def main():
             if d is None:
                 continue
             name = os.path.basename(f)
-            if name.startswith("join-e") or name.startswith("join-item") \
-                    or name.startswith("join-fluid"):
-                cls = re.match(r'join-([a-z]+)', name).group(1)
-            else:
-                cls = "block"
+            match = re.match(r'join-(item|fluid|particle|e)(?:-|\d)', name)
+            cls = match.group(1) if match else "block"
+            # The dyn/large entity series are diagnostic, separate from mobs.
+            if cls == "e" and re.search(r'-(dyn|large)-', name):
+                cls = "e-" + re.search(r'-(dyn|large)-', name).group(1)
             ns = ns_of(name)
-            eff = d["cells"] - d.get("dynamic", 0) - d.get("skipped", 0)
-            if eff <= 0:
-                continue
+            counts = Counter(r["verdict"] for r in d.get("rows", []))
+            if d.get("verdict") == "GLOBAL-MISALIGNED":
+                counts["RED"] += 1
+            eff = counts["GREEN"] + counts["RED"]
             rows.append({"class": cls, "ns": ns, "pages": 1,
                          "metric": "green",
-                         "green": eff - d["red"], "eff": eff,
-                         "red": d["red"], "skipped": d.get("skipped", 0)})
+                         "green": counts["GREEN"], "eff": eff,
+                         "red": counts["RED"],
+                         "skipped": sum(n for v, n in counts.items()
+                                        if v not in ("GREEN", "RED"))})
 
     # --- stream diagnostics: sound / particle ---
     for pat, cls in (("[d]iag-sound-*.json", "sound"),
@@ -84,9 +86,16 @@ def main():
                 continue
             a = agg[ns_of(os.path.basename(f))]
             a["pages"] += 1
-            a["mapped"] += d.get("mapped", 0)
-            a["total"] += d.get("total", 0)
-            a["missing_ours"] += d.get("missing_ours", 0)
+            preview = d.get("mapped_preview") or {}
+            total = preview.get("expected", d.get("truth_count", 0))
+            hits = preview.get("position_hits", total if d.get("ordered_equal") else 0)
+            a["mapped"] += hits
+            a["total"] += total
+            a["missing_ours"] += total - hits
+            # Missing artifacts and extra/reordered events cannot be candidates.
+            if d.get("verdict") == "ARTIFACT-MISSING" or (
+                    total == hits and not preview.get("order_exact", d.get("ordered_equal", False))):
+                a["missing_ours"] += 1
         for ns, a in sorted(agg.items()):
             rows.append({"class": cls, "ns": ns, "pages": a["pages"],
                          "metric": "stream",
@@ -106,9 +115,9 @@ def main():
             a = agg[ns_of(os.path.basename(f))]
             a["pages"] += 1
             v = d.get("verdict")
-            if v == "EMPTY":
+            if v in ("EMPTY", "RED", "ARTIFACT-MISSING"):
                 a["empty"] += 1
-            elif v == "CONTENT":
+            elif v in ("CONTENT", "GREEN"):
                 a["content"] += 1
                 if d.get("ae") is not None:
                     a["ae"].append(d["ae"])
@@ -136,14 +145,18 @@ def main():
     for (cls, ns), m in sorted(merged.items()):
         pct = 100 * m["green"] / m["eff"] if m["eff"] else None
         ready = "MEASURED" if m["eff"] else "NO-DATA"
-        if pct is not None:
+        if m["red"] and not m["eff"]:
+            ready = "BROKEN (missing artifact)"
+        if pct is not None and m["metrics"] != {"frame"}:
             if m["red"] == 0:
                 ready = "FLIP-CANDIDATE (0 red)"
             elif pct >= 90:
                 ready = "NEAR (>=90%)"
+        if m["metrics"] == {"frame"}:
+            ready = "DIAGNOSTIC (calibration required)"
         table.append({"class": cls, "ns": ns, "pages": m["pages"],
                       "eff": m["eff"], "green": m["green"], "red": m["red"],
-                      "green_pct": round(pct, 1) if pct is not None else None,
+                      "green_pct": round(pct, 3) if pct is not None else None,
                       "skipped": m["skipped"], "state": ready})
 
     if args.out_json:

@@ -2604,6 +2604,7 @@ jobs:
   # green verdict.
   wall-verdict:
     name: gallery verdict (coverage gate + shard gates)
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [wall-truth, wall-ours]
@@ -2632,6 +2633,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p scenes verdict gallery-verdict
+          python3 scripts/cimscene/flip-report.py --json gallery-verdict/class-summary.json \
+            reports/gallery-report-* | tee gallery-verdict/class-summary.txt
+          {
+            echo '### Measured gallery classes'
+            echo '```text'
+            cat gallery-verdict/class-summary.txt
+            echo '```'
+            echo "[Truth and ours screenshots and per-cell diffs]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID#artifacts)"
+          } >> "$GITHUB_STEP_SUMMARY"
           # merge the fresh truth manifests (ANY shard's copy of the index /
           # reconciliation file is byte-identical — registry-derived)
           find truth-meta -name 'gallery-*.tsv' -exec cp {} scenes/ \;
