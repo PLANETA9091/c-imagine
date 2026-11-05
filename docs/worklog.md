@@ -5962,3 +5962,40 @@ Work Log:
   jumps to the 90% band, the 14-au + 14-av pair is the whole story; if it
   stays low with SMALL per-cell ae, the next lever is per-cell content
   (the composites at the correct scale but wrong pixels).
+
+### 14-av verification on CI (#114, ecf70d3 — 28.33% green, was 2.09%)
+- (#112 was cancelled by the gallery concurrency group when the tools
+  commit ecf70d3 landed 2 min later; re-dispatched via workflow_dispatch
+  as #114 on the same tree.)
+- THE ISOLATE SCALE DATUM LIVE (ours s0 step log, first print ever):
+  `ISOLATE_SCALE casing w=45 h=45 x=557..601 y=405..449` — the -0.65-era
+  78x79 is GONE: the options.txt fov:0.0 pin is read by the CI client
+  end to end. (45 px = the RAW isolate summon without the plugin's TR
+  transform; the PAGE displays carry the plugin TR and land on-contract
+  — see the span check below.)
+- THE SPAN CHECK (page_blobs.py, create p0, ours #114 vs truth #110):
+  ours blob-1 x=355..556 (w=202 h=126) vs truth x=349..554 (w=206 h=128)
+  — the page geometry now matches the truth to ±6 px (was 1.47x off).
+  The remaining ours blob merge (two truth blobs joining at 580..780) is
+  a ±8 px gap difference, not a scale error.
+- THE METRIC (all 8 shards' reports, the same aggregator):
+  TOTAL green 2.09% -> **28.33%** (25257 cells: red 18470 -> 12142,
+  dynamic 5319, spill 941 -> 640). Per ns: create/blocks 1.78 -> 35.55%,
+  biomesoplenty/blocks 3.54 -> 14.24%, dynamictrees/blocks 1.52 -> 3.53%,
+  item channels 0.1-0.5 -> 13-20%, entity pages 0-50 -> 84-100% (the mob
+  channel is essentially CLEAN — the 14-at gamerule pins + the scale fix
+  did it).
+- THE REMAINING RED MASS IS CONTENT-LEVEL: create walls
+  (small_diorite/cut_ochrum/cut_diorite/small_calcite_brick_wall, 17-18
+  cells each at ae ~100-130k/cell — alignment/mortar-line level, not
+  geometry), BOP flora (high_grass_plant, lumaloop_plant, webbing,
+  dead/willow_fence_gate at ae 0.8-4.3M — pack-channel gaps for the
+  cross-shaped/tall plant models), dynamictrees (mostly DYNAMIC class —
+  the 1258 dyn cells are the tree-sway animation, correct to exclude).
+- NEXT LEVERS, in order: (1) the walls' per-cell alignment — extend the
+  join ALIGN radius (3 px) or add a sub-cell best-fit scale; measure the
+  ae histogram first (a 6-px systematic shift would explain ~100k/cell);
+  (2) the BOP flora composites — check the cross-model plants against
+  the truth crops (the pack bake for plants may need the CT/uvlock
+  treatment the walls got); (3) re-tighten the 60000 gate on the new ae
+  distribution once the walls calm down.
