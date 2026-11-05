@@ -186,6 +186,24 @@ public final class GalleryPack {
     static List<Resolved> build(List<Path> jars, List<Input> inputs,
                                 TreeMap<String, byte[]> entries, List<String> warnings)
             throws IOException {
+        return build(jars, inputs, entries, warnings, Map.of(), null);
+    }
+
+    /**
+     * Build with the TINT-BAKE channel: {@code tintTable} maps a modded
+     * texture ref ({@code ns:block/foo}) to the calibrated per-channel
+     * multiply (scripts/f2v/tint-calibrate.py). The composite emit rewrites
+     * every tinted sprite to a BAKED sibling ({@code ..._cimtint}) carrying
+     * the multiplied pixels; the raw texture stays untouched at its original
+     * path so every other consumer (item icons, the note_block block
+     * channel) renders it exactly as before. {@code bakeLog} (nullable)
+     * collects one line per applied bake for the pack build report.
+     */
+    static List<Resolved> build(List<Path> jars, List<Input> inputs,
+                                TreeMap<String, byte[]> entries, List<String> warnings,
+                                Map<String, double[]> tintTable,
+                                List<String> bakeLog)
+            throws IOException {
         // deterministic order + dedupe (a repeated state reuses the first cmd)
         List<Input> sorted = new ArrayList<>(inputs);
         sorted.sort(Comparator.comparing(Input::stateId));
@@ -248,7 +266,7 @@ public final class GalleryPack {
                 // measured composite behaviour; the spawning entity carries
                 // 0/0).
                 String ref = synthesizeComposite(jars, bareState, parts,
-                        compositeIdx, entries, warnings, ctCtx);
+                        compositeIdx, entries, warnings, ctCtx, tintTable, bakeLog);
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
@@ -703,7 +721,9 @@ public final class GalleryPack {
      */
     private static String synthesizeComposite(List<Path> jars, String state, List<Part> parts,
                                               int idx, TreeMap<String, byte[]> entries,
-                                              List<String> warnings, String ctCtx) throws IOException {
+                                              List<String> warnings, String ctCtx,
+                                              Map<String, double[]> tintTable,
+                                              List<String> bakeLog) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
         double displayScale = 1;
@@ -737,6 +757,12 @@ public final class GalleryPack {
             applyCtRemap(jars, mergedElements, textures, ctIndices, entries, warnings,
                     state);
         }
+        // TINT-BAKE (scripts/f2v/tint-calibrate.py): rewrite calibrated
+        // sprites to baked siblings BEFORE the wrapper is emitted. The
+        // elements reference texture KEYS (#p0_cross...), so only this map's
+        // VALUES change — the raw texture at its original path keeps serving
+        // every untinted consumer.
+        bakeCompositeTextures(jars, textures, tintTable, entries, bakeLog);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         JsonObject texObj = new JsonObject();
@@ -750,6 +776,117 @@ public final class GalleryPack {
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
         return WRAPPER_REF_PREFIX + idx;
+    }
+
+    // ---- tint-bake (visual-tints.tsv) --------------------------------------------
+
+    /** The baked-sprite name suffix (also the PNG file suffix). A DISTINCT
+     *  path keeps the raw texture intact for the item channel and the
+     *  note_block block channel — only gallery composites reference it. */
+    static final String TINT_SUFFIX = "_cimtint";
+
+    /**
+     * Rewrite every tinted sprite ref in the composite's texture map to its
+     * baked sibling. Deterministic: the map is sorted, one bake per UNIQUE
+     * sprite (repeated part keys share it), and the multiply is pure integer
+     * math on the decoded pixels.
+     */
+    private static void bakeCompositeTextures(List<Path> jars,
+                                              Map<String, String> textures,
+                                              Map<String, double[]> tintTable,
+                                              TreeMap<String, byte[]> entries,
+                                              List<String> bakeLog) throws IOException {
+        if (tintTable == null || tintTable.isEmpty() || textures.isEmpty()) {
+            return;
+        }
+        Map<String, String> bakedRefs = new TreeMap<>();
+        for (Map.Entry<String, String> e : textures.entrySet()) {
+            String sprite = e.getValue();
+            if (!sprite.contains(":") || sprite.endsWith(TINT_SUFFIX)) {
+                continue;
+            }
+            double[] tint = tintTable.get(sprite);
+            if (tint == null) {
+                continue;
+            }
+            String baked = bakedRefs.computeIfAbsent(sprite,
+                    s -> bakeTintedSprite(jars, s, tint, entries, bakeLog));
+            if (baked != null) {
+                e.setValue(baked);
+            }
+        }
+    }
+
+    /**
+     * Multiply one raw texture's RGB by the calibrated tint and put the PNG
+     * at the sibling path ({@code textures/<dir>/<name>_cimtint.png}).
+     * Returns the baked sprite ref, or null when the raw PNG is unavailable
+     * (the composite keeps the raw sprite then — an honest partial render).
+     * Alpha is preserved; rounding is Math.round (floor(v+0.5)) on the
+     * double product, clamped to [0,255] — the SAME documented rounding the
+     * calibrator's evidence assumes.
+     */
+    static String bakeTintedSprite(List<Path> jars, String sprite, double[] tint,
+                                   TreeMap<String, byte[]> entries, List<String> bakeLog) {
+        String rawPng = spritePathPng(sprite);
+        String bakedPng = rawPng.substring(0, rawPng.length() - 4) + TINT_SUFFIX + ".png";
+        try {
+            byte[] raw = readPngFromJars(jars, rawPng);
+            if (raw == null) {
+                return null;
+            }
+            byte[] baked = multiplyPng(raw, tint);
+            entries.put(bakedPng, baked);
+            if (bakeLog != null) {
+                bakeLog.add(sprite + " <- (" + tint[0] + ", " + tint[1] + ", "
+                        + tint[2] + ") baked at " + sprite + TINT_SUFFIX);
+            }
+            return sprite + TINT_SUFFIX;
+        } catch (Exception bad) {
+            return null; // the composite falls back to the raw sprite
+        }
+    }
+
+    /**
+     * THE multiply, byte-deterministic: decode via ImageIO, per-pixel
+     * channel multiply with Math.round + clamp, re-encode via ImageIO. The
+     * same inputs on the same JDK produce the same bytes — the same
+     * constraint the pack's sha1 story already carries (CI pre-boot build
+     * and the plugin's boot-time rebuild pin one Paper/JDK).
+     */
+    static byte[] multiplyPng(byte[] png, double[] tint) throws IOException {
+        java.awt.image.BufferedImage in =
+                javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+        if (in == null) {
+            throw new IOException("not a decodable PNG");
+        }
+        int w = in.getWidth();
+        int h = in.getHeight();
+        java.awt.image.BufferedImage out =
+                new java.awt.image.BufferedImage(w, h,
+                        java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = in.getRGB(x, y);
+                int a = (argb >>> 24) & 0xFF;
+                int r = (argb >>> 16) & 0xFF;
+                int g = (argb >>> 8) & 0xFF;
+                int b = argb & 0xFF;
+                out.setRGB(x, y, (a << 24)
+                        | (clamp255(r * tint[0]) << 16)
+                        | (clamp255(g * tint[1]) << 8)
+                        | clamp255(b * tint[2]));
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(out, "png", bos);
+        return bos.toByteArray();
+    }
+
+    /** Multiply + Math.round + clamp into the 8-bit channel range. */
+    private static int clamp255(double v) {
+        long r = Math.round(v);
+        return (int) Math.max(0, Math.min(255, r));
     }
 
     // ---- the real-client quad channel ---------------------------------------
