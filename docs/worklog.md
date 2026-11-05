@@ -6239,3 +6239,210 @@ Analysis before implementation (2026-11-05):
   Easton's 26.3 client; all three pages' RED AEs exactly match baseline.
   Block-light 0/15 also leaves the same RED counts. Horizontal/vertical
   flips worsen the 117 BOP red crops. Do not pursue these levers further.
+
+---
+## Owner logging directive — full session audit and next actions (2026-11-05)
+
+The owner requires EVERYTHING done and EVERYTHING planned to be recorded in
+THIS repository's worklog. From this checkpoint, record the intended next
+batch before executing it, then append its results, including failures and
+rejected hypotheses. Repository records remain English. This entry also
+backfills the session actions that were previously summarized too briefly.
+
+### Session recovery and initial investigation
+- Read repository AGENTS.md, parent /home/btw/AGENTS.md, README.md,
+  docs/MODPACK.md, the latest worklog sections (14-au through 14-bb),
+  scripts/stand-easton/README.md and its sandbox/driver/dump scripts.
+- Checked git status (initially clean), branch (main), recent history,
+  workflow configuration, local test/build helpers, and existing local
+  analysis/stand artifact directories. No subagents were started.
+- Initial GitHub access failed under the old network sandbox; an escalation
+  request was interrupted by the owner. The owner then enabled unrestricted
+  access and said to continue. Subsequent gh/tailscale operations succeeded.
+- Discovered available tools; used shell/gh/tailscale for repository, CI and
+  Easton work. No messages were sent to third parties or unrelated services.
+- Checked Easton's existing queue and service state. cim-stand was inactive;
+  old a-pins/b jobs had finished. The desktop was never used for rendering:
+  every client launch used the existing bwrap/private-Xvfb sandbox, private
+  /run and /tmp, isolated network, software renderer and resource caps.
+- Easton's login shell is fish and its ls alias parsed -lt unexpectedly.
+  Switched to /bin/ls and explicit /bin/bash for remote scripts. A wildcard
+  diagnostic also failed under fish; repeated with explicit bash. These
+  inspection errors did not modify the stand.
+
+### CI baseline and measurements retained
+- Inspected gallery #129, run 42070701695 at f44639f6, including all job
+  conclusions and artifact inventory. All truth/seed jobs passed; all ours
+  jobs failed at the pixel join. Integration 42070701924 and mod-matrix
+  42070701889 on that tree passed.
+- Downloaded gallery-report-0..7, wall-truth-meta-0, wall-truth-shots-0,
+  wall-ours-shots-0 and seed-pack into /tmp/cim-green-129. A redundant
+  download attempt into already populated report-6/report-4 directories
+  reported existing files; the original full eight reports were retained.
+- Read gallery-diff, flip-report, sound-diff, particle-diff, inv-diff,
+  coverage-gate tests, gallery workflow, CimPlugin.galleryPage, QuadDump,
+  GalleryPack, ObjMesh and F2vPack selftest code to trace producer/consumer
+  contracts. Viewed both stacks' Create-pane and BOP plant RED crops.
+- Direct block row counts on #129 (GREEN/(GREEN+RED), a deliberately
+  different denominator from the older total-cell metric): Create
+  15629/15630 = 99.994%, BOP 4916/5032 = 97.695%, Dynamic Trees
+  1815/1820 = 99.725%. Deferred/skipped rows are not full-mod parity proof.
+  Create item REDs: mangrove_window_pane and refined_radiance. The sole
+  Create block RED is p0 c4/r0 acacia_window_pane, AE 60293.
+- Generated corrected class-summary.json and class-summary.txt under
+  /tmp/cim-green-129. The 60000 gate, ALIGN=6 and margin=8 stayed unchanged.
+
+### Reporting fix, validation and publication
+- Commit aabd2e02: count explicit verdict rows (avoid double subtraction of
+  skipped cells and silently dropped pages); classify namespaced item/fluid
+  files correctly; preserve skipped-only pages; read actual stream schemas;
+  keep CONTENT-only frames diagnostic; fail closed on malformed JSON.
+- Added eight Python schema regression tests and a CI job running them plus
+  scripts/audit_runblocks.py. Added always() to the final gallery verdict
+  job, class-summary artifacts and screenshot links in its Actions summary.
+- Ran scripts/local-check.sh. First attempt stopped because clippy was
+  missing for existing Rust 1.93.0. Installed that toolchain's clippy
+  component with rustup, then fmt, clippy -D warnings and workspace tests
+  all passed. Coverage-gate smoke tests all passed; all embedded workflow
+  shell blocks passed bash -n; git diff --check passed.
+- aabd2e02 standard CI run 42078952204 passed every job. Its gallery run
+  42078952344 demonstrated that the final verdict job now RUNS after failed
+  dependencies instead of being skipped (the old invalid-mod-ID tree
+  correctly remains RED).
+- The first push was rejected because main advanced. Fetched and rebased
+  over incoming 6e7bac97 / fd01f618 / 28f3e633 before pushing; no force push.
+
+### Easton baseline, controls and rejected shading hypothesis
+- Transferred the exact #129 seed once as an archive, staged it under
+  ~/cim-stand/green129, and backed up the previous pack, scenes, plugin and
+  server.properties under green129/previous before replacing stand inputs.
+- Ran a focused queued baseline job for Create p0 and BOP p40/p48, taking
+  both an initial and repeat screenshot for each page. Baseline joins:
+  Create p0 1 RED, BOP p40 11 RED, BOP p48 19 RED; global shift (0,0).
+  Create's AE was 60365 vs CI 60293; high_grass age=1 reproduced 76902
+  exactly; lumaloop age=15 lit=true was 109979 vs CI 109987. Repeat shots
+  did not move enough to justify an animation exemption.
+- Captured service resources: MemoryPeak=2640121856 bytes and cumulative
+  CPUUsageNSec=257574572000 including startup. This is a stand resource
+  sample, NOT a production hot-path before/after benchmark.
+- Tested display block-light overrides 0 vs 15 with sky=15 on the same
+  pages. RED counts stayed 1/11/19. Saved all probe screenshots and joins.
+- Inspected actual 1.21.1 and 26.3 client.jar cross.json models and javap
+  output of 26.3 CuboidModelElement/Deserializer, FaceBakery and upstream
+  FML classes. Saved bytecode inspection text under /tmp/cim-green-129.
+- Built a diagnostic pack variant translating shade:false to
+  shade_direction_override:"up" in generated c-imagine models: 5015
+  elements across 1795 models; SHA1
+  7ec10d7543f573b25f7c785ee6a4e921c57caeab. Confirmed the stand served this
+  hash, server.properties matched, and the client reloaded the server pack.
+- This variant is a measured NO-OP: every remaining RED AE on all three
+  pages is identical to baseline. No shading change was added to source.
+  The older model-format observation alone is insufficient for an
+  ItemDisplay rendering fix; do not claim it solved the plant residual.
+- Tested normal/horizontal/vertical/both flips offline on 117 BOP red
+  crops. Normal median AE 76586; hflip 171981; vflip 194275; both 223292.
+  No flipped crop cleared the gate. Simple mirroring is rejected.
+- Downloaded stand outputs to /tmp/cim-green-129/easton. One diagnostic
+  archive had a preceding status line; stripped bytes before the gzip
+  header before extraction. Kept all original archives for inspection.
+- Generated a reviewable local artifact with both stacks' full screenshots,
+  per-cell JSONs, corrected table and resource sample:
+  ci-artifacts/green-campaign-129/index.html (gitignored, not committed).
+- Stopped cim-stand after every capture batch. Issued restoration of the
+  original #129 baseline pack/hash/server.properties after the final probe;
+  confirmation is the first outstanding check below. Previous stand inputs
+  remain backed up. Never exposed a window on Easton's desktop.
+
+### Incoming Tier-1 regression: IDs and per-mod containers
+- Incoming 6e7bac97 added net/cap mods with hyphens in runtime mod IDs.
+  Integration 42078952000 and mod-matrix 42078952098 failed. Downloaded
+  real NeoForge, Paper and M2 harness logs; both stacks rejected the same
+  invalid ID before mod construction. Rechecked FML 4.0.45 ModInfo's real
+  regex with javap, rather than relaxing loader validation.
+- Commit a0317bb8: runtime IDs/namespaces cimtest_net/cimtest_cap, matching
+  TOML dependencies, Gradle registrations and CI namespace assertions.
+  Preserved deterministic [cimtest-net]/[cimtest-cap] marker labels.
+- Added Gradle verifyModIds to check; gradle build with Java 21 passed.
+  Temporarily restored the invalid ID only for a negative verifyModIds
+  invocation, confirmed rejection, then restored valid metadata in finally.
+  No invalid metadata or generated jars/logs were committed.
+- A second non-fast-forward push incorporated incoming 13968f55 worklog
+  changes. Resolved the append conflict by preserving BOTH audit entries,
+  rebased and pushed without rewriting others' published history.
+- a0317bb8 integration run 42079969394: real NeoForge passed, including
+  both payload codecs, component persistence, capability registration and
+  energy set=42/got=42. Layer constructors and codec/component markers also
+  passed, but generic mod cimtest_net construction assertion failed.
+- Read the exact M2 manifest and FmlHost pipeline. Scanner intentionally
+  emits one row per jar, containing all @Mod annotations. FmlHost wrongly
+  overwrote a jar's ModInfo with its last declaration and ran all mod
+  entrypoints in ONE container. Rechecked upstream FMLModContainer bytecode:
+  each container takes its own IModInfo/entrypoints while resolving the
+  shared module through getOwningFile().moduleName().
+- Commit d7362f80: expand each jar's ModInfos into individual container
+  specs, select @Mod(value=id) entrypoints, retain one module per jar,
+  preserve full scan data and census all expanded namespaces. No packet
+  loop or registry registration loop was altered.
+- Added pure Java ownership/dist fixtures. Bootstrap build, ownership
+  fixtures, StateMapper and SidecarStore selftests passed. Existing
+  bootstrap compiler warnings remain; no new warning was introduced.
+- d7362f80 CI run 42080905571: every job passed. Integration 42080905580:
+  Paper boot/restart, M2 harness, real NeoForge AND census parity ALL passed.
+  Mod-matrix 42080905954: all eight listed jobs passed, including Create
+  truth/layer census parity and all Tier-2 truth legs.
+- Started profiling BEFORE (42080726515, a0317bb8) and AFTER (42080943943,
+  d7362f80). Criterion passed on both. Boot/RSS budget jobs were still
+  running at the latest check; collect actual numbers before claiming
+  before/after performance. Also manually dispatched mod-matrix
+  42080067418 at a0317bb8 before the loader fix; its later status is less
+  authoritative than the all-green d7362f80 matrix.
+
+### Gallery client-cache fix and current HEAD
+- a0317bb8 gallery 42079969425 seed succeeded but every truth client failed
+  its handshake. Downloaded truth-meta-0 and the s0 job log. Client log
+  explicitly names cimtest_net:hello/echo as missing on the CLIENT.
+- Found fresh mods/options/servers.dat were staged BEFORE the client
+  runtime cache restored truth-client/game, so stale inputs won. This also
+  explains why camera pins could depend on the cached game directory.
+- Commit 4d556391: stage the exact current server mod set AFTER runtime
+  restore/fetch, delete obsolete generated client jars, cmp each copied jar,
+  emit SHA256 inventory, then write camera/options/server-list pins. Added
+  client.out and input hashes to truth-meta artifacts. Required channel
+  registration/handshake checks remain intact. Embedded bash audit and
+  whitespace validation passed before publication.
+- Latest gallery run: 42082255137 at 4d556391, pending behind the already
+  started a0317bb8 run. Concurrency cancel-in-progress=false is respected:
+  started runs finish; only an obsolete PENDING d7362f80 run was replaced
+  automatically by GitHub's concurrency group. No running run was canceled.
+- All commits use the required PLANETA9091 noreply author. Server logs,
+  world data, screenshots, archives and generated reports remain artifacts
+  outside tracked source. Working tree was clean before this audit append.
+
+### Next actions — recorded BEFORE execution
+1. Confirm the outstanding Easton baseline-restoration command completed
+   and cim-stand is inactive; append its actual result here.
+2. Commit and push this comprehensive worklog checkpoint (docs-only; no
+   new implementation), integrating concurrent main updates if necessary
+   and preserving their work. Record the resulting commit ID.
+3. Follow gallery 42082255137 to completion. Confirm every truth client
+   receives current jars and joins, then inspect all pixel/coverage shard
+   reports. If any new failure appears, stop renderer work and fix it first.
+4. Collect both profiling budget results and their boot/RSS numbers; retain
+   artifacts and report any budget failure as a blocker. Do not infer a
+   performance win from Criterion success alone.
+5. Refresh the local dual-stack review artifact with probe outcomes and
+   the next complete gallery results; keep all screenshots/reports ignored.
+6. Continue the Create-first residual investigation ONLY from measured
+   captures. Keep the 60000 gate and calibrated geometry unchanged. The
+   shade-field, brightness and simple-flip hypotheses are already rejected.
+7. Before any further implementation or test batch, append its intended
+   action here; afterward append evidence, run IDs, outcomes and next step.
+   Do not declare full GREEN while any gate-hard RED or required CI failure
+   remains. A later turn must recover from this log without guessing.
+
+Audit checkpoint results (18:16 UTC): Easton restoration returned
+`baseline-restored`; the staging script had verified the service inactive
+before restoring #129 pack.zip, pack.sha1 and server.properties. Both
+profiling runs still have Criterion SUCCESS / boot-RSS IN_PROGRESS.
+Gallery 42082255137 is still PENDING, without jobs yet. Proceeding with the
+planned docs-only checkpoint commit/push, then monitoring those runs.
