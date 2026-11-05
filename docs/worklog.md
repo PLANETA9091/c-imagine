@@ -5727,3 +5727,69 @@ client: p20 RED 27 -> 0, p6 11 -> 0, p36 36 -> 6, p391 39 -> 10 (CT rows
 285 -> 463). The next CLEAN run measures the real green-share jump; the
 infra churn (the ladder companions: cloth-config 15.0.140 mine, guideme
 21.1.22 the cron's) is converging.
+
+---
+## Task 14-at — the #107 autopsy (run 41908677297, 31b051f): the ours leg
+renders MAGNIFIED; the real green-share is 2.11%, not 24%; the camera-lock
+pins are dead on Paper 26.3
+
+Work Log:
+- Gallery #107 (main, 31b051f) failed gate-hard: all 8 ours shards died in
+  the INLINE pixel join (GATE=1, verdict skipped). The shard reports are
+  complete, so the run is fully measurable offline.
+- THE REAL NUMBER (scripts/r107_share.py over the 8 gallery-report-N
+  artifacts, per-page join JSONs): green = cells - red - spill - DYNAMIC.
+  The first pass counted the DYNAMIC class as green — the honest split:
+  biomesoplenty 3.29%, create 1.81%, dynamictrees 1.40%, minecraft (mobs)
+  2.17% -> TOTAL 2.11% (25245 cells, 18472 RED, 941 SPILL, 5307 DYNAMIC).
+- THE RED MASS IS ONE FAILURE, not channel gaps: create walls 9521 cells
+  (51.5%), create stairs 2857, boP stairs/walls/doors/fence-gates — every
+  wall state (163 variants each) is RED. Same state renders GREEN in one
+  cell and RED in another (p159 cut_scoria_brick_wall c4r0 green vs c10r0
+  red) — positional, not per-state.
+- THE PIXEL TRUTH (full-page shots, pages 0/103/159): the ours frame is
+  MAGNIFIED about the screen centre. The platform grid, the horizon and
+  the world render identically at first glance, but the horizon moves
+  372 -> 377 (= the 1.35x-about-centre prediction exactly), the structure
+  bounding boxes grow 1.35-1.70x radially from the centre, and the
+  band-wise vertical shifts span -40..+70 px (a spread, not a rigid
+  shift). The per-page global alignment absorbs part of it; what remains
+  goes RED.
+- THE ISOLATED DISPLAYS (ours-isolated-pane-casing.png, the known-position
+  summons): the andesite_casing renders 78x79 px where the contract needs
+  ~57 px (1 block at dist 9.0, f=60.5) = 1.37x; the acacia_window_pane
+  lands +2.1 blocks off its summon position. The pipeline magnification
+  is real and display-scoped.
+- THE FOV LAW FITS: 1.35x about the centre = FOV 54.4 deg vs the 70-deg
+  contract; on the 26.3 slider mapping measured by probe-fov.sh
+  (-0.65 -> 70, 0.0 -> 99) that is the DEFAULT slider value -1.0 — i.e.
+  the client behaves as if options.txt (fov:-0.65) were never read.
+  BUT gallery #95 (41892119307, fix/14-ap-item-harness) rendered the same
+  pages ALIGNED (measured: p105/p113 horizons equal 377, structures match
+  1:1) with the identical client build (piston-meta 26.3 unchanged since
+  11-03), identical options.txt line, identical rig constants — so the
+  pin DID apply at #95 and something in the ladder window (e615a1a /
+  23ed9c1 / e73581a) broke it. The pack composites also changed shape in
+  that window (create:acacia_window g0: 1 full-cube element at #95 -> 8
+  x=0-plane slivers at #107 — the new ObjMesh path) — per-model
+  magnifications differ (windows 1.70x, walls/casing 1.34-1.37x), so the
+  ObjMesh shrink/undo (f1ed491: 58 scale-2.0 rows in paper.json) is the
+  second suspect alongside the dead fov pin.
+- THE MOB PAGES ARE NIGHT: the ours leg's "time set noon" succeeds but
+  every gamerule fails — "Incorrect argument for command gamerule
+  doDaylightCycle false" — while the truth leg's identical commands
+  succeed. The ours pins answer in the 26.3 server dialect ("Set
+  minecraft:overworld to time marker minecraft:noon"): the ours leg runs
+  Paper 26.3 (fill.papermc.io/.../versions/26.3, the staging-review
+  architecture), where the gamerule set is renamed. doDaylightCycle
+  stays TRUE, the walk reaches the mob/item pages at night (emobs/emobs
+  create0 = starfield vs the truth's noon) — those channels are 100%
+  RED regardless of geometry.
+- NEXT LEVERS, in order: (1) boot Paper 26.3 locally, read its real
+  gamerule names, re-pin the ours leg per-version; (2) the same local
+  stand measures the 26.3 client's actual rendered scale with the
+  fov:-0.65 pin — if the pin is dead client-side, find the option name
+  the 26.3 build reads; if alive, the magnification is the display
+  pipeline and GALLERY_SCALE/TZ need re-measuring against it; (3) audit
+  the ObjMesh shrink/undo pairs (58 scale-2.0 rows vs the meshes that
+  actually shrank) once the global magnification is fixed.
