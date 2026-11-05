@@ -7247,3 +7247,20 @@ no_level=" line first: no_level>0 means the dump had no level, and drawn near
 0 would point at Flywheel making Create renderers bail. Limits: a FRESH block
 entity stands in, so runtime state is not reflected, and any moving part
 freezes at partialTick 0.
+
+### 14-bh — #157 measured: the clamp WORKS, the red sea now rides the block-entity capture switch
+- #157 (d1b6b83: the clamp + aed9770's block-entity bake + the retries) rebuilt the seed
+  cleanly (the client-fetch retry carried the evicted-cache path) and the pack renders
+  REAL GEOMETRY everywhere — the #141 missing-texture cubes are gone (BOP blocks
+  0.08% -> 1.52%, create 0.38% -> 0.80% green, mekanism/sophisticatedbackpacks now
+  MEASURED). The 14-bf clamp verdict: no boundary violations, no missing models.
+- THE REMAINING RED SEA IS A NEW LAYER: the crops show EMPTY ours cells (stone floor
+  visible, no block) across every mod — the join classes are diverse (brass_door 67,
+  crafting_monitor 64, webbing 64, encased_fluid_pipe 59, brick walls 39 each), not one
+  family. The ours boot log shows the cause: [ERROR] "No key layers in MapLike[{}]" at
+  server start plus mass "no pack CMD for <state> — cell skipped" — the aed9770
+  block-entity bake changed the dump/consumption contract and rows are dropping out of
+  visual-gallery.tsv. This is the capture switch's fallout, not the clamp's.
+- NEXT (for whoever picks it up): trace "No key layers in MapLike[{}]" — a codec reading
+  a 'layers' field from an empty map, most likely the new BE-bake mesh format parsed by
+  the wrong reader — then re-count the pack rows vs the manifest states.
