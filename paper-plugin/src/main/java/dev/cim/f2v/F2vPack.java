@@ -2233,6 +2233,32 @@ public final class F2vPack {
         double[] angles = ObjMesh.eulerOf(ObjMesh.columnsOf(30, 40, 50));
         expect(failures, Math.abs(angles[0] - 30) < 1e-6 && Math.abs(angles[1] - 40) < 1e-6
                 && Math.abs(angles[2] - 50) < 1e-6, "obj: euler decomposition round-trips");
+        // a sprite no jar can supply must never leave the blocks atlas: the
+        // generated trims/items/* sprites live in the items atlas, and ONE
+        // mixed quad aborts the bake of the whole paper definition
+        TreeMap<String, byte[]> hostEntries = new TreeMap<>();
+        List<String> hostWarnings = new ArrayList<>();
+        String trim = "minecraft:trims/items/leggings_trim_quartz";
+        String hosted = GalleryPack.hostSprite(List.of(), trim, hostEntries, hostWarnings);
+        expect(failures, hosted.equals(GalleryPack.PLACEHOLDER_SPRITE),
+                "gallery: an unhostable item-atlas sprite takes the placeholder");
+        expect(failures, hostEntries.containsKey(
+                "assets/c-imagine/textures/block/items/unhosted.png"),
+                "gallery: the placeholder sprite ships in the pack");
+        expect(failures, hostWarnings.size() == 1 && hostWarnings.get(0).contains(trim),
+                "gallery: the unhostable sprite stays loud in the build report");
+        expect(failures, GalleryPack.hostSprite(List.of(), "mod:block/gone", hostEntries,
+                hostWarnings).equals("mod:block/gone"),
+                "gallery: a missing block-path sprite keeps its blocks-atlas ref");
+        JsonObject onLimit = new JsonObject();
+        onLimit.add("from", JsonParser.parseString("[-16, 0, 32]"));
+        onLimit.add("to", JsonParser.parseString("[-16, 4, 32]"));
+        JsonObject inflated = GalleryPack.inflateDegenerate(onLimit);
+        expect(failures, inflated.getAsJsonArray("from").get(0).getAsDouble() == -16
+                && inflated.getAsJsonArray("to").get(0).getAsDouble() > -16
+                && inflated.getAsJsonArray("to").get(2).getAsDouble() == 32
+                && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
+                "gallery: a degenerate plane on the limit inflates inward only");
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;

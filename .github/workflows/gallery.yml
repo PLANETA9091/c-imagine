@@ -2291,6 +2291,15 @@ jobs:
           pip install -q numpy pillow
           mkdir -p gallery-report
           GATE=0
+          # A failed item bake is one root cause, not N pixel reds: every
+          # cell shares the paper definition, so a single atlas-mixing model
+          # turns the whole walk into missing-model cubes. Name it up front;
+          # the pages still join below for the forensics.
+          if grep -qa "Unable to bake item model" visual-client/client.out; then
+            echo "::error::item model bake failed on the real client — per-cell REDs below are its fallout"
+            grep -a -A1 "Unable to bake item model" visual-client/client.out | cut -c1-200
+            GATE=1
+          fi
           echo "=== BLOCK pages (stride $SI +$K): manifest-driven, per ladder ns (the FRESH truth manifests ARE the page set) ==="
           for NS in $LADDER_NS; do
             for p in $(seq $SI $K $MAXP); do
