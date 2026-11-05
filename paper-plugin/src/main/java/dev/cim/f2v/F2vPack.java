@@ -639,6 +639,7 @@ public final class F2vPack {
             throws IOException {
         List<String> warnings = new ArrayList<>();
         GalleryPack.resetModelScales();
+        GalleryPack.resetJarCache();
         GalleryPack.setQuadDir(outDir.resolve("quads"));
         List<VisualItem> baseResolved = assignCmds(manifestRows);
 

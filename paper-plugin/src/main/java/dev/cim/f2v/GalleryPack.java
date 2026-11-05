@@ -471,20 +471,19 @@ public final class GalleryPack {
         String path = ref.substring(colon + 1);
         String[] candidates = {"assets/" + ns + "/models/" + path + ".json"};
         for (Path jar : jars) {
-            try (ZipFile zf = new ZipFile(jar.toFile())) {
-                for (String cand : candidates) {
-                    ZipEntry e = zf.getEntry(cand);
-                    if (e == null) {
-                        continue;
-                    }
-                    byte[] modelBytes = zf.getInputStream(e).readAllBytes();
-                    // the ENTRY MODEL itself rides at its original path
-                    // (copyParentGraph only walks parents + textures — the
-                    // F2vPack item path does the same putIfAbsent dance)
-                    entries.putIfAbsent(cand, modelBytes);
-                    F2vPack.copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
-                    return ns + ":" + path;
+            ZipFile zf = jarCache(jars).zip(jar);
+            for (String cand : candidates) {
+                ZipEntry e = zf.getEntry(cand);
+                if (e == null) {
+                    continue;
                 }
+                byte[] modelBytes = zf.getInputStream(e).readAllBytes();
+                // the ENTRY MODEL itself rides at its original path
+                // (copyParentGraph only walks parents + textures — the
+                // F2vPack item path does the same putIfAbsent dance)
+                entries.putIfAbsent(cand, modelBytes);
+                F2vPack.copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
+                return ns + ":" + path;
             }
         }
         return null;
@@ -636,15 +635,29 @@ public final class GalleryPack {
 
     /** Read one PNG from the jars (the client jar carries vanilla textures). */
     private static byte[] readPngFromJars(List<Path> jars, String file) throws IOException {
-        for (Path jar : jars) {
-            try (ZipFile zf = new ZipFile(jar.toFile())) {
-                ZipEntry e = zf.getEntry(file);
-                if (e != null) {
-                    return zf.getInputStream(e).readAllBytes();
-                }
-            }
+        return jarCache(jars).read(file);
+    }
+
+    private static JarCache jars;
+    private static List<Path> jarsKey;
+
+    /** Open-once reads: every lookup reopening 9 jars was most of the pack build (see JarCache). */
+    private static synchronized JarCache jarCache(List<Path> paths) {
+        if (!paths.equals(jarsKey)) {
+            resetJarCache();
+            jars = new JarCache(paths);
+            jarsKey = List.copyOf(paths);
         }
-        return null;
+        return jars;
+    }
+
+    /** Fresh reads for a new build; a selftest fixture may rewrite a jar at the same path. */
+    static synchronized void resetJarCache() {
+        if (jars != null) {
+            jars.close();
+        }
+        jars = null;
+        jarsKey = null;
     }
 
     /**
@@ -1579,16 +1592,8 @@ public final class GalleryPack {
 
     /** Read one JSON resource from the first jar that carries it. */
     static JsonObject readJsonFromJars(List<Path> jars, String file) throws IOException {
-        for (Path jar : jars) {
-            try (ZipFile zf = new ZipFile(jar.toFile())) {
-                ZipEntry e = zf.getEntry(file);
-                if (e != null) {
-                    return JsonParser.parseString(
-                            new String(zf.getInputStream(e).readAllBytes(), StandardCharsets.UTF_8))
-                            .getAsJsonObject();
-                }
-            }
-        }
-        return null;
+        byte[] bytes = jarCache(jars).read(file);
+        return bytes == null ? null
+                : JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8)).getAsJsonObject();
     }
 }
