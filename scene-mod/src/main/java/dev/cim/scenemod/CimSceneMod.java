@@ -547,8 +547,18 @@ public final class CimSceneMod {
             if (now.isAir()) {
                 if (cell) {
                     dissolved++;
-                    String gone = was.split("\t")[4];
-                    tsv.append("skip\t-1\t-1\t-1\t").append(gone).append("\t0\tdissolved\n");
+                    // the state as PLACED: the settle pass may already have read air.
+                    // A static block keeps its cell: what dissolves here can survive
+                    // the truth walk (measured: 5 dynamictrees leaves), and the ours
+                    // leg replays this manifest while the join gates on truth's. A
+                    // block entity stays out; its mesh can spill into live neighbours.
+                    BlockState placedState = slice.get(i);
+                    String gone = stateString(placedState,
+                            BuiltInRegistries.BLOCK.getKey(placedState.getBlock()));
+                    tsv.append(placedState.hasBlockEntity()
+                                    ? "skip\t-1\t-1\t-1\t"
+                                    : "skip\t" + pos.getX() + '\t' + pos.getY() + '\t' + pos.getZ() + '\t')
+                            .append(gone).append("\t0\tdissolved\n");
                     LOGGER.info("[cimscene] gallery settle ns={} page={} reason=dissolved state={}",
                             namespace, page, gone);
                 } else if (was != null) {

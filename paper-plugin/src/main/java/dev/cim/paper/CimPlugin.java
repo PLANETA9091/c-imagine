@@ -1174,13 +1174,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         final java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
-                if (line.isBlank() || line.startsWith("cell\t")) {
-                    if (line.startsWith("cell\t")) {
-                        cells.add(line.split("\t", -1));
-                    }
-                    continue;
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                } else if (line.startsWith("skip\t") && line.endsWith("\tdissolved")
+                        && !line.startsWith("skip\t-1\t")) {
+                    // dissolved on the seed walk only maybe: the truth manifest,
+                    // not this one, decides whether the cell is compared
+                    cells.add(line.split("\t", -1));
                 }
-                // header row or skip row — nothing to spawn
+                // header row or any other skip row — nothing to spawn
             }
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery: manifest read failed " + mf + ": " + ioe);

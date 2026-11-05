@@ -7204,3 +7204,24 @@ HONESTY NOTE on "green": mekanism and sophisticatedbackpacks block pages are
 GREEN because every cell is DYNAMIC (block entity) and left ungated: 861 and
 384 cells, 0 gated. Across all block pages DYNAMIC is ~5,750 cells. Those
 pages prove nothing about parity yet and must not be quoted as coverage.
+
+2026-11-05T20:05:00+00:00 dynamictrees p5 reds (5 flowering_azalea_leaves, ae~560k, same state GREEN in
+sibling cells): ours cell EMPTY, not a colour gap. The seed walk wrote them
+"skip ... dissolved", truth kept them, ours replays the seed manifest while
+the join gates on truth's. Trigger NOT identified: randomTickSpeed is 0 on
+both legs (the seed also runs tick rate 1000, unproven link). Static blocks
+now keep their coordinates on dissolved rows and ours places them; truth still
+decides what is compared, so nothing is exempted. Block entities stay out:
+their meshes could spill into live neighbours. Dissolved rows also name the
+PLACED state now, not minecraft:air (334 anonymous rows in shard 7 alone).
+
+minecraft:rabbit (the one vanilla entity RED, every run): NOT a bug here. 26.3
+ships a redesigned rabbit (RabbitRenderState hop/idle-head-tilt animations,
+new model and texture) against the 1.21.1 truth. Entity geometry is client
+code, a pack cannot reach it. OWNER DECISION: accept as a vanilla version
+delta, or route rabbits through a display channel. Not gate-exempted.
+
+Residual list from the last healthy run (42085254497), for whoever picks up:
+Create pane 1; items create:experience_block, experience_nugget,
+refined_radiance, mangrove_window_pane; biomesoplenty:anomaly; BOP 116 blocks
+(lumaloop 32, glowworm_silk 19, high_grass 13, hanging_cobweb 13, ...).
