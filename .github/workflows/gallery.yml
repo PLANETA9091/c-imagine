@@ -184,7 +184,7 @@ jobs:
   seed:
     name: gallery seed — pack + manifests (cache-hit ~1 min, miss = full walk)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90   # the P2 ladder (ae2/mekanism/backpacks/jade) walks four more registries to exhaustion
     steps:
       - uses: actions/checkout@v4
 
