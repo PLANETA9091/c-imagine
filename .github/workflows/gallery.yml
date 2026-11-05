@@ -705,7 +705,7 @@ jobs:
           rm -rf world world_nether world_the_end   # fresh flat world
           setsid bash -c "java -Xmx2G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
-          javac -d vtools scripts/visual/Shot.java scripts/visual/Key.java
+          javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
           NEED=""
           for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6; do
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
@@ -892,13 +892,13 @@ jobs:
               for i in $(seq 1 8); do
                 python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                   "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                java -cp vtools Shot "truth-shots/.settle-$NS-p$p.png"
+                bash scripts/visual/shot.sh "truth-shots/.settle-$NS-p$p.png"
                 CUR=$(md5sum "truth-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
                 if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
                 PREV="$CUR"
               done
               rm -f "truth-shots/.settle-$NS-p$p.png"
-              java -cp vtools Shot "truth-shots/gal-p-$NS$p.png"
+              bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p.png"
               # ANIM liveness probe (DIAGNOSTIC): kinetic pages only — a
               # page whose manifest carries dyn=1 cells (manifest-driven,
               # zero hardcode; the static pages stay one-shot). Two frames
@@ -907,9 +907,9 @@ jobs:
               # while truth-delta > threshold).
               DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "srv-wall/c-imagine/scenes/gallery-$NS-p$p.tsv")
               if [ "${DYNC:-0}" -gt 0 ]; then
-                java -cp vtools Shot "truth-shots/gal-p-$NS$p-t0.png"
+                bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t0.png"
                 sleep 2
-                java -cp vtools Shot "truth-shots/gal-p-$NS$p-t1.png"
+                bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t1.png"
               fi
               echo "shot $NS page $p"
             done
@@ -922,7 +922,7 @@ jobs:
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery page $NS 0"
               sleep 2
-              java -cp vtools Shot "truth-shots/gal-p-${NS}0-again.png"
+              bash scripts/visual/shot.sh "truth-shots/gal-p-${NS}0-again.png"
               echo "shot $NS page 0 again"
             done
           fi
@@ -1052,9 +1052,9 @@ jobs:
             sleep 2   # + the 2s settle before done = ~4s spawn->shot: section rebuild (wall -> air) + entity render under llvmpipe
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            java -cp vtools Shot "truth-shots/gal-e$p.png"
+            bash scripts/visual/shot.sh "truth-shots/gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair: a second shot ~2s later
-            java -cp vtools Shot "truth-shots/gal-e$p-self.png"
+            bash scripts/visual/shot.sh "truth-shots/gal-e$p-self.png"
             echo "shot mob page $p"
           done
           # DYN + LARGE series (diagnostic, never gated): non-Mobs and
@@ -1073,7 +1073,7 @@ jobs:
               sleep 2   # + the 2s settle before done (14-an: the settle rides wait_done)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "truth-shots/gal-e$SERIES$p.png"
+              bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p.png"
               echo "shot $SERIES page $p"
             done
           done
@@ -1087,7 +1087,7 @@ jobs:
             sleep 2
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            java -cp vtools Shot "truth-shots/gal-e0-again.png"
+            bash scripts/visual/shot.sh "truth-shots/gal-e0-again.png"
             echo "shot mob page 0 again"
             # the next walk's kill must not land before the final settle
             # rewrites this page's manifest: every subject would read dissolved
@@ -1122,7 +1122,7 @@ jobs:
                 sleep 2   # 14-an: the settle pass rides a real tick delay inside wait_done
                 python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                   "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                java -cp vtools Shot "truth-shots/gal-e$SERIES-$NS$p.png"
+                bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
                 echo "shot $NS $SERIES page $p"
               done
               [ "$EX" = "1" ] || { echo "$NS $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
@@ -1152,7 +1152,7 @@ jobs:
               sleep 1   # static item displays settle like the block pages
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "truth-shots/gal-i-$NS$p.png"
+              bash scripts/visual/shot.sh "truth-shots/gal-i-$NS$p.png"
               # HELD leg (DIAGNOSTIC, 2026-11-04): stage the page's FIRST
               # item into the viewer's hotbar slot 0 over RCON (the SAME
               # manifest row the ours plugin replay reads), restore the HUD
@@ -1200,7 +1200,7 @@ jobs:
               sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "truth-shots/gal-pa-$NS$p.png"
+              bash scripts/visual/shot.sh "truth-shots/gal-pa-$NS$p.png"
               echo "shot $NS particle page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS particle walk hit the MAXP cap without exhausted"; exit 1; }
@@ -1226,7 +1226,7 @@ jobs:
               sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "truth-shots/gal-fl-$NS$p.png"
+              bash scripts/visual/shot.sh "truth-shots/gal-fl-$NS$p.png"
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS fluid walk hit the MAXP cap without exhausted"; exit 1; }
@@ -1499,7 +1499,7 @@ jobs:
           # the rebuild: 4.8 min of every ours boot (#35).
           setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
-          javac -d vtools scripts/visual/Shot.java scripts/visual/Key.java
+          javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
           NEED=""
           for pkg in libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6; do
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
@@ -1619,7 +1619,7 @@ jobs:
               sleep 2
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-p-${NS}0-again.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-p-${NS}0-again.png"
               echo "shot $NS page 0 again"
             done
             # 12-ac/12-ah bisect x2: ONE isolated display per suspect family,
@@ -1636,7 +1636,7 @@ jobs:
             sleep 2
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            java -cp vtools Shot "ours-shots/ours-isolated-pane-casing.png"
+            bash scripts/visual/shot.sh "ours-shots/ours-isolated-pane-casing.png"
             echo "shot isolated pane+casing"
             # 14-at SCALE DATUM (diagnostic, never gated): the isolate layout
             # is byte-stable across runs when the display pipeline is sane
@@ -1719,7 +1719,7 @@ jobs:
               sleep 1
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-iso-$NAME.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-iso-$NAME.png"
               echo "shot isolated $NAME (x=$X cmd=$CMD)"
             done
             # 14-n PLUGIN-PATH ISOLATES (diagnostic, not gated): the v2
@@ -1798,7 +1798,7 @@ jobs:
               sleep 1
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer $CX $CY $CZ $YAW $PITCH" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-iso9001-$NAME.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-iso9001-$NAME.png"
               echo "shot plugin-path isolate $NAME (page $P cam $CX,$CY,$CZ yaw $YAW pitch $PITCH)"
             done
             # 14-z RENDER-INSTABILITY TRIANGULATION (diagnostic, not gated):
@@ -1840,7 +1840,7 @@ jobs:
               sleep 1
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-iso14z-$NAME.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-iso14z-$NAME.png"
               echo "shot 14z isolate $NAME (page $P placed=$WANT)"
             done
           fi
@@ -1882,21 +1882,21 @@ jobs:
               for i in $(seq 1 8); do
                 python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                   "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                java -cp vtools Shot "ours-shots/.settle-$NS-p$p.png"
+                bash scripts/visual/shot.sh "ours-shots/.settle-$NS-p$p.png"
                 CUR=$(md5sum "ours-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
                 if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
                 PREV="$CUR"
               done
               rm -f "ours-shots/.settle-$NS-p$p.png"
-              java -cp vtools Shot "ours-shots/ours-gal-p-$NS$p.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p.png"
               # ANIM liveness probe (truth-leg mirror, DIAGNOSTIC): the
               # SAME manifest drives the decision — identical kinetic-page
               # selection on both legs, two frames 2s apart
               DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "$M")
               if [ "${DYNC:-0}" -gt 0 ]; then
-                java -cp vtools Shot "ours-shots/ours-gal-p-$NS$p-t0.png"
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t0.png"
                 sleep 2
-                java -cp vtools Shot "ours-shots/ours-gal-p-$NS$p-t1.png"
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png"
               fi
               test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
               echo "shot $NS page $p"
@@ -1936,9 +1936,9 @@ jobs:
             sleep 5   # section rebuild + entity render under llvmpipe
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            java -cp vtools Shot "ours-shots/ours-gal-e$p.png"
+            bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror)
-            java -cp vtools Shot "ours-shots/ours-gal-e$p-self.png"
+            bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p-self.png"
             echo "shot mob page $p"
           done
           # DYN + LARGE series (diagnostic)
@@ -1954,7 +1954,7 @@ jobs:
               sleep 5
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-e$SERIES$p.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p.png"
               echo "shot $SERIES page $p"
             done
           done
@@ -1965,7 +1965,7 @@ jobs:
             sleep 6
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-            java -cp vtools Shot "ours-shots/ours-gal-e0-again.png"
+            bash scripts/visual/shot.sh "ours-shots/ours-gal-e0-again.png"
             echo "shot mob page 0 again"
           fi
           # MOD-NAMESPACE entity replay (per ladder ns): the staged
@@ -1995,7 +1995,7 @@ jobs:
                 sleep 4
                 python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                   "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                java -cp vtools Shot "ours-shots/ours-gal-e$SERIES-$NS$p.png"
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 test -s "ours-shots/ours-gal-e$SERIES-$NS$p.png" || { echo "$NS $SERIES page $p shot missing"; exit 1; }
                 echo "shot $NS $SERIES page $p"
               done
@@ -2026,7 +2026,7 @@ jobs:
               sleep 1   # static item displays settle like the block pages
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-i-$NS$p.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-i-$NS$p.png"
               # HELD replay (truth-leg mirror, DIAGNOSTIC): the plugin
               # stages the SAME manifest row's item as the pack CMD carrier
               # into hotbar slot 0; restore the HUD, press "1", shoot
@@ -2066,7 +2066,7 @@ jobs:
               sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-pa-$NS$p.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-pa-$NS$p.png"
               test -s "ours-shots/ours-gal-pa-$NS$p.png" || { echo "$NS particle page $p shot missing"; exit 1; }
               echo "shot $NS particle page $p"
             done
@@ -2092,7 +2092,7 @@ jobs:
               sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-fl-$NS$p.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-fl-$NS$p.png"
               test -s "ours-shots/ours-gal-fl-$NS$p.png" || { echo "$NS fluid page $p shot missing"; exit 1; }
               echo "shot $NS fluid page $p"
             done
