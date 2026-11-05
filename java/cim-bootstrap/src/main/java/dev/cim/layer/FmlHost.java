@@ -158,6 +158,7 @@ public final class FmlHost {
             // 3) real ModFile / ModFileInfo / ModInfo per jar (real toml parsing)
             List<Object> modFiles = new ArrayList<>();
             List<Object> modInfos = new ArrayList<>();
+            List<ModSpec> containerSpecs = new ArrayList<>();
             Map<ModSpec, Object> infoBySpec = new HashMap<>();
             for (ModSpec mod : mods) {
                 Object file = buildModFile(mod);
@@ -170,7 +171,10 @@ public final class FmlHost {
                 List<?> infos = (List<?>) call(fileInfo, "getMods");
                 for (Object info : infos) {
                     modInfos.add(info);
-                    infoBySpec.put(mod, info);
+                    String id = (String) call(info, "getModId");
+                    ModSpec spec = forModId(mod, id);
+                    containerSpecs.add(spec);
+                    infoBySpec.put(spec, info);
                 }
             }
 
@@ -200,7 +204,7 @@ public final class FmlHost {
             // filter are excluded here too, so downstream (mod, container)
             // parallel loops stay aligned.
             List<ModSpec> containerMods = new ArrayList<>();
-            for (ModSpec mod : mods) {
+            for (ModSpec mod : containerSpecs) {
                 Object scanData = buildScanData(mod);
                 Object info = infoBySpec.get(mod);
                 if (info == null) {
@@ -405,7 +409,7 @@ public final class FmlHost {
             gameBus.getClass().getMethod("start").invoke(gameBus);
 
             // 9) census of modded entries + status
-            Map<String, Object> modded = census(mods);
+            Map<String, Object> modded = census(containerSpecs);
             long ms = (System.nanoTime() - started) / 1_000_000L;
             System.out.println(LOG + " mod execution ok (mods=" + containers.size()
                     + ", registered=" + registered + ", moddedEntries=" + modded
@@ -487,7 +491,7 @@ public final class FmlHost {
      * server entrypoint). Only entrypoints whose {@code @Mod} target has no
      * dist or a DEDICATED_SERVER/ANY dist survive.
      */
-    private static List<String> distFilteredEntrypoints(ModSpec mod) {
+    static List<String> distFilteredEntrypoints(ModSpec mod) {
         List<String> out = new ArrayList<>();
         if (Boolean.getBoolean("cim.debug.modulelayer")) {
             for (ScanAnn ann : mod.annotations()) {
@@ -517,6 +521,23 @@ public final class FmlHost {
             }
         }
         return out;
+    }
+
+    /** One FML container per declared mod, sharing its jar's module and scan data. */
+    static ModSpec forModId(ModSpec file, String id) {
+        List<String> entries = new ArrayList<>();
+        for (String entry : file.entrypoints()) {
+            for (ScanAnn ann : file.annotations()) {
+                if (ann.descriptor().contains("/fml/common/Mod;")
+                        && entry.replace('.', '/').equals(ann.clazz())
+                        && id.equals(ann.data().get("value"))) {
+                    entries.add(entry);
+                    break;
+                }
+            }
+        }
+        return new ModSpec(id, file.jar(), file.version(), entries,
+                file.modulePackages(), file.services(), file.annotations());
     }
 
     private static Object invokeValue(Object enumHolder) {

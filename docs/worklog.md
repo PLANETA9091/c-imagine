@@ -6201,3 +6201,22 @@ Analysis before implementation (2026-11-05):
   marker labels. Expected: both stacks construct all three test mods and
   reach the codec/component assertions. Rendering work stays parked until
   this integration regression is fixed.
+
+### Multi-mod container blocker exposed after the ID fix
+- a0317bb8 M2 harness now constructs cimtest_net/cimtest_cap and passes
+  both payload codecs and the component set/get + persistent codec legs.
+  Its assertion fails at `mod cimtest_net not constructed`: the generic
+  FmlHost marker appears only for cimtest; all three constructors ran in
+  that ONE container. FmlHost mapped each ModSpec to the LAST ModInfo in
+  its file and supplied every entrypoint to that container.
+- Rechecked upstream FMLModContainer 4.0.45 bytecode: constructor takes
+  ONE IModInfo and that mod's entrypoints, and finds the shared module via
+  info.getOwningFile().moduleName(). One module per jar is correct; one
+  container per jar is not. The scanner's manifest deliberately emits
+  one row per jar with all @Mod annotations, so expansion belongs here.
+- Expected: parse one ModFile per jar; expand all its ModInfos into
+  individual container specs, selecting @Mod(value=<id>) entrypoints;
+  retain each file's shared module and full scan data. Log and lifecycle
+  each container independently; count both namespaces in census. No
+  packet path or registration loop changes. A pure Java fixture will
+  exercise entrypoint ownership and dist filtering before real-stack CI.
