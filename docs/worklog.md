@@ -6638,3 +6638,42 @@ truth/shard evidence without canceling it.
 - EXPECTED ON THE NEXT GALLERY RUN: the BOP crop/plant class (~102-127 reds at ae
   62-120k) collapses toward the gate; the sky +1 skew (152,189,255 vs 153,190,255)
   remains a separate lever if the class does not fully clear.
+18:30 checkpoint: attempt-specific API confirms ALL EIGHT truth shards
+SUCCESS on corrected gallery 42082255137. Thus the fresh-mod staging and
+required-channel handshake fix is proven through complete real-client
+walks. Seed SUCCESS; ours s6 SUCCESS; s3/s5/s7 fail at the pixel join;
+s1 is the identified pre-launch CDN disconnect; s0/s2 are joining; s4
+was still in client-join preparation at the last snapshot.
+
+Retry fix committed locally as 0ce41628 with required author; fetch/rebase
+completed, push still awaiting network completion. No running CI run was
+canceled. Next collect currently available fresh gallery-report artifacts
+and truth s0's captures/meta into /tmp/cim-green-42082255137; aggregate
+only complete downloaded shards and label missing shards explicitly.
+Use these fresh captures for the next Create-first diagnosis, not a mixed
+set of different runs. Then finish tracking remaining shard failures.
+
+Network/collection checkpoint: current report artifacts and truth-meta-0
+were downloaded successfully. The run-list request failed with a GitHub
+TLS handshake timeout; this is a local API transport failure, not a CI
+conclusion. Truth screenshots are still transferring. The git push has
+not returned; next inspect ONLY this session's push process, terminate a
+stalled attempt if necessary, and verify remote HEAD before a bounded
+normal push retry. Do not force push or cancel CI. Meanwhile aggregate the
+available downloaded reports, explicitly reporting absent/zero-join shards.
+
+Collection/publish results: currently complete downloaded reports are
+s3/s5/s6/s7, plus the s1 zero-join failure stub. s0/s2/s4 are not downloaded,
+so these are PARTIAL counts only: Create blocks GREEN 7832 / RED 0 /
+DYNAMIC 526 / SPILL 14 / skipped 7309; BOP GREEN 2413 / RED 34;
+Dynamic Trees GREEN 806 / RED 5. No full-run percentage is claimed.
+Fresh truth screenshots download hit its 60-second timeout (124); meta and
+reports succeeded. A partial screenshot directory may exist; verify files
+before retrying extraction to a fresh destination.
+The one session push process (PID 928063) had stalled >3 minutes. Sent
+TERM; command returned 143. Remote publication is UNKNOWN until verified;
+no CI run or server was stopped. A bounded ls-remote verification is pending.
+Next preserve these audit notes in a docs checkpoint, then retry a normal
+push with a 60-second bound. A non-fast-forward rejection must be resolved
+by fetching/rebasing; never force. Retry the truth screenshot transfer and
+obtain the newly finished s0/s2/s4 reports after checking availability.
