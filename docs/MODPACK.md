@@ -51,16 +51,17 @@ markers are DIAGNOSTICS — they never green a rank (owner directive 2026-10-30)
 The gallery walks **four ladder namespaces** (`LADDER_NS` in `gallery.yml`:
 `create biomesoplenty dynamictrees combat_roll` — registry namespaces
 verified from each jar's `neoforge.mods.toml`; pins in
-`scripts/cimscene/mods.lock`). Status per mod (marked honestly — the first
-full multi-ns measurement happens after this branch merges, since PRs do
-not trigger this repo's push-to-main CI):
+`scripts/cimscene/mods.lock`). Status per mod (ON MAIN, measured — gallery
+#114 is the baseline: 39.7% gated green-share by the flat count, the fixes
+below landed after it; the first full 12-class measurement is the first
+post-fix gallery run):
 
-| Mod | CI wired (branch) | Note |
+| Mod | CI status (main) | Measured baseline (#114) + fixes landed after it |
 |---|---|---|
-| Create | CI wired (branch): the full walk all classes, as on main | the measured baseline |
-| Biomes O' Plenty | CI wired (branch): gallery walk ns=biomesoplenty, all classes + the biome-tint diagnostic; companions glitchcore + terrablender pinned (mandatory deps, checked in the jar) | biome-tint class = DIAGNOSTIC-first proof surface |
-| Dynamic Trees | CI wired (branch): gallery walk ns=dynamictrees, all classes | BE bridge channel proof stays the M5.6 surface |
-| Combat Roll | CI wired (branch): gallery walk ns=combat_roll, all classes; playeranimator companion pinned (mandatory dep) | sound/held diagnostic classes cover its sound/animation surface |
+| Create | full walk all 12 classes on main | blocks 48.9% (31,389 states, full page coverage), items 20.3% — the CMD-space collision fix (`a83ec48f`) re-owns the duplicated thresholds; particles 13 types now spawn (programmatic send), the sound stream channel is live (14 built-in + mapped vanilla), 14 GUI menus walked diagnostic |
+| Biomes O' Plenty | full walk all classes on main; companions glitchcore + terrablender + cloth-config pinned (mandatory deps, measured: a missing one is an FML boot crash) | blocks 16.4% — 44 of ~118 pages shot EMPTY on ours (the down-stretches lane, 14-bb); the vanilla-template parent fix (14-ay) resolves 12/13 red families; biome-tint = DIAGNOSTIC (69 biomes in the ledger) |
+| Dynamic Trees | full walk all classes on main | blocks 13.7% gated (the tree mass rides the DYNAMIC class), items 12.9% — the same CMD fix applies |
+| Combat Roll | full walk on main; playeranimator companion pinned | registers NO visual content (0 blocks/items/entities) — its ladder value is the sound class (2 sounds walked) + held |
 
 Companion mods (playeranimator, glitchcore, terrablender) ride the server
 but their namespaces are deliberately not ladder namespaces — they are
@@ -132,18 +133,20 @@ features function in the layer, visual diff within contract threshold.
 - **The `inv` class** (see the table above): the open-inventory view on
   both legs.
 
-### Tier 2 CI wiring status (branch `ci/full-content-coverage`, 2026-11-04)
+### Tier 2 CI wiring status (ON MAIN, 2026-11-05)
 
-`mod-matrix.yml` gained `tier2-truth` matrix legs for the server-loadable
-set — each boots a real NeoForge 21.1.265 server + the locked mod and
-asserts the mod's namespace lands census rows:
+`mod-matrix.yml` `tier2-truth` matrix legs run on every push — each boots a
+real NeoForge 21.1.265 server + the locked mod and asserts the mod's
+namespace lands census rows. Green on main since the guideme companion
+fix (`fa70f92f`: ae2 requires guideme 21.1.1+ without shipping it —
+measured FML crash 41896212806):
 
-| Mod | CI wired (branch) | Note |
+| Mod | CI status (main) | Note |
 |---|---|---|
-| AE2 | CI wired (branch): tier2-truth census leg | server_side=required per Modrinth |
-| Mekanism | CI wired (branch): tier2-truth census leg | server_side=required per Modrinth |
-| Sophisticated Backpacks | CI wired (branch): tier2-truth census leg; rides its REQUIRED companion sophisticated-core (checked in the jar) | server_side=required per Modrinth |
-| Jade | CI wired (branch): tier2-truth boot leg, assert-rows=no | a HUD provider registers no content — the rung proves boot + census file, honestly not rows |
+| AE2 | tier2-truth census leg, GREEN | rides guideme (pinned 21.1.22); server_side=required per Modrinth |
+| Mekanism | tier2-truth census leg, GREEN | server_side=required per Modrinth |
+| Sophisticated Backpacks | tier2-truth census leg, GREEN | rides its REQUIRED companion sophisticated-core (checked in the jar); server_side=required per Modrinth |
+| Jade | tier2-truth boot leg, assert-rows=no | a HUD provider registers no content — the rung proves boot + census file, honestly not rows |
 | JEI | NOT wired — excluded from the server census | Modrinth metadata: server_side=optional, ships no server content (nothing to census) |
 | JourneyMap | NOT wired — excluded from the server census | Modrinth metadata: server_side=optional, ships no server content (nothing to census) |
 
