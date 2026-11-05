@@ -368,6 +368,44 @@ def clip_fraction(tex: str, tint: np.ndarray, assets: "JarAssets") -> float:
     return float((clips.any(axis=1)).mean())
 
 
+def aggregate_texture(tex: str, cells: list, assets: "JarAssets",
+                      tolerance: float, epsilon: float = EPSILON):
+    """Fold one texture's per-cell solves into a TSV row, or refuse it.
+
+    Returns (row, reason): row = (tex, (r,g,b), evidence) when every cell
+    agrees within tolerance on every channel, the median multiply sits in the
+    bake family [BAKE_RATIO_MIN, BAKE_RATIO_MAX], and the bake is
+    representable in the raw texture's gamut (<= BAKE_CLIP_MAX clipped
+    pixels); otherwise row is None and reason names the refusal class.
+    A median within epsilon of (1,1,1) is 'no measured tint' (row None, no
+    reason — nothing wrong, just nothing to bake).
+    """
+    ratios = np.array([c["ratio"] for c in cells])
+    med = np.median(ratios, axis=0)
+    spread = float(np.max(ratios.max(axis=0) - ratios.min(axis=0)))
+    if len(cells) > 1 and spread > tolerance:
+        return None, (f"cells disagree (spread {spread:.3f} > {tolerance}): "
+                      + "; ".join(f"{c['state']}@{c['cell']}="
+                                  + "/".join(f"{x:.3f}" for x in c["ratio"])
+                                  for c in cells))
+    if med.min() < BAKE_RATIO_MIN or med.max() > BAKE_RATIO_MAX:
+        return None, (f"multiply out of bake family "
+                      f"[{BAKE_RATIO_MIN}, {BAKE_RATIO_MAX}]: "
+                      + "/".join(f"{x:.3f}" for x in med)
+                      + " — lightmap/emissive class, not a texture tint")
+    cf = clip_fraction(tex, med, assets)
+    if cf > BAKE_CLIP_MAX:
+        return None, (f"bake unrepresentable: {cf:.1%} of opaque pixels "
+                      f"would clip at 255 — lightmap class")
+    rounded = tuple(round(float(x), 4) for x in med)
+    if all(abs(x - 1.0) <= epsilon for x in rounded):
+        return None, None  # no measured tint
+    evidence = ";".join(
+        f"{c['state']}@{c['page']}:{c['cell']}|n={c['n']}|class={c['cls']}"
+        for c in cells)
+    return (tex, rounded, evidence), None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jars", required=True, type=pathlib.Path,
@@ -418,35 +456,12 @@ def main(argv=None) -> int:
 
     rows, dropped = [], []
     for tex in sorted(per_tex):
-        cells = per_tex[tex]
-        ratios = np.array([c["ratio"] for c in cells])
-        med = np.median(ratios, axis=0)
-        spread = float(np.max(ratios.max(axis=0) - ratios.min(axis=0)))
-        if len(cells) > 1 and spread > args.tolerance:
-            dropped.append((tex, f"cells disagree (spread {spread:.3f} > "
-                                 f"{args.tolerance}): "
-                                 + "; ".join(f"{c['state']}@{c['cell']}="
-                                             + "/".join(f"{x:.3f}" for x in c["ratio"])
-                                             for c in cells)))
-            continue
-        if med.min() < BAKE_RATIO_MIN or med.max() > BAKE_RATIO_MAX:
-            dropped.append((tex, f"multiply out of bake family "
-                                 f"[{BAKE_RATIO_MIN}, {BAKE_RATIO_MAX}]: "
-                                 + "/".join(f"{x:.3f}" for x in med)
-                                 + " — lightmap/emissive class, not a texture tint"))
-            continue
-        cf = clip_fraction(tex, med, assets)
-        if cf > BAKE_CLIP_MAX:
-            dropped.append((tex, f"bake unrepresentable: {cf:.1%} of opaque "
-                                 f"pixels would clip at 255 — lightmap class"))
-            continue
-        rounded = tuple(round(float(x), 4) for x in med)
-        if all(abs(x - 1.0) <= args.epsilon for x in rounded):
-            continue  # no measured tint
-        evidence = ";".join(
-            f"{c['state']}@{c['page']}:{c['cell']}|n={c['n']}|class={c['cls']}"
-            for c in cells)
-        rows.append((tex, rounded, evidence))
+        row, reason = aggregate_texture(tex, per_tex[tex], assets,
+                                        args.tolerance, args.epsilon)
+        if row is not None:
+            rows.append(row)
+        elif reason is not None:
+            dropped.append((tex, reason))
 
     with args.out.open("w") as f:
         f.write("# visual-tints.tsv — tint-bake calibration (scripts/f2v/"
