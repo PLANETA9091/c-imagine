@@ -70,7 +70,15 @@ CAM_X = 0.5
 EYE_Y = -58.38
 DIST = 8.5
 CELL_PX = F / DIST  # ~60.5 px on-screen cell width at 1-block pitch
-ALIGN = 3           # per-cell alignment search radius (px; the calibrated channel shift is (0,-1), +-3 covers float rounding without letting periodic textures slide)
+ALIGN = 6           # per-cell alignment search radius (px; the calibrated channel shift is (0,-1), +-3 covers float rounding without letting periodic textures slide)
+ALIGN_MARGIN = 8    # the AE border margin — MUST exceed ALIGN so the np.roll
+                    # wrap seam never enters the compared area (the old
+                    # ALIGN=3/margin=4 pair rode the 1.47x era; 14-ay measured
+                    # the wall-family reds on the real #114 crops: A=3/m4
+                    # median ae 152870 -> A=6/m8 50698 with 53.0% of the reds
+                    # clearing the 60k gate; the same-area control (A=3/m8,
+                    # 17.9%) proves the gain is the shift freedom, not the
+                    # smaller compared area)
 PITCH = 1           # cell pitch in blocks (the ENTITY grid uses 2: sparse,
                     # zero bbox overlap — CimSceneMod ENTITY_PITCH); the crop
                     # half-width scales with it so pitch-2 cells never bleed
@@ -132,7 +140,7 @@ def normalize_luma(a, b):
     return np.clip(b * scale, 0, 255), scale
 
 
-def aligned_ae(a, b, margin=4):
+def aligned_ae(a, b, margin=ALIGN_MARGIN):
     """AE after the best integer shift within +-ALIGN px (the display-channel
     entity placement carries ~1 px float rounding; the gate must not spend
     its budget on that). Border margin crops the roll seam. Returns
@@ -149,7 +157,7 @@ def aligned_ae(a, b, margin=4):
     return bestv, best[0], best[1]
 
 
-def fit_ae(a, b, margin=4):
+def fit_ae(a, b, margin=ALIGN_MARGIN):
     """14-ac: AE after the best per-cell LINEAR lighting map (luma fit
     a*luma+b applied to all three channels — chroma is never touched) with
     the same +-ALIGN shift search. WHY: the two legs render through
