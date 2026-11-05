@@ -6805,3 +6805,92 @@ renderer diagnosis. Concurrent P2 CI 42088264167 SUCCESS; integration and
 mod-matrix running. P2 gallery 42088395686 pending behind the older active
 run. Manual e52257fa mod-matrix 42087141443 SUCCESS. No runs canceled by us.
 Individual report-0/report-3 retries succeeded after the artifact 503.
+
+2026-11-05T18:58:04.736020+00:00 batch audit: commit 7d173cb1 was pushed normally to main. Fetch/rebase
+found no divergence. Correction: manually typed 19:03/19:07 timestamps in
+previous entries were estimates and wrong; actual tool UTC is 18:57.
+Use clock-generated timestamps from here onward; preserve earlier evidence.
+Log download initially required --allow-escape-sequences; retried successfully.
+Visual run 42088316659 failed closed before client launch because the chosen
+seed has zero sound manifests. Its c9996baa commit is absent from this
+checkout; inspect run head branch/dispatch input before treating it as the
+current main workflow. No gate bypass or empty-manifest fabrication.
+Next retain run provenance, finish the seven available report aggregates,
+and trace Create's actual texture alpha/UV connection endpoints. No new
+Easton launch until a specific expected observable change is documented.
+
+2026-11-05T18:59:27.412264+00:00 completed gallery 42085254497: seed + eight truth shards SUCCESS;
+eight ours shards pixel RED; final verdict completed FAILURE. All shards
+produced real joins, counts [81,75,74,74,73,72,70,70] (589 total), unlike
+the earlier interrupted s1. Individual retries recovered all eight reports
+and final verdict; both full screenshot sets for shard0 downloaded.
+Measured explicit GREEN/(GREEN+RED): Create blocks15632/15633 (one RED,
+pane AE60293), BOP4916/5032 (116 RED), DT1815/1820 (five RED).
+Create items695/699 (four RED); BOP items433/434; vanilla entities35/36
+(rabbit RED). Sound/particle streams still have zero mapped hits and remain
+diagnostic; frame CONTENT is not parity. No full GREEN claim.
+Incoming shading change does not change BOP's measured block totals vs
+#129, and the sole Create pane AE is exactly unchanged. Three extra Create
+GREEN blocks are not evidence of a causal gain; check exclusion/animation
+phase transitions before attribution.
+Visual run provenance: workflow_dispatch on feat/parity-modern, commit
+c9996baa, not main. It fails closed on an incompatible seed lacking sound
+manifests. Record this separate branch blocker without patching a workflow
+that is absent from main. Current main source is not that run's source.
+Next update the ignored review page with complete-run numbers and both
+current screenshot sets; preserve exact-both-keys Easton no-op evidence,
+then inspect actual native client material handling for a pane A/B.
+
+2026-11-05T19:00:30.379316+00:00 review update completed: ignored HTML page now includes complete 589-page
+run table and fresh CI pairs (Create0/BOP40/48). First copy attempt failed
+before changing HTML because ours artifact uses an ours-shots subdirectory;
+corrected path, copied both stacks and saved table + focused pane crop.
+Easton read-only check confirmed inactive and baseline SHA1
+2cbfa75104052c3e2acee645eda6c0bfba083481; no launches or input changes.
+
+Preserved exact-both-key Easton proof: SHA1
+0e231bd62c76f60795b86ca7086c208a4870c348, 1795 models/5015 elements,
+served hash and client reload confirmed. Create0/BOP40/BOP48 RGB frames
+versus baseline each changed_pixels=0, AE=0, max_delta=0; RED1/11/19.
+Snake-only variant7ec10d7543f573b25f7c785ee6a4e921c57caeab also no-op.
+Neither probe used camelCase. Replay CMDs112607/104411/105114 matched
+g12607/g4411/g5114. No claim beyond measured pages. Stand stopped/restored.
+
+New run42089207913 failed before replay in all truth/seed jobs at ladder
+mod fetch. Remote main advanced to ceb23484; inspect its correction before
+attempting any duplicate fix. Concurrent uncommitted gallery-diff.py edits
+scope vanilla dyn rows differently; they are another writer's work and
+are not staged or altered by this session. Next check exact fetch failure
+and remote correction, then publish the audit without absorbing their file.
+
+2026-11-05T19:01:17.639570+00:00 new blocking defect confirmed: expanded ladder requests Modrinth slug
+applied-energistics-2, which returns no project. Official pages checked:
+https://modrinth.com/mod/ae2 resolves Applied Energistics 2;
+https://modrinth.com/mod/applied-energistics-2 is Project not found.
+The seed log fails exactly there after downloading GuideME. Incoming
+ceb23484 only invalidates the seed cache; it does not correct this slug.
+Expected observable behavior: mandatory fetch using existing ae2=19.2.18
+pin downloads appliedenergistics2-19.2.18.jar and TOML declares ae2.
+Plan: replace wrong workflow slug with ae2, remove the invalid alias from
+mods.lock (retain existing correct pin), run the actual pinned fetch and
+inspect jar metadata/dependencies, then workflow shell audit. Publish fix
+with logs, preserving concurrent cache-bump commit by normal merge if
+needed and leaving the other writer's gallery-diff.py unstaged.
+Previous path guesses scripts/fetch-ladder.sh and fetch-modrinth.sh were
+wrong; actual source read is scripts/cimscene/fetch-ladder.sh.
+
+2026-11-05T19:01:51.489790+00:00 AE2 fetch fix validation: real cold fetch SUCCESS, 8,236,552-byte
+appliedenergistics2-19.2.18.jar, SHA256
+df15a07f86ca1ca93aa66373f9d5d84dd3d4586631fceb38f4fbc85dad591e39.
+TOML modId ae2/version19.2.18; required GuideME[21.1.1,) matches
+existing21.1.22 pin. Warm fetch SUCCESS with cached jar. Workflow embedded
+shell audit zero failures, ten report regression tests PASS, diff check
+clean. No new dependency/version or gate relaxation. Next commit only
+workflow/lock/worklog, merge concurrent ceb23484 without touching the other
+writer's gallery-diff.py, push normally and observe newly triggered jobs.
+
+Cache-key inspection also finds paper-plugin/src/** and pom.xml ALREADY
+included in SEED_INPUTS at both seed and ours steps. Therefore the incoming
+cache-bump commit's explanation that plugin source is absent from the key
+is not established by current workflow. A fresh rebuild remains useful,
+but it does not override measured exact-both-keys no-op Easton evidence.

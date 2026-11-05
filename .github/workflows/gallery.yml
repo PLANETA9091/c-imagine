@@ -170,7 +170,7 @@ env:
   # loaded at construct time (me.shedaniel.autoconfig PartitioningSerializer
   # — the measured #102 boot crash: NoClassDefFoundError during mod
   # construction); pinned in mods.lock.
-  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme applied-energistics-2 mekanism sophisticated-backpacks sophisticated-core jade"
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade"
   LADDER_NS: "create biomesoplenty dynamictrees combat_roll ae2 mekanism sophisticatedbackpacks jade"
 
 jobs:
