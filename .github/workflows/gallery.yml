@@ -1473,10 +1473,19 @@ jobs:
           # the same deterministic smooth_stone floor; see the truth leg's
           # comment for the #74 grass-floor forensics). Runs after the
           # forceload so the far band sits inside loaded chunks.
+          # 14-at GAMERULE RENAMES (measured locally on paper-26.3-242,
+          # scripts/p263_gamerule.sh + the live rcon probes): the 26.3
+          # GameRuleRegistryFix renamed the rules — doDaylightCycle ->
+          # advance_time, doWeatherCycle -> advance_weather, doMobSpawning
+          # -> spawn_mobs. The old names fail with "Incorrect argument"
+          # (measured run #107: the ours leg's pins all died, the daylight
+          # stayed TRUE, and the mob/item pages shot at NIGHT against the
+          # truth's noon). The ours leg runs Paper 26.3 — the new names;
+          # the truth leg (1.21.1) keeps the old ones.
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "gamerule doDaylightCycle false" "time set noon" \
-            "gamerule doWeatherCycle false" "weather clear" \
-            "gamerule doMobSpawning false" "forceload add -64 -32 64 48" \
+            "gamerule advance_time false" "time set noon" \
+            "gamerule advance_weather false" "weather clear" \
+            "gamerule spawn_mobs false" "forceload add -64 -32 64 48" \
             | tee ours-pins.log
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "forceload add -128 8 128 104" \

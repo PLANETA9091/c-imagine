@@ -5793,3 +5793,31 @@ Work Log:
   pipeline and GALLERY_SCALE/TZ need re-measuring against it; (3) audit
   the ObjMesh shrink/undo pairs (58 scale-2.0 rows vs the meshes that
   actually shrank) once the global magnification is fixed.
+
+### 14-at addendum — the pins fix (measured live on paper-26.3-242)
+- Booted the CI's exact Paper build locally (fill.papermc.io 26.3 build 242,
+  JDK 25, "Done (14.4s)"). The full rename map comes from the client jar's
+  net/minecraft/util/datafix/fixes/GameRuleRegistryFix: doDaylightCycle ->
+  advance_time, doWeatherCycle -> advance_weather, doMobSpawning ->
+  spawn_mobs (the whole table is in the class; spawnChunkRadius removed).
+  Live rcon: "gamerule advance_time false" -> "Game rule advance_time is
+  now set to false"; advance_weather/spawn_mobs ditto. FIXED both
+  workflows: gallery.yml's ours leg + visual.yml's camera-lock pins now
+  send the 26.3 names (the truth legs keep the 1.21.1 names — their pins
+  verifiably work).
+- The zoom is NOT: the render backend (both #95 and #107 fall back to
+  Vulkan llvmpipe with the identical "Couldn't find matching GLX visual"
+  OpenGL failure), the client build (piston-meta 26.3 unchanged since
+  11-03), the options key name (the 26.3 Options class still reads "fov"),
+  the rig constants (unchanged since #84), or the isolated displays (the
+  #95 and #107 isolate shots are pixel-identical — 78x79 px casing in
+  both). The page renders magnify k=1.70 about the screen centre (two
+  independent structures: p0 window cluster 394..554 -> 224..495 = the
+  1.70-about-640 prediction exactly; p103 structure C 1.69). 1.70 = the
+  content scale of a ~44.7 deg fov on the measured 26.3 slider law
+  (deg(v) = 99 + 44.6v) — v=-1.22, which is NEITHER the -0.65 pin NOR the
+  -1.0 default. The remaining suspects: the fov VALUE semantics (the pin
+  applies but the law is non-linear below -1) or a display-entity
+  position/interp change on Paper 26.3. Next: the local stand bisect —
+  (a) the real pack, (b) a hand-made one-quad pack, (c) a vanilla summon
+  without the plugin — the step that keeps the zoom names the layer.

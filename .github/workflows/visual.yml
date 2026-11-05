@@ -154,15 +154,19 @@ jobs:
           # the NeoForge truth side (parity-diff.yml) pins the SAME sun angle
           # and kills weather — both worlds must shoot under identical sky
           # light, and rain/sky drift between shots is poison for the pixel
-          # gates below
-          echo "gamerule doDaylightCycle false" > console.in
+          # gates below. 14-at: Paper 26.3 renamed the gamerules
+          # (GameRuleRegistryFix): doDaylightCycle -> advance_time,
+          # doWeatherCycle -> advance_weather, doMobSpawning -> spawn_mobs —
+          # the old names fail with "Incorrect argument" (measured locally on
+          # paper-26.3-242).
+          echo "gamerule advance_time false" > console.in
           echo "time set noon" > console.in
-          echo "gamerule doWeatherCycle false" > console.in
+          echo "gamerule advance_weather false" > console.in
           echo "weather clear" > console.in
           # camera-lock: NO ambient mobs — a wandering peaceful mob pollutes
           # the locked pre/shot pair (measured: a pig walked into the run-45
           # locked frame)
-          echo "gamerule doMobSpawning false" > console.in
+          echo "gamerule spawn_mobs false" > console.in
           echo "server up + pack serving"
       - name: vanilla client joins under xvfb + visual contract
         run: |
