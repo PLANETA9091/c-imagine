@@ -565,6 +565,52 @@ public final class F2vPack {
     }
 
     /**
+     * Read {@code visual-tints.tsv} (the TINT-BAKE channel, produced by
+     * scripts/f2v/tint-calibrate.py): {@code texRef<TAB>r<TAB>g<TAB>b[
+     * <TAB>evidence]} — one calibrated per-channel MULTIPLY per modded
+     * TEXTURE ref (the pack can only apply a tint at texture granularity,
+     * so the calibrator keys the table by texture, with the source
+     * block/item state carried in the ignored evidence column). Optional;
+     * MISSING FILE = empty table = today's behavior byte-for-byte (no bake,
+     * no pack delta). Malformed rows are skipped. {@code #} comments blank.
+     */
+    public static Map<String, double[]> readTintManifest(Path tsv) throws IOException {
+        Map<String, double[]> map = new TreeMap<>();
+        if (!Files.isRegularFile(tsv)) {
+            return map;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 4 || parts[0].isBlank()) {
+                continue;
+            }
+            try {
+                double[] tint = new double[]{
+                        Double.parseDouble(parts[1].trim()),
+                        Double.parseDouble(parts[2].trim()),
+                        Double.parseDouble(parts[3].trim())};
+                boolean sane = true;
+                for (double v : tint) {
+                    if (!(v >= 0.0) || v > 4.0) {
+                        sane = false;
+                        break;
+                    }
+                }
+                if (sane) {
+                    map.putIfAbsent(parts[0].trim(), tint);
+                }
+            } catch (NumberFormatException ignored) {
+                // a malformed row is skipped, never fatal
+            }
+        }
+        return map;
+    }
+
+    /**
      * Emit the 26.3 equipment surface for one legacy armor texture pair:
      * the {@code equipment/<ns>/<name>.json} definition (humanoid +
      * humanoid_leggings layers) plus the textures at the NEW canonical
@@ -852,7 +898,19 @@ public final class F2vPack {
             List<GalleryPack.Input> galleryInputs =
                     GalleryPack.readManifest(galleryManifest);
             if (!galleryInputs.isEmpty()) {
-                gallery = GalleryPack.build(jars, galleryInputs, entries, warnings);
+                // TINT-BAKE channel (scripts/f2v/tint-calibrate.py): the
+                // gallery composite emit rewrites tinted sprites to a baked
+                // sibling (_cimtint) with the calibrated multiply applied.
+                // Absent visual-tints.tsv = empty table = no rewrite, the
+                // pack stays byte-identical to today's build.
+                Map<String, double[]> tintTable =
+                        readTintManifest(outDir.resolve("visual-tints.tsv"));
+                List<String> tintBakeLog = new ArrayList<>();
+                gallery = GalleryPack.build(jars, galleryInputs, entries, warnings,
+                        tintTable, tintBakeLog);
+                for (String bake : tintBakeLog) {
+                    warnings.add("tint-bake applied: " + bake);
+                }
                 GalleryPack.writeResolvedManifest(
                         outDir.resolve("visual-gallery.resolved.tsv"), gallery);
                 if (!gallery.isEmpty()) {
@@ -1643,6 +1701,15 @@ public final class F2vPack {
             + "\"faces\": {\"up\": {\"uv\": [0,0,16,2], \"texture\": \"#tex\"}}}]}";
     private static final String MODEL_ROCK_ARROW =
             "{\"parent\": \"fakemod:block/rock\", \"textures\": {\"all\": \"fakemod:block/arrow_tex\"}}";
+    /** TINT-BAKE fixture: an own-elements block over a KNOWN grey texture —
+     *  the visual-tints.tsv multiply must land on the baked sibling sprite,
+     *  leaving the raw texture byte-identical for every other consumer. */
+    private static final String MODEL_TINTED_BLOOM =
+            "{\"textures\": {\"tex\": \"fakemod:block/bloom_tex\"}, "
+            + "\"elements\": [{\"from\": [4,0,4], \"to\": [12,16,12], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,8,16], \"texture\": \"#tex\"}}}]}";
+    private static final String BS_TINTED_BLOOM =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/tinted_bloom\"}}}";
     /** The MEASURED #46 killer: create-1.21.1's creative_motor carries a face
      *  uv rect [14,4,20,10] — past the 16px sprite (a legal 1.21.1 texture
      *  bleed). 26.3's FaceBakery.computeMaterialTransparency samples the rect
@@ -1703,7 +1770,10 @@ public final class F2vPack {
             // of the existing index-based assertions holds); the CT remap
             // matches the SPRITE path shape (create:block/palettes/...)
             + "fakemod:stone_pillar[axis=y,east=false,north=false,south=false,"
-            + "west=false]#0,0,12,12,12,12\n";
+            + "west=false]#0,0,12,12,12,12\n"
+            // tint-bake fixture row: the composite must reference the BAKED
+            // sibling sprite while the raw texture stays untouched
+            + "fakemod:tinted_bloom\n";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -1740,6 +1810,11 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/models/block/pane_side.json", MODEL_PANE_SIDE.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/rock_arrow.json", MODEL_ROCK_ARROW.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/rock.json", BS_ROCK.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/tinted_bloom.json",
+                    BS_TINTED_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/tinted_bloom.json",
+                    MODEL_TINTED_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/bloom_tex.png", testGreyPng());
             jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/zmotor.json", BS_ZMOTOR.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/zmotor.json", MODEL_ZMOTOR.getBytes(StandardCharsets.UTF_8));
@@ -1836,6 +1911,14 @@ public final class F2vPack {
                     StandardCharsets.UTF_8);
             Files.writeString(out.resolve("visual-gallery.tsv"), GALLERY_TSV,
                     StandardCharsets.UTF_8);
+            // TINT-BAKE manifest: a KNOWN multiply for the bloom fixture —
+            // exercises exact multiply, half-up rounding, 255 clamp, alpha
+            // preservation, and the raw-texture-untouched guarantee
+            Files.writeString(out.resolve("visual-tints.tsv"),
+                    "# calibrated by scripts/f2v/tint-calibrate.py\n"
+                    + "fakemod:block/bloom_tex\t0.5\t1.0\t2.0\t"
+                    + "fakemod:tinted_bloom@gallery-fake:p1:c0,r0|n=9|class=luma-uniform\n",
+                    StandardCharsets.UTF_8);
 
             // -- build twice, must be byte-identical ------------------------------
             List<EquipmentAsset> equipment = List.of(new EquipmentAsset(
@@ -1903,9 +1986,9 @@ public final class F2vPack {
             // composite — including the vanilla-parent shape (own textures,
             // elements from the client jar's block/cube_all), which the old
             // direct path rendered as NOTHING (measured run 41126658261)
-            expect(failures, r1.gallery().size() == 7,
-                    "gallery: 7 state rows resolved, got " + r1.gallery().size());
-            if (r1.gallery().size() == 7) {
+            expect(failures, r1.gallery().size() == 8,
+                    "gallery: 8 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 8) {
                 List<GalleryPack.Resolved> g = r1.gallery();
                 // pane[north=false] = composite of the unconditional parts
                 // (post + the y90 side) — multipart rows are ALWAYS composites
@@ -1974,8 +2057,83 @@ public final class F2vPack {
                 }
             }
             expect(failures, r1.gallery().stream()
-                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 7,
-                    "gallery: cmds unique (100000..100006)");
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 8,
+                    "gallery: cmds unique (100000..100007)");
+
+            // -- TINT-BAKE channel asserts -----------------------------------------
+            // the bake log lands in the build report's warnings (the pack
+            // build log) — one honest line per baked texture
+            expect(failures, r1.warnings().stream()
+                            .anyMatch(w -> w.startsWith("tint-bake applied: fakemod:block/bloom_tex")),
+                    "tint bake recorded in the build log");
+            TreeMap<String, byte[]> tintZip = readZip(out.resolve("pack.zip"));
+            String bakedKey = "assets/fakemod/textures/block/bloom_tex_cimtint.png";
+            expect(failures, tintZip.containsKey(bakedKey),
+                    "tint bake: the baked sibling PNG rides the pack");
+            if (tintZip.containsKey(bakedKey)) {
+                java.awt.image.BufferedImage baked = decodePng(tintZip.get(bakedKey));
+                int[][] expected = {
+                        {100, 100, 100, 255}, {70, 140, 255, 255},
+                        {100, 10, 20, 255}, {5, 20, 60, 0},
+                        {128, 255, 255, 255}, {0, 0, 0, 255},
+                        {32, 128, 255, 255}, {1, 2, 6, 255}};
+                boolean pixelsOk = baked.getWidth() == 4 && baked.getHeight() == 2;
+                for (int y = 0; y < 2 && pixelsOk; y++) {
+                    for (int x = 0; x < 4 && pixelsOk; x++) {
+                        int argb = baked.getRGB(x, y);
+                        int[] p = expected[y * 4 + x];
+                        int want = (p[3] << 24) | (p[0] << 16) | (p[1] << 8) | p[2];
+                        pixelsOk &= argb == want;
+                        if (argb != want) {
+                            failures.add("tint bake pixel (" + x + "," + y + "): want "
+                                    + Integer.toHexString(want) + " got "
+                                    + Integer.toHexString(argb));
+                        }
+                    }
+                }
+                expect(failures, pixelsOk,
+                        "tint bake: baked pixels = raw x (0.5,1.0,2.0) with "
+                        + "half-up rounding, 255 clamp, alpha preserved");
+            }
+            // the RAW texture rides UNCHANGED — the item channel and the
+            // note_block block channel keep rendering it exactly as before
+            expect(failures, java.util.Arrays.equals(
+                            tintZip.get("assets/fakemod/textures/block/bloom_tex.png"),
+                            jarEntries.get("assets/fakemod/textures/block/bloom_tex.png")),
+                    "tint bake: the raw texture is untouched in the pack");
+            String bloomComp = r1.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:tinted_bloom"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !bloomComp.isEmpty(), "tint bake: composite located");
+            if (!bloomComp.isEmpty()) {
+                String bloomJson = str(tintZip, bloomComp);
+                expect(failures, bloomJson.contains("fakemod:block/bloom_tex_cimtint"),
+                        "tint bake: the composite references the BAKED sprite");
+            }
+            // ABSENT visual-tints.tsv = today's behavior byte-for-byte: no
+            // baked siblings anywhere, the composite references the raw sprite
+            Path out2 = tmp.resolve("out2");
+            Files.createDirectories(out2);
+            Files.writeString(out2.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out2.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out2.resolve("visual-gallery.tsv"), GALLERY_TSV,
+                    StandardCharsets.UTF_8);
+            build(mods, out2, readManifest(out2.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out2.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            TreeMap<String, byte[]> noTintZip = readZip(out2.resolve("pack.zip"));
+            expect(failures, noTintZip.keySet().stream()
+                            .noneMatch(k -> k.contains(GalleryPack.TINT_SUFFIX)),
+                    "tint bake: absent visual-tints.tsv = no baked sprites (today's pack)");
+            // tinted_bloom sorts 6th of 8 (after the stone_pillar CT row) = g5
+            String noTintComp = "assets/c-imagine/models/gallery/g5.json";
+            expect(failures, str(noTintZip, noTintComp).contains("\"fakemod:block/bloom_tex\""),
+                    "tint bake: absent visual-tints.tsv = composite references the raw sprite");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
@@ -2296,6 +2454,33 @@ public final class F2vPack {
         java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
         javax.imageio.ImageIO.write(img, "png", bos);
         return bos.toByteArray();
+    }
+
+    /** TINT-BAKE fixture texture: 4x2 ARGB with per-pixel KNOWN values —
+     *  exact multiply, clamped multiply, half-up rounding (127.5 -> 128),
+     *  alpha-0 preservation, and the 0/255 gamut ends. */
+    private static byte[] testGreyPng() throws IOException {
+        int[][] px = {
+                {200, 100, 50, 255}, {140, 140, 140, 255},
+                {200, 10, 10, 255}, {10, 20, 30, 0},
+                {255, 255, 255, 255}, {0, 0, 0, 255},
+                {64, 128, 192, 255}, {1, 2, 3, 255}};
+        java.awt.image.BufferedImage img =
+                new java.awt.image.BufferedImage(4, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 2; y++) {
+            for (int x = 0; x < 4; x++) {
+                int[] p = px[y * 4 + x];
+                img.setRGB(x, y, (p[3] << 24) | (p[0] << 16) | (p[1] << 8) | p[2]);
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", bos);
+        return bos.toByteArray();
+    }
+
+    /** Decode a PNG byte array to ARGB pixels (selftest pixel asserts). */
+    private static java.awt.image.BufferedImage decodePng(byte[] png) throws IOException {
+        return javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
     }
 
     private static void deleteRecursively(Path p) throws IOException {
