@@ -1070,7 +1070,7 @@ jobs:
             echo "shot mob page 0 again"
             # the next walk's kill must not land before the final settle
             # rewrites this page's manifest: every subject would read dissolved
-            for i in $(seq 1 120); do
+            for i in $(seq 1 1000); do
               [ "$(cat "$SETTLED" 2>/dev/null || echo 0)" != "$S0" ] && break
               sleep 0.03
             done
