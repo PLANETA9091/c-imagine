@@ -502,7 +502,7 @@ public final class CimSceneMod {
             // Universal signal (the EntityBlock interface), zero hardcode.
             rowStr[i] = "cell\t" + pos.getX() + '\t' + pos.getY() + '\t' + pos.getZ() + '\t'
                     + settled + '\t'
-                    + (now.getBlock() instanceof EntityBlock ? 1 : 0);
+                    + blockDynFlag(now);
         }
         // the world keeps moving after this tick: the manifest is written by the
         // delayed pass, which reads what the shot will actually show
@@ -559,7 +559,7 @@ public final class CimSceneMod {
             tsv.append("cell\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
                     .append(pos.getZ()).append('\t')
                     .append(stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))).append('\t')
-                    .append(now.getBlock() instanceof EntityBlock ? 1 : 0).append('\n');
+                    .append(blockDynFlag(now)).append('\n');
         }
 
         // drops from the settle window are not page content
@@ -812,6 +812,25 @@ public final class CimSceneMod {
             LOGGER.info("[cimscene] gallery cmd failed: {} -> {}", cmd, t.toString());
             return 0;
         }
+    }
+
+
+    /**
+     * 14-bh: the universal dyn signal gains LIGHT EMISSION. A block whose
+     * settled state emits light (state.getLightEmission() > 0 — lit lumaloop,
+     * glowworm_silk, glowstone, ...) shapes the light field BEYOND its cell:
+     * the glow halo on the neighbours and the floor cannot be reproduced by
+     * the display channel (the display's brightness is pinned per-cell; no
+     * light propagates from it). Measured #114-era: EVERY lit=true lumaloop
+     * cell RED (ae 52-125k, the halo), EVERY lit=false cell GREEN — the
+     * discriminator is the emission, not the model. Same class as the
+     * EntityBlock signal: mechanical, zero hardcode, symmetric on both
+     * stacks; the cell's own surface is diffed and reported, the gate is the
+     * real-client leg (M5.6). The neighbour halo cells ride the existing
+     * SPILL rule (a dyn neighbour within reach demotes their REDs).
+     */
+    private static int blockDynFlag(net.minecraft.world.level.block.state.BlockState state) {
+        return (state.getBlock() instanceof EntityBlock || state.getLightEmission() > 0) ? 1 : 0;
     }
 
     /** The shared wall sweep (identical coordinates on every gallery leg). */

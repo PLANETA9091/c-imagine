@@ -7061,3 +7061,45 @@ negative evidence if no gain. Publish only a proven production fix.
   per-ns coverage ledger (coverage-gate.py walks LADDER_NS only) —
   the fixed EDPAGES=3 window plus the loud missing-manifest GATE carries
   their coverage the same way the mob pages' EPAGES window does.
+
+---
+## Task 14-bh — the light-emission dyn signal: EVERY lit=true lumaloop RED,
+every lit=false GREEN — the discriminator is the block's own light emission
+(the glow halo the display channel structurally cannot reproduce); the
+universal getLightEmission()>0 dyn rule lands in the settle pass
+
+Agent: main
+Task: close the BOP flora pool (~106 REDs: lumaloop 32, glowworm_silk 19,
+hanging_cobweb 13, high_grass 11) — classify sway-vs-channel from the
+measured data before touching anything
+
+Work Log:
+- THE CROSS-RUN DISCRIMINATOR (biomesoplenty-p47, shard 7, the same cells
+  in runs 42070701695 and 42082255137): the lumaloop page splits PERFECTLY
+  by the lit property — every lit=true cell RED (ae 52-125k), every
+  lit=false cell GREEN (ae 20-58k), across 30 cells and two independent
+  runs. NOT sway: the truth's own pixels are stable between runs; the
+  lit plant's GLOW HALO (the light field on the neighbours and the floor)
+  is what differs — the display channel pins the cell's brightness but no
+  light propagates from it into the world.
+- THE FIX (one universal signal, zero hardcode): the block gallery's dyn
+  flag (both the placement write and the delayed settle pass) becomes
+  blockDynFlag(state) = (instanceof EntityBlock || getLightEmission() > 0).
+  Light-emitting states join the dyn class (mechanical, symmetric, the
+  same EntityBlock-style rule); their neighbour halo cells ride the
+  EXISTING SPILL rule (a dyn neighbour within reach demotes their REDs) —
+  the halo is exactly the spill geometry. The cells' pixel ae stays in the
+  reports; the gate is the real-client leg (M5.6).
+- COVERAGE NOTE: the rule is registry-wide — every mod's light-emitting
+  block states (glowworm_silk, lit plants, glowstone-family, amethyst,
+  create's light rails...) get the same honest classification as the
+  ladder grows.
+- Verified: gradle build -p scene-mod green; the paper-plugin files carry
+  a concurrent agent's in-flight work and were left untouched.
+
+Stage Summary:
+- The flora pool's mechanism is named (the light halo, not the model), the
+  fix is one mechanical signal in the manifest writer, and the existing
+  SPILL machinery absorbs the halo geometry. Expected: the lit lumaloop
+  cells demote DYNAMIC, the halo cells SPILL, the remaining flora REDs =
+  hanging_cobweb/high_grass (non-emitting — a separate, smaller probe).
