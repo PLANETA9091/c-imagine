@@ -1134,35 +1134,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     // ---- GALLERY ours-leg surface (M5.5, roadmap) ------------------------------
 
     /**
-     * Entity-transform calibration constants for gallery cells. MEASURED
-     * against the truth leg's page-0 screenshot (wall bounding box):
-     * run 4 @ scale 2.0 / ty −3/16 rendered the wall at 70.2 px/cell with its
-     * centre 14 px above the truth leg's — the applied item context is NOT
-     * the assumed ground transform. Calibrated (run 5): scale ×60.48/70.2 =
-     * 1.7236 (truth cell = F/dist = 60.48 px @ 720p FOV 70, dist 8.5),
-     * ty −0.419 (14 px / 60.48 px/m further down). Re-measure after any
-     * client-version bump.
+     * The gallery rig needs no correction: with both legs on the 70-degree
+     * contract, an identity display lands exactly on the truth cell. The old
+     * values (scale 1.0126, ty -0.0184, tz +0.20) were fitted while both clients
+     * rendered at 1.47x; at the real camera they left every page 2.2% small and
+     * 1 px low (scale 0.978 on gallery 42036584838, every page alike).
      */
-    static final float GALLERY_SCALE = 1.0126f;
+    static final float GALLERY_SCALE = 1.0f;
     static final float GALLERY_TX = 0.0f;
-    static final float GALLERY_TY = -0.0184f;
-    /**
-     * MEASURED (#62 forensics, 14-l): the 26.3 display pipeline renders the
-     * item-display geometry ~0.20 blocks CLOSER to the camera than the
-     * entity Pos — the in-page render law over the four probe pages is
-     * dx_px = 1.35*wx - 0.5, dy_px = -1.5*h + 3.55 (wx = manifest x, h =
-     * height above the eye), i.e. a magnification about the camera axis +
-     * eye level with slope 61.8 px/block instead of the truth's 60.5 —
-     * equivalent to the geometry sitting 0.183..0.20 blocks nearer. The
-     * suspected mechanism: the vanilla "fixed" display-context translation
-     * ([0,0,-4] model units = 0.25 blocks) now applied by the 26.3
-     * item-display path. The join's ALIGN=3 mask absorbed this for |wx|<=2;
-     * every cell further out or higher up paid the shift as AE (the sail
-     * family's -6px reads as an empty window). T_Z = +0.20 pushes the
-     * geometry back onto the truth positions; re-measure after any client
-     * bump.
-     */
-    static final float GALLERY_TZ = 0.20f;
+    static final float GALLERY_TY = 0.0f;
+    static final float GALLERY_TZ = 0.0f;
 
     /**
      * Replay one truth-leg gallery page manifest as ItemDisplay rigs:
@@ -1551,11 +1532,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                            // the block rig's calibration, not identity: the
-                            // 26.3 item-display path renders the geometry
-                            // ~0.20 blocks nearer than the truth leg's (see
-                            // GALLERY_TZ). Identity zoomed every item page
-                            // 1.025x about the screen centre (gallery 41880239869)
+                            // the same rig as the block pages
                             e.setTransformation(new org.bukkit.util.Transformation(
                                     new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
                                     new org.joml.Quaternionf(),
