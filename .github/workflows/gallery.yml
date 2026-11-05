@@ -329,17 +329,18 @@ jobs:
           wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
             local BASE="srv-wall/c-imagine/scenes/$1"
             local VD VE
-            for i in $(seq 1 120); do
+            for i in $(seq 1 1000); do
               VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
               VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
               [ "$VD" != "$2" ] && return 0
               [ "$VE" != "$3" ] && return 1
-              sleep 0.25
+              sleep 0.03
             done
             echo "no done marker file: $1"; return 2
           }
           # no leaf decay or random growth: the seed must settle like the truth walk
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" >/dev/null
+          # and no client to keep in step with: ticks are only a settle delay here, so run them fast
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" "tick rate 1000" >/dev/null
           # BLOCK pages (to exhaustion — the coverage law), one loop per
           # ladder namespace (LADDER_NS is the single source of the ns list)
           for NS in $LADDER_NS; do
@@ -828,12 +829,12 @@ jobs:
           wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
             local BASE="srv-wall/c-imagine/scenes/$1"
             local VD VE
-            for i in $(seq 1 120); do
+            for i in $(seq 1 1000); do
               VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
               VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
               [ "$VD" != "$2" ] && return 0
               [ "$VE" != "$3" ] && return 1
-              sleep 0.25
+              sleep 0.03
             done
             echo "no done marker file: $1"; return 2
           }
@@ -935,12 +936,12 @@ jobs:
           wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
             local BASE="srv-wall/c-imagine/scenes/$1"
             local VD VE
-            for i in $(seq 1 120); do
+            for i in $(seq 1 1000); do
               VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
               VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
               [ "$VD" != "$2" ] && return 0
               [ "$VE" != "$3" ] && return 1
-              sleep 0.25
+              sleep 0.03
             done
             echo "no done marker file: $1"; return 2
           }
@@ -1071,7 +1072,7 @@ jobs:
             # rewrites this page's manifest: every subject would read dissolved
             for i in $(seq 1 120); do
               [ "$(cat "$SETTLED" 2>/dev/null || echo 0)" != "$S0" ] && break
-              sleep 0.25
+              sleep 0.03
             done
           fi
           # MOD-NAMESPACE entity walk (per ladder ns): the same series
