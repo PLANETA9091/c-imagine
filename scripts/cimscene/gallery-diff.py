@@ -50,6 +50,16 @@ Report rows: page, cell (col,row), state, ae, shift, verdict. A page is
 GREEN only when every cell row is GREEN; the exit code carries the verdict
 (CI gate). Skipped states (fluid/invisible) are reported as skipped — they
 are identical non-content on both legs, never counted red.
+
+Verdict classes (14-bf): the manifest dyn=1 demotion to DYNAMIC is
+NAMESPACE-SCOPED — a modded-namespace dyn row keeps DYNAMIC (its picture
+rides the mod's BlockEntityRenderer, the pack channel's structural gap;
+gate = M5.6's real-client leg), while a minecraft-namespace dyn row is
+gate-hard comparable content: both legs render the same vanilla entity
+through the same renderer, a RED counts, and a RED whose own per-leg
+second-shot pair moved (ANIMATED, the 14-aj rule) is the animation-phase
+excuse instead. Both self frames must be passed (--truth-self/--ours-self)
+for the ANIMATED class to exist; without them every RED gates.
 """
 import argparse
 import json
@@ -423,11 +433,30 @@ def main():
             # demoted — a spill neighbour never turns a clean cell RED, and
             # never un-greens one.
             sn = spill_near(int(x), int(y))
+            # 14-bf THE NAMESPACE SCOPES THE DYN CLASS: dyn=1 was written for
+            # the MODDED BlockEntityRenderer channel — part of the cell's
+            # picture is drawn by code the vanilla-client pack channel
+            # structurally cannot reproduce (the roadmap M5.6 gate). A
+            # VANILLA-namespace subject has no such asymmetry: both legs
+            # render the same registered entity/block through the same
+            # vanilla renderer, so its row is real comparable content and a
+            # RED verdict counts (the vanilla dyn/large ENTITY series gate —
+            # the state/entity column always carries the namespace prefix;
+            # a legacy unprefixed id reads as minecraft). Time-varying
+            # vanilla subjects (boats slide, arrows fall, camel ear twitch)
+            # are caught by the ANIMATED self-pair rule below — the walk
+            # shoots every gated page twice per leg for exactly this.
+            row_ns = state.split(":", 1)[0] if ":" in state else "minecraft"
+            vanilla_dyn = dyn and row_ns == "minecraft"
             verdict = "GREEN" if v <= args.gate else "RED"
-            if dyn or air:
+            if dyn and not vanilla_dyn:
                 dynamic += 1
                 if verdict == "RED":
-                    verdict = "DYNAMIC" if dyn else "AIR"
+                    verdict = "DYNAMIC"
+            elif air:
+                dynamic += 1
+                if verdict == "RED":
+                    verdict = "AIR"
             elif verdict == "RED" and animated:
                 animated_n += 1
                 verdict = "ANIMATED"

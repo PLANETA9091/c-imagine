@@ -6996,3 +6996,68 @@ experience_nugget62695, mangrove_window_pane71618, refined_radiance63497.
 Next collect material probe, compare complete RGB frames + unchanged gate
 joins against the same truth; inspect bar-end geometry visually, retain
 negative evidence if no gain. Publish only a proven production fix.
+
+---
+## Task 14-bf — gate the vanilla-namespace dyn/large entity rows: the coverage expansion
+
+- THE READING (verified in scripts/cimscene/gallery-diff.py and the scene
+  mod): the entity settle pass writes dyn=1 for EVERY non-Mob row
+  (CimSceneMod.settleGalleryEntity: `+ (isMob ? 0 : 1)`), and
+  gallery-diff.py demoted every dyn=1 row's RED to DYNAMIC. The
+  demotion was designed for the MODDED BER channel (part of the cell's
+  picture is drawn by the mod's BlockEntityRenderer, which the vanilla
+  client pack channel structurally cannot reproduce — the M5.6 gate).
+  Applied blindly it also swallowed the VANILLA non-Mob entities
+  (boat, chest_boat, minecarts, armor_stand, arrow, item_frame,
+  end_crystal...) — but a vanilla-namespace subject has NO such
+  asymmetry: both legs render the same registered entity through the
+  same vanilla renderer. That is real comparable content, and the
+  diagnostic join never gating it was an honest-coverage HOLE, not a
+  safety property.
+- THE CHANGE (gallery-diff.py): the dyn demotion is now NAMESPACE-SCOPED
+  off the row's state/entity id (the manifest carries the full namespaced
+  id; a legacy unprefixed id reads as minecraft). A modded-namespace dyn
+  row keeps DYNAMIC (the M5.6 backlog accounting is unchanged — modded
+  dyn/large joins stay diagnostic); a minecraft-namespace dyn row is
+  gate-hard: its RED verdict counts, and the 14-aj ANIMATED rule applies
+  FIRST (a RED whose own per-leg second-shot pair exceeds the gate is
+  animation phase, not a channel defect). Vanilla block/item/particle/
+  fluid rows are unaffected in practice: the block ladder walks only
+  LADDER_NS (no minecraft block walk), and the item rows carry dyn=0.
+- THE WIRING (gallery.yml): the dyn/large walk/replay loops on BOTH legs
+  now take the self-consistency pair (the mob-page 14-aj pattern — sleep 2
+  + second shot: `gal-e$SERIES$p-self.png` /
+  `ours-gal-e$SERIES$p-self.png`), because boats slide, arrows fall and
+  camels twitch — the ANIMATED class needs both legs' second shots. The
+  "DYN + LARGE pages (minecraft)" join section is the GATE now: missing
+  shot/manifest is a loud GATE=1 (no silent gaps, the mob-join contract),
+  the self frames are passed, and the outputs are renamed
+  diag-$SERIES-p$p.json -> join-e-$SERIES-minecraft-p$p.json. The
+  -minecraft- name segment is deliberate: flip-report.py's ns_of contract
+  parses `join-e-dyn-<ns>-p<N>.json` and a name without the ns segment
+  backtracks into ns="dyn" (verified offline against the real report
+  names) — the gated rows now land in the class summary as
+  e-dyn/e-large ns=minecraft instead of polluting the block row.
+- MEASURED on the last complete run 42085254497 (07ff9a7a, shard reports
+  gallery-report-0/1/2, the diag-dyn-p*/diag-large-p* reports): the
+  expansion gates 24 NEW compared cells per run — dyn pages p0/p1/p2:
+  19 cells (11 GREEN + 8 pixel-reds the old code demoted to DYNAMIC:
+  area_effect_cloud 1.02M, boat 1.55M, chest_boat 2.13M,
+  dragon_fireball 2.37M, end_crystal 1.25M, falling_block 0.59M,
+  fireball 1.55M, glow_item_frame 0.62M ae), large pages p0/p1/p2:
+  5 cells (camel/ghast/giant GREEN + ender_dragon 1.87M and enderman
+  1.41M — verdict RED all along, tolerated only by the `|| true`).
+  The 84 wrong-series/dissolved skip rows stay skipped (unchanged
+  accounting). For scale the same run's mob gate: 26 compared,
+  17 GREEN + 9 ANIMATED, 0 RED.
+- EXPECTED VERDICT CHANGES: the next full run gates the vanilla
+  non-Mob rows for the first time and is EXPECTED TO FAIL until the 10
+  pixel-red cells either demote ANIMATED against their new self pairs
+  (the movers — boat/chest_boat slide, the fireballs drift) or get a
+  real channel fix. That red verdict is the expansion working: the
+  previous state was the same reds silently invisible behind the
+  diagnostic join. No modded-namespace row changes verdict.
+- Not done here: the vanilla dyn/large pages are not in the
+  per-ns coverage ledger (coverage-gate.py walks LADDER_NS only) —
+  the fixed EDPAGES=3 window plus the loud missing-manifest GATE carries
+  their coverage the same way the mob pages' EPAGES window does.
