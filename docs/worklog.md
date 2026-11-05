@@ -6711,3 +6711,63 @@ variant's keys, record the correction with its known SHA1, then integrate
 incoming work without reverting it. Treat the incoming rendering benefit
 as UNMEASURED until its real gallery/Easton results arrive. Preserve both
 histories and obtain the incoming commit's CI run IDs for validation.
+
+Rebase/collection checkpoint: preserved both sides of the worklog append
+conflict; rebase completed. Local audit commits are now ed0784a7 and
+74ba1995 on top of incoming 07ff9a7a. Source retry fix remains the exact
+published 0ce41628. Fresh s0/s2 reports and all 147 truth s0 PNGs downloaded
+successfully on retry. Fresh Create p0 c4/r0 is STILL AE 60293 (exact #129
+baseline); no Create block improvement is inferred from unrelated fixes.
+
+CORRECTION TO 14-be's camelCase presumption: inspected the retained ZIP,
+SHA1 7ec10d7543f573b25f7c785ee6a4e921c57caeab. It contains 5759
+shade_direction_override entries (744 already present + 5015 translated),
+ZERO shadeDirectionOverride entries. The measured 14-bd NO-OP used the
+correct snake_case spelling. The incoming doc's spelling explanation is
+therefore disproven; its anticipated rendering gain remains unmeasured.
+
+Next batch: inspect ours s4's exact current step via its job endpoint;
+look up CI/gallery runs for incoming 07ff9a7a and our 0ce41628; run the
+existing offline plugin build/selftest on the integrated source. Prepare a
+second controlled Easton pack from #129 retaining BOTH shade:false and
+shade_direction_override:"up", exactly matching incoming output, to
+resolve any uncertainty caused by the first probe removing the ignored
+legacy key. Compare the same three truth pages, unchanged gate/rig, with
+both screenshot sets and hashes retained. Record results before attributing
+any improvement. Publish the audit correction using a normal push.
+
+CI status now confirmed: retry-fix CI 42084659373 and incoming-shading CI
+42085254652 both SUCCESS. Retry integration 42084659376 / mod-matrix
+42084659332 and incoming integration 42085254584 are running. Incoming
+07ff9a7a gallery 42085254497 has started; the older pending retry-only
+gallery 42084659443 was automatically superseded by concurrency, not
+manually canceled. Corrected-cache gallery 42082255137 is now COMPLETE /
+FAILURE; ours s4 finished at the pixel join, not at client startup.
+Next collect s4 and the final verdict artifact to measure the complete
+available run (s1 still has zero joins), then finish the planned plugin
+selftest and exact-both-keys Easton A/B. No full GREEN claim is justified.
+
+Integrated-source validation: offline plugin build completed SUCCESS;
+F2vPack --selftest reports ALL OK. Retry integration 42084659376 has now
+completed SUCCESS alongside its standard CI. Current report s4 download
+and final-verdict artifact lookup are pending.
+Next execute the already planned exact-both-keys A/B: generate the pack
+variant locally, record its changed-model/element count and SHA1, transfer
+it to a separate Easton artifact path, and stage it ONLY if cim-stand is
+inactive. Use the same private sandbox and queued three-page capture.
+Do not interrupt another active stand session. After capture, collect
+resources/screenshots, stop our service, and restore the #129 baseline.
+
+Both-keys variant generation completed: 1795 models / 5015 elements,
+SHA1 0e231bd62c76f60795b86ca7086c208a4870c348. Sequencing error in the
+orchestration: the upload command was started after exec returned a
+running-session ID for the producer, before producer completion had been
+confirmed. It may have read a growing file. No variant was staged/launched.
+Corrective plan: wait for the upload to finish, compare remote sha1sum to
+this completed local hash, and re-upload sequentially on mismatch. Never
+run an unverified partial pack. All future producer/consumer operations
+must wait for the producer's final exit code, not just its session ID.
+Final gallery-verdict artifact exists (2828 bytes); s4 report downloaded.
+Next save the final verdict, aggregate all seven measured shards plus the
+explicit missing s1 join, and publish the worklog corrections before
+starting the verified Easton variant.
