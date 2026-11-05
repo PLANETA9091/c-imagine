@@ -512,7 +512,16 @@ jobs:
       - name: fetch the NeoForge client runtime (client cache miss)
         if: steps.seed-verify.outputs.hit != 'true' && steps.nfc-cache-seed.outputs.cache-hit != 'true'
         run: |
-          python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets
+          # the Mojang CDN intermittently serves a truncated client jar
+          # (the installer's sha1 check: "invalid checksum", measured on the
+          # ada33886 seed) — retry the whole fetch up to 3 times
+          for ATTEMPT in 1 2 3; do
+            python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets && break
+            echo "client fetch attempt $ATTEMPT failed — retrying"
+            [ "$ATTEMPT" = "3" ] && exit 1
+            rm -rf nfc truth-client
+            sleep 20
+          done
           sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
 
       - name: quad dump on the real client (cache miss)
