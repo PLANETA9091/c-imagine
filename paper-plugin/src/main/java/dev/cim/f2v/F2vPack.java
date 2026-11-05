@@ -891,6 +891,15 @@ public final class F2vPack {
         sanitizeFaceUvs(entries, warnings);
 
         ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+        // files generated beside the pack (scripts/f2v/entity-remap.py) ride it verbatim
+        Path overlay = outDir.resolve("overlay");
+        if (Files.isDirectory(overlay)) {
+            try (java.util.stream.Stream<Path> files = Files.walk(overlay)) {
+                for (Path f : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
+                    entries.put(overlay.relativize(f).toString().replace('\\', '/'), Files.readAllBytes(f));
+                }
+            }
+        }
         byte[] zip = zip(entries);
         String sha1 = sha1Hex(zip);
         Files.createDirectories(outDir);

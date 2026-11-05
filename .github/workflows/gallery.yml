@@ -529,6 +529,10 @@ jobs:
           # rows stay, for the cells whose static model already draws the same.
           cat seed-pack/scenes/quads/rows.tsv >> seed-pack/f2v/visual-gallery.tsv
           mv seed-pack/scenes/quads seed-pack/f2v/quads
+          # the 1.21.1 cow and pig art on 26.3's layouts, read from the real client jar
+          pip install -q pillow
+          EXTRA=$(find nfc -name 'client-*-extra.jar' | head -1)
+          python3 scripts/f2v/entity-remap.py "$EXTRA" scripts/f2v/entity-uv-map.tsv seed-pack/f2v/overlay
           cat scripts/f2v/visual-items.tsv seed-pack/f2v/visual-gallery-items.tsv \
             > seed-pack/f2v/visual-items.tsv
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
@@ -536,7 +540,7 @@ jobs:
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets visual-client/client.jar 2>&1 | tee pack-build.log
-          rm -rf seed-pack/f2v/quads   # baked into the pack; the ctx files ride the scenes
+          rm -rf seed-pack/f2v/quads seed-pack/f2v/overlay   # baked into the pack; the ctx files ride the scenes
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
