@@ -6060,37 +6060,31 @@ animation phase, not art.
 
 scripts/stand-easton is the fast loop: dump + pack + 12 pages + join in about 5 minutes.
 
-### Round-5 lane — the sound + particle STREAM channels, and an independent 14-ay verification
+---
+## Task 14-bb — the join ALIGN radius 3 -> 6 px: the decisive offline A/B on the real #114 crops
 
-The sound and particle channels were census-only: the truth capture wrote rows, the ours
-replay wrote an honest empty log. Both ours legs now send REAL packets: the sound replay
-one ClientboundSoundPacket per manifest cell, the particle replay one
-ClientboundLevelParticlesPacket per cell, each resolved through a pack-side mapping
-(visual-sounds.tsv / visual-particles.tsv, generated at seed from the truth manifests,
-deterministic: exact-name -> category table -> documented default) and validated against
-Paper's LIVE registry before send, so a drifted candidate degrades to the default
-(counted unmapped-fallback) instead of a kick. The capture logs record the POST-rewrite
-id the vanilla 26.3 client received — sound-diff.py joins two real ordered streams for
-the first time, particle-diff.py (new) does the same for particles. Descriptors were
-javap-verified against the real Paper 26.3 build 241 NMS before a line was written.
-Both classes stay DIAGNOSTIC; sound-diff's --map is a report-only preview of the flip
-(mapped-position coverage), never a verdict. FIRST-RUN: no channel numbers exist until
-the next gallery run.
-
-Particle truth capture: the particle branch rides the PROVEN sound-capture mixin
-injection point (same three-arg Connection.send descriptor) — no new mixin descriptor
-to pin. Contract documented in gallery-particles-mapping.py: modded options bytes are
-not portable, the mapped type rides as its SIMPLE default options (data-carrying
-options degrade to the lookalike, the stream names the rewrite).
-
-Independent verification of the 14-ay minecraft-fallback (a3bdfd38), fresh clone, real
-BOP 21.1.0.14 jar + the 26.3 client jar, 13 states from #114's red families
-(stairs x2, fence_gate, trapdoor, fence, wall, webbing, barnacles, slab, pressure_plate,
-door, hanging_sign): 12 resolve on current main, only the hanging_sign drops (client BE
-geometry, correctly skipped). The first repro accidentally ran the PRE-14-ay jar and
-dropped the same 7 vanilla-template families #114 rendered empty — a clean A/B of the
-fix. One residue named: F2vPack.copyParentGraph still walks parents in the SINGLE jar
-that carried the entry model, so bare vanilla parents warn "parent model missing in
-jar" there (27 warnings on the 13-state repro) — cosmetic while every gallery row
-emits a self-contained composite (resolveModelGraph walks all jars + the fallback),
-but the build report noise hides real signals.
+- THE QUESTION the 14-av worklog parked first: "extend the join ALIGN radius (3 px) or
+  add a sub-cell best-fit scale; measure the ae histogram first". Measured (the real
+  per-cell truth/ours crops the #114 run saved into the gallery-report-N diff dirs,
+  scripts/r114_align_ab.py, 615 cells of the 5233-cell wall-family RED population,
+  stratified hi-ae tail + stride-3):
+  A=3/m=4 (the shipped config) median ae 152870, 0.0% of the reds clear the 60k gate;
+  A=3/m=8 (the same-compared-area CONTROL — the margin must grow with the radius, so
+  part of any ALIGN gain is the smaller area) 17.9% green;
+  A=6/m=8 53.0% green, median 50698; A=9/m=11 55.4%; A=12/m=14 56.4% — saturated.
+  The shift freedom is worth +35 pp over the control. The SCALE probe is flat: with
+  per-cell zoom freedom only 3.9% clear the gate and the best-scale histogram is
+  bimodal mush (0.88..1.12) — the wall residual is CONTENT (texture/bake), not geometry.
+- THE CONTROLLED PAGE TEST (create p232, the exact #114 truth+ours full frames, the
+  exact manifest, the shipped tool): OLD config 15/39 RED, median 51058; NEW config
+  (ALIGN=6, margin=ALIGN_MARGIN=8 committed as 5286342) 0/39 RED, max ae 42339,
+  global shift (0,0) err 28.5. The wrap seam stays hidden: margin > ALIGN is enforced
+  by the new ALIGN_MARGIN constant; synthetic selftest (2px shift found, beyond-radius
+  content stays red, wrap leak 0).
+- WHAT IT MEANS: the #114 wall-family red mass (5233 cells) was MOSTLY the +-3 cap
+  saturating on a >3 px residual (the 14-aw zeroed rig + the fov fix left a 4-6 px
+  per-cell placement wobble the old radius could not reach). With 14-az re-baking the
+  meshes through the real renderer AND the align fix, the walls should collapse.
+- Not done here: the 60000 gate recalibration for the margin-8 area (~0.83x ae scale)
+  — measure the NEW ae distribution on the next clean run first (the 14-av parked
+  question (b) stands).
