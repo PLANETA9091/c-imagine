@@ -856,8 +856,11 @@ public final class GalleryPack {
                 el.getAsJsonObject("faces").getAsJsonObject("south").addProperty("tintindex", flags.get(i)[1]);
             }
         }
-        ObjMesh.materialize(elements, textures, sprite -> readPngFromJars(jars, spritePathPng(sprite)),
-                WRAPPER_NS, entries, warnings);
+        // a re-hosted sprite exists only in the pack, not in any jar
+        ObjMesh.materialize(elements, textures, sprite -> {
+            byte[] hosted = entries.get(spritePathPng(sprite));
+            return hosted != null ? hosted : readPngFromJars(jars, spritePathPng(sprite));
+        }, WRAPPER_NS, entries, warnings);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         JsonObject texObj = new JsonObject();
