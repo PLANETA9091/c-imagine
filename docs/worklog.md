@@ -6027,3 +6027,35 @@ same ctx side files the replay already reads). Generic by construction: no mod i
 Open: `no pack CMD` for 103 BOP stairs, 55 branches, 51 fences, 47 leaves in the CI seed.
 The stand builds from the truth manifests, which will show whether that is a seed-vs-truth
 manifest difference.
+
+### 14-ay/14-az — the real renderer becomes the source of every block and item mesh
+
+QuadDump moved from getQuads to ModelBlockRenderer.tesselateBlock with a capturing
+VertexConsumer: putBulkData is the one point where checkSides culling, per-vertex AO and
+tint arrive together. Page.getShade returns 1 because the ours client lights the display
+itself, so only AO x tint is baked. Non-white faces bake into shared 1024px sheets, tiles
+deduplicated across the pack: 8 sheets for 22659 cells.
+
+Items go through the real ItemRenderer with a capturing MultiBufferSource, so Java item
+colours and anything a custom renderer draws from the block atlas land in the pack.
+Geometry on other textures is counted (foreign_quads), never guessed. The dump waits up
+to 30 s for the local player, which a few custom renderers read.
+
+Measured traps, for whoever touches this next:
+- item-definition `transformation` works on 0..1 model space: a bare scale moves a k=2
+  mesh half a block. The matrix carries t = (1-k)/2.
+- from/to limits apply before rotation; size by the real boxes, not the vertices.
+- a re-hosted sprite exists only in the pack: read `entries` before the jars.
+- block settle has to run after real ticks. Sand falls, unsupported saplings pop, leaves
+  decay: the manifest must say what the wall holds at shot time.
+- JarCache was orphaned: the pack build went 15+ min -> 20 s by using it again.
+
+Stand vs CI truth, 12 pages: RED 100 -> 27, Create block pages 100% green. Most of what
+remains is the settle class, which needs a truth run (5166735e).
+
+Version gap, not yet handled: 26.3 rebuilt cow, mooshroom and pig (64x64 layouts, new
+models), so 1.21.1 textures cannot be dropped in. 33 of 387 shared entity textures differ
+in pixels (horses, tropical fish, camel, ghast, magma cube). Parrot and fox REDs are idle
+animation phase, not art.
+
+scripts/stand-easton is the fast loop: dump + pack + 12 pages + join in about 5 minutes.
