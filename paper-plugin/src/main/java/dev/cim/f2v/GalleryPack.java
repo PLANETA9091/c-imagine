@@ -645,7 +645,7 @@ public final class GalleryPack {
                             + " (" + modelRef + ")");
                     continue;
                 }
-                entries.put("assets/" + WRAPPER_NS + "/textures/block/" + key + ".png", bytes);
+                putHosted(jars, key, png, bytes, entries);
                 textures.put(t.getKey(), newSprite);
                 texNo++;
             } else {
@@ -1057,8 +1057,24 @@ public final class GalleryPack {
             return sprite;
         }
         String key = "items/" + sprite.replace(':', '_').replace('/', '_');
-        entries.put("assets/" + WRAPPER_NS + "/textures/block/" + key + ".png", bytes);
+        putHosted(jars, key, png, bytes, entries);
         return WRAPPER_NS + ":block/" + key;
+    }
+
+    /**
+     * Ship a re-hosted PNG with its animation metadata: without the .mcmeta an
+     * animated strip stops being frames and squashes into one smeared sprite
+     * (measured: 18 re-hosted strips, none animated — ae2 crystals, mekanism
+     * alloys and liquids).
+     */
+    private static void putHosted(List<Path> jars, String key, String sourcePng, byte[] bytes,
+                                  TreeMap<String, byte[]> entries) throws IOException {
+        String hosted = "assets/" + WRAPPER_NS + "/textures/block/" + key + ".png";
+        entries.put(hosted, bytes);
+        byte[] meta = readPngFromJars(jars, sourcePng + ".mcmeta");
+        if (meta != null) {
+            entries.put(hosted + ".mcmeta", meta);
+        }
     }
 
     /** Stands in for a sprite the pack cannot host; visible on purpose. */

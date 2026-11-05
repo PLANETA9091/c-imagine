@@ -2408,6 +2408,21 @@ public final class F2vPack {
         expect(failures, GalleryPack.hostSprite(List.of(), "mod:block/gone", hostEntries,
                 hostWarnings).equals("mod:block/gone"),
                 "gallery: a missing block-path sprite keeps its blocks-atlas ref");
+        // a re-hosted animated strip keeps its frames
+        Path animJar = tmp.resolve("anim.jar");
+        try (ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(animJar))) {
+            zo.putNextEntry(new ZipEntry("assets/mod/textures/item/glow.png"));
+            zo.write(new byte[]{1});
+            zo.closeEntry();
+            zo.putNextEntry(new ZipEntry("assets/mod/textures/item/glow.png.mcmeta"));
+            zo.write("{\"animation\":{}}".getBytes(StandardCharsets.UTF_8));
+            zo.closeEntry();
+        }
+        GalleryPack.resetJarCache();
+        String animated = GalleryPack.hostSprite(List.of(animJar), "mod:item/glow", hostEntries, hostWarnings);
+        expect(failures, animated.equals("c-imagine:block/items/mod_item_glow")
+                && hostEntries.containsKey("assets/c-imagine/textures/block/items/mod_item_glow.png.mcmeta"),
+                "gallery: a re-hosted sprite keeps its animation metadata");
         JsonObject onLimit = new JsonObject();
         onLimit.add("from", JsonParser.parseString("[-16, 0, 32]"));
         onLimit.add("to", JsonParser.parseString("[-16, 4, 32]"));
