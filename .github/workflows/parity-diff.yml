@@ -8,7 +8,12 @@ name: parity-diff
 # icon crop — the same model, the same vanilla GUI math on both sides).
 #
 # Inputs: visual_run_id — the visual.yml run whose visual-contract-evidence
-# artifact carries the c-imagine side shots.
+# artifact carries the c-imagine side shots. Since the visual.yml re-arm
+# (feat/parity-modern, 2026-11-05) that artifact ALSO carries the seed v2
+# ladder surfaces (gal-item/gal-held/gal-inv shots per LADDER_NS + the
+# ordered sound replay logs + the item manifests + visual-sounds.tsv);
+# when they are present this workflow measures the per-channel identity
+# beyond the calibrated cimtest datums.
 #
 # Actions policy (owner directive): dispatch-only, budget is scarce — one
 # dispatch = one measured identity datum per channel.
@@ -20,6 +25,12 @@ on:
         description: "visual.yml run id with visual-contract-evidence"
         required: true
         type: string
+
+env:
+  # THE LADDER mirror (gallery.yml is the single source of these lists —
+  # keep the two in sync when the ladder grows)
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config"
+  LADDER_NS: "create biomesoplenty dynamictrees combat_roll"
 
 jobs:
   modded-truth:
@@ -36,9 +47,24 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: build cimtest mod (NeoForge 1.21.1)
-        working-directory: test-mods
-        run: gradle build --no-daemon
+      # cimscene rides the truth side since the ladder re-arm: the SOUND
+      # walk's packet-capture mixin (SoundPacketCaptureMixin) IS the
+      # SoundCapture window, and the item walk writes the manifests the
+      # ladder give legs read. The calibrated cimtest legs are unchanged.
+      - name: build cimtest + cimscene mods (NeoForge 1.21.1)
+        run: |
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+          test -f test-mods/build/libs/cimtest-1.0.0.jar
+          test -f scene-mod/build/libs/cimscene-1.0.0.jar
+
+      # THE LADDER JARS (locked, scripts/cimscene/mods.lock — the same pins
+      # the gallery seed walked): the truth client renders the REAL modded
+      # items and the registries carry the modded sound events the sound
+      # walk plays. Both sides of the parity pair ride the SAME locked
+      # versions, so the sorted-registry walks pair row-for-row.
+      - name: fetch ladder mods (locked)
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
 
       # --- caches: installer output (~130 MB) + vanilla assets (~830 MB) ---
       - name: restore NeoForge client install (cache)
@@ -85,6 +111,8 @@ jobs:
           cp -r layer-srv srv-truth
           mkdir -p srv-truth/mods
           cp test-mods/build/libs/cimtest-1.0.0.jar srv-truth/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-truth/mods/
+          cp mods-ladder/*.jar srv-truth/mods/
           echo "eula=true" > srv-truth/eula.txt
           cat > srv-truth/server.properties <<'PROPS'
           online-mode=false
@@ -149,6 +177,8 @@ jobs:
           echo "onboardAccessibility:false" > truth-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py truth-client/game
           cp test-mods/build/libs/cimtest-1.0.0.jar truth-client/game/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar truth-client/game/mods/
+          cp mods-ladder/*.jar truth-client/game/mods/
           ls -la truth-client/game/mods/
           ( cd truth-client && bash -c "$(cat launch.txt)" > client.out 2>&1 ) &
           CLIENT_PID=$!
@@ -231,6 +261,68 @@ jobs:
           # job's identity datum meaningless
           grep -q "Changed the block at 0, -60, 3" srv-truth/boot.log \
             || { echo "truth setblock feedback MISSING — block never placed"; tail -20 srv-truth/boot.log; exit 1; }
+          # --------------------------------------------------------------
+          # LADDER PARITY LEGS (seed v2 re-arm, 2026-11-05): the REAL
+          # modded client renders the REAL registry — page 0 per ladder
+          # namespace, the mirror of the visual.yml ladder legs:
+          #   t-item-<ns>.png   hotbar slot-0 with the REAL modded item
+          #                     (the identity pair of gal-item-<ns>.png)
+          #   t-held-<ns>.png   first-person held (pairs gal-held-<ns>.png)
+          #   gallery-sound-<ns>-p0.log  the ordered stream the sound-
+          #                     capture mixin recorded while the cimscene
+          #                     sound walk played every registered
+          #                     SoundEvent of the ns in sorted order
+          #                     (pairs the ours replay log; sound-diff.py
+          #                     joins the two streams per page)
+          # No artifact pairing is ASSUMED: this side re-walks page 0
+          # itself over the SAME locked jars (mods.lock) — the diff job
+          # guards the pairing by comparing the two sides' manifests'
+          # first rows. Camera pinned to the gallery held-class convention
+          # (0.5 -60 0.5 yaw 0 pitch 0), HUD on, first person — the state
+          # the locked leg above left the client in.
+          mkdir -p srv-truth/c-imagine/scenes
+          for NS in $LADDER_NS; do
+            echo "=== truth ladder leg: $NS ==="
+            # the item walk writes the manifest the give leg reads
+            echo "cimscene gallery item $NS 0" > srv-truth/console.in
+            for i in $(seq 1 240); do
+              [ -f "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.done" ] && break
+              sleep 1
+            done
+            [ -f "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.done" ] \
+              || { echo "[ladder] $NS: the item walk never wrote its done marker"; tail -20 srv-truth/boot.log; exit 1; }
+            FIRST=$(awk -F'\t' '$1=="cell"{print $5; exit}' \
+              "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.tsv")
+            if [ -z "$FIRST" ]; then
+              echo "[ladder] $NS: no item rows on manifest page 0 (registry empty for the class — combat_roll case) — item/held legs skipped, honest absence"
+            else
+              echo "[ladder] $NS: first item row = $FIRST"
+              echo "clear cimviewer" > srv-truth/console.in
+              sleep 2
+              echo "tp cimviewer 0.5 -60 0.5 0 0" > srv-truth/console.in
+              sleep 2
+              echo "give cimviewer $FIRST 1" > srv-truth/console.in
+              sleep 4
+              java -cp vtools Shot "shots/t-item-$NS.png"
+              java -cp vtools Key 1
+              sleep 1
+              java -cp vtools Shot "shots/t-held-$NS.png"
+            fi
+            # THE SOUNDCAPTURE WINDOW: `cimscene gallery sound` arms the
+            # packet-capture mixin before the first play and disarms after
+            # the last (the window holds exactly this page's outgoing
+            # ClientboundSound* packets) — the log IS the ordered stream.
+            echo "cimscene gallery sound $NS 0" > srv-truth/console.in
+            for i in $(seq 1 240); do
+              [ -f "srv-truth/c-imagine/scenes/gallery-sound-$NS-p0.done" ] && break
+              sleep 1
+            done
+            [ -f "srv-truth/c-imagine/scenes/gallery-sound-$NS-p0.done" ] \
+              || { echo "[ladder] $NS: the sound walk never wrote its done marker"; tail -20 srv-truth/boot.log; exit 1; }
+            [ -f "srv-truth/c-imagine/scenes/gallery-sound-$NS-p0.log" ] \
+              || { echo "[ladder] $NS: the sound capture log is missing (the capture window never fired)"; exit 1; }
+            echo "[ladder] $NS: sound stream events = $(wc -l < "srv-truth/c-imagine/scenes/gallery-sound-$NS-p0.log")"
+          done
           kill $CLIENT_PID $XVFB_PID 2>/dev/null || true
           ls -la shots/
 
@@ -244,6 +336,10 @@ jobs:
             truth-client/client.out
             truth-client/launch.txt
             truth-client/summary.json
+            # the ladder legs' manifests + capture logs (the diff job's
+            # pairing guard reads the item manifests; sound-diff.py joins
+            # the capture logs against the ours replay logs)
+            srv-truth/c-imagine/scenes/
           if-no-files-found: warn
 
   # --- the identity diff ------------------------------------------------------
@@ -333,3 +429,86 @@ jobs:
           # (the measured stable value is 1531 = 7.0%)
           [ "$AE_block_ident" -le "2500" ] || { echo "BLOCK IDENTITY GATE FAILED: $AE_block_ident > 2500 — the stock client no longer renders the modded block identically"; exit 1; }
           echo "F2F parity diff: identity datum recorded"
+          # --------------------------------------------------------------
+          # PER-CHANNEL LADDER IDENTITY (seed v2 re-arm, 2026-11-05) —
+          # measured, REPORT-FIRST per the repo's calibration discipline
+          # (a gate locks to the measured value + tolerance in a later
+          # dispatch, never before). The calibrated cimtest datums above
+          # are untouched. Paths: the visual artifact (since the visual.yml
+          # re-arm) carries the seed v2 surfaces under cim/srv/...; the
+          # truth artifact carries this run's re-walked manifests + the
+          # SoundCapture logs under truth/srv-truth/...
+          SC="cim/srv/c-imagine/scenes"
+          TC="truth/srv-truth/c-imagine/scenes"
+          SMAP="cim/srv/c-imagine/f2v/visual-sounds.tsv"
+          pip install -q pillow numpy   # framediff.py (the held full-frame join)
+          mkdir -p parity-identity
+          if [ ! -d "$SC" ] || [ ! -d "$TC" ]; then
+            echo "LADDER IDENTITY: a side carries no ladder surfaces (a pre-re-arm visual run) — the per-channel identity legs are SKIPPED, named not silent"
+          else
+            for NS in $LADDER_NS; do
+              echo "=== ladder identity: $NS ==="
+              TI="truth/shots/t-item-$NS.png"; TH="truth/shots/t-held-$NS.png"
+              CI="cim/shots/gal-item-$NS.png"; CH="cim/shots/gal-held-$NS.png"
+              if [ ! -f "$TI" ] || [ ! -f "$CI" ]; then
+                echo "[ladder] $NS: the item leg is absent on a side (honest absence: a registry-empty ns or a skipped leg) — SKIPPED, named"
+                continue
+              fi
+              # PAIRING GUARD: both sides must have walked the SAME manifest
+              # row — the two dispatches must ride the same locked inputs
+              # (mods.lock); a mismatch would make every datum garbage.
+              TF=$(awk -F'\t' '$1=="cell"{print $5; exit}' "$TC/gallery-item-$NS-p0.tsv")
+              CF=$(awk -F'\t' '$1=="cell"{print $5; exit}' "$SC/gallery-item-$NS-p0.tsv")
+              if [ -z "$TF" ] || [ "$TF" != "$CF" ]; then
+                echo "LADDER ITEM DESYNC ($NS): truth first row '$TF' != c-imagine first row '$CF' — the two dispatches rode different inputs"
+                exit 1
+              fi
+              echo "[ladder] $NS: paired item row = $TF"
+              # appearance sanity (the item must be IN the slot-0 crop on
+              # both sides — the same contract the cimtest icon sanity uses)
+              AE_ti=$(java -cp vtools PixelDiff truth/shots/t00-baseline.png "$TI" 375 663 48 48)
+              AE_ci=$(java -cp vtools PixelDiff cim/shots/00-baseline.png "$CI" 375 663 48 48)
+              echo "AE(icon appearance: truth)=$AE_ti AE(icon appearance: c-imagine)=$AE_ci"
+              [ "$AE_ti" -gt "500" ] || { echo "[ladder] $NS: the real modded item never appeared in the truth hotbar"; exit 1; }
+              [ "$AE_ci" -gt "500" ] || { echo "[ladder] $NS: the pack carrier never appeared in the c-imagine hotbar"; exit 1; }
+              # THE ITEM IDENTITY datum (ungated REPORT — the GUI crop path,
+              # the same math the cimtest icon datum measured at 2300/2304;
+              # each ns item locks its own gate after its first dispatch)
+              AE_ii=$(java -cp vtools PixelDiff "$TI" "$CI" 375 663 48 48)
+              echo "AE(item identity $NS: truth vs c-imagine) = $AE_ii  <-- LADDER ITEM IDENTITY DATUM (ungated report)"
+              # HELD first-person identity: the gallery held class' full-frame
+              # framediff join (EMPTY names a dead side, CONTENT measures the
+              # divergence; DIAGNOSTIC-ONLY per the flip law — no gate here)
+              if [ -f "$TH" ] && [ -f "$CH" ]; then
+                python3 scripts/cimscene/framediff.py --truth "$TH" --ours "$CH" \
+                  --ns "$NS" --page 0 --class-name held \
+                  --out "parity-identity/held-$NS.json" || true
+              else
+                echo "[ladder] $NS: the held shot is missing on a side — held identity SKIPPED, named"
+              fi
+              # SOUND ordered-stream identity: sound-diff.py joins the truth
+              # capture (the packet-capture mixin's window) against the ours
+              # replay log (the post-rewrite ids the vanilla client received);
+              # --map previews the RESOLVED comparison (the future flipped
+              # verdict's shape). DIAGNOSTIC (|| true) per the flip law until
+              # the channel is measured stable.
+              if [ -f "$TC/gallery-sound-$NS-p0.log" ] && [ -f "$SC/gallery-sound-$NS-p0.log" ]; then
+                python3 scripts/cimscene/sound-diff.py \
+                  --truth "$TC/gallery-sound-$NS-p0.log" \
+                  --ours "$SC/gallery-sound-$NS-p0.log" \
+                  --ns "$NS" --page 0 --map "$SMAP" \
+                  --out "parity-identity/sound-$NS.json" || true
+              else
+                echo "[ladder] $NS: a sound capture log is missing — the sound identity is SKIPPED, named"
+              fi
+            done
+            echo "F2F parity diff: ladder identity measured (item crops reported, held/sound joins diagnostic — the flip law applies)"
+          fi
+
+      - name: upload the ladder identity reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-identity
+          path: parity-identity/
+          if-no-files-found: warn
