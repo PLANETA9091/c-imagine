@@ -471,7 +471,9 @@ public final class CimSceneMod {
                 continue;
             }
             BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
-            level.setBlock(pos, st, 3);
+            // no shape updates: a door half, a belt or a link has no support here and
+            // would pop, leaving a cell nothing compares. The wall shows every state as given
+            level.setBlock(pos, st, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
             placed++;
             placedPos.add(pos);
             placedIndex.add(i);
