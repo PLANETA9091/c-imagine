@@ -5821,3 +5821,12 @@ Work Log:
   position/interp change on Paper 26.3. Next: the local stand bisect —
   (a) the real pack, (b) a hand-made one-quad pack, (c) a vanilla summon
   without the plugin — the step that keeps the zoom names the layer.
+
+### 14-at verification on CI — the pins fix lands (#108, 42289cc)
+- #108's ours-pins.log: "Game rule advance_time is now set to false" /
+  advance_weather / spawn_mobs — the 26.3 renames apply on the real runner;
+  the daylight is frozen at noon from #108 on (the mob/item pages stop
+  shooting at night). The run still fails the gate — the page-scale
+  magnification (k=1.70) remains the open lever, with the bisect plan and
+  the new ISOLATE_SCALE step-log datum (first prints in #109) recorded
+  above.
