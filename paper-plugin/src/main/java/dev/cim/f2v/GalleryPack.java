@@ -287,7 +287,30 @@ public final class GalleryPack {
                     cmd += 1.0f;
                     continue;
                 }
-                StateRef s = parseState(bareState);
+                // 14-bq THE SLIDING DOORS (decompiled SlidingDoorRenderer +
+                // SlidingDoorBlock.getRenderShape, measured on the #188 p30
+                // crops): the truth's upper half NEVER draws the BER panel
+                // (the upper BE keeps bridgeTicks up -> shouldRenderSpecial
+                // false; getRenderShape returns ENTITYBLOCK_ANIMATED when
+                // visible=false, so the static is hidden too) — an upper
+                // visible=false cell renders NOTHING, while ours rides the
+                // static panel and measures ae 129K–483K (78 RED cells).
+                // And the lower visible=false open=true cell renders the
+                // CLOSED panel (open is RESET in the BER path) TRANSLATED by
+                // the settled slide — value²·13/16 along movementDirection
+                // (facing.clockWise, opposite when hinge=left) + value2/32
+                // along facing; the alignment search clamps at ±6px against
+                // a ~40px slide (ae 108K–465K, 15 regular-door REDs).
+                if (UPPER_INVISIBLE_DOOR.matcher(bareState).matches()) {
+                    String ref = synthesizeEmptyComposite(compositeIdx, entries);
+                    compositeIdx++;
+                    out.add(new Resolved(state, cmd, ref, 0, 0, true));
+                    cmd += 1.0f;
+                    continue;
+                }
+                double[] slide = slideDoorOffset(bareState);
+                StateRef s = parseState(slide == null ? bareState
+                        : bareState.replace("open=true", "open=false"));
                 List<Part> parts = resolveStateParts(jars, s, entries, warnings);
                 if (parts.isEmpty()) {
                     warnings.add("gallery: no matching model for " + state + " — row dropped");
@@ -313,6 +336,9 @@ public final class GalleryPack {
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
+                }
+                if (slide != null) {
+                    translateCompositeElements(ref, slide, entries);
                 }
                 compositeIdx++;
                 out.add(new Resolved(state, cmd, ref, 0, 0, true));
@@ -1174,6 +1200,122 @@ public final class GalleryPack {
     static void setQuadDir(Path dir) {
         quadDir = dir;
         itemQuadMap = null;
+    }
+
+    // ------------------------------------------------------- 14-bq doors --
+
+    /**
+     * The five Create sliding doors whose truth rendering the #188 crops
+     * measured: an UPPER visible=false cell shows NOTHING (the upper BE's
+     * bridgeTicks keep the BER out and getRenderShape hides the static),
+     * while ours rode the full static panel at ae 129K–483K.
+     */
+    private static final java.util.regex.Pattern UPPER_INVISIBLE_DOOR =
+            java.util.regex.Pattern.compile(
+                    "create:(brass|copper|andesite|framed_glass|train)_door"
+                            + "\\[.*half=upper.*visible=false.*\\]");
+
+    /**
+     * The settled slide of a lower visible=false open=true REGULAR door
+     * (brass/framed_glass/train — the non-folding BER branch): the CLOSED
+     * panel translated value²·13/16 along movementDirection + value2/32
+     * along facing, in MODEL units (1/16 block). Copper/andesite fold
+     * instead (the 91° panel rotation) — not a translation, untouched here.
+     *
+     * @return {dx, dz} in model units, or null when the state is not a
+     *         slid lower door.
+     */
+    private static double[] slideDoorOffset(String state) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(
+                "create:(brass|framed_glass|train)_door\\[([^\\]]*)\\]").matcher(state);
+        if (!m.matches()) {
+            return null;
+        }
+        String props = m.group(2);
+        if (!props.contains("half=lower") || !props.contains("visible=false")
+                || !props.contains("open=true")) {
+            return null;
+        }
+        java.util.regex.Matcher fm = java.util.regex.Pattern.compile("facing=(\\w+)")
+                .matcher(props);
+        java.util.regex.Matcher hm = java.util.regex.Pattern.compile("hinge=(\\w+)")
+                .matcher(props);
+        if (!fm.find() || !hm.find()) {
+            return null;
+        }
+        // movementDirection = facing.clockWise, opposite when hinge=left
+        int fx, fz; // facing vector in model units
+        switch (fm.group(1)) {
+            case "north" -> { fx = 0; fz = -1; }
+            case "south" -> { fx = 0; fz = 1; }
+            case "east" -> { fx = 1; fz = 0; }
+            case "west" -> { fx = -1; fz = 0; }
+            default -> { return null; }
+        }
+        int mvx, mvz;
+        switch (fm.group(1)) {
+            case "north" -> { mvx = 1; mvz = 0; }   // north.clockWise = east
+            case "east" -> { mvx = 0; mvz = 1; }    // east.clockWise = south
+            case "south" -> { mvx = -1; mvz = 0; }  // south.clockWise = west
+            default -> { mvx = 0; mvz = -1; }       // west.clockWise = north
+        }
+        if (hm.group(1).equals("left")) {
+            mvx = -mvx;
+            mvz = -mvz;
+        }
+        // value=1 settled: 13/16 block along movement + 1/32 along facing
+        return new double[]{mvx * 13.0 + fx * 0.5, mvz * 13.0 + fz * 0.5};
+    }
+
+    /** A composite that joins the wall as an intentionally blank cell. */
+    private static String synthesizeEmptyComposite(int idx, TreeMap<String, byte[]> entries) {
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.add("textures", new JsonObject());
+        wrapper.add("elements", new JsonArray());
+        recordScale(WRAPPER_REF_PREFIX + idx, 1.0);
+        entries.put(WRAPPER_PREFIX + idx + ".json", wrapper.toString()
+                .getBytes(StandardCharsets.UTF_8));
+        return WRAPPER_REF_PREFIX + idx;
+    }
+
+    /** Shifts every element of an emitted composite by {@code off} = {dx, dz}. */
+    private static void translateCompositeElements(String ref, double[] off,
+                                                   TreeMap<String, byte[]> entries) {
+        String ns, rest;
+        String[] parts = ref.split(":", 2);
+        if (parts.length != 2) {
+            return;
+        }
+        ns = parts[0];
+        rest = parts[1];
+        String file = "assets/" + ns + "/models/" + rest + ".json";
+        byte[] raw = entries.get(file);
+        if (raw == null) {
+            return;
+        }
+        JsonObject model = com.google.gson.JsonParser.parseString(new String(raw,
+                StandardCharsets.UTF_8)).getAsJsonObject();
+        if (!model.has("elements")) {
+            return;
+        }
+        for (JsonElement el : model.getAsJsonArray("elements")) {
+            JsonObject e = el.getAsJsonObject();
+            if (!e.has("from") || !e.has("to")) {
+                continue;
+            }
+            e.add("from", shiftVec(e.getAsJsonArray("from"), off));
+            e.add("to", shiftVec(e.getAsJsonArray("to"), off));
+        }
+        entries.put(file, model.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static JsonArray shiftVec(JsonArray v, double[] off) {
+        JsonArray out = new JsonArray();
+        out.add(v.get(0).getAsDouble() + off[0]);
+        out.add(v.get(1).getAsDouble());
+        out.add(v.get(2).getAsDouble() + off[1]);
+        return out;
     }
 
     /**
