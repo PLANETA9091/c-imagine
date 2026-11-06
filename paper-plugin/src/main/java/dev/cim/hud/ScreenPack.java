@@ -35,6 +35,7 @@ public final class ScreenPack {
     private static final int INVENTORY_PANEL_WIDTH = 176;
     private static final String ITEM_MANIFEST = "visual-items.resolved.tsv";
     private static final String CACHE = "screens.tsv";
+    private static final String CAPTURES = "screens";
 
     /**
      * One glyph of a scene, at (x, y) from the screen's top left. A floating
@@ -49,16 +50,23 @@ public final class ScreenPack {
     public record Widget(int x, int y, int w, int h, String label) {
     }
 
+    /**
+     * Set when the art is the mod's real rendered screen: where its corner sits
+     * from the screen centre, and its slots. Title and widgets are in the pixels.
+     */
+    public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots) {
+    }
+
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
     public record Scene(String className, String menu, int width, int height, boolean titleCentered,
-                        List<Piece> pieces, List<Widget> widgets) {
+                        List<Piece> pieces, List<Widget> widgets, Captured captured) {
         public String shortName() {
             return className.substring(Math.max(className.lastIndexOf('/'), className.lastIndexOf('$')) + 1);
         }
     }
 
     /** Scenes plus the art of each glyph, in a stable order. */
-    record Baked(List<Scene> scenes, Map<Character, BufferedImage> art) {
+    record Baked(List<Scene> scenes, Map<Character, BufferedImage> art, Map<Character, Integer> heights) {
     }
 
     private ScreenPack() {
@@ -78,7 +86,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v4");
+        StringBuilder out = new StringBuilder("v5");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -97,6 +105,14 @@ public final class ScreenPack {
             out.append("scene\t").append(s.className()).append('\t').append(s.menu() == null ? "" : s.menu())
                     .append('\t').append(s.width()).append('\t').append(s.height()).append('\t')
                     .append(s.titleCentered()).append('\n');
+            if (s.captured() != null) {
+                out.append("captured\t").append(s.captured().originX()).append('\t')
+                        .append(s.captured().originY()).append('\n');
+                for (GuiCaptures.Slot slot : s.captured().slots()) {
+                    out.append("cslot\t").append(slot.x()).append('\t').append(slot.y()).append('\t')
+                            .append(slot.player()).append('\n');
+                }
+            }
             for (Piece p : s.pieces()) {
                 out.append("piece\t").append((int) p.glyph()).append('\t').append(p.x()).append('\t')
                         .append(p.y()).append('\t').append(p.w()).append('\t').append(p.h()).append('\t')
@@ -120,7 +136,14 @@ public final class ScreenPack {
                 pieces = new ArrayList<>();
                 widgets = new ArrayList<>();
                 out.add(new Scene(p[1], p[2].isEmpty() ? null : p[2], Integer.parseInt(p[3]), Integer.parseInt(p[4]),
-                        Boolean.parseBoolean(p[5]), pieces, widgets));
+                        Boolean.parseBoolean(p[5]), pieces, widgets, null));
+            } else if (p[0].equals("captured")) {
+                Scene last = out.remove(out.size() - 1);
+                out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
+                        pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>())));
+            } else if (p[0].equals("cslot")) {
+                out.get(out.size() - 1).captured().slots().add(new GuiCaptures.Slot(
+                        Integer.parseInt(p[1]), Integer.parseInt(p[2]), Boolean.parseBoolean(p[3])));
             } else if (p[0].equals("piece") && pieces != null) {
                 pieces.add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
                         Integer.parseInt(p[4]), Integer.parseInt(p[5]), Boolean.parseBoolean(p[6])));
@@ -145,7 +168,7 @@ public final class ScreenPack {
             JsonObject provider = new JsonObject();
             provider.addProperty("type", "bitmap");
             provider.addProperty("file", HudPack.NS + ":font/" + file);
-            provider.addProperty("height", e.getValue().getHeight());
+            provider.addProperty("height", baked.heights().getOrDefault(e.getKey(), e.getValue().getHeight()));
             provider.addProperty("ascent", ascent);
             JsonArray chars = new JsonArray();
             chars.add(String.valueOf(e.getKey()));
@@ -230,8 +253,9 @@ public final class ScreenPack {
     private static Baked bake(Path modsDir) throws IOException {
         List<Scene> scenes = new ArrayList<>();
         Map<Character, BufferedImage> art = new java.util.LinkedHashMap<>();
+        Map<Character, Integer> heights = new HashMap<>();
         if (!Files.isDirectory(modsDir)) {
-            return new Baked(scenes, art);
+            return new Baked(scenes, art, heights);
         }
         List<Path> jars;
         try (Stream<Path> s = Files.list(modsDir)) {
@@ -294,11 +318,150 @@ public final class ScreenPack {
                 ModScanner.ScreenInfo i = info.get(slashed(b.screenClass));
                 String menu = i == null || i.menuClass == null ? null : slashed(i.menuClass);
                 scenes.add(new Scene(slashed(b.screenClass), menu, bg.width, bg.height,
-                        measuresTitle(slashed(b.screenClass), classes), pieces, widgets));
+                        measuresTitle(slashed(b.screenClass), classes), pieces, widgets, null));
             }
         }
+        addCaptures(modsDir.resolveSibling("c-imagine").resolve(CAPTURES), scenes, art, heights);
         writeCache(modsDir, scenes);
-        return new Baked(scenes, art);
+        return new Baked(scenes, art, heights);
+    }
+
+    /**
+     * Real rendered screens from {@code ScreenArt}. They replace any scanned scene for
+     * the same menu, because they are what the mod actually draws.
+     */
+    private static void addCaptures(Path dir, List<Scene> scenes, Map<Character, BufferedImage> art,
+                                    Map<Character, Integer> heights) throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        List<Path> files;
+        try (Stream<Path> s = Files.list(dir)) {
+            files = s.filter(p -> p.toString().endsWith(".tsv")).sorted().toList();
+        }
+        for (Path tsv : files) {
+            Path png = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".png"));
+            if (!Files.isRegularFile(png)) {
+                continue;
+            }
+            String menu = null;
+            int frameW = 0;
+            int frameH = 0;
+            int scale = 1;
+            int left = 0;
+            int top = 0;
+            int xSize = 0;
+            int ySize = 0;
+            List<GuiCaptures.Slot> slots = new ArrayList<>();
+            for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+                String[] p = line.split("\t");
+                switch (p[0]) {
+                    case "menu" -> menu = slashed(p[2]);
+                    case "frame" -> {
+                        frameW = Integer.parseInt(p[1]);
+                        frameH = Integer.parseInt(p[2]);
+                        scale = Integer.parseInt(p[3]);
+                    }
+                    case "bounds" -> {
+                        left = Integer.parseInt(p[1]);
+                        top = Integer.parseInt(p[2]);
+                        xSize = Integer.parseInt(p[3]);
+                        ySize = Integer.parseInt(p[4]);
+                    }
+                    case "slot" -> slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
+                            p[3].equals("player")));
+                    default -> {
+                    }
+                }
+            }
+            BufferedImage image = ImageIO.read(png.toFile());
+            if (menu == null || image == null) {
+                continue;
+            }
+            List<Piece> pieces = captureTiles(opaque(image), scale, left, top, art, heights);
+            if (pieces.isEmpty()) {
+                continue;
+            }
+            String key = menu;
+            scenes.removeIf(s -> key.equals(s.menu()));
+            int guiW = (frameW + scale - 1) / scale;
+            int guiH = (frameH + scale - 1) / scale;
+            scenes.add(new Scene(menu, menu, xSize, ySize, false, pieces, new ArrayList<>(),
+                    new Captured(left - guiW / 2, top - guiH / 2, slots)));
+        }
+    }
+
+    /**
+     * Some draws write colour with zero alpha. A real framebuffer is opaque, so that
+     * colour is what a player sees: any pixel holding colour counts as solid.
+     */
+    private static BufferedImage opaque(BufferedImage src) {
+        BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < src.getHeight(); y++) {
+            for (int x = 0; x < src.getWidth(); x++) {
+                int c = src.getRGB(x, y);
+                out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+            }
+        }
+        return out;
+    }
+
+    /** Cuts the opaque area into glyphs that land one GUI pixel per {@code scale} source pixels. */
+    private static List<Piece> captureTiles(BufferedImage img, int scale, int left, int top,
+                                            Map<Character, BufferedImage> art, Map<Character, Integer> heights)
+            throws IOException {
+        int minX = img.getWidth();
+        int minY = img.getHeight();
+        int maxX = -1;
+        int maxY = -1;
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = 0; x < img.getWidth(); x++) {
+                if (img.getRGB(x, y) >>> 24 != 0) {
+                    minX = Math.min(minX, x);
+                    minY = Math.min(minY, y);
+                    maxX = Math.max(maxX, x);
+                    maxY = Math.max(maxY, y);
+                }
+            }
+        }
+        List<Piece> out = new ArrayList<>();
+        if (maxX < 0) {
+            return out;
+        }
+        minX -= minX % scale;
+        minY -= minY % scale;
+        int step = TILE / scale * scale;
+        for (int y = minY; y <= maxY; y += step) {
+            for (int x = minX; x <= maxX; x += step) {
+                int w = Math.min(step, (maxX + scale - x) / scale * scale);
+                int h = Math.min(step, (maxY + scale - y) / scale * scale);
+                BufferedImage tile = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+                boolean any = false;
+                for (int ty = 0; ty < h; ty++) {
+                    for (int tx = 0; tx < w; tx++) {
+                        if (x + tx < img.getWidth() && y + ty < img.getHeight()) {
+                            int c = img.getRGB(x + tx, y + ty);
+                            tile.setRGB(tx, ty, c);
+                            any |= c >>> 24 != 0;
+                        }
+                    }
+                }
+                if (!any) {
+                    continue;
+                }
+                char glyph = (char) (GLYPH_BASE + art.size());
+                if (glyph >= GLYPH_LIMIT) {
+                    throw new IOException("out of screen glyphs");
+                }
+                if (tile.getRGB(w - 1, h - 1) >>> 24 == 0) {
+                    tile.setRGB(w - 1, h - 1, 0x01000000);
+                }
+                art.put(glyph, tile);
+                heights.put(glyph, h / scale);
+                out.add(new Piece(glyph, x / scale - left, y / scale - top, w / scale, h / scale, false));
+            }
+        }
+        return out;
     }
 
     private static String slashed(String name) {

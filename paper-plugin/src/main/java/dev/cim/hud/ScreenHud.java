@@ -99,10 +99,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         final int originX;
         final int originY;
         ItemStack cursor;
+        boolean pointerShown = true;
 
         Session(ScreenPack.Scene scene, GuiCaptures.Capture capture, Pointer pointer) {
             this.scene = scene;
-            this.capture = capture;
+            ScreenPack.Captured real = scene.captured();
+            this.capture = real == null ? capture
+                    : new GuiCaptures.Capture(null, scene.menu(), null, List.of(), real.slots());
+            capture = this.capture;
             this.pointer = pointer;
             this.held = new ItemStack[capture == null ? 0 : capture.slots().size()];
             int minX = 0;
@@ -119,8 +123,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     }
                 }
             }
-            originX = -(minX + maxX) / 2;
-            originY = -(minY + maxY) / 2;
+            originX = real != null ? real.originX() : -(minX + maxX) / 2;
+            originY = real != null ? real.originY() : -(minY + maxY) / 2;
         }
 
         /** Where a floating inventory panel goes: the first player slot is its (8, 17). */
@@ -223,6 +227,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         ScreenPack.Scene scene = sceneFor(menuClass.replace('.', '/'));
         if (scene != null) {
             open(player, scene);
+            // The real screen has no pointer in the frame either: the gallery mouse is off-screen.
+            open.get(player.getUniqueId()).pointerShown = false;
         }
         return scene != null;
     }
@@ -230,7 +236,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         CommandSender target = sender instanceof ProxiedCommandSender proxy ? proxy.getCallee() : sender;
-        ScreenPack.Scene scene = args.length == 1 ? scenes.stream()
+        ScreenPack.Scene scene = args.length >= 1 ? scenes.stream()
                 .filter(s -> s.shortName().equalsIgnoreCase(args[0])).findFirst().orElse(null) : null;
         if (!(target instanceof Player player) || scene == null) {
             sender.sendMessage("Usage: /modscreen <" + String.join("|",
@@ -238,6 +244,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return true;
         }
         open(player, scene);
+        open.get(player.getUniqueId()).pointerShown = !(args.length > 1);
         return true;
     }
 
@@ -312,7 +319,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 frame.freeLabel(s.originX + (centered ? (s.scene.width() - 8) / 2 - w / 2 : TITLE_X),
                         s.originY + (centered ? TITLE_Y - 2 : TITLE_Y), s.capture.title());
             }
-            int[] at = s.panelAt();
+            int[] at = s.scene.captured() != null ? null : s.panelAt();
             if (at != null) {
                 frame.freeLabel(s.originX + at[0] + TITLE_X, s.originY + at[1] + TITLE_Y, "Inventory");
             }
@@ -323,7 +330,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 int x = s.originX + slot.x();
                 int y = s.originY + slot.y();
                 if (slot.x() > -1000) {
-                    if ((slot.player() && !panel) || i == hover) {
+                    if ((slot.player() && !panel && s.scene.captured() == null) || i == hover) {
                         frame.free(x - 1, y - 1, String.valueOf(i == hover ? HudPack.SLOT_HOVER : HudPack.SLOT), 19);
                     }
                     drawItem(frame, x, y, slotItem(player, s, i, nth));
@@ -332,7 +339,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
         }
         drawItem(frame, s.pointer.x() - 8, s.pointer.y() - 8, s.cursor);
-        frame.free(s.pointer.x(), s.pointer.y(), String.valueOf(HudPack.CURSOR), 9);
+        if (s.pointerShown) {
+            frame.free(s.pointer.x(), s.pointer.y(), String.valueOf(HudPack.CURSOR), 9);
+        }
     }
 
     private void click(Player player, String button) {

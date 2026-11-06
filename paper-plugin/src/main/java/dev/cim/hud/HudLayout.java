@@ -143,7 +143,7 @@ public final class HudLayout {
                         ivec3 c = ivec3(round(Color.rgb * 255.0));
                         // Drawn shadows carry a quarter of this colour, so runs turn them off.
                         pos.x += float((c.r << 4) | (c.g >> 4)) - FREE_ORIGIN;
-                        pos.y += 0.5 * ui.y + float(((c.g & 15) << 8) | c.b) - FREE_ORIGIN;
+                        pos.y += 0.5 * ui.y + float(((c.g & 15) << 8) | c.b) - FREE_ORIGIN + FREE_Y;
                         float shade = anchor == FREE_DARK_ANCHOR ? 0.25 : 1.0;
                         cimColor = vec4(shade, shade, shade, Color.a);
                         return pos;
@@ -180,6 +180,7 @@ public final class HudLayout {
                 .replace("FREE_DARK_ANCHOR", String.valueOf(Anchor.FREE_DARK.ordinal()))
                 .replace("FREE_ANCHOR", String.valueOf(Anchor.FREE.ordinal()))
                 .replace("FREE_ORIGIN", FREE_ZERO + ".0")
+                .replace("FREE_Y", "2.0")
                 .replace("TEXT_ROW_HEIGHT", String.valueOf(TEXT_ROW_HEIGHT))
                 .replace("TEXT_BLOCK", (TEXT_ROWS * TEXT_ROW_HEIGHT) + ".0")
                 .replace("BOTTOM_CLEAR", "44.0")
