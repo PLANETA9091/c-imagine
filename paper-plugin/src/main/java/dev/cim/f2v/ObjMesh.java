@@ -512,6 +512,22 @@ final class ObjMesh {
         BAKER.reset();
     }
 
+    /**
+     * 14-bs: an exact-pixel tile for a rect face's sprite window. The
+     * near-miss statics sample the direct sprites through each leg's atlas;
+     * the atlas layouts and mip chains differ (1.21.1 vs 26.3) and the
+     * minified wall sampling blends neighbours differently. Baking the face's
+     * own window as a tile (the shared sheets carry 2px gutters — wider than
+     * the mip radius) makes the face sample ITS OWN pixels 1:1 and the atlas
+     * layout stops mattering. Returns {sheet, x, y} like {@link Baker#place}.
+     */
+    static int[] placeExactTile(java.awt.image.BufferedImage img) {
+        int w = img.getWidth();
+        int h = img.getHeight();
+        int[] argb = img.getRGB(0, 0, w, h, null, 0, w);
+        return BAKER.place(argb, w, h);
+    }
+
     /** Writes the baked sheets into the pack; call once, after every model is emitted. */
     static void flushBaker(String spriteNs, Map<String, byte[]> entries) throws IOException {
         BAKER.flush(spriteNs, entries);

@@ -891,6 +891,9 @@ public final class GalleryPack {
         // light_emission on EVERY merged element BEFORE the wrapper is
         // emitted — the element property rides the emitted JSON verbatim.
         applyEmissive(state, mergedElements, emissiveTable, emissiveLog);
+        // 14-bs: the door sprites sample their own exact tiles (the atlas
+        // layouts/mip chains differ between the legs)
+        bakeFaceTiles(mergedElements, textures, jars, entries, warnings);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         JsonObject texObj = new JsonObject();
@@ -1318,6 +1321,101 @@ public final class GalleryPack {
         return out;
     }
 
+    /** The five Create sliding doors' sprites — the near-miss sampling class. */
+    private static final java.util.regex.Pattern DOOR_SPRITE =
+            java.util.regex.Pattern.compile(
+                    "create:block/(brass|copper|andesite|framed_glass|train)_door_.*");
+
+    /**
+     * 14-bs: bake every door-sprite face window into an exact-pixel objcut
+     * tile. The near-miss door cells (55 at ae 63K–151K, shift [0,0], luma
+     * ~1) sample the direct sprites through each leg's atlas; the atlas
+     * layouts and mip chains differ (1.21.1 vs 26.3) and the minified wall
+     * sampling blends neighbours differently. With the face sampling ITS OWN
+     * pixels 1:1 from a guttered sheet tile, the atlas layout stops
+     * mattering. Mirrored windows keep their orientation (the linear uv
+     * remap preserves the corner order); the per-face vertex rotation is
+     * untouched (it composes linearly with the remap).
+     */
+    private static void bakeFaceTiles(JsonArray elements, Map<String, String> textures,
+                                      List<Path> jars, TreeMap<String, byte[]> entries,
+                                      List<String> warnings) {
+        int bakeNo = 0;
+        for (JsonElement elE : elements) {
+            JsonObject el = elE.getAsJsonObject();
+            if (!el.has("faces")) {
+                continue;
+            }
+            JsonObject faces = el.getAsJsonObject("faces");
+            for (Map.Entry<String, JsonElement> fe : faces.entrySet()) {
+                JsonObject face = fe.getValue().getAsJsonObject();
+                if (!face.has("texture") || !face.has("uv")) {
+                    continue;
+                }
+                String texKey = face.get("texture").getAsString();
+                String mapKey = texKey.startsWith("#") ? texKey.substring(1) : texKey;
+                String sprite = textures.get(mapKey);
+                if (sprite == null || !DOOR_SPRITE.matcher(sprite).matches()) {
+                    continue;
+                }
+                JsonArray uvA = face.getAsJsonArray("uv");
+                double u0 = uvA.get(0).getAsDouble();
+                double v0 = uvA.get(1).getAsDouble();
+                double u1 = uvA.get(2).getAsDouble();
+                double v1 = uvA.get(3).getAsDouble();
+                double spanU = Math.abs(u1 - u0);
+                double spanV = Math.abs(v1 - v0);
+                if (spanU < 0.01 || spanV < 0.01) {
+                    continue;
+                }
+                byte[] png = entries.get(spritePathPng(sprite));
+                if (png == null) {
+                    try {
+                        png = readPngFromJars(jars, spritePathPng(sprite));
+                    } catch (IOException e) {
+                        png = null;
+                    }
+                }
+                if (png == null) {
+                    warnings.add("14-bs: door sprite missing: " + sprite);
+                    continue;
+                }
+                java.awt.image.BufferedImage src;
+                try {
+                    src = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+                } catch (IOException e) {
+                    warnings.add("14-bs: door sprite unreadable: " + sprite);
+                    continue;
+                }
+                if (src == null) {
+                    continue;
+                }
+                int w = src.getWidth();
+                int h = src.getHeight();
+                int px = (int) Math.round(Math.min(u0, u1) / 16.0 * w);
+                int py = (int) Math.round(Math.min(v0, v1) / 16.0 * h);
+                int pw = Math.max(1, (int) Math.round(spanU / 16.0 * w));
+                int ph = Math.max(1, (int) Math.round(spanV / 16.0 * h));
+                px = Math.max(0, Math.min(w - 1, px));
+                py = Math.max(0, Math.min(h - 1, py));
+                pw = Math.max(1, Math.min(w - px, pw));
+                ph = Math.max(1, Math.min(h - py, ph));
+                int[] at = ObjMesh.placeExactTile(src.getSubimage(px, py, pw, ph));
+                String key = "b" + (bakeNo++);
+                textures.put(key, WRAPPER_NS + ":block/objcut/sheet" + at[0]);
+                face.addProperty("texture", "#" + key);
+                double su = 16.0 / spanU;
+                double sv = 16.0 / spanV;
+                JsonArray nuv = new JsonArray();
+                nuv.add((u0 - Math.min(u0, u1)) * su);
+                nuv.add((v0 - Math.min(v0, v1)) * sv);
+                nuv.add((u1 - Math.min(u0, u1)) * su);
+                nuv.add((v1 - Math.min(v0, v1)) * sv);
+                face.add("uv", nuv);
+            }
+        }
+    }
+
     /**
      * A cell's model from the quads the real client baked for it: connected
      * textures, neighbour-aware meshes and culled see-through faces arrive
@@ -1448,6 +1546,10 @@ public final class GalleryPack {
             byte[] hosted = entries.get(spritePathPng(sprite));
             return hosted != null ? hosted : readPngFromJars(jars, spritePathPng(sprite));
         }, WRAPPER_NS, entries, warnings);
+        // 14-bs: the door sprites sample their own exact tiles (the atlas
+        // layouts/mip chains differ between the legs) — the q-path composites
+        // carry the same direct sprite windows
+        bakeFaceTiles(elements, textures, jars, entries, warnings);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         JsonObject texObj = new JsonObject();
