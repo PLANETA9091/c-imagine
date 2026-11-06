@@ -529,6 +529,13 @@ jobs:
               [ "$EX" = "1" ] || { echo "$NS $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
             done
           done
+          # MENU scan (per ladder ns): the probe needs no client, so the ours leg,
+          # which runs beside the truth leg, has every menu's class and slots.
+          for NS in $LADDER_NS; do
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery gui-scan $NS" || true
+            grep "gallery-gui-scan ns=$NS " srv-wall/boot.log | tail -1 || true
+          done
           # ITEM walk (per ladder ns, to exhaustion)
           for NS in $LADDER_NS; do
             EX=0
@@ -606,7 +613,7 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
           done
-          # gui stays OUT of the seed walk on purpose: openMenu needs a
+          # the gui SHOTS stay out of the seed walk: openMenu needs a
           # joined viewer, the seed walks headless — its manifests come
           # from the truth shards' walks. INV is different: the inv
           # manifest is a pure SLOT RE-LABELLING of the item manifest

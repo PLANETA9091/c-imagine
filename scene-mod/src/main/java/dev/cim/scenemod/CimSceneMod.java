@@ -296,6 +296,10 @@ public final class CimSceneMod {
                                                 .executes(ctx -> gallerySound(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("gui-scan")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .executes(ctx -> galleryGuiScan(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "namespace")))))
                         .then(Commands.literal("gui")
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
@@ -1627,6 +1631,8 @@ public final class CimSceneMod {
     /** Records what would open without telling any client, whose block is about to vanish. */
     private static final class GuiProbe extends net.neoforged.neoforge.common.util.FakePlayer {
         ResourceLocation seen;
+        String seenClass;
+        List<String> seenSlots;
 
         GuiProbe(ServerLevel level) {
             super(level, new com.mojang.authlib.GameProfile(
@@ -1635,7 +1641,14 @@ public final class CimSceneMod {
 
         private java.util.OptionalInt record(net.minecraft.world.MenuProvider provider) {
             try {
-                seen = BuiltInRegistries.MENU.getKey(provider.createMenu(1, getInventory(), this).getType());
+                net.minecraft.world.inventory.AbstractContainerMenu menu = provider.createMenu(1, getInventory(), this);
+                seen = BuiltInRegistries.MENU.getKey(menu.getType());
+                seenClass = menu.getClass().getName();
+                seenSlots = new ArrayList<>();
+                for (net.minecraft.world.inventory.Slot slot : menu.slots) {
+                    seenSlots.add(slot.x + "\t" + slot.y + "\t"
+                            + (slot.container == getInventory() ? "player" : "menu"));
+                }
             } catch (Throwable t) {
                 LOGGER.info("[cimscene] gallery-gui probe createMenu threw {}", t.toString());
             }
@@ -1679,6 +1692,83 @@ public final class CimSceneMod {
         } catch (Throwable t) {
             LOGGER.info("[cimscene] gallery-gui opener {} threw {}", opener, t.toString());
         }
+    }
+
+    /**
+     * Writes every menu's manifest with no client involved: the probe's server-side
+     * menu object already knows its class and slots. Both gallery legs and a real
+     * server can use this, and no disconnect can cut it short.
+     */
+    private static int galleryGuiScan(CommandSourceStack src, String namespace) {
+        ServerLevel level = src.getLevel();
+        BlockPos rig = level.getSharedSpawnPos().above(3);
+        GuiProbe probe = new GuiProbe(level);
+        probe.setPos(rig.getX() + 0.5, rig.getY() + 1, rig.getZ() + 2.5);
+        List<String> candidates = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)) {
+                candidates.add("block:" + b);
+            }
+        }
+        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+            if (i.getNamespace().equals(namespace)) {
+                candidates.add("item:" + i);
+            }
+        }
+        candidates.sort(Comparator.naturalOrder());
+        Map<ResourceLocation, List<String>> openers = new HashMap<>();
+        Map<ResourceLocation, String> classes = new HashMap<>();
+        Map<ResourceLocation, List<String>> slots = new HashMap<>();
+        for (String candidate : candidates) {
+            probe.seen = null;
+            try {
+                guiPlace(level, rig, candidate);
+                guiAct(level, probe, rig, candidate);
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui-scan candidate {} threw {}", candidate, t.toString());
+            }
+            if (probe.seen != null) {
+                openers.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(candidate);
+                classes.putIfAbsent(probe.seen, probe.seenClass);
+                slots.putIfAbsent(probe.seen, probe.seenSlots);
+            }
+            level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
+        }
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
+        ids.removeIf(id -> !id.getNamespace().equals(namespace));
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        int found = 0;
+        for (int page = 0; page < ids.size(); page++) {
+            ResourceLocation id = ids.get(page);
+            StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+            if (classes.containsKey(id)) {
+                found++;
+                tsv.append("cell\t0\t0\t0\t").append(id).append("\topened-by:")
+                        .append(openers.get(id).get(0)).append('\t').append(classes.get(id)).append('\n');
+                for (String each : openers.get(id)) {
+                    tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
+                }
+                int index = 0;
+                for (String slot : slots.get(id)) {
+                    String[] p = slot.split("\t");
+                    tsv.append("slot\t").append(index++).append('\t').append(p[0]).append('\t').append(p[1])
+                            .append('\t').append(id).append('\t').append(p[2]).append('\n');
+                }
+            } else {
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tno-opener\n");
+            }
+            try {
+                Path parent = Path.of("c-imagine", "scenes");
+                Files.createDirectories(parent);
+                Files.writeString(parent.resolve("gallery-gui-" + namespace + "-p" + page + ".tsv"),
+                        tsv.toString(), StandardCharsets.UTF_8);
+            } catch (IOException ioe) {
+                LOGGER.error("[cimscene] gallery-gui-scan write failed {}: {}", id, ioe.toString());
+            }
+        }
+        LOGGER.info("[cimscene] gallery-gui-scan ns={} tried={} menus={} found={}",
+                namespace, candidates.size(), ids.size(), found);
+        return found;
     }
 
     /** Tries every block and item of the namespace once and keeps what opened a menu. */
