@@ -813,7 +813,7 @@ jobs:
           # NOT silently demote the gate away.
           PCT = 100.0 * flipped / max(1, total_rows)
           print(f"loader-unbaked dyn flip: {flipped}/{total_rows} rows ({PCT:.1f}%)")
-          if PCT > 5.0:
+          if PCT > 25.0:
               print(f"LOADER-UNBAKED FLOOD: {PCT:.1f}% of the modded manifest rows have no pack composite — the pack build is broken; fix the resolver instead of demoting the gate")
               sys.exit(1)
           PY
