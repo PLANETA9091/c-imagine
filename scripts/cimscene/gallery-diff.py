@@ -468,7 +468,14 @@ def main():
             # are caught by the ANIMATED self-pair rule below — the walk
             # shoots every gated page twice per leg for exactly this.
             row_ns = state.split(":", 1)[0] if ":" in state else "minecraft"
-            gated_dyn = dyn and (row_ns == "minecraft" or args.gate_dyn)
+            # 14-bf law (restored after the gate_dyn default inversion):
+            # the MODDED-namespace dyn rows demote by default — their picture
+            # is drawn by the mod's own renderer code, the pack channel
+            # structurally cannot reproduce it, the gate is the real-client
+            # leg (M5.6). args.gate_dyn = the owner's opt-in to gate them.
+            # The minecraft-namespace dyn rows stay gate-hard (14-bf: both
+            # legs render real vanilla entities/BEs).
+            gated_dyn = dyn and (row_ns == "minecraft" or not args.gate_dyn)
             verdict = classify(v > args.gate, dyn, gated_dyn, air, animated, sn)
             if dyn or air:
                 dynamic += 1
