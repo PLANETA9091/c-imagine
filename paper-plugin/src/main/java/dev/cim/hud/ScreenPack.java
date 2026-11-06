@@ -2,6 +2,7 @@ package dev.cim.hud;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dev.f2v.vm.discovery.ClientSurfaceScanner;
 import dev.f2v.vm.discovery.GuiSpriteBytecodeScanner;
 import dev.f2v.vm.discovery.ModScanner;
 import java.awt.image.BufferedImage;
@@ -44,8 +45,13 @@ public final class ScreenPack {
     public record Piece(char glyph, int x, int y, int w, int h, boolean floating) {
     }
 
+    /** A control the scan proved: where it is and what it is called. */
+    public record Widget(int x, int y, int w, int h, String label) {
+    }
+
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
-    public record Scene(String className, String menu, int width, int height, List<Piece> pieces) {
+    public record Scene(String className, String menu, int width, int height, boolean titleCentered,
+                        List<Piece> pieces, List<Widget> widgets) {
         public String shortName() {
             return className.substring(Math.max(className.lastIndexOf('/'), className.lastIndexOf('$')) + 1);
         }
@@ -72,7 +78,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v3");
+        StringBuilder out = new StringBuilder("v4");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -89,11 +95,16 @@ public final class ScreenPack {
         StringBuilder out = new StringBuilder(stamp(modsDir)).append('\n');
         for (Scene s : scenes) {
             out.append("scene\t").append(s.className()).append('\t').append(s.menu() == null ? "" : s.menu())
-                    .append('\t').append(s.width()).append('\t').append(s.height()).append('\n');
+                    .append('\t').append(s.width()).append('\t').append(s.height()).append('\t')
+                    .append(s.titleCentered()).append('\n');
             for (Piece p : s.pieces()) {
                 out.append("piece\t").append((int) p.glyph()).append('\t').append(p.x()).append('\t')
                         .append(p.y()).append('\t').append(p.w()).append('\t').append(p.h()).append('\t')
                         .append(p.floating()).append('\n');
+            }
+            for (Widget w : s.widgets()) {
+                out.append("widget\t").append(w.x()).append('\t').append(w.y()).append('\t').append(w.w())
+                        .append('\t').append(w.h()).append('\t').append(w.label() == null ? "" : w.label()).append('\n');
             }
         }
         Files.writeString(cache, out.toString(), StandardCharsets.UTF_8);
@@ -102,14 +113,20 @@ public final class ScreenPack {
     static List<Scene> parse(List<String> lines) {
         List<Scene> out = new ArrayList<>();
         List<Piece> pieces = null;
+        List<Widget> widgets = null;
         for (String line : lines) {
             String[] p = line.split("\t", -1);
             if (p[0].equals("scene")) {
                 pieces = new ArrayList<>();
-                out.add(new Scene(p[1], p[2].isEmpty() ? null : p[2], Integer.parseInt(p[3]), Integer.parseInt(p[4]), pieces));
+                widgets = new ArrayList<>();
+                out.add(new Scene(p[1], p[2].isEmpty() ? null : p[2], Integer.parseInt(p[3]), Integer.parseInt(p[4]),
+                        Boolean.parseBoolean(p[5]), pieces, widgets));
             } else if (p[0].equals("piece") && pieces != null) {
                 pieces.add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
                         Integer.parseInt(p[4]), Integer.parseInt(p[5]), Boolean.parseBoolean(p[6])));
+            } else if (p[0].equals("widget") && widgets != null) {
+                widgets.add(new Widget(Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                        Integer.parseInt(p[4]), p[5]));
             }
         }
         return out;
@@ -223,7 +240,8 @@ public final class ScreenPack {
         Map<String, List<Piece>> shared = new HashMap<>();
         for (Path jar : jars) {
             Map<String, byte[]> textures = new HashMap<>();
-            readTextures(Files.readAllBytes(jar), textures, 0);
+            Map<String, byte[]> classes = new HashMap<>();
+            readTextures(Files.readAllBytes(jar), textures, classes, 0);
             ModScanner.Profile profile = ModScanner.scan(jar);
             Map<String, GuiSpriteBytecodeScanner.Sprite> sprites = new HashMap<>();
             for (GuiSpriteBytecodeScanner.Sprite s : profile.guiSprites) {
@@ -255,9 +273,28 @@ public final class ScreenPack {
                         }
                     }
                 }
+                List<Widget> widgets = new ArrayList<>();
+                for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
+                    for (ClientSurfaceScanner.Action a : surface.actions) {
+                        if (!slashed(b.screenClass).equals(slashed(a.sourceScreen)) || a.widgetX < 0 || a.widgetY < 0
+                                || a.widgetWidth <= 0 || a.widgetXAnchor != ClientSurfaceScanner.WidgetCoordinateAnchor.START
+                                || a.widgetYAnchor != ClientSurfaceScanner.WidgetCoordinateAnchor.START) {
+                            continue;
+                        }
+                        widgets.add(new Widget(a.widgetX, a.widgetY, a.widgetWidth, a.widgetHeight, a.widgetLabel));
+                        GuiSpriteBytecodeScanner.Sprite icon = sprites.get(a.widgetVisualOwner + "." + a.widgetVisualField);
+                        if (icon != null) {
+                            int dx = Math.max(0, (a.widgetWidth - icon.width) / 2);
+                            int dy = Math.max(0, (a.widgetHeight - icon.height) / 2);
+                            pieces.add(new Piece(HudPack.BUTTON, a.widgetX, a.widgetY, a.widgetWidth, a.widgetHeight, false));
+                            pieces.addAll(tiles(icon, textures, a.widgetX + dx, a.widgetY + dy, shared, art));
+                        }
+                    }
+                }
                 ModScanner.ScreenInfo i = info.get(slashed(b.screenClass));
                 String menu = i == null || i.menuClass == null ? null : slashed(i.menuClass);
-                scenes.add(new Scene(slashed(b.screenClass), menu, bg.width, bg.height, pieces));
+                scenes.add(new Scene(slashed(b.screenClass), menu, bg.width, bg.height,
+                        measuresTitle(slashed(b.screenClass), classes), pieces, widgets));
             }
         }
         writeCache(modsDir, scenes);
@@ -308,14 +345,42 @@ public final class ScreenPack {
         return placed;
     }
 
-    private static void readTextures(byte[] jar, Map<String, byte[]> out, int depth) throws IOException {
+    /**
+     * True when the screen or a superclass measures text with {@code Font.width}
+     * while drawing, which is how a screen centres its title.
+     */
+    private static boolean measuresTitle(String screen, Map<String, byte[]> classes) {
+        for (String at = screen; at != null && classes.containsKey(at); ) {
+            org.objectweb.asm.ClassReader reader = new org.objectweb.asm.ClassReader(classes.get(at));
+            org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+            reader.accept(node, org.objectweb.asm.ClassReader.SKIP_DEBUG | org.objectweb.asm.ClassReader.SKIP_FRAMES);
+            for (org.objectweb.asm.tree.MethodNode method : node.methods) {
+                if (!method.name.equals("renderBg") && !method.name.equals("renderLabels")) {
+                    continue;
+                }
+                for (org.objectweb.asm.tree.AbstractInsnNode insn : method.instructions) {
+                    if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call
+                            && call.owner.equals("net/minecraft/client/gui/Font") && call.name.equals("width")) {
+                        return true;
+                    }
+                }
+            }
+            at = node.superName;
+        }
+        return false;
+    }
+
+    private static void readTextures(byte[] jar, Map<String, byte[]> out, Map<String, byte[]> classes, int depth)
+            throws IOException {
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(jar))) {
             for (ZipEntry e; (e = zip.getNextEntry()) != null; ) {
                 String name = e.getName();
                 if (name.startsWith("assets/") && name.contains("/textures/gui/") && name.endsWith(".png")) {
                     out.put(name, zip.readAllBytes());
+                } else if (name.endsWith(".class")) {
+                    classes.put(name.substring(0, name.length() - 6), zip.readAllBytes());
                 } else if (depth < 2 && name.startsWith("META-INF/jarjar/") && name.endsWith(".jar")) {
-                    readTextures(zip.readAllBytes(), out, depth + 1);
+                    readTextures(zip.readAllBytes(), out, classes, depth + 1);
                 }
             }
         }

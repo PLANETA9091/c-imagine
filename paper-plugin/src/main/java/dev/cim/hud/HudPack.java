@@ -27,6 +27,8 @@ public final class HudPack {
     public static final char BACKDROP = '\uE021';
     public static final char SLOT = '\uE022';
     public static final char SLOT_HOVER = '\uE023';
+    /** Plate under a scanned icon button. */
+    public static final char BUTTON = '\uE024';
     public static final int BACKDROP_W = 1024;
     public static final int BACKDROP_H = 640;
     private static final int BACKDROP_SCALE = 16;
@@ -49,6 +51,7 @@ public final class HudPack {
         entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
         entries.put("assets/" + NS + "/textures/font/slot.png", png(slot(false)));
         entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(slot(true)));
+        entries.put("assets/" + NS + "/textures/font/button.png", png(button()));
         for (int i = 0; i < ARROWS; i++) {
             entries.put("assets/" + NS + "/textures/font/arrow" + i + ".png", png(arrow(i)));
         }
@@ -87,6 +90,11 @@ public final class HudPack {
             slot.add("chars", chars);
             providers.add(slot);
         }
+        JsonObject button = bitmap(NS + ":font/button.png", 18, ascent);
+        JsonArray buttonChars = new JsonArray();
+        buttonChars.add(String.valueOf(BUTTON));
+        button.add("chars", buttonChars);
+        providers.add(button);
         providers.addAll(screens);
         return font;
     }
@@ -161,6 +169,23 @@ public final class HudPack {
         for (int y = 0; y < 3; y++) {
             for (int x = 0; x < 3; x++) {
                 img.setRGB(x, y, 0xFFFFFFFF);
+            }
+        }
+        return img;
+    }
+
+    /** A raised 18px button: light top and left, dark bottom and right. */
+    private static BufferedImage button() {
+        BufferedImage img = new BufferedImage(18, 18, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 18; y++) {
+            for (int x = 0; x < 18; x++) {
+                int c = 0xFF9C9C9C;
+                if (x == 0 || y == 0) {
+                    c = 0xFFD8D8D8;
+                } else if (x == 17 || y == 17) {
+                    c = 0xFF4A4A4A;
+                }
+                img.setRGB(x, y, c);
             }
         }
         return img;

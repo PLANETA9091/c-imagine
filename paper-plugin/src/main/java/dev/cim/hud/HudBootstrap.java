@@ -61,8 +61,10 @@ public final class HudBootstrap {
         if (map != null) {
             map.setExecutor(minimap);
         }
-        if (Boolean.getBoolean("cim.hud.debug")) {
+        if (Boolean.getBoolean("cim.hud.probe")) {
             hud.register(HudService.anchorProbe());
+        }
+        if (Boolean.getBoolean("cim.hud.debug")) {
             plugin.getServer().getScheduler().runTaskTimer(plugin, () -> plugin.getLogger().info(
                     "[cim-hud] frames=" + hud.sentFrames()), 200L, 200L);
         }

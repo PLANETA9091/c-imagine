@@ -306,7 +306,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         if (s.capture != null) {
             if (s.capture.title() != null) {
-                frame.freeLabel(s.originX + TITLE_X, s.originY + TITLE_Y, s.capture.title());
+                // A centring screen uses Create's convention: on (width - 8) / 2, near the top.
+                int w = HudText.width(s.capture.title());
+                boolean centered = s.scene.titleCentered();
+                frame.freeLabel(s.originX + (centered ? (s.scene.width() - 8) / 2 - w / 2 : TITLE_X),
+                        s.originY + (centered ? TITLE_Y - 2 : TITLE_Y), s.capture.title());
             }
             int[] at = s.panelAt();
             if (at != null) {
@@ -335,6 +339,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         Session s = open.get(player.getUniqueId());
         if (s == null) {
             return;
+        }
+        int px = s.pointer.x() - s.originX;
+        int py = s.pointer.y() - s.originY;
+        for (ScreenPack.Widget w : s.scene.widgets()) {
+            if (px >= w.x() && px < w.x() + w.w() && py >= w.y() && py < w.y() + w.h()) {
+                log.info("[cim-screen] " + player.getName() + " " + button + " widget '" + w.label()
+                        + "' in " + s.scene.shortName());
+                return;
+            }
         }
         int index = s.hover();
         log.info("[cim-screen] " + player.getName() + " " + button + " click slot=" + index + " at "
