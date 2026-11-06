@@ -691,7 +691,7 @@ jobs:
           # runs here. A page that fails leaves that menu without art, and a
           # second scan puts back any manifest a lost viewer overwrote.
           for NS in $LADDER_NS; do
-            N=$(ls "$SCENES"/gallery-gui-$NS-p*.tsv 2>/dev/null | wc -l)
+            N=$(find "$SCENES" -maxdepth 1 -name "gallery-gui-$NS-p*.tsv" | wc -l)
             for p in $(seq 0 $((N-1))); do
               [ "$N" -gt 0 ] || break
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
@@ -701,7 +701,7 @@ jobs:
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery gui-scan $NS" >/dev/null 2>&1 || true
           done
-          echo "screens captured: $(ls srv-wall/c-imagine/screens/*.png 2>/dev/null | wc -l)"
+          echo "screens captured: $(find srv-wall/c-imagine/screens -name '*.png' 2>/dev/null | wc -l)"
           touch "$TRIGGER"
           for i in $(seq 1 600); do
             grep -q "quad dump done" truth-client/client-dump.out 2>/dev/null && break
