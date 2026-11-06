@@ -57,6 +57,31 @@ public final class CimTestHeavyMod {
     }
 
     @SubscribeEvent
+    public void onServerStarted(net.neoforged.neoforge.event.server.ServerStartedEvent event) {
+        // THE SELF-ARM CONTRACT (the profiling budget job): a marker file
+        // mods/cimtest-heavy.selfarm ("msPerTick ticks") arms the load on
+        // world start — the budget job touches it ONLY in the modded boot,
+        // so the bare-vs-modded comparison needs no console interaction.
+        // Absent file = no load (the CI gallery boots stay clean).
+        try {
+            java.nio.file.Path marker = event.getServer()
+                    .getServerDirectory().resolve("mods/cimtest-heavy.selfarm");
+            if (!java.nio.file.Files.isRegularFile(marker)) {
+                LOGGER.info("[cimtest_heavy] no selfarm marker — the load stays disarmed");
+                return;
+            }
+            String[] parts = java.nio.file.Files.readString(marker).trim().split("\\s+");
+            int ms = Integer.parseInt(parts[0].trim());
+            int ticks = Integer.parseInt(parts[1].trim());
+            LOGGER.info("[cimtest_heavy] selfarm: arming from {} (msPerTick={} ticks={})",
+                    marker.getFileName(), ms, ticks);
+            arm(ms, ticks, event.getServer());
+        } catch (Throwable t) {
+            LOGGER.info("[cimtest_heavy] selfarm failed (the load stays disarmed): {}", t.toString());
+        }
+    }
+
+    @SubscribeEvent
     public void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("cimheavy")
                 .requires(src -> src.hasPermission(2))
