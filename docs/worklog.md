@@ -7645,3 +7645,94 @@ Independent static Easton capture matches the CI raw bytes EXACTLY for
 Create pane(qb7b3ecc37191f961),high_grass(qcb85a888b6ece251),lumaloop_lit
 (q04aa8e57d9ac8e7c), despite different client mod inventory/worldless probe.
 This confirms the measured raw geometry/color controls are reproducible.
+
+2026-11-06T14:16:50.507285+00:00 Published5a00d627 normally; its mod-matrix started and gallery is pending
+behind the active76ab52b1 comparison. No runs manually canceled. The source
+change touches only the scene harness/workflow, so standard CI/integration
+path filters did not trigger; explicitly dispatch both for this published
+revision to complete the required matrix. No hot Paper path changed, so
+no new performance claim or budget adjustment is appropriate.
+
+2026-11-06T14:20:56.327513+00:00 Next Create-pane experiment (ignored artifact only): add a diagnostic
+range-dispatch entry at CMD1000000 pointing to a two-sided copy of exactly
+gallery/g20381. Each original south-facing rectangle gets a coplanar
+north-facing counterpart with mirrored U coordinates; original model and
+all existing dispatch entries remain unchanged. Expected if backface culling
+causes the missing strip: switching only that cell's CMD makes the strip
+appear and reduces AE against the same truth frame. If unchanged/worse,
+reject hypothesis. No production double-sided conversion without proof.
+Use exact #164 pack/plugin/scenes, baseline and variant in ONE client
+session via ItemDisplay data update, plus unchanged BOP40 control. Back up
+current stand inputs/driver/properties, verify inactive/empty queue before
+staging, use existing private capped sandbox and restore after collection.
+Standard CI42232510821/integration42232515119 dispatched for5a00d627;
+mod-matrix42232212120 and its queued gallery42232211952 are also tracked.
+
+2026-11-06T14:22:13.057899+00:00 Prepared pane A/B fixture and scripts; bash syntax checks PASS. Diagnostic
+pack SHA1 b4dc97714c05aa5c6bfc34213cd6d3a138644f42, original14 elements
+plus14 coplanar reverse faces. Existing CMDs unchanged; only diagnostic
+CMD1000000 added (previous maximum400009). Target's actual #164 CMD120381.
+Upload archive SHA256
+780ece1db6b308429f3bb577cb3bb4f08f3f1768d4eed36712263e741dde6f67.
+Stage guard verifies pack hash/inactive units/empty queue, backs up exact
+f2v/scenes/plugin/properties/driver; temporary client heap2G within existing
+8GB low-priority service. Collector restores every input and stops service.
+Upload must finish exit0 before staging. Baseline then selective NBT-CMD
+switch in one session avoids comparing differently rebuilt shader atlases.
+
+2026-11-06T14:24:36.458923+00:00 Pane fixture upload finished exit0 before stage request. Starting only after
+remote SHA1 validation; baseline/variant/control captures will share one
+resource reload and exact #164 plugin/manifests. New ignored review page:
+ci-artifacts/green-campaign-20261106/index.html (full truth/ours Create0/16/384,
+class table and byte-identical static capture controls). Corrected focused
+crop grid spacing so panels no longer overlap. No artifacts committed.
+Fallback revision5a00d627 standard CI42232510821 completed all SUCCESS;
+integration42232515119 now all SUCCESS (Paper/M4,truth,M2,census).
+Await full mod-matrix and visual comparison before any GREEN claim.
+
+2026-11-06T14:25:18.323997+00:00 Latest source explicitly sets vanilla control EPAGES/EDPAGES=0 under an
+existing owner-scoping decision; current mod-gallery tables therefore do
+not prove vanilla control entities. Keep this exclusion visible; do not
+infer whole-client parity from mod-only counts. No scope/gate changes made.
+Pane fixture hash validated and stand successfully started. Collector now
+waits at most45s for rc0, then retains screenshots/NBT-CMD proof/reload hash,
+stops the service and restores original #129 inputs plus exact driver.
+Fallback fix standard CI/integration/mod-matrix are now all SUCCESS.
+Only the complete real-mod visual result is outstanding for that revision.
+
+2026-11-06T14:27:41.901312+00:00 Pane A/B completed rc0 with exact before/after CMD proof120381->1000000.
+Target-only switch changed262 fullframe pixels,sum_abs66696,max143.
+Unchanged-gate crop: baseline minAE60363 (RED); reverse-face variant
+minAE31038 (GREEN),norm35506,raw60469; all shifts(0,0). Missing vertical
+strip reappears. This confirms a backface-culling loss; lighting still
+visibly differs, so this is not a100%-identical claim. Baseline reproduced
+CI60295 closely on the exact #164 runtime. Repeats/control must be checked.
+Collector restored #129 pack SHA1 2cbfa75104052c3e2acee645eda6c0bfba083481,
+plugin/scenes/properties/driver, and stopped service. Next read actual1.21.1
+render-type culling state and capture it per mesh, then emit reverse faces
+ONLY where source rendering disabled culling. Do not globally duplicate
+opaque faces or hide residuals. Runtime resources/proof/screenshots retained.
+
+2026-11-06T14:32:46.150482+00:00 Pane interpretation correction: adding reverse faces PROVES that geometry
+addition improves the observed crop, but does NOT alone prove the source
+renderer intended no culling. Actual1.21.1 RenderType source uses CULL for
+normal chunk solid/cutout/translucent pipelines; therefore globally copying
+all reverse faces would be unjustified. Keep this as diagnostic-only until
+the source material/pass and actual visible quad ownership are resolved.
+No production double-sided change was made. Also read26.3 FaceInfo/FaceBakery:
+south-face winding is positive-Z as assumed; bakeVertex maps UVs directly,
+so a generic extra UV-shrink hypothesis is not supported by that code.
+Next retain exact A/B evidence, verify repeat stability and target-only delta,
+then prioritize measured fallback-capture CI results while investigating
+source/target alpha/culling differences. Do not turn a passing crop into
+a claim of identical rendering.
+
+2026-11-06T14:33:23.455456+00:00 Pane repeat validation complete: baseline, reverse-face variant and BOP40
+control each RGB-bit-identical to its own repeat (0 changed pixels).
+Variant affects only bbox[672,394,695,444], consistent with target cell.
+Review page now includes full original truth, full baseline and diagnostic,
+focused three-way crop, reload/hash proof, NBT selection proof, repeat stats
+and source-culling caveat. Never present the diagnostic as a shipped fix.
+Full service MemoryPeak4171948032B,CPU209204373000ns (startup included).
+Next publish current audit, inspect fallback run's active step/marker and
+compare captured kinetic meshes as soon as its seed completes.
