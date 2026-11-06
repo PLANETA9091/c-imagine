@@ -143,3 +143,5 @@ biomesoplenty:high_grass[age=17]	15	biomesoplenty:high_grass[age=17]@biomesoplen
 biomesoplenty:high_grass[age=19]	15	biomesoplenty:high_grass[age=19]@biomesoplenty-p40:c8,r6|n=70285|class=lightmap-fullbright
 biomesoplenty:waterlily	15	biomesoplenty:waterlily@biomesoplenty-p104:c2,r0|n=117230|class=lightmap-fullbright
 biomesoplenty:white_lavender	15	biomesoplenty:white_lavender@biomesoplenty-p104:c1,r6|n=71719|class=lightmap-fullbright
+biomesoplenty:brimstone_cluster[half=lower]	15	biomesoplenty:brimstone_cluster[half=lower]@biomesoplenty-p13:c6,r4|n=69827|class=lightmap-uniform
+biomesoplenty:brimstone_cluster[half=upper]	15	biomesoplenty:brimstone_cluster[half=upper]@biomesoplenty-p13 sibling half|class=lightmap-uniform
