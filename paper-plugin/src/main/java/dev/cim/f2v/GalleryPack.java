@@ -268,13 +268,16 @@ public final class GalleryPack {
                 if (hash >= 0) {
                     ctCtx = state.substring(hash + 1).trim();
                     bareState = state.substring(0, hash);
-                    if (!ctCtx.startsWith("q")) {
+                    // q<hash> = the quad capture channel; p<codes> = the
+                    // 14-bo pipe attachment channel (validated below);
+                    // i0,...,i5 = the 14-ak CT channel.
+                    if (!ctCtx.startsWith("q") && !ctCtx.startsWith("p")) {
                         parseCtCtx(ctCtx); // validate early — a bad ctx drops the row
                     }
                 }
                 if (ctCtx != null && ctCtx.startsWith("q")) {
                     String quadRef = synthesizeQuadComposite(jars, ctCtx.substring(1), compositeIdx,
-                            entries, warnings);
+                            entries, warnings, tintTable);
                     if (quadRef == null) {
                         warnings.add("gallery: quad mesh failed for " + state + " — row dropped");
                         continue;
@@ -1180,9 +1183,10 @@ public final class GalleryPack {
      */
     private static String synthesizeQuadComposite(List<Path> jars, String hash, int idx,
                                                   TreeMap<String, byte[]> entries,
-                                                  List<String> warnings) throws IOException {
+                                                  List<String> warnings,
+                                                  Map<String, double[]> tintTable) throws IOException {
         return synthesizeQuadModel(jars, hash, WRAPPER_PREFIX + idx + ".json", WRAPPER_REF_PREFIX + idx,
-                entries, warnings, true);
+                entries, warnings, true, tintTable);
     }
 
     /** The item's mesh from the real ItemRenderer, when the dump captured one. */
@@ -1194,7 +1198,7 @@ public final class GalleryPack {
             return null;
         }
         return synthesizeQuadModel(jars, hash, "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json",
-                WRAPPER_NS + ":items/i" + itemNo, entries, warnings, false);
+                WRAPPER_NS + ":items/i" + itemNo, entries, warnings, false, null);
     }
 
     private static Map<String, String> itemQuadMap;
@@ -1217,7 +1221,8 @@ public final class GalleryPack {
 
     private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
                                               TreeMap<String, byte[]> entries,
-                                              List<String> warnings, boolean block) throws IOException {
+                                              List<String> warnings, boolean block,
+                                              Map<String, double[]> tintTable) throws IOException {
         Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
             warnings.add("gallery: quad mesh missing: " + hash);
@@ -1237,7 +1242,24 @@ public final class GalleryPack {
             if (key == null) {
                 key = "q" + keyOf.size();
                 keyOf.put(c[0], key);
-                textures.put(key, hostSprite(jars, c[0], entries, warnings));
+                // TINT-BAKE (scripts/f2v/tint-calibrate.py) reaches the QUAD
+                // channel through the same calibrated-sibling rule the static
+                // composites use (bakeCompositeTextures): a tabled sprite is
+                // re-hosted as its ..._cimtint sibling and THIS composite's
+                // key points at the sibling — the raw sprite stays intact
+                // for every untinted consumer. The block channel only: the
+                // item quad path passes no table (the tint rows are measured
+                // on block-state cells; an item icon's lighting is its own
+                // surface).
+                String hosted = hostSprite(jars, c[0], entries, warnings);
+                double[] tint = tintTable == null ? null : tintTable.get(c[0]);
+                if (tint != null) {
+                    String sibling = bakeTintedSprite(jars, c[0], tint, entries, warnings);
+                    if (sibling != null) {
+                        hosted = sibling;
+                    }
+                }
+                textures.put(key, hosted);
             }
             List<ObjMesh.Vert> verts = new ArrayList<>();
             for (int i = 0; i < 4; i++) {
@@ -1886,7 +1908,7 @@ public final class GalleryPack {
                 }
             }
             if (elements == null && (json.has("elements") || json.has("children"))) {
-                elements = mergeModelGeometry(json, textures, warnings);
+                elements = mergeModelGeometry(jars, json, "", textures, warnings, 0);
             }
             if (elements == null && isObjModel(json)) {
                 ObjGeometry g = readObjGeometry(jars, json, warnings);
@@ -1935,15 +1957,29 @@ public final class GalleryPack {
      * tubes) are dropped: the emitted composite renders on the solid layer,
      * an alpha-carrying sprite shows opaque.
      *
+     * <p>14-bp CHILD PARENT CHAINS: a composite child that is a bare
+     * {@code {"parent": ...}} ref carries NO inline geometry — the real
+     * machine model rides the chain (mekanism's factory tiers: the
+     * composite child {@code "base"} points at
+     * {@code mekanism:block/factory/sawing/base}, whose elements ARE the
+     * machine; measured run 42243329692: every factory tier's composite
+     * came out element-less and the whole tier family dropped out of the
+     * static channel). The chain merges each level's textures under the
+     * child's prefix and takes the FIRST level carrying geometry; the
+     * vanilla parent semantics hold (the child's own textures override the
+     * chain's via putIfAbsent order).
+     *
      * @return the merged element array, or null when the level carries no
      *         geometry at all (the parent walk continues)
      */
-    private static JsonArray mergeModelGeometry(JsonObject json, Map<String, String> textures,
-                                                List<String> warnings) {
+    private static JsonArray mergeModelGeometry(List<Path> jars, JsonObject json, String prefix,
+                                                Map<String, String> textures, List<String> warnings,
+                                                int depth) {
         JsonArray out = new JsonArray();
         if (json.has("elements")) {
             for (JsonElement el : json.getAsJsonArray("elements")) {
-                out.add(el.deepCopy());
+                out.add(prefix.isEmpty() ? el.deepCopy()
+                        : renameTextureRefs(el.getAsJsonObject(), prefix));
             }
         }
         if (json.has("children")) {
@@ -1952,23 +1988,101 @@ public final class GalleryPack {
                     continue;
                 }
                 JsonObject child = c.getValue().getAsJsonObject();
-                if (!child.has("elements") || !child.getAsJsonArray("elements")
-                        .isJsonArray() || child.getAsJsonArray("elements").size() == 0) {
-                    continue;
-                }
-                String prefix = c.getKey() + "_";
-                if (child.has("textures") && child.getAsJsonObject("textures").isJsonObject()) {
-                    for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
-                            .entrySet()) {
-                        textures.putIfAbsent(prefix + t.getKey(), t.getValue().getAsString());
+                String childPrefix = prefix + c.getKey() + "_";
+                if (child.has("elements") && child.getAsJsonArray("elements")
+                        .isJsonArray() && child.getAsJsonArray("elements").size() > 0) {
+                    if (child.has("textures") && child.getAsJsonObject("textures").isJsonObject()) {
+                        for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
+                                .entrySet()) {
+                            textures.putIfAbsent(childPrefix + t.getKey(), t.getValue().getAsString());
+                        }
                     }
-                }
-                for (JsonElement el : child.getAsJsonArray("elements")) {
-                    out.add(renameTextureRefs(el.getAsJsonObject(), prefix));
+                    for (JsonElement el : child.getAsJsonArray("elements")) {
+                        out.add(renameTextureRefs(el.getAsJsonObject(), childPrefix));
+                    }
+                } else if (child.has("parent") && child.get("parent").isJsonPrimitive() && jars != null) {
+                    JsonArray chained = mergeChildChain(jars, child, childPrefix, textures,
+                            warnings, depth);
+                    if (chained != null) {
+                        out.addAll(chained);
+                    }
                 }
             }
         }
         return out.size() == 0 ? null : out;
+    }
+
+    /**
+     * One composite child's PARENT chain (14-bp): merge the child's own
+     * textures under its prefix, then walk {@code parent} refs (each
+     * level's textures join under the same prefix, the first level that
+     * carries geometry — inline elements or nested children — wins; the
+     * walk continues through geometry-less levels exactly like
+     * {@code resolveModelGraph}'s parent walk). Bounded: 8 chain levels,
+     * depth-guarded against cycles.
+     */
+    private static JsonArray mergeChildChain(List<Path> jars, JsonObject child, String prefix,
+                                             Map<String, String> textures, List<String> warnings,
+                                             int depth) {
+        if (depth > 8) {
+            warnings.add("gallery: composite child chain deeper than 8 at " + prefix
+                    + " — stopped");
+            return null;
+        }
+        if (child.has("textures") && child.getAsJsonObject("textures").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures").entrySet()) {
+                textures.putIfAbsent(prefix + t.getKey(), t.getValue().getAsString());
+            }
+        }
+        String cur = child.get("parent").getAsString();
+        int hops = 0;
+        while (cur != null && !cur.isEmpty() && hops++ <= 8) {
+            JsonObject pj = readParentModelJson(jars, cur, warnings);
+            if (pj == null) {
+                warnings.add("gallery: composite child parent missing in jars: " + cur
+                        + " (child " + prefix + ")");
+                break;
+            }
+            if (pj.has("textures") && pj.getAsJsonObject("textures").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> t : pj.getAsJsonObject("textures").entrySet()) {
+                    textures.putIfAbsent(prefix + t.getKey(), t.getValue().getAsString());
+                }
+            }
+            JsonArray geo = mergeModelGeometry(jars, pj, prefix, textures, warnings, depth + 1);
+            if (geo != null) {
+                return geo;
+            }
+            cur = pj.has("parent") && pj.get("parent").isJsonPrimitive()
+                    ? pj.get("parent").getAsString() : null;
+        }
+        return null;
+    }
+
+    /**
+     * One parent ref -> the model json. A namespaced ref resolves in its
+     * namespace; a bare ref is a vanilla parent (the 14-ay rule) — the
+     * minecraft assets carry it.
+     */
+    private static JsonObject readParentModelJson(List<Path> jars, String ref, List<String> warnings) {
+        String file;
+        if (ref.contains(":")) {
+            int colon = ref.indexOf(':');
+            file = "assets/" + ref.substring(0, colon) + "/models/" + ref.substring(colon + 1) + ".json";
+        } else {
+            file = "assets/minecraft/models/" + ref + ".json";
+        }
+        try {
+            JsonObject json = readJsonFromJars(jars, file);
+            if (json == null && !file.startsWith("assets/minecraft/")) {
+                int slash = file.indexOf("/models/");
+                String bare = "assets/minecraft/models/" + file.substring(slash + 8);
+                json = readJsonFromJars(jars, bare);
+            }
+            return json;
+        } catch (IOException bad) {
+            warnings.add("gallery: composite child parent read failed: " + ref + " — " + bad);
+            return null;
+        }
     }
 
     // ---- rotation bake ------------------------------------------------------------

@@ -3,3 +3,21 @@
 # solved from truth/ours median ratios on the gallery triptychs; rounding = python round() to 4 decimals.
 create:block/palettes/acacia_window	0.9202	0.9152	0.9119	create:acacia_window_pane[east=true,north=true,south=true,waterlogged=false,west=false]@gallery-create-p0:c4,r0|n=3063|class=luma-uniform
 create:block/palettes/mangrove_window	0.6321	0.6321	0.6	create:mangrove_window_pane@gallery-item-create-p4:c10,r5|n=2549|class=luma-uniform
+# 14-bq THE QUAD-DRIVEN MACHINE FRONTS (run 42243329692, the base-row smooth-light
+# deficit): the factory tier composites ride the quad channel; the dump's fake
+# Page pins light 15 and shade 1 (QuadDump.Page getBrightness/getShade), so the
+# baked tiles carry the AO but NOT the ground-plane smooth-light shadow nor the
+# 1.21.1 directional shade the truth renders at the wall's base row (every RED
+# cell sits at r0/r1). The deficit = per-texture attributable on the factory
+# fronts ONLY: the *_factory_front art rides the ONE camera-facing face (the
+# south cells' dominant region, n>2500 per cell), all evidence cells share one
+# lighting class (r0, south), and no GREEN row shows the same texture from
+# another lighting (the front is invisible from every other facing). The
+# per-family tints are NOT cross-averaged (sawing/infusing/crushing have
+# distinct front arts). The contested classes stay untinted: the separator body
+# (ratio 1.0 on p11's r5/r6 cells vs 0.52 on p12's r0 cells = two lightings, one
+# texture), ports/back/side/top/bottom (sliver-level evidence only), and every
+# fullbright LED art (measured ratio ~1.0).
+mekanism:block/factory/sawing/sawing_factory_front	0.3859	0.3797	0.3734	mekanism:basic_sawing_factory[active=false,facing=south,fluid_logged=EMPTY]@gallery-mekanism-p7:c0,r0|n=2753|class=smoothlight-median;mekanism:advanced_sawing_factory[active=false,facing=south,fluid_logged=EMPTY]@gallery-mekanism-p3:c7,r0|n=2746|class=smoothlight-median
+mekanism:block/factory/infusing/infusing_factory_front	0.4008	0.3943	0.3901	mekanism:elite_infusing_factory[active=false,facing=south,fluid_logged=EMPTY]@gallery-mekanism-p14:c10,r0|n=2620|class=smoothlight-median;mekanism:advanced_infusing_factory[active=false,facing=south,fluid_logged=EMPTY]@gallery-mekanism-p2:c3,r0|n=2754|class=smoothlight-median
+mekanism:block/factory/crushing/crushing_factory_front	0.4321	0.4231	0.4179	mekanism:advanced_crushing_factory[active=false,facing=south,fluid_logged=EMPTY]@gallery-mekanism-p1:c6,r0|n=765|class=smoothlight-median
