@@ -1069,6 +1069,85 @@ public final class GalleryPack {
         }
     }
 
+    /** THE SPRITE EMISSIVE UPGRADE: a tabled item whose resolved model is a
+     *  vanilla-shaped sprite (item/generated — no elements, so the element
+     *  light_emission lever does not exist) upgrades to a flat-quad
+     *  composite: one 16x16 plane carrying the sprite texture on both faces
+     *  + light_emission from the table. Geometry-compatible with the sprite
+     *  (the rig renders both as a flat quad), fullbright like the truth.
+     *  Returns the composite model ref, or null when the item is not
+     *  tabled / the sprite cannot resolve (the caller keeps the original
+     *  model — byte-identical behavior). */
+    static String synthesizeSpriteEmissive(List<Path> jars, String modelRef,
+                                           String itemId, int itemNo,
+                                           Map<String, Integer> emissiveTable,
+                                           TreeMap<String, byte[]> entries,
+                                           List<String> warnings) throws IOException {
+        if (emissiveTable == null || emissiveTable.isEmpty()) {
+            return null;
+        }
+        Integer level = emissiveTable.get(itemId);
+        if (level == null) {
+            level = emissiveTable.get(canonicalState(itemId));
+        }
+        if (level == null) {
+            return null;
+        }
+        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
+        if (mg == null) {
+            return null;
+        }
+        String sprite = mg.textures.get("layer0");
+        if (sprite == null || sprite.isEmpty() || sprite.startsWith("#")) {
+            // not a single-sprite model — the upgrade does not apply
+            return null;
+        }
+        String texRef = sprite.contains(":") ? sprite : "minecraft:" + sprite;
+        String spritePath = texRef.replace(':', '/') + ".png";
+        byte[] png = null;
+        for (Path jar : jars) {
+            ZipEntry e = jarCache(jars).zip(jar).getEntry("assets/"
+                    + texRef.split(":")[0] + "/textures/"
+                    + texRef.split(":", 2)[1] + ".png");
+            if (e != null) {
+                png = jarCache(jars).zip(jar).getInputStream(e).readAllBytes();
+                break;
+            }
+        }
+        if (png == null) {
+            warnings.add("sprite emissive: texture missing for " + itemId
+                    + " (" + texRef + ") — kept the sprite model");
+            return null;
+        }
+        entries.put("assets/" + texRef.split(":")[0] + "/textures/"
+                + texRef.split(":", 2)[1] + ".png", png);
+        String compRef = "c-imagine:gallery/sprite_emissive_" + itemNo;
+        JsonObject el = new JsonObject();
+        el.add("from", com.google.gson.JsonParser.parseString("[0.01,0.01,7.99]"));
+        el.add("to", com.google.gson.JsonParser.parseString("[15.99,15.99,8.01]"));
+        el.addProperty("shade_direction_override", "up");
+        el.addProperty("light_emission", level);
+        JsonObject faces = new JsonObject();
+        for (String face : new String[]{"north", "south"}) {
+            JsonObject f = new JsonObject();
+            f.add("uv", com.google.gson.JsonParser.parseString("[0.0,0.0,16.0,16.0]"));
+            f.addProperty("texture", "#p0");
+            faces.add(face, f);
+        }
+        el.add("faces", faces);
+        JsonArray elements = new JsonArray();
+        elements.add(el);
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("parent", "minecraft:block/block");
+        JsonObject texObj = new JsonObject();
+        texObj.addProperty("p0", texRef);
+        wrapper.add("textures", texObj);
+        wrapper.add("elements", elements);
+        entries.put("assets/c-imagine/models/"
+                + compRef.split(":")[1] + ".json", wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        return compRef;
+    }
+
     /** Block id + re-sorted {@code prop=val} pairs — one canonical spelling
      *  of a blockstate string ({@code ns:block[a=1,b=2]} and
      *  {@code ns:block[b=2,a=1]} both land here). */
