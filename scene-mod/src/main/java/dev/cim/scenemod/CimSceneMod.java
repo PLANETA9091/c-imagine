@@ -1609,6 +1609,7 @@ public final class CimSceneMod {
     /** Every block and item seen opening a menu: dyed variants share one menu. */
     private static final Map<ResourceLocation, List<String>> GUI_ALL_OPENERS = new HashMap<>();
     private static final int GUI_SETTLE_TICKS = 10;
+    private static final int GUI_PROBE_XZ = 20000;
     private static net.minecraft.world.entity.Entity guiEntity;
 
     /** Inside menu reach, in front of the viewer, so {@code stillValid} keeps the screen up. */
@@ -1773,10 +1774,17 @@ public final class CimSceneMod {
     }
 
     /** One probe pass; every result lands in {@code onFound}. */
-    private static int guiProbeAll(ServerLevel level, BlockPos rig, double x, double y, double z, String namespace,
+    private static int guiProbeAll(ServerLevel level, String namespace,
                                    java.util.function.Consumer<GuiProbe> onFound) {
+        // Far from every player: no client tracks this spot, so an entity whose spawn
+        // data only works in context cannot reach one and disconnect it.
+        BlockPos rig = new BlockPos(GUI_PROBE_XZ, 100, GUI_PROBE_XZ);
+        net.minecraft.world.level.ChunkPos chunk = new net.minecraft.world.level.ChunkPos(rig);
+        level.setChunkForced(chunk.x, chunk.z, true);
+        level.getChunk(chunk.x, chunk.z);
+        level.setBlock(rig.below(), Blocks.STONE.defaultBlockState(), 3);
         GuiProbe probe = new GuiProbe(level);
-        probe.setPos(x, y, z);
+        probe.setPos(rig.getX() + 0.5, rig.getY(), rig.getZ() + 2.5);
         List<String> candidates = guiCandidates(namespace);
         for (String candidate : candidates) {
             probe.seen = null;
@@ -1792,6 +1800,8 @@ public final class CimSceneMod {
             }
             guiClearRig(level, probe, rig);
         }
+        level.setBlock(rig.below(), Blocks.AIR.defaultBlockState(), 3);
+        level.setChunkForced(chunk.x, chunk.z, false);
         return candidates.size();
     }
 
@@ -1802,19 +1812,16 @@ public final class CimSceneMod {
      */
     private static int galleryGuiScan(CommandSourceStack src, String namespace) {
         ServerLevel level = src.getLevel();
-        BlockPos rig = level.getSharedSpawnPos().above(3);
         Map<ResourceLocation, List<String>> openers = new HashMap<>();
         Map<ResourceLocation, String> classes = new HashMap<>();
         Map<ResourceLocation, String> titles = new HashMap<>();
         Map<ResourceLocation, List<String>> slots = new HashMap<>();
-        level.setBlock(rig.below(), Blocks.STONE.defaultBlockState(), 3);
-        int tried = guiProbeAll(level, rig, rig.getX() + 0.5, rig.getY(), rig.getZ() + 2.5, namespace, probe -> {
+        int tried = guiProbeAll(level, namespace, probe -> {
             openers.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(probe.candidate);
             classes.putIfAbsent(probe.seen, probe.seenClass);
             titles.putIfAbsent(probe.seen, probe.seenTitle);
             slots.putIfAbsent(probe.seen, probe.seenSlots);
         });
-        level.setBlock(rig.below(), Blocks.AIR.defaultBlockState(), 3);
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
         ids.removeIf(id -> !id.getNamespace().equals(namespace));
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -1861,8 +1868,7 @@ public final class CimSceneMod {
             return known;
         }
         Map<ResourceLocation, String> found = new HashMap<>();
-        BlockPos rig = guiRigPos(viewer);
-        int tried = guiProbeAll(level, rig, viewer.getX(), viewer.getY(), viewer.getZ(), namespace, probe -> {
+        int tried = guiProbeAll(level, namespace, probe -> {
             found.putIfAbsent(probe.seen, probe.candidate);
             GUI_ALL_OPENERS.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(probe.candidate);
         });
