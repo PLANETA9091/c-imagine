@@ -22,6 +22,8 @@ import java.util.TreeMap;
 public final class ItemGlyphs {
 
     private static final int BASE = 0xF0000;
+    /** Modded ids start here, so a different modded set can never shift vanilla icons. */
+    private static final int MODDED_BASE = 0xF8000;
     private static final int ICON = 16;
 
     private final Map<String, Integer> codepoints = new HashMap<>();
@@ -44,11 +46,15 @@ public final class ItemGlyphs {
                 }
             }
         }
-        files.putAll(moddedTextures);
         int i = 0;
         for (String id : files.keySet()) {
             codepoints.put(id, BASE + i++);
         }
+        i = 0;
+        for (String id : new TreeMap<>(moddedTextures).keySet()) {
+            codepoints.put(id, MODDED_BASE + i++);
+        }
+        files.putAll(moddedTextures);
     }
 
     /** The glyph for an id, or null when no item has that id. */

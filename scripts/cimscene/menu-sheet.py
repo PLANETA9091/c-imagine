@@ -5,8 +5,9 @@ Every menu a namespace registers gets one verdict. GREEN means every pixel of th
 menu's area is identical on both legs. RED is everything else, including a menu that
 did not open and a frame that is missing, so nothing passes by being absent.
 
-The area comes from the menu's real slots, centred as a screen centres itself. The
-world behind a screen differs between the legs and is not compared.
+The area is what the mod really draws, from its captured screen, or failing that the
+menu's slots centred on the frame. The world behind a screen differs between the legs
+and is not compared.
 
 Writes join-menu-<ns>-<menu>.json (the shape the shard verdict reads), one sheet per
 menu with truth, ours and the differing pixels, and menus.md for the run summary.
@@ -56,7 +57,20 @@ def menu_box(frame_size, slots, scale):
     return (cx - w * scale // 2, cy - h * scale // 2, cx + w * scale // 2, cy + h * scale // 2)
 
 
-def compare(truth_path, ours_path, slots, scale):
+def art_mask(path, size):
+    """The pixels the mod really draws, from its captured screen, or None."""
+    if not path or not os.path.isfile(path):
+        return None
+    art = Image.open(path).convert("RGBA")
+    if art.size != size:
+        return None
+    r, g, b, a = art.split()
+    # Colour with zero alpha is solid in a real framebuffer, as ScreenPack treats it.
+    solid = ImageChops.lighter(ImageChops.lighter(r, g), ImageChops.lighter(b, a))
+    return solid.point(lambda v: 255 if v else 0)
+
+
+def compare(truth_path, ours_path, slots, scale, art=None):
     """Returns (differing pixels, total pixels, mask image), or None without both frames."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return None
@@ -64,6 +78,14 @@ def compare(truth_path, ours_path, slots, scale):
     ours = Image.open(ours_path).convert("RGB")
     if truth.size != ours.size:
         return None
+    mask = art_mask(art, truth.size)
+    if mask is not None and mask.getbbox():
+        r, g, b = ImageChops.difference(truth, ours).split()
+        diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+        diff = ImageChops.multiply(diff, mask)
+        box = mask.getbbox()
+        total = sum(1 for v in mask.crop(box).getdata() if v)
+        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box)
     box = menu_box(truth.size, slots, scale)
     # Per channel: converting to grey would round a one-step difference away.
     r, g, b = ImageChops.difference(truth.crop(box), ours.crop(box)).split()
@@ -100,6 +122,7 @@ def main():
     for name in ("--meta", "--truth", "--ours", "--out", "--report", "--ns"):
         ap.add_argument(name, required=True)
     ap.add_argument("--scale", type=int, default=3)
+    ap.add_argument("--art", default="")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     os.makedirs(a.report, exist_ok=True)
@@ -114,7 +137,8 @@ def main():
             if read is None or not os.path.isfile(truth):
                 continue  # another shard's page: this shard shot only its stride
             menu, opened, note, slots = read
-            result = compare(truth, ours, slots, a.scale)
+            art = os.path.join(a.art, menu.replace(":", "_").replace("/", "_") + ".png") if a.art else None
+            result = compare(truth, ours, slots, a.scale, art)
             verdict, why = judge(menu, opened, note, result)
             name = menu.replace(":", "_")
             sheet = Image.new("RGB", (SHEET[0] * 3 + 8, SHEET[1] + LABEL), (70, 70, 70))

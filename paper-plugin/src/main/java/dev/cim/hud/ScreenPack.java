@@ -78,7 +78,10 @@ public final class ScreenPack {
         String stamp = stamp(modsDir);
         if (Files.isRegularFile(cache)) {
             List<String> lines = Files.readAllLines(cache, StandardCharsets.UTF_8);
-            if (!lines.isEmpty() && lines.get(0).equals(stamp)) {
+            // Without the capture folder a rescan would lose art the pack was built
+            // with, as on a server that only received the seed's pack and scenes.
+            boolean canRebake = Files.isDirectory(modsDir.resolveSibling("c-imagine").resolve(CAPTURES));
+            if (!lines.isEmpty() && (lines.get(0).equals(stamp) || !canRebake)) {
                 return parse(lines);
             }
         }

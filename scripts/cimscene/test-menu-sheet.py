@@ -24,11 +24,17 @@ outside = base.copy()
 outside.putpixel((2, 2), (255, 0, 0))
 outside.save(e)
 slots = [(8, 18), (152, 124)]
+art = os.path.join(d, "art.png")
+mask = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
+mask.paste((200, 200, 200, 255), (600, 300, 700, 400))
+mask.save(art)
 bad = 0
 for label, got, want in [
     ("identical frames", m.judge("x", True, "", m.compare(a, b, slots, 3))[0], "GREEN"),
     ("one pixel off by one", m.judge("x", True, "", m.compare(a, c, slots, 3))[0], "RED"),
     ("difference outside the menu", m.judge("x", True, "", m.compare(a, e, slots, 3))[0], "GREEN"),
+    ("art mask sees a changed pixel", m.judge("x", True, "", m.compare(a, c, slots, 3, art))[0], "RED"),
+    ("art mask ignores the world around it", m.judge("x", True, "", m.compare(a, e, slots, 3, art))[0], "GREEN"),
     ("menu that did not open", m.judge("x", False, "no-opener", m.compare(a, b, slots, 3))[0], "RED"),
     ("missing frame", m.judge("x", True, "", m.compare(a, "/nonexistent", slots, 3))[0], "RED"),
 ]:

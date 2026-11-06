@@ -384,7 +384,7 @@ jobs:
           # walk touches $TRIGGER (QuadDump.onTick checks the file per tick).
           # The walk step boots it fresh per attempt — a client that died
           # mid-walk must never serve the next attempt.
-          sed "s#^java #java -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
+          sed "s#^java #java -Dcim.screenart=$PWD/srv-wall/c-imagine/screens -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
 
       - name: server-side walk — block pages under a live client, restart on disconnect (14-bj)
         if: steps.seed-verify.outputs.hit != 'true'
@@ -686,6 +686,22 @@ jobs:
               || { echo "relaunched dump client failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
             sleep 5
           fi
+          # SCREEN CAPTURE: the live client opens every menu the scan found, and
+          # ScreenArt saves what the mod really draws. This feeds the pack, so it
+          # runs here. A page that fails leaves that menu without art, and a
+          # second scan puts back any manifest a lost viewer overwrote.
+          for NS in $LADDER_NS; do
+            N=$(ls "$SCENES"/gallery-gui-$NS-p*.tsv 2>/dev/null | wc -l)
+            for p in $(seq 0 $((N-1))); do
+              [ "$N" -gt 0 ] || break
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery gui $NS $p" >/dev/null 2>&1 || true
+              sleep 3
+            done
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery gui-scan $NS" >/dev/null 2>&1 || true
+          done
+          echo "screens captured: $(ls srv-wall/c-imagine/screens/*.png 2>/dev/null | wc -l)"
           touch "$TRIGGER"
           for i in $(seq 1 600); do
             grep -q "quad dump done" truth-client/client-dump.out 2>/dev/null && break
@@ -773,6 +789,10 @@ jobs:
           # tree; the verify steps (seed + ours shards) compare it against
           # SEED_INPUTS — measured #47: a prefix-restored older pack silently
           # served a stale builder and the missingno wall came back
+          # the ours leg draws from the same scenes, and the gate masks to this art
+          cp srv-wall/c-imagine/f2v/screens.tsv seed-pack/f2v/ 2>/dev/null || true
+          mkdir -p seed-pack/screens
+          cp -r srv-wall/c-imagine/screens/. seed-pack/screens/ 2>/dev/null || true
           echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
@@ -790,6 +810,7 @@ jobs:
           name: seed-pack
           path: |
             seed-pack/scenes
+            seed-pack/screens
             seed-pack/f2v
             seed-pack/plugin
           if-no-files-found: error
@@ -2706,7 +2727,8 @@ jobs:
           done
           echo "=== MENU gate: every menu pixel-identical or RED ==="
           python3 scripts/cimscene/menu-sheet.py --meta truth-meta --truth truth-shots \
-            --ours ours-shots --out gallery-report/menus --report gallery-report --ns "$LADDER_NS" || GATE=1
+            --ours ours-shots --art seed-pack/screens --out gallery-report/menus \
+            --report gallery-report --ns "$LADDER_NS" || GATE=1
           cat gallery-report/menus/menus.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           echo "=== per-page verdicts (this shard) ==="
           python3 - <<'PY'
