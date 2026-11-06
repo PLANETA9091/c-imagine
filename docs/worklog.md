@@ -7264,3 +7264,52 @@ freezes at partialTick 0.
 - NEXT (for whoever picks it up): trace "No key layers in MapLike[{}]" — a codec reading
   a 'layers' field from an empty map, most likely the new BE-bake mesh format parsed by
   the wrong reader — then re-count the pack rows vs the manifest states.
+
+### 14-bi — the paper sea was the client DROPPING the pack: three re-hosted "frames": [] mcmeta crashed the atlas upload
+- The 14-bh lead ("No key layers in MapLike[{}]") is BENIGN: the error fires at
+  20:28:57 between "creating new world" and "Loaded 1866 advancements", before the
+  plugin loads — it is the flat-world generator settings decoding `{}` (FlatLevelGeneratorSettings
+  wants "layers"); it was in every boot log including the healthy ones. Withdrawn.
+- THE ACTUAL CHAIN (measured on run 42099936223 = gallery #157, artifact wall-ours-meta-0):
+  the ours client.out shows the pack reload at 20:30:53 ("vanilla, vanilla, server/0000..."),
+  then at 20:31:04 `IllegalArgumentException: Dest texture (16x160) is not large enough to
+  write a rectangle of 16x160 at 0x0` in SpriteContents.uploadFirstFrame <- TextureAtlas.
+  uploadInitialContents <- AtlasManager$PendingStitch.joinAndUpload, and IMMEDIATELY a THIRD
+  `Reloading ResourceManager: vanilla, vanilla` — the client dropped the server pack and
+  reloaded vanilla. Every shot after 20:31:04 (all of them) renders item_displays with NO
+  pack = the base paper quad = the "tiny white diamond" sea. #136's client.out has exactly
+  TWO reloads. The block+item joins all-RED with the verdict at ae2 0.478% / BOP 1.52% /
+  create 0.8% was this fallback, not geometry. The 14-bh "clamp works, real geometry
+  everywhere" read was wrong — it read the same paper sea as improvement vs #141's magenta.
+- THE MECHANISM (decompiled client-26.3.jar with vineflower): for STATIC sprites the atlas
+  allocates a scratch texture of contents().width x contents().height and uploadFirstFrame
+  writes byMipLevel[0] into it; animated sprites are excluded from that path. SpriteContents
+  (name, FrameSize, image): width/height = the FRAME size from the animation metadata, while
+  byMipLevel[0] = the WHOLE STRIP; and createAnimatedTexture ends with
+  `return frames.size() <= 1 ? null : ...` — an animation with at most one valid frame
+  returns NULL -> isAnimated()==false -> the sprite rides the static path with FRAME-sized
+  contents and a STRIP-sized image -> 0 + stripHeight > frameHeight -> throw -> pack dropped.
+- THE TRIGGER: GalleryPack.putHosted (3ffbb47) copies the source mcmeta verbatim. Three
+  re-hosted mekanism item textures carry `"frames": []` — an explicit EMPTY list is NOT
+  frames().isEmpty(), so the loader takes the else-branch, validates zero entries, and lands
+  on the null return: mekanism_item_alloy_atomic 16x160 (the exact 16x160 in the crash),
+  mekanism_item_enriched_refined_obsidian 16x32, mekanism_item_network_reader 16x272. The
+  client's own warnings named all three first: "Unused frames in sprite c-imagine:block/
+  items/mekanism_item_alloy_atomic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]". The other 82 mcmeta
+  resolve to >= 2 valid frames and animate fine (the 9 shipped in #136 never crashed).
+- THE FIX: GalleryPack.sanitizeAnimationMetadata (both mcmeta copy paths — putHosted AND the
+  blockPath branch): read the PNG IHDR, tile the strip with the mcmeta frame size, count
+  VALID frames (index in range, time > 0); fewer than two on a multi-frame strip -> drop the
+  "frames" member and animate sequentially instead; unparseable PNG or mcmeta ships without
+  metadata (a static sprite always fits its own slot). The frames:[] trio now animates
+  sequentially — frame 0 at t=0 is exactly what the capture recorded. Offline build green,
+  F2vPack --selftest ALL OK (the selftest fixtures are real PNGs now, with the dead-strip
+  sanitization and the valid-frames-verbatim cases added).
+- ALSO: the join step names this fallout class up front now — gallery.yml hard-fails with a
+  named ::error when client.out contains "not large enough to write a rectangle" (the pack
+  was dropped; the per-cell REDs below are its fallout), mirroring the "Unable to bake item
+  model" guard from #141.
+- NEXT: push, watch the gallery run — the seed cache rides SEED_INPUTS so the pack rebuilds
+  with the sanitized mcmeta. Then the green re-baseline: the pre-P2 93.02% never measured
+  ae2/mekanism/sophisticatedbackpacks; the P2 shards are the new frontier (block-entity
+  cells now gate, dissolved-row cells now place).

@@ -645,7 +645,7 @@ public final class GalleryPack {
                             + " (" + modelRef + ")");
                     continue;
                 }
-                putHosted(jars, key, png, bytes, entries);
+                putHosted(jars, key, png, bytes, entries, warnings);
                 textures.put(t.getKey(), newSprite);
                 texNo++;
             } else {
@@ -1052,12 +1052,15 @@ public final class GalleryPack {
             entries.putIfAbsent(png, bytes);
             byte[] meta = readPngFromJars(jars, png + ".mcmeta");
             if (meta != null) {
-                entries.putIfAbsent(png + ".mcmeta", meta);
+                meta = sanitizeAnimationMetadata(sprite, bytes, meta, warnings);
+                if (meta != null) {
+                    entries.putIfAbsent(png + ".mcmeta", meta);
+                }
             }
             return sprite;
         }
         String key = "items/" + sprite.replace(':', '_').replace('/', '_');
-        putHosted(jars, key, png, bytes, entries);
+        putHosted(jars, key, png, bytes, entries, warnings);
         return WRAPPER_NS + ":block/" + key;
     }
 
@@ -1068,13 +1071,95 @@ public final class GalleryPack {
      * alloys and liquids).
      */
     private static void putHosted(List<Path> jars, String key, String sourcePng, byte[] bytes,
-                                  TreeMap<String, byte[]> entries) throws IOException {
+                                  TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
         String hosted = "assets/" + WRAPPER_NS + "/textures/block/" + key + ".png";
         entries.put(hosted, bytes);
         byte[] meta = readPngFromJars(jars, sourcePng + ".mcmeta");
         if (meta != null) {
-            entries.put(hosted + ".mcmeta", meta);
+            meta = sanitizeAnimationMetadata(sourcePng, bytes, meta, warnings);
+            if (meta != null) {
+                entries.put(hosted + ".mcmeta", meta);
+            }
         }
+    }
+
+    /**
+     * The 26.3 client treats an animation that resolves to at most ONE valid
+     * frame as STATIC while keeping the FRAME-sized contents: the atlas then
+     * allocates one frame slot and uploadFirstFrame writes the WHOLE strip
+     * into it — IllegalArgumentException, the reload dies and the client
+     * DROPS THE SERVER PACK (measured run 42099936223: three re-hosted
+     * mekanism mcmeta with "frames": [] turned every gallery cell into the
+     * paper fallback). Sanitize: an explicit frames list that carries fewer
+     * than two valid entries on a multi-frame strip loses the list and
+     * animates sequentially instead; an unparseable PNG or mcmeta ships
+     * without metadata (a static sprite always fits its own atlas slot).
+     */
+    static byte[] sanitizeAnimationMetadata(String sprite, byte[] png, byte[] meta,
+                                            List<String> warnings) {
+        int[] dims = pngDims(png);
+        if (dims == null) {
+            warnings.add("gallery: animation metadata dropped (unreadable PNG): " + sprite);
+            return null;
+        }
+        JsonObject root;
+        try {
+            root = JsonParser.parseString(new String(meta, StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (RuntimeException bad) {
+            warnings.add("gallery: animation metadata dropped (unparseable mcmeta): " + sprite);
+            return null;
+        }
+        if (!root.has("animation") || !root.get("animation").isJsonObject()) {
+            return meta;
+        }
+        JsonObject anim = root.getAsJsonObject("animation");
+        int frameW = anim.has("width") ? anim.get("width").getAsInt() : dims[0];
+        int frameH = anim.has("height") ? anim.get("height").getAsInt() : dims[0];
+        if (frameW <= 0 || frameH <= 0 || dims[0] % frameW != 0 || dims[1] % frameH != 0) {
+            warnings.add("gallery: animation metadata dropped (strip " + dims[0] + "x" + dims[1]
+                    + " does not tile " + frameW + "x" + frameH + "): " + sprite);
+            return null;
+        }
+        int total = (dims[0] / frameW) * (dims[1] / frameH);
+        if (total <= 1 || !anim.has("frames") || !anim.get("frames").isJsonArray()) {
+            return meta;
+        }
+        int defaultTime = anim.has("frametime") ? anim.get("frametime").getAsInt() : 1;
+        int valid = 0;
+        for (JsonElement e : anim.getAsJsonArray("frames")) {
+            int index;
+            int time;
+            if (e.isJsonObject()) {
+                JsonObject f = e.getAsJsonObject();
+                index = f.has("index") ? f.get("index").getAsInt() : -1;
+                time = f.has("time") ? f.get("time").getAsInt() : defaultTime;
+            } else {
+                index = e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber() ? e.getAsInt() : -1;
+                time = defaultTime;
+            }
+            if (index >= 0 && index < total && time > 0) {
+                valid++;
+            }
+        }
+        if (valid >= 2) {
+            return meta;
+        }
+        warnings.add("gallery: animation frames list (" + valid + " valid of " + total
+                + ") would render the strip static — animating sequentially: " + sprite);
+        anim.remove("frames");
+        return root.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** IHDR width/height of a PNG byte array, or null when it is not a PNG. */
+    private static int[] pngDims(byte[] png) {
+        if (png == null || png.length < 24 || png[0] != (byte) 0x89 || png[1] != 0x50
+                || png[2] != 0x4E || png[3] != 0x47) {
+            return null;
+        }
+        return new int[]{
+                (png[16] & 0xFF) << 24 | (png[17] & 0xFF) << 16 | (png[18] & 0xFF) << 8 | (png[19] & 0xFF),
+                (png[20] & 0xFF) << 24 | (png[21] & 0xFF) << 16 | (png[22] & 0xFF) << 8 | (png[23] & 0xFF)
+        };
     }
 
     /** Stands in for a sprite the pack cannot host; visible on purpose. */

@@ -2282,6 +2282,16 @@ jobs:
             grep -a -A1 "Unable to bake item model" visual-client/client.out | cut -c1-200
             GATE=1
           fi
+          # A failed ATLAS upload kills the reload and the client re-enters a
+          # vanilla-only reload (the server pack is dropped): measured run
+          # 42099936223, three re-hosted mcmeta with "frames": [] crashed
+          # SpriteContents.uploadFirstFrame and every cell rendered the paper
+          # fallback. Name it up front the same way.
+          if grep -qa "not large enough to write a rectangle" visual-client/client.out; then
+            echo "::error::atlas upload failed on the real client — the server pack was dropped, every cell renders vanilla (paper); per-cell REDs below are its fallout"
+            grep -a -B2 "not large enough to write a rectangle" visual-client/client.out | cut -c1-200
+            GATE=1
+          fi
           echo "=== BLOCK pages (stride $SI +$K): manifest-driven, per ladder ns (the FRESH truth manifests ARE the page set) ==="
           for NS in $LADDER_NS; do
             for p in $(seq $SI $K $MAXP); do

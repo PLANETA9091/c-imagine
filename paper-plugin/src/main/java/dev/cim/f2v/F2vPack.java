@@ -2408,14 +2408,34 @@ public final class F2vPack {
         expect(failures, GalleryPack.hostSprite(List.of(), "mod:block/gone", hostEntries,
                 hostWarnings).equals("mod:block/gone"),
                 "gallery: a missing block-path sprite keeps its blocks-atlas ref");
-        // a re-hosted animated strip keeps its frames
+        // a re-hosted sprite keeps animation metadata the client can honour;
+        // a frames list resolving to at most ONE valid frame on a multi-frame
+        // strip flips the sprite static with frame-sized contents and crashes
+        // the atlas upload — the client then DROPS the whole pack (measured
+        // run 42099936223: three re-hosted "frames": [] mcmeta turned every
+        // gallery cell into the paper fallback)
+        byte[] square16 = f2vSelftestPng(16, 16);
+        byte[] strip32 = f2vSelftestPng(16, 32);
+        byte[] strip48 = f2vSelftestPng(16, 48);
         Path animJar = Files.createTempFile("f2v-selftest-anim", ".jar");
         try (ZipOutputStream zo = new ZipOutputStream(Files.newOutputStream(animJar))) {
             zo.putNextEntry(new ZipEntry("assets/mod/textures/item/glow.png"));
-            zo.write(new byte[]{1});
+            zo.write(square16);
             zo.closeEntry();
             zo.putNextEntry(new ZipEntry("assets/mod/textures/item/glow.png.mcmeta"));
-            zo.write("{\"animation\":{}}".getBytes(StandardCharsets.UTF_8));
+            zo.write("{\"animation\":{\"frametime\":2}}".getBytes(StandardCharsets.UTF_8));
+            zo.closeEntry();
+            zo.putNextEntry(new ZipEntry("assets/mod/textures/item/dead_strip.png"));
+            zo.write(strip32);
+            zo.closeEntry();
+            zo.putNextEntry(new ZipEntry("assets/mod/textures/item/dead_strip.png.mcmeta"));
+            zo.write("{\"animation\":{\"frametime\":6,\"frames\":[]}}".getBytes(StandardCharsets.UTF_8));
+            zo.closeEntry();
+            zo.putNextEntry(new ZipEntry("assets/mod/textures/item/live_strip.png"));
+            zo.write(strip48);
+            zo.closeEntry();
+            zo.putNextEntry(new ZipEntry("assets/mod/textures/item/live_strip.png.mcmeta"));
+            zo.write("{\"animation\":{\"frametime\":2,\"frames\":[0,2]}}".getBytes(StandardCharsets.UTF_8));
             zo.closeEntry();
         }
         GalleryPack.resetJarCache();
@@ -2423,6 +2443,16 @@ public final class F2vPack {
         expect(failures, animated.equals("c-imagine:block/items/mod_item_glow")
                 && hostEntries.containsKey("assets/c-imagine/textures/block/items/mod_item_glow.png.mcmeta"),
                 "gallery: a re-hosted sprite keeps its animation metadata");
+        GalleryPack.hostSprite(List.of(animJar), "mod:item/dead_strip", hostEntries, hostWarnings);
+        byte[] deadRaw = hostEntries.get("assets/c-imagine/textures/block/items/mod_item_dead_strip.png.mcmeta");
+        String deadMeta = deadRaw == null ? null : new String(deadRaw, StandardCharsets.UTF_8);
+        expect(failures, deadMeta != null && !deadMeta.contains("\"frames\""),
+                "gallery: a frames list with no valid entries animates sequentially");
+        GalleryPack.hostSprite(List.of(animJar), "mod:item/live_strip", hostEntries, hostWarnings);
+        byte[] liveRaw = hostEntries.get("assets/c-imagine/textures/block/items/mod_item_live_strip.png.mcmeta");
+        String liveMeta = liveRaw == null ? null : new String(liveRaw, StandardCharsets.UTF_8);
+        expect(failures, liveMeta != null && liveMeta.contains("[0,2]"),
+                "gallery: a valid frames list ships verbatim");
         GalleryPack.resetJarCache();
         Files.delete(animJar);
         JsonObject onLimit = new JsonObject();
@@ -2449,6 +2479,20 @@ public final class F2vPack {
         if (!cond) {
             failures.add(what);
         }
+    }
+
+    /** A real w x h PNG (opaque, one gray shade) — the animation sanitizer reads IHDR. */
+    private static byte[] f2vSelftestPng(int w, int h) throws IOException {
+        java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
+                w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                image.setRGB(x, y, ((x + y) & 1) == 0 ? 0xFF404040 : 0xFF808080);
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(image, "png", bos);
+        return bos.toByteArray();
     }
 
     private static String str(TreeMap<String, byte[]> entries, String key) {
