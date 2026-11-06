@@ -96,4 +96,13 @@ drawn by code, so the scanner finds art for 0 of AE2's 34 menu screens and 1 of
 Mekanism's 67. The next step is F2V's other half, capturing each real screen once with a
 real modded client.
 
-Not done yet: that capture, live widgets, conditional layers, and any effect on the mod.
+`ScreenArt` in the harness mod is that capture. Screens are matched by menu id, because
+whole mods share one menu class.
+
+`scripts/hud/click-test.sh` drives a real vanilla client with real mouse input, in the
+Easton no-window sandbox, and judges by what the server saw: opening, picking up and
+placing stacks, bare panel, one event per click, buttons, returning items on close,
+and `/keyboard`. An empty hand in open air sends no packet, so right click needs a held
+item or a block in reach.
+
+Not done yet: live widgets, conditional layers, and any effect on the mod.

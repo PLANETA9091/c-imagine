@@ -2727,7 +2727,7 @@ jobs:
           done
           echo "=== MENU gate: every menu pixel-identical or RED ==="
           python3 scripts/cimscene/menu-sheet.py --meta truth-meta --truth truth-shots \
-            --ours ours-shots --art seed-pack/screens --out gallery-report/menus \
+            --ours ours-shots --art seed-pack/screens --stride "$SI/$K" --out gallery-report/menus \
             --report gallery-report --ns "$LADDER_NS" || GATE=1
           cat gallery-report/menus/menus.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           echo "=== per-page verdicts (this shard) ==="

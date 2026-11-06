@@ -89,7 +89,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v6");
+        StringBuilder out = new StringBuilder("v7");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -342,6 +342,14 @@ public final class ScreenPack {
         try (Stream<Path> s = Files.list(dir)) {
             files = s.filter(p -> p.toString().endsWith(".tsv")).sorted().toList();
         }
+        Map<String, Integer> classUses = new HashMap<>();
+        for (Path tsv : files) {
+            for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+                if (line.startsWith("menu\t")) {
+                    classUses.merge(slashed(line.split("\t")[2]), 1, Integer::sum);
+                }
+            }
+        }
         for (Path tsv : files) {
             Path png = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".png"));
             if (!Files.isRegularFile(png)) {
@@ -390,11 +398,21 @@ public final class ScreenPack {
                 continue;
             }
             // Many menu ids can share one class, so only a scanned guess is replaced.
+            // Its buttons are kept when that class belongs to this menu alone, because
+            // the capture has their pixels but not where a click should land.
             String key = menu;
+            List<Widget> widgets = new ArrayList<>();
+            if (classUses.getOrDefault(key, 0) == 1) {
+                for (Scene s : scenes) {
+                    if (s.captured() == null && key.equals(s.menu())) {
+                        widgets.addAll(s.widgets());
+                    }
+                }
+            }
             scenes.removeIf(s -> s.captured() == null && key.equals(s.menu()));
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
-            scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, new ArrayList<>(),
+            scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
                     new Captured(left - guiW / 2, top - guiH / 2, slots)));
         }
     }

@@ -2563,6 +2563,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 2 && args[0].equalsIgnoreCase("hudaim")) {
+            String aimed = callSync(() -> dev.cim.hud.HudBootstrap.aimForHarness(
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer"), args[1]));
+            sender.sendMessage(LOG_PREFIX + "hudaim " + aimed);
+            return true;
+        }
         if (args.length == 1 && args[0].equalsIgnoreCase("guiclose")) {
             callSync(() -> {
                 dev.cim.hud.HudBootstrap.closeForHarness(org.bukkit.Bukkit.getPlayerExact("cimviewer"));

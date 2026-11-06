@@ -247,9 +247,44 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     public void open(Player player, ScreenPack.Scene scene) {
+        log.info("[cim-screen] " + player.getName() + " opened " + scene.shortName());
         GuiCaptures.Capture capture = captureOf(scene);
         open.put(player.getUniqueId(), new Session(scene, capture,
                 new Pointer(300, 170, player.getYaw(), player.getPitch())));
+    }
+
+    /**
+     * Test harness: turns the player's look so the pointer lands on a target, the
+     * way moving the mouse does. {@code s<n>} is a slot, {@code w<n>} a widget,
+     * {@code x,y} a point in the screen. Returns what it aimed at.
+     */
+    public String aim(Player player, String target) {
+        Session s = open.get(player.getUniqueId());
+        if (s == null) {
+            return "no screen open";
+        }
+        int x;
+        int y;
+        if (target.startsWith("s")) {
+            GuiCaptures.Slot slot = s.capture.slots().get(Integer.parseInt(target.substring(1)));
+            x = slot.x() + 8;
+            y = slot.y() + 8;
+        } else if (target.startsWith("w")) {
+            ScreenPack.Widget w = s.scene.widgets().get(Integer.parseInt(target.substring(1)));
+            x = w.x() + w.w() / 2;
+            y = w.y() + w.h() / 2;
+        } else {
+            String[] p = target.split(",");
+            x = Integer.parseInt(p[0]);
+            y = Integer.parseInt(p[1]);
+        }
+        float yaw = player.getYaw() + (float) ((x + s.originX - s.pointer.x()) / SENSITIVITY);
+        float pitch = player.getPitch() + (float) ((y + s.originY - s.pointer.y()) / SENSITIVITY);
+        org.bukkit.Location at = player.getLocation();
+        at.setYaw(yaw);
+        at.setPitch(pitch);
+        player.teleport(at);
+        return "aimed " + target + " at " + x + "," + y + " widgets=" + s.scene.widgets().size();
     }
 
     /** Opens the screen of one menu; the gallery's ours leg uses this. */
@@ -387,6 +422,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         int py = s.pointer.y() - s.originY;
         for (ScreenPack.Widget w : s.scene.widgets()) {
             if (px >= w.x() && px < w.x() + w.w() && py >= w.y() && py < w.y() + w.h()) {
+                org.bukkit.Bukkit.getPluginManager().callEvent(new ScreenWidgetEvent(player, s.scene.className(), w.label()));
                 log.info("[cim-screen] " + player.getName() + " " + button + " widget '" + w.label()
                         + "' in " + s.scene.shortName());
                 return;

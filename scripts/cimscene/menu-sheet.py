@@ -123,7 +123,9 @@ def main():
         ap.add_argument(name, required=True)
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--art", default="")
+    ap.add_argument("--stride", default="", help="index/count of this shard's pages, e.g. 3/8")
     a = ap.parse_args()
+    a.stride = tuple(int(v) for v in a.stride.split("/")) if a.stride else None
     os.makedirs(a.out, exist_ok=True)
     os.makedirs(a.report, exist_ok=True)
     rows = []
@@ -134,8 +136,12 @@ def main():
             truth = os.path.join(a.truth, f"gal-gui-{ns}{page}.png")
             ours = os.path.join(a.ours, f"ours-gal-gui-{ns}{page}.png")
             read = read_manifest(manifest)
-            if read is None or not os.path.isfile(truth):
-                continue  # another shard's page: this shard shot only its stride
+            if read is None:
+                continue
+            # Each shard shoots one stride of the pages. The stride is checked by
+            # number, so a page this shard owed and failed to shoot still counts RED.
+            if a.stride and int(page) % a.stride[1] != a.stride[0]:
+                continue
             menu, opened, note, slots = read
             art = os.path.join(a.art, menu.replace(":", "_").replace("/", "_") + ".png") if a.art else None
             result = compare(truth, ours, slots, a.scale, art)

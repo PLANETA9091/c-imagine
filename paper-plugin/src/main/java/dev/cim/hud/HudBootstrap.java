@@ -15,6 +15,10 @@ public final class HudBootstrap {
     private HudBootstrap() {
     }
 
+    public static String aimForHarness(org.bukkit.entity.Player player, String target) {
+        return screens == null || player == null ? "no hud" : screens.aim(player, target);
+    }
+
     public static void closeForHarness(org.bukkit.entity.Player player) {
         if (screens != null && player != null) {
             screens.close(player);
