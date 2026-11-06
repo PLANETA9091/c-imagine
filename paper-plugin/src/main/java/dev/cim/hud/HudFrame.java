@@ -71,6 +71,24 @@ public final class HudFrame {
         return this;
     }
 
+    /**
+     * Glyphs from the free font at a pixel, measured from the screen centre.
+     * {@code advance} is what they move the pen, so the run can return it.
+     */
+    public HudFrame free(int x, int y, String glyphs, int advance) {
+        parts.add(Component.text(glyphs + move(-advance))
+                .font(font(HudLayout.freeId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y)))
+                .shadowColor(ShadowColor.none()));
+        return this;
+    }
+
+    /** ASCII at a pixel. It draws white: the colour channel is holding the position. */
+    public HudFrame freeText(int x, int y, String raw) {
+        String s = HudText.sanitize(raw);
+        return free(x, y, s, HudText.width(s));
+    }
+
     /** Takes over another frame's runs. */
     public HudFrame append(HudFrame other) {
         parts.addAll(other.parts);
@@ -86,7 +104,11 @@ public final class HudFrame {
     }
 
     private static Key font(HudLayout.Anchor anchor, int row) {
-        return Key.key(HudPack.NS, HudLayout.fontName(HudLayout.id(anchor, row)));
+        return font(HudLayout.id(anchor, row));
+    }
+
+    private static Key font(int id) {
+        return Key.key(HudPack.NS, HudLayout.fontName(id));
     }
 
     /** Glyphs that move the pen by {@code distance} pixels. */

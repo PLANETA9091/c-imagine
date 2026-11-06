@@ -23,6 +23,12 @@ public final class HudPack {
     public static final char BACK_BASE = '\uE120';
     public static final int SPACE_BITS = 11;
 
+    public static final char CURSOR = '\uE020';
+    public static final char BACKDROP = '\uE021';
+    public static final int BACKDROP_W = 1024;
+    public static final int BACKDROP_H = 640;
+    private static final int BACKDROP_SCALE = 16;
+
     private static final String[] ASCII_ROWS = asciiRows();
 
     private HudPack() {
@@ -37,9 +43,13 @@ public final class HudPack {
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_background.png", clear);
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_progress.png", clear);
         entries.put("assets/" + NS + "/textures/font/cell.png", png(cell()));
+        entries.put("assets/" + NS + "/textures/font/cursor.png", png(cursor()));
+        entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
         for (int i = 0; i < ARROWS; i++) {
             entries.put("assets/" + NS + "/textures/font/arrow" + i + ".png", png(arrow(i)));
         }
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
+                freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
         for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
             for (int row = 0; row < HudLayout.rows(a); row++) {
                 int id = HudLayout.id(a, row);
@@ -47,6 +57,25 @@ public final class HudPack {
                         font(id).toString().getBytes(StandardCharsets.UTF_8));
             }
         }
+    }
+
+    /** The free font, plus the given extra bitmap providers (one per scanned screen). */
+    static JsonObject freeFont(JsonArray screens) {
+        JsonObject font = font(HudLayout.freeId());
+        JsonArray providers = font.getAsJsonArray("providers");
+        int ascent = HudLayout.ascent(HudLayout.freeId());
+        JsonObject cursor = bitmap(NS + ":font/cursor.png", 12, ascent);
+        JsonArray c = new JsonArray();
+        c.add(String.valueOf(CURSOR));
+        cursor.add("chars", c);
+        providers.add(cursor);
+        JsonObject backdrop = bitmap(NS + ":font/backdrop.png", BACKDROP_H, ascent);
+        JsonArray b = new JsonArray();
+        b.add(String.valueOf(BACKDROP));
+        backdrop.add("chars", b);
+        providers.add(backdrop);
+        providers.addAll(screens);
+        return font;
     }
 
     private static JsonObject font(int id) {
@@ -124,6 +153,40 @@ public final class HudPack {
         return img;
     }
 
+    /** The vanilla arrow pointer shape, 8 wide and 12 tall. */
+    private static BufferedImage cursor() {
+        String[] shape = {"X.......", "XX......", "XOX.....", "XOOX....", "XOOOX...", "XOOOOX..",
+                "XOOOOOX.", "XOOOOOOX", "XOOOXXXX", "XOXOOX..", "XX.XOOX.", "....XX.."};
+        BufferedImage img = new BufferedImage(8, 12, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 12; y++) {
+            for (int x = 0; x < 8; x++) {
+                char c = shape[y].charAt(x);
+                if (c != '.') {
+                    img.setRGB(x, y, c == 'X' ? 0xFF000000 : 0xFFFFFFFF);
+                }
+            }
+        }
+        img.setRGB(7, 11, 0x01000000);
+        return img;
+    }
+
+    /**
+     * Dims the world while a screen is up, the way a vanilla screen does. Font
+     * glyphs must fit a 256px atlas page, so this is small and the provider's
+     * height scales it up.
+     */
+    private static BufferedImage backdrop() {
+        int w = BACKDROP_W / BACKDROP_SCALE;
+        int h = BACKDROP_H / BACKDROP_SCALE;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                img.setRGB(x, y, 0xC0101010);
+            }
+        }
+        return img;
+    }
+
     /** A player marker pointing along {@code step * 45} degrees, 0 being north. */
     private static BufferedImage arrow(int step) {
         int size = 9;
@@ -169,7 +232,7 @@ public final class HudPack {
         contribute(entries);
         if (args.length >= 2 && args[0].equals("--emit")) {
             if (args.length == 3) {
-                System.out.println("menus baked: " + MenuPack.contribute(entries, java.nio.file.Path.of(args[2])));
+                System.out.println("screens baked: " + ScreenPack.contribute(entries, java.nio.file.Path.of(args[2])));
             }
             try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(
                     java.nio.file.Files.newOutputStream(java.nio.file.Path.of(args[1])))) {
@@ -186,6 +249,8 @@ public final class HudPack {
             return;
         }
         int bad = 0;
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
+                freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
         for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
             for (int row = 0; row < HudLayout.rows(a); row++) {
                 int id = HudLayout.id(a, row);
@@ -202,6 +267,15 @@ public final class HudPack {
             }
         }
         bad += check(true, "every anchor and row encodes, decodes and has a font");
+        for (int[] p : new int[][]{{0, 0}, {-320, -180}, {319, 179}, {-2048, 2047}}) {
+            int c = HudLayout.freeColor(p[0], p[1]);
+            int r = c >> 16 & 255;
+            int g = c >> 8 & 255;
+            int b = c & 255;
+            int x = ((r << 4) | (g >> 4)) - 2048;
+            int y = (((g & 15) << 8) | b) - 2048;
+            bad += check(x == p[0] && y == p[1], "the shader decodes a free position: " + p[0] + "," + p[1]);
+        }
         bad += check(HudLayout.decode(300) == -1, "ordinary GUI text is not decoded");
         String vsh = HudLayout.vertexShader();
         bad += check(!vsh.matches("(?s).*\\b(HEIGHT_BIT|MAX_BIT|ROW_BITS|MAP_[A-Z]+|BASELINE|MARGIN|TEXT_[A-Z_]+|BOTTOM_CLEAR)\\b.*"),

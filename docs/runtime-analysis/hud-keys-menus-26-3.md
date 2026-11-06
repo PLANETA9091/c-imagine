@@ -1,8 +1,8 @@
 # HUD, menus and mod keys on the vanilla 26.3 client
 
 Status 2026-11-06. Everything marked measured was seen on the real 26.3 client
-against Paper with the real Create 6.0.10 jar. There has been no truth-client
-comparison and no CI run yet.
+against Paper with the real Create 6.0.10 jar. The CI gallery comparison is running
+on `ci/menu-compare` and has no result yet.
 
 ## What limits this
 
@@ -12,8 +12,9 @@ comparison and no CI run yet.
   reach mod code.
 - **Mod HUDs, screens and key handlers are client classes.** They never run on a
   server. Each surface below is a translation, not the mod's own code running.
-- **Client-only mods.** A minimap mod does nothing on a server, so the minimap here
-  is c-imagine's own map, not a port of Xaero's or JourneyMap.
+- **Client-only mods.** The minimap here is still c-imagine's own map. The target is
+  F2V's route: find a map mod's own colour code by scanning and call it with server
+  chunks. That needs an adapter, because the code expects 1.21.1 `Level` objects.
 
 ## Keys
 
@@ -51,32 +52,35 @@ a wire capture.
 Harness accounts (`cimviewer`, `cimbot`) get no HUD, so gallery shots stay comparable.
 `-Dcim.hud.debug=true` turns it on for them and adds an anchor probe.
 
-## Menus
+## Screens
 
-A server cannot move slots, so `MenuFit` moves the art to the chest grid, and the
-picture is one glyph drawn as the chest title. Labels draw before slots, so items sit
-on top. Titles use a shader anchor: the client rejects a bitmap with ascent above
-height, which also rejects the whole font (`MenuPack --selftest` guards this).
+Chest menus and the hand-written Create tables are gone. `ScreenScanner` reads every
+jar in `mods/` and finds each Screen, its menu and its background without running
+client code, following the approach of F2V (read-only reference). `ScreenPack` bakes
+each background into one font glyph, and `ScreenHud` draws it with a backdrop and a
+pointer. No mod is named anywhere in this path.
 
-| Menu | Slot error | Panel error | State |
-|---|---|---|---|
-| filter | 0 | 22 | good |
-| package_port | 0 | 15 | good, not seen on client |
-| schematic_table | 1 | 17 | good |
-| attribute_filter | 1 | 39 | not seen on client |
-| crafting_blueprint | 7 | 10 | slot art visibly patched |
-| linked_controller | 36 | 10 | slots moved off their art |
-| toolbox | 36 | 14 | slots moved off their art |
+Measured: 50 Create screens found, 14 tied to a menu (Create registers 14 menu types),
+39 baked with art, 6 of 6 backgrounds equal to hand-read values. Xaero: 30 screens
+found. BOP and Dynamic Trees: none. Filter, attribute filter and toolbox were seen on
+the real client with their original layout.
 
-Errors are pixels. Panel error is how far the mod panel and the inventory panel moved
-relative to each other. Not 1:1: the panels move, chest cells that are not slots still
-highlight on hover, and gaps show a dark fill because the shared chest texture cannot
-be changed.
+Free positioning: the glyph colour carries x and y, and `text.vsh` decodes it, so one
+font reaches every pixel. Such glyphs draw white, and runs must disable shadows.
 
-The other 7 Create menus are listed in `MenuCatalog.UNSUPPORTED`: they are widget
-screens with no chest form. Dialogs are the likely route. Geometry is hand-read from
-Create's classes, so other mods have no menus yet; a truth-client dump is the generic
-path.
+Font glyphs must fit the client's 256px atlas page. A larger bitmap draws nothing.
+Scale small art up through the provider's height. Art over 256 wide is not handled.
+The client also refuses a whole font if a bitmap's ascent exceeds its height.
 
-Right-click opening uses the pack's carriers: measured for an item, not yet for a
-block. Slot contents are not saved.
+Mouse: each tick the change in yaw and pitch moves the pointer, and attack and use are
+the buttons. Measured on the real client: pointer follows the mouse, clicks arrive
+with coordinates. Limits:
+
+- it updates at most 20 times a second, plus network delay; felt smoothness is unmeasured
+- the world turns behind the screen, because the camera really moves
+- the pointer stalls while pitch sits at +-90
+- Esc is not visible to the server, so sneak closes the screen
+
+Not done yet: items and slots, widgets and text, opening by right-click, and any effect
+on the mod. Clicks are only logged. Slot positions come from the CI walk on
+`ci/menu-compare`.

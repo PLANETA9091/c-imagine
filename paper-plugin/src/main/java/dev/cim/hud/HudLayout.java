@@ -21,8 +21,8 @@ public final class HudLayout {
         BOTTOM_LEFT, BOTTOM_CENTER, BOTTOM_RIGHT,
         /** Dense rows for pixel-cell images, top right. */
         MAP,
-        /** Not a screen position: moves a chest title vertically, see {@link #titleId}. */
-        MENU_TITLE;
+        /** Any pixel: the glyph's colour carries its position, see {@link #freeColor}. */
+        FREE;
 
         public boolean right() {
             return this == TOP_RIGHT || this == MIDDLE_RIGHT || this == BOTTOM_RIGHT;
@@ -41,26 +41,13 @@ public final class HudLayout {
     public static final int TEXT_ROW_HEIGHT = 10;
     public static final int MAP_ROWS = 34;
     public static final int MAP_CELL = 3;
-    static final int TITLE_ROW_ZERO = 56;
+    static final int FREE_ZERO = 2048;
 
     private HudLayout() {
     }
 
     public static int rows(Anchor a) {
-        return a == Anchor.MENU_TITLE ? 0 : a == Anchor.MAP ? MAP_ROWS : TEXT_ROWS;
-    }
-
-    /**
-     * Id that moves chest title text by {@code dy} pixels. A font cannot do this
-     * alone: the client rejects a bitmap whose ascent exceeds its height, so
-     * text can never be raised above the chest's top edge by ascent.
-     */
-    public static int titleId(int dy) {
-        int row = dy + TITLE_ROW_ZERO;
-        if (row < 0 || row >= (1 << ROW_BITS)) {
-            throw new IllegalArgumentException("title offset out of range: " + dy);
-        }
-        return (Anchor.MENU_TITLE.ordinal() << ROW_BITS) | row;
+        return a == Anchor.FREE ? 0 : a == Anchor.MAP ? MAP_ROWS : TEXT_ROWS;
     }
 
     public static int id(Anchor a, int row) {
@@ -68,6 +55,25 @@ public final class HudLayout {
             throw new IllegalArgumentException(a + " has no row " + row);
         }
         return (a.ordinal() << ROW_BITS) | row;
+    }
+
+    /** The one id every freely placed glyph shares. */
+    public static int freeId() {
+        return Anchor.FREE.ordinal() << ROW_BITS;
+    }
+
+    /**
+     * Colour that tells the shader where to put a glyph, in GUI pixels from the
+     * screen centre. Fixed rows would need a font per y; this needs one font,
+     * so a cursor or a widget can sit on any pixel. The glyph itself draws white.
+     */
+    public static int freeColor(int x, int y) {
+        int px = x + FREE_ZERO;
+        int py = y + FREE_ZERO;
+        if (px < 0 || px > 4095 || py < 0 || py > 4095) {
+            throw new IllegalArgumentException("off the coordinate range: " + x + "," + y);
+        }
+        return (px << 12) | py;
     }
 
     /** The font ascent that makes the shader read {@code id}. */
@@ -115,6 +121,8 @@ public final class HudLayout {
                 layout(location = 2) out vec4 vertexColor;
                 layout(location = 3) out vec2 texCoord0;
 
+                vec4 cimColor;
+
                 // c-imagine HUD decoder. Technique: BetterHud (MIT), see HudLayout.java.
                 vec3 cimHudPlace(vec3 pos) {
                     vec2 ui = ceil(2.0 / vec2(ProjMat[0][0], -ProjMat[1][1]));
@@ -128,11 +136,15 @@ public final class HudLayout {
                     int id = bit - (1 << MAX_BIT);
                     int anchor = id >> ROW_BITS;
                     int row = id & ((1 << ROW_BITS) - 1);
-                    if (anchor == TITLE_ANCHOR) {
-                        pos.y += float(row - TITLE_ZERO) - float(bit << HEIGHT_BIT);
+                    pos.y -= float(bit << HEIGHT_BIT) + BASELINE;
+                    if (anchor == FREE_ANCHOR) {
+                        ivec3 c = ivec3(round(Color.rgb * 255.0));
+                        // Drawn shadows carry a quarter of this colour, so runs turn them off.
+                        pos.x += float((c.r << 4) | (c.g >> 4)) - FREE_ORIGIN;
+                        pos.y += 0.5 * ui.y + float(((c.g & 15) << 8) | c.b) - FREE_ORIGIN;
+                        cimColor = vec4(1.0, 1.0, 1.0, Color.a);
                         return pos;
                     }
-                    pos.y -= float(bit << HEIGHT_BIT) + BASELINE;
                     // The carrier centres its text, and the encoder nets every run to zero advance.
                     pos.x -= 0.5 * ui.x;
                     if (anchor == MAP_ANCHOR) {
@@ -151,14 +163,15 @@ public final class HudLayout {
                 }
 
                 void main() {
+                    cimColor = Color;
                     gl_Position = ProjMat * ModelViewMat * vec4(cimHudPlace(Position), 1.0);
 
                 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
                     sphericalVertexDistance = fog_spherical_distance(Position);
                     cylindricalVertexDistance = fog_cylindrical_distance(Position);
-                    vertexColor = Color * sample_lightmap(Sampler2, UV2);
+                    vertexColor = cimColor * sample_lightmap(Sampler2, UV2);
                 #else
-                    vertexColor = Color;
+                    vertexColor = cimColor;
                 #endif
                     texCoord0 = UV0;
                 }
@@ -166,8 +179,8 @@ public final class HudLayout {
                 .replace("HEIGHT_BIT", String.valueOf(HEIGHT_BIT))
                 .replace("MAX_BIT", String.valueOf(MAX_BIT))
                 .replace("ROW_BITS", String.valueOf(ROW_BITS))
-                .replace("TITLE_ANCHOR", String.valueOf(Anchor.MENU_TITLE.ordinal()))
-                .replace("TITLE_ZERO", String.valueOf(TITLE_ROW_ZERO))
+                .replace("FREE_ANCHOR", String.valueOf(Anchor.FREE.ordinal()))
+                .replace("FREE_ORIGIN", FREE_ZERO + ".0")
                 .replace("MAP_ANCHOR", String.valueOf(Anchor.MAP.ordinal()))
                 .replace("MAP_CELL", String.valueOf(MAP_CELL))
                 .replace("MAP_RIGHT", (MAP_ROWS * MAP_CELL + 6) + ".0")

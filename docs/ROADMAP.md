@@ -532,10 +532,11 @@ and measured coverage: `runtime-analysis/hud-keys-menus-26-3.md`.
 
 - [x] Key census from mod jars, `/keyboard` dialog, `VirtualKeyEvent`.
 - [x] HUD channel (font + `text.vsh` + hidden boss bar) and the server minimap.
-- [x] Create menu art and slots on chests, right-click opening: 7 of 14 menus.
+- [x] Automatic screen scanner and HUD screens with a look-driven mouse; no chests.
+- [ ] Items, slots, widgets and right-click opening on scanned screens.
+- [ ] Real map-mod colour code on the server, through a scanner and an adapter.
 - [ ] Live mod behaviour behind all three: blocked on the layer hosting real
       players. No key, slot or HUD value reaches mod code yet.
-- [ ] The other 7 Create menus and every non-Create mod's menus.
 - [ ] Mod HUD layers (goggles, train HUD): client code, needs live data first.
 - [ ] Dual-stack proof: truth screenshots beside ours in the gui gallery.
 

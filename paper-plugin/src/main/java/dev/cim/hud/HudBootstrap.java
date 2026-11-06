@@ -27,24 +27,17 @@ public final class HudBootstrap {
         if (command != null) {
             command.setExecutor(keyboard);
         }
-        ModMenus menus = new ModMenus();
-        plugin.getServer().getPluginManager().registerEvents(menus, plugin);
-        PluginCommand menu = plugin.getCommand("modmenu");
-        if (menu != null) {
-            menu.setExecutor(menus);
-        }
-        try {
-            MenuTriggers triggers = new MenuTriggers(menus, Path.of(System.getProperty("user.dir"), "c-imagine", "f2v"));
-            plugin.getServer().getPluginManager().registerEvents(triggers, plugin);
-            plugin.getLogger().info("[cim-menu] " + MenuCatalog.MENUS.size() + " menu(s), "
-                    + triggers.size() + " carrier(s) known");
-        } catch (IOException e) {
-            plugin.getLogger().warning("[cim-menu] carrier manifests unreadable, menus open by command only: " + e);
-        }
         HudService hud = new HudService();
         Minimap minimap = new Minimap();
         hud.register(minimap);
         hud.register(keyboard);
+        ScreenHud screens = new ScreenHud(plugin.getLogger(), Path.of(System.getProperty("user.dir"), "mods"));
+        plugin.getServer().getPluginManager().registerEvents(screens, plugin);
+        hud.register(screens);
+        PluginCommand screen = plugin.getCommand("modscreen");
+        if (screen != null) {
+            screen.setExecutor(screens);
+        }
         PluginCommand map = plugin.getCommand("minimap");
         if (map != null) {
             map.setExecutor(minimap);

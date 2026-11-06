@@ -15,10 +15,10 @@ commands:
   minimap:
     description: Toggle the minimap
     usage: /minimap
-  modmenu:
-    description: Open a translated mod menu
-    usage: /modmenu <id>
-    permission: cim.modmenu
+  modscreen:
+    description: Open a scanned mod screen
+    usage: /modscreen <ClassName>
+    permission: cim.modscreen
 permissions:
-  cim.modmenu:
+  cim.modscreen:
     default: op
