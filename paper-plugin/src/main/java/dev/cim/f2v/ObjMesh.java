@@ -696,9 +696,27 @@ final class ObjMesh {
                         }
                         double u = l[0] * uvs[0][0] + l[1] * uvs[t][0] + l[2] * uvs[t + 1][0];
                         double v = l[0] * uvs[0][1] + l[1] * uvs[t][1] + l[2] * uvs[t + 1][1];
-                        int tx = Math.floorMod((int) Math.floor(u / 16 * w), w);
-                        int ty = Math.floorMod((int) Math.floor(v / 16 * w), w); // frame 0 of an animation
-                        int argb = src.getRGB(tx, ty);
+                        // 14-bm: the native render samples the sprite LINEARLY — the
+                        // 14-bj audit measured the door panels' sub-pixel phase race
+                        // on exactly this: the tile baked NEAREST texels and the GPU's
+                        // linear filter then reproduced the staircase, not the sprite's
+                        // gradients. Sample the sprite bilinearly at the same (u,v);
+                        // the GPU's filter over the 4px/texel tile reconstructs the
+                        // linear surface instead of the nearest staircase.
+                        double sx = u / 16 * w - 0.5;
+                        double sy = v / 16 * w - 0.5; // frame 0 of an animation
+                        int px = (int) Math.floor(sx);
+                        int py = (int) Math.floor(sy);
+                        double fx = sx - px;
+                        double fy = sy - py;
+                        // vanilla atlas pads sprites by extending their edge texels
+                        // (the stitcher's border pass) — clamp, never repeat
+                        int tx0 = Math.min(w - 1, Math.max(0, px));
+                        int ty0 = Math.min(w - 1, Math.max(0, py));
+                        int tx1 = Math.min(w - 1, Math.max(0, px + 1));
+                        int ty1 = Math.min(w - 1, Math.max(0, py + 1));
+                        int argb = bilerp(src.getRGB(tx0, ty0), src.getRGB(tx1, ty0),
+                                src.getRGB(tx0, ty1), src.getRGB(tx1, ty1), fx, fy);
                         if (colors != null) {
                             int rgb = 0;
                             for (int c = 0; c < 3; c++) {
@@ -728,6 +746,22 @@ final class ObjMesh {
                 el.add(k, r.get(k));
             }
         }
+    }
+
+    /** Straight-alpha bilinear of four texels — the GPU's magnification filter, exact. */
+    private static int bilerp(int c00, int c10, int c01, int c11, double fx, double fy) {
+        double w00 = (1 - fx) * (1 - fy);
+        double w10 = fx * (1 - fy);
+        double w01 = (1 - fx) * fy;
+        double w11 = fx * fy;
+        int argb = 0xFF000000;
+        for (int c = 0; c < 4; c++) {
+            int shift = 8 * c;
+            double s = w00 * ((c00 >>> shift) & 255) + w10 * ((c10 >>> shift) & 255)
+                    + w01 * ((c01 >>> shift) & 255) + w11 * ((c11 >>> shift) & 255);
+            argb |= Math.min(255, Math.max(0, (int) Math.round(s))) << shift;
+        }
+        return argb;
     }
 
     private static double[] bary(double a, double b, double[] p0, double[] p1, double[] p2) {
