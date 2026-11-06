@@ -7313,3 +7313,25 @@ freezes at partialTick 0.
   with the sanitized mcmeta. Then the green re-baseline: the pre-P2 93.02% never measured
   ae2/mekanism/sophisticatedbackpacks; the P2 shards are the new frontier (block-entity
   cells now gate, dissolved-row cells now place).
+
+### 14-bi verdict — run #158 (2d96264): the pack rides again, the block gate re-baselines at 96.73%
+- The ours client.out in #158 has NO "not large enough to write a rectangle" (the two
+  matches in the s0 job log are the guard's own script text) and no third vanilla-only
+  reload: the sanitized pack survives the atlas upload. The joins measure REAL geometry
+  again (create p0 red=9/61 vs the paper sea's 49/61).
+- BLOCK-page verdict (hard gate, --gate-dyn block-entity cells RED, dissolved rows placed,
+  the full P2 ladder measured): ae2 98.81% (2816/2850), biomesoplenty 98.26% (4916/5003),
+  create 95.34% (15762/16532), dynamictrees 98.91% (1820/1840), mekanism 98.20% (873/889),
+  sophisticatedbackpacks 100.00% (384/384). TOTAL 28782/29754 = 96.73% — above the 93.02%
+  (#80) baseline, with mekanism/sophisticatedbackpacks measured for the first time and
+  block-entity cells NO LONGER excused as DYNAMIC.
+- Residual families (400 listed rows): create:fluid_pipe 44, brass_door 37, andesite_door
+  26, framed_glass_door 17, blaze_burner 16, adjustable_chain_gearshift 9, gantry_shaft 9,
+  brass_tunnel 8, nixie_tubes 23 combined, mechanical_piston 8, fluid_valve 7, shaft 6,
+  ae2:crafting_monitor 8 — the Create block-entity/kinetic family the aed9770 BE-bake now
+  DRAWS but does not yet draw identically (origin, partialTick 0, Flywheel-style quads);
+  and the long-known biomesoplenty plants: lumaloop 21, glowworm_silk 19, high_grass 13.
+- NEXT (14-bj): the Create door/kinetic BE cells are the single biggest lever left
+  (~250 of the listed reds). Compare one door cell's QuadDump mesh vs the truth crop
+  first (the BE origin parameter, the door's half-tick pose), then fluid_pipe's
+  connection-driven proxy geometry.
