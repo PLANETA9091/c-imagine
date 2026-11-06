@@ -88,3 +88,29 @@ type = "required"
 versionRange = "[1.0.0,)"
 ordering = "AFTER"
 side = "BOTH"
+
+# --- Tier-1 heavy leg: same jar (multi-mod), its own modId -------------------
+[[mods]]
+modId = "cimtest_heavy"
+version = "1.0.0"
+displayName = "CIM Test Mod — Heavy"
+authors = "PLANETA9091"
+description = '''
+Tier-1 heavy leg: the deterministic allocation + tick-load generator the
+profiling budget gate measures against. Armed via /cimheavy load, rides
+NeoForge's server-tick event, server-side only.
+'''
+
+[[dependencies.cimtest_heavy]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[dependencies.cimtest_heavy]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,)"
+ordering = "NONE"
+side = "BOTH"

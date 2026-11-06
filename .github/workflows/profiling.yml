@@ -117,6 +117,13 @@ jobs:
           cp -r tmpl modded
           unzip -o dist/module-imagine.zip -d modded/modules/
           cp java/cim-bootstrap/build/cim-bootstrap.jar modded/modules/imagine/cim-bootstrap.jar
+          # THE TICK-LOAD PROBE (cimtest-heavy, Tier-1): the selfarm marker
+          # arms a deterministic 10ms/tick burn for 600 ticks on world
+          # start — the boot log carries the [cimtest_heavy] load-done
+          # markers the compare parses (the module's own tick charge under
+          # a KNOWN load; the bare boot has no mod and no marker)
+          mkdir -p modded/mods
+          printf '10 600\n' > modded/mods/cimtest-heavy.selfarm
           cd modded
           set +e
           ( while true; do ps -o rss= -C java >> rss.log 2>/dev/null || true; sleep 2; done ) &
@@ -129,6 +136,23 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/perf/boot-budget.py bare modded | tee -a "$GITHUB_STEP_SUMMARY"
+          # THE TICK-LOAD BUDGET: the cimtest-heavy load-done markers carry the
+          # per-tick overshoot of a KNOWN 10ms burn under the module — the gate:
+          # the average overshoot stays within 2ms (the scheduler/allocator charge
+          # the module may add to a known load)
+          if grep -q "load done" modded/boot.log; then
+            AVG=$(grep -o "avgOverMsPerTick=[0-9.]*" modded/boot.log | tail -1 | cut -d= -f2)
+            echo "tick-load probe (10ms burn x600 under the module): avgOverMsPerTick=$AVG" | tee -a "$GITHUB_STEP_SUMMARY"
+            python3 -c "
+          import sys
+          avg = float('$AVG' or '0')
+          limit = 2.0
+          if avg > limit:
+              print(f'TICK-LOAD BUDGET FAILED: avgOverMsPerTick={avg} > {limit}ms — the module charges the known load beyond the budget'); sys.exit(1)
+          print(f'tick-load budget ok: {avg} <= {limit}ms')"
+          else
+            echo "TICK-LOAD BUDGET INCOMPLETE: no [cimtest_heavy] load-done marker in the modded boot log — the selfarm did not fire"; exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()

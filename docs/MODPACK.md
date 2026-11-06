@@ -12,6 +12,7 @@ pinned by version.
 | `cimtest` | registration (block/item/BE/entity), lifecycle events, login hooks, custom mods.toml metadata, dependency declarations | M0 ✔ (source) / M2 (layer execution) |
 | `cimtest-net` | custom payload/channel both directions (1.21.1 `PayloadRegistrar`/`StreamCodec`): wire-codec round trips, S2C hello on player login, C2S echo from the client | source ✔; codec legs asserted in the layer boot + M2 harness; registration + full wire round trip asserted on real stacks (parity-real-neoforge / parity-diff) |
 | `cimtest-cap` | custom DataComponent (`cimtest_cap:charge`) + item capability (`RegisterCapabilitiesEvent`, 21.1 API — AttachCapabilitiesEvent is removed in 1.21) | source ✔; component legs asserted in the layer boot + M2 harness; capability legs asserted on real stacks (parity-real-neoforge / parity-diff) |
+| `cimtest-heavy` | the deterministic allocation + tick-load generator the profiling budget gate measures against (/cimheavy load msPerTick ticks; markers `[cimtest_heavy] load armed/running/done`) | DONE — the multi-mod jar, 4th [[mods]] entry; the layer constructs it (per-mod FML containers) |
 
 Layout note: `cimtest-net` and `cimtest-cap` use the runtime mod IDs
 `cimtest_net` and `cimtest_cap` (NeoForge forbids hyphens in mod IDs) and ride the SAME

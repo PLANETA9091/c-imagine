@@ -424,7 +424,7 @@ jobs:
           # M2: real-FML mod execution over the composite mod set (real mods +
           # cimtest) inside the live Paper JVM
           grep -q "\[c-imagine\] mod execution ok" srv/boot.log || fail "M2 mod execution FAILED"
-          for m in appleskin neoforge cimtest cimtest_net cimtest_cap ferritecore jade jei spark; do
+          for m in appleskin neoforge cimtest cimtest_net cimtest_cap cimtest_heavy ferritecore jade jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
           done
           # shadow-space log pipeline: first-party mod markers must reach the
@@ -626,7 +626,7 @@ jobs:
           L=out/harness.log
           grep -q "mod execution ok" $L || fail "mod execution FAILED (see harness.log)"
           # every real mod + layer + cimtest constructed through real FML
-          for m in appleskin neoforge cimtest cimtest_net cimtest_cap ferritecore jade mezz_config jei spark; do
+          for m in appleskin neoforge cimtest cimtest_net cimtest_cap cimtest_heavy ferritecore jade mezz_config jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" $L || fail "mod $m not constructed"
           done
           # cimtest registrations went through the real RegisterEvent pipeline
