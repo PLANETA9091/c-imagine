@@ -291,7 +291,7 @@ jobs:
             done
             [ -f "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.done" ] \
               || { echo "[ladder] $NS: the item walk never wrote its done marker"; tail -20 srv-truth/boot.log; exit 1; }
-            FIRST=$(awk -F'\t' '$1=="cell"{print $5; exit}' \
+            FIRST=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' \
               "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.tsv")
             if [ -z "$FIRST" ]; then
               echo "[ladder] $NS: no item rows on manifest page 0 (registry empty for the class — combat_roll case) — item/held legs skipped, honest absence"
@@ -457,8 +457,8 @@ jobs:
               # PAIRING GUARD: both sides must have walked the SAME manifest
               # row — the two dispatches must ride the same locked inputs
               # (mods.lock); a mismatch would make every datum garbage.
-              TF=$(awk -F'\t' '$1=="cell"{print $5; exit}' "$TC/gallery-item-$NS-p0.tsv")
-              CF=$(awk -F'\t' '$1=="cell"{print $5; exit}' "$SC/gallery-item-$NS-p0.tsv")
+              TF=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' "$TC/gallery-item-$NS-p0.tsv")
+              CF=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' "$SC/gallery-item-$NS-p0.tsv")
               if [ -z "$TF" ] || [ "$TF" != "$CF" ]; then
                 echo "LADDER ITEM DESYNC ($NS): truth first row '$TF' != c-imagine first row '$CF' — the two dispatches rode different inputs"
                 exit 1

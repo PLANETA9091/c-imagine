@@ -1128,7 +1128,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
                     cells.add(line.split("\t", -1));
                 } else if (line.startsWith("skip\t") && line.endsWith("\tdissolved")
@@ -1304,7 +1304,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
                     cells.add(line.split("\t", -1));
                 }
@@ -1439,7 +1439,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
                     cells.add(line.split("\t", -1));
                 }
@@ -1576,7 +1576,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // in this order; the stream join is an ORDERED compare)
         java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 String[] p = line.split("\t");
                 // MEASURED (run 42085254497 ours boot log): the HEADER row is
                 // "cell\tx\ty\tz\tsound\tnote" — it starts with "cell" too,
@@ -1891,7 +1891,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         int cells = 0;
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
                     cells++;
                 }
@@ -1950,7 +1950,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final java.util.List<String[]> rows = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t") || line.startsWith("skip\t")) {
                     rows.add(line.split("\t", -1));
                 }
@@ -2024,15 +2024,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         String itemId = null;
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
-                if (line.startsWith("cell\t")) {
-                    String[] row = line.split("\t", -1);
-                    if (row.length >= 5) {
-                        itemId = row[4];
-                        break;
-                    }
-                }
-            }
+            itemId = dev.cim.f2v.GalleryPack.firstSceneItem(mf);
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-held: manifest read failed "
                     + mf + ": " + ioe);
@@ -2099,7 +2091,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final java.util.List<String[]> slots = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("slot\t")) {
                     continue;   // header
                 }
@@ -2204,7 +2196,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // them in this order; the stream join is an ORDERED compare)
         java.util.List<String[]> cells = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 String[] p = line.split("\t");
                 // MEASURED (run 42085254497 ours boot log): the HEADER row is
                 // "cell\tx\ty\tz\tsound\tnote" — it starts with "cell" too,
@@ -2343,7 +2335,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final java.util.List<String[]> rows = new java.util.ArrayList<>();
         try {
-            for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t") || line.startsWith("skip\t")) {
                     rows.add(line.split("\t", -1));
                 }

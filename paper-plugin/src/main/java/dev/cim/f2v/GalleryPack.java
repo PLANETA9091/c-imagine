@@ -86,6 +86,24 @@ public final class GalleryPack {
 
     // ---- manifest ------------------------------------------------------------
 
+    /** Scene headers begin with cell too; they are schema, never registry content. */
+    public static List<String> readSceneLines(Path manifest) throws IOException {
+        List<String> lines = Files.readAllLines(manifest, StandardCharsets.UTF_8);
+        lines.removeIf(line -> line.startsWith("cell\tx\ty\tz\t"));
+        return lines;
+    }
+
+    /** The first actual item row, in the same order the real scene walk emitted it. */
+    public static String firstSceneItem(Path manifest) throws IOException {
+        for (String line : readSceneLines(manifest)) {
+            String[] row = line.split("\t", -1);
+            if (row.length >= 5 && row[0].equals("cell")) {
+                return row[4];
+            }
+        }
+        return null;
+    }
+
     /**
      * Read {@code visual-gallery.tsv}: one modded blockstate string per line
      * ({@code #} comments and blank lines ignored). An optional 2nd column

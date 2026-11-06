@@ -177,7 +177,7 @@ final class QuadDump {
             Map<BlockPos, String> names = new HashMap<>();
             for (String line : lines.subList(1, lines.size())) {
                 String[] c = line.split("\t");
-                if (c.length < 5 || !c[0].equals("cell")) {
+                if (c.length < 5 || !c[0].equals("cell") || c[1].equals("x")) {
                     continue;
                 }
                 BlockPos pos = new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]), Integer.parseInt(c[3]));
@@ -432,7 +432,7 @@ final class QuadDump {
         for (Path mf : manifests) {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
                 String[] c = line.split("\t");
-                if (c.length < 5 || !c[0].equals("cell")) {
+                if (c.length < 5 || !c[0].equals("cell") || c[1].equals("x")) {
                     continue;
                 }
                 items++;

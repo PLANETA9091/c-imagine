@@ -239,7 +239,7 @@ jobs:
               items = []
               for line in mf.read_text(encoding="utf-8").splitlines():
                   p = line.split("\t")
-                  if len(p) >= 5 and p[0] == "cell" and p[4].strip():
+                  if len(p) >= 5 and p[0] == "cell" and p[1].lstrip("-").isdigit() and p[4].strip():
                       items.append(p[4].strip())
               items = items[:36]
               rows = ["slot\titem"]
@@ -514,7 +514,7 @@ jobs:
               echo "=== ladder parity leg: $NS ==="
               FIRST=""
               if [ -f "srv/c-imagine/scenes/gallery-item-$NS-p0.tsv" ]; then
-                FIRST=$(awk -F'\t' '$1=="cell"{print $5; exit}' \
+                FIRST=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' \
                   "srv/c-imagine/scenes/gallery-item-$NS-p0.tsv")
               fi
               if [ -z "$FIRST" ]; then

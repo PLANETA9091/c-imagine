@@ -2540,6 +2540,16 @@ public final class F2vPack {
             String face = "minecraft:block/stone\t0\t-1"
                     + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
                     + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n";
+            Path scene = quads.resolve("gallery-item-fixture-p0.tsv");
+            Files.writeString(scene, "cell\tx\ty\tz\titem\tdyn\tnote\n"
+                    + "skip\t-1\t-60\t9\tfixture:missing\t0\tnochannel\n"
+                    + "cell\t-5\t-60\t9\tfixture:first\t0\tok\n"
+                    + "cell\t-4\t-60\t9\tfixture:second\t0\tok\n");
+            expect(failures, "fixture:first".equals(GalleryPack.firstSceneItem(scene)),
+                    "scene: held replay selects the first real item, not header or skip");
+            expect(failures, GalleryPack.readSceneLines(scene).size() == 3
+                            && GalleryPack.readSceneLines(scene).getFirst().startsWith("skip\t"),
+                    "scene: schema header is removed; every data/skip row remains");
             // One unlit and one ordinary source face must remain distinct.
             Files.writeString(quads.resolve("fixture.tsv"), face + face.replace("\t0\t-1", "\t1\t-1"));
             Files.writeString(quads.resolve("items.tsv"), "fixture:item\tfixture\n");
