@@ -12,9 +12,10 @@ on `ci/menu-compare` and has no result yet.
   reach mod code.
 - **Mod HUDs, screens and key handlers are client classes.** They never run on a
   server. Each surface below is a translation, not the mod's own code running.
-- **Client-only mods.** The minimap here is still c-imagine's own map. The target is
-  F2V's route: find a map mod's own colour code by scanning and call it with server
-  chunks. That needs an adapter, because the code expects 1.21.1 `Level` objects.
+- **Client-only mods.** There is no minimap: c-imagine's own was removed on the owner's
+  instruction, as it was not a real map mod. The target is F2V's route: find a map mod's
+  own colour code by scanning and call it with server chunks. That needs an adapter,
+  because the code expects 1.21.1 `Level` objects.
 
 ## Keys
 
@@ -40,14 +41,10 @@ carries the text. Each run nets to zero advance so elements cannot push each oth
 | Measured | Result |
 |---|---|
 | Nine anchors, text alignment | exact |
-| Server tick, map on vs off | 2.2 ms vs 1.9 ms, walking, one player |
-| Full map frame, deflated JSON | 263 B flat, 431 B terrain, 4.5 KB noise |
 | Identical frames | not sent |
 
-Limits: the map moves in whole-block steps; text is ASCII only (others print `?`); the
-carrier takes the first boss bar line, so real boss bars sit 19 px lower; any real
-yellow boss bar loses its bar. Compressed size is an estimate from deflated JSON, not
-a wire capture.
+Limits: text is ASCII only (others print `?`); the carrier takes the first boss bar
+line, so real boss bars sit 19 px lower; any real yellow boss bar loses its bar.
 
 Harness accounts (`cimviewer`, `cimbot`) get no HUD, so gallery shots stay comparable.
 `-Dcim.hud.debug=true` turns it on for them and adds an anchor probe.

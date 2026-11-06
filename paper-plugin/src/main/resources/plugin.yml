@@ -14,9 +14,6 @@ commands:
   keyboard:
     description: Toggle the virtual keyboard for mod keybindings
     usage: /keyboard
-  minimap:
-    description: Toggle the minimap
-    usage: /minimap
   modscreen:
     description: Open a scanned mod screen
     usage: /modscreen <ClassName>

@@ -19,8 +19,6 @@ public final class HudLayout {
         TOP_LEFT, TOP_CENTER, TOP_RIGHT,
         MIDDLE_LEFT, CENTER, MIDDLE_RIGHT,
         BOTTOM_LEFT, BOTTOM_CENTER, BOTTOM_RIGHT,
-        /** Dense rows for pixel-cell images, top right. */
-        MAP,
         /** Any pixel: the glyph's colour carries its position, see {@link #freeColor}. */
         FREE,
         /** The same, tinted the grey of a vanilla screen label. */
@@ -41,15 +39,13 @@ public final class HudLayout {
 
     public static final int TEXT_ROWS = 16;
     public static final int TEXT_ROW_HEIGHT = 10;
-    public static final int MAP_ROWS = 34;
-    public static final int MAP_CELL = 3;
     static final int FREE_ZERO = 2048;
 
     private HudLayout() {
     }
 
     public static int rows(Anchor a) {
-        return a == Anchor.FREE || a == Anchor.FREE_DARK ? 0 : a == Anchor.MAP ? MAP_ROWS : TEXT_ROWS;
+        return a == Anchor.FREE || a == Anchor.FREE_DARK ? 0 : TEXT_ROWS;
     }
 
     public static int id(Anchor a, int row) {
@@ -154,18 +150,13 @@ public final class HudLayout {
                     }
                     // The carrier centres its text, and the encoder nets every run to zero advance.
                     pos.x -= 0.5 * ui.x;
-                    if (anchor == MAP_ANCHOR) {
-                        pos.x += ui.x - MAP_RIGHT;
-                        pos.y += MAP_TOP + float(row * MAP_CELL);
-                    } else {
-                        int col = anchor % 3;
-                        int band = anchor / 3;
-                        pos.x += float(col) * 0.5 * ui.x + (col == 0 ? MARGIN : col == 2 ? -MARGIN : 0.0);
-                        float lines = float(row * TEXT_ROW_HEIGHT);
-                        pos.y += band == 0 ? MARGIN + lines
-                               : band == 1 ? 0.5 * ui.y + lines - TEXT_BLOCK / 2.0
-                               : ui.y - BOTTOM_CLEAR - TEXT_BLOCK + lines;
-                    }
+                    int col = anchor % 3;
+                    int band = anchor / 3;
+                    pos.x += float(col) * 0.5 * ui.x + (col == 0 ? MARGIN : col == 2 ? -MARGIN : 0.0);
+                    float lines = float(row * TEXT_ROW_HEIGHT);
+                    pos.y += band == 0 ? MARGIN + lines
+                           : band == 1 ? 0.5 * ui.y + lines - TEXT_BLOCK / 2.0
+                           : ui.y - BOTTOM_CLEAR - TEXT_BLOCK + lines;
                     return pos;
                 }
 
@@ -189,10 +180,6 @@ public final class HudLayout {
                 .replace("FREE_DARK_ANCHOR", String.valueOf(Anchor.FREE_DARK.ordinal()))
                 .replace("FREE_ANCHOR", String.valueOf(Anchor.FREE.ordinal()))
                 .replace("FREE_ORIGIN", FREE_ZERO + ".0")
-                .replace("MAP_ANCHOR", String.valueOf(Anchor.MAP.ordinal()))
-                .replace("MAP_CELL", String.valueOf(MAP_CELL))
-                .replace("MAP_RIGHT", (MAP_ROWS * MAP_CELL + 6) + ".0")
-                .replace("MAP_TOP", "4.0")
                 .replace("TEXT_ROW_HEIGHT", String.valueOf(TEXT_ROW_HEIGHT))
                 .replace("TEXT_BLOCK", (TEXT_ROWS * TEXT_ROW_HEIGHT) + ".0")
                 .replace("BOTTOM_CLEAR", "44.0")

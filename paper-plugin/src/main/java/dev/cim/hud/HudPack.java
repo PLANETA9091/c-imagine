@@ -14,10 +14,6 @@ public final class HudPack {
 
     public static final String NS = "cimhud";
 
-    /** Private-use glyphs present in every HUD font. */
-    public static final char CELL = '\uE000';
-    public static final char ARROW_BASE = '\uE010';
-    public static final int ARROWS = 8;
     /** A run of these moves the pen; bit {@code n} of the distance picks {@code SPACE_BASE + n}. */
     public static final char SPACE_BASE = '\uE100';
     public static final char BACK_BASE = '\uE120';
@@ -46,15 +42,11 @@ public final class HudPack {
         byte[] clear = png(new BufferedImage(182, 5, BufferedImage.TYPE_INT_ARGB));
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_background.png", clear);
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_progress.png", clear);
-        entries.put("assets/" + NS + "/textures/font/cell.png", png(cell()));
         entries.put("assets/" + NS + "/textures/font/cursor.png", png(cursor()));
         entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
         entries.put("assets/" + NS + "/textures/font/slot.png", png(slot(false)));
         entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(slot(true)));
         entries.put("assets/" + NS + "/textures/font/button.png", png(button()));
-        for (int i = 0; i < ARROWS; i++) {
-            entries.put("assets/" + NS + "/textures/font/arrow" + i + ".png", png(arrow(i)));
-        }
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
                 freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeDarkId()) + ".json",
@@ -122,20 +114,6 @@ public final class HudPack {
         ascii.add("chars", chars);
         providers.add(ascii);
 
-        JsonObject cell = bitmap(NS + ":font/cell.png", HudLayout.MAP_CELL, ascent);
-        JsonArray cellChars = new JsonArray();
-        cellChars.add(String.valueOf(CELL));
-        cell.add("chars", cellChars);
-        providers.add(cell);
-
-        for (int i = 0; i < ARROWS; i++) {
-            JsonObject arrow = bitmap(NS + ":font/arrow" + i + ".png", 9, ascent);
-            JsonArray arrowChars = new JsonArray();
-            arrowChars.add(String.valueOf((char) (ARROW_BASE + i)));
-            arrow.add("chars", arrowChars);
-            providers.add(arrow);
-        }
-
         JsonObject root = new JsonObject();
         root.add("providers", providers);
         return root;
@@ -162,16 +140,6 @@ public final class HudPack {
             rows[r] = row.toString();
         }
         return rows;
-    }
-
-    private static BufferedImage cell() {
-        BufferedImage img = new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < 3; y++) {
-            for (int x = 0; x < 3; x++) {
-                img.setRGB(x, y, 0xFFFFFFFF);
-            }
-        }
-        return img;
     }
 
     /** A raised 18px button: light top and left, dark bottom and right. */
@@ -239,34 +207,6 @@ public final class HudPack {
                 img.setRGB(x, y, 0xC0101010);
             }
         }
-        return img;
-    }
-
-    /** A player marker pointing along {@code step * 45} degrees, 0 being north. */
-    private static BufferedImage arrow(int step) {
-        int size = 9;
-        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-        double angle = Math.toRadians(step * 45.0);
-        double dx = Math.sin(angle);
-        double dy = -Math.cos(angle);
-        double c = (size - 1) / 2.0;
-        for (int y = 0; y < size; y++) {
-            for (int x = 0; x < size; x++) {
-                double px = x - c;
-                double py = y - c;
-                double along = px * dx + py * dy;
-                double across = Math.abs(px * -dy + py * dx);
-                boolean inside = along >= -3.2 && along <= 4.2 && across <= (4.2 - along) * 0.45;
-                boolean notch = along < -1.2 && across < (-1.2 - along) * 1.1;
-                if (inside && !notch) {
-                    boolean edge = across > (4.2 - along) * 0.45 - 1.0 || along < -2.4;
-                    img.setRGB(x, y, edge ? 0xFF000000 : 0xFFFFFFFF);
-                }
-            }
-        }
-        // A glyph's advance comes from its rightmost non-clear pixel. This one is
-        // below the shader's alpha cutoff: invisible, but it fixes all eight at 10.
-        img.setRGB(size - 1, size - 1, 0x01000000);
         return img;
     }
 
@@ -346,11 +286,6 @@ public final class HudPack {
         }
         bad += check(HudText.width("Hi") == 8 && HudText.width(" ") == 4, "known glyph widths");
         bad += check(HudText.sanitize("za\u017C").equals("za?"), "non-ASCII prints as ?");
-        for (int i = 0; i < ARROWS; i++) {
-            BufferedImage arrow = ImageIO.read(new java.io.ByteArrayInputStream(
-                    entries.get("assets/" + NS + "/textures/font/arrow" + i + ".png")));
-            bad += check(arrow.getRGB(8, 8) >>> 24 != 0, "arrow " + i + " keeps its fixed advance");
-        }
         if (args.length > 1) {
             try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(args[1])) {
                 BufferedImage ascii = ImageIO.read(jar.getInputStream(

@@ -51,7 +51,7 @@ public final class HudService implements Listener {
     static Layer anchorProbe() {
         return (player, frame) -> {
             for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
-                if (a != HudLayout.Anchor.MAP && HudLayout.rows(a) > 0) {
+                if (HudLayout.rows(a) > 0) {
                     frame.text(a, 0, a.name(), net.kyori.adventure.text.format.NamedTextColor.YELLOW);
                     frame.text(a, 1, "second line", net.kyori.adventure.text.format.NamedTextColor.AQUA);
                 }

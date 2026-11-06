@@ -46,8 +46,6 @@ public final class HudBootstrap {
             command.setExecutor(keyboard);
         }
         HudService hud = new HudService();
-        Minimap minimap = new Minimap();
-        hud.register(minimap);
         hud.register(keyboard);
         screens = new ScreenHud(plugin.getLogger(), Path.of(System.getProperty("user.dir"), "mods"));
         plugin.getServer().getPluginManager().registerEvents(screens, plugin);
@@ -56,10 +54,6 @@ public final class HudBootstrap {
         PluginCommand screen = plugin.getCommand("modscreen");
         if (screen != null) {
             screen.setExecutor(screens);
-        }
-        PluginCommand map = plugin.getCommand("minimap");
-        if (map != null) {
-            map.setExecutor(minimap);
         }
         if (Boolean.getBoolean("cim.hud.probe")) {
             hud.register(HudService.anchorProbe());

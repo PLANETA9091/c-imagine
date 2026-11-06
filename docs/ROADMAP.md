@@ -531,7 +531,7 @@ keybinding, 1:1 and smooth, with `/keyboard` as the way in for mod keys. Contrac
 and measured coverage: `runtime-analysis/hud-keys-menus-26-3.md`.
 
 - [x] Key census from mod jars, `/keyboard` dialog, `VirtualKeyEvent`.
-- [x] HUD channel (font + `text.vsh` + hidden boss bar) and the server minimap.
+- [x] HUD channel (font + `text.vsh` + hidden boss bar).
 - [x] Automatic screen scanner and HUD screens with a look-driven mouse; no chests.
 - [ ] Items, slots, widgets and right-click opening on scanned screens.
 - [ ] Real map-mod colour code on the server, through a scanner and an adapter.
