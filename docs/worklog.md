@@ -7426,3 +7426,25 @@ freezes at partialTick 0.
      audit as (1).
 - The verdict artifact: gallery-verdict (run 42211400496). The seed's client rig (prep + attempt
   loop + relaunch-capable dump) is now the walk's permanent environment.
+
+### 14-bk — the emissive-block light gap: the truth renders its own glow, ours sampled the local light
+- #162 (b9a152b, the 4px/texel cutout) measured 96.89% (+0.03): the plant families did NOT move
+  (lumaloop 21, glowworm_silk 19 — unchanged). Three hypotheses died on measurement:
+  (a) the cutout resample density (the plants ride the DIRECT sprite path — 4 rotated-rect elements
+  with the full-sprite UVs, no cutout at all); (b) the animation phase (the lumaloop_lit.png is a
+  static 16x16 with no mcmeta in the pack); (c) the 2s-periodic glow hiding from the self-pair —
+  the truth's t0/t1 self-pairs for the lumaloop cells measured 20..160 ae (STATIC content).
+- The delta's shape: the ours crop is ~0.85-0.9x DIMMER than the truth (truth luma mean 146.7 vs
+  ours 128.4 on c0_r0; 162.5 vs 130.3 on c9_r1), mid-rows worst (the ratio dips to 0.84 at the
+  glow's core rows), and R/G dim more than B (R 170.9->151.8, G 149.4->136.4, B 112.8->110.2) —
+  the warm R/G signature of a missing BLOCK-LIGHT component. THE ROOT: lumaloop[lit=true] EMITS
+  light — the truth leg renders it at block light 15 (the lightmap (15,15)); the ours display's
+  default brightness samples the LOCAL light of the ours world (the displays emit nothing) =
+  (sky 15, block 0) — the lightmap (15,0) is ~0.85x of (15,15) with the warm block-light tint.
+  The same class covers blaze_burner (16), glowworm_silk (19), the nixie tubes (~30) — every
+  emissive block state.
+- THE FIX (this commit): the scene walk writes the state's getLightEmission() as the manifest's
+  7th column ("light"); the plugin's gallery spawn pins the display's brightness to
+  (emission, 15) — the emissive cells ride their own block light exactly like the truth leg; the
+  non-emissive rows pin (0, 15) = the same local light they already rode, so nothing but the glow
+  changes. The Brightness(blockLight, skyLight) argument order verified against the Spigot javadoc.

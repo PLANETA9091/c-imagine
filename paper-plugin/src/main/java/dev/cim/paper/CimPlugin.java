@@ -1282,11 +1282,30 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 .rotateY((float) Math.PI),
                         new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                         new org.joml.Quaternionf());
+                // 14-bk: pin the display's light to the state's own emission —
+                // the truth leg renders an emissive block at its block light
+                // (the lit lumaloop, the blaze burner, the nixie tubes), while
+                // the display's default local light is (sky 15, block 0) and
+                // the crop measured the glow ~0.85x dimmer with the warm R/G
+                // shift of the missing block-light component. The 7th manifest
+                // column (the scene walk's getLightEmission) carries it; the
+                // non-emissive rows pin (0, 15) = the same local light they
+                // already rode, so nothing but the glow changes.
+                int emission = 0;
+                if (row.length > 6) {
+                    try {
+                        emission = Integer.parseInt(row[6].trim());
+                    } catch (NumberFormatException bad) {
+                        emission = 0;
+                    }
+                }
+                final int fEmission = Math.min(15, Math.max(0, emission));
                 org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                             e.setTransformation(tr);
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(fEmission, 15));
                         });
                 log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                         + row[1] + "," + row[2] + "," + row[3] + " state=" + state

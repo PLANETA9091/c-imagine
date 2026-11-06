@@ -500,9 +500,17 @@ public final class CimSceneMod {
             // surface for these cells and reports the AE, but they carry no
             // red verdict — their gate is the real-client leg (roadmap M5.6).
             // Universal signal (the EntityBlock interface), zero hardcode.
+            // 14-bk: the 7th column carries the state's LIGHT EMISSION — the
+            // ours leg pins the spawn display's brightness to (emission, 15)
+            // so an emissive block (the lit lumaloop, the blaze burner, the
+            // nixie tubes) renders at its own block light exactly like the
+            // truth leg does; the display's default local light is (15, 0)
+            // and the truth-vs-ours crop measured the glow ~0.85x dimmer with
+            // the warm R/G shift of the missing block-light component.
             rowStr[i] = "cell\t" + pos.getX() + '\t' + pos.getY() + '\t' + pos.getZ() + '\t'
                     + settled + '\t'
-                    + blockDynFlag(now);
+                    + blockDynFlag(now) + '\t'
+                    + now.getLightEmission();
         }
         // the world keeps moving after this tick: the manifest is written by the
         // delayed pass, which reads what the shot will actually show
@@ -537,7 +545,7 @@ public final class CimSceneMod {
             return;
         }
         int dissolved = 0;
-        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\n");
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\tlight\n");
         for (int i = 0; i < GALLERY_CELLS; i++) {
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
@@ -569,7 +577,8 @@ public final class CimSceneMod {
             tsv.append("cell\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
                     .append(pos.getZ()).append('\t')
                     .append(stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))).append('\t')
-                    .append(blockDynFlag(now)).append('\n');
+                    .append(blockDynFlag(now)).append('\t')
+                    .append(now.getLightEmission()).append('\n');
         }
 
         // drops from the settle window are not page content
