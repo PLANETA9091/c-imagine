@@ -7407,13 +7407,14 @@ freezes at partialTick 0.
   mekanism 855/884, sophisticatedbackpacks 384/384 — TOTAL 26632/27494 = 96.86% vs #158's 96.63%
   (reds 927 -> 862). The create reds dropped 770 -> 658; create p16's door reds 30 -> 17.
 - THE REMAINING REDS ARE THE RENDER-FIDELITY CLASSES, measured on #161's crops:
-  1. THE BE MESH CAPTURE MIXES COORDINATE FRAMES: the door's panel faces captured at 0..16 (the
-     pose-applied putBulkData path) while its edge strips captured at -8..8 (the RAW float-vertex
-     path — ItemCapture.addVertex(float,float,float) records the coordinates without the
-     renderer's PoseStack). The ours display then draws the strips half a block off, and the
-     highlight on p16 c8_r0 shows the panel's texture stripes phase-shifted. Any Create BER that
-     pushes raw vertices rides this. NEXT (14-bk): carry the PoseStack into ItemCapture's float
-     path (or force the pose overload), re-dump, and re-measure the door/nixie/burner families.
+  1. WITHDRAWN (the 14-bk bytecode check): the door mesh's -8..8 elements are the sliding door's
+     REAL FRAME RAILS — Create 6.0.10 renders the door through SuperByteBuffer
+     (partial(PartialModel, state).translate(...).light(...).renderInto(pose, vc)) and the partial's
+     rails genuinely extend half a block beyond the block bounds; the truth shows the same frame
+     strips. The mixed coordinate frames were geometry, not a capture bug. The door residual is the
+     texture-filtering path: the panel's UVs map a ~0.5-unit window of the sprite onto the full
+     16-unit face (Create's own mapping), and the ours cutout re-samples it nearest-then-linear
+     where the truth samples linear directly — a sub-pixel phase race on the panel's stripes.
   2. THE CUTOUT RESAMPLE DENSITY: the objcut tiles render at 2px per source texel
      (ObjMesh.Cell: pw = ceil(w*texels*2), cap 120) while the truth's native render samples the
      16-px sprite at ~3.75px/texel on the 60px/cell wall. The BOP plant reds (lumaloop 21,

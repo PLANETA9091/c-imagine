@@ -644,7 +644,13 @@ final class ObjMesh {
             a1 = aMax;
             b0 = bMin;
             b1 = bMax;
-            // two output pixels per source texel keep the slanted edge sharp
+            // four output pixels per source texel keep the slanted edge sharp:
+            // 14-bj measured the BOP plant reds at ~110k ae on crops that look
+            // near-identical — the truth's native render samples a 16-px sprite
+            // at ~3.75 px/texel on the 60px/cell wall, and the old 2px/texel
+            // cutout loses the edge-stepping race (lumaloop 21, glowworm_silk
+            // 19, high_grass 13 at the #161 baseline). 4px/texel matches the
+            // native density; the 120 cap keeps the sheet budget bounded.
             double texels = 1;
             int size = src == null ? 16 : src.getWidth();
             for (int i = 0; i < pts.length; i++) {
@@ -654,8 +660,8 @@ final class ObjMesh {
                     texels = Math.max(texels, len(sub2(uvs[j], uvs[i])) / 16 * size / dp);
                 }
             }
-            pw = Math.max(2, Math.min(120, (int) Math.ceil((a1 - a0) * texels * 2)));
-            ph = Math.max(2, Math.min(120, (int) Math.ceil((b1 - b0) * texels * 2)));
+            pw = Math.max(2, Math.min(120, (int) Math.ceil((a1 - a0) * texels * 4)));
+            ph = Math.max(2, Math.min(120, (int) Math.ceil((b1 - b0) * texels * 4)));
         }
 
         private static float[][] readColors(JsonArray cs) {
