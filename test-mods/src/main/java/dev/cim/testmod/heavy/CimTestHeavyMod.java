@@ -50,6 +50,13 @@ public final class CimTestHeavyMod {
     private int totalTicks;
     private long totalOverNanos;
     private int overTicks;
+    private String profile = "cpu";
+    // the entity churn state (the entity profile: the subjects the module's
+    // sync path carries — the cimtest TestEntity rides the layer's entity
+    // bridge, so its tick+sync charge IS the module's charge)
+    private final java.util.List<net.minecraft.world.entity.Entity> churn =
+            new java.util.ArrayList<>();
+    private int churnIdx;
 
     public CimTestHeavyMod(IEventBus modBus) {
         NeoForge.EVENT_BUS.register(this);
@@ -61,29 +68,75 @@ public final class CimTestHeavyMod {
         event.getDispatcher().register(Commands.literal("cimheavy")
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("load")
-                        .then(Commands.argument("msPerTick", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 50))
-                                .then(Commands.argument("ticks", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 12000))
-                                        .executes(ctx -> {
-                                            int ms = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "msPerTick");
-                                            int ticks = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "ticks");
-                                            arm(ms, ticks,
-                                                    ctx.getSource().getServer());
-                                            return Command.SINGLE_SUCCESS;
-                                        })))));
+                        .then(Commands.argument("profile", com.mojang.brigadier.arguments.StringArgumentType.word())
+                                .then(Commands.argument("msPerTick", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 50))
+                                        .then(Commands.argument("ticks", com.mojang.brigadier.arguments.IntegerArgumentType.integer(1, 12000))
+                                                .executes(ctx -> {
+                                                    String profile = com.mojang.brigadier.arguments.StringArgumentType.getString(ctx, "profile");
+                                                    int ms = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "msPerTick");
+                                                    int ticks = com.mojang.brigadier.arguments.IntegerArgumentType.getInteger(ctx, "ticks");
+                                                    arm(profile, ms, ticks,
+                                                            ctx.getSource().getServer(), ctx.getSource().getLevel());
+                                                    return Command.SINGLE_SUCCESS;
+                                                }))))));
     }
 
-    /** Arm the load: msPerTick of burn per server tick, for ticks ticks. */
-    private void arm(int msPerTick, int ticks, MinecraftServer server) {
+    /** Arm the load: the profile's work per server tick, for ticks ticks.
+     *  Profiles (the profiling budget measures the MODULE's charge on each
+     *  server path it hooks — a bare CPU spin charges nothing the module
+     *  touches, so the real subjects are the server paths the layer
+     *  intercepts):
+     *    cpu     — the integer-mix spin (the scheduler baseline)
+     *    entity  — move/rotate the cimtest TestEntity churn pool (the
+     *              entity tick + the sync packets ride the layer's bridge)
+     *    packet  — send an action-bar packet to every player per tick
+     *              (the net path through the F2V translation)
+     *    alloc   — the bounded allocation churn (the GC pressure surface)
+     */
+    private void arm(String profile, int msPerTick, int ticks, MinecraftServer server,
+                     net.minecraft.server.level.ServerLevel level) {
+        this.profile = profile;
         this.remainingTicks = ticks;
         this.totalTicks = ticks;
         this.budgetNanosPerTick = msPerTick * 1_000_000L;
         this.totalOverNanos = 0;
         this.overTicks = 0;
-        LOGGER.info("[cimtest_heavy] load armed: msPerTick={} ticks={}", msPerTick, ticks);
+        if ("entity".equals(profile)) {
+            setupEntityChurn(level);
+        }
+        LOGGER.info("[cimtest_heavy] load armed: profile={} msPerTick={} ticks={}",
+                profile, msPerTick, ticks);
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             p.displayClientMessage(Component.literal(
-                    "[cimtest_heavy] load armed: msPerTick=" + msPerTick + " ticks=" + ticks), false);
+                    "[cimtest_heavy] load armed: profile=" + profile + " msPerTick=" + msPerTick
+                            + " ticks=" + ticks), false);
         }
+    }
+
+    /** The entity churn pool: 40 TestEntities near the world spawn — the
+     *  subjects move every tick while armed; their sync rides the module. */
+    private void setupEntityChurn(net.minecraft.server.level.ServerLevel level) {
+        churn.clear();
+        churnIdx = 0;
+        var type = dev.cim.testmod.CimEntities.TEST_ENTITY.get();
+        var spawn = level.getSharedSpawnPos();
+        for (int i = 0; i < 40; i++) {
+            try {
+                var e = type.create(level);
+                if (e == null) {
+                    continue;
+                }
+                e.moveTo(spawn.getX() + (i % 8) * 2.0, spawn.getY() + 1.0,
+                        spawn.getZ() + (i / 8) * 2.0, 0.0f, 0.0f);
+                e.setNoGravity(true);
+                level.addFreshEntity(e);
+                churn.add(e);
+            } catch (Throwable t) {
+                LOGGER.info("[cimtest_heavy] churn spawn failed at {}: {}",
+                        i, t.toString());
+            }
+        }
+        LOGGER.info("[cimtest_heavy] entity churn pool: {} subject(s)", churn.size());
     }
 
     @SubscribeEvent
@@ -93,7 +146,12 @@ public final class CimTestHeavyMod {
         }
         int tick = totalTicks - remainingTicks + 1;
         long start = System.nanoTime();
-        burn(budgetNanosPerTick);
+        switch (profile) {
+            case "entity" -> churnEntities();
+            case "packet" -> packetLoad(event.getServer());
+            case "alloc" -> allocLoad();
+            default -> burn(budgetNanosPerTick);
+        }
         long spent = System.nanoTime() - start;
         // overMs: the tick's own wall cost of the burn loop (the burn self-
         // paces to the budget; the overshoot measures the allocator/JIT
@@ -110,9 +168,58 @@ public final class CimTestHeavyMod {
         }
         if (remainingTicks == 0) {
             double avgMs = totalTicks > 0 ? (totalOverNanos / (double) totalTicks) / 1_000_000.0 : 0.0;
-            LOGGER.info("[cimtest_heavy] load done: ticks={} overMsTotal={} avgOverMsPerTick={}",
-                    totalTicks, totalOverNanos / 1_000_000, String.format("%.2f", avgMs));
+            LOGGER.info("[cimtest_heavy] load done: profile={} ticks={} overMsTotal={} avgOverMsPerTick={}",
+                    profile, totalTicks, totalOverNanos / 1_000_000, String.format("%.2f", avgMs));
+            for (var e : churn) {
+                try { e.discard(); } catch (Throwable ignore) { }
+            }
+            churn.clear();
         }
+    }
+
+    /** The entity churn: move + rotate every pool subject — the entity
+     *  tick and the ClientboundEntityPositionSync packets ride the module's
+     *  bridge, so the profile measures the layer's entity-path charge. */
+    private void churnEntities() {
+        long deadline = System.nanoTime() + budgetNanosPerTick;
+        int moved = 0;
+        while (System.nanoTime() < deadline) {
+            var e = churn.get(churnIdx % Math.max(1, churn.size()));
+            churnIdx++;
+            if (e.isAlive()) {
+                e.moveTo(e.getX() + 0.05, e.getY(), e.getZ(), (churnIdx % 360), 0.0f);
+                moved++;
+            }
+        }
+        SINK = moved;
+    }
+
+    /** The packet churn: an action-bar broadcast per tick — the packets
+     *  ride the net path the F2V translation hooks. */
+    private void packetLoad(MinecraftServer server) {
+        long deadline = System.nanoTime() + budgetNanosPerTick;
+        int sent = 0;
+        while (System.nanoTime() < deadline) {
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                p.displayClientMessage(Component.literal(
+                        "[cimtest_heavy] probe " + (sent++)), true);
+            }
+        }
+        SINK = sent;
+    }
+
+    /** The allocation churn: bounded byte[] allocation at the budget rate —
+     *  the GC pressure surface (young-gen collection rides the tick). */
+    private void allocLoad() {
+        long deadline = System.nanoTime() + budgetNanosPerTick;
+        Object keep = null;
+        int n = 0;
+        while (System.nanoTime() < deadline) {
+            keep = new byte[4096];
+            keep.hashCode();
+            n++;
+        }
+        SINK = n;
     }
 
     /** Burn the budget: an integer mix loop (cheap, predictable) until the
