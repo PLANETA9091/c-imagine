@@ -42,12 +42,14 @@ import net.neoforged.neoforge.common.NeoForge;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -56,6 +58,9 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 
 /**
  * Ask the real client what each wall cell draws. A static pack model cannot
@@ -194,10 +199,28 @@ final class QuadDump {
                 }
             }
             StringBuilder ctx = new StringBuilder();
+            // 14-bn: the walk's settled BE NBT (the sibling .benbt file — the
+            // manifest's own schema stays 7-column). Loaded into the capture
+            // BE so runtime-only state (the gearshift's shifted flag, the
+            // fluid pipe's flow data) renders as the wall settled it, not as
+            // a fresh BE's defaults.
+            Map<BlockPos, String> beTags = new HashMap<>();
+            Path benbt = mf.resolveSibling(
+                    mf.getFileName().toString().replaceAll("\\.tsv$", ".benbt"));
+            if (Files.exists(benbt)) {
+                for (String line : Files.readAllLines(benbt, StandardCharsets.UTF_8)) {
+                    String[] c = line.split("\t");
+                    if (c.length >= 5 && c[0].equals("cell")) {
+                        beTags.put(new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]),
+                                Integer.parseInt(c[3])), c[4]);
+                    }
+                }
+                LOGGER.info("[cimscene] quad dump be nbt rows {}: {}", benbt.getFileName(), beTags.size());
+            }
             for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
                 cells++;
                 try {
-                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites);
+                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites, beTags);
                     if (mesh == null) {
                         continue;
                     }
@@ -234,7 +257,8 @@ final class QuadDump {
      * ambient occlusion, its tint and offset, all captured at the one point
      * they reach the vertex buffer. Null when the renderer draws nothing.
      */
-    private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
+    private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites,
+                                  Map<BlockPos, String> beTags) {
         Minecraft mc = Minecraft.getInstance();
         BakedModel model = mc.getBlockRenderer().getBlockModel(state);
         ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
@@ -248,20 +272,23 @@ final class QuadDump {
                     random, seed, OverlayTexture.NO_OVERLAY, data, type);
         }
         if (state.hasBlockEntity()) {
-            appendBlockEntity(pos, state, sprites, capture.out);
+            appendBlockEntity(pos, state, sprites, capture.out, beTags);
         }
         return capture.out.length() == 0 ? null : capture.out.toString();
     }
 
     /**
      * What the cell's BlockEntityRenderer draws on top of its block model: for
-     * a Create door that is the whole door. A fresh block entity stands in for
-     * the wall's, so state a mod only sets at runtime is not reflected. Mod
-     * code can fail here in any way; that costs this cell its renderer, never
-     * the dump, and the final log line counts it.
+     * a Create door that is the whole door. The capture BE is the wall's OWN
+     * settled state when the manifest's sibling .benbt file carries it (14-bn:
+     * the walk saves each settled tile's real NBT server-side); only a cell
+     * without a row falls back to a fresh block entity, so state a mod only
+     * sets at runtime renders as the wall holds it, not as the type default.
+     * Mod code can fail here in any way; that costs this cell its renderer,
+     * never the dump, and the final log line counts it.
      */
     private static void appendBlockEntity(BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites,
-                                          StringBuilder out) {
+                                          StringBuilder out, Map<BlockPos, String> beTags) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             berNoLevel++;
@@ -276,6 +303,22 @@ final class QuadDump {
                 return;
             }
             be.setLevel(mc.level);
+            // 14-bn: the wall's settled NBT — Speed/shifted/flow data land in
+            // the BE before its renderer runs. A failed load falls back to the
+            // fresh defaults for THIS cell (logged), never to a skipped cell.
+            String b64 = beTags == null ? null : beTags.get(pos);
+            if (b64 != null) {
+                try {
+                    // 1.21.1's NbtIo takes an NbtAccounter (the Provider overloads
+                    // came in 1.21.2); unlimitedHeap — the wall's own trusted dump
+                    be.loadWithComponents(NbtIo.readCompressed(
+                            new ByteArrayInputStream(Base64.getDecoder().decode(b64)),
+                            NbtAccounter.unlimitedHeap()), mc.level.registryAccess());
+                } catch (Throwable bad) {
+                    LOGGER.info("[cimscene] quad dump be nbt load skip {}: {}",
+                            state.getBlock(), bad.toString());
+                }
+            }
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
                 return;

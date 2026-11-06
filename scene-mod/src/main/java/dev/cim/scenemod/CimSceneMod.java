@@ -16,6 +16,7 @@ import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
@@ -32,6 +33,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
@@ -58,12 +60,14 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -528,6 +532,24 @@ public final class CimSceneMod {
     private static final int BLOCK_SETTLE_RETRIES = 8;
 
     /**
+     * The tile's settled state, gzipped NBT in base64 — tab/newline-free for
+     * the manifest-adjacent file. Never throws: a tile whose serializer fails
+     * loses its row (the dump falls back to the fresh BE), not its page.
+     */
+    private static String benbtB64(ServerLevel level, BlockEntity tile) {
+        try {
+            CompoundTag tag = tile.saveWithoutMetadata(level.registryAccess());
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            NbtIo.writeCompressed(tag, bos);
+            return Base64.getEncoder().encodeToString(bos.toByteArray());
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery be nbt skip {}: {}",
+                    BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(tile.getType()), t.toString());
+            return null;
+        }
+    }
+
+    /**
      * Rewrite the page from what the wall holds now. Placed blocks fall, pop off
      * unsupported or turn into something else over the following ticks, and a
      * falling block can land on a cell that was empty. A cell the world emptied
@@ -546,6 +568,17 @@ public final class CimSceneMod {
         }
         int dissolved = 0;
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\tlight\n");
+        // 14-bn: the settled BEs' real NBT rides a SIBLING file (".benbt" — no
+        // ".tsv" suffix, so every manifest glob that counts pages stays
+        // blind to it): one row per BE cell — cell x y z nbt(base64 gzip).
+        // The quad dump loads it into its capture BE, so runtime state a mod
+        // only sets at runtime (the gearshift's shifted flag, the fluid
+        // pipe's flow data, the whistle's pressure) renders EXACTLY as the
+        // wall settled instead of the fresh BE's defaults; and the truth leg
+        // writes the same file from its own world, so the legs' BE-state
+        // convergence becomes byte-comparable like the manifests already are.
+        StringBuilder benbt = new StringBuilder("cell\tx\ty\tz\tnbt\n");
+        int benbtRows = 0;
         for (int i = 0; i < GALLERY_CELLS; i++) {
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
@@ -579,6 +612,15 @@ public final class CimSceneMod {
                     .append(stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))).append('\t')
                     .append(blockDynFlag(now)).append('\t')
                     .append(now.getLightEmission()).append('\n');
+            if (now.hasBlockEntity()) {
+                BlockEntity tile = level.getBlockEntity(pos);
+                String nbt = tile == null ? null : benbtB64(level, tile);
+                if (nbt != null) {
+                    benbt.append("cell\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
+                            .append(pos.getZ()).append('\t').append(nbt).append('\n');
+                    benbtRows++;
+                }
+            }
         }
 
         // drops from the settle window are not page content
@@ -593,6 +635,10 @@ public final class CimSceneMod {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
             Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+            if (benbtRows > 0) {
+                String benbtFile = "gallery-" + namespace + "-p" + page + ".benbt";
+                Files.writeString(parent.resolve(benbtFile), benbt.toString(), StandardCharsets.UTF_8);
+            }
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] gallery manifest write failed {}: {}", manifest, ioe.toString());
         }
