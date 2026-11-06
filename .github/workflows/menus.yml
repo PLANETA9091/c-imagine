@@ -1,0 +1,153 @@
+name: menus
+
+# The menu gate on its own: real NeoForge frames beside c-imagine on vanilla 26.3,
+# pixel for pixel. It skips the gallery's block and entity walks, so a run takes
+# minutes. Slices run in parallel, sized so each walks about 24 menus.
+
+on:
+  push:
+    branches: [ci/menu-compare-2]
+    paths:
+      - 'paper-plugin/**'
+      - 'scene-mod/**'
+      - 'scripts/hud/**'
+      - 'scripts/cimscene/menu-sheet.py'
+      - 'scripts/visual/**'
+      - '.github/workflows/menus.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: menus-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LADDER_SLUGS: create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade
+
+jobs:
+  slice:
+    name: menus ${{ matrix.ns }} ${{ matrix.si }}/${{ matrix.k }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ns: create, si: 0, k: 1 }
+          - { ns: ae2, si: 0, k: 2 }
+          - { ns: ae2, si: 1, k: 2 }
+          - { ns: mekanism, si: 0, k: 3 }
+          - { ns: mekanism, si: 1, k: 3 }
+          - { ns: mekanism, si: 2, k: 3 }
+          - { ns: sophisticatedbackpacks, si: 0, k: 1 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache: false
+      - uses: actions/setup-java@v4
+        id: jdk25
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: paper-plugin/pom.xml
+      - uses: actions/setup-java@v4
+        id: jdk21
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: restore scene jar
+        id: jars
+        uses: actions/cache@v4
+        with:
+          path: scene-mod/build/libs
+          key: menus-scene-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*') }}
+      - name: build scene jar (cache miss)
+        if: steps.jars.outputs.cache-hit != 'true'
+        run: gradle build --no-daemon -p scene-mod
+      - name: restore NeoForge server
+        id: layer
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge server (cache miss)
+        if: steps.layer.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
+      - name: restore NeoForge client
+        id: nfc
+        uses: actions/cache@v4
+        with:
+          path: |
+            nfc
+            truth-client
+          key: neoforge-truth-client-1211-v4
+      - name: fetch NeoForge client (cache miss)
+        if: steps.nfc.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets
+          sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
+      - name: restore vanilla client and Paper
+        uses: actions/cache@v4
+        with:
+          path: |
+            visual-client
+            srv-ours/paper.jar
+            srv-ours/libraries
+            srv-ours/versions
+            srv-ours/cache
+          key: menus-ours-26.3-v1
+      - name: GL libraries
+        run: |
+          NEED=""
+          for pkg in libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 xvfb; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
+          done
+          if [ -n "$NEED" ]; then sudo apt-get update -qq; sudo apt-get install -y -qq $NEED; fi
+      - name: truth, ours and the pixel verdict
+        env:
+          J21: ${{ steps.jdk21.outputs.path }}
+          J25: ${{ steps.jdk25.outputs.path }}
+        run: bash scripts/hud/menu-shard.sh ${{ matrix.ns }} ${{ matrix.si }} ${{ matrix.k }}
+      - name: keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menus-${{ matrix.ns }}-${{ matrix.si }}
+          path: |
+            gallery-report
+            srv-wall/boot.log
+            srv-ours/boot.log
+            truth-client/client.out
+            visual-client/client.out
+            plugin-build.log
+          if-no-files-found: warn
+
+  verdict:
+    name: menus verdict
+    runs-on: ubuntu-latest
+    needs: [slice]
+    if: always()
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - name: GREEN or RED
+        run: |
+          find all -name menus.md -exec cat {} + | grep -E '^\| ' | grep -v '^| menu' | sort -u > all.md
+          G=$(grep -c '| GREEN |' all.md || true); T=$(wc -l < all.md)
+          { echo "### Menus: $G of $T GREEN"; echo; echo '| menu | verdict | detail |'; echo '|---|---|---|'; cat all.md; } >> "$GITHUB_STEP_SUMMARY"
+          echo "menus: $G of $T GREEN"
+          [ "$T" -gt 0 ] && [ "$G" = "$T" ]
