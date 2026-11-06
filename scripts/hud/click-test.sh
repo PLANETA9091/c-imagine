@@ -51,15 +51,40 @@ $SHOT "$OUT/3-closed.png"
 mark; $MOUSE left; sleep 1
 seen 'click slot=' && fail 'a closed screen takes no clicks' || pass 'a closed screen takes no clicks'
 
+key() { aim "k$1" >/dev/null; $MOUSE left; }
+pos() { $RC 'data get entity cimviewer Pos[2]' | tail -1 | grep -oE '[-0-9.]+d' | head -1; }
+
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; sleep 1
-mark; $MOUSE say /keyboard; sleep 2
-seen 'issued server command: /keyboard' && pass 'typing /keyboard reaches the server' || fail 'typing /keyboard reaches the server'
+mark; $MOUSE say /keyboard
+expect 'keyboard open' 'typing /keyboard opens the floating keyboard' 2
 $SHOT "$OUT/4-keyboard.png"
-mark; $MOUSE click 352 299
-expect 'key=34[0-9] down' 'a keyboard button sends a key'
-mark; $MOUSE click 352 497
+mark; key 87
 expect 'key=87 up' 'a plain key taps down and up'
-$SHOT "$OUT/5-keyboard.png"
+[ "$(tail -n +"$MARK" "$LOG" | grep -c 'key=87 down')" = "1" ] && pass 'one click is one key press' \
+    || fail 'one click is one key press'
+mark; key 342
+expect 'key=342 down' 'a modifier latches'
+$SHOT "$OUT/5-held.png"
+mark; key 342
+expect 'key=342 up' 'a second click releases it'
+mark; key -2; key 82
+expect 'key=82 down' 'hold mode keeps a plain key down'
+seen 'key=82 up' && fail 'hold mode does not release' || pass 'hold mode does not release'
+mark; key 82; expect 'key=82 up' 'held key releases'; key -2
+B=$(pos); $MOUSE walk 900; sleep 0.5; A2=$(pos)
+[ -n "$B" ] && [ "$B" != "$A2" ] && pass "the player walks with the keyboard open ($B to $A2)" \
+    || fail "the player walks with the keyboard open ($B to $A2)"
+key -3; sleep 0.5; $SHOT "$OUT/6-mods.png"
+mark; key -100
+expect 'bindings=\[create' 'a mod binding reaches its key'
+key -100; key -3
+mark; key -4
+expect 'keyboard closed' 'the close key closes it'
+$SHOT "$OUT/7-closed.png"
+mark; $MOUSE left; sleep 1
+seen 'key=' && fail 'a closed keyboard takes no clicks' || pass 'a closed keyboard takes no clicks'
+mark; $MOUSE say /keyboard; expect 'keyboard open' 'it opens again' 2
+mark; $MOUSE say /keyboard; expect 'keyboard closed' '/keyboard toggles it off' 2
 
 [ "$bad" = 0 ] && echo 'click test: ALL PASS' || echo "click test: $bad FAILED"
 exit "$bad"

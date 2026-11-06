@@ -25,6 +25,12 @@ public final class HudPack {
     public static final char SLOT_HOVER = '\uE023';
     /** Plate under a scanned icon button. */
     public static final char BUTTON = '\uE024';
+    public static final char KEY = '\uE025';
+    public static final char KEY_LIT = '\uE026';
+    public static final char KEY_HOVER = '\uE027';
+    public static final char KEY_WIDE = '\uE028';
+    public static final char KEY_WIDE_LIT = '\uE029';
+    public static final char KEY_WIDE_HOVER = '\uE02A';
     public static final int BACKDROP_W = 1024;
     public static final int BACKDROP_H = 640;
     private static final int BACKDROP_SCALE = 16;
@@ -47,6 +53,9 @@ public final class HudPack {
         entries.put("assets/" + NS + "/textures/font/slot.png", png(slot()));
         entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(hover()));
         entries.put("assets/" + NS + "/textures/font/button.png", png(button()));
+        for (int i = 0; i < 6; i++) {
+            entries.put("assets/" + NS + "/textures/font/key" + i + ".png", png(keycap(i)));
+        }
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
                 freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeDarkId()) + ".json",
@@ -81,6 +90,13 @@ public final class HudPack {
             chars.add(String.valueOf(hover ? SLOT_HOVER : SLOT));
             slot.add("chars", chars);
             providers.add(slot);
+        }
+        for (int i = 0; i < 6; i++) {
+            JsonObject key = bitmap(NS + ":font/key" + i + ".png", KeyboardLayout.CAP_H, ascent);
+            JsonArray keyChars = new JsonArray();
+            keyChars.add(String.valueOf((char) (KEY + i)));
+            key.add("chars", keyChars);
+            providers.add(key);
         }
         JsonObject button = bitmap(NS + ":font/button.png", 18, ascent);
         JsonArray buttonChars = new JsonArray();
@@ -140,6 +156,35 @@ public final class HudPack {
             rows[r] = row.toString();
         }
         return rows;
+    }
+
+    /** Keycaps, in {@link #KEY} order: normal, held, hover, then the same three wide. */
+    private static BufferedImage keycap(int kind) {
+        int w = kind < 3 ? KeyboardLayout.KEY_W : KeyboardLayout.WIDE_W;
+        int h = KeyboardLayout.CAP_H;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        int style = kind % 3;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                boolean corner = (x == 0 || x == w - 1) && (y == 0 || y == h - 1);
+                int c;
+                if (style == 2) {
+                    c = 0x60FFFFFF;
+                } else if (corner) {
+                    c = 0;
+                } else if (x == 0 || y == 0) {
+                    c = style == 1 ? 0xF0A4F0A4 : 0xE8FFFFFF;
+                } else if (x == w - 1 || y == h - 1) {
+                    c = style == 1 ? 0xF02E7D32 : 0xE8585858;
+                } else {
+                    c = style == 1 ? 0xF066D06A : 0xE8C6C6C6;
+                }
+                img.setRGB(x, y, c);
+            }
+        }
+        // Corners are clear, and a glyph's advance comes from its last solid column.
+        img.setRGB(w - 1, h - 1, style == 2 ? 0x60FFFFFF : 0x01000000);
+        return img;
     }
 
     /** A raised 18px button: light top and left, dark bottom and right. */

@@ -55,6 +55,13 @@ public final class HudFrame {
         return this;
     }
 
+    /** A prepared run in label grey, with its own pen moves. */
+    public HudFrame freeRun(int x, int y, String text, int advance) {
+        parts.add(Component.text(text + move(-advance)).font(font(HudLayout.freeDarkId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
+        return this;
+    }
+
     /** Takes over another frame's runs. */
     public HudFrame append(HudFrame other) {
         parts.addAll(other.parts);

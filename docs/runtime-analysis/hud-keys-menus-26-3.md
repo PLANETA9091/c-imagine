@@ -23,14 +23,13 @@ on `ci/menu-compare` and has no result yet.
 Create gives its 6 keys plus Ponder's, with the defaults in the bytecode; BOP and
 Dynamic Trees give none.
 
-`/keyboard` is a `multi_action` dialog with `pause: false` and
-`after_action: none`: the world keeps running and typing does not reopen the screen.
-A click is a custom click. Shift, Ctrl and Alt latch, as does any key in hold mode,
-because a button has no key-up. Esc reaches the server through the exit action.
-Latched keys stay shown on the HUD. Delivery is `VirtualKeyEvent`.
-
-The dialog screen blurs the world and takes the mouse, and vanilla draws its warning
-icon beside the title. None of that can be removed from the server.
+`/keyboard` toggles a keyboard floating on the HUD: keycaps over the live game with no
+screen open, so the world stays sharp and the player keeps walking. The look direction
+moves a pointer and attack and use packets click, with mining and placing blocked while
+it is open. `KeyboardLayout` holds the geometry for both drawing and clicking. Modifiers
+latch, as does any key in hold mode, because a click has no key-up. Held keys light up,
+and stay listed on the HUD after closing. Mod bindings have their own page, twelve at a
+time. Delivery is `VirtualKeyEvent`.
 
 ## HUD
 
@@ -102,7 +101,8 @@ whole mods share one menu class.
 `scripts/hud/click-test.sh` drives a real vanilla client with real mouse input, in the
 Easton no-window sandbox, and judges by what the server saw: opening, picking up and
 placing stacks, bare panel, one event per click, buttons, returning items on close,
-and `/keyboard`. An empty hand in open air sends no packet, so right click needs a held
+and the floating keyboard, including walking with it open. `screen-sweep.sh` opens every
+baked screen and clicks a slot with the real mouse. An empty hand in open air sends no packet, so right click needs a held
 item or a block in reach.
 
 Not done yet: live widgets, conditional layers, and any effect on the mod.

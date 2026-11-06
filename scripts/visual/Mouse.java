@@ -32,6 +32,11 @@ public final class Mouse {
                 r.keyPress(KeyEvent.VK_ENTER);
                 r.keyRelease(KeyEvent.VK_ENTER);
             }
+            case "walk" -> {
+                r.keyPress(KeyEvent.VK_W);
+                Thread.sleep(Long.parseLong(a[1]));
+                r.keyRelease(KeyEvent.VK_W);
+            }
             case "sneak" -> {
                 r.keyPress(KeyEvent.VK_SHIFT);
                 Thread.sleep(Long.parseLong(a[1]));

@@ -11,12 +11,25 @@ public final class HudBootstrap {
 
     private static ScreenHud screens;
     private static HudService hud;
+    private static VirtualKeyboard keyboard;
 
     private HudBootstrap() {
     }
 
     public static String aimForHarness(org.bukkit.entity.Player player, String target) {
-        return screens == null || player == null ? "no hud" : screens.aim(player, target);
+        if (screens == null || player == null) {
+            return "no hud";
+        }
+        return target.startsWith("k") ? keyboard.aim(player, Integer.parseInt(target.substring(1)))
+                : screens.aim(player, target);
+    }
+
+    public static java.util.List<String> listForHarness() {
+        return screens == null ? java.util.List.of() : screens.listForHarness();
+    }
+
+    public static boolean openNamedForHarness(org.bukkit.entity.Player player, String name) {
+        return screens != null && player != null && screens.openNamed(player, name);
     }
 
     public static void closeForHarness(org.bukkit.entity.Player player) {
@@ -53,9 +66,11 @@ public final class HudBootstrap {
         }
         HudService hud = new HudService();
         hud.register(keyboard);
+        HudBootstrap.keyboard = keyboard;
         screens = new ScreenHud(plugin.getLogger(), Path.of(System.getProperty("user.dir"), "mods"));
         plugin.getServer().getPluginManager().registerEvents(screens, plugin);
         hud.register(screens);
+        screens.busyWhen(keyboard::isOpen);
         HudBootstrap.hud = hud;
         PluginCommand screen = plugin.getCommand("modscreen");
         if (screen != null) {

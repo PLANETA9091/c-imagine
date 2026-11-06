@@ -157,6 +157,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     private final Logger log;
+    /** The floating keyboard takes clicks first. */
+    private java.util.function.Predicate<Player> busy = p -> false;
     private final List<ScreenPack.Scene> scenes;
     private Map<String, GuiCaptures.Capture> captures;
     private final Path scenesDir;
@@ -210,6 +212,38 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
             }
         }
+    }
+
+    public void busyWhen(java.util.function.Predicate<Player> test) {
+        busy = test;
+    }
+
+    /** Every scene and the first on-screen slot, one per line, for the sweep test. */
+    public List<String> listForHarness() {
+        List<String> out = new ArrayList<>();
+        for (ScreenPack.Scene scene : scenes) {
+            GuiCaptures.Capture c = scene.captured() != null
+                    ? new GuiCaptures.Capture(null, null, null, List.of(), scene.captured().slots()) : captureOf(scene);
+            int first = -1;
+            if (c != null) {
+                for (int i = 0; i < c.slots().size() && first < 0; i++) {
+                    if (c.slots().get(i).x() > -1000) {
+                        first = i;
+                    }
+                }
+            }
+            out.add(scene.className() + "\t" + first + "\t" + scene.widgets().size());
+        }
+        return out;
+    }
+
+    /** Opens a scene by its name, for the sweep test. */
+    public boolean openNamed(Player player, String name) {
+        ScreenPack.Scene scene = scenes.stream().filter(s -> s.className().equals(name)).findFirst().orElse(null);
+        if (scene != null) {
+            open(player, scene);
+        }
+        return scene != null;
     }
 
     /** The real stack that shows as a modded item, or air when there is none. */
@@ -470,7 +504,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     @EventHandler
     public void onSwing(PlayerAnimationEvent event) {
-        if (open.containsKey(event.getPlayer().getUniqueId())) {
+        if (!busy.test(event.getPlayer()) && open.containsKey(event.getPlayer().getUniqueId())) {
             event.setCancelled(true);
             click(event.getPlayer(), "left");
         }
@@ -480,6 +514,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler(priority = EventPriority.HIGH)
     public void onUse(PlayerInteractEvent event) {
         Player player = event.getPlayer();
+        if (busy.test(player)) {
+            return;
+        }
         if (open.containsKey(player.getUniqueId())) {
             event.setCancelled(true);
             if (event.getHand() == EquipmentSlot.HAND
