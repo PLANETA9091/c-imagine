@@ -9,6 +9,7 @@ import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.particles.ParticleOptions;
@@ -43,6 +44,9 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -65,6 +69,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -1592,6 +1597,83 @@ public final class CimSceneMod {
     // --- gui gallery (the MENU channel census, 2026-11-04 — DIAGNOSTIC
     // --- first: one menu per page, the open attempt IS the measurement)
 
+    /** Per namespace: which block or item opens each menu, found by trying them all. */
+    private static final Map<String, Map<ResourceLocation, String>> GUI_OPENERS = new HashMap<>();
+
+    /** Inside menu reach, in front of the viewer, so {@code stillValid} keeps the screen up. */
+    private static BlockPos guiRigPos(ServerPlayer viewer) {
+        return viewer.blockPosition().relative(viewer.getDirection(), 2);
+    }
+
+    private static void guiClearRig(ServerLevel level, ServerPlayer viewer, BlockPos rig) {
+        level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
+        viewer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+    }
+
+    private static ResourceLocation guiOpenMenu(ServerPlayer viewer) {
+        if (viewer.containerMenu == viewer.inventoryMenu) {
+            return null;
+        }
+        try {
+            return BuiltInRegistries.MENU.getKey(viewer.containerMenu.getType());
+        } catch (UnsupportedOperationException noType) {
+            return null;
+        }
+    }
+
+    /** Right-clicks a block or uses an item the way the player would; true when a menu is up. */
+    private static boolean guiInvoke(ServerLevel level, ServerPlayer viewer, BlockPos rig, String opener) {
+        try {
+            ResourceLocation id = ResourceLocation.parse(opener.substring(opener.indexOf(':') + 1));
+            if (opener.startsWith("block:")) {
+                BlockState state = BuiltInRegistries.BLOCK.get(id).defaultBlockState();
+                level.setBlock(rig, state, 3);
+                state.useWithoutItem(level, viewer, new BlockHitResult(
+                        Vec3.atCenterOf(rig), Direction.UP, rig, false));
+            } else {
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
+                viewer.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                stack.use(level, viewer, InteractionHand.MAIN_HAND);
+            }
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery-gui opener {} threw {}", opener, t.toString());
+        }
+        return guiOpenMenu(viewer) != null;
+    }
+
+    /** Tries every block and item of the namespace once and keeps what opened a menu. */
+    private static Map<ResourceLocation, String> guiOpeners(ServerLevel level, ServerPlayer viewer, String namespace) {
+        Map<ResourceLocation, String> known = GUI_OPENERS.get(namespace);
+        if (known != null) {
+            return known;
+        }
+        Map<ResourceLocation, String> found = new HashMap<>();
+        BlockPos rig = guiRigPos(viewer);
+        List<String> candidates = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)) {
+                candidates.add("block:" + b);
+            }
+        }
+        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+            if (i.getNamespace().equals(namespace)) {
+                candidates.add("item:" + i);
+            }
+        }
+        candidates.sort(Comparator.naturalOrder());
+        for (String candidate : candidates) {
+            if (guiInvoke(level, viewer, rig, candidate)) {
+                found.putIfAbsent(guiOpenMenu(viewer), candidate);
+            }
+            viewer.closeContainer();
+            guiClearRig(level, viewer, rig);
+        }
+        LOGGER.info("[cimscene] gallery-gui openers ns={} tried={} found={}",
+                namespace, candidates.size(), found.size());
+        GUI_OPENERS.put(namespace, found);
+        return found;
+    }
+
     /**
      * The universal GUI gallery: EVERY {@link MenuType} registered by the
      * namespace, sorted by id, ONE per page — the server opens the menu for
@@ -1642,25 +1724,36 @@ public final class CimSceneMod {
                     namespace, page, id);
         } else {
             viewer.closeContainer();   // the previous page's screen, if any
-            try {
-                MenuType<?> type = BuiltInRegistries.MENU.get(id);
-                // empty extra data: factories that read block/menu context
-                // throw here (recorded honestly); context-free menus open
-                net.minecraft.network.RegistryFriendlyByteBuf extra = new net.minecraft.network.RegistryFriendlyByteBuf(
-                        Unpooled.buffer(), viewer.server.registryAccess());
-                viewer.openMenu(new SimpleMenuProvider(
-                        (windowId, inv, player) -> type.create(windowId, inv, extra),
-                        Component.literal(id.toString())));
+            BlockPos rig = guiRigPos(viewer);
+            guiClearRig(level, viewer, rig);
+            // A real menu needs the context its own code supplies, so the walk
+            // does what a player does. Empty extra data is only the fallback.
+            String opener = guiOpeners(level, viewer, namespace).get(id);
+            String how = null;
+            if (opener != null && guiInvoke(level, viewer, rig, opener)) {
+                how = "opened-by:" + opener;
+            } else {
+                try {
+                    MenuType<?> type = BuiltInRegistries.MENU.get(id);
+                    net.minecraft.network.RegistryFriendlyByteBuf extra = new net.minecraft.network.RegistryFriendlyByteBuf(
+                            Unpooled.buffer(), viewer.server.registryAccess());
+                    viewer.openMenu(new SimpleMenuProvider(
+                            (windowId, inv, player) -> type.create(windowId, inv, extra),
+                            Component.literal(id.toString())));
+                    how = "opened-empty";
+                } catch (Throwable t) {
+                    failed++;
+                    tsv.append("skip\t-1\t-1\t-1\t").append(id)
+                            .append("\topen-failed:").append(opener == null ? "no-opener:" : "opener-failed:")
+                            .append(t.getClass().getName()).append('\n');
+                    LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed "
+                                    + "menu={} opener={} err={}", namespace, page, id, opener, t.toString());
+                }
+            }
+            if (how != null) {
                 placed++;
-                tsv.append("cell\t").append(GALLERY_X0).append('\t')
-                        .append(GALLERY_Y0).append('\t').append(GALLERY_Z)
-                        .append('\t').append(id).append("\tok\n");
-            } catch (Throwable t) {
-                failed++;
-                tsv.append("skip\t-1\t-1\t-1\t").append(id)
-                        .append("\topen-failed:").append(t.getClass().getName()).append('\n');
-                LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed "
-                                + "menu={} err={}", namespace, page, id, t.toString());
+                tsv.append("cell\t").append(rig.getX()).append('\t').append(rig.getY()).append('\t')
+                        .append(rig.getZ()).append('\t').append(id).append('\t').append(how).append('\n');
             }
         }
         String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
