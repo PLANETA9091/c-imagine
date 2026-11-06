@@ -7335,3 +7335,44 @@ freezes at partialTick 0.
   (~250 of the listed reds). Compare one door cell's QuadDump mesh vs the truth crop
   first (the BE origin parameter, the door's half-tick pose), then fluid_pipe's
   connection-driven proxy geometry.
+
+### 14-bj — the door REDs were a WALK-ENVIRONMENT divergence: the seed walk had no player, so its wall never ticked
+- Opened #158's diff-create-p16 crops: the truth crop showed the closed brass door panel, the ours
+  crop showed the OPEN doorway (frame strips, see-through middle). Suspicious — pulled both legs'
+  manifests and THEY DISAGREE: truth (-1,-60) = open=false,powered=false; ours (the seed) = open=true,
+  powered=true. Each leg's pixels faithfully match its OWN manifest — the join was comparing
+  DIFFERENT STATES at the same positions. The manifest-diff script (shard 0): 4419 cells, 43
+  mismatched — ALL Create BE families (brass_door 31, framed_glass_door 7, shaft 3, copper_door 2);
+  shard 4: 32 (andesite_door 27, shaft 5). Every RED in the door/kinetic families is this rig error,
+  not a render defect — the 14-bi residual read ("Create BE drawn but not identically") was wrong.
+- WHY (measured): the manifest is the SETTLED contract (12-ac) — written by the delayed
+  settleBlockPage ~10 ticks after placement, re-reading the world. The truth walk's CLIENT (joined,
+  standing at the camera) keeps the wall chunks entity-ticking (the player ticket,
+  ChunkLevel.ENTITY_TICKING_LEVEL = 31); Create's door BEs then tick and settle the wall: doors
+  flip powered true->false (+open follows), and visible=false doors DISSOLVE (truth boot.log p16:
+  10 "reason=dissolved", every one visible=false). The seed walk ran CLIENTLESS: its wall chunks
+  sat at border level, the BEs never ticked, the doors stayed as PLACED (seed job log p16:
+  cells=77 mutated=0 dissolved=0). Same jar, same commands — only the TICKING differed. The truth
+  walk is deterministic across runs (#157 truth == #158 truth, p16 byte-identical); so is the seed
+  (ours #157 == ours #158) — two deterministic walkers with different environments.
+- The 1.21.1 chunk-level constants (read out of the vanilla jar's constant pool): FULL=33,
+  BLOCK_TICKING=32, ENTITY_TICKING=31 — /forceload-style FORCED tickets ride level 33 and DO NOT
+  tick block entities, so a setChunkForced/"forceload add" fix would have been a no-op for exactly
+  the BEs we need. The level-31 player ticket is the only vanilla mechanism that ticks them.
+- THE FIX (the seed walk gets the truth walk's environment):
+  1. QuadDump waits: -Dcim.quaddump.waitFor=<file> — the dump client boots, joins, and STANDS BY
+     until the file exists (gated mode also REQUIRES a joined player: no JOIN_TICKS fall-through).
+  2. gallery.yml seed job: the client-runtime steps moved BEFORE the walk; a new "boot the dump
+     client BEFORE the walk" step (Xvfb + mods + the gated launch) waits for the join marker
+     ("Loaded N advancements", 600s) — the walk MUST NOT run clientless (hard fail otherwise).
+  3. The walk pins parity gamerules: randomTickSpeed 0 (as before) + doMobSpawning false (the
+     truth pins it at camera-pins; with the client now ticking the wall, a spawn during a settle
+     would walk into the cells on ONE leg only) + kill @e[type=!player] BEFORE the first page (the
+     join's initial-spawn pass populates the just-ticking chunks; the truth block walk kills first).
+  4. After the walk, the dump step: guards "disconnected|connection lost" in client-dump.out (a
+     mid-walk disconnect would silently break the parity for the remaining pages), touches the
+     trigger, waits for "quad dump done".
+- EXPECTED: the seed manifests converge on the truth's settled states (doors open=false/powered=false,
+  visible=false doors skip as dissolved on both legs); the ours leg replays those settled states from
+  the pack (the dump dumps the settled states' meshes); the door/kinetic REDs re-compare like-for-like.
+  fluid_pipe (44, shards 4/5) is NOT a manifest mismatch (shard 4 has none) — it stays the next lever.

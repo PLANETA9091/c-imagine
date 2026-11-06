@@ -318,6 +318,75 @@ jobs:
           [ -n "$R" ] || { tail -60 srv-wall/boot.log; exit 1; }
           echo "seed server up: $R"
 
+      # 14-bj: the dump client boots BEFORE the walk. A player in the world
+      # keeps the wall chunks entity-ticking (the player ticket, level 31 —
+      # FORCED/forceload tickets ride level 33 and DO NOT tick block
+      # entities), exactly the truth walk's environment, so
+      # BlockEntity-driven blocks (Create doors, pipes, shafts) settle the
+      # wall identically on both legs. Measured #158 without the player: the
+      # seed's doors never ticked (create p16: mutated=0 dissolved=0) while
+      # the truth's dissolved 10 and silently flipped open/powered — the
+      # manifests diverged and the join compared DIFFERENT states (43 cells
+      # in shard 0 alone, all Create BE families). The dump itself waits for
+      # the trigger file the walk touches after the last manifest.
+      - name: restore NeoForge client runtime for the quad dump (cache miss)
+        if: steps.seed-verify.outputs.hit != 'true'
+        id: nfc-cache-seed
+        uses: actions/cache@v4
+        with:
+          path: |
+            nfc
+            truth-client
+          key: neoforge-truth-client-1211-v4
+
+      - name: fetch the NeoForge client runtime (client cache miss)
+        if: steps.seed-verify.outputs.hit != 'true' && steps.nfc-cache-seed.outputs.cache-hit != 'true'
+        run: |
+          # the Mojang CDN intermittently serves a truncated client jar
+          # (the installer's sha1 check: "invalid checksum", measured on the
+          # ada33886 seed) — retry the whole fetch up to 3 times
+          for ATTEMPT in 1 2 3; do
+            python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets && break
+            echo "client fetch attempt $ATTEMPT failed — retrying"
+            [ "$ATTEMPT" = "3" ] && exit 1
+            rm -rf nfc truth-client
+            sleep 20
+          done
+          sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
+
+      - name: boot the dump client BEFORE the walk (player-ticket parity, 14-bj)
+        if: steps.seed-verify.outputs.hit != 'true'
+        run: |
+          set -euo pipefail
+          NEED=""
+          for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6 xvfb; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
+          done
+          if [ -n "${NEED:-}" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq $NEED
+          fi
+          Xvfb :98 -screen 0 1280x720x24 +extension GLX +render -noreset &
+          sleep 1
+          export DISPLAY=:98 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          mkdir -p truth-client/game/mods truth-client/assets/indexes truth-client/assets/objects
+          cp srv-wall/mods/*.jar truth-client/game/mods/
+          printf 'onboardAccessibility:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          SCENES="$PWD/srv-wall/c-imagine/scenes"
+          TRIGGER="$PWD/dump-go"
+          rm -f "$TRIGGER"
+          echo "$TRIGGER" > dump-trigger-path.txt
+          LAUNCH=$(sed "s#^java #java -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt)
+          setsid bash -c "cd truth-client && timeout 1800 bash -c \"$LAUNCH\" > client-dump.out 2>&1" < /dev/null > /dev/null 2>&1 &
+          # the join IS the parity pin: without it the walk must not run
+          for i in $(seq 1 600); do
+            grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null && break
+            sleep 1
+          done
+          grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
+            || { echo "dump client failed to join before the walk — the settle parity would break"; tail -40 truth-client/client-dump.out; exit 1; }
+          sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
+
       - name: server-side walk — ALL series, manifests only, no shots (cache miss)
         if: steps.seed-verify.outputs.hit != 'true'
         run: |
@@ -350,9 +419,18 @@ jobs:
             done
             echo "no done marker file: $1"; return 2
           }
-          # no leaf decay or random growth: the seed must settle like the truth walk
-          # and no client to keep in step with: ticks are only a settle delay here, so run them fast
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" "tick rate 1000" >/dev/null
+          # no leaf decay or random growth: the seed must settle like the truth
+          # walk; the dump client's player keeps the wall chunks entity-ticking
+          # now (14-bj), so the settle windows tick exactly like the truth
+          # walk's — and doMobSpawning false must ride with it (the truth pins
+          # it at camera-pins; a spawn during a settle would walk into the
+          # cells on ONE leg only). Ticks stay fast: BE settling is tick-count
+          # driven, the same 10-tick windows at 1000 t/s.
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" "gamerule doMobSpawning false" "tick rate 1000" >/dev/null
+          # the join's initial-spawn pass may have placed animals near the
+          # wall (the wall chunks only became entity-ticking at the join);
+          # the truth block walk kills @e before its first page — same here
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "kill @e[type=!player]" >/dev/null
           # BLOCK pages (to exhaustion — the coverage law), one loop per
           # ladder namespace (LADDER_NS is the single source of the ns list)
           for NS in $LADDER_NS; do
@@ -497,54 +575,26 @@ jobs:
       # THE QUAD DUMP: a static pack model cannot know what a dynamic model
       # draws (connected textures, neighbour-aware meshes, culled see-through
       # faces), so the real NeoForge client answers per wall cell, for every mod
-      # alike. Models need no server, so it runs once at the end of client
-      # loading and exits. Writes the ctx side files + quads/ into the scenes.
-      - name: restore NeoForge client runtime for the quad dump (cache miss)
-        if: steps.seed-verify.outputs.hit != 'true'
-        id: nfc-cache-seed
-        uses: actions/cache@v4
-        with:
-          path: |
-            nfc
-            truth-client
-          key: neoforge-truth-client-1211-v4
-
-      - name: fetch the NeoForge client runtime (client cache miss)
-        if: steps.seed-verify.outputs.hit != 'true' && steps.nfc-cache-seed.outputs.cache-hit != 'true'
-        run: |
-          # the Mojang CDN intermittently serves a truncated client jar
-          # (the installer's sha1 check: "invalid checksum", measured on the
-          # ada33886 seed) — retry the whole fetch up to 3 times
-          for ATTEMPT in 1 2 3; do
-            python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets && break
-            echo "client fetch attempt $ATTEMPT failed — retrying"
-            [ "$ATTEMPT" = "3" ] && exit 1
-            rm -rf nfc truth-client
-            sleep 20
-          done
-          sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
-
-      - name: quad dump on the real client (cache miss)
+      # alike. The client booted BEFORE the walk (player-ticket parity, 14-bj)
+      # and stood by on cim.quaddump.waitFor — the walk's manifests are final
+      # now, so trigger the dump and wait for it. Writes the ctx side files +
+      # quads/ into the scenes.
+      - name: quad dump on the real client (cache miss) — trigger after the walk
         if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
-          NEED=""
-          for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6 xvfb; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
-          done
-          if [ -n "${NEED:-}" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq $NEED
-          fi
-          Xvfb :98 -screen 0 1280x720x24 +extension GLX +render -noreset &
-          sleep 1
-          export DISPLAY=:98 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
-          mkdir -p truth-client/game/mods truth-client/assets/indexes truth-client/assets/objects
-          cp srv-wall/mods/*.jar truth-client/game/mods/
-          printf 'onboardAccessibility:false\nrenderClouds:false\n' > truth-client/game/options.txt
           SCENES="$PWD/srv-wall/c-imagine/scenes"
-          LAUNCH=$(sed "s#^java #java -Dcim.quaddump=$SCENES #" truth-client/launch.txt)
-          (cd truth-client && timeout 900 bash -c "$LAUNCH" > client-dump.out 2>&1) || true
+          TRIGGER=$(cat dump-trigger-path.txt)
+          # the client must still be IN the world: a mid-walk disconnect would
+          # have settled the remaining pages without the player ticket — the
+          # parity this whole rig exists for would be silently gone
+          grep -qiE "disconnected|connection lost" truth-client/client-dump.out \
+            && { echo "dump client disconnected during the walk — the settle parity broke"; tail -40 truth-client/client-dump.out; exit 1; }
+          touch "$TRIGGER"
+          for i in $(seq 1 600); do
+            grep -q "quad dump done" truth-client/client-dump.out 2>/dev/null && break
+            sleep 1
+          done
           grep "quad dump done" truth-client/client-dump.out || { tail -40 truth-client/client-dump.out; exit 1; }
           test -f "$SCENES/quads/done"
 

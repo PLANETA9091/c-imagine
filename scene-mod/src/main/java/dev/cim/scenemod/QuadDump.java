@@ -94,11 +94,38 @@ final class QuadDump {
         NeoForge.EVENT_BUS.addListener(QuadDump::onTick);
     }
 
+    /**
+     * 14-bj GATED DUMP: when {@code cim.quaddump.waitFor} names a file, the
+     * dump stands by until that file EXISTS. The seed walk needs this
+     * client's player IN the world BEFORE it runs — the player ticket keeps
+     * the wall chunks entity-ticking, exactly like the truth walk's client
+     * does — so BlockEntity-driven blocks (Create doors, pipes, shafts)
+     * settle the wall identically on both legs. Measured #158 without the
+     * player: the seed's doors never ticked (page 16: mutated=0 dissolved=0)
+     * while the truth's did (10 dissolved + silent powered/open flips) — the
+     * two legs' manifests diverged on 43 cells in shard 0 alone and every
+     * such cell compared DIFFERENT states. The client boots before the walk;
+     * the workflow touches the file when the manifests are final.
+     */
+    private static Path waitForFile() {
+        String p = System.getProperty("cim.quaddump.waitFor");
+        return p == null || p.isEmpty() ? null : Path.of(p);
+    }
+
     /** Models are ready once the loading overlay is gone, whichever screen follows it. */
     private static void onTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (started || mc.getOverlay() != null) {
             return;
+        }
+        Path trigger = waitForFile();
+        if (trigger != null) {
+            // gated mode: the dump MUST ride a joined client (the player
+            // ticket is the point) and MUST NOT run before the walk touched
+            // the trigger — no JOIN_TICKS fall-through, the client just waits.
+            if (mc.player == null || !Files.exists(trigger)) {
+                return;
+            }
         }
         // some item renderers read the local player: give a reachable server time to admit it
         if (mc.player == null && ++waited < JOIN_TICKS) {
