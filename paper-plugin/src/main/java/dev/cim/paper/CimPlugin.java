@@ -162,7 +162,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             if (Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
                 String preSha1 = Files.readString(base.resolve("pack.sha1")).trim();
-                result = rebuildForVerification(modsDir, base, manifest);
+                result = dev.cim.f2v.F2vPack.rebuildForVerification(modsDir, base);
                 boolean match = result.sha1().equals(preSha1);
                 log().info(LOG_PREFIX + "f2v pack: built (" + result.items().size()
                         + " item(s), sha1=" + result.sha1() + ") integrity="
@@ -188,51 +188,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + " sha1=" + result.sha1());
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v pack: init FAILED (visual parity degraded): " + t);
-        }
-    }
-
-    /**
-     * Rebuild into a scratch dir for sha1 verification WITHOUT touching the
-     * stored zip (integrity-first: serve what the properties hash covers).
-     * Both manifests come from the REAL f2v dir (the scratch dir is empty —
-     * measured 19ad1e3: an equipment manifest read from the scratch dir
-     * silently drops the armor assets and breaks the sha1 match).
-     */
-    private dev.cim.f2v.F2vPack.Result rebuildForVerification(Path modsDir, Path base,
-            Path manifest) throws IOException {
-        Path scratch = base.resolve("verify");
-        try {
-            List<dev.cim.f2v.F2vPack.VisualItem> rows = Files.isRegularFile(manifest)
-                    ? dev.cim.f2v.F2vPack.readManifest(manifest) : List.of();
-            List<dev.cim.f2v.F2vPack.EquipmentAsset> equipment =
-                    dev.cim.f2v.F2vPack.readEquipmentManifest(
-                            base.resolve("visual-equipment.tsv"));
-            List<dev.cim.f2v.F2vPack.VisualBlock> blocks =
-                    dev.cim.f2v.F2vPack.readBlockManifest(
-                            base.resolve("visual-blocks.tsv"));
-            // the GALLERY manifest must come from the REAL f2v dir too (same
-            // 19ad1e3 lesson as the equipment manifests: build() reads
-            // visual-gallery.tsv from its OUT dir — which is the scratch here)
-            Path gallerySrc = base.resolve("visual-gallery.tsv");
-            if (Files.isRegularFile(gallerySrc)) {
-                Files.createDirectories(scratch);
-                Files.copy(gallerySrc, scratch.resolve("visual-gallery.tsv"),
-                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-            }
-            return dev.cim.f2v.F2vPack.build(modsDir, scratch, rows, equipment, blocks);
-        } finally {
-            // keep the tree small; the stored pack.zip is the served truth
-            try {
-                Files.deleteIfExists(scratch.resolve("pack.zip"));
-                Files.deleteIfExists(scratch.resolve("pack.sha1"));
-                Files.deleteIfExists(scratch.resolve("build-report.txt"));
-                Files.deleteIfExists(scratch.resolve("visual-items.resolved.tsv"));
-                Files.deleteIfExists(scratch.resolve("visual-gallery.tsv"));
-                Files.deleteIfExists(scratch.resolve("visual-gallery.resolved.tsv"));
-                Files.deleteIfExists(scratch);
-            } catch (IOException ignored) {
-                // scratch cleanup is best-effort
-            }
         }
     }
 

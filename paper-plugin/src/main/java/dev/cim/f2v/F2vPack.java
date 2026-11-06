@@ -459,6 +459,40 @@ public final class F2vPack {
         return out;
     }
 
+    /** Rebuild all source inputs in scratch without modifying the served pack. */
+    public static Result rebuildForVerification(Path mods, Path base) throws IOException {
+        return rebuildForVerification(mods, base, extraAssets());
+    }
+
+    private static Result rebuildForVerification(Path mods, Path base, List<Path> assets) throws IOException {
+        Path scratch = Files.createTempDirectory(base, "verify-");
+        try {
+            for (String name : List.of("visual-gallery.tsv", "visual-tints.tsv", "quads", "overlay")) {
+                Path source = base.resolve(name);
+                if (!Files.exists(source)) {
+                    continue;
+                }
+                try (var paths = Files.walk(source)) {
+                    for (Path path : (Iterable<Path>) paths::iterator) {
+                        Path target = scratch.resolve(base.relativize(path));
+                        if (Files.isDirectory(path)) {
+                            Files.createDirectories(target);
+                        } else {
+                            Files.copy(path, target);
+                        }
+                    }
+                }
+            }
+            Path items = base.resolve("visual-items.tsv");
+            return build(mods, scratch, Files.isRegularFile(items) ? readManifest(items) : List.of(),
+                    readEquipmentManifest(base.resolve("visual-equipment.tsv")),
+                    readBlockManifest(base.resolve("visual-blocks.tsv")),
+                    readPaletteManifest(base.resolve("visual-palettes.tsv")), assets);
+        } finally {
+            deleteRecursively(scratch);
+        }
+    }
+
     /**
      * Read {@code visual-blocks.tsv}: {@code moddedBlockId<TAB>instrument[
      * <TAB>note]} — one note_block stand-in slot per row (measured surface:
@@ -719,6 +753,7 @@ public final class F2vPack {
                                List<PaletteRow> paletteRows,
                                List<Path> extraAssets)
             throws IOException {
+        Files.createDirectories(outDir);
         List<String> warnings = new ArrayList<>();
         GalleryPack.resetModelScales();
         GalleryPack.resetJarCache();
@@ -1018,7 +1053,6 @@ public final class F2vPack {
         }
         byte[] zip = zip(entries);
         String sha1 = sha1Hex(zip);
-        Files.createDirectories(outDir);
         Files.write(outDir.resolve("pack.zip"), zip);
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
@@ -1936,6 +1970,8 @@ public final class F2vPack {
                     "fakemod:shiny",
                     "textures/models/armor/shiny_layer_1.png",
                     "textures/models/armor/shiny_layer_2.png"));
+            Files.writeString(out.resolve("visual-equipment.tsv"), "fakemod:shiny\t"
+                    + "textures/models/armor/shiny_layer_1.png\ttextures/models/armor/shiny_layer_2.png\n");
             Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
                     equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
                     readPaletteManifest(out.resolve("visual-palettes.tsv")),
@@ -1947,6 +1983,9 @@ public final class F2vPack {
             if (!r1.sha1().equals(r2.sha1())) {
                 failures.add("sha1 not deterministic: " + r1.sha1() + " vs " + r2.sha1());
             }
+            Result verified = rebuildForVerification(mods, out, List.of(vanillaJar));
+            expect(failures, verified.sha1().equals(r1.sha1()),
+                    "verification: items/equipment/blocks/palettes/gallery/tints/assets match pre-boot build");
             if (r1.items().size() != 5) {
                 failures.add("expected 5 resolved rows (4 manifest + 1 palette variant), got "
                         + r1.items().size() + ": " + r1.items());
@@ -2476,6 +2515,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        freshOutputSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -2548,6 +2588,40 @@ public final class F2vPack {
             GalleryPack.resetModelScales();
             GalleryPack.setQuadDir(null);
             deleteRecursively(quads);
+        }
+    }
+
+    private static void freshOutputSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-fresh-selftest");
+        try {
+            Path mods = Files.createDirectory(root.resolve("mods"));
+            TreeMap<String, byte[]> files = new TreeMap<>();
+            files.put("assets/fixture/textures/fluid/water_still.png", f2vSelftestPng(2, 2));
+            writeJar(mods.resolve("fluid.jar"), files);
+            Path out = root.resolve("missing/pack");
+            build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
+            expect(failures, Files.isRegularFile(out.resolve("visual-gallery-fluids.tsv")),
+                    "pack: fluid manifest can be emitted into a fresh nested output directory");
+            Files.createDirectories(out.resolve("overlay/assets/fixture"));
+            Files.writeString(out.resolve("overlay/assets/fixture/evidence.txt"), "overlay input");
+            Files.createDirectory(out.resolve("quads"));
+            Files.writeString(out.resolve("quads/fixture.tsv"), "minecraft:block/stone\t0\t-1"
+                    + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
+                    + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n");
+            Files.writeString(out.resolve("visual-gallery.tsv"), "fixture:block#qfixture\n");
+            Result original = build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
+            byte[] stored = Files.readAllBytes(out.resolve("pack.zip"));
+            Result verified = rebuildForVerification(mods, out, List.of());
+            expect(failures, original.sha1().equals(verified.sha1()),
+                    "verification: captured quads and overlay participate in the same deterministic build");
+            expect(failures, java.util.Arrays.equals(stored, Files.readAllBytes(out.resolve("pack.zip"))),
+                    "verification: served pack bytes are untouched");
+            try (var paths = Files.list(out)) {
+                expect(failures, paths.noneMatch(p -> p.getFileName().toString().startsWith("verify-")),
+                        "verification: scratch input/output tree is cleaned");
+            }
+        } finally {
+            deleteRecursively(root);
         }
     }
 

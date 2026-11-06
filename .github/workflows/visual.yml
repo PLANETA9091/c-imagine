@@ -256,7 +256,7 @@ jobs:
           mkfifo console.in
           # keep the FIFO open and feed console commands from a file later
           # paperclip patches the Mojang jar on first boot (network needed)
-          tail -f console.in | java -Xmx2G -jar paper.jar --nogui > boot.log 2>&1 &
+          tail -f console.in | java -Xmx2G -Dcim.f2v.assetsJars="$GITHUB_WORKSPACE/visual-client/client.jar" -jar paper.jar --nogui > boot.log 2>&1 &
           echo $! > ../srv.pid
           cd ..
           # wait for Done (120 x 2s)
@@ -266,6 +266,7 @@ jobs:
           done
           grep -q "Done (" srv/boot.log || { tail -30 srv/boot.log; exit 1; }
           grep -q "f2v pack: serving" srv/boot.log || { tail -30 srv/boot.log; exit 1; }
+          grep -Fq "integrity=ok (matches pre-boot build)" srv/boot.log || { tail -40 srv/boot.log; exit 1; }
           # CAMERA-LOCK PARITY PIN (docs/runtime-analysis/camera-lock-26-3.md):
           # the NeoForge truth side (parity-diff.yml) pins the SAME sun angle
           # and kills weather — both worlds must shoot under identical sky
