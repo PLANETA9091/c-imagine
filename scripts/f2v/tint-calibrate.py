@@ -93,6 +93,9 @@ class JarAssets:
         # resolve against it
         if vanilla_jar is not None:
             self.zfs.append((vanilla_jar.name, zipfile.ZipFile(vanilla_jar)))
+        # the modded states whose models resolve to minecraft-namespace
+        # textures (the STATE-KEYED tint route — see state_textures)
+        self.vanilla_tex_states: dict[str, set] = {}
 
     def read_json(self, path: str):
         for name, zf in self.zfs:
@@ -138,7 +141,10 @@ class JarAssets:
             out |= ptext
             ok = ok and pok
         else:
-            ok = ok and ("elements" in data)  # a root model must carry geometry
+            # the parent-less terminal: block/block (the display/ambient
+            # holder) carries no elements BY DESIGN — the chain's geometry
+            # guarantee is satisfied by the textures the child collected
+            ok = ok and (("elements" in data) or bool(out))
         return out, ok
 
     def state_textures(self, state: str):
@@ -192,7 +198,20 @@ class JarAssets:
             tex |= t
         if not tex:
             return None
-        # only vanilla refs (#local or minecraft:) -> nothing modded to bake
+        # the vanilla refs (#local or minecraft:) get the STATE-KEYED route:
+        # a modded state rendering a minecraft-namespace texture (the DT
+        # leaves' blockstate maps to the vanilla jungle_leaves model) has
+        # its own IBlockColor tint the vanilla client cannot know — the
+        # per-state tint-bake isolates the multiply to the state's composite
+        # (a state-suffixed sibling texture), so the shared vanilla texture
+        # keeps serving the vanilla block untinted.
+        vanilla_tex = {t for t in tex if t.startswith("minecraft:")}
+        if vanilla_tex:
+            # the STATE-KEYED route: the caller collects the cells under the
+            # (tex, state) key — the multiply applies to the state's
+            # composite only (a state-suffixed sibling texture)
+            self.vanilla_tex_states[state] = vanilla_tex
+            return tex
         modded = {t for t in tex if not t.startswith("minecraft:")}
         return modded
 
@@ -353,6 +372,10 @@ BAKE_CLIP_MAX = 0.01
 def clip_fraction(tex: str, tint: np.ndarray, assets: "JarAssets") -> float:
     """Fraction of the raw texture's opaque pixels whose baked RGB would clip
     at 255 on any channel (and was not already 255)."""
+    # bare refs (the vanilla-parented models' "block/jungle_leaves") are
+    # minecraft-namespace by convention — the same rule copyModelGraph uses
+    if ":" not in tex:
+        tex = "minecraft:" + tex
     ns, path = tex.split(":", 1)
     png = assets.read_bytes(f"assets/{ns}/textures/{path}.png")
     if png is None:
@@ -433,7 +456,8 @@ def main(argv=None) -> int:
     refused: list[tuple[str, str]] = []
     for state, cells in sorted(pairs.items()):
         texs = assets.state_textures(state)
-        if not texs or len(texs) != 1:
+        state_keyed = state in assets.vanilla_tex_states
+        if not state_keyed and (not texs or len(texs) != 1):
             refused.append((state, "multi/ambiguous texture: "
                             + (",".join(sorted(texs)) if texs else "unresolved")))
             continue
@@ -448,14 +472,35 @@ def main(argv=None) -> int:
                 continue
             r, n = solved
             chroma_t = float(np.median(truth.max(axis=2) - truth.min(axis=2)))
-            per_tex[tex].append({
+            pkey = tex + ("\x00" + state if state in assets.vanilla_tex_states else "")
+            per_tex[pkey].append({
                 "state": state, "ratio": r, "n": n, "page": page,
                 "cell": f"c{col},r{rowi}",
                 "cls": classify(r, chroma_t),
             })
 
+    # THE STATE-KEYED TINT ROUTE: the modded states whose models resolve
+    # to minecraft-namespace textures — the per-state multiply solves from
+    # the same crops, the rows key on the STATE (GalleryPack applies the
+    # multiply to the state's composite only; a state-suffixed sibling
+    # texture keeps the shared vanilla texture untouched)
+    state_rows = []
+    state_dropped = []
+    for state, texs in sorted(assets.vanilla_tex_states.items()):
+        tex = next(iter(texs))
+        key = tex + "\x00" + state
+        cells = per_tex.get(key)
+        if cells is None:
+            continue
+        row, reason = aggregate_texture(tex, cells, assets,
+                                        args.tolerance, args.epsilon)
+        if row is not None:
+            state_rows.append(row)
+        elif reason is not None:
+            state_dropped.append((tex + " [state " + state + "]", reason))
+
     rows, dropped = [], []
-    for tex in sorted(per_tex):
+    for tex in sorted(k for k in per_tex if "\x00" not in k):
         row, reason = aggregate_texture(tex, per_tex[tex], assets,
                                         args.tolerance, args.epsilon)
         if row is not None:
@@ -472,6 +517,8 @@ def main(argv=None) -> int:
                 f"triptychs; rounding = python round() to 4 decimals.\n")
         for tex, (r, g, b), ev in rows:
             f.write(f"{tex}\t{r}\t{g}\t{b}\t{ev}\n")
+        for state, (r, g, b), ev in state_rows:
+            f.write(f"{state}\t{r}\t{g}\t{b}\t{ev}\n")
 
     print(f"tints written: {len(rows)} -> {args.out}")
     print(f"refused states: {len(refused)}; dropped textures: {len(dropped)}")
