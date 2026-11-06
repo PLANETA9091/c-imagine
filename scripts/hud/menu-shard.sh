@@ -58,7 +58,7 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
   for i in $(seq 1 30); do [ "$(cat "$M" 2>/dev/null || echo none)" != "$B" ] && break; sleep 0.2; done
-  sleep 2.5
+  sleep 3
   $SHOT "truth-shots/gal-gui-$NS$p.png" || true
 done
 stamp "truth done: $(find srv-wall/c-imagine/screens -name '*.png' | wc -l) screens captured"

@@ -56,6 +56,15 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
+      # NeoForge's decompile is the slow part of a harness build, and it never changes.
+      - name: restore Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            scene-mod/build/moddev
+            scene-mod/.gradle
+          key: menus-gradle-${{ hashFiles('scene-mod/build.gradle', 'scene-mod/gradle.properties') }}
       - name: restore scene jar
         id: jars
         uses: actions/cache@v4

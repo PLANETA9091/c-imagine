@@ -39,6 +39,7 @@ public final class ScreenArt {
     private static final Logger LOGGER = LoggerFactory.getLogger("cimscene");
     /** Software rendering in CI manages a few frames a second, so this has to stay small. */
     private static final int SETTLE_FRAMES = 6;
+    private static final long SETTLE_MILLIS = 1800;
 
     /** Read by {@code ScreenBackgroundMixin}: true while the capture pass draws. */
     public static boolean capturing;
@@ -46,6 +47,7 @@ public final class ScreenArt {
     private static final Set<ResourceLocation> DONE = new HashSet<>();
     private static Object current;
     private static int frames;
+    private static long openedAt;
 
     private ScreenArt() {
     }
@@ -64,8 +66,10 @@ public final class ScreenArt {
         if (current != screen) {
             current = screen;
             frames = 0;
+            openedAt = System.currentTimeMillis();
         }
-        if (++frames != SETTLE_FRAMES) {
+        // Mods animate a screen as it opens, so wait for that in time as well as frames.
+        if (++frames < SETTLE_FRAMES || System.currentTimeMillis() - openedAt < SETTLE_MILLIS) {
             return;
         }
         ResourceLocation id;
@@ -161,7 +165,9 @@ public final class ScreenArt {
             target.clear(Minecraft.ON_OSX);
             target.bindWrite(true);
             GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-            graphics.renderItem(new ItemStack(stack.getItem()), 0, 0);
+            ItemStack one = stack.copyWithCount(1);
+            graphics.renderItem(one, 0, 0);
+            graphics.renderItemDecorations(mc.font, one, 0, 0);
             graphics.flush();
             save(target, mc.getWindow().getWidth(), mc.getWindow().getHeight(), file);
         }

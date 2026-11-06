@@ -1684,15 +1684,26 @@ public final class CimSceneMod {
         if (plain.startsWith("block:")) {
             ResourceLocation id = ResourceLocation.parse(plain.substring("block:".length()));
             level.setBlock(rig, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
-        } else if (plain.startsWith("place+item:")) {
-            // Parts and multi-piece items exist only through their own placement code.
+        } else if (plain.startsWith("place+item:") || plain.startsWith("hang+item:")) {
+            // Parts and placed entities exist only through their item's own placement code.
+            boolean hang = plain.startsWith("hang+item:");
             ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
-                    ResourceLocation.parse(plain.substring("place+item:".length()))));
+                    ResourceLocation.parse(plain.substring(plain.indexOf(':') + 1))));
             player.setItemInHand(InteractionHand.MAIN_HAND, stack);
-            BlockPos floor = rig.below();
+            BlockPos against = hang ? rig.north() : rig.below();
+            Direction face = hang ? Direction.SOUTH : Direction.UP;
+            if (hang) {
+                level.setBlock(against, Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(against.above(), Blocks.STONE.defaultBlockState(), 3);
+            }
             stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(floor).add(0, 0.5, 0), Direction.UP, floor, false)));
+                    new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            for (net.minecraft.world.entity.Entity e : level.getEntities((net.minecraft.world.entity.Entity) null,
+                    new net.minecraft.world.phys.AABB(rig).inflate(2),
+                    e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
+                guiEntity = e;
+            }
         } else if (plain.startsWith("entity:")) {
             net.minecraft.world.entity.Entity entity = BuiltInRegistries.ENTITY_TYPE.get(
                     ResourceLocation.parse(plain.substring("entity:".length()))).create(level);
@@ -1710,7 +1721,9 @@ public final class CimSceneMod {
         String plain = opener.replace("sneak+", "");
         player.setShiftKeyDown(sneak);
         try {
-            if (plain.startsWith("block:") || plain.startsWith("place+item:")) {
+            if (guiEntity != null && plain.contains("+item:")) {
+                guiEntity.interact(player, InteractionHand.MAIN_HAND);
+            } else if (plain.startsWith("block:") || plain.startsWith("place+item:")) {
                 // Low in the cell: a part placed on the floor sits there, a full block does not care.
                 BlockHitResult hit = new BlockHitResult(new Vec3(rig.getX() + 0.5, rig.getY() + 0.06, rig.getZ() + 0.5),
                         Direction.UP, rig, false);
@@ -1727,7 +1740,7 @@ public final class CimSceneMod {
                         guiEntity.interact(player, InteractionHand.MAIN_HAND);
                     }
                 }
-            } else {
+            } else if (plain.startsWith("item:")) {
                 ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
                 ResourceLocation id = ResourceLocation.parse(plain.substring("item:".length()));
                 if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(id)) {
@@ -1756,6 +1769,7 @@ public final class CimSceneMod {
                 out.add("item:" + i);
                 if (!(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
                     out.add("place+item:" + i);
+                    out.add("hang+item:" + i);
                 }
             }
         }
