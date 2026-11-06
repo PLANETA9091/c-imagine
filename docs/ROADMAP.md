@@ -524,6 +524,21 @@ then promoted to the gate; every run ships both screenshot sets + per-cell
 diff artifacts for eye review, and the run is RED whenever any cell is red,
 any channel row is red, or any class did not reach the verdict.
 
+## M6.2 — Player surfaces: HUD, menus, mod keys (owner goal 2026-11-06)
+
+**Goal:** a player on the vanilla 26.3 client gets every mod HUD, menu and
+keybinding, 1:1 and smooth, with `/keyboard` as the way in for mod keys. Contract
+and measured coverage: `runtime-analysis/hud-keys-menus-26-3.md`.
+
+- [x] Key census from mod jars, `/keyboard` dialog, `VirtualKeyEvent`.
+- [x] HUD channel (font + `text.vsh` + hidden boss bar) and the server minimap.
+- [x] Create menu art and slots on chests, right-click opening: 7 of 14 menus.
+- [ ] Live mod behaviour behind all three: blocked on the layer hosting real
+      players. No key, slot or HUD value reaches mod code yet.
+- [ ] The other 7 Create menus and every non-Create mod's menus.
+- [ ] Mod HUD layers (goggles, train HUD): client code, needs live data first.
+- [ ] Dual-stack proof: truth screenshots beside ours in the gui gallery.
+
 ## M6 — Resource pack synthesis (shapes, not cubes)
 
 - PackBuilder port: model/texture extraction from mod jars, OBJ support, server

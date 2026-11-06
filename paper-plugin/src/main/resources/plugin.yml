@@ -9,3 +9,16 @@ commands:
   cim:
     description: c-imagine module status
     usage: /cim
+  keyboard:
+    description: Toggle the virtual keyboard for mod keybindings
+    usage: /keyboard
+  minimap:
+    description: Toggle the minimap
+    usage: /minimap
+  modmenu:
+    description: Open a translated mod menu
+    usage: /modmenu <id>
+    permission: cim.modmenu
+permissions:
+  cim.modmenu:
+    default: op

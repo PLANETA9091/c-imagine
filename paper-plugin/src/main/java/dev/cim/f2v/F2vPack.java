@@ -836,6 +836,8 @@ public final class F2vPack {
         entries.put("pack.mcmeta", packMcmeta().getBytes(StandardCharsets.UTF_8));
         if (!rows.isEmpty()) {
             // the F2V 2.0 modded post-effect chain rides every non-empty pack
+        dev.cim.hud.HudPack.contribute(entries);
+        dev.cim.hud.MenuPack.contribute(entries, modsDir);
             entries.put("assets/c-imagine/post_effect/cimsepia.json",
                     MODDED_CHAIN_JSON.getBytes(StandardCharsets.UTF_8));
         }
