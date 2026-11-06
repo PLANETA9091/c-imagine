@@ -37,7 +37,8 @@ import org.slf4j.LoggerFactory;
 public final class ScreenArt {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("cimscene");
-    private static final int SETTLE_FRAMES = 20;
+    /** Software rendering in CI manages a few frames a second, so this has to stay small. */
+    private static final int SETTLE_FRAMES = 6;
 
     /** Read by {@code ScreenBackgroundMixin}: true while the capture pass draws. */
     public static boolean capturing;

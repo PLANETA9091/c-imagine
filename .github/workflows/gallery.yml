@@ -696,7 +696,7 @@ jobs:
               [ "$N" -gt 0 ] || break
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "cimscene gallery gui $NS $p" >/dev/null 2>&1 || true
-              sleep 3
+              sleep 5
             done
             python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
               "cimscene gallery gui-scan $NS" >/dev/null 2>&1 || true
