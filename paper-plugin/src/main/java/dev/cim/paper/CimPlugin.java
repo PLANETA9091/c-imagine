@@ -1118,8 +1118,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return 0;
         }
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byState = new java.util.HashMap<>();
+        // 14-bt THE MESH INDEX: the pack's quad rows name ONE representative
+        // state per distinct captured mesh (rows.tsv dedupes by content —
+        // the #214 acacia_leaves measured it: qdc34ed7381c8e259 serves both
+        // the persistent=false representative AND the persistent=true cells,
+        // but the byState lookup `state#q<hash>` only ever hit the exact
+        // representative string — every sibling state fell back to the plain
+        // static composite and measured ae 323K-369K against the truth's own
+        // captured geometry it ALREADY CARRIES). The mesh IS the content:
+        // index every quad row by its bare hash and let the ctx position
+        // resolve through it directly.
+        java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadHash = new java.util.HashMap<>();
         for (dev.cim.f2v.GalleryPack.Resolved r : f2v.gallery()) {
             byState.put(r.stateId(), r);
+            String id = r.stateId();
+            int q = id.indexOf("#q");
+            if (q >= 0) {
+                byQuadHash.putIfAbsent(id.substring(q + 2), r);
+            }
         }
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-" + ns + "-p" + page + ".tsv");
@@ -1193,6 +1209,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 String ctKey = ctByPos.get(row[1] + "," + row[2] + "," + row[3]);
                 dev.cim.f2v.GalleryPack.Resolved picked = ctKey == null ? null
                         : map.get(state + "#" + ctKey);
+                // 14-bt: the mesh identity outranks the state spelling — a
+                // ctx hash always resolves through the captured mesh itself
+                if (picked == null && ctKey != null) {
+                    picked = byQuadHash.get(ctKey);
+                }
                 if (picked == null) {
                     picked = map.get(state);
                 }
