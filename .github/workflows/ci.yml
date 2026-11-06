@@ -126,7 +126,7 @@ jobs:
       - name: hud, keyboard and menu selftests
         working-directory: paper-plugin
         run: |
-          for t in KeyCensus KeyboardState HudPack MenuFit MenuPack MenuTriggers; do
+          for t in KeyCensus KeyboardState HudPack; do
             java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" "dev.cim.hud.$t" --selftest
           done
       - uses: actions/upload-artifact@v4

@@ -53,30 +53,5 @@ Harness accounts (`cimviewer`, `cimbot`) get no HUD, so gallery shots stay compa
 
 ## Menus
 
-A server cannot move slots, so `MenuFit` moves the art to the chest grid, and the
-picture is one glyph drawn as the chest title. Labels draw before slots, so items sit
-on top. Titles use a shader anchor: the client rejects a bitmap with ascent above
-height, which also rejects the whole font (`MenuPack --selftest` guards this).
-
-| Menu | Slot error | Panel error | State |
-|---|---|---|---|
-| filter | 0 | 22 | good |
-| package_port | 0 | 15 | good, not seen on client |
-| schematic_table | 1 | 17 | good |
-| attribute_filter | 1 | 39 | not seen on client |
-| crafting_blueprint | 7 | 10 | slot art visibly patched |
-| linked_controller | 36 | 10 | slots moved off their art |
-| toolbox | 36 | 14 | slots moved off their art |
-
-Errors are pixels. Panel error is how far the mod panel and the inventory panel moved
-relative to each other. Not 1:1: the panels move, chest cells that are not slots still
-highlight on hover, and gaps show a dark fill because the shared chest texture cannot
-be changed.
-
-The other 7 Create menus are listed in `MenuCatalog.UNSUPPORTED`: they are widget
-screens with no chest form. Dialogs are the likely route. Geometry is hand-read from
-Create's classes, so other mods have no menus yet; a truth-client dump is the generic
-path.
-
-Right-click opening uses the pack's carriers: measured for an item, not yet for a
-block. Slot contents are not saved.
+Chest menus were removed on the owner's instruction, along with the built-in minimap.
+Scanned screens drawn on the HUD replace them on branch `ci/menu-compare-2`.

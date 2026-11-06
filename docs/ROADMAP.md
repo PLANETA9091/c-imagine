@@ -531,8 +531,7 @@ keybinding, 1:1 and smooth, with `/keyboard` as the way in for mod keys. Contrac
 and measured coverage: `runtime-analysis/hud-keys-menus-26-3.md`.
 
 - [x] Key census from mod jars, `/keyboard` dialog, `VirtualKeyEvent`.
-- [x] HUD channel (font + `text.vsh` + hidden boss bar) and the server minimap.
-- [x] Create menu art and slots on chests, right-click opening: 7 of 14 menus.
+- [x] HUD channel (font + `text.vsh` + hidden boss bar) .
 - [ ] Live mod behaviour behind all three: blocked on the layer hosting real
       players. No key, slot or HUD value reaches mod code yet.
 - [ ] The other 7 Create menus and every non-Create mod's menus.

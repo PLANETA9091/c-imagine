@@ -168,9 +168,6 @@ public final class HudPack {
         java.util.TreeMap<String, byte[]> entries = new java.util.TreeMap<>();
         contribute(entries);
         if (args.length >= 2 && args[0].equals("--emit")) {
-            if (args.length == 3) {
-                System.out.println("menus baked: " + MenuPack.contribute(entries, java.nio.file.Path.of(args[2])));
-            }
             try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(
                     java.nio.file.Files.newOutputStream(java.nio.file.Path.of(args[1])))) {
                 z.putNextEntry(new java.util.zip.ZipEntry("pack.mcmeta"));
