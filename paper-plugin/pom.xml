@@ -56,6 +56,26 @@
             <version>4.2.16.Final</version>
             <scope>provided</scope>
         </dependency>
+        <!-- F2V's bytecode scanners. asm and maven-artifact come with Paper;
+             asm-analysis does not, so plugin.yml asks Paper to fetch it. -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-tree</artifactId>
+            <version>9.9.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-analysis</artifactId>
+            <version>9.9.1</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.maven</groupId>
+            <artifactId>maven-artifact</artifactId>
+            <version>3.9.6</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>

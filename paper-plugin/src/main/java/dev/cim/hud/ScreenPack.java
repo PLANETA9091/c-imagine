@@ -2,6 +2,8 @@ package dev.cim.hud;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import dev.f2v.vm.discovery.GuiSpriteBytecodeScanner;
+import dev.f2v.vm.discovery.ModScanner;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -19,31 +21,98 @@ import java.util.zip.ZipInputStream;
 import javax.imageio.ImageIO;
 
 /**
- * Turns every Screen the scanner finds into one free-font glyph. Nothing here
- * names a mod: the input is whatever jars are in {@code mods/}.
+ * Turns what F2V's scanners find in {@code mods/} into free-font glyphs. Nothing
+ * here names a mod. A scan takes seconds, so the result is cached by jar stamp.
  */
 public final class ScreenPack {
 
     private static final char GLYPH_BASE = '\uE300';
-    private static final int MAX_SCREENS = 0x1800;
+    private static final int GLYPH_LIMIT = 0xF000;
+    /** A glyph must fit the client's 256px font page, with room for its padding. */
+    private static final int TILE = 240;
+    /** The vanilla inventory panel's width; its first slot sits at (8, 17). */
+    private static final int INVENTORY_PANEL_WIDTH = 176;
     private static final String ITEM_MANIFEST = "visual-items.resolved.tsv";
+    private static final String CACHE = "screens.tsv";
 
-    /** One drawable screen. {@code glyph} is the same at pack build and at runtime. */
-    public record Scene(String className, String menu, char glyph, int width, int height) {
+    /**
+     * One glyph of a scene, at (x, y) from the screen's top left. A floating
+     * piece is an inventory panel whose position the bytecode only computes at
+     * runtime: its (x, y) is relative to the panel, and the captured player
+     * slots place it.
+     */
+    public record Piece(char glyph, int x, int y, int w, int h, boolean floating) {
+    }
+
+    /** One drawable screen. Glyphs are the same at pack build and at runtime. */
+    public record Scene(String className, String menu, int width, int height, List<Piece> pieces) {
         public String shortName() {
             return className.substring(Math.max(className.lastIndexOf('/'), className.lastIndexOf('$')) + 1);
         }
     }
 
-    /** Scenes plus the cropped art, in a stable order. */
-    record Baked(List<Scene> scenes, List<BufferedImage> art) {
+    /** Scenes plus the art of each glyph, in a stable order. */
+    record Baked(List<Scene> scenes, Map<Character, BufferedImage> art) {
     }
 
     private ScreenPack() {
     }
 
+    /** The scanned scenes, from the cache when the jars have not changed. */
     public static List<Scene> scenes(Path modsDir) throws IOException {
+        Path cache = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(CACHE);
+        String stamp = stamp(modsDir);
+        if (Files.isRegularFile(cache)) {
+            List<String> lines = Files.readAllLines(cache, StandardCharsets.UTF_8);
+            if (!lines.isEmpty() && lines.get(0).equals(stamp)) {
+                return parse(lines);
+            }
+        }
         return bake(modsDir).scenes();
+    }
+
+    private static String stamp(Path modsDir) throws IOException {
+        StringBuilder out = new StringBuilder("v3");
+        if (Files.isDirectory(modsDir)) {
+            try (Stream<Path> s = Files.list(modsDir)) {
+                for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
+                    out.append('|').append(jar.getFileName()).append(':').append(Files.size(jar));
+                }
+            }
+        }
+        return out.toString();
+    }
+
+    private static void writeCache(Path modsDir, List<Scene> scenes) throws IOException {
+        Path cache = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(CACHE);
+        Files.createDirectories(cache.getParent());
+        StringBuilder out = new StringBuilder(stamp(modsDir)).append('\n');
+        for (Scene s : scenes) {
+            out.append("scene\t").append(s.className()).append('\t').append(s.menu() == null ? "" : s.menu())
+                    .append('\t').append(s.width()).append('\t').append(s.height()).append('\n');
+            for (Piece p : s.pieces()) {
+                out.append("piece\t").append((int) p.glyph()).append('\t').append(p.x()).append('\t')
+                        .append(p.y()).append('\t').append(p.w()).append('\t').append(p.h()).append('\t')
+                        .append(p.floating()).append('\n');
+            }
+        }
+        Files.writeString(cache, out.toString(), StandardCharsets.UTF_8);
+    }
+
+    static List<Scene> parse(List<String> lines) {
+        List<Scene> out = new ArrayList<>();
+        List<Piece> pieces = null;
+        for (String line : lines) {
+            String[] p = line.split("\t", -1);
+            if (p[0].equals("scene")) {
+                pieces = new ArrayList<>();
+                out.add(new Scene(p[1], p[2].isEmpty() ? null : p[2], Integer.parseInt(p[3]), Integer.parseInt(p[4]), pieces));
+            } else if (p[0].equals("piece") && pieces != null) {
+                pieces.add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                        Integer.parseInt(p[4]), Integer.parseInt(p[5]), Boolean.parseBoolean(p[6])));
+            }
+        }
+        return out;
     }
 
     /** Adds every scanned screen to the pack and returns how many. */
@@ -51,19 +120,18 @@ public final class ScreenPack {
         Baked baked = bake(modsDir);
         JsonArray providers = new JsonArray();
         int ascent = HudLayout.ascent(HudLayout.freeId());
-        for (int i = 0; i < baked.scenes().size(); i++) {
-            Scene scene = baked.scenes().get(i);
+        for (Map.Entry<Character, BufferedImage> e : baked.art().entrySet()) {
             ByteArrayOutputStream png = new ByteArrayOutputStream();
-            ImageIO.write(baked.art().get(i), "png", png);
-            String file = "screen/" + i + ".png";
+            ImageIO.write(e.getValue(), "png", png);
+            String file = "screen/" + (int) e.getKey() + ".png";
             entries.put("assets/" + HudPack.NS + "/textures/font/" + file, png.toByteArray());
             JsonObject provider = new JsonObject();
             provider.addProperty("type", "bitmap");
             provider.addProperty("file", HudPack.NS + ":font/" + file);
-            provider.addProperty("height", scene.height());
+            provider.addProperty("height", e.getValue().getHeight());
             provider.addProperty("ascent", ascent);
             JsonArray chars = new JsonArray();
-            chars.add(String.valueOf(scene.glyph()));
+            chars.add(String.valueOf(e.getKey()));
             provider.add("chars", chars);
             providers.add(provider);
         }
@@ -144,7 +212,7 @@ public final class ScreenPack {
 
     private static Baked bake(Path modsDir) throws IOException {
         List<Scene> scenes = new ArrayList<>();
-        List<BufferedImage> art = new ArrayList<>();
+        Map<Character, BufferedImage> art = new java.util.LinkedHashMap<>();
         if (!Files.isDirectory(modsDir)) {
             return new Baked(scenes, art);
         }
@@ -152,20 +220,92 @@ public final class ScreenPack {
         try (Stream<Path> s = Files.list(modsDir)) {
             jars = s.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
         }
+        Map<String, List<Piece>> shared = new HashMap<>();
         for (Path jar : jars) {
-            byte[] bytes = Files.readAllBytes(jar);
             Map<String, byte[]> textures = new HashMap<>();
-            readTextures(bytes, textures, 0);
-            for (ScreenScanner.ScreenInfo info : ScreenScanner.scanJar(bytes)) {
-                BufferedImage image = crop(info, textures);
-                if (image != null && scenes.size() < MAX_SCREENS) {
-                    scenes.add(new Scene(info.className(), info.menu(), (char) (GLYPH_BASE + scenes.size()),
-                            image.getWidth(), image.getHeight()));
-                    art.add(image);
+            readTextures(Files.readAllBytes(jar), textures, 0);
+            ModScanner.Profile profile = ModScanner.scan(jar);
+            Map<String, GuiSpriteBytecodeScanner.Sprite> sprites = new HashMap<>();
+            for (GuiSpriteBytecodeScanner.Sprite s : profile.guiSprites) {
+                sprites.put(s.owner + "." + s.field, s);
+            }
+            Map<String, ModScanner.ScreenInfo> info = new HashMap<>();
+            for (ModScanner.ScreenInfo i : profile.screens) {
+                info.put(slashed(i.screenClass), i);
+            }
+            List<GuiSpriteBytecodeScanner.ScreenBackground> backgrounds = new ArrayList<>(profile.guiBackgrounds);
+            backgrounds.sort(java.util.Comparator.comparing(b -> b.screenClass));
+            for (GuiSpriteBytecodeScanner.ScreenBackground b : backgrounds) {
+                GuiSpriteBytecodeScanner.Sprite bg = sprites.get(b.spriteOwner + "." + b.spriteField);
+                if (bg == null) {
+                    continue;
                 }
+                List<Piece> pieces = new ArrayList<>(tiles(bg, textures, 0, 0, shared, art));
+                if (pieces.isEmpty()) {
+                    continue;
+                }
+                for (GuiSpriteBytecodeScanner.ScreenLayer l : profile.guiLayers) {
+                    GuiSpriteBytecodeScanner.Sprite sprite = sprites.get(l.spriteOwner + "." + l.spriteField);
+                    // Conditional art depends on live state the scan cannot know.
+                    if (sprite != null && slashed(l.screenClass).equals(slashed(b.screenClass))
+                            && !l.conditional && !l.partialOnly && !l.stretched) {
+                        boolean floating = l.x < 0 && sprite.width == INVENTORY_PANEL_WIDTH;
+                        for (Piece p : tiles(sprite, textures, floating ? 0 : l.x, floating ? 0 : l.y, shared, art)) {
+                            pieces.add(new Piece(p.glyph(), p.x(), p.y(), p.w(), p.h(), floating));
+                        }
+                    }
+                }
+                ModScanner.ScreenInfo i = info.get(slashed(b.screenClass));
+                String menu = i == null || i.menuClass == null ? null : slashed(i.menuClass);
+                scenes.add(new Scene(slashed(b.screenClass), menu, bg.width, bg.height, pieces));
             }
         }
+        writeCache(modsDir, scenes);
         return new Baked(scenes, art);
+    }
+
+    private static String slashed(String name) {
+        return name == null ? null : name.replace('.', '/');
+    }
+
+    /** A sprite as glyphs of at most {@link #TILE} pixels, each shared between screens. */
+    private static List<Piece> tiles(GuiSpriteBytecodeScanner.Sprite s, Map<String, byte[]> textures, int x, int y,
+                                     Map<String, List<Piece>> shared, Map<Character, BufferedImage> art)
+            throws IOException {
+        String key = s.texture + "|" + s.u + "|" + s.v + "|" + s.width + "|" + s.height;
+        List<Piece> origin = shared.get(key);
+        if (origin == null) {
+            origin = new ArrayList<>();
+            byte[] png = find(textures, s.texture);
+            if (png != null && s.width > 0 && s.height > 0) {
+                BufferedImage src = ImageIO.read(new ByteArrayInputStream(png));
+                if (s.u >= 0 && s.v >= 0 && s.u + s.width <= src.getWidth() && s.v + s.height <= src.getHeight()) {
+                    for (int ty = 0; ty < s.height; ty += TILE) {
+                        for (int tx = 0; tx < s.width; tx += TILE) {
+                            char glyph = (char) (GLYPH_BASE + art.size());
+                            if (glyph >= GLYPH_LIMIT) {
+                                throw new IOException("out of screen glyphs");
+                            }
+                            int w = Math.min(TILE, s.width - tx);
+                            int h = Math.min(TILE, s.height - ty);
+                            BufferedImage tile = copy(src, s.u + tx, s.v + ty, w, h);
+                            // A glyph's advance comes from its last opaque column, so pin it.
+                            if (tile.getRGB(w - 1, h - 1) >>> 24 == 0) {
+                                tile.setRGB(w - 1, h - 1, 0x01000000);
+                            }
+                            art.put(glyph, tile);
+                            origin.add(new Piece(glyph, tx, ty, w, h, false));
+                        }
+                    }
+                }
+            }
+            shared.put(key, origin);
+        }
+        List<Piece> placed = new ArrayList<>(origin.size());
+        for (Piece p : origin) {
+            placed.add(new Piece(p.glyph(), p.x() + x, p.y() + y, p.w(), p.h(), false));
+        }
+        return placed;
     }
 
     private static void readTextures(byte[] jar, Map<String, byte[]> out, int depth) throws IOException {
@@ -179,27 +319,6 @@ public final class ScreenPack {
                 }
             }
         }
-    }
-
-    private static BufferedImage crop(ScreenScanner.ScreenInfo info, Map<String, byte[]> textures) throws IOException {
-        ScreenScanner.Rect r = info.background();
-        if (r != null) {
-            byte[] png = find(textures, r.texture());
-            if (png != null) {
-                BufferedImage src = ImageIO.read(new ByteArrayInputStream(png));
-                if (r.u() >= 0 && r.v() >= 0 && r.w() > 0 && r.h() > 0
-                        && r.u() + r.w() <= src.getWidth() && r.v() + r.h() <= src.getHeight()) {
-                    return copy(src, r.u(), r.v(), r.w(), r.h());
-                }
-            }
-        }
-        for (String texture : info.textures()) {
-            byte[] png = find(textures, texture);
-            if (png != null) {
-                return trimmed(ImageIO.read(new ByteArrayInputStream(png)));
-            }
-        }
-        return null;
     }
 
     /** An enum names a bare file like {@code filters}; a string names a full path. */
@@ -217,21 +336,6 @@ public final class ScreenPack {
         return out;
     }
 
-    /** A whole-sheet texture has its screen in the top left and empty space around it. */
-    private static BufferedImage trimmed(BufferedImage src) {
-        int right = 0;
-        int bottom = 0;
-        for (int y = 0; y < src.getHeight(); y++) {
-            for (int x = 0; x < src.getWidth(); x++) {
-                if (src.getRGB(x, y) >>> 24 != 0) {
-                    right = Math.max(right, x + 1);
-                    bottom = Math.max(bottom, y + 1);
-                }
-            }
-        }
-        return right == 0 ? null : copy(src, 0, 0, right, bottom);
-    }
-
     private static int check(boolean ok, String what) {
         System.out.println((ok ? "ok   " : "FAIL ") + what);
         return ok ? 0 : 1;
@@ -247,7 +351,17 @@ public final class ScreenPack {
             System.out.println("     screens baked: " + n);
             bad += check(n > 0, "the scanner feeds the pack");
             List<Scene> again = scenes(Path.of(args[1]));
-            bad += check(again.size() == n && again.equals(scenes(Path.of(args[1]))), "glyphs are stable between runs");
+            bad += check(again.size() == n && again.equals(scenes(Path.of(args[1]))), "the cache returns the same scenes");
+            Map<String, int[]> oracle = Map.of("FilterScreen", new int[]{214, 99},
+                    "AttributeFilterScreen", new int[]{241, 85}, "ToolboxScreen", new int[]{188, 171},
+                    "LinkedControllerScreen", new int[]{179, 109}, "BlueprintScreen", new int[]{179, 109},
+                    "SchematicTableScreen", new int[]{214, 85});
+            for (var e : oracle.entrySet()) {
+                Scene s = again.stream().filter(x -> x.shortName().equals(e.getKey())).findFirst().orElse(null);
+                bad += check(s != null && s.width() == e.getValue()[0] && s.height() == e.getValue()[1],
+                        e.getKey() + " art from the scanner: " + (s == null ? null : s.width() + "x" + s.height()
+                                + " pieces=" + s.pieces().size() + " menu=" + s.menu()));
+            }
         }
         int fonts = 0;
         for (var e : entries.entrySet()) {

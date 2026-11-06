@@ -119,6 +119,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             originY = -(minY + maxY) / 2;
         }
 
+        /** Where a floating inventory panel goes: the first player slot is its (8, 17). */
+        int[] panelAt() {
+            if (capture != null) {
+                for (GuiCaptures.Slot s : capture.slots()) {
+                    if (s.player() && s.x() > -1000) {
+                        return new int[]{s.x() - 8, s.y() - 17};
+                    }
+                }
+            }
+            return null;
+        }
+
         /** The slot under the pointer, or -1. */
         int hover() {
             if (capture == null) {
@@ -277,7 +289,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         s.pointer.look(player.getYaw(), player.getPitch());
         frame.free(-HudPack.BACKDROP_W / 2, -HudPack.BACKDROP_H / 2, String.valueOf(HudPack.BACKDROP),
                 HudPack.BACKDROP_W + 1);
-        frame.free(s.originX, s.originY, String.valueOf(s.scene.glyph()), s.scene.width() + 1);
+        boolean panel = false;
+        for (ScreenPack.Piece piece : s.scene.pieces()) {
+            int[] at = s.panelAt();
+            if (piece.floating() && at == null) {
+                continue;
+            }
+            panel |= piece.floating();
+            int x = s.originX + piece.x() + (piece.floating() ? at[0] : 0);
+            int y = s.originY + piece.y() + (piece.floating() ? at[1] : 0);
+            frame.free(x, y, String.valueOf(piece.glyph()), piece.w() + 1);
+        }
         if (s.capture != null) {
             int hover = s.hover();
             int nth = 0;
@@ -286,7 +308,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 int x = s.originX + slot.x();
                 int y = s.originY + slot.y();
                 if (slot.x() > -1000) {
-                    if (slot.player() || i == hover) {
+                    if ((slot.player() && !panel) || i == hover) {
                         frame.free(x - 1, y - 1, String.valueOf(i == hover ? HudPack.SLOT_HOVER : HudPack.SLOT), 19);
                     }
                     drawItem(frame, x, y, slotItem(player, s, i, nth));

@@ -54,22 +54,30 @@ Harness accounts (`cimviewer`, `cimbot`) get no HUD, so gallery shots stay compa
 
 ## Screens
 
-Chest menus and the hand-written Create tables are gone. `ScreenScanner` reads every
-jar in `mods/` and finds each Screen, its menu and its background without running
-client code, following the approach of F2V (read-only reference). `ScreenPack` bakes
-each background into one font glyph, and `ScreenHud` draws it with a backdrop and a
-pointer. No mod is named anywhere in this path.
+Chest menus and hand-written tables are gone. The scanners are F2V's own, copied into
+`paper-plugin/src/main/java/dev/f2v` (`third_party/f2v/NOTICE.md`). They read every jar
+in `mods/` without running client code, and need only ASM. `ScreenPack` bakes each
+screen's background and fixed layers into font glyphs, tiled to fit the font atlas,
+and caches the result by jar stamp in `c-imagine/f2v/screens.tsv`. `ScreenHud` draws
+them with a backdrop, slots, items and a pointer. No mod is named in this path.
 
-Measured: 50 Create screens found, 14 tied to a menu (Create registers 14 menu types),
-39 baked with art, 6 of 6 backgrounds equal to hand-read values. Xaero: 30 screens
-found. BOP and Dynamic Trees: none. Filter, attribute filter and toolbox were seen on
-the real client with their original layout.
+Slots, openers and menu classes come from the automatic gallery walk, which opens each
+menu through the mod's own code. A layer the bytecode cannot place, such as a shared
+inventory panel, is anchored to the captured player slots.
+
+Measured on Create: 38 screens baked, 6 of 6 backgrounds equal to hand-read values, and
+the full filter (art, inventory panel, real items) drawn on the real client from inside
+Paper. Clicks move real stacks, and closing returns them.
+
+Xaero: the scanner finds the colour pipeline in Xaero's World Map
+(`MapBlock.write`, `getPixelColour`), not in the Minimap jar. Calling it needs 1.21.1
+`BlockState` and `Level` objects, which the layer does not have yet.
 
 Free positioning: the glyph colour carries x and y, and `text.vsh` decodes it, so one
 font reaches every pixel. Such glyphs draw white, and runs must disable shadows.
 
-Font glyphs must fit the client's 256px atlas page. A larger bitmap draws nothing.
-Scale small art up through the provider's height. Art over 256 wide is not handled.
+Font glyphs must fit the client's 256px atlas page. A larger bitmap draws nothing, so
+art is tiled at 240px.
 The client also refuses a whole font if a bitmap's ascent exceeds its height.
 
 Mouse: each tick the change in yaw and pitch moves the pointer, and attack and use are
@@ -81,6 +89,5 @@ with coordinates. Limits:
 - the pointer stalls while pitch sits at +-90
 - Esc is not visible to the server, so sneak closes the screen
 
-Not done yet: items and slots, widgets and text, opening by right-click, and any effect
-on the mod. Clicks are only logged. Slot positions come from the CI walk on
-`ci/menu-compare`.
+Not done yet: titles and text, live widgets, conditional layers, and any effect on the
+mod itself.
