@@ -467,7 +467,8 @@ public final class F2vPack {
     private static Result rebuildForVerification(Path mods, Path base, List<Path> assets) throws IOException {
         Path scratch = Files.createTempDirectory(base, "verify-");
         try {
-            for (String name : List.of("visual-gallery.tsv", "visual-tints.tsv", "quads", "overlay")) {
+            for (String name : List.of("visual-gallery.tsv", "visual-tints.tsv",
+                    "visual-emissive.tsv", "quads", "overlay")) {
                 Path source = base.resolve(name);
                 if (!Files.exists(source)) {
                     continue;
@@ -637,6 +638,49 @@ public final class F2vPack {
                 }
                 if (sane) {
                     map.putIfAbsent(parts[0].trim(), tint);
+                }
+            } catch (NumberFormatException ignored) {
+                // a malformed row is skipped, never fatal
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Read {@code visual-emissive.tsv} (the EMISSIVE-BAKE channel, the gallery
+     * LIGHTMAP class): {@code stateId<TAB>level[<TAB>evidence]} — one
+     * {@code light_emission} level 0-15 per measured-RED blockstate string
+     * (the 1.21.2+ block-model ELEMENT property, "defines the minimum light
+     * level that the element can receive" — purely visual). The composite
+     * emit bakes the level onto EVERY element of that state's emitted model
+     * JSON. Optional; MISSING FILE = empty table = today's behavior
+     * byte-for-byte (the mirror contract of {@link #readTintManifest}).
+     * Malformed rows are skipped. {@code #} comments blank.
+     */
+    public static Map<String, Integer> readEmissiveManifest(Path tsv) throws IOException {
+        Map<String, Integer> map = new TreeMap<>();
+        if (!Files.isRegularFile(tsv)) {
+            return map;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 2 || parts[0].isBlank()) {
+                continue;
+            }
+            try {
+                int level = Integer.parseInt(parts[1].trim());
+                if (level >= 0 && level <= 15) {
+                    String key = parts[0].trim();
+                    map.putIfAbsent(key, level);
+                    // the CANONICAL spelling binds as an alias: the manifest
+                    // walk and the table may order the same properties
+                    // differently. The raw key keeps priority (putIfAbsent),
+                    // first row wins — deterministic file order.
+                    map.putIfAbsent(GalleryPack.canonicalState(key), level);
                 }
             } catch (NumberFormatException ignored) {
                 // a malformed row is skipped, never fatal
@@ -944,10 +988,21 @@ public final class F2vPack {
                 Map<String, double[]> tintTable =
                         readTintManifest(outDir.resolve("visual-tints.tsv"));
                 List<String> tintBakeLog = new ArrayList<>();
+                // EMISSIVE-BAKE channel (visual-emissive.tsv, the gallery
+                // LIGHTMAP class): the gallery composite emit sets element
+                // "light_emission" on every element of a tabled state's
+                // model JSON. Absent visual-emissive.tsv = empty table =
+                // no rewrite, the pack stays byte-identical to today's build.
+                Map<String, Integer> emissiveTable =
+                        readEmissiveManifest(outDir.resolve("visual-emissive.tsv"));
+                List<String> emissiveBakeLog = new ArrayList<>();
                 gallery = GalleryPack.build(jars, galleryInputs, entries, warnings,
-                        tintTable, tintBakeLog);
+                        tintTable, tintBakeLog, emissiveTable, emissiveBakeLog);
                 for (String bake : tintBakeLog) {
                     warnings.add("tint-bake applied: " + bake);
+                }
+                for (String bake : emissiveBakeLog) {
+                    warnings.add("emissive-bake applied: " + bake);
                 }
                 GalleryPack.writeResolvedManifest(
                         outDir.resolve("visual-gallery.resolved.tsv"), gallery);
@@ -1757,6 +1812,22 @@ public final class F2vPack {
             + "\"faces\": {\"north\": {\"uv\": [0,0,8,16], \"texture\": \"#tex\"}}}]}";
     private static final String BS_TINTED_BLOOM =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/tinted_bloom\"}}}";
+    /** The EMISSIVE-BAKE fixture: two elements so the "every element" contract
+     *  is observable; the state carries its properties in a DIFFERENT order
+     *  than the emissive table row keys it, so the canonical-state fallback
+     *  binds. */
+    private static final String MODEL_GLOW_BLOOM =
+            "{\"textures\": {\"tex\": \"fakemod:block/glow_tex\"}, "
+            + "\"elements\": ["
+            + "{\"from\": [2,0,2], \"to\": [8,16,8], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,6,16], \"texture\": \"#tex\"}}}, "
+            + "{\"from\": [8,0,8], \"to\": [14,16,14], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,6,16], \"texture\": \"#tex\"}}}]}";
+    private static final String BS_GLOW_BLOOM =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/glow_bloom\"}}}";
+    private static final String GALLERY_EMISSIVE_TSV =
+            "fakemod:glow_bloom[lit=true,power=7]\n"
+            + "fakemod:rock\n";
     /** The MEASURED #46 killer: create-1.21.1's creative_motor carries a face
      *  uv rect [14,4,20,10] — past the 16px sprite (a legal 1.21.1 texture
      *  bleed). 26.3's FaceBakery.computeMaterialTransparency samples the rect
@@ -1861,6 +1932,11 @@ public final class F2vPack {
                     BS_TINTED_BLOOM.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/tinted_bloom.json",
                     MODEL_TINTED_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/glow_bloom.json",
+                    BS_GLOW_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/glow_bloom.json",
+                    MODEL_GLOW_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/glow_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/bloom_tex.png", testGreyPng());
             jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/zmotor.json", BS_ZMOTOR.getBytes(StandardCharsets.UTF_8));
@@ -2186,6 +2262,107 @@ public final class F2vPack {
             String noTintComp = "assets/c-imagine/models/gallery/g5.json";
             expect(failures, str(noTintZip, noTintComp).contains("\"fakemod:block/bloom_tex\""),
                     "tint bake: absent visual-tints.tsv = composite references the raw sprite");
+
+            // -- EMISSIVE-BAKE channel asserts ---------------------------------------
+            // Own fixture dir: appending a state to GALLERY_TSV would churn every
+            // index-based gallery assert above; the emissive bake needs only a
+            // minimal manifest. The table keys the state with its properties in
+            // a DIFFERENT order than the manifest row (canonical fallback), plus
+            // the malformed-row contracts: an out-of-range level and a
+            // non-numeric level are skipped, never fatal.
+            Path out3 = tmp.resolve("out3");
+            Files.createDirectories(out3);
+            Files.writeString(out3.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out3.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out3.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            Files.writeString(out3.resolve("visual-emissive.tsv"),
+                    "# visual-emissive.tsv — the LIGHTMAP class (run 42085254497 join REDs)\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t15\t"
+                    + "fakemod:glow_bloom[lit=true,power=7]@gallery-fake:p1:c0,r0|n=9"
+                    + "|class=lightmap-fullbright\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t15\n"
+                    + "fakemod:bad\t99\tout-of-range levels are skipped\n"
+                    + "fakemod:bad2\tabc\tnon-numeric levels are skipped\n",
+                    StandardCharsets.UTF_8);
+            Map<String, Integer> emissiveParsed =
+                    readEmissiveManifest(out3.resolve("visual-emissive.tsv"));
+            expect(failures, emissiveParsed.size() == 2
+                            && Integer.valueOf(15).equals(emissiveParsed.get(
+                                    "fakemod:glow_bloom[power=7,lit=true]"))
+                            && Integer.valueOf(15).equals(emissiveParsed.get(
+                                    "fakemod:glow_bloom[lit=true,power=7]")),
+                    "emissive manifest: raw + canonical alias survive (malformed/out-of-range skipped)");
+            Result r3 = build(mods, out3, readManifest(out3.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out3.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            Result r4 = build(mods, out3, readManifest(out3.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out3.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            expect(failures, r3.sha1().equals(r4.sha1()),
+                    "emissive bake: deterministic (rebuild byte-identical)");
+            expect(failures, r3.warnings().stream().anyMatch(w -> w.startsWith(
+                            "emissive-bake applied: fakemod:glow_bloom[lit=true,power=7]"
+                            + " light_emission=15 on 2 elements")),
+                    "emissive bake recorded in the build log");
+            TreeMap<String, byte[]> emissiveZip = readZip(out3.resolve("pack.zip"));
+            java.util.function.Function<String, String> compositeOf = stateId ->
+                    r3.gallery().stream()
+                            .filter(r -> r.stateId().equals(stateId))
+                            .findFirst()
+                            .map(r -> "assets/c-imagine/models/gallery/"
+                                    + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1)
+                                    + ".json")
+                            .orElse("");
+            String glowComp = compositeOf.apply("fakemod:glow_bloom[lit=true,power=7]");
+            String rockComp = compositeOf.apply("fakemod:rock");
+            expect(failures, !glowComp.isEmpty() && !rockComp.isEmpty(),
+                    "emissive bake: both fixture composites located");
+            if (!glowComp.isEmpty()) {
+                JsonArray glowEls = JsonParser.parseString(str(emissiveZip, glowComp))
+                        .getAsJsonObject().getAsJsonArray("elements");
+                boolean allEmissive = glowEls.size() == 2;
+                for (JsonElement el : glowEls) {
+                    allEmissive &= el.getAsJsonObject().has("light_emission")
+                            && el.getAsJsonObject().get("light_emission").getAsInt() == 15;
+                }
+                expect(failures, allEmissive,
+                        "emissive bake: EVERY element of the tabled state carries light_emission 15");
+            }
+            if (!rockComp.isEmpty()) {
+                JsonArray rockEls = JsonParser.parseString(str(emissiveZip, rockComp))
+                        .getAsJsonObject().getAsJsonArray("elements");
+                boolean noneEmissive = true;
+                for (JsonElement el : rockEls) {
+                    noneEmissive &= !el.getAsJsonObject().has("light_emission");
+                }
+                expect(failures, noneEmissive,
+                        "emissive bake: a state not in the table emits untouched");
+            }
+            // ABSENT visual-emissive.tsv = today's behavior byte-for-byte
+            Path out5 = tmp.resolve("out5");
+            Files.createDirectories(out5);
+            Files.writeString(out5.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out5.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out5.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            build(mods, out5, readManifest(out5.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out5.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            TreeMap<String, byte[]> noEmissiveZip = readZip(out5.resolve("pack.zip"));
+            JsonArray noEls = JsonParser.parseString(str(noEmissiveZip,
+                    "assets/c-imagine/models/gallery/g0.json"))
+                    .getAsJsonObject().getAsJsonArray("elements");
+            boolean absentClean = true;
+            for (JsonElement el : noEls) {
+                absentClean &= !el.getAsJsonObject().has("light_emission");
+            }
+            expect(failures, absentClean,
+                    "emissive bake: absent visual-emissive.tsv = no light_emission anywhere");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));

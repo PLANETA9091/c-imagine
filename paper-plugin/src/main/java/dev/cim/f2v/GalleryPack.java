@@ -204,7 +204,7 @@ public final class GalleryPack {
     static List<Resolved> build(List<Path> jars, List<Input> inputs,
                                 TreeMap<String, byte[]> entries, List<String> warnings)
             throws IOException {
-        return build(jars, inputs, entries, warnings, Map.of(), null);
+        return build(jars, inputs, entries, warnings, Map.of(), null, Map.of(), null);
     }
 
     /**
@@ -221,6 +221,27 @@ public final class GalleryPack {
                                 TreeMap<String, byte[]> entries, List<String> warnings,
                                 Map<String, double[]> tintTable,
                                 List<String> bakeLog)
+            throws IOException {
+        return build(jars, inputs, entries, warnings, tintTable, bakeLog, Map.of(), null);
+    }
+
+    /**
+     * Build with the TINT-BAKE and EMISSIVE-BAKE channels. {@code
+     * emissiveTable} maps a blockstate string to a {@code light_emission}
+     * level 0-15 (visual-emissive.tsv, the gallery LIGHTMAP class): the
+     * composite emit sets the ELEMENT property on every element of that
+     * state's emitted model JSON — the real client renders those states
+     * fullbright (the mod registers a lightLevel / emissiveRendering in
+     * code), ours renders the same geometry dim. Absent/empty table = no-op
+     * (byte-identical output). {@code emissiveLog} (nullable) collects one
+     * line per applied bake for the pack build report.
+     */
+    static List<Resolved> build(List<Path> jars, List<Input> inputs,
+                                TreeMap<String, byte[]> entries, List<String> warnings,
+                                Map<String, double[]> tintTable,
+                                List<String> bakeLog,
+                                Map<String, Integer> emissiveTable,
+                                List<String> emissiveLog)
             throws IOException {
         // deterministic order + dedupe (a repeated state reuses the first cmd)
         List<Input> sorted = new ArrayList<>(inputs);
@@ -284,7 +305,8 @@ public final class GalleryPack {
                 // measured composite behaviour; the spawning entity carries
                 // 0/0).
                 String ref = synthesizeComposite(jars, bareState, parts,
-                        compositeIdx, entries, warnings, ctCtx, tintTable, bakeLog);
+                        compositeIdx, entries, warnings, ctCtx, tintTable, bakeLog,
+                        emissiveTable, emissiveLog);
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
@@ -741,7 +763,9 @@ public final class GalleryPack {
                                               int idx, TreeMap<String, byte[]> entries,
                                               List<String> warnings, String ctCtx,
                                               Map<String, double[]> tintTable,
-                                              List<String> bakeLog) throws IOException {
+                                              List<String> bakeLog,
+                                              Map<String, Integer> emissiveTable,
+                                              List<String> emissiveLog) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
         double displayScale = 1;
@@ -781,6 +805,10 @@ public final class GalleryPack {
         // VALUES change — the raw texture at its original path keeps serving
         // every untinted consumer.
         bakeCompositeTextures(jars, textures, tintTable, entries, bakeLog);
+        // EMISSIVE-BAKE (visual-emissive.tsv): set the tabled state's
+        // light_emission on EVERY merged element BEFORE the wrapper is
+        // emitted — the element property rides the emitted JSON verbatim.
+        applyEmissive(state, mergedElements, emissiveTable, emissiveLog);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         JsonObject texObj = new JsonObject();
@@ -905,6 +933,62 @@ public final class GalleryPack {
     private static int clamp255(double v) {
         long r = Math.round(v);
         return (int) Math.max(0, Math.min(255, r));
+    }
+
+    // ---- emissive-bake (visual-emissive.tsv) ------------------------------------
+
+    /**
+     * Set {@code light_emission} (the 1.21.2+ block-model ELEMENT property,
+     * "defines the minimum light level that the element can receive" — purely
+     * visual) on EVERY element of the emitted composite for a state in the
+     * emissive table. The LIGHTMAP class: the real client renders these
+     * states fullbright (the mod registers a lightLevel / emissiveRendering
+     * in code), ours renders the same geometry dim (measured 0.43-0.77x
+     * truth on the glow pixels, run 42085254497). Absent/empty table = no-op
+     * (byte-identical output); a state not in the table = no-op. An element
+     * that already carries the property is OVERWRITTEN — the table is the
+     * measured calibration. The lookup matches the manifest state string
+     * exactly, then the canonical form (re-sorted properties), so a table
+     * row still binds when two writers order the same properties
+     * differently. CT quad-suffix rows never reach here with the suffix
+     * (build strips {@code #...} before this call), so the bare state is
+     * what binds.
+     */
+    private static void applyEmissive(String state, JsonArray elements,
+                                      Map<String, Integer> emissiveTable,
+                                      List<String> emissiveLog) {
+        if (emissiveTable == null || emissiveTable.isEmpty()) {
+            return;
+        }
+        Integer level = emissiveTable.get(state);
+        if (level == null) {
+            level = emissiveTable.get(canonicalState(state));
+        }
+        if (level == null) {
+            return;
+        }
+        for (JsonElement el : elements) {
+            el.getAsJsonObject().addProperty("light_emission", level);
+        }
+        if (emissiveLog != null) {
+            emissiveLog.add(state + " light_emission=" + level
+                    + " on " + elements.size() + " elements");
+        }
+    }
+
+    /** Block id + re-sorted {@code prop=val} pairs — one canonical spelling
+     *  of a blockstate string ({@code ns:block[a=1,b=2]} and
+     *  {@code ns:block[b=2,a=1]} both land here). */
+    static String canonicalState(String state) {
+        int br = state.indexOf('[');
+        if (br < 0) {
+            return state;
+        }
+        String base = state.substring(0, br);
+        int close = state.endsWith("]") ? state.length() - 1 : state.length();
+        String[] props = state.substring(br + 1, close).split(",");
+        java.util.Arrays.sort(props);
+        return base + '[' + String.join(",", props) + ']';
     }
 
     // ---- the real-client quad channel ---------------------------------------
