@@ -1,0 +1,5 @@
+# visual-tints.tsv — tint-bake calibration (scripts/f2v/tint-calibrate.py)
+# texRef\tr\tg\tb\tevidence — multiply the raw texture's RGB by (r,g,b) at pack build; alpha preserved.
+# solved from truth/ours median ratios on the gallery triptychs; rounding = python round() to 4 decimals.
+create:block/palettes/acacia_window	0.9202	0.9152	0.9119	create:acacia_window_pane[east=true,north=true,south=true,waterlogged=false,west=false]@gallery-create-p0:c4,r0|n=3063|class=luma-uniform
+create:block/palettes/mangrove_window	0.6321	0.6321	0.6	create:mangrove_window_pane@gallery-item-create-p4:c10,r5|n=2549|class=luma-uniform
