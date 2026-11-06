@@ -896,6 +896,12 @@ public final class GalleryPack {
         bakeFaceTiles(mergedElements, textures, jars, entries, warnings);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.addProperty("render_type", "minecraft:cutout");
+        // 14-bv: the cutout render type — the composites inherit the block/block
+        // SOLID layer where the transparent PNG pixels render their RGB (the
+        // framed-glass panes, the window glass, the scaffold and DT-leaf holes
+        // all measured BLACK panes at ae 60K-693K); the cutout discards the
+        // alpha<0.1 pixels and the see-through classes render the wall behind
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());
@@ -1171,6 +1177,12 @@ public final class GalleryPack {
         elements.add(el);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.addProperty("render_type", "minecraft:cutout");
+        // 14-bv: the cutout render type — the composites inherit the block/block
+        // SOLID layer where the transparent PNG pixels render their RGB (the
+        // framed-glass panes, the window glass, the scaffold and DT-leaf holes
+        // all measured BLACK panes at ae 60K-693K); the cutout discards the
+        // alpha<0.1 pixels and the see-through classes render the wall behind
         JsonObject texObj = new JsonObject();
         texObj.addProperty("p0", texRef);
         wrapper.add("textures", texObj);
@@ -1274,6 +1286,12 @@ public final class GalleryPack {
     private static String synthesizeEmptyComposite(int idx, TreeMap<String, byte[]> entries) {
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.addProperty("render_type", "minecraft:cutout");
+        // 14-bv: the cutout render type — the composites inherit the block/block
+        // SOLID layer where the transparent PNG pixels render their RGB (the
+        // framed-glass panes, the window glass, the scaffold and DT-leaf holes
+        // all measured BLACK panes at ae 60K-693K); the cutout discards the
+        // alpha<0.1 pixels and the see-through classes render the wall behind
         wrapper.add("textures", new JsonObject());
         wrapper.add("elements", new JsonArray());
         recordScale(WRAPPER_REF_PREFIX + idx, 1.0);
@@ -1552,6 +1570,12 @@ public final class GalleryPack {
         bakeFaceTiles(elements, textures, jars, entries, warnings);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.addProperty("render_type", "minecraft:cutout");
+        // 14-bv: the cutout render type — the composites inherit the block/block
+        // SOLID layer where the transparent PNG pixels render their RGB (the
+        // framed-glass panes, the window glass, the scaffold and DT-leaf holes
+        // all measured BLACK panes at ae 60K-693K); the cutout discards the
+        // alpha<0.1 pixels and the see-through classes render the wall behind
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());
