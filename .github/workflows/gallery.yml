@@ -354,7 +354,7 @@ jobs:
           done
           sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
 
-      - name: boot the dump client BEFORE the walk (player-ticket parity, 14-bj)
+      - name: prep the dump client runtime (player-ticket parity, 14-bj)
         if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
@@ -368,7 +368,6 @@ jobs:
           fi
           Xvfb :98 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 1
-          export DISPLAY=:98 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
           mkdir -p truth-client/game/mods truth-client/assets/indexes truth-client/assets/objects
           cp srv-wall/mods/*.jar truth-client/game/mods/
           printf 'onboardAccessibility:false\nrenderClouds:false\n' > truth-client/game/options.txt
@@ -376,18 +375,13 @@ jobs:
           TRIGGER="$PWD/dump-go"
           rm -f "$TRIGGER"
           echo "$TRIGGER" > dump-trigger-path.txt
-          LAUNCH=$(sed "s#^java #java -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt)
-          setsid bash -c "cd truth-client && timeout 1800 bash -c \"$LAUNCH\" > client-dump.out 2>&1" < /dev/null > /dev/null 2>&1 &
-          # the join IS the parity pin: without it the walk must not run
-          for i in $(seq 1 600); do
-            grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null && break
-            sleep 1
-          done
-          grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
-            || { echo "dump client failed to join before the walk — the settle parity would break"; tail -40 truth-client/client-dump.out; exit 1; }
-          sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
+          # the gated launch: the client boots, joins, and STANDS BY until the
+          # walk touches $TRIGGER (QuadDump.onTick checks the file per tick).
+          # The walk step boots it fresh per attempt — a client that died
+          # mid-walk must never serve the next attempt.
+          sed "s#^java #java -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
 
-      - name: server-side walk — ALL series, manifests only, no shots (cache miss)
+      - name: server-side walk — block pages under a live client, restart on disconnect (14-bj)
         if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
@@ -399,6 +393,16 @@ jobs:
           # #38: page 0's done line sat 30s and landed exactly when the
           # wait gave up — a Files.writeString cannot stall. The boot.log
           # lines are echoed best-effort for the log readers.
+          # 14-bj: the BLOCK walk runs under a LIVE dump client (the player
+          # ticket keeps the wall chunks entity-ticking — the truth walk's
+          # environment). A client death mid-walk voids the parity for the
+          # remaining pages, so each attempt runs the FULL block walk on a
+          # FRESH client and a disconnect voids the attempt (#159 attempt 1:
+          # a Create contraption spawn-data payload crashed the client near
+          # the walk's end — the same class the entity walk bans subjects
+          # for). The later series (entity/item/particle/fluid/sound/biome)
+          # have NO BlockEntity settle dependence — their manifests do not
+          # need the client.
           base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
             # command: the scene writes the marker INSIDE the command's
             # execution (the mtime measured #39: 17:57:32 vs the response
@@ -426,30 +430,60 @@ jobs:
           # it at camera-pins; a spawn during a settle would walk into the
           # cells on ONE leg only). Ticks stay fast: BE settling is tick-count
           # driven, the same 10-tick windows at 1000 t/s.
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" "gamerule doMobSpawning false" "tick rate 1000" >/dev/null
-          # the join's initial-spawn pass may have placed animals near the
-          # wall (the wall chunks only became entity-ticking at the join);
-          # the truth block walk kills @e before its first page — same here
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "kill @e[type=!player]" >/dev/null
-          # BLOCK pages (to exhaustion — the coverage law), one loop per
-          # ladder namespace (LADDER_NS is the single source of the ns list)
-          for NS in $LADDER_NS; do
-            EXHAUSTED=0
-            for p in $(seq 0 $MAXP); do
-              base_of "gallery-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery page $NS $p"
-              RC=0; wait_done "gallery-$NS-p$p" "$V0D" "$V0E" || RC=$?
-              [ "$RC" = "2" ] && { echo "$NS page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-              if [ "$RC" = "1" ]; then
-                echo "$NS block walk exhausted at page $p"
-                EXHAUSTED=1
-                break
-              fi
-              grep "gallery done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+          WALK_OK=""
+          for ATTEMPT in 1 2 3; do
+            echo "=== block walk attempt $ATTEMPT (fresh dump client) ==="
+            export DISPLAY=:98 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+            pkill -f cim.quaddump 2>/dev/null || true
+            rm -f truth-client/client-dump.out
+            LAUNCH=$(cat launch-dump.txt)
+            setsid bash -c "cd truth-client && timeout 1500 bash -c \"$LAUNCH\" > client-dump.out 2>&1" < /dev/null > /dev/null 2>&1 &
+            # the join IS the parity pin: without it the walk must not run
+            for i in $(seq 1 600); do
+              grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null && break
+              sleep 1
             done
-            [ "$EXHAUSTED" = "1" ] || { echo "$NS block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
+            grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
+              || { echo "attempt $ATTEMPT: dump client failed to join"; tail -20 truth-client/client-dump.out; continue; }
+            sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" "gamerule doMobSpawning false" "tick rate 1000" >/dev/null
+            # the join's initial-spawn pass may have placed animals near the
+            # wall (the wall chunks only became entity-ticking at the join);
+            # the truth block walk kills @e before its first page — same here
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "kill @e[type=!player]" >/dev/null
+            # BLOCK pages (to exhaustion — the coverage law), one loop per
+            # ladder namespace (LADDER_NS is the single source of the ns list)
+            for NS in $LADDER_NS; do
+              EXHAUSTED=0
+              for p in $(seq 0 $MAXP); do
+                base_of "gallery-$NS-p$p"
+                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                  "cimscene gallery page $NS $p"
+                RC=0; wait_done "gallery-$NS-p$p" "$V0D" "$V0E" || RC=$?
+                [ "$RC" = "2" ] && { echo "$NS page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+                if [ "$RC" = "1" ]; then
+                  echo "$NS block walk exhausted at page $p"
+                  EXHAUSTED=1
+                  break
+                fi
+                grep "gallery done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+              done
+              [ "$EXHAUSTED" = "1" ] || { echo "$NS block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
+            done
+            # back to the truth's pace: the remaining series have no BE settle
+            # dependence and the truth runs them at 20 t/s; the packet backlog
+            # from the 1000 t/s block walk also drains here
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "tick rate 20" >/dev/null
+            if grep -qiE "disconnected|connection lost" truth-client/client-dump.out; then
+              echo "attempt $ATTEMPT: the client disconnected mid-walk — the block parity voided, redoing on a fresh client"
+              tail -20 truth-client/client-dump.out || true
+              continue
+            fi
+            WALK_OK=1
+            echo "=== block walk attempt $ATTEMPT: clean (the client lived through the last settle) ==="
+            break
           done
+          [ -n "$WALK_OK" ] || { echo "no disconnect-free block walk in 3 attempts — the settle parity is unproven, refusing to ship a mixed manifest"; exit 1; }
           # ENTITY pages: difficulty easy (the SAME pin as the truth entity
           # walk — hostile mobs must survive), then the fixed minecraft
           # scope + every LADDER_NS namespace to exhaustion, series by series
@@ -575,21 +609,32 @@ jobs:
       # THE QUAD DUMP: a static pack model cannot know what a dynamic model
       # draws (connected textures, neighbour-aware meshes, culled see-through
       # faces), so the real NeoForge client answers per wall cell, for every mod
-      # alike. The client booted BEFORE the walk (player-ticket parity, 14-bj)
-      # and stood by on cim.quaddump.waitFor — the walk's manifests are final
-      # now, so trigger the dump and wait for it. Writes the ctx side files +
-      # quads/ into the scenes.
+      # alike. The block walk ran under a live client (player-ticket parity,
+      # 14-bj); the later series may have outlived it — the dump needs A
+      # client (models + the join), but NOT the parity (it reads manifests +
+      # models, never the wall's settled state), so relaunch freely here.
       - name: quad dump on the real client (cache miss) — trigger after the walk
         if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           SCENES="$PWD/srv-wall/c-imagine/scenes"
           TRIGGER=$(cat dump-trigger-path.txt)
-          # the client must still be IN the world: a mid-walk disconnect would
-          # have settled the remaining pages without the player ticket — the
-          # parity this whole rig exists for would be silently gone
-          grep -qiE "disconnected|connection lost" truth-client/client-dump.out \
-            && { echo "dump client disconnected during the walk — the settle parity broke"; tail -40 truth-client/client-dump.out; exit 1; }
+          export DISPLAY=:98 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          if ! grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null \
+             || grep -qiE "disconnected|connection lost" truth-client/client-dump.out 2>/dev/null; then
+            echo "the dump client did not survive the walk — relaunching for the dump itself (block parity already banked)"
+            pkill -f cim.quaddump 2>/dev/null || true
+            rm -f truth-client/client-dump.out
+            LAUNCH=$(cat launch-dump.txt)
+            setsid bash -c "cd truth-client && timeout 900 bash -c \"$LAUNCH\" > client-dump.out 2>&1" < /dev/null > /dev/null 2>&1 &
+            for i in $(seq 1 600); do
+              grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null && break
+              sleep 1
+            done
+            grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
+              || { echo "relaunched dump client failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
+            sleep 5
+          fi
           touch "$TRIGGER"
           for i in $(seq 1 600); do
             grep -q "quad dump done" truth-client/client-dump.out 2>/dev/null && break

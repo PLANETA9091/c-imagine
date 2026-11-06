@@ -7376,3 +7376,23 @@ freezes at partialTick 0.
   visible=false doors skip as dissolved on both legs); the ours leg replays those settled states from
   the pack (the dump dumps the settled states' meshes); the door/kinetic REDs re-compare like-for-like.
   fluid_pipe (44, shards 4/5) is NOT a manifest mismatch (shard 4 has none) — it stays the next lever.
+
+### 14-bj run #159 (dfeec03) — the client joined and the walk ran clean; a Create contraption payload crashed the client at the END of the block walk
+- The new seed rig WORKED: the gated dump client joined before the walk ("boot the dump client
+  BEFORE the walk" step success), the block walk completed (675 gallery-done lines), then
+  "Client disconnected with reason: Failed to process advanced entity spawn data:
+  Contraption.fromNBT NPE (contraption is null)" — an OrientedContraptionEntity spawn payload
+  the client's Create 6.0.10 could not resolve. The disconnect guard caught it and failed the
+  dump step (by design — the parity for the tail pages was voided). The truth's clients survive
+  their walks (the truth rig has a whole death-recovery infra; s0's client.out in #158 has zero
+  disconnects) — the payload's origin on the seed's server is not in the surviving logs (the
+  seed's boot.log died with the runner).
+- THE RESTRUCTURE (bbfa79b): the attempt loop wraps ONLY the block walk — a disconnect voids the
+  attempt and the FULL block walk redoes on a FRESH client (up to 3); the later series
+  (entity/item/particle/fluid/sound/biome) have NO BE settle dependence and run after the loop
+  regardless (the walk restores tick rate 20 after the block pages — the truth's pace, and the
+  1000 t/s packet backlog drains). The dump step relaunches the client if the walk outlived it
+  (the dump needs A client for models + the join, never the wall's settled state). The prep step
+  now only writes launch-dump.txt (the gated launch line); the walk step boots fresh per attempt.
+- The seed walk itself (manifests, gamerules, commands) is VERBATIM 12-ax — the only changes are
+  the client lifecycle around it.
