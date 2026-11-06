@@ -83,6 +83,7 @@ final class QuadDump {
     private static final int JOIN_TICKS = 600;
     private static boolean started;
     private static int berDrawn;
+    private static int berNotRendered;
     private static int berFailed;
     private static int berNoLevel;
     private static int waited;
@@ -224,8 +225,8 @@ final class QuadDump {
         Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
         dumpItems(scenes, out, sprites);
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
-                        + "block_entities drawn={} failed={} no_level={}",
-                cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel);
+                        + "block_entities drawn={} failed={} no_level={} not_rendered={}",
+                cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel, berNotRendered);
     }
 
     /**
@@ -277,6 +278,14 @@ final class QuadDump {
             be.setLevel(mc.level);
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
+                return;
+            }
+            // Match BlockEntityRenderDispatcher's eligibility checks. Some
+            // renderers require a formed structure, nonempty fluid, or active
+            // portal before their render method can safely be called.
+            if (!be.getType().isValid(state)
+                    || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
+                berNotRendered++;
                 return;
             }
             ItemCapture capture = new ItemCapture(sprites, 0);

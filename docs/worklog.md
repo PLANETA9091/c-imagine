@@ -7736,3 +7736,102 @@ and source-culling caveat. Never present the diagnostic as a shipped fix.
 Full service MemoryPeak4171948032B,CPU209204373000ns (startup included).
 Next publish current audit, inspect fallback run's active step/marker and
 compare captured kinetic meshes as soon as its seed completes.
+
+2026-11-06T14:35:39.393655+00:00 Fallback hypothesis CONFIRMED by real NeoForge raw capture, not a rig-only
+assertion: runtime marker active=false; target gearshift mesh grows14->20
+quads and now contains create:block/axis_top(2) + axis(4), previously absent.
+Hash changes q6dd2f823b94363cb->qdc5f34768c79154d. Whistle41quads, pane14,
+high_grass4 remain byte-identical controls. Capture totals:27507 cells,
+27335 dumped,26650 distinct,0 failed; BER drawn1408,failed9,no_level0
+(previous successful capture drew627). Recovered781 BER captures, but nine
+errors and pixel residuals remain blockers; no full GREEN claim.
+Next download exact fallback pack and same-run truth0, reproduce three
+Create pages on Easton, quantify recovered shaft pixel AE, and inspect the
+nine BER exceptions from retained logs. This uses real mod geometry and
+keeps reference screenshots/gates unchanged.
+
+2026-11-06T14:37:19.777872+00:00 Preparing exact fallback-run Easton runtime and three Create captures:
+pages0,16,384, each with self-repeat. Use same-run truth42232211952 and
+verify selected state/context identity before attributing changes. Upload
+contains the real rebuilt pack/plugin/scenes, not the pane diagnostic.
+Stage/collector reuse the previously validated backup/restore protocol with
+new green-fallback path; only one capped private stand may run. Source
+inspection of nine capture errors identifies one Mekanism teleporter null
+color and eight thermal_evaporation_controller empty-fluid errors. These
+are real remaining capture blockers, likely fresh-BE state initialization;
+record and investigate actual synced BE data rather than suppress errors.
+
+2026-11-06T14:37:42.020949+00:00 Fallback runtime inputs verified locally: packSHA1
+d4fb983acd84a7feb38e8fb1b01ca38d6f64a340. Probe archiveSHA256
+18ad5d3a1c09ce30df86a514c89c382e9b2a9705d85a6e1954be32ac66a0a6da.
+Both units inactive; archive generation/mkdir completed exit0. Upload started;
+do not stage until final transfer success and matching remote hash.
+Read server settle writer and capture path: only block STATE is serialized;
+BlockEntity synced/update NBT is absent and capture constructs a fresh BE.
+This is a plausible shared mechanism for remaining stateful renderer errors.
+Next inspect real1.21.1 getUpdateTag/handleUpdateTag contract before designing
+any snapshot fix; no hardcoded Mekanism default color/fluid workaround.
+
+2026-11-06T14:38:59.903026+00:00 Fallback runtime upload finished exit0; stage now verifies its exact hash
+before backup/replacement/start. Producer/consumer order preserved.
+Previous76ab52b1 gallery completed RED as expected (no capture behavior
+change in that revision); its final verdict downloaded for full comparison.
+Native1.21.1 BlockEntity source and NeoForge interface confirm server
+getUpdateTag(HolderLookup.Provider) is the chunk-sync snapshot and client
+handleUpdateTag is the synchronization entry point. Current capture does
+neither. Read-only investigation continues; no guessed mod defaults added.
+
+2026-11-06T14:39:51.863090+00:00 Before a large NBT change, inspect a smaller upstream contract: capture
+invokes renderer.render directly, potentially bypassing renderer.shouldRender
+that the real BlockEntityRenderDispatcher checks first. Mekanism may skip
+empty/unformed machines there, which would explain all nine exceptions.
+Next read actual dispatcher source and pinned Mekanism renderer bytecode;
+only implement behavior that matches their real call sequence.
+
+2026-11-06T14:40:39.828326+00:00 Confirmed smaller root cause for teleporter error: real dispatcher calls
+hasLevel/type.isValid and renderer.shouldRender before render. Capture skips
+those checks. Pinned Mekanism RenderTeleporter.shouldRender explicitly
+requires tile.shouldRender && level!=null; its fresh unformed tile fails
+that condition and must never enter the portal/color render method.
+This is a call-contract bug, not permission to swallow errors or invent a
+color. Inspect equivalent multiblock predicate for the eight fluid errors;
+then match native dispatch checks and log predicate-rejected geometry
+separately while preserving all remaining exceptions as blockers.
+
+2026-11-06T14:41:29.533016+00:00 All nine Mekanism exceptions now have a verified upstream cause. Teleporter
+shouldRender rejects inactive portals; MultiblockTileEntityRenderer requires
+master+formed+valid render location; ThermalEvaporationPlant additionally
+requires a NONEMPTY input tank. Our capture bypassed these guards and called
+render on invalid/invisible states, causing null-color/empty-fluid errors.
+Implement native dispatcher eligibility: type.isValid(state) and
+renderer.shouldRender(be, actual camera position) before render. Count
+predicate-rejected renderers separately as not_rendered; retain exception
+counts/logs unchanged. The static model still captures and every page still
+faces the same pixel gate. Expected: nine spurious renderer exceptions
+become normal native eligibility rejections, not fabricated color/fluid or
+ignored errors. Build/CI must prove this; fresh-BE synced-data limitation
+still exists and is not solved by these guards.
+
+2026-11-06T14:44:16.429189+00:00 Focused fallback replay completed rc0 and restored #129 inputs. Same-run
+truth comparison: target gearshift AE279166 before ->68480 after (still RED
+at unchanged60000); the missing shaft is visibly restored, remaining defect
+is surface brightness. Pane remains60363, as predicted unchanged control.
+Exact served fallback pack hash and resource reload confirmed; no exaggerated
+GREEN claim. Next preserve full page joins/repeats and inspect native item
+normal handling:26.3 VertexConsumer.putBakedQuad uses cardinal
+BakedQuad.direction, while Create's rotated BER normals can be continuous.
+Native item-model local transformation is applied after bake, so a focused
+per-plane transform diagnostic may preserve geometry AND original normals
+without shaders/global overrides. Read actual transform codec/order before
+any such probe; no production conversion change is chosen yet.
+Eligibility guard build PASS8s; workflow audit0; report tests10 PASS.
+
+2026-11-06T14:44:45.201719+00:00 Native eligibility fix ready: type validity + shouldRender checks match
+BlockEntityRenderDispatcher; not_rendered counter appended without changing
+existing error counters. Gradle build PASS8s, workflow audit0 failures,
+10 report regression tests PASS, diff clean. Publish as independent small
+capture fix; actual Mekanism exception elimination still needs real CI.
+Do not conflate it with full BE-state replay or the normal-lighting probe.
+Fallback source5a00d627 shard0 report is now available; next download and
+compare every same-state verdict with the prior run, not just the chosen
+shaft. Full Easton target improved279166->68480 but remains correctly RED.
