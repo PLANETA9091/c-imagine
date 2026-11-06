@@ -9,7 +9,6 @@ import java.util.UUID;
 import java.util.logging.Logger;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -50,11 +49,13 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
 
     private final Logger log;
     private final List<KeyCensus.ModKey> census;
+    private final CameraLock camera;
     private final Map<UUID, Session> sessions = new HashMap<>();
 
-    public VirtualKeyboard(Logger log, List<KeyCensus.ModKey> census) {
+    public VirtualKeyboard(Logger log, List<KeyCensus.ModKey> census, CameraLock camera) {
         this.log = log;
         this.census = census;
+        this.camera = camera;
     }
 
     /** True while a player's clicks belong to the keyboard. */
@@ -72,12 +73,23 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
             return true;
         }
         Session s = session(player);
-        s.open = !s.open;
         if (s.open) {
+            closeKeyboard(player, s);
+        } else {
+            s.open = true;
             s.pointer = new ScreenHud.Pointer(213, 118, player.getYaw(), player.getPitch());
+            camera.engage(player, "keyboard", () -> closeKeyboard(player, s));
+            log.info("[cim-key] " + player.getName() + " keyboard open");
         }
-        log.info("[cim-key] " + player.getName() + " keyboard " + (s.open ? "open" : "closed"));
         return true;
+    }
+
+    private void closeKeyboard(Player player, Session s) {
+        if (s.open) {
+            s.open = false;
+            camera.release(player, "keyboard");
+            log.info("[cim-key] " + player.getName() + " keyboard closed");
+        }
     }
 
     private List<KeyboardLayout.Cap> caps(Session s) {
@@ -173,8 +185,7 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
         }
         int action = cap.action();
         if (action == KeyboardLayout.CLOSE) {
-            s.open = false;
-            log.info("[cim-key] " + player.getName() + " keyboard closed");
+            closeKeyboard(player, s);
         } else if (action == KeyboardState.CELL_HOLD) {
             s.state.toggleHoldMode();
         } else if (action == KeyboardState.CELL_PAGE) {
@@ -215,6 +226,8 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
     public void onQuit(PlayerQuitEvent event) {
         Session s = sessions.remove(event.getPlayer().getUniqueId());
         if (s != null) {
+            s.open = false;
+            camera.release(event.getPlayer(), "keyboard");
             deliver(event.getPlayer(), s.state.releaseAll());
         }
     }
@@ -254,10 +267,7 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
         if (cap == null) {
             return "no cap " + action;
         }
-        Location at = player.getLocation();
-        at.setYaw(player.getYaw() + (float) ((cap.x() + cap.w() / 2 - s.pointer.x()) / ScreenHud.SENSITIVITY));
-        at.setPitch(player.getPitch() + (float) ((cap.y() + 7 - s.pointer.y()) / ScreenHud.SENSITIVITY));
-        player.teleport(at);
+        s.pointer.moveTo(cap.x() + cap.w() / 2, cap.y() + 7);
         return "aimed cap " + cap.label();
     }
 }

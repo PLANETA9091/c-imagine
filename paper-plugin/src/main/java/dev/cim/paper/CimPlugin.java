@@ -243,6 +243,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        dev.cim.hud.HudBootstrap.disable();
         log().info(LOG_PREFIX + "paper plugin disabled");
     }
 

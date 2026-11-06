@@ -12,6 +12,14 @@ public final class HudBootstrap {
     private static ScreenHud screens;
     private static HudService hud;
     private static VirtualKeyboard keyboard;
+    private static CameraLock camera;
+
+    /** Nobody may stay on a seat that outlives the plugin. */
+    public static void disable() {
+        if (camera != null) {
+            camera.releaseAll();
+        }
+    }
 
     private HudBootstrap() {
     }
@@ -58,7 +66,8 @@ public final class HudBootstrap {
             keys = List.of();
         }
         plugin.getLogger().info("[cim-key] census: " + keys.size() + " mod key(s)");
-        VirtualKeyboard keyboard = new VirtualKeyboard(plugin.getLogger(), keys);
+        camera = new CameraLock(plugin);
+        VirtualKeyboard keyboard = new VirtualKeyboard(plugin.getLogger(), keys, camera);
         plugin.getServer().getPluginManager().registerEvents(keyboard, plugin);
         PluginCommand command = plugin.getCommand("keyboard");
         if (command != null) {
@@ -71,6 +80,7 @@ public final class HudBootstrap {
         plugin.getServer().getPluginManager().registerEvents(screens, plugin);
         hud.register(screens);
         screens.busyWhen(keyboard::isOpen);
+        screens.useCamera(camera, plugin);
         HudBootstrap.hud = hud;
         PluginCommand screen = plugin.getCommand("modscreen");
         if (screen != null) {

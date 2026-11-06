@@ -65,6 +65,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             this.pitch = pitch;
         }
 
+        /** Test harness: put the pointer on a spot, as if the mouse had gone there. */
+        void moveTo(int newX, int newY) {
+            x = clamp(newX, halfW);
+            y = clamp(newY, halfH);
+        }
+
         void look(float newYaw, float newPitch) {
             float dYaw = wrap(newYaw - yaw);
             x = clamp(x + dYaw * SENSITIVITY, halfW);
@@ -159,6 +165,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Logger log;
     /** The floating keyboard takes clicks first. */
     private java.util.function.Predicate<Player> busy = p -> false;
+    private CameraLock camera;
+    private org.bukkit.plugin.Plugin plugin;
+    private boolean harnessFrame;
     private final List<ScreenPack.Scene> scenes;
     private Map<String, GuiCaptures.Capture> captures;
     private final Path scenesDir;
@@ -212,6 +221,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
             }
         }
+    }
+
+    public void useCamera(CameraLock lock, org.bukkit.plugin.Plugin owner) {
+        camera = lock;
+        plugin = owner;
     }
 
     public void busyWhen(java.util.function.Predicate<Player> test) {
@@ -285,6 +299,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         GuiCaptures.Capture capture = captureOf(scene);
         open.put(player.getUniqueId(), new Session(scene, capture,
                 new Pointer(300, 170, player.getYaw(), player.getPitch())));
+        if (camera != null && !harnessFrame) {
+            // Not during the click that opened it: a mount from inside that event is lost.
+            org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+                if (open.containsKey(player.getUniqueId())) {
+                    camera.engage(player, "screen", () -> close(player));
+                }
+            });
+        }
     }
 
     /**
@@ -312,12 +334,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             x = Integer.parseInt(p[0]);
             y = Integer.parseInt(p[1]);
         }
-        float yaw = player.getYaw() + (float) ((x + s.originX - s.pointer.x()) / SENSITIVITY);
-        float pitch = player.getPitch() + (float) ((y + s.originY - s.pointer.y()) / SENSITIVITY);
-        org.bukkit.Location at = player.getLocation();
-        at.setYaw(yaw);
-        at.setPitch(pitch);
-        player.teleport(at);
+        s.pointer.moveTo(x + s.originX, y + s.originY);
         return "aimed " + target + " at " + x + "," + y + " widgets=" + s.scene.widgets().size();
     }
 
@@ -326,7 +343,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         refreshCaptures();
         ScreenPack.Scene scene = sceneFor(menuId, menuClass);
         if (scene != null) {
+            // A gallery frame is compared with a real screen, which keeps the hotbar.
+            harnessFrame = true;
             open(player, scene);
+            harnessFrame = false;
             // The real screen has no pointer in the frame either.
             open.get(player.getUniqueId()).pointerShown = false;
         }
@@ -486,6 +506,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         Session s = open.remove(player.getUniqueId());
         if (s == null) {
             return;
+        }
+        if (camera != null) {
+            camera.release(player, "screen");
         }
         List<ItemStack> back = new ArrayList<>();
         if (s.cursor != null) {

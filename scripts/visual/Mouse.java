@@ -1,13 +1,20 @@
 import java.awt.Robot;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.lang.foreign.Arena;
+import java.lang.foreign.FunctionDescriptor;
+import java.lang.foreign.Linker;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 
 /**
  * Real input for the HUD click test. Usage: Mouse left|right | Mouse move X Y
- * | Mouse click X Y | Mouse say TEXT | Mouse sneak MILLIS. Runs inside the display's own session.
+ * | Mouse click X Y | Mouse sweep DX DY | Mouse say TEXT | Mouse sneak MILLIS. Runs inside the display's own session.
  */
 public final class Mouse {
-    public static void main(String[] a) throws Exception {
+    public static void main(String[] a) throws Throwable {
         Robot r = new Robot();
         r.setAutoDelay(60);
         switch (a[0]) {
@@ -32,6 +39,7 @@ public final class Mouse {
                 r.keyPress(KeyEvent.VK_ENTER);
                 r.keyRelease(KeyEvent.VK_ENTER);
             }
+            case "sweep" -> relative(Integer.parseInt(a[1]), Integer.parseInt(a[2]));
             case "walk" -> {
                 r.keyPress(KeyEvent.VK_W);
                 Thread.sleep(Long.parseLong(a[1]));
@@ -45,6 +53,30 @@ public final class Mouse {
             default -> throw new IllegalArgumentException(a[0]);
         }
         Thread.sleep(150);
+    }
+
+    /**
+     * A grabbed client reads relative motion, and Robot only makes absolute moves, so
+     * this is the same XTest call a real relative mouse event takes.
+     */
+    private static void relative(int dx, int dy) throws Throwable {
+        Linker linker = Linker.nativeLinker();
+        Arena arena = Arena.global();
+        SymbolLookup x11 = SymbolLookup.libraryLookup("libX11.so.6", arena);
+        SymbolLookup xtst = SymbolLookup.libraryLookup("libXtst.so.6", arena);
+        MethodHandle open = linker.downcallHandle(x11.find("XOpenDisplay").orElseThrow(),
+                FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS));
+        MethodHandle flush = linker.downcallHandle(x11.find("XFlush").orElseThrow(),
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS));
+        MethodHandle move = linker.downcallHandle(xtst.find("XTestFakeRelativeMotionEvent").orElseThrow(),
+                FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT,
+                        ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG));
+        MemorySegment display = (MemorySegment) open.invoke(MemorySegment.NULL);
+        for (int i = 0; i < 30; i++) {
+            int ignored = (int) move.invoke(display, dx, dy, 0L);
+            ignored = (int) flush.invoke(display);
+            Thread.sleep(25);
+        }
     }
 
     private static void tap(Robot r, int button) {

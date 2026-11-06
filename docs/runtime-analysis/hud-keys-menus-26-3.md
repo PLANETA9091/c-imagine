@@ -81,9 +81,14 @@ the buttons. Measured on the real client: pointer follows the mouse, clicks arri
 with coordinates. Limits:
 
 - it updates at most 20 times a second, plus network delay; felt smoothness is unmeasured
-- the world turns behind the screen, because the camera really moves
+- `CameraLock` holds the view still: the player sits on an invisible seat and the client's
+  camera moves to a fixed display entity. A passenger still sends its look every tick
+  (`LocalPlayer.sendChanges`), which a player with a foreign camera does not. Measured:
+  look 0 to 39 degrees, 0 world pixels moved, with a screen and with the keyboard open.
+  Walking on the keyboard is the server moving the seat from the movement keys
+- while locked the client hides the first-person hand or hotbar in some states
 - the pointer stalls while pitch sits at +-90
-- Esc is not visible to the server, so sneak closes the screen
+- Esc is not visible to the server, so sneak closes the screen and the keyboard
 
 The gallery gates menus. `scripts/cimscene/menu-sheet.py` gives each one GREEN or RED
 through the same `join-*.json` the shard verdict reads: GREEN only when every pixel of
