@@ -1891,10 +1891,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return new int[]{0, 0, -1};
         }
         int cells = 0;
+        String menuClass = null;
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
                 if (line.startsWith("cell\t")) {
                     cells++;
+                    String[] row = line.split("\t", -1);
+                    if (row.length > 6) {
+                        menuClass = row[6];
+                    }
                 }
                 // header / skip rows (open-failed notes pass through — the
                 // join reads them from the manifest, not from here)
@@ -1905,11 +1910,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return new int[]{0, 0, -1};
         }
         final int cellsf = cells;
+        final String hudClass = menuClass;
         callSync(() -> {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer != null) {
                 viewer.closeInventory();
+                if (hudClass != null) {
+                    dev.cim.hud.HudBootstrap.openForHarness(viewer, hudClass);
+                }
             }
             World w = world(worldName());
             for (int bx = -6; bx <= 6; bx++) {
@@ -2543,6 +2552,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 1 && args[0].equalsIgnoreCase("guiclose")) {
+            callSync(() -> {
+                dev.cim.hud.HudBootstrap.closeForHarness(org.bukkit.Bukkit.getPlayerExact("cimviewer"));
+                return 0;
+            });
+            return true;
+        }
         // /cim postfx <player> <id[,id...]|clear> — the M5 harness surface
         // for the post-effect channel (parity matrix "atmosphere"): request
         // pack-contributed chains for a viewer, or clear them all.

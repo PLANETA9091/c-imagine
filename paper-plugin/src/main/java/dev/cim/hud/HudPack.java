@@ -25,6 +25,8 @@ public final class HudPack {
 
     public static final char CURSOR = '\uE020';
     public static final char BACKDROP = '\uE021';
+    public static final char SLOT = '\uE022';
+    public static final char SLOT_HOVER = '\uE023';
     public static final int BACKDROP_W = 1024;
     public static final int BACKDROP_H = 640;
     private static final int BACKDROP_SCALE = 16;
@@ -45,6 +47,8 @@ public final class HudPack {
         entries.put("assets/" + NS + "/textures/font/cell.png", png(cell()));
         entries.put("assets/" + NS + "/textures/font/cursor.png", png(cursor()));
         entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
+        entries.put("assets/" + NS + "/textures/font/slot.png", png(slot(false)));
+        entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(slot(true)));
         for (int i = 0; i < ARROWS; i++) {
             entries.put("assets/" + NS + "/textures/font/arrow" + i + ".png", png(arrow(i)));
         }
@@ -74,6 +78,13 @@ public final class HudPack {
         b.add(String.valueOf(BACKDROP));
         backdrop.add("chars", b);
         providers.add(backdrop);
+        for (boolean hover : new boolean[]{false, true}) {
+            JsonObject slot = bitmap(NS + ":font/" + (hover ? "slot_hover" : "slot") + ".png", 18, ascent);
+            JsonArray chars = new JsonArray();
+            chars.add(String.valueOf(hover ? SLOT_HOVER : SLOT));
+            slot.add("chars", chars);
+            providers.add(slot);
+        }
         providers.addAll(screens);
         return font;
     }
@@ -148,6 +159,23 @@ public final class HudPack {
         for (int y = 0; y < 3; y++) {
             for (int x = 0; x < 3; x++) {
                 img.setRGB(x, y, 0xFFFFFFFF);
+            }
+        }
+        return img;
+    }
+
+    /** An 18px inventory slot, with vanilla's bevel; the hover one is lighter. */
+    private static BufferedImage slot(boolean hover) {
+        BufferedImage img = new BufferedImage(18, 18, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 18; y++) {
+            for (int x = 0; x < 18; x++) {
+                int c = hover ? 0xFFC5C5C5 : 0xFF8B8B8B;
+                if (x == 0 || y == 0) {
+                    c = 0xFF373737;
+                } else if (x == 17 || y == 17) {
+                    c = 0xFFFFFFFF;
+                }
+                img.setRGB(x, y, c);
             }
         }
         return img;

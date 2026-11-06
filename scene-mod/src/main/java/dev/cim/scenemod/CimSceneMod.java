@@ -1599,6 +1599,9 @@ public final class CimSceneMod {
 
     /** Per namespace: which block or item opens each menu, found by trying them all. */
     private static final Map<String, Map<ResourceLocation, String>> GUI_OPENERS = new HashMap<>();
+    /** Every block and item seen opening a menu: dyed variants share one menu. */
+    private static final Map<ResourceLocation, List<String>> GUI_ALL_OPENERS = new HashMap<>();
+    private static final int GUI_SETTLE_TICKS = 10;
 
     /** Inside menu reach, in front of the viewer, so {@code stillValid} keeps the screen up. */
     private static BlockPos guiRigPos(ServerPlayer viewer) {
@@ -1621,24 +1624,58 @@ public final class CimSceneMod {
         }
     }
 
-    /** Right-clicks a block or uses an item the way the player would; true when a menu is up. */
-    private static boolean guiInvoke(ServerLevel level, ServerPlayer viewer, BlockPos rig, String opener) {
+    /** Records what would open without telling any client, whose block is about to vanish. */
+    private static final class GuiProbe extends net.neoforged.neoforge.common.util.FakePlayer {
+        ResourceLocation seen;
+
+        GuiProbe(ServerLevel level) {
+            super(level, new com.mojang.authlib.GameProfile(
+                    java.util.UUID.nameUUIDFromBytes("cimscene-gui".getBytes(StandardCharsets.UTF_8)), "cimscene-gui"));
+        }
+
+        private java.util.OptionalInt record(net.minecraft.world.MenuProvider provider) {
+            try {
+                seen = BuiltInRegistries.MENU.getKey(provider.createMenu(1, getInventory(), this).getType());
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui probe createMenu threw {}", t.toString());
+            }
+            return java.util.OptionalInt.empty();
+        }
+
+        @Override
+        public java.util.OptionalInt openMenu(net.minecraft.world.MenuProvider provider) {
+            return record(provider);
+        }
+
+        @Override
+        public java.util.OptionalInt openMenu(net.minecraft.world.MenuProvider provider,
+                java.util.function.Consumer<net.minecraft.network.RegistryFriendlyByteBuf> extra) {
+            return record(provider);
+        }
+    }
+
+    private static void guiPlace(ServerLevel level, BlockPos rig, String opener) {
+        if (opener.startsWith("block:")) {
+            ResourceLocation id = ResourceLocation.parse(opener.substring("block:".length()));
+            level.setBlock(rig, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
+        }
+    }
+
+    /** Right-clicks the placed block or uses the item, the way a player would. */
+    private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
         try {
-            ResourceLocation id = ResourceLocation.parse(opener.substring(opener.indexOf(':') + 1));
             if (opener.startsWith("block:")) {
-                BlockState state = BuiltInRegistries.BLOCK.get(id).defaultBlockState();
-                level.setBlock(rig, state, 3);
-                state.useWithoutItem(level, viewer, new BlockHitResult(
+                level.getBlockState(rig).useWithoutItem(level, player, new BlockHitResult(
                         Vec3.atCenterOf(rig), Direction.UP, rig, false));
             } else {
-                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
-                viewer.setItemInHand(InteractionHand.MAIN_HAND, stack);
-                stack.use(level, viewer, InteractionHand.MAIN_HAND);
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
+                        ResourceLocation.parse(opener.substring("item:".length()))));
+                player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                stack.use(level, player, InteractionHand.MAIN_HAND);
             }
         } catch (Throwable t) {
             LOGGER.info("[cimscene] gallery-gui opener {} threw {}", opener, t.toString());
         }
-        return guiOpenMenu(viewer) != null;
     }
 
     /** Tries every block and item of the namespace once and keeps what opened a menu. */
@@ -1649,6 +1686,8 @@ public final class CimSceneMod {
         }
         Map<ResourceLocation, String> found = new HashMap<>();
         BlockPos rig = guiRigPos(viewer);
+        GuiProbe probe = new GuiProbe(level);
+        probe.setPos(viewer.getX(), viewer.getY(), viewer.getZ());
         List<String> candidates = new ArrayList<>();
         for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
             if (b.getNamespace().equals(namespace)) {
@@ -1662,11 +1701,18 @@ public final class CimSceneMod {
         }
         candidates.sort(Comparator.naturalOrder());
         for (String candidate : candidates) {
-            if (guiInvoke(level, viewer, rig, candidate)) {
-                found.putIfAbsent(guiOpenMenu(viewer), candidate);
+            probe.seen = null;
+            try {
+                guiPlace(level, rig, candidate);
+                guiAct(level, probe, rig, candidate);
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui candidate {} threw {}", candidate, t.toString());
             }
-            viewer.closeContainer();
-            guiClearRig(level, viewer, rig);
+            if (probe.seen != null) {
+                found.putIfAbsent(probe.seen, candidate);
+                GUI_ALL_OPENERS.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(candidate);
+            }
+            level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
         }
         LOGGER.info("[cimscene] gallery-gui openers ns={} tried={} found={}",
                 namespace, candidates.size(), found.size());
@@ -1726,43 +1772,72 @@ public final class CimSceneMod {
             viewer.closeContainer();   // the previous page's screen, if any
             BlockPos rig = guiRigPos(viewer);
             guiClearRig(level, viewer, rig);
-            // A real menu needs the context its own code supplies, so the walk
-            // does what a player does. Empty extra data is only the fallback.
+            // A real menu needs the context its own code supplies, so the walk does
+            // what a player does. The block entity must reach the client first, or
+            // the screen reads a null holder and the client disconnects.
             String opener = guiOpeners(level, viewer, namespace).get(id);
-            String how = null;
-            if (opener != null && guiInvoke(level, viewer, rig, opener)) {
-                how = "opened-by:" + opener;
-            } else {
-                try {
-                    MenuType<?> type = BuiltInRegistries.MENU.get(id);
-                    net.minecraft.network.RegistryFriendlyByteBuf extra = new net.minecraft.network.RegistryFriendlyByteBuf(
-                            Unpooled.buffer(), viewer.server.registryAccess());
-                    viewer.openMenu(new SimpleMenuProvider(
-                            (windowId, inv, player) -> type.create(windowId, inv, extra),
-                            Component.literal(id.toString())));
-                    how = "opened-empty";
-                } catch (Throwable t) {
-                    failed++;
-                    tsv.append("skip\t-1\t-1\t-1\t").append(id)
-                            .append("\topen-failed:").append(opener == null ? "no-opener:" : "opener-failed:")
-                            .append(t.getClass().getName()).append('\n');
-                    LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed "
-                                    + "menu={} opener={} err={}", namespace, page, id, opener, t.toString());
-                }
+            if (opener != null) {
+                guiPlace(level, rig, opener);
             }
-            if (how != null) {
-                placed++;
-                tsv.append("cell\t").append(rig.getX()).append('\t').append(rig.getY()).append('\t')
-                        .append(rig.getZ()).append('\t').append(id).append('\t').append(how).append('\n');
-                // Slot geometry is server state, so every opened menu documents itself.
-                int slotIndex = 0;
-                for (net.minecraft.world.inventory.Slot slot : viewer.containerMenu.slots) {
-                    tsv.append("slot\t").append(slotIndex++).append('\t').append(slot.x).append('\t')
-                            .append(slot.y).append('\t').append(id).append('\t')
-                            .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\n');
-                }
+            runAfterTicks(level.getServer(), GUI_SETTLE_TICKS,
+                    () -> finishGuiPage(level, viewer, namespace, page, id, opener, rig));
+            return 1;
+        }
+        writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed);
+        return placed;
+    }
+
+    private static void finishGuiPage(ServerLevel level, ServerPlayer viewer, String namespace, int page,
+                                      ResourceLocation id, String opener, BlockPos rig) {
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+        int placed = 0;
+        int failed = 0;
+        String how = null;
+        if (opener != null) {
+            guiAct(level, viewer, rig, opener);
+            if (guiOpenMenu(viewer) != null) {
+                how = "opened-by:" + opener;
             }
         }
+        if (how == null) {
+            try {
+                MenuType<?> type = BuiltInRegistries.MENU.get(id);
+                net.minecraft.network.RegistryFriendlyByteBuf extra = new net.minecraft.network.RegistryFriendlyByteBuf(
+                        Unpooled.buffer(), viewer.server.registryAccess());
+                viewer.openMenu(new SimpleMenuProvider(
+                        (windowId, inv, player) -> type.create(windowId, inv, extra),
+                        Component.literal(id.toString())));
+                how = "opened-empty";
+            } catch (Throwable t) {
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\topen-failed:")
+                        .append(opener == null ? "no-opener:" : "opener-failed:")
+                        .append(t.getClass().getName()).append('\n');
+                LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed menu={} opener={} err={}",
+                        namespace, page, id, opener, t.toString());
+            }
+        }
+        if (how != null) {
+            placed++;
+            tsv.append("cell\t").append(rig.getX()).append('\t').append(rig.getY()).append('\t')
+                    .append(rig.getZ()).append('\t').append(id).append('\t').append(how).append('\t')
+                    .append(viewer.containerMenu.getClass().getName()).append('\n');
+            for (String each : GUI_ALL_OPENERS.getOrDefault(id, List.of())) {
+                tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
+            }
+            // Slot geometry is server state, so every opened menu documents itself.
+            int slotIndex = 0;
+            for (net.minecraft.world.inventory.Slot slot : viewer.containerMenu.slots) {
+                tsv.append("slot\t").append(slotIndex++).append('\t').append(slot.x).append('\t')
+                        .append(slot.y).append('\t').append(id).append('\t')
+                        .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\n');
+            }
+        }
+        writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed);
+    }
+
+    private static void writeGuiManifest(String namespace, int page, ResourceLocation id, String guiStem,
+                                         StringBuilder tsv, int placed, int failed) {
         String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
@@ -1774,7 +1849,6 @@ public final class CimSceneMod {
         LOGGER.info("[cimscene] gallery-gui done ns={} page={} cells={} failed={} menu={}",
                 namespace, page, placed, failed, id);
         writeDoneMarkerFile(guiStem, false);
-        return placed;
     }
 
     // --- biome-tint gallery (the BOP P1 channel proof surface, 2026-11-04

@@ -26,6 +26,7 @@ public final class ScreenPack {
 
     private static final char GLYPH_BASE = '\uE300';
     private static final int MAX_SCREENS = 0x1800;
+    private static final String ITEM_MANIFEST = "visual-items.resolved.tsv";
 
     /** One drawable screen. {@code glyph} is the same at pack build and at runtime. */
     public record Scene(String className, String menu, char glyph, int width, int height) {
@@ -66,9 +67,79 @@ public final class ScreenPack {
             provider.add("chars", chars);
             providers.add(provider);
         }
+        Map<String, String> icons = moddedIcons(modsDir);
+        providers.addAll(new ItemGlyphs(icons).providers());
+        // A provider's file must exist in the pack, or the client drops the font.
+        copyIcons(entries, icons, modsDir);
         entries.put("assets/" + HudPack.NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
                 HudPack.freeFont(providers).toString().getBytes(StandardCharsets.UTF_8));
         return baked.scenes().size();
+    }
+
+    /**
+     * Modded item id to its icon, for ids the item manifest names and whose flat
+     * square texture is really in a mod jar.
+     */
+    static Map<String, String> moddedIcons(Path modsDir) throws IOException {
+        Path manifest = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(ITEM_MANIFEST);
+        Map<String, String> out = new java.util.TreeMap<>();
+        if (!Files.isRegularFile(manifest) || !Files.isDirectory(modsDir)) {
+            return out;
+        }
+        java.util.Set<String> wanted = new java.util.HashSet<>();
+        for (dev.cim.f2v.F2vPack.VisualItem row : dev.cim.f2v.F2vPack.readManifest(manifest)) {
+            wanted.add(row.moddedId());
+        }
+        Map<String, byte[]> art = new HashMap<>();
+        try (Stream<Path> s = Files.list(modsDir)) {
+            for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
+                readIcons(Files.readAllBytes(jar), art, 0);
+            }
+        }
+        for (String id : wanted) {
+            String[] p = id.split(":", 2);
+            for (String folder : new String[]{"item", "block"}) {
+                byte[] png = art.get("assets/" + p[0] + "/textures/" + folder + "/" + p[1] + ".png");
+                if (png != null && png.length > 24 && square(png)) {
+                    out.put(id, p[0] + ":" + folder + "/" + p[1] + ".png");
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    private static void copyIcons(Map<String, byte[]> entries, Map<String, String> icons, Path modsDir)
+            throws IOException {
+        Map<String, byte[]> art = new HashMap<>();
+        try (Stream<Path> s = Files.list(modsDir)) {
+            for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
+                readIcons(Files.readAllBytes(jar), art, 0);
+            }
+        }
+        for (String file : icons.values()) {
+            String[] p = file.split(":", 2);
+            String entry = "assets/" + p[0] + "/textures/" + p[1];
+            entries.putIfAbsent(entry, art.get(entry));
+        }
+    }
+
+    private static boolean square(byte[] png) {
+        return java.nio.ByteBuffer.wrap(png).getInt(16) == java.nio.ByteBuffer.wrap(png).getInt(20);
+    }
+
+    private static void readIcons(byte[] jar, Map<String, byte[]> out, int depth) throws IOException {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(jar))) {
+            for (ZipEntry e; (e = zip.getNextEntry()) != null; ) {
+                String name = e.getName();
+                if (name.startsWith("assets/") && name.endsWith(".png")
+                        && (name.contains("/textures/item/") || name.contains("/textures/block/"))) {
+                    out.put(name, zip.readAllBytes());
+                } else if (depth < 2 && name.startsWith("META-INF/jarjar/") && name.endsWith(".jar")) {
+                    readIcons(zip.readAllBytes(), out, depth + 1);
+                }
+            }
+        }
     }
 
     private static Baked bake(Path modsDir) throws IOException {

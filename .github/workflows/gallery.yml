@@ -2316,10 +2316,10 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "ours $NS sound replay hit the MAXP cap"; exit 1; }
           done
-          # GUI replay (per ladder ns, DIAGNOSTIC): the plugin closes the
-          # viewer's inventory and counts every menu nochannel (Paper
-          # cannot instantiate a mod MenuType); the shot shows the honestly
-          # closed screen.
+          # GUI replay (per ladder ns, DIAGNOSTIC): the plugin draws the scanned
+          # screen for the menu the truth leg recorded. It lives on the HUD,
+          # so F1 must be off, and Esc would open the pause menu instead.
+          java -cp vtools Key F1 || true
           for NS in $LADDER_NS; do
             EX=0
             for p in $(seq $SI $K $MAXP); do
@@ -2336,10 +2336,11 @@ jobs:
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Shot "ours-shots/ours-gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
-              java -cp vtools Key ESC || true
             done
             [ "$EX" = "1" ] || { echo "ours $NS gui replay hit the MAXP cap"; exit 1; }
           done
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "cim guiclose" >/dev/null 2>&1 || true
+          java -cp vtools Key F1 || true
           # BIOME-TINT replay (per ladder ns, DIAGNOSTIC): the plugin places
           # the SAME sample rig (real vanilla blocks) and counts every
           # modded biome nochannel; the shot shows the honestly untinted rig.

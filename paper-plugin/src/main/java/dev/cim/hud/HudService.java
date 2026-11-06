@@ -80,7 +80,14 @@ public final class HudService implements Listener {
     }
 
     private void attach(Player player) {
-        if (harnessAccount(player.getName())) {
+        if (!harnessAccount(player.getName())) {
+            show(player);
+        }
+    }
+
+    /** Gives a player the carrier regardless of account. */
+    void show(Player player) {
+        if (carriers.containsKey(player.getUniqueId())) {
             return;
         }
         BossBar bar = BossBar.bossBar(Component.empty(), 0f, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);
