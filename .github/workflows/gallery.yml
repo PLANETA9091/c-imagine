@@ -2620,9 +2620,19 @@ jobs:
                   --ours "ours-shots/ours-gal-p-${NS}0-again.png" --manifest "$M" \
                   --out "gallery-report/determinism-ours-$NS-p0.json" || true
               fi
+              # 14-br THE BLOCK SELF-CONSISTENCY PAIR: the anim probes already
+              # shoot t0/t1 2s apart on BOTH legs for every dyn=1 page — feed
+              # the second frames to the join so a cell that MOVES AGAINST
+              # ITSELF (either leg) demotes to ANIMATED with evidence, the
+              # 14-bf law's honest escape hatch. Static cells (settled doors,
+              # unpowered machines) keep their self_ae ~0 and stay gated.
+              SELF_T=""; SELF_O=""
+              [ -f "truth-shots/gal-p-$NS$p-t1.png" ] && SELF_T="--truth-self truth-shots/gal-p-$NS$p-t1.png"
+              [ -f "ours-shots/ours-gal-p-$NS$p-t1.png" ] && SELF_O="--ours-self ours-shots/ours-gal-p-$NS$p-t1.png"
               python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-$NS-p$p.json" \
-                --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn || GATE=1
+                --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn \
+                $SELF_T $SELF_O || GATE=1
             done
           done
           echo "=== ENTITY pages: the same gate, no channel excuses ==="
