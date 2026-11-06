@@ -104,11 +104,11 @@ public final class ScreenArt {
         Path dir = Path.of(System.getProperty("cim.screenart"));
         Files.createDirectories(dir);
         String name = id.getNamespace() + "_" + id.getPath().replace('/', '_');
-        try (NativeImage image = new NativeImage(w, h, false)) {
-            RenderSystem.bindTexture(target.getColorTextureId());
-            image.downloadTexture(0, false);
-            image.flipY();
-            image.writeToFile(dir.resolve(name + ".png"));
+        save(target, w, h, dir.resolve(name + ".png"));
+        try {
+            captureIcons(mc, target, lifted, dir.resolve("icons"));
+        } catch (Throwable t) {
+            LOGGER.warn("[cimscene] icon capture failed: {}", t.toString());
         }
         mc.getMainRenderTarget().bindWrite(true);
         target.destroyBuffers();
@@ -129,6 +129,42 @@ public final class ScreenArt {
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
+    }
+
+    private static void save(TextureTarget target, int w, int h, Path file) throws IOException {
+        try (NativeImage image = new NativeImage(w, h, false)) {
+            RenderSystem.bindTexture(target.getColorTextureId());
+            image.downloadTexture(0, false);
+            image.flipY();
+            image.writeToFile(file);
+        }
+    }
+
+    /**
+     * The real pixels of each carried item. A texture file is only one layer of what a
+     * model draws: tints, overlays and 3D blocks exist only once it is rendered. Icons
+     * land in the top left corner; the file name carries the GUI scale.
+     */
+    private static void captureIcons(Minecraft mc, TextureTarget target, List<ItemStack> stacks, Path dir)
+            throws IOException {
+        Files.createDirectories(dir);
+        int scale = (int) mc.getWindow().getGuiScale();
+        for (ItemStack stack : stacks) {
+            if (stack.isEmpty()) {
+                continue;
+            }
+            ResourceLocation item = BuiltInRegistries.ITEM.getKey(stack.getItem());
+            Path file = dir.resolve(item.getNamespace() + "__" + item.getPath() + "_s" + scale + ".png");
+            if (Files.exists(file)) {
+                continue;
+            }
+            target.clear(Minecraft.ON_OSX);
+            target.bindWrite(true);
+            GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+            graphics.renderItem(new ItemStack(stack.getItem()), 0, 0);
+            graphics.flush();
+            save(target, mc.getWindow().getWidth(), mc.getWindow().getHeight(), file);
+        }
     }
 
     /** Empties the player's inventory for the pass, so slots draw bare. */

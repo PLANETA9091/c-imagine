@@ -12,6 +12,7 @@
   },
   "client": [
     "ScreenBackgroundMixin",
-    "MouseParkMixin"
+    "MouseParkMixin",
+    "EditBoxBlinkMixin"
   ]
 }

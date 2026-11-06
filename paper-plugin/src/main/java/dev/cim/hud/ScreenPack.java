@@ -187,6 +187,7 @@ public final class ScreenPack {
             providers.add(provider);
         }
         Map<String, String> icons = moddedIds == null ? moddedIcons(modsDir) : iconsFor(modsDir, moddedIds);
+        addCapturedIcons(entries, icons, modsDir.resolveSibling("c-imagine").resolve(CAPTURES).resolve("icons"));
         // The running server may not have the jars, and must number glyphs as this pack does.
         Path iconFile = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(ICONS);
         Files.createDirectories(iconFile.getParent());
@@ -231,6 +232,37 @@ public final class ScreenPack {
             }
         }
         return out;
+    }
+
+    /** Rendered icons from the real client replace flat textures for the same item. */
+    private static void addCapturedIcons(Map<String, byte[]> entries, Map<String, String> icons, Path dir)
+            throws IOException {
+        if (!Files.isDirectory(dir)) {
+            return;
+        }
+        List<Path> files;
+        try (Stream<Path> s = Files.list(dir)) {
+            files = s.filter(p -> p.toString().endsWith(".png")).sorted().toList();
+        }
+        for (Path file : files) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("(.+)__(.+)_s(\\d+)\\.png")
+                    .matcher(file.getFileName().toString());
+            if (!m.matches() || m.group(1).equals("minecraft")) {
+                continue;
+            }
+            int size = 16 * Integer.parseInt(m.group(3));
+            BufferedImage shot = ImageIO.read(file.toFile());
+            BufferedImage icon = opaque(copy(shot, 0, 0, size, size));
+            // A solid last column makes every captured icon advance by 17.
+            if (icon.getRGB(size - 1, size - 1) >>> 24 == 0) {
+                icon.setRGB(size - 1, size - 1, 0x01000000);
+            }
+            String name = m.group(1) + "_" + m.group(2);
+            ByteArrayOutputStream png = new ByteArrayOutputStream();
+            ImageIO.write(icon, "png", png);
+            entries.put("assets/" + HudPack.NS + "/textures/font/icon/" + name + ".png", png.toByteArray());
+            icons.put(m.group(1) + ":" + m.group(2), HudPack.NS + ":font/icon/" + name + ".png\t17");
+        }
     }
 
     /**
@@ -286,7 +318,9 @@ public final class ScreenPack {
         for (String value : icons.values()) {
             String[] p = value.split("\t")[0].split(":", 2);
             String entry = "assets/" + p[0] + "/textures/" + p[1];
-            entries.putIfAbsent(entry, art.get(entry));
+            if (art.containsKey(entry)) {
+                entries.putIfAbsent(entry, art.get(entry));
+            }
         }
     }
 
