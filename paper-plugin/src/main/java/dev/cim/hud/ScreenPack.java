@@ -35,6 +35,7 @@ public final class ScreenPack {
     private static final int INVENTORY_PANEL_WIDTH = 176;
     private static final String ITEM_MANIFEST = "visual-items.resolved.tsv";
     private static final String CACHE = "screens.tsv";
+    private static final String ICONS = "icons.tsv";
     private static final String CAPTURES = "screens";
 
     /**
@@ -160,6 +161,12 @@ public final class ScreenPack {
 
     /** Adds every scanned screen to the pack and returns how many. */
     public static int contribute(Map<String, byte[]> entries, Path modsDir) throws IOException {
+        return contribute(entries, modsDir, null);
+    }
+
+    /** {@code moddedIds} is the pack's item list; null reads it from the server's manifest. */
+    public static int contribute(Map<String, byte[]> entries, Path modsDir, java.util.Collection<String> moddedIds)
+            throws IOException {
         Baked baked = bake(modsDir);
         JsonArray providers = new JsonArray();
         int ascent = HudLayout.ascent(HudLayout.freeId());
@@ -178,7 +185,13 @@ public final class ScreenPack {
             provider.add("chars", chars);
             providers.add(provider);
         }
-        Map<String, String> icons = moddedIcons(modsDir);
+        Map<String, String> icons = moddedIds == null ? moddedIcons(modsDir) : iconsFor(modsDir, moddedIds);
+        // The running server may not have the jars, and must number glyphs as this pack does.
+        Path iconFile = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(ICONS);
+        Files.createDirectories(iconFile.getParent());
+        StringBuilder listed = new StringBuilder();
+        icons.forEach((id, file) -> listed.append(id).append('\t').append(file).append('\n'));
+        Files.writeString(iconFile, listed.toString(), StandardCharsets.UTF_8);
         providers.addAll(new ItemGlyphs(icons).providers());
         // A provider's file must exist in the pack, or the client drops the font.
         copyIcons(entries, icons, modsDir);
@@ -193,13 +206,36 @@ public final class ScreenPack {
      */
     static Map<String, String> moddedIcons(Path modsDir) throws IOException {
         Path manifest = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(ITEM_MANIFEST);
-        Map<String, String> out = new java.util.TreeMap<>();
-        if (!Files.isRegularFile(manifest) || !Files.isDirectory(modsDir)) {
-            return out;
+        if (!Files.isRegularFile(manifest)) {
+            return new java.util.TreeMap<>();
         }
         java.util.Set<String> wanted = new java.util.HashSet<>();
         for (dev.cim.f2v.F2vPack.VisualItem row : dev.cim.f2v.F2vPack.readManifest(manifest)) {
             wanted.add(row.moddedId());
+        }
+        return iconsFor(modsDir, wanted);
+    }
+
+    /** What the pack was built with when known, else whatever the jars here offer. */
+    static Map<String, String> iconsForRuntime(Path modsDir) throws IOException {
+        Path file = modsDir.resolveSibling("c-imagine").resolve("f2v").resolve(ICONS);
+        if (!Files.isRegularFile(file)) {
+            return moddedIcons(modsDir);
+        }
+        Map<String, String> out = new java.util.TreeMap<>();
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String[] p = line.split("\t");
+            if (p.length == 2) {
+                out.put(p[0], p[1]);
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, String> iconsFor(Path modsDir, java.util.Collection<String> wanted) throws IOException {
+        Map<String, String> out = new java.util.TreeMap<>();
+        if (!Files.isDirectory(modsDir)) {
+            return out;
         }
         Map<String, byte[]> art = new HashMap<>();
         try (Stream<Path> s = Files.list(modsDir)) {

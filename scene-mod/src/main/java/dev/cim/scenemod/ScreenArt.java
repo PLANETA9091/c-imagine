@@ -118,6 +118,10 @@ public final class ScreenArt {
         tsv.append("bounds\t").append(screen.getGuiLeft()).append('\t').append(screen.getGuiTop()).append('\t')
                 .append(screen.getXSize()).append('\t').append(screen.getYSize()).append('\n');
         for (Slot slot : screen.getMenu().slots) {
+            // A disabled slot exists in the menu but not on the screen.
+            if (!slot.isActive()) {
+                continue;
+            }
             tsv.append("slot\t").append(slot.x).append('\t').append(slot.y).append('\t')
                     .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\n');
         }

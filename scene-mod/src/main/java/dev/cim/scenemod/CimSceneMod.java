@@ -1629,17 +1629,24 @@ public final class CimSceneMod {
     }
 
     /** Records what would open without telling any client, whose block is about to vanish. */
-    private static final class GuiProbe extends net.neoforged.neoforge.common.util.FakePlayer {
+    private static final class GuiProbe extends ServerPlayer {
         ResourceLocation seen;
         String candidate;
         String seenClass;
         String seenTitle;
         List<String> seenSlots;
 
+        /**
+         * A real ServerPlayer, not a FakePlayer: mods refuse fake players on purpose, to
+         * stop automation opening menus. Only its network handler is borrowed.
+         */
         GuiProbe(ServerLevel level) {
-            super(level, new com.mojang.authlib.GameProfile(
-                    java.util.UUID.nameUUIDFromBytes("cimscene-gui".getBytes(StandardCharsets.UTF_8)), "cimscene-gui"));
+            super(level.getServer(), level, PROFILE, net.minecraft.server.level.ClientInformation.createDefault());
+            this.connection = new net.neoforged.neoforge.common.util.FakePlayer(level, PROFILE).connection;
         }
+
+        private static final com.mojang.authlib.GameProfile PROFILE = new com.mojang.authlib.GameProfile(
+                java.util.UUID.nameUUIDFromBytes("cimscene-gui".getBytes(StandardCharsets.UTF_8)), "cimscene-gui");
 
         private java.util.OptionalInt record(net.minecraft.world.MenuProvider provider) {
             try {
@@ -1714,7 +1721,10 @@ public final class CimSceneMod {
                 }
             } else if (plain.startsWith("entity:")) {
                 if (guiEntity != null) {
-                    guiEntity.interact(player, InteractionHand.MAIN_HAND);
+                    // The order a client's click takes: the exact spot first, then the entity.
+                    if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
+                        guiEntity.interact(player, InteractionHand.MAIN_HAND);
+                    }
                 }
             } else {
                 ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);

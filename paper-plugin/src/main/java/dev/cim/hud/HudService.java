@@ -59,6 +59,14 @@ public final class HudService implements Listener {
         };
     }
 
+    /** A recipe toast would sit over the frame the gallery compares. */
+    @EventHandler
+    public void onRecipe(org.bukkit.event.player.PlayerRecipeDiscoverEvent event) {
+        if (harnessAccount(event.getPlayer().getName())) {
+            event.setCancelled(true);
+        }
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         attach(event.getPlayer());

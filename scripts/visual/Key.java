@@ -18,6 +18,12 @@ public class Key {
             System.err.println("usage: Key <F1|F5|ESC|SPACE|ENTER|1..9>");
             System.exit(2);
         }
+        // Parks the mouse off every menu: an open screen shows a free cursor.
+        if (args[0].equalsIgnoreCase("MOUSEOFF")) {
+            new Robot().mouseMove(1, 1);
+            Thread.sleep(150);
+            return;
+        }
         int code = switch (args[0].toUpperCase()) {
             case "F1" -> KeyEvent.VK_F1;
             case "F5" -> KeyEvent.VK_F5;

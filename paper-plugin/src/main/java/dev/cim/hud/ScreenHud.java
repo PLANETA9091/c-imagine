@@ -46,6 +46,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private static final int TITLE_X = 8;
     private static final int TITLE_Y = 6;
 
+    /** Half of a 1280x720 screen at GUI scale 3, the smallest common one. */
+    private static final int POINTER_X = 210;
+    private static final int POINTER_Y = 118;
+
     /** GUI pixels per degree of look. */
     static final double SENSITIVITY = 6.0;
 
@@ -187,7 +191,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         try {
             found = ScreenPack.scenes(modsDir);
             known = GuiCaptures.byId(GuiCaptures.read(root.resolve("scenes")));
-            icons = new ItemGlyphs(ScreenPack.moddedIcons(modsDir));
+            icons = new ItemGlyphs(ScreenPack.iconsForRuntime(modsDir));
             readCarriers(root.resolve("f2v"));
         } catch (IOException e) {
             log.warning("[cim-screen] scan failed: " + e);
@@ -298,7 +302,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         log.info("[cim-screen] " + player.getName() + " opened " + scene.shortName());
         GuiCaptures.Capture capture = captureOf(scene);
         open.put(player.getUniqueId(), new Session(scene, capture,
-                new Pointer(300, 170, player.getYaw(), player.getPitch())));
+                new Pointer(POINTER_X, POINTER_Y, player.getYaw(), player.getPitch())));
         if (camera != null && !harnessFrame) {
             // Not during the click that opened it: a mount from inside that event is lost.
             org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
@@ -341,6 +345,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Opens the screen of one menu; the gallery's ours leg uses this. */
     public boolean openMenu(Player player, String menuId, String menuClass) {
         refreshCaptures();
+        // A menu with no scene must show nothing, not the previous page's screen.
+        close(player);
         ScreenPack.Scene scene = sceneFor(menuId, menuClass);
         if (scene != null) {
             // A gallery frame is compared with a real screen, which keeps the hotbar.
@@ -443,7 +449,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (at != null) {
                 frame.freeLabel(s.originX + at[0] + TITLE_X, s.originY + at[1] + TITLE_Y, "Inventory");
             }
-            int hover = s.hover();
+            // The gallery's real mouse is parked off the menu, so nothing is hovered there.
+            int hover = s.pointerShown ? s.hover() : -1;
             int nth = 0;
             for (int i = 0; i < s.capture.slots().size(); i++) {
                 GuiCaptures.Slot slot = s.capture.slots().get(i);

@@ -790,7 +790,7 @@ jobs:
           # SEED_INPUTS — measured #47: a prefix-restored older pack silently
           # served a stale builder and the missingno wall came back
           # the ours leg draws from the same scenes, and the gate masks to this art
-          cp srv-wall/c-imagine/f2v/screens.tsv seed-pack/f2v/ 2>/dev/null || true
+          cp srv-wall/c-imagine/f2v/screens.tsv srv-wall/c-imagine/f2v/icons.tsv seed-pack/f2v/ 2>/dev/null || true
           mkdir -p seed-pack/screens
           cp -r srv-wall/c-imagine/screens/. seed-pack/screens/ 2>/dev/null || true
           echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
@@ -1499,6 +1499,8 @@ jobs:
               sleep 2   # the client screen renders
               python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
                 "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Key MOUSEOFF || true
+              sleep 0.5
               java -cp vtools Shot "truth-shots/gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
               # ESC closes the open screen before the next page (the next
