@@ -714,6 +714,12 @@ jobs:
           cp -r srv-wall/c-imagine/scenes/. seed-pack/scenes/
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv \
              scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv seed-pack/f2v/
+          # the calibration tables ride the pack input dir: absent file =
+          # byte-identical behavior (readTintManifest/readEmissiveManifest),
+          # present = the measured multiplies / light_emission bake
+          for T in visual-tints.tsv visual-emissive.tsv; do
+            [ -f "scripts/f2v/$T" ] && cp "scripts/f2v/$T" seed-pack/f2v/
+          done
           # per-ns pack manifests, then ONE concatenated file per channel —
           # GalleryPack auto-assigns the CMD space (blocks 100000+i, items
           # 300000+i) over the concatenated rows in order, and the plugin
