@@ -1756,16 +1756,25 @@ jobs:
           setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
-          NEED=""
-          for pkg in libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
-          done
-          if [ -n "${NEED:-}" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq $NEED
-          fi
+          # MEASURED (run 42250969085, all 8 ours shards): the client died
+          # with "Couldn't find matching GLX visual / opengl_missing" while
+          # the truth shards (1.21.1 client) joined on the same runners —
+          # the 26.3 client's GLX requirements are stricter, and the
+          # dpkg -s skip trusted the RUNNER IMAGE's pre-installed mesa,
+          # which rolled under us and no longer exposes the visual the
+          # 26.3 GlDevice requests. Install UNCONDITIONALLY (the apt
+          # version, not whatever the image ships) and probe the GLX
+          # visual list right after Xvfb starts — a fast named failure
+          # instead of a 12-minute blind client stall.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 mesa-utils
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 1
+          export DISPLAY=:99
+          GLXV=$(glxinfo -B 2>/dev/null | grep -c "GLX Visuals" || true)
+          OPENGLV=$(glxinfo -B 2>/dev/null | grep -E "OpenGL version" || true)
+          echo "GLX probe: visuals_block=$GLXV | $OPENGLV"
+          [ -n "$OPENGLV" ] || { echo "GLX probe FAILED — no OpenGL renderer on :99 (the 26.3 client would crash opengl_missing)"; glxinfo -display :99 2>&1 | head -20; exit 1; }
           # the visual client runtime (piston-meta, with assets) — cached
           [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           wc -c visual-client/classpath.txt visual-client/launch.txt
