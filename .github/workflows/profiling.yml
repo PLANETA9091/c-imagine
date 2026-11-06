@@ -88,6 +88,12 @@ jobs:
           bash scripts/build-bootstrap.sh
           CIM_BOOTSTRAP_JAR="$PWD/java/cim-bootstrap/build/cim-bootstrap.jar" \
             bash scripts/package-module.sh
+          # THE TICK-LOAD PROBE needs the cimtest multi-mod jar (the 5th
+          # mod, cimtest_heavy, rides it) staged into the modded boot mods
+          # dir — without it the layer reports "no jars in mods", the FML
+          # seed skips, and the selfarm marker has nothing to arm
+          JAVA_HOME=/usr/lib/jvm/java-21-openjdk gradle build --no-daemon -p test-mods
+
 
       - name: scaffold Paper 26.3 (shared template)
         run: |
@@ -123,6 +129,7 @@ jobs:
           # markers the compare parses (the module's own tick charge under
           # a KNOWN load; the bare boot has no mod and no marker)
           mkdir -p modded/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar modded/mods/
           printf '10 600\n' > modded/mods/cimtest-heavy.selfarm
           cd modded
           set +e
