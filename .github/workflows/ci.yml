@@ -123,6 +123,12 @@ jobs:
         run: |
           mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
+      - name: hud, keyboard and menu selftests
+        working-directory: paper-plugin
+        run: |
+          for t in KeyCensus KeyboardState HudPack MenuFit MenuPack MenuTriggers; do
+            java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" "dev.cim.hud.$t" --selftest
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: cim-paper-plugin

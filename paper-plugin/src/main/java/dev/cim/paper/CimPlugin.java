@@ -71,6 +71,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         netWatch = new NetWatch(this);
         f2vInit();
+        dev.cim.hud.HudBootstrap.enable(this);
     }
 
     // ---- F2V 2.0 visual pipeline (M5.2) ---------------------------------------
