@@ -407,6 +407,40 @@ public final class GalleryPack {
         }
         if (bs.has("multipart")) {
             JsonArray mp = bs.getAsJsonArray("multipart");
+            // THE WALL POST RULE (measured run 42085254497, p109 c1,r1 —
+            // white_sandstone_wall[east=tall, rest=none, up=false]): the
+            // real 1.21.1 client renders the CENTER POST for a
+            // single-connection wall — the wall renderer derives the post
+            // from the CONNECTIVITY (one arm = the post rises), not from
+            // the static multipart's up-keyed post case (BOP's post case
+            // keys on up=true; the state said up=false; the composite came
+            // out arm-only while the truth frame carried the post). After
+            // the static evaluation: exactly ONE matched side arm and no
+            // matched post → inject the blockstate's own wall_post case.
+            boolean matchedPost = false;
+            int matchedArms = 0;
+            JsonObject postCase = null;
+            for (JsonElement pe : mp) {
+                JsonObject part = pe.getAsJsonObject();
+                boolean matches = !part.has("when")
+                        || matchesWhen(part.getAsJsonObject("when"), s.props());
+                JsonElement apply = part.has("apply") ? part.get("apply") : null;
+                JsonObject entry = apply == null ? null
+                        : apply.isJsonArray()
+                        ? apply.getAsJsonArray().get(0).getAsJsonObject()
+                        : apply.getAsJsonObject();
+                String model = entry == null ? null
+                        : entry.has("model") ? entry.get("model").getAsString() : null;
+                if (matches) {
+                    if (model != null && model.contains("wall_post")) {
+                        matchedPost = true;
+                    } else if (model != null && model.contains("wall_side")) {
+                        matchedArms++;
+                    }
+                } else if (model != null && model.contains("wall_post") && postCase == null) {
+                    postCase = part;
+                }
+            }
             for (JsonElement pe : mp) {
                 JsonObject part = pe.getAsJsonObject();
                 if (part.has("when") && !matchesWhen(part.getAsJsonObject("when"), s.props())) {
@@ -425,6 +459,25 @@ public final class GalleryPack {
                 }
                 // a missing multipart part model: recorded, the composite
                 // synthesizes from what resolved (honest partial render)
+            }
+            if (!matchedPost && matchedArms == 1 && postCase != null) {
+                // inject the blockstate's own post case (its model + its
+                // rotation), so the single-connection wall carries the post
+                // the real client renders
+                JsonElement applyEl = postCase.get("apply");
+                JsonObject entry = applyEl.isJsonArray()
+                        ? applyEl.getAsJsonArray().get(0).getAsJsonObject()
+                        : applyEl.getAsJsonObject();
+                String model = entry.get("model").getAsString();
+                int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
+                int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
+                String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
+                if (ref != null) {
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
+                    warnings.add("wall-post injected for " + s.ns() + ":"
+                            + " one-connection wall (the connectivity rule)");
+                }
             }
         }
         return parts;
