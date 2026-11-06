@@ -63,6 +63,10 @@ CATEGORY_TABLE = [
     # UI confirm/deny
     ("confirm", "minecraft:ui.button.click"),
     ("deny", "minecraft:entity.villager.no"),
+    # Mekanism (validated: assets/mekanism/sounds.json, 46 events)
+    ("gui.digital", "minecraft:ui.button.click"),
+    ("tile.machine", "minecraft:block.piston.extend"),
+    ("geiger", "minecraft:ui.button.click"),
     # generic families (the original buckets, kept last)
     ("music", "minecraft:music.menu"),
     ("ui.", "minecraft:ui.button.click"),
