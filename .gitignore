@@ -73,3 +73,6 @@ paper-plugin/src/main/resources/assets/
 /layer-srv/
 /mods-create/
 /vtools/
+
+# local GH credentials (never commit)
+/.secrets/
