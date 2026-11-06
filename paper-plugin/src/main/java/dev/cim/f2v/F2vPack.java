@@ -2527,6 +2527,23 @@ public final class F2vPack {
                 expect(failures, GalleryPack.itemNode(ref) == null,
                         "unlit: repeated builds cannot inherit previous item layers");
             }
+            // A non-planar first quad splits in two. Its output count must
+            // never shift the second quad's explicit shade:false metadata.
+            String nonplanar = face.replace("\t0\t-1", "\t1\t-1")
+                    .replace("\t0\t1\t0\t0\t0\n", "\t0\t1\t0.5\t0\t0\n");
+            Files.writeString(quads.resolve("fixture.tsv"), nonplanar + face);
+            entries.clear();
+            entries.put("assets/minecraft/textures/block/stone.png", f2vSelftestPng(2, 2));
+            GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:block#qfixture")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            JsonArray split = JsonParser.parseString(new String(entries.get(
+                    "assets/c-imagine/models/gallery/g0.json"), StandardCharsets.UTF_8))
+                    .getAsJsonObject().getAsJsonArray("elements");
+            expect(failures, split.size() == 3
+                            && !split.get(0).getAsJsonObject().has("shade")
+                            && !split.get(1).getAsJsonObject().has("shade")
+                            && !split.get(2).getAsJsonObject().get("shade").getAsBoolean(),
+                    "unlit: split source pieces retain flags without shifting subsequent faces");
         } finally {
             GalleryPack.resetModelScales();
             GalleryPack.setQuadDir(null);

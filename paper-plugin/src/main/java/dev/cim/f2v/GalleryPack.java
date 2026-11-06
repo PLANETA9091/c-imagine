@@ -987,18 +987,22 @@ public final class GalleryPack {
             return null;
         }
         double k = ObjMesh.fitElements(faces);
-        JsonArray elements = ObjMesh.toElements(faces, k);
-        for (int i = 0; i < elements.size() && i < flags.size(); i++) {
-            JsonObject el = elements.get(i).getAsJsonObject();
-            if (flags.get(i)[0] == 0) {
-                // Preserve source metadata. Neither field disables the
-                // native ITEM shader's diffuse lighting; block shade:false
-                // needs its own item-local normal below.
-                el.addProperty("shade", false);
-                el.addProperty("shade_direction_override", "up");
-            }
-            if (flags.get(i)[1] >= 0 && el.has("faces")) {
-                el.getAsJsonObject("faces").getAsJsonObject("south").addProperty("tintindex", flags.get(i)[1]);
+        JsonArray elements = new JsonArray();
+        for (int i = 0; i < faces.size(); i++) {
+            // A non-planar source quad emits multiple triangles. All pieces
+            // inherit this face's metadata; output indices are not face IDs.
+            for (var value : ObjMesh.toElements(List.of(faces.get(i)), k)) {
+                JsonObject el = value.getAsJsonObject();
+                if (flags.get(i)[0] == 0) {
+                    // These fields alone do not disable ITEM shader diffuse.
+                    el.addProperty("shade", false);
+                    el.addProperty("shade_direction_override", "up");
+                }
+                if (flags.get(i)[1] >= 0 && el.has("faces")) {
+                    el.getAsJsonObject("faces").getAsJsonObject("south")
+                            .addProperty("tintindex", flags.get(i)[1]);
+                }
+                elements.add(el);
             }
         }
         // a re-hosted sprite exists only in the pack, not in any jar
