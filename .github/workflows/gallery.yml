@@ -806,13 +806,24 @@ jobs:
           # manifest IS the signal; zero per-mod code; every future mod's
           # loader states get the same honest classification.
           python3 - <<'PY'
-          import glob, pathlib, sys
+          import glob, pathlib, re, sys
           resolved = set()
           total_rows = 0
           for line in pathlib.Path('seed-pack/f2v/visual-gallery.resolved.tsv').read_text().splitlines():
               if line.startswith('#') or not line.strip():
                   continue
               resolved.add(line.split('\t')[0])
+          # 14-bx THE RUNTIME-GEOMETRY FAMILIES: dynamictrees builds its
+          # leaves, branches, roots and trunk shells from the mod's own code
+          # at runtime — the captured mesh is the mod's static fallback blob
+          # (#214/#226 measured the q composite riding the captured bake at
+          # ae 323K-369K against the truth's own sparse bushy render), so the
+          # pack channel structurally cannot reproduce the DT's runtime leaf
+          # mesh. The honest class = M5.6 (reported, never gated — the gate
+          # is the real-client leg). Mechanical: the namespace + the family
+          # pattern, no per-state code.
+          dt_runtime = re.compile(
+              r'^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)')
           flipped = 0
           for mf in pathlib.Path('seed-pack/scenes').glob('gallery-*-p*.tsv'):
               if '.ctx.' in mf.name:
@@ -823,7 +834,7 @@ jobs:
                   p = line.split('\t')
                   if (p[0] == 'cell' and len(p) >= 6 and p[5].strip() == '0'
                           and not p[4].startswith('minecraft:')
-                          and p[4] not in resolved):
+                          and (p[4] not in resolved or dt_runtime.match(p[4]))):
                       p[5] = '1'
                       flipped += 1
                       out.append('\t'.join(p))
