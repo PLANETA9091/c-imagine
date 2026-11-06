@@ -1609,15 +1609,11 @@ public final class CimSceneMod {
     /** Every block and item seen opening a menu: dyed variants share one menu. */
     private static final Map<ResourceLocation, List<String>> GUI_ALL_OPENERS = new HashMap<>();
     private static final int GUI_SETTLE_TICKS = 10;
+    private static net.minecraft.world.entity.Entity guiEntity;
 
     /** Inside menu reach, in front of the viewer, so {@code stillValid} keeps the screen up. */
     private static BlockPos guiRigPos(ServerPlayer viewer) {
         return viewer.blockPosition().relative(viewer.getDirection(), 2);
-    }
-
-    private static void guiClearRig(ServerLevel level, ServerPlayer viewer, BlockPos rig) {
-        level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
-        viewer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
     }
 
     private static ResourceLocation guiOpenMenu(ServerPlayer viewer) {
@@ -1634,6 +1630,7 @@ public final class CimSceneMod {
     /** Records what would open without telling any client, whose block is about to vanish. */
     private static final class GuiProbe extends net.neoforged.neoforge.common.util.FakePlayer {
         ResourceLocation seen;
+        String candidate;
         String seenClass;
         String seenTitle;
         List<String> seenSlots;
@@ -1672,22 +1669,55 @@ public final class CimSceneMod {
         }
     }
 
-    private static void guiPlace(ServerLevel level, BlockPos rig, String opener) {
-        if (opener.startsWith("block:")) {
-            ResourceLocation id = ResourceLocation.parse(opener.substring("block:".length()));
+    /** Prepares what the opener acts on. Openers read {@code [sneak+][place+]kind:id}. */
+    private static void guiPlace(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        String plain = opener.replace("sneak+", "");
+        if (plain.startsWith("block:")) {
+            ResourceLocation id = ResourceLocation.parse(plain.substring("block:".length()));
             level.setBlock(rig, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
+        } else if (plain.startsWith("place+item:")) {
+            // Parts and multi-piece items exist only through their own placement code.
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
+                    ResourceLocation.parse(plain.substring("place+item:".length()))));
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            BlockPos floor = rig.below();
+            stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(floor).add(0, 0.5, 0), Direction.UP, floor, false)));
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        } else if (plain.startsWith("entity:")) {
+            net.minecraft.world.entity.Entity entity = BuiltInRegistries.ENTITY_TYPE.get(
+                    ResourceLocation.parse(plain.substring("entity:".length()))).create(level);
+            if (entity != null) {
+                entity.moveTo(rig.getX() + 0.5, rig.getY(), rig.getZ() + 0.5, 0f, 0f);
+                level.addFreshEntity(entity);
+                guiEntity = entity;
+            }
         }
     }
 
-    /** Right-clicks the placed block or uses the item, the way a player would. */
+    /** Acts the way a player's right click does, in the same order the game tries things. */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        boolean sneak = opener.startsWith("sneak+");
+        String plain = opener.replace("sneak+", "");
+        player.setShiftKeyDown(sneak);
         try {
-            if (opener.startsWith("block:")) {
-                level.getBlockState(rig).useWithoutItem(level, player, new BlockHitResult(
-                        Vec3.atCenterOf(rig), Direction.UP, rig, false));
+            if (plain.startsWith("block:") || plain.startsWith("place+item:")) {
+                // Low in the cell: a part placed on the floor sits there, a full block does not care.
+                BlockHitResult hit = new BlockHitResult(new Vec3(rig.getX() + 0.5, rig.getY() + 0.06, rig.getZ() + 0.5),
+                        Direction.UP, rig, false);
+                BlockState state = level.getBlockState(rig);
+                net.minecraft.world.ItemInteractionResult result = state.useItemOn(
+                        player.getItemInHand(InteractionHand.MAIN_HAND), level, player, InteractionHand.MAIN_HAND, hit);
+                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                    state.useWithoutItem(level, player, hit);
+                }
+            } else if (plain.startsWith("entity:")) {
+                if (guiEntity != null) {
+                    guiEntity.interact(player, InteractionHand.MAIN_HAND);
+                }
             } else {
                 ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
-                ResourceLocation id = ResourceLocation.parse(opener.substring("item:".length()));
+                ResourceLocation id = ResourceLocation.parse(plain.substring("item:".length()));
                 if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(id)) {
                     stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
                     player.setItemInHand(InteractionHand.MAIN_HAND, stack);
@@ -1696,7 +1726,73 @@ public final class CimSceneMod {
             }
         } catch (Throwable t) {
             LOGGER.info("[cimscene] gallery-gui opener {} threw {}", opener, t.toString());
+        } finally {
+            player.setShiftKeyDown(false);
         }
+    }
+
+    /** What a namespace offers a player's hand: every block, item and entity, plain and sneaking. */
+    private static List<String> guiCandidates(String namespace) {
+        List<String> out = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)) {
+                out.add("block:" + b);
+            }
+        }
+        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+            if (i.getNamespace().equals(namespace)) {
+                out.add("item:" + i);
+                if (!(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
+                    out.add("place+item:" + i);
+                }
+            }
+        }
+        for (ResourceLocation e : BuiltInRegistries.ENTITY_TYPE.keySet()) {
+            if (e.getNamespace().equals(namespace)) {
+                out.add("entity:" + e);
+            }
+        }
+        out.sort(Comparator.naturalOrder());
+        List<String> both = new ArrayList<>(out);
+        for (String each : out) {
+            both.add("sneak+" + each);
+        }
+        return both;
+    }
+
+    private static void guiClearRig(ServerLevel level, ServerPlayer player, BlockPos rig) {
+        for (BlockPos p : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
+            level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+        }
+        for (net.minecraft.world.entity.Entity e : level.getEntities((net.minecraft.world.entity.Entity) null,
+                new net.minecraft.world.phys.AABB(rig).inflate(6), e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
+            e.discard();
+        }
+        guiEntity = null;
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+    }
+
+    /** One probe pass; every result lands in {@code onFound}. */
+    private static int guiProbeAll(ServerLevel level, BlockPos rig, double x, double y, double z, String namespace,
+                                   java.util.function.Consumer<GuiProbe> onFound) {
+        GuiProbe probe = new GuiProbe(level);
+        probe.setPos(x, y, z);
+        List<String> candidates = guiCandidates(namespace);
+        for (String candidate : candidates) {
+            probe.seen = null;
+            probe.candidate = candidate;
+            try {
+                guiPlace(level, probe, rig, candidate);
+                guiAct(level, probe, rig, candidate);
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui candidate {} threw {}", candidate, t.toString());
+            }
+            if (probe.seen != null) {
+                onFound.accept(probe);
+            }
+            guiClearRig(level, probe, rig);
+        }
+        return candidates.size();
     }
 
     /**
@@ -1707,40 +1803,18 @@ public final class CimSceneMod {
     private static int galleryGuiScan(CommandSourceStack src, String namespace) {
         ServerLevel level = src.getLevel();
         BlockPos rig = level.getSharedSpawnPos().above(3);
-        GuiProbe probe = new GuiProbe(level);
-        probe.setPos(rig.getX() + 0.5, rig.getY() + 1, rig.getZ() + 2.5);
-        List<String> candidates = new ArrayList<>();
-        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
-            if (b.getNamespace().equals(namespace)) {
-                candidates.add("block:" + b);
-            }
-        }
-        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
-            if (i.getNamespace().equals(namespace)) {
-                candidates.add("item:" + i);
-            }
-        }
-        candidates.sort(Comparator.naturalOrder());
         Map<ResourceLocation, List<String>> openers = new HashMap<>();
         Map<ResourceLocation, String> classes = new HashMap<>();
         Map<ResourceLocation, String> titles = new HashMap<>();
         Map<ResourceLocation, List<String>> slots = new HashMap<>();
-        for (String candidate : candidates) {
-            probe.seen = null;
-            try {
-                guiPlace(level, rig, candidate);
-                guiAct(level, probe, rig, candidate);
-            } catch (Throwable t) {
-                LOGGER.info("[cimscene] gallery-gui-scan candidate {} threw {}", candidate, t.toString());
-            }
-            if (probe.seen != null) {
-                openers.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(candidate);
-                classes.putIfAbsent(probe.seen, probe.seenClass);
-                titles.putIfAbsent(probe.seen, probe.seenTitle);
-                slots.putIfAbsent(probe.seen, probe.seenSlots);
-            }
-            level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
-        }
+        level.setBlock(rig.below(), Blocks.STONE.defaultBlockState(), 3);
+        int tried = guiProbeAll(level, rig, rig.getX() + 0.5, rig.getY(), rig.getZ() + 2.5, namespace, probe -> {
+            openers.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(probe.candidate);
+            classes.putIfAbsent(probe.seen, probe.seenClass);
+            titles.putIfAbsent(probe.seen, probe.seenTitle);
+            slots.putIfAbsent(probe.seen, probe.seenSlots);
+        });
+        level.setBlock(rig.below(), Blocks.AIR.defaultBlockState(), 3);
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
         ids.removeIf(id -> !id.getNamespace().equals(namespace));
         ids.sort(Comparator.comparing(ResourceLocation::toString));
@@ -1776,7 +1850,7 @@ public final class CimSceneMod {
             }
         }
         LOGGER.info("[cimscene] gallery-gui-scan ns={} tried={} menus={} found={}",
-                namespace, candidates.size(), ids.size(), found);
+                namespace, tried, ids.size(), found);
         return found;
     }
 
@@ -1788,36 +1862,11 @@ public final class CimSceneMod {
         }
         Map<ResourceLocation, String> found = new HashMap<>();
         BlockPos rig = guiRigPos(viewer);
-        GuiProbe probe = new GuiProbe(level);
-        probe.setPos(viewer.getX(), viewer.getY(), viewer.getZ());
-        List<String> candidates = new ArrayList<>();
-        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
-            if (b.getNamespace().equals(namespace)) {
-                candidates.add("block:" + b);
-            }
-        }
-        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
-            if (i.getNamespace().equals(namespace)) {
-                candidates.add("item:" + i);
-            }
-        }
-        candidates.sort(Comparator.naturalOrder());
-        for (String candidate : candidates) {
-            probe.seen = null;
-            try {
-                guiPlace(level, rig, candidate);
-                guiAct(level, probe, rig, candidate);
-            } catch (Throwable t) {
-                LOGGER.info("[cimscene] gallery-gui candidate {} threw {}", candidate, t.toString());
-            }
-            if (probe.seen != null) {
-                found.putIfAbsent(probe.seen, candidate);
-                GUI_ALL_OPENERS.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(candidate);
-            }
-            level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
-        }
-        LOGGER.info("[cimscene] gallery-gui openers ns={} tried={} found={}",
-                namespace, candidates.size(), found.size());
+        int tried = guiProbeAll(level, rig, viewer.getX(), viewer.getY(), viewer.getZ(), namespace, probe -> {
+            found.putIfAbsent(probe.seen, probe.candidate);
+            GUI_ALL_OPENERS.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(probe.candidate);
+        });
+        LOGGER.info("[cimscene] gallery-gui openers ns={} tried={} found={}", namespace, tried, found.size());
         GUI_OPENERS.put(namespace, found);
         return found;
     }
@@ -1879,12 +1928,13 @@ public final class CimSceneMod {
             // the screen reads a null holder and the client disconnects.
             String opener = guiOpeners(level, viewer, namespace).get(id);
             if (opener != null) {
-                guiPlace(level, rig, opener);
+                guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
                 // client's inventory, so the stack has to arrive first.
-                if (opener.startsWith("item:")) {
+                String plain = opener.replace("sneak+", "");
+                if (plain.startsWith("item:")) {
                     viewer.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.get(
-                            ResourceLocation.parse(opener.substring("item:".length())))));
+                            ResourceLocation.parse(plain.substring("item:".length())))));
                     viewer.inventoryMenu.broadcastChanges();
                 }
             }

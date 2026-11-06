@@ -22,11 +22,12 @@ public final class HudBootstrap {
     }
 
     /** The gallery's ours leg: shows the menu it recorded, to the harness account too. */
-    public static boolean openForHarness(org.bukkit.entity.Player player, String menuClass) {
+    public static boolean openForHarness(org.bukkit.entity.Player player, String menuClass, String heldId) {
         if (screens == null) {
             return false;
         }
         hud.show(player);
+        player.getInventory().setItemInMainHand(screens.carrier(heldId));
         return screens.openMenuClass(player, menuClass);
     }
 

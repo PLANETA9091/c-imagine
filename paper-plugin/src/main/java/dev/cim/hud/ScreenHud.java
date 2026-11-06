@@ -162,6 +162,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Path scenesDir;
     private final ItemGlyphs glyphs;
     private final Map<Float, String> itemCarriers = new HashMap<>();
+    private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
     private final Map<String, String> blockCarriers = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
 
@@ -200,6 +201,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (Files.isRegularFile(items)) {
             for (F2vPack.VisualItem row : F2vPack.readManifest(items)) {
                 itemCarriers.put(row.cmd(), row.moddedId());
+                carrierRows.put(row.moddedId(), row);
             }
         }
         Path blocks = f2v.resolve("visual-blocks.tsv");
@@ -208,6 +210,22 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
             }
         }
+    }
+
+    /** The real stack that shows as a modded item, or air when there is none. */
+    ItemStack carrier(String moddedId) {
+        F2vPack.VisualItem row = moddedId == null ? null : carrierRows.get(moddedId);
+        Material host = row == null ? null : Material.matchMaterial(row.hostItem());
+        if (host == null) {
+            return new ItemStack(Material.AIR);
+        }
+        ItemStack stack = new ItemStack(host);
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        org.bukkit.inventory.meta.components.CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+        cmd.setFloats(List.of(row.cmd()));
+        meta.setCustomModelDataComponent(cmd);
+        stack.setItemMeta(meta);
+        return stack;
     }
 
     /** The scanned screen for a menu class, or null. */
@@ -418,7 +436,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
             return;
         }
-        if (event.getHand() != EquipmentSlot.HAND || player.isSneaking()
+        if (event.getHand() != EquipmentSlot.HAND
                 || (event.getAction() != Action.RIGHT_CLICK_AIR && event.getAction() != Action.RIGHT_CLICK_BLOCK)) {
             return;
         }
@@ -432,7 +450,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (opener == null && item != null && !item.getType().isAir()) {
             opener = "item:" + itemId(item);
         }
-        ScreenPack.Scene scene = opener == null ? null : sceneForOpener(opener);
+        // The walk recorded whether the mod wants a sneaking click, as Create's controller does.
+        ScreenPack.Scene scene = opener == null ? null
+                : sceneForOpener((player.isSneaking() ? "sneak+" : "") + opener);
         if (scene != null) {
             event.setCancelled(true);
             open(player, scene);
