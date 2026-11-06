@@ -89,6 +89,15 @@ public final class HudFrame {
         return free(x, y, s, HudText.width(s));
     }
 
+    /** ASCII at a pixel in label grey, for text on a light panel. */
+    public HudFrame freeLabel(int x, int y, String raw) {
+        String s = HudText.sanitize(raw);
+        int w = HudText.width(s);
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeDarkId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
+        return this;
+    }
+
     /** Takes over another frame's runs. */
     public HudFrame append(HudFrame other) {
         parts.addAll(other.parts);

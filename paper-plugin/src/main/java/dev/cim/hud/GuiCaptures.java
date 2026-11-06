@@ -20,7 +20,7 @@ public final class GuiCaptures {
     public record Slot(int x, int y, boolean player) {
     }
 
-    public record Capture(String menuId, String menuClass, List<String> openers, List<Slot> slots) {
+    public record Capture(String menuId, String menuClass, String title, List<String> openers, List<Slot> slots) {
     }
 
     private GuiCaptures() {
@@ -48,6 +48,7 @@ public final class GuiCaptures {
     static Capture parse(List<String> lines) {
         String menu = null;
         String menuClass = null;
+        String title = null;
         List<String> openers = new ArrayList<>();
         List<Slot> slots = new ArrayList<>();
         for (String line : lines) {
@@ -61,13 +62,15 @@ public final class GuiCaptures {
                 if (p[5].startsWith("opened-by:")) {
                     openers.add(p[5].substring("opened-by:".length()));
                 }
+            } else if (p[0].equals("title")) {
+                title = p[5];
             } else if (p[0].equals("opener") && !openers.contains(p[5])) {
                 openers.add(p[5]);
             } else if (p[0].equals("slot")) {
                 slots.add(new Slot(Integer.parseInt(p[2]), Integer.parseInt(p[3]), p[5].equals("player")));
             }
         }
-        return menu == null ? null : new Capture(menu, menuClass, openers, slots);
+        return menu == null ? null : new Capture(menu, menuClass, title, openers, slots);
     }
 
     /** Menu class to capture, for joining with the bytecode scan. */

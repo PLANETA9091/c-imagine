@@ -1632,6 +1632,7 @@ public final class CimSceneMod {
     private static final class GuiProbe extends net.neoforged.neoforge.common.util.FakePlayer {
         ResourceLocation seen;
         String seenClass;
+        String seenTitle;
         List<String> seenSlots;
 
         GuiProbe(ServerLevel level) {
@@ -1644,6 +1645,7 @@ public final class CimSceneMod {
                 net.minecraft.world.inventory.AbstractContainerMenu menu = provider.createMenu(1, getInventory(), this);
                 seen = BuiltInRegistries.MENU.getKey(menu.getType());
                 seenClass = menu.getClass().getName();
+                seenTitle = provider.getDisplayName().getString();
                 seenSlots = new ArrayList<>();
                 for (net.minecraft.world.inventory.Slot slot : menu.slots) {
                     seenSlots.add(slot.x + "\t" + slot.y + "\t"
@@ -1718,6 +1720,7 @@ public final class CimSceneMod {
         candidates.sort(Comparator.naturalOrder());
         Map<ResourceLocation, List<String>> openers = new HashMap<>();
         Map<ResourceLocation, String> classes = new HashMap<>();
+        Map<ResourceLocation, String> titles = new HashMap<>();
         Map<ResourceLocation, List<String>> slots = new HashMap<>();
         for (String candidate : candidates) {
             probe.seen = null;
@@ -1730,6 +1733,7 @@ public final class CimSceneMod {
             if (probe.seen != null) {
                 openers.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(candidate);
                 classes.putIfAbsent(probe.seen, probe.seenClass);
+                titles.putIfAbsent(probe.seen, probe.seenTitle);
                 slots.putIfAbsent(probe.seen, probe.seenSlots);
             }
             level.setBlock(rig, Blocks.AIR.defaultBlockState(), 3);
@@ -1745,6 +1749,8 @@ public final class CimSceneMod {
                 found++;
                 tsv.append("cell\t0\t0\t0\t").append(id).append("\topened-by:")
                         .append(openers.get(id).get(0)).append('\t').append(classes.get(id)).append('\n');
+                tsv.append("title\t-\t-\t-\t").append(id).append('\t')
+                        .append(titles.get(id).replace('\t', ' ')).append('\n');
                 for (String each : openers.get(id)) {
                     tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
                 }

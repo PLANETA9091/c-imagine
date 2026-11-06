@@ -42,6 +42,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     private static final Pattern STATE = Pattern.compile("(\\w+)=(\\w+)");
 
+    /** Where AbstractContainerScreen puts its labels. */
+    private static final int TITLE_X = 8;
+    private static final int TITLE_Y = 6;
+
     /** GUI pixels per degree of look. */
     static final double SENSITIVITY = 6.0;
 
@@ -301,6 +305,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             frame.free(x, y, String.valueOf(piece.glyph()), piece.w() + 1);
         }
         if (s.capture != null) {
+            if (s.capture.title() != null) {
+                frame.freeLabel(s.originX + TITLE_X, s.originY + TITLE_Y, s.capture.title());
+            }
+            int[] at = s.panelAt();
+            if (at != null) {
+                frame.freeLabel(s.originX + at[0] + TITLE_X, s.originY + at[1] + TITLE_Y, "Inventory");
+            }
             int hover = s.hover();
             int nth = 0;
             for (int i = 0; i < s.capture.slots().size(); i++) {
@@ -465,11 +476,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         GuiCaptures.Capture c = GuiCaptures.parse(List.of(
                 "cell\tx\ty\tz\tmenu\tnote",
                 "cell\t1\t2\t3\tcreate:filter\topened-by:item:create:filter\tcom.simibubi.FilterMenu",
+                "title\t-\t-\t-\tcreate:filter\tList Filter",
                 "opener\t-\t-\t-\tcreate:filter\titem:create:filter",
                 "opener\t-\t-\t-\tcreate:filter\titem:create:other",
                 "slot\t0\t23\t25\tcreate:filter\tmenu",
                 "slot\t1\t38\t121\tcreate:filter\tplayer"));
         bad += check(c != null && c.menuClass().equals("com/simibubi/FilterMenu"), "capture keeps the menu class");
+        bad += check(c != null && "List Filter".equals(c.title()), "capture keeps the title");
         bad += check(c != null && c.openers().size() == 2, "openers are collected once each");
         bad += check(c != null && c.slots().size() == 2 && c.slots().get(1).player(), "slots keep their owner");
         bad += check(playerIndex(0) == 9 && playerIndex(26) == 35 && playerIndex(27) == 0,
