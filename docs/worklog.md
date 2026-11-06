@@ -7396,3 +7396,32 @@ freezes at partialTick 0.
   now only writes launch-dump.txt (the gated launch line); the walk step boots fresh per attempt.
 - The seed walk itself (manifests, gamerules, commands) is VERBATIM 12-ax — the only changes are
   the client lifecycle around it.
+
+### 14-bj verdict — run #161 (3b4fec1): the manifests CONVERGED, the block gate re-baselines at 96.86%
+- The attempt-1 block walk ran CLEAN under the live dump client (the #159 contraption crash did not
+  recur); the dump completed (cells=27507 dumped=27310 failed=0, block_entities drawn=627 failed=9
+  no_level=0) and the pack rebuilt from the client-ticked seed. The ours-161 create-p16 manifest is
+  BYTE-IDENTICAL to the truth's — the 43/32-cell walk divergence (doors/shafts) is GONE: each leg's
+  pixels now compare the SAME state.
+- BLOCK gate: ae2 2817/2850, biomesoplenty 4918/5004, create 15877/16535, dynamictrees 1781/1837,
+  mekanism 855/884, sophisticatedbackpacks 384/384 — TOTAL 26632/27494 = 96.86% vs #158's 96.63%
+  (reds 927 -> 862). The create reds dropped 770 -> 658; create p16's door reds 30 -> 17.
+- THE REMAINING REDS ARE THE RENDER-FIDELITY CLASSES, measured on #161's crops:
+  1. THE BE MESH CAPTURE MIXES COORDINATE FRAMES: the door's panel faces captured at 0..16 (the
+     pose-applied putBulkData path) while its edge strips captured at -8..8 (the RAW float-vertex
+     path — ItemCapture.addVertex(float,float,float) records the coordinates without the
+     renderer's PoseStack). The ours display then draws the strips half a block off, and the
+     highlight on p16 c8_r0 shows the panel's texture stripes phase-shifted. Any Create BER that
+     pushes raw vertices rides this. NEXT (14-bk): carry the PoseStack into ItemCapture's float
+     path (or force the pose overload), re-dump, and re-measure the door/nixie/burner families.
+  2. THE CUTOUT RESAMPLE DENSITY: the objcut tiles render at 2px per source texel
+     (ObjMesh.Cell: pw = ceil(w*texels*2), cap 120) while the truth's native render samples the
+     16-px sprite at ~3.75px/texel on the 60px/cell wall. The BOP plant reds (lumaloop 21,
+     glowworm_silk 19, high_grass 13) are crops that look near-identical but carry ~110k ae from
+     the edge-stepping difference alone. NEXT: raise the density to 4px/texel (the 1024-sheets
+     grow ~4x, ~48 sheets, still trivial for the client) and re-measure the diagonal-geometry
+     families (plants, leaves, quartz buds).
+  3. fluid_pipe (44, unchanged): the junction's interior/frame geometry — the same capture-class
+     audit as (1).
+- The verdict artifact: gallery-verdict (run 42211400496). The seed's client rig (prep + attempt
+  loop + relaunch-capable dump) is now the walk's permanent environment.
