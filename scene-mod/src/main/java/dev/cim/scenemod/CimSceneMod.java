@@ -1668,9 +1668,12 @@ public final class CimSceneMod {
                 level.getBlockState(rig).useWithoutItem(level, player, new BlockHitResult(
                         Vec3.atCenterOf(rig), Direction.UP, rig, false));
             } else {
-                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
-                        ResourceLocation.parse(opener.substring("item:".length()))));
-                player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+                ResourceLocation id = ResourceLocation.parse(opener.substring("item:".length()));
+                if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(id)) {
+                    stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
+                    player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                }
                 stack.use(level, player, InteractionHand.MAIN_HAND);
             }
         } catch (Throwable t) {
@@ -1778,6 +1781,13 @@ public final class CimSceneMod {
             String opener = guiOpeners(level, viewer, namespace).get(id);
             if (opener != null) {
                 guiPlace(level, rig, opener);
+                // The same race for items: a held-item menu looks up its host in the
+                // client's inventory, so the stack has to arrive first.
+                if (opener.startsWith("item:")) {
+                    viewer.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.get(
+                            ResourceLocation.parse(opener.substring("item:".length())))));
+                    viewer.inventoryMenu.broadcastChanges();
+                }
             }
             runAfterTicks(level.getServer(), GUI_SETTLE_TICKS,
                     () -> finishGuiPage(level, viewer, namespace, page, id, opener, rig));
