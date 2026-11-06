@@ -44,8 +44,8 @@ public final class HudPack {
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_progress.png", clear);
         entries.put("assets/" + NS + "/textures/font/cursor.png", png(cursor()));
         entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
-        entries.put("assets/" + NS + "/textures/font/slot.png", png(slot(false)));
-        entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(slot(true)));
+        entries.put("assets/" + NS + "/textures/font/slot.png", png(slot()));
+        entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(hover()));
         entries.put("assets/" + NS + "/textures/font/button.png", png(button()));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
                 freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
@@ -76,7 +76,7 @@ public final class HudPack {
         backdrop.add("chars", b);
         providers.add(backdrop);
         for (boolean hover : new boolean[]{false, true}) {
-            JsonObject slot = bitmap(NS + ":font/" + (hover ? "slot_hover" : "slot") + ".png", 18, ascent);
+            JsonObject slot = bitmap(NS + ":font/" + (hover ? "slot_hover" : "slot") + ".png", hover ? 16 : 18, ascent);
             JsonArray chars = new JsonArray();
             chars.add(String.valueOf(hover ? SLOT_HOVER : SLOT));
             slot.add("chars", chars);
@@ -159,18 +159,29 @@ public final class HudPack {
         return img;
     }
 
-    /** An 18px inventory slot, with vanilla's bevel; the hover one is lighter. */
-    private static BufferedImage slot(boolean hover) {
+    /** An 18px inventory slot, with vanilla's bevel. */
+    private static BufferedImage slot() {
         BufferedImage img = new BufferedImage(18, 18, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 18; y++) {
             for (int x = 0; x < 18; x++) {
-                int c = hover ? 0xFFC5C5C5 : 0xFF8B8B8B;
+                int c = 0xFF8B8B8B;
                 if (x == 0 || y == 0) {
                     c = 0xFF373737;
                 } else if (x == 17 || y == 17) {
                     c = 0xFFFFFFFF;
                 }
                 img.setRGB(x, y, c);
+            }
+        }
+        return img;
+    }
+
+    /** Vanilla's slot highlight: half-transparent white over whatever the mod's slot is. */
+    private static BufferedImage hover() {
+        BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                img.setRGB(x, y, 0x80FFFFFF);
             }
         }
         return img;

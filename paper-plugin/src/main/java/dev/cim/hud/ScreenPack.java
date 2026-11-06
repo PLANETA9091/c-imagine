@@ -89,7 +89,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v5");
+        StringBuilder out = new StringBuilder("v6");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -348,6 +348,7 @@ public final class ScreenPack {
                 continue;
             }
             String menu = null;
+            String menuId = null;
             int frameW = 0;
             int frameH = 0;
             int scale = 1;
@@ -359,7 +360,10 @@ public final class ScreenPack {
             for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
                 switch (p[0]) {
-                    case "menu" -> menu = slashed(p[2]);
+                    case "menu" -> {
+                        menuId = p[1];
+                        menu = slashed(p[2]);
+                    }
                     case "frame" -> {
                         frameW = Integer.parseInt(p[1]);
                         frameH = Integer.parseInt(p[2]);
@@ -385,11 +389,12 @@ public final class ScreenPack {
             if (pieces.isEmpty()) {
                 continue;
             }
+            // Many menu ids can share one class, so only a scanned guess is replaced.
             String key = menu;
-            scenes.removeIf(s -> key.equals(s.menu()));
+            scenes.removeIf(s -> s.captured() == null && key.equals(s.menu()));
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
-            scenes.add(new Scene(menu, menu, xSize, ySize, false, pieces, new ArrayList<>(),
+            scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, new ArrayList<>(),
                     new Captured(left - guiW / 2, top - guiH / 2, slots)));
         }
     }

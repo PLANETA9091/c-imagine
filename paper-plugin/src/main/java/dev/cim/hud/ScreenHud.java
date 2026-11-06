@@ -175,7 +175,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         scenesDir = root.resolve("scenes");
         try {
             found = ScreenPack.scenes(modsDir);
-            known = GuiCaptures.byClass(GuiCaptures.read(root.resolve("scenes")));
+            known = GuiCaptures.byId(GuiCaptures.read(root.resolve("scenes")));
             icons = new ItemGlyphs(ScreenPack.moddedIcons(modsDir));
             readCarriers(root.resolve("f2v"));
         } catch (IOException e) {
@@ -190,7 +190,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** The walk's files can land after boot, as they do in the gallery. */
     private void refreshCaptures() {
         try {
-            captures = GuiCaptures.byClass(GuiCaptures.read(scenesDir));
+            captures = GuiCaptures.byId(GuiCaptures.read(scenesDir));
         } catch (IOException e) {
             log.warning("[cim-screen] capture read failed: " + e);
         }
@@ -228,24 +228,37 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return stack;
     }
 
-    /** The scanned screen for a menu class, or null. */
-    private ScreenPack.Scene sceneFor(String menuClass) {
-        return scenes.stream().filter(s -> menuClass.equals(s.menu())).findFirst().orElse(null);
+    /** The screen for a menu: its own capture first, then a scan of its class. */
+    private ScreenPack.Scene sceneFor(String menuId, String menuClass) {
+        ScreenPack.Scene own = scenes.stream().filter(s -> s.className().equals(menuId)).findFirst().orElse(null);
+        if (own != null || menuClass == null) {
+            return own;
+        }
+        String wanted = menuClass.replace('.', '/');
+        return scenes.stream().filter(s -> wanted.equals(s.menu())).findFirst().orElse(null);
+    }
+
+    private GuiCaptures.Capture captureOf(ScreenPack.Scene scene) {
+        GuiCaptures.Capture own = captures.get(scene.className());
+        if (own != null || scene.menu() == null) {
+            return own;
+        }
+        return captures.values().stream().filter(c -> scene.menu().equals(c.menuClass())).findFirst().orElse(null);
     }
 
     public void open(Player player, ScreenPack.Scene scene) {
-        GuiCaptures.Capture capture = scene.menu() == null ? null : captures.get(scene.menu());
+        GuiCaptures.Capture capture = captureOf(scene);
         open.put(player.getUniqueId(), new Session(scene, capture,
                 new Pointer(300, 170, player.getYaw(), player.getPitch())));
     }
 
-    /** Opens by menu class; the gallery's ours leg uses this. */
-    public boolean openMenuClass(Player player, String menuClass) {
+    /** Opens the screen of one menu; the gallery's ours leg uses this. */
+    public boolean openMenu(Player player, String menuId, String menuClass) {
         refreshCaptures();
-        ScreenPack.Scene scene = sceneFor(menuClass.replace('.', '/'));
+        ScreenPack.Scene scene = sceneFor(menuId, menuClass);
         if (scene != null) {
             open(player, scene);
-            // The real screen has no pointer in the frame either: the gallery mouse is off-screen.
+            // The real screen has no pointer in the frame either.
             open.get(player.getUniqueId()).pointerShown = false;
         }
         return scene != null;
@@ -348,10 +361,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 int x = s.originX + slot.x();
                 int y = s.originY + slot.y();
                 if (slot.x() > -1000) {
-                    if ((slot.player() && !panel && s.scene.captured() == null) || i == hover) {
-                        frame.free(x - 1, y - 1, String.valueOf(i == hover ? HudPack.SLOT_HOVER : HudPack.SLOT), 19);
+                    if (slot.player() && !panel && s.scene.captured() == null) {
+                        frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }
                     drawItem(frame, x, y, slotItem(player, s, i, nth));
+                    if (i == hover) {
+                        frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
+                    }
                 }
                 nth += slot.player() ? 1 : 0;
             }
@@ -462,7 +478,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private ScreenPack.Scene sceneForOpener(String opener) {
         for (GuiCaptures.Capture c : captures.values()) {
             if (c.openers().contains(opener)) {
-                return sceneFor(c.menuClass());
+                return sceneFor(c.menuId(), c.menuClass());
             }
         }
         return null;

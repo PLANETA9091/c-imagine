@@ -1893,6 +1893,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         int cells = 0;
         String menuClass = null;
         String opener = "";
+        String menuId = null;
         try {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
                 if (line.startsWith("cell\t")) {
@@ -1900,6 +1901,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     String[] row = line.split("\t", -1);
                     if (row.length > 6) {
                         menuClass = row[6];
+                    }
+                    if (row.length > 4) {
+                        menuId = row[4];
                     }
                     if (row.length > 5) {
                         opener = row[5].replace("opened-by:", "").replace("sneak+", "");
@@ -1915,6 +1919,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         final int cellsf = cells;
         final String hudClass = menuClass;
+        final String hudId = menuId;
         // The truth leg holds the item that opened the menu, and its slot shows it.
         final String heldId = opener.startsWith("item:") ? opener.substring("item:".length()) : null;
         callSync(() -> {
@@ -1922,8 +1927,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer != null) {
                 viewer.closeInventory();
-                if (hudClass != null) {
-                    dev.cim.hud.HudBootstrap.openForHarness(viewer, hudClass, heldId);
+                if (hudId != null) {
+                    dev.cim.hud.HudBootstrap.openForHarness(viewer, hudId, hudClass, heldId);
                 }
             }
             World w = world(worldName());

@@ -73,13 +73,11 @@ public final class GuiCaptures {
         return menu == null ? null : new Capture(menu, menuClass, title, openers, slots);
     }
 
-    /** Menu class to capture, for joining with the bytecode scan. */
-    public static Map<String, Capture> byClass(List<Capture> captures) {
+    /** Menu id to capture. An id is unique; a class is often shared by a whole mod. */
+    public static Map<String, Capture> byId(List<Capture> captures) {
         Map<String, Capture> out = new HashMap<>();
         for (Capture c : captures) {
-            if (c.menuClass() != null) {
-                out.put(c.menuClass(), c);
-            }
+            out.put(c.menuId(), c);
         }
         return out;
     }
