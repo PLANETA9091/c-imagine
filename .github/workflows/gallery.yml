@@ -1785,6 +1785,22 @@ jobs:
           [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           wc -c visual-client/classpath.txt visual-client/launch.txt
           sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
+          # THE VULKAN FALLBACK (measured 2026-11-06: the rolled runner
+          # image's GLX offers GL 4.5 COMPAT while the 26.3 GlDevice
+          # demands more — "Couldn't find matching GLX visual" killed every
+          # ours join; the 1.21.1 truth client (GL 3.2) is permissive and
+          # joined). The 26.3 client carries a VULKAN backend: launch-arg
+          # --graphicsBackend vulkan bypasses GLX entirely; locally
+          # verified: the client initializes Vulkan and runs. Probe-gated:
+          # only when the GLX OpenGL version is below 4.6 (lavapipe from
+          # mesa-vulkan-drivers serves Vulkan 1.3 with no GLX involved).
+          GLMAJ=$(echo "$OPENGLV" | grep -oE "[0-9]+\.[0-9]+" | head -1 | cut -d. -f1)
+          GLMIN=$(echo "$OPENGLV" | grep -oE "[0-9]+\.[0-9]+" | head -1 | cut -d. -f2)
+          if [ "${GLMAJ:-0}" -lt 4 ] || { [ "${GLMAJ:-0}" -eq 4 ] && [ "${GLMIN:-0}" -lt 6 ]; }; then
+            echo "GL $GLMAJ.$GLMIN < 4.6 — switching the 26.3 client to the VULKAN backend (lavapipe)"
+            sed -i 's/--graphicsBackend opengl/--graphicsBackend vulkan/' visual-client/launch.txt
+            grep -oE "\-\-graphicsBackend [a-z]*" visual-client/launch.txt
+          fi
           mkdir -p visual-client/game
           # THE 26.3 FOV PIN (14-av, re-measured locally 2026-11-05, probe-14av.sh):
           # the old -0.65 pin was calibrated (2026-11-01) against a CI truth
