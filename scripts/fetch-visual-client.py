@@ -182,9 +182,24 @@ def main() -> int:
             target = out / "assets" / "objects" / h[:2] / h
             if target.exists() and target.stat().st_size == obj.get("size"):
                 continue
-                fetch_to(f"{RESOURCES}/{h[:2]}/{h}", target, expected_sha1=h)
+            # 14-bp FIX: this call must sit OUTSIDE the skip-if. 7db9d133's
+            # re-indent parked it UNDER the `continue` — dead code, the store
+            # never downloaded a missing object, and "fetched/verified" lied
+            # while the 26.3 client died NoSuchFileException on
+            # panorama_1.png (CubeMapTexture, Pre render) in EVERY ours shard
+            # (#197 measured: 8/8 red, probe crash read as inconclusive).
+            fetch_to(f"{RESOURCES}/{h[:2]}/{h}", target, expected_sha1=h)
             n_dl += 1
-        print(f"assets: {len(objects)} objects fetched/verified")
+        # the honest completeness net: a store the index doesn't cover is a
+        # NAMED failure here, not a blind 12-minute client stall downstream
+        missing = [o["hash"] for o in objects.values()
+                   if not (out / "assets" / "objects" / o["hash"][:2] / o["hash"]).exists()]
+        if missing:
+            raise SystemExit(
+                f"asset store incomplete: {len(missing)}/{len(objects)} objects missing "
+                f"(e.g. {missing[:3]}) — refusing to hand the client a broken store")
+        print(f"assets: {len(objects)} index objects complete "
+              f"({n_dl} total files downloaded this run)")
 
     # --- launch line -------------------------------------------------------------
     jvm = " ".join(a for a in summary["jvm_args"] if isinstance(a, str))
