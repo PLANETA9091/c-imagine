@@ -28,3 +28,20 @@ biomesoplenty:block/snowblossom_sapling	0.9356	0.934	0.933	biomesoplenty:snowblo
 biomesoplenty:block/sprout	0.9455	0.8969	0.9206	biomesoplenty:sprout@gallery-item-biomesoplenty-p4:c4,r3|n=1680|class=luma+chroma
 biomesoplenty:block/willow_trapdoor	1.1591	1.1446	1.1423	biomesoplenty:willow_trapdoor[facing=south,half=top,open=true,powered=false,waterlogged=false]@gallery-biomesoplenty-p116:c5,r0|n=2549|class=luma+chroma;biomesoplenty:willow_trapdoor[facing=south,half=top,open=true,powered=true,waterlogged=false]@gallery-biomesoplenty-p116:c3,r0|n=2527|class=luma+chroma
 block/cocoa_stage0	0.913	0.9074	0.9018	dynamictrees:cocoa[age=0,facing=north,radius_offset=4]@gallery-dynamictrees-p2:c4,r1|n=1454|class=luma+chroma
+# visual-tints.tsv — flora tint extension (14-bu): the
+# chroma-masked per-pixel median of truth/ours (see
+# scripts/flora-tints.py). Defensible rows only.
+biomesoplenty:block/barley	1.069	1.0625	1.0208	biomesoplenty:barley[half=lower]@gallery-biomesoplenty-p0:c6,r0|n=1636|class=chroma-median
+biomesoplenty:block/flowering_oak_leaves	1.2	1.2258	1.0	biomesoplenty:flowering_oak_leaves[distance=1,persistent=false,waterlogged=false]@gallery-biomesoplenty-p32:c0,r6|n=2304|class=chroma-median;biomesoplenty:flowering_oak_leaves[distance=1,persistent=true,waterlogged=false]@gallery-biomesoplenty-p32:c9,r5|n=2292|class=chroma-median;biomesoplenty:flowering_oak_leaves[distance=2,persistent=false,waterlogged=false]@gallery-biomesoplenty-p32:c4,r6|n=2297|class=chroma-median;biomesoplenty:flowering_oak_leaves[distance=2,persistent=true,waterlogged=false]@gallery-biomesoplenty-p32:c2,r6|n=2309|class=chroma-median;biomesoplenty:flowering_oak_leaves[distance=3,persistent=false,waterlogged=false]@gallery-biomesoplenty-p32:c8,r6|n=2320|class=chroma-median;biomesoplenty:flowering_oak_leaves[distance=3,persistent=true,waterlogged=false]@gallery-biomesoplenty-p32:c6,r6|n=2310|class=chroma-median;biomesoplenty:flowering_oak_leaves[distance=4,persistent=true,waterlogged=false]@gallery-biomesoplenty-p32:c10,r6|n=2309|class=chroma-median
+biomesoplenty:block/origin_leaves	1.1165	1.1441	1.0704	biomesoplenty:origin_leaves[distance=2,persistent=false,waterlogged=false]@gallery-biomesoplenty-p72:c2,r0|n=1898|class=chroma-median;biomesoplenty:origin_leaves[distance=2,persistent=true,waterlogged=false]@gallery-biomesoplenty-p72:c0,r0|n=1906|class=chroma-median;biomesoplenty:origin_leaves[distance=3,persistent=false,waterlogged=false]@gallery-biomesoplenty-p72:c6,r0|n=1882|class=chroma-median;biomesoplenty:origin_leaves[distance=3,persistent=true,waterlogged=false]@gallery-biomesoplenty-p72:c4,r0|n=1901|class=chroma-median;biomesoplenty:origin_leaves[distance=4,persistent=false,waterlogged=false]@gallery-biomesoplenty-p72:c10,r0|n=1888|class=chroma-median;biomesoplenty:origin_leaves[distance=4,persistent=true,waterlogged=false]@gallery-biomesoplenty-p72:c8,r0|n=1882|class=chroma-median
+biomesoplenty:block/origin_sapling	0.95	0.9337	1.0	biomesoplenty:origin_sapling[stage=0]@gallery-biomesoplenty-p72:c1,r2|n=2942|class=chroma-median
+biomesoplenty:block/watergrass	0.9589	0.9529	0.925	biomesoplenty:watergrass[half=lower,waterlogged=false]@gallery-biomesoplenty-p104:c1,r0|n=2110|class=chroma-median
+# 14-bu THE FLORA TINT EXTENSION (scripts/flora-tints.py, run on the #214
+# shard-0 triptychs): the wall's achromatic smooth_stone pulled the tool's
+# per-cell medians toward 1.0 and refused the whole flora family; the
+# chroma-masked per-pixel median of truth/ours isolates the tinted plant
+# pixels (the raw sprites are pre-tint grayscale) and the sway/particle
+# minority does not survive the median. The REF rows stay refused honestly:
+# high_grass (the age variants scatter past 0.47), bramble_leaves,
+# flesh_tendons (the pulsing BE). The bake rides the composite's baked
+# sibling sprite — the raw texture keeps serving every untinted consumer.
