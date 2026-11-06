@@ -2696,6 +2696,10 @@ jobs:
               done
             done
           done
+          echo "=== MENU comparison: truth beside ours (diagnostic) ==="
+          python3 scripts/cimscene/menu-sheet.py --meta truth-meta --truth truth-shots \
+            --ours ours-shots --out gallery-report/menus --ns "$LADDER_NS" || true
+          cat gallery-report/menus/menus.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           echo "=== per-page verdicts (this shard) ==="
           python3 - <<'PY'
           import glob, json
