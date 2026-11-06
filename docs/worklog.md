@@ -7835,3 +7835,126 @@ Do not conflate it with full BE-state replay or the normal-lighting probe.
 Fallback source5a00d627 shard0 report is now available; next download and
 compare every same-state verdict with the prior run, not just the chosen
 shaft. Full Easton target improved279166->68480 but remains correctly RED.
+
+2026-11-06T14:47:06.019231+00:00 Native eligibility fix published b3aecb10; no forged default data, no gate
+changes. Focused shader-normal diagnostic source read confirms item-local
+transformation is applied to layer pose AFTER quad bake; native vertex
+writer derives normals from snapped cardinal BakedQuad.direction. This can
+lose real BER facet normals when all rotations were baked into elements.
+Potential legal data-model fix: keep each plane unrotated during bake and
+apply its exact rotation as native item-local transformation, preserving
+positions while transforming the normal continuously. Must first test
+native composite/transform codec and exact root/pivot order; no production
+patch from this hypothesis. One guessed class name CompositeItemModel was
+wrong; actual class is CompositeModel. Keep failed lookup in audit.
+Measured Create shard0:2027 GREEN/72 RED before vs2044 GREEN/55 RED after
+fallback. Only one shard, not a full-run improvement claim; full verdict
+still pending. Next finish three-page joins and native-format probe prep.
+
+2026-11-06T14:48:44.332346+00:00 Next normal-fidelity diagnostic: build native minecraft:composite item
+models whose child planes bake unrotated, then apply the ORIGINAL element
+rotation/pivot through each child's native transformation. ModelBakery starts
+with identity; layer applies local transform after ItemTransform; translation
+is o-R*o (o in block units). Positions/UVs/materials remain mathematically
+identical; normals transform after cardinal bake instead of snapping after
+rotation. Target recovered gearshift and whistle, original/variant each in
+one session with two reserved diagnostic CMDs. Native Transformation codec
+must validate every plane/corner before running. No production change until
+real same-frame measurement and visual review; performance/layer cost also
+requires review if the hypothesis succeeds.
+
+2026-11-06T14:49:50.805480+00:00 Normal-probe preparation caught a fixture parser error before any launch:
+header starts with cell/x/y/z, so matching cell rows alone attempted int(x).
+Corrected header exclusion, rerun generator. Native Transformation codec
+probe compiled successfully against the actual26.3 client classpath; run it
+only after generated JSON/ZIP producer finishes. Root-transform source
+confirmed ItemTransform.NO_TRANSFORM applies(-0.5,-0.5,-0.5) before local
+matrix, consistent with chosen pivot translation o-R*o.
+
+2026-11-06T14:51:07.461361+00:00 Native codec diagnostic PASS:61 planes,maximum corner error2.6656008e-7
+blocks. Pure26.3 codec decoded every transformation; geometry/UVs unchanged.
+Diagnostic packSHA1 91fbecc6752d9f9492b264435bda89d62015f39b.
+Targets: gearshift originalCMD120393->1000000 (20 layers), whistle
+163517->1000001 (41 layers). Expected if normal snapping explains residual:
+source silhouettes stay fixed, face brightness approaches truth and AE
+falls. If not, reject. No albedo/gate edits, no production normal patch.
+Prepared guarded backup/restore scripts, one-session before/after plus
+self-repeat and BOP40 control. Package upload only after generator/mkdir
+finish; launch only after final upload0 and remote hash equality.
+
+2026-11-06T14:52:30.910377+00:00 Local comparison audit caught an invocation mismatch: the first full-page
+Easton join omitted --gate-dyn, whereas CI block joins REQUIRE it. That
+old page summary is invalid for BE verdict totals (manual target AE values
+are unaffected). Replace all local page joins using the exact CI block
+flags, without self-frame animation demotion (CI does not pass self frames
+for blocks). Keep repeats as separate stability evidence. Do not report
+the old red1 summary as parity. This correction strengthens comparability.
+
+2026-11-06T14:53:18.169286+00:00 Native-normal fixture archive completed SHA256
+0e3b435e38ba957b52b42069b180544611040673e1ea7e2e269bf41d2116295e;
+upload now completed exit0. Stage verifies pack91fbecc6752d9f9492b264435bda89d62015f39b
+before launch. No producer/consumer overlap. Corrected CI-equivalent local
+joins (--gate-dyn,no self demotion): Create0 RED2,Create16 RED16,Create384
+RED17. Seven gallery-classification tests PASS. Source fallback shard0
+had55 Create RED across51 pages (vs72 before); full run verdict is now
+available and download started to measure all8 shards honestly.
+
+2026-11-06T15:01:11.083927+00:00 Full fallback run42232211952 completed with all8 measured shards; final
+verdict remains FAILURE. Measured block ratio before76ab52b1:26636/27491
+(96.887%); after5a00d627:26746/27495(97.276%). Create RED656->548, GREEN
+15879->15991, effective denominator16535->16539. Four count/phase transitions
+mean do not claim every gained GREEN is a causal static fix; recovered shaft
+raw geometry and focused AE reduction provide direct causal evidence.
+BOP RED78->79,Mekanism29->30,DT59 unchanged,AE233 unchanged,Backpacks0.
+No full GREEN/identity claim. Exact native-normal experiment collection is
+pending; keep source positions/materials fixed and evaluate real pixels.
+
+2026-11-06T15:05:01.490799+00:00 Native per-plane rotation probe completed and restored stand inputs.
+Gearshift minAE68480->57287 (GREEN at unchanged60000);550 changed pixels,
+sum_abs13415. Whistle is an exact RGB no-op (0 changed pixels), AE111372
+unchanged. Thus normal snapping explains one facet residual, not the broad
+whistle darkening. All61 plane positions were native-codec verified before
+launch. Preserve full screenshots/repeats and gate results; no production
+normal conversion yet because source block/item render passes have different
+lighting semantics. In particular block shader paths may already bake
+lighting in vertex colors; applying item diffuse can double-shade them.
+Follow source render-pass contracts rather than indiscriminately changing
+all normals or boosting albedo. Earlier manual block percentage96.887 was
+a transcription error; exact before26636/27491=96.889891237%, after97.275868340%.
+
+2026-11-06T15:07:33.562986+00:00 Normal probe repeats: all five baseline/variant/control pairs RGB-identical
+(0 changed pixels). Stand restored baseline SHA1 and stopped; collector
+kept runtime proof/resources. No production normal conversion shipped.
+Further source reasoning: Whistle BER uses RenderType.solid (BLOCK format,
+no GPU normal diffuse), and captured shaft colors already include0.4..1.0
+lighting multipliers. The26.3 item shader applies extra diffuse. A faithful
+bridge may need an unlit material representation, rather than geometric
+normal restoration. Native affine item transforms can independently stage
+a planar quad's baked normal while preserving every point on that plane;
+prototype only, with actual PoseStack/codec validation before any launch.
+First target genuinely unlit source cases (shade:false BOP plants and
+Whistle's BER solid pass); do not boost textures or relax the gate. Shader
+semantics must be recorded per source pass before production generalization.
+Eligibility run's raw artifact now available; download started to verify
+predicate rejections and failed count from real mod capture.
+
+2026-11-06T15:10:24.215918+00:00 Next diagnostic isolates DOUBLE shading rather than changing source colors.
+For source passes that already supply lit vertex colors (Whistle/shaft
+RenderType.solid BLOCK buffers) and shade:false lumaloop, preserve all
+positions, UVs and RGBA and emulate their unlit pass on the native item
+path. A supported affine local transform can keep a plane's tangent vectors
+unchanged while steering the post-bake normal into the item shader's fully
+lit direction. This uses native JSON matrices only, no core shader override,
+no texture brightening, no extra entities, no gate change. It remains a
+prototype, not a production exception or a per-state shipping rule.
+Validate every matrix through actual26.3 Transformation + PoseStack normal
+math and all original corners; then measure three before/after cells against
+same-run truth. Only a source-render-pass-based generalization could ship.
+
+2026-11-06T15:14:48.843888+00:00 Resume audit: isolated checkout has only the pending worklog edit; the unlit probe ZIP, transform manifest, and compiled native codec checker have finished producing and no matching producer process remains. Next: validate actual native transform geometry/normals, inspect renderer eligibility capture evidence, and check all current required CI runs before advancing.
+
+2026-11-06T15:15:19.281521+00:00 Latest b3aecb10 checks: ci42237258500 SUCCESS, integration42237263728 SUCCESS, mod-matrix42236659571 SUCCESS; gallery42236659570 RED. Real seed capture: cells27507/dumped27335/distinct26650/failed0; BER drawn1394/failed0/no_level0/not_rendered80. The prior nine capture exceptions disappeared under native renderer eligibility checks; runtime narrator/audio initialization warnings remain unrelated to capture counters. Native26.3 codec + PoseStack proof passed all40 unlit diagnostic planes, max corner error2.682209e-7 blocks and normal tolerance1e-5. Plan: unchanged-gate Easton before/after diagnostic for gearshift, whistle, and lumaloop, preserving all input backups and capped private display isolation; separately download latest visual verdict.
+
+2026-11-06T15:16:33.531087+00:00 Full latest gallery verdict downloaded and read: measured blocks26769/27501 GREEN,732 RED; Create15995/16539 with544 RED; BOP79 RED, DynamicTrees59, AE232, Mekanism18, Backpacks0. Items16 RED. Deferred/NO-DATA/diagnostic classes still prevent full parity claims. Unlit input archive37,496,977 bytes produced successfully, bash syntax checks passed. Easton both own units inactive, original pack hash2cbfa75104052c3e2acee645eda6c0bfba083481 verified, isolated green-unlit directory created. Upload underway; do not stage until final exit0.
+
+2026-11-06T15:16:50.631200+00:00 Unlit upload finished exit0. Staging now verifies SHA1 16a82bf4e9380c6d49681d3a9ce4479128818cd7, unit/queue guards and backups before starting the private stand. No production lighting code changed; only diagnostic native JSON models are staged. Latest gallery overall measured block ratio26769/27501 (97.338278608%) is still RED. Plan: collect three same-session baseline/variant screenshot pairs plus repeats and native NBT/hash proof, restore all baseline inputs and stop own unit, compare using existing gallery-diff functions and exact gates, then publish the journal/evidence review links.
