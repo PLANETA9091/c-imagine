@@ -17,7 +17,7 @@ import java.util.stream.Stream;
  */
 public final class GuiCaptures {
 
-    public record Slot(int x, int y, boolean player) {
+    public record Slot(int x, int y, boolean player, int index) {
     }
 
     public record Capture(String menuId, String menuClass, String title, List<String> openers, List<Slot> slots) {
@@ -67,7 +67,8 @@ public final class GuiCaptures {
             } else if (p[0].equals("opener") && !openers.contains(p[5])) {
                 openers.add(p[5]);
             } else if (p[0].equals("slot")) {
-                slots.add(new Slot(Integer.parseInt(p[2]), Integer.parseInt(p[3]), p[5].equals("player")));
+                slots.add(new Slot(Integer.parseInt(p[2]), Integer.parseInt(p[3]), p[5].equals("player"),
+                        p.length > 6 ? Integer.parseInt(p[6]) : -1));
             }
         }
         return menu == null ? null : new Capture(menu, menuClass, title, openers, slots);

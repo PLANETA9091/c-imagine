@@ -389,9 +389,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (stack == null || stack.getType().isAir() || glyphs == null) {
             return;
         }
-        String glyph = glyphs.glyph(itemId(stack));
+        String id = itemId(stack);
+        String glyph = glyphs.glyph(id);
         if (glyph != null) {
-            frame.free(x, y, glyph, 17);
+            frame.free(x, y, glyph, glyphs.advance(id));
         }
         if (stack.getAmount() > 1) {
             String n = String.valueOf(stack.getAmount());
@@ -404,9 +405,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return nth < 27 ? nth + 9 : nth - 27;
     }
 
-    private ItemStack slotItem(Player player, Session s, int index, int nthPlayer) {
+    /** The real inventory index when the capture has it: mods add player slots in any order. */
+    private static int playerSlot(Session s, int index) {
+        int recorded = s.capture.slots().get(index).index();
+        return recorded >= 0 ? recorded : playerIndex(nthPlayer(s, index));
+    }
+
+    private ItemStack slotItem(Player player, Session s, int index) {
         return s.capture.slots().get(index).player()
-                ? player.getInventory().getItem(playerIndex(nthPlayer)) : s.held[index];
+                ? player.getInventory().getItem(playerSlot(s, index)) : s.held[index];
     }
 
     private static int nthPlayer(Session s, int index) {
@@ -451,7 +458,6 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
             // The gallery's real mouse is parked off the menu, so nothing is hovered there.
             int hover = s.pointerShown ? s.hover() : -1;
-            int nth = 0;
             for (int i = 0; i < s.capture.slots().size(); i++) {
                 GuiCaptures.Slot slot = s.capture.slots().get(i);
                 int x = s.originX + slot.x();
@@ -460,12 +466,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }
-                    drawItem(frame, x, y, slotItem(player, s, i, nth));
+                    drawItem(frame, x, y, slotItem(player, s, i));
                     if (i == hover) {
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }
                 }
-                nth += slot.player() ? 1 : 0;
             }
         }
         drawItem(frame, s.pointer.x() - 8, s.pointer.y() - 8, s.cursor);
@@ -498,7 +503,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // Left swaps whole stacks, as a vanilla slot does. Nothing here is the mod's menu.
         ItemStack carried = s.cursor;
         if (s.capture.slots().get(index).player()) {
-            int slot = playerIndex(nthPlayer(s, index));
+            int slot = playerSlot(s, index);
             ItemStack there = player.getInventory().getItem(slot);
             s.cursor = there == null || there.getType().isAir() ? null : there;
             player.getInventory().setItem(slot, carried);

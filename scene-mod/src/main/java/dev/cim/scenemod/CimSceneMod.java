@@ -1657,7 +1657,8 @@ public final class CimSceneMod {
                 seenSlots = new ArrayList<>();
                 for (net.minecraft.world.inventory.Slot slot : menu.slots) {
                     seenSlots.add(slot.x + "\t" + slot.y + "\t"
-                            + (slot.container == getInventory() ? "player" : "menu"));
+                            + (slot.container == getInventory() ? "player" : "menu") + "\t"
+                            + slot.getContainerSlot());
                 }
             } catch (Throwable t) {
                 LOGGER.info("[cimscene] gallery-gui probe createMenu threw {}", t.toString());
@@ -1852,7 +1853,7 @@ public final class CimSceneMod {
                 for (String slot : slots.get(id)) {
                     String[] p = slot.split("\t");
                     tsv.append("slot\t").append(index++).append('\t').append(p[0]).append('\t').append(p[1])
-                            .append('\t').append(id).append('\t').append(p[2]).append('\n');
+                            .append('\t').append(id).append('\t').append(p[2]).append('\t').append(p[3]).append('\n');
                 }
             } else {
                 tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tno-opener\n");
@@ -1954,7 +1955,7 @@ public final class CimSceneMod {
                     viewer.inventoryMenu.broadcastChanges();
                 }
             }
-            runAfterTicks(level.getServer(), GUI_SETTLE_TICKS,
+            runAfterTicks(level.getServer(), opener != null && opener.contains("entity:") ? 40 : GUI_SETTLE_TICKS,
                     () -> finishGuiPage(level, viewer, namespace, page, id, opener, rig));
             return 1;
         }
@@ -1968,7 +1969,8 @@ public final class CimSceneMod {
         int placed = 0;
         int failed = 0;
         String how = null;
-        if (opener != null) {
+        boolean gone = opener != null && opener.contains("entity:") && (guiEntity == null || !guiEntity.isAlive());
+        if (opener != null && !gone) {
             guiAct(level, viewer, rig, opener);
             if (guiOpenMenu(viewer) != null) {
                 how = "opened-by:" + opener;
@@ -2005,7 +2007,7 @@ public final class CimSceneMod {
             for (net.minecraft.world.inventory.Slot slot : viewer.containerMenu.slots) {
                 tsv.append("slot\t").append(slotIndex++).append('\t').append(slot.x).append('\t')
                         .append(slot.y).append('\t').append(id).append('\t')
-                        .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\n');
+                        .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\t').append(slot.getContainerSlot()).append('\n');
             }
         }
         writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed);

@@ -90,7 +90,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v7");
+        StringBuilder out = new StringBuilder("v8");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -114,7 +114,7 @@ public final class ScreenPack {
                         .append(s.captured().originY()).append('\n');
                 for (GuiCaptures.Slot slot : s.captured().slots()) {
                     out.append("cslot\t").append(slot.x()).append('\t').append(slot.y()).append('\t')
-                            .append(slot.player()).append('\n');
+                            .append(slot.player()).append('\t').append(slot.index()).append('\n');
                 }
             }
             for (Piece p : s.pieces()) {
@@ -147,7 +147,8 @@ public final class ScreenPack {
                         pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>())));
             } else if (p[0].equals("cslot")) {
                 out.get(out.size() - 1).captured().slots().add(new GuiCaptures.Slot(
-                        Integer.parseInt(p[1]), Integer.parseInt(p[2]), Boolean.parseBoolean(p[3])));
+                        Integer.parseInt(p[1]), Integer.parseInt(p[2]), Boolean.parseBoolean(p[3]),
+                        Integer.parseInt(p[4])));
             } else if (p[0].equals("piece") && pieces != null) {
                 pieces.add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
                         Integer.parseInt(p[4]), Integer.parseInt(p[5]), Boolean.parseBoolean(p[6])));
@@ -225,11 +226,29 @@ public final class ScreenPack {
         Map<String, String> out = new java.util.TreeMap<>();
         for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
             String[] p = line.split("\t");
-            if (p.length == 2) {
-                out.put(p[0], p[1]);
+            if (p.length == 3) {
+                out.put(p[0], p[1] + "\t" + p[2]);
             }
         }
         return out;
+    }
+
+    /**
+     * What the client will advance the pen by, the way BitmapProvider measures it: from the
+     * last column holding any alpha. A wrong number moves everything drawn after the glyph.
+     */
+    private static int advance(byte[] png) throws IOException {
+        BufferedImage img = ImageIO.read(new ByteArrayInputStream(png));
+        int right = 0;
+        for (int y = 0; y < img.getHeight(); y++) {
+            for (int x = img.getWidth() - 1; x >= right; x--) {
+                if (img.getRGB(x, y) >>> 24 != 0) {
+                    right = x + 1;
+                    break;
+                }
+            }
+        }
+        return (int) (0.5 + right * 16.0 / img.getHeight()) + 1;
     }
 
     private static Map<String, String> iconsFor(Path modsDir, java.util.Collection<String> wanted) throws IOException {
@@ -248,7 +267,7 @@ public final class ScreenPack {
             for (String folder : new String[]{"item", "block"}) {
                 byte[] png = art.get("assets/" + p[0] + "/textures/" + folder + "/" + p[1] + ".png");
                 if (png != null && png.length > 24 && square(png)) {
-                    out.put(id, p[0] + ":" + folder + "/" + p[1] + ".png");
+                    out.put(id, p[0] + ":" + folder + "/" + p[1] + ".png\t" + advance(png));
                     break;
                 }
             }
@@ -264,8 +283,8 @@ public final class ScreenPack {
                 readIcons(Files.readAllBytes(jar), art, 0);
             }
         }
-        for (String file : icons.values()) {
-            String[] p = file.split(":", 2);
+        for (String value : icons.values()) {
+            String[] p = value.split("\t")[0].split(":", 2);
             String entry = "assets/" + p[0] + "/textures/" + p[1];
             entries.putIfAbsent(entry, art.get(entry));
         }
@@ -420,7 +439,7 @@ public final class ScreenPack {
                         ySize = Integer.parseInt(p[4]);
                     }
                     case "slot" -> slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
-                            p[3].equals("player")));
+                            p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1));
                     default -> {
                     }
                 }

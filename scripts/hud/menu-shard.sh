@@ -52,16 +52,13 @@ stamp "truth walk: $N menus, slice $SI/$K"
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' 'recipe give cimviewer *' >/dev/null
 sleep 8
 for p in $(seq "$SI" "$K" $((N-1))); do
-  $RC list | grep -q cimviewer || { stamp "viewer lost before page $p, rejoining"; client; wait_viewer; sleep 6; $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; }
+  # A disconnected client sits on its error screen, so it is replaced, not waited for.
+  $RC list | grep -q cimviewer || { stamp "viewer lost before page $p, relaunching"; pkill -f 'cim.screenart' || true; sleep 1; client; wait_viewer; sleep 8; $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; }
   M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.done"
   B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
   for i in $(seq 1 30); do [ "$(cat "$M" 2>/dev/null || echo none)" != "$B" ] && break; sleep 0.2; done
-  # The cursor returns to the centre whenever a screen opens, and on software rendering
-  # that lands after the server says so, so park it only once the screen is up.
-  sleep 2
-  $KEY MOUSEOFF || true
-  sleep 0.8
+  sleep 2.5
   $SHOT "truth-shots/gal-gui-$NS$p.png" || true
 done
 stamp "truth done: $(find srv-wall/c-imagine/screens -name '*.png' | wc -l) screens captured"

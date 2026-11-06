@@ -1050,7 +1050,7 @@ jobs:
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
             "gamerule doMobSpawning false" "gamerule randomTickSpeed 0" | tee truth-pins.log
-          LAUNCH=$(cat truth-client/launch.txt)
+          LAUNCH=$(sed 's/^java /java -Dcim.nomouse=true /' truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)

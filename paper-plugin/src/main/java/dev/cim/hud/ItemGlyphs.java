@@ -28,9 +28,10 @@ public final class ItemGlyphs {
 
     private final Map<String, Integer> codepoints = new HashMap<>();
     private final Map<String, String> files = new TreeMap<>();
+    private final Map<String, Integer> advances = new HashMap<>();
 
     /**
-     * @param moddedTextures modded item id to texture, already known to exist. The
+     * @param moddedTextures modded item id to "texture, tab, advance"; the file is known to exist. The
      *                       client refuses a whole font over one missing file.
      */
     public ItemGlyphs(Map<String, String> moddedTextures) throws IOException {
@@ -41,8 +42,9 @@ public final class ItemGlyphs {
             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             for (String line; (line = r.readLine()) != null; ) {
                 String[] p = line.split("\t");
-                if (p.length == 2) {
+                if (p.length == 3) {
                     files.put("minecraft:" + p[0], "minecraft:" + p[1] + ".png");
+                    advances.put("minecraft:" + p[0], Integer.parseInt(p[2]));
                 }
             }
         }
@@ -54,7 +56,16 @@ public final class ItemGlyphs {
         for (String id : new TreeMap<>(moddedTextures).keySet()) {
             codepoints.put(id, MODDED_BASE + i++);
         }
-        files.putAll(moddedTextures);
+        moddedTextures.forEach((id, value) -> {
+            String[] p = value.split("\t");
+            files.put(id, p[0]);
+            advances.put(id, Integer.parseInt(p[1]));
+        });
+    }
+
+    /** How far the client moves the pen for this icon. */
+    public int advance(String id) {
+        return advances.getOrDefault(id, ICON + 1);
     }
 
     /** The glyph for an id, or null when no item has that id. */

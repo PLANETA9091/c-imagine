@@ -124,7 +124,8 @@ public final class ScreenArt {
                 continue;
             }
             tsv.append("slot\t").append(slot.x).append('\t').append(slot.y).append('\t')
-                    .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\n');
+                    .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\t')
+                    .append(slot.getContainerSlot()).append('\n');
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
