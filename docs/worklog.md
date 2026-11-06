@@ -7448,3 +7448,22 @@ freezes at partialTick 0.
   (emission, 15) — the emissive cells ride their own block light exactly like the truth leg; the
   non-emissive rows pin (0, 15) = the same local light they already rode, so nothing but the glow
   changes. The Brightness(blockLight, skyLight) argument order verified against the Spigot javadoc.
+
+### 14-bk verdict — run #164 (6a059c3, clean re-dispatch after #163's shard-2 flake): 96.92%
+- #163 measured 96.78% but shard 2's ours job produced NO shots (join_pages=0 — the client died
+  before its walk; a flake, not the rig) — a re-dispatch on the same sha measured the full ladder:
+  ae2 2819/2851, biomesoplenty 4923/5001, create 15886/16535, dynamictrees 1778/1837, mekanism
+  855/884, sophisticatedbackpacks 384/384 — TOTAL 26645/27492 = 96.92%. New campaign high
+  (#158 96.63% -> #161 96.86% -> #162 96.89% -> #164 96.92%).
+- THE EMISSIVE FIX MEASURED NEUTRAL: the plant/burner/nixie families kept their reds and their ae
+  (lumaloop 21, glowworm_silk 19, blaze_burner 16 — unchanged). The hypothesis died on the
+  vanilla lightmap's shape: at noon the sky-15 row already saturates the brightness curve, so
+  (15,0) == (15,15) and pinning the display's block light changes nothing for these cells. The
+  fix stays (it is correct at dusk/night worlds and costs nothing), but the plant's ~0.85x
+  darkness has another source. NEXT (14-bl): instrument the capture directly — the dump's quads
+  TSV rows carry the per-vertex rgb; extract a lumaloop cell's captured colors and compare them
+  against the sprite's texels to see exactly which multiplier the ours side bakes/loses (the
+  quads were removed after the pack bake, so the seed step must keep quads/ in the artifact).
+- Families after #164 (400 listed): fluid_pipe 44, brass_door 38, andesite_door 26, lumaloop 21,
+  glowworm_silk 19, blaze_burner 16, framed_glass_door 14, gearshift 9, gantry_shaft 9,
+  brass_tunnel 8, nixie tubes ~30 combined, mechanical_piston 8, ae2:crafting_monitor 8.
