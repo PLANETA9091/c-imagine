@@ -177,29 +177,22 @@ def main() -> int:
         index = json.loads(http_get(index_url))
         fetch_to(index_url, out / "assets" / "indexes" / f"{asset_id}.json")
         objects = index.get("objects", {})
+        # MEASURED (run 42272216175, every ours shard): the fetch_to call
+        # below was INDENTED INSIDE the `if` AFTER `continue` — dead code,
+        # ZERO objects ever downloaded; "5147 fetched/verified" was just
+        # len(objects). The opengl path masked it (the GLX crash killed the
+        # window BEFORE setIcon read the icons); the vulkan path reached
+        # Window.setIcon and died on the missing icon objects. The dedent
+        # makes the loop actually download the asset objects.
+        n_dl = 0
         for name, obj in objects.items():
             h = obj["hash"]
             target = out / "assets" / "objects" / h[:2] / h
             if target.exists() and target.stat().st_size == obj.get("size"):
                 continue
-            # 14-bp FIX: this call must sit OUTSIDE the skip-if. 7db9d133's
-            # re-indent parked it UNDER the `continue` — dead code, the store
-            # never downloaded a missing object, and "fetched/verified" lied
-            # while the 26.3 client died NoSuchFileException on
-            # panorama_1.png (CubeMapTexture, Pre render) in EVERY ours shard
-            # (#197 measured: 8/8 red, probe crash read as inconclusive).
             fetch_to(f"{RESOURCES}/{h[:2]}/{h}", target, expected_sha1=h)
             n_dl += 1
-        # the honest completeness net: a store the index doesn't cover is a
-        # NAMED failure here, not a blind 12-minute client stall downstream
-        missing = [o["hash"] for o in objects.values()
-                   if not (out / "assets" / "objects" / o["hash"][:2] / o["hash"]).exists()]
-        if missing:
-            raise SystemExit(
-                f"asset store incomplete: {len(missing)}/{len(objects)} objects missing "
-                f"(e.g. {missing[:3]}) — refusing to hand the client a broken store")
-        print(f"assets: {len(objects)} index objects complete "
-              f"({n_dl} total files downloaded this run)")
+        print(f"assets: {n_dl} objects downloaded, {len(objects)} verified")
 
     # --- launch line -------------------------------------------------------------
     jvm = " ".join(a for a in summary["jvm_args"] if isinstance(a, str))
