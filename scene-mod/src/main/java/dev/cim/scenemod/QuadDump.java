@@ -208,14 +208,25 @@ final class QuadDump {
             Path benbt = mf.resolveSibling(
                     mf.getFileName().toString().replaceAll("\\.tsv$", ".benbt"));
             if (Files.exists(benbt)) {
-                for (String line : Files.readAllLines(benbt, StandardCharsets.UTF_8)) {
-                    String[] c = line.split("\t");
-                    if (c.length >= 5 && c[0].equals("cell")) {
-                        beTags.put(new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]),
-                                Integer.parseInt(c[3])), c[4]);
+                // never let a sibling file kill the dump: a malformed .benbt
+                // costs its cells' BE fidelity (fresh-BE fallback), not the run
+                try {
+                    for (String line : Files.readAllLines(benbt, StandardCharsets.UTF_8)) {
+                        String[] c = line.split("\t");
+                        // the header row ("cell x y z nbt") rides the same shape
+                        // as a data row's prefix — skip it like the manifest
+                        // parser skips its own
+                        if (c.length >= 5 && c[0].equals("cell") && !c[1].equals("x")) {
+                            beTags.put(new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]),
+                                    Integer.parseInt(c[3])), c[4]);
+                        }
                     }
+                    LOGGER.info("[cimscene] quad dump be nbt rows {}: {}", benbt.getFileName(), beTags.size());
+                } catch (Throwable bad) {
+                    LOGGER.info("[cimscene] quad dump be nbt unusable {}: {}",
+                            benbt.getFileName(), bad.toString());
+                    beTags.clear();
                 }
-                LOGGER.info("[cimscene] quad dump be nbt rows {}: {}", benbt.getFileName(), beTags.size());
             }
             for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
                 cells++;
