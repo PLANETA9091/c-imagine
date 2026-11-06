@@ -199,7 +199,7 @@ jobs:
       # f2v/inputs.sha1 and every consumer compares it against this hash.
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "hash=${{ hashFiles('.github/workflows/gallery.yml', 'scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -708,7 +708,10 @@ jobs:
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets visual-client/client.jar 2>&1 | tee pack-build.log
-          rm -rf seed-pack/f2v/quads seed-pack/f2v/overlay   # baked into the pack; the ctx files ride the scenes
+          # Keep the exact captured vertices/colors for parity diagnosis and
+          # cache-hit runs, outside the f2v directory served to ours shards.
+          mv seed-pack/f2v/quads seed-pack/quads
+          rm -rf seed-pack/f2v/overlay
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
@@ -754,6 +757,25 @@ jobs:
             seed-pack/f2v/inputs.sha1
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-items.resolved.tsv
+          if-no-files-found: error
+
+      - name: upload captured meshes and source mappings (also on failure)
+        if: ${{ always() && hashFiles('seed-pack/quads/rows.tsv', 'seed-pack/f2v/quads/rows.tsv', 'srv-wall/c-imagine/scenes/quads/rows.tsv') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-captured-meshes
+          path: |
+            seed-pack/quads
+            seed-pack/f2v/quads
+            srv-wall/c-imagine/scenes/quads
+            seed-pack/scenes/*.ctx.tsv
+            srv-wall/c-imagine/scenes/*.ctx.tsv
+            seed-pack/f2v/visual-gallery.resolved.tsv
+            seed-pack/f2v/visual-items.resolved.tsv
+            seed-pack/f2v/pack.sha1
+            seed-pack/f2v/inputs.sha1
+            pack-build.log
+            client-dump.out
           if-no-files-found: error
 
   # ----------------------------------------------------------- wall-truth --
@@ -1532,7 +1554,7 @@ jobs:
       # hashFiles lives in a step — job-level env rejects it, measured #48)
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "hash=${{ hashFiles('.github/workflows/gallery.yml', 'scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         id: jdk25

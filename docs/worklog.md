@@ -7467,3 +7467,56 @@ freezes at partialTick 0.
 - Families after #164 (400 listed): fluid_pipe 44, brass_door 38, andesite_door 26, lumaloop 21,
   glowworm_silk 19, blaze_burner 16, framed_glass_door 14, gearshift 9, gantry_shaft 9,
   brass_tunnel 8, nixie tubes ~30 combined, mechanical_piston 8, ae2:crafting_monitor 8.
+
+### GREEN campaign continuation — isolated worktree audit
+
+2026-11-06T13:59:44.154570+00:00 owner directive: continue at maximum efficiency toward legitimate100% GREEN
+on everything. English updates; record all work and next actions here.
+Initial reconciliation: HEAD414eb895, concurrent three plugin files and
+array-variants remain dirty and preserved. No own stand process is assumed
+running after interruption; verify before any new launch. Next fetch remote
+history/current run outcomes, inventory every red workflow and its exact
+first failure, and fix a confirmed blocker without changing thresholds,
+concealing failing rows or treating deferred classes as proven parity.
+Earlier planned Paperclip checksum preparation was not implemented before
+interruption; upstream metadata/cache behavior was read only.
+
+2026-11-06T13:59:57.169936+00:00 remote main is f6d82a32, substantially newer than this dirty shared checkout.
+Latest6a059c39 standard CI42221344765/integration42221344766/mod-matrix
+42221345033 SUCCESS; galleries42221344849 and42226714706 FAILED.
+Therefore current confirmed blocker is gallery parity, not the historical
+Paperclip incident. Prioritize latest measured evidence over an unnecessary
+new infrastructure patch. Plan: create isolated detached worktree at current
+origin/main (/tmp/cim-green-20261106) to preserve concurrent root edits;
+inspect latest gallery failures and retained review artifacts, identify
+largest actionable Create-first residual, measure and fix smallest slice.
+Mirror this session's new audit entries into that worktree before commits.
+
+2026-11-06T14:01:25.589107+00:00 Latest gallery42226714706: seed/eight truth SUCCESS; eight ours pixel RED;
+final coverage/shard verdict RED. Latest verdict and report0 downloaded
+successfully to /tmp/cim-green-20261106-artifacts. Easton inactive, baseline
+SHA1 unchanged. No new stand launch. Source review confirms captured quads
+are deleted after baking; cache input fingerprint also omits workflow
+changes even though that file controls seed gamerules/walker lifecycle.
+Expected fix: archive unmodified raw quads plus state/context mapping in
+Actions artifacts on success/failure, retain raw data in seed cache for
+later cache-hit runs, and include gallery.yml in BOTH seed fingerprints so
+a changed rig cannot reuse a payload from a different workflow contract.
+No verdict, exclusion, luma, alignment or AE behavior changes. Plan: move
+quads out of runtime f2v into seed-pack/quads after successful bake; upload
+separate diagnostic artifact (including pre-bake locations after failure),
+audit all embedded shell syntax, inspect exact diff and publish this slice.
+
+2026-11-06T14:02:02.137854+00:00 Diagnostic retention implementation complete in isolated worktree: quads
+move to seed-pack/quads after bake (kept by existing seed cache); separate
+seed-captured-meshes artifact includes raw meshes, context maps, resolved
+models, pack/input hashes and build/dump logs. The failure path also finds
+pre-bake quads. Both fingerprints now include the workflow and remain equal.
+Validation: YAML parsed; embedded shell audit0 failures; ten report tests
+PASS; coverage smoke ALL PASS; diff check clean. No runtime/gate changes.
+Latest full measured block table is Create15886/16535 (649 RED), BOP4923/5001,
+DT1778/1837,AE22819/2851,Mekanism855/884,Backpacks384/384. Diagnostic classes
+and excluded cells do not count as full parity. Create shard0 has72 RED,
+largest steam_whistle17/brass_door17/sticker13. Next publish the evidence
+retention slice, let its freshly invalidated seed capture authoritative
+meshes, and inspect current pack/shots meanwhile for a reproducible fix.
