@@ -1754,6 +1754,13 @@ public final class CimSceneMod {
                 placed++;
                 tsv.append("cell\t").append(rig.getX()).append('\t').append(rig.getY()).append('\t')
                         .append(rig.getZ()).append('\t').append(id).append('\t').append(how).append('\n');
+                // Slot geometry is server state, so every opened menu documents itself.
+                int slotIndex = 0;
+                for (net.minecraft.world.inventory.Slot slot : viewer.containerMenu.slots) {
+                    tsv.append("slot\t").append(slotIndex++).append('\t').append(slot.x).append('\t')
+                            .append(slot.y).append('\t').append(id).append('\t')
+                            .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\n');
+                }
             }
         }
         String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
