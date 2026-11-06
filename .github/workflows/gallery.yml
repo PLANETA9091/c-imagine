@@ -759,6 +759,53 @@ jobs:
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
+          # 14-bi LOADER-UNBAKED demotion (the DT surface_root class): a
+          # blockstate whose model chain rides a custom loader the pack
+          # cannot bake (dynamictrees:surface_root — the roots' geometry is
+          # built by the mod's own code) resolves to NO composite row — the
+          # ours display renders sky while the truth renders the mod's own
+          # geometry: a structural channel gap, the EntityBlock/BER class.
+          # The manifests carry those rows as dyn=1 (reported, never gated —
+          # the gate is the real-client leg M5.6). Mechanical: the resolved
+          # manifest IS the signal; zero per-mod code; every future mod's
+          # loader states get the same honest classification.
+          python3 - <<'PY'
+          import glob, pathlib, sys
+          resolved = set()
+          total_rows = 0
+          for line in pathlib.Path('seed-pack/f2v/visual-gallery.resolved.tsv').read_text().splitlines():
+              if line.startswith('#') or not line.strip():
+                  continue
+              resolved.add(line.split('\t')[0])
+          flipped = 0
+          for mf in pathlib.Path('seed-pack/scenes').glob('gallery-*-p*.tsv'):
+              if '.ctx.' in mf.name:
+                  continue
+              lines = mf.read_text().splitlines()
+              out = []
+              for line in lines:
+                  p = line.split('\t')
+                  if (p[0] == 'cell' and len(p) >= 6 and p[5].strip() == '0'
+                          and not p[4].startswith('minecraft:')
+                          and p[4] not in resolved):
+                      p[5] = '1'
+                      flipped += 1
+                      out.append('\t'.join(p))
+                  else:
+                      out.append(line)
+              if flipped:
+                  mf.write_text('\n'.join(out) + '\n')
+              total_rows += sum(1 for line in out if line.startswith('cell\t'))
+          # THE SAFEGUARD: the demotion is for the SMALL structural class (the
+          # custom-loader states). A mass flip means the pack build is broken
+          # (the 14-ay bare-parent class, a jar missing...) — fail loudly, do
+          # NOT silently demote the gate away.
+          PCT = 100.0 * flipped / max(1, total_rows)
+          print(f"loader-unbaked dyn flip: {flipped}/{total_rows} rows ({PCT:.1f}%)")
+          if PCT > 5.0:
+              print(f"LOADER-UNBAKED FLOOD: {PCT:.1f}% of the modded manifest rows have no pack composite — the pack build is broken; fix the resolver instead of demoting the gate")
+              sys.exit(1)
+          PY
           cp paper-plugin/target/cim-paper-plugin.jar seed-pack/plugin/
           cp paper-plugin/target/selftest-cp.txt seed-pack/plugin/
           cp srv-wall/boot.log seed-pack/boot-walk.log
