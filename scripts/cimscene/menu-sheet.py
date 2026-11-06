@@ -1,70 +1,140 @@
 #!/usr/bin/env python3
-"""Side-by-side menu report: the real NeoForge client beside c-imagine.
+"""Menu gallery join: the real NeoForge client beside c-imagine, GREEN or RED.
 
-Reads the truth gui manifests and writes one PNG per menu, truth left, ours
-right, plus menus.md for the run summary. A menu that did not open, or a frame
-that is missing, is listed by name. Diagnostic: it never fails the run.
+Every menu a namespace registers gets one verdict. GREEN means every pixel of the
+menu's area is identical on both legs. RED is everything else, including a menu that
+did not open and a frame that is missing, so nothing passes by being absent.
 
-Usage: menu-sheet.py --meta DIR --truth DIR --ours DIR --out DIR --ns a,b
+The area comes from the menu's real slots, centred as a screen centres itself. The
+world behind a screen differs between the legs and is not compared.
+
+Writes join-menu-<ns>-<menu>.json (the shape the shard verdict reads), one sheet per
+menu with truth, ours and the differing pixels, and menus.md for the run summary.
+Exits 1 when any menu is RED.
+
+Usage: menu-sheet.py --meta DIR --truth DIR --ours DIR --out DIR --report DIR --ns "a b"
 """
 import argparse
 import glob
+import json
 import os
 import re
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
 LABEL = 18
+SHEET = (426, 240)
+# A vanilla screen with no slots to measure.
+DEFAULT_W, DEFAULT_H = 176, 166
 
 
-def rows(path):
+def read_manifest(path):
+    """Returns (menu, opened, note, slots) for one page, or None."""
+    menu, opened, note, slots = None, False, "", []
     with open(path, encoding="utf-8") as f:
         for line in f:
-            parts = line.rstrip("\n").split("\t")
-            if parts[0] in ("cell", "skip") and parts[1] != "x" and len(parts) >= 6:
-                yield parts[0], parts[4], parts[5]
+            p = line.rstrip("\n").split("\t")
+            if len(p) < 6 or p[1] == "x":
+                continue
+            if p[0] == "cell":
+                menu, opened, note = p[4], True, p[5]
+            elif p[0] == "skip":
+                menu, opened, note = p[4], False, p[5]
+            elif p[0] == "slot" and int(p[2]) > -1000:
+                slots.append((int(p[2]), int(p[3])))
+    return None if menu is None else (menu, opened, note, slots)
 
 
-def panel(path, title, size):
+def menu_box(frame_size, slots, scale):
+    """Pixel rectangle of the menu, from its slots, centred on the frame."""
+    if slots:
+        w = max(x for x, _ in slots) - min(x for x, _ in slots) + 18
+        h = max(y for _, y in slots) - min(y for _, y in slots) + 18
+    else:
+        w, h = DEFAULT_W, DEFAULT_H
+    cx, cy = frame_size[0] // 2, frame_size[1] // 2
+    return (cx - w * scale // 2, cy - h * scale // 2, cx + w * scale // 2, cy + h * scale // 2)
+
+
+def compare(truth_path, ours_path, slots, scale):
+    """Returns (differing pixels, total pixels, mask image), or None without both frames."""
+    if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
+        return None
+    truth = Image.open(truth_path).convert("RGB")
+    ours = Image.open(ours_path).convert("RGB")
+    if truth.size != ours.size:
+        return None
+    box = menu_box(truth.size, slots, scale)
+    # Per channel: converting to grey would round a one-step difference away.
+    r, g, b = ImageChops.difference(truth.crop(box), ours.crop(box)).split()
+    diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+    red = sum(1 for v in diff.getdata() if v)
+    return red, diff.size[0] * diff.size[1], diff
+
+
+def panel(image, title, size):
     out = Image.new("RGB", (size[0], size[1] + LABEL), (24, 24, 24))
     ImageDraw.Draw(out).text((4, 3), title, fill=(255, 255, 255))
-    if path and os.path.isfile(path):
-        out.paste(Image.open(path).convert("RGB").resize(size), (0, LABEL))
+    if image is not None:
+        out.paste(image.convert("RGB").resize(size), (0, LABEL))
     else:
         ImageDraw.Draw(out).text((8, LABEL + 8), "no frame", fill=(255, 90, 90))
     return out
 
 
+def load(path):
+    return Image.open(path) if os.path.isfile(path) else None
+
+
+def judge(menu, opened, note, result):
+    if not opened:
+        return "RED", f"not opened: {note}"
+    if result is None:
+        return "RED", "frame missing"
+    red, total, _ = result
+    return ("GREEN", "pixel identical") if red == 0 else ("RED", f"{red} of {total} pixels differ")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    for name in ("--meta", "--truth", "--ours", "--out", "--ns"):
+    for name in ("--meta", "--truth", "--ours", "--out", "--report", "--ns"):
         ap.add_argument(name, required=True)
+    ap.add_argument("--scale", type=int, default=3)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    size = (640, 360)
-    table = []
+    os.makedirs(a.report, exist_ok=True)
+    rows = []
     for ns in a.ns.replace(",", " ").split():
         pattern = os.path.join(a.meta, "**", f"gallery-gui-{ns}-p*.tsv")
         for manifest in sorted(glob.glob(pattern, recursive=True)):
             page = re.search(r"-p(\d+)\.tsv$", manifest).group(1)
             truth = os.path.join(a.truth, f"gal-gui-{ns}{page}.png")
             ours = os.path.join(a.ours, f"ours-gal-gui-{ns}{page}.png")
-            for kind, menu, note in rows(manifest):
-                name = menu.replace(":", "_")
-                sheet = Image.new("RGB", (size[0] * 2 + 4, size[1] + LABEL), (70, 70, 70))
-                sheet.paste(panel(truth, f"NeoForge: {menu}", size), (0, 0))
-                sheet.paste(panel(ours, "c-imagine, vanilla 26.3", size), (size[0] + 4, 0))
-                sheet.save(os.path.join(a.out, f"{name}.png"))
-                state = "opened" if kind == "cell" else "NOT OPENED"
-                table.append((menu, state, note, os.path.isfile(truth), os.path.isfile(ours)))
-    opened = sum(1 for r in table if r[1] == "opened")
+            read = read_manifest(manifest)
+            if read is None or not os.path.isfile(truth):
+                continue  # another shard's page: this shard shot only its stride
+            menu, opened, note, slots = read
+            result = compare(truth, ours, slots, a.scale)
+            verdict, why = judge(menu, opened, note, result)
+            name = menu.replace(":", "_")
+            sheet = Image.new("RGB", (SHEET[0] * 3 + 8, SHEET[1] + LABEL), (70, 70, 70))
+            sheet.paste(panel(load(truth), f"NeoForge: {menu}", SHEET), (0, 0))
+            sheet.paste(panel(load(ours), f"c-imagine: {verdict}", SHEET), (SHEET[0] + 4, 0))
+            sheet.paste(panel(result[2] if result else None, why, SHEET), (SHEET[0] * 2 + 8, 0))
+            sheet.save(os.path.join(a.out, f"{name}.png"))
+            with open(os.path.join(a.report, f"join-menu-{name}.json"), "w", encoding="utf-8") as f:
+                json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
+                           "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
+            rows.append((menu, verdict, why))
+    green = sum(1 for r in rows if r[1] == "GREEN")
     with open(os.path.join(a.out, "menus.md"), "w", encoding="utf-8") as f:
-        f.write(f"### Menus: {opened} of {len(table)} opened on the real client\n\n")
-        f.write("| menu | truth | how | truth frame | ours frame |\n|---|---|---|---|---|\n")
-        for menu, state, note, t, o in table:
-            f.write(f"| {menu} | {state} | {note} | {'yes' if t else 'no'} | {'yes' if o else 'no'} |\n")
-    print(f"menu sheets: {opened}/{len(table)} opened, {a.out}")
+        f.write(f"### Menus: {green} of {len(rows)} GREEN\n\n| menu | verdict | detail |\n|---|---|---|\n")
+        for menu, verdict, why in rows:
+            f.write(f"| {menu} | {verdict} | {why} |\n")
+    print(f"menus: {green}/{len(rows)} GREEN")
+    # No rows proves nothing, so it cannot pass.
+    return 0 if rows and green == len(rows) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

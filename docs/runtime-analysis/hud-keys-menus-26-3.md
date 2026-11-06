@@ -86,5 +86,14 @@ with coordinates. Limits:
 - the pointer stalls while pitch sits at +-90
 - Esc is not visible to the server, so sneak closes the screen
 
-Not done yet: titles and text, live widgets, conditional layers, and any effect on the
-mod itself.
+The gallery gates menus. `scripts/cimscene/menu-sheet.py` gives each one GREEN or RED
+through the same `join-*.json` the shard verdict reads: GREEN only when every pixel of
+the menu's area is identical on both legs. A menu that did not open or a missing frame
+is RED. The tutorial toast is off on every gallery client.
+
+Bytecode alone does not cover every mod: AE2's screens are JSON files and Mekanism's are
+drawn by code, so the scanner finds art for 0 of AE2's 34 menu screens and 1 of
+Mekanism's 67. The next step is F2V's other half, capturing each real screen once with a
+real modded client.
+
+Not done yet: that capture, live widgets, conditional layers, and any effect on the mod.
