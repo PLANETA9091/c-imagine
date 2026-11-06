@@ -2398,6 +2398,19 @@ public final class CimSceneMod {
                 continue;
             }
             boolean isMob = e instanceof Mob;
+            if (isMob) {
+                // THE AMBIENT-HOPPER RE-PIN (measured: run 42255431005's
+                // rabbit cell — NoAI freezes AI but the spawn-packet yaw
+                // race left the truth rabbit facing AWAY from the locked
+                // camera while ours faced it; one cell, ae 436k). Re-assert
+                // the pose HERE, inside the settle pass that runs right
+                // before the page's done marker + shot — no mob can turn
+                // between this and the picture.
+                Mob m = (Mob) e;
+                m.setYRot(180.0f);
+                m.setYHeadRot(180.0f);
+                m.setYBodyRot(180.0f);
+            }
             if (!isMob) dyn++;
             cells++;
             rowStr[i] = "cell\t" + (GALLERY_X0 + col * ENTITY_PITCH) + '\t'
