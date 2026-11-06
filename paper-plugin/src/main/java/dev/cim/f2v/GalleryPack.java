@@ -908,7 +908,7 @@ public final class GalleryPack {
                                                   TreeMap<String, byte[]> entries,
                                                   List<String> warnings) throws IOException {
         return synthesizeQuadModel(jars, hash, WRAPPER_PREFIX + idx + ".json", WRAPPER_REF_PREFIX + idx,
-                entries, warnings);
+                entries, warnings, true);
     }
 
     /** The item's mesh from the real ItemRenderer, when the dump captured one. */
@@ -920,7 +920,7 @@ public final class GalleryPack {
             return null;
         }
         return synthesizeQuadModel(jars, hash, "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json",
-                WRAPPER_NS + ":items/i" + itemNo, entries, warnings);
+                WRAPPER_NS + ":items/i" + itemNo, entries, warnings, false);
     }
 
     private static Map<String, String> itemQuadMap;
@@ -943,7 +943,7 @@ public final class GalleryPack {
 
     private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
                                               TreeMap<String, byte[]> entries,
-                                              List<String> warnings) throws IOException {
+                                              List<String> warnings, boolean block) throws IOException {
         Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
             warnings.add("gallery: quad mesh missing: " + hash);
@@ -991,15 +991,9 @@ public final class GalleryPack {
         for (int i = 0; i < elements.size() && i < flags.size(); i++) {
             JsonObject el = elements.get(i).getAsJsonObject();
             if (flags.get(i)[0] == 0) {
-                // 1.21.1 said shade:false (no directional shading). The 26.3
-                // element deserializer (CuboidModelElement$Deserializer) reads
-                // ONLY "shade_direction_override" -> Direction.byName; the old
-                // boolean is dead there, so the client re-applied its default
-                // south-snap shade (x0.8) on top of the captured colors — the
-                // measured BOP crop darkening. Mojang's own migration maps
-                // shade:false -> override "up" (= brightness 1.0), so both
-                // wordings ride along: 26.3 reads the override, anything that
-                // still understands the boolean ignores the unknown key.
+                // Preserve source metadata. Neither field disables the
+                // native ITEM shader's diffuse lighting; block shade:false
+                // needs its own item-local normal below.
                 el.addProperty("shade", false);
                 el.addProperty("shade_direction_override", "up");
             }
@@ -1022,7 +1016,60 @@ public final class GalleryPack {
         wrapper.add("elements", elements);
         recordScale(ref, k);
         entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        if (block) {
+            registerUnlitBlockLayers(wrapper, ref, k, entries);
+        }
         return ref;
+    }
+
+    private static void registerUnlitBlockLayers(JsonObject wrapper, String ref, double scale,
+                                                 TreeMap<String, byte[]> entries) {
+        JsonArray ordinary = new JsonArray();
+        JsonArray children = new JsonArray();
+        int plane = 0;
+        for (var value : wrapper.getAsJsonArray("elements")) {
+            JsonObject element = value.getAsJsonObject();
+            if (!element.has("shade") || element.get("shade").getAsBoolean()) {
+                ordinary.add(element);
+                continue;
+            }
+            UnlitBlockModel.Plane unlit = UnlitBlockModel.plane(element, scale);
+            String childRef = ref + "_unlit_" + plane++;
+            JsonObject child = wrapper.deepCopy();
+            JsonArray one = new JsonArray();
+            one.add(unlit.element());
+            child.add("elements", one);
+            entries.put(modelPath(childRef), child.toString().getBytes(StandardCharsets.UTF_8));
+            JsonObject node = modelNode(childRef);
+            node.add("transformation", unlit.transformation());
+            children.add(node);
+        }
+        if (children.isEmpty()) {
+            return;
+        }
+        if (!ordinary.isEmpty()) {
+            String childRef = ref + "_shaded";
+            JsonObject child = wrapper.deepCopy();
+            child.add("elements", ordinary);
+            entries.put(modelPath(childRef), child.toString().getBytes(StandardCharsets.UTF_8));
+            recordScale(childRef, scale);
+            children.add(F2vPack.itemModelNode(childRef));
+        }
+        JsonObject composite = new JsonObject();
+        composite.addProperty("type", "minecraft:composite");
+        composite.add("models", children);
+        ITEM_NODES.put(ref, composite);
+    }
+
+    private static String modelPath(String ref) {
+        return "assets/" + ref.replace(":", "/models/") + ".json";
+    }
+
+    private static JsonObject modelNode(String ref) {
+        JsonObject node = new JsonObject();
+        node.addProperty("type", "minecraft:model");
+        node.addProperty("model", ref);
+        return node;
     }
 
     /**
@@ -1476,9 +1523,16 @@ public final class GalleryPack {
      * so {@link F2vPack#itemDef} restores it in the item definition instead.
      */
     private static final Map<String, Double> MODEL_SCALE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final Map<String, JsonObject> ITEM_NODES = new java.util.concurrent.ConcurrentHashMap<>();
 
     static void resetModelScales() {
         MODEL_SCALE.clear();
+        ITEM_NODES.clear();
+    }
+
+    static JsonObject itemNode(String ref) {
+        JsonObject node = ITEM_NODES.get(ref);
+        return node == null ? null : node.deepCopy();
     }
 
     /** The item definition's scale for a model ref (1 for all but oversized meshes). */

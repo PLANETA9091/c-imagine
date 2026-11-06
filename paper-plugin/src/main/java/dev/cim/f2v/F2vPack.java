@@ -1,5 +1,6 @@
 package dev.cim.f2v;
 
+import com.google.gson.JsonArray;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -1479,9 +1480,14 @@ public final class F2vPack {
           .append("    \"entries\": [\n");
         for (int i = 0; i < entries.size(); i++) {
             Map.Entry<Float, String> e = entries.get(i);
-            sb.append("      {\"threshold\": ").append(e.getKey())
-              .append(", \"model\": {\"type\": \"minecraft:model\", \"model\": \"")
-              .append(e.getValue()).append('"').append(scaleField(e.getValue())).append("}}");
+            sb.append("      {\"threshold\": ").append(e.getKey()).append(", \"model\": ");
+            JsonObject override = GalleryPack.itemNode(e.getValue());
+            if (override != null) {
+                sb.append(override).append('}');
+            } else {
+                sb.append("{\"type\": \"minecraft:model\", \"model\": \"")
+                  .append(e.getValue()).append('"').append(scaleField(e.getValue())).append("}}");
+            }
             sb.append(i + 1 < entries.size() ? ",\n" : "\n");
         }
         sb.append("    ],\n")
@@ -1489,6 +1495,11 @@ public final class F2vPack {
           .append(hostPath).append("\"}\n")
           .append("  }\n}\n");
         return sb.toString();
+    }
+
+    static JsonObject itemModelNode(String ref) {
+        return JsonParser.parseString("{\"type\":\"minecraft:model\",\"model\":\"" + ref
+                + "\"" + scaleField(ref) + "}").getAsJsonObject();
     }
 
     /**
@@ -2464,6 +2475,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("to").get(2).getAsDouble() == 32
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
+        unlitBlockSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -2479,6 +2491,118 @@ public final class F2vPack {
         if (!cond) {
             failures.add(what);
         }
+    }
+
+    private static void unlitBlockSelftest(List<String> failures) throws IOException {
+        unlitPlaneSelftest(failures);
+        Path quads = Files.createTempDirectory("f2v-unlit-selftest");
+        try {
+            String face = "minecraft:block/stone\t0\t-1"
+                    + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
+                    + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n";
+            // One unlit and one ordinary source face must remain distinct.
+            Files.writeString(quads.resolve("fixture.tsv"), face + face.replace("\t0\t-1", "\t1\t-1"));
+            Files.writeString(quads.resolve("items.tsv"), "fixture:item\tfixture\n");
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(quads);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            List<GalleryPack.Resolved> rows = GalleryPack.build(List.of(),
+                    List.of(new GalleryPack.Input("fixture:block#qfixture")), entries, warnings,
+                    Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "unlit: block capture resolves");
+            if (!rows.isEmpty()) {
+                String ref = rows.getFirst().modelRef();
+                JsonObject node = GalleryPack.itemNode(ref);
+                expect(failures, node != null && node.get("type").getAsString().equals("minecraft:composite")
+                                && node.getAsJsonArray("models").size() == 2,
+                        "unlit: explicit false block face gets its layer; shaded face retained");
+                String dispatch = itemDef("paper", List.of(Map.entry(100000f, ref)));
+                expect(failures, dispatch.contains("minecraft:composite") && dispatch.contains("transformation"),
+                        "unlit: range dispatch carries the native composite and matrix");
+                String itemRef = GalleryPack.synthesizeItemQuads(List.of(), "fixture:item", 0, entries, warnings);
+                expect(failures, itemRef != null && GalleryPack.itemNode(itemRef) == null,
+                        "unlit: identical ITEM capture retains native item lighting");
+                GalleryPack.resetModelScales();
+                expect(failures, GalleryPack.itemNode(ref) == null,
+                        "unlit: repeated builds cannot inherit previous item layers");
+            }
+        } finally {
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(null);
+            deleteRecursively(quads);
+        }
+    }
+
+    private static void unlitPlaneSelftest(List<String> failures) {
+        java.util.Random random = new java.util.Random(9);
+        double maxCorner = 0;
+        double maxNormal = 0;
+        for (int i = 0; i < 256; i++) {
+            JsonObject source = JsonParser.parseString("{\"from\":[2,3,4],\"to\":[14,15,4.02],"
+                    + "\"shade\":false,\"faces\":{\"south\":{\"texture\":\"#q0\",\"uv\":[0,0,16,16]}},"
+                    + "\"rotation\":{\"origin\":[8,8,8],\"x\":0,\"y\":0,\"z\":0}}")
+                    .getAsJsonObject();
+            JsonObject rotation = source.getAsJsonObject("rotation");
+            double[] angles = {random.nextDouble() * 360, random.nextDouble() * 360,
+                    random.nextDouble() * 360};
+            rotation.addProperty("x", angles[0]);
+            rotation.addProperty("y", angles[1]);
+            rotation.addProperty("z", angles[2]);
+            double scale = i % 2 + 1;
+            UnlitBlockModel.Plane plane = UnlitBlockModel.plane(source, scale);
+            expect(failures, source.get("faces").equals(plane.element().get("faces")),
+                    "unlit: source UVs/material unchanged");
+            JsonObject baked = plane.element().getAsJsonObject("rotation");
+            double[][] before = ObjMesh.columnsOf(angles[0], angles[1], angles[2]);
+            double[][] after = ObjMesh.columnsOf(baked.get("x").getAsDouble(),
+                    baked.get("y").getAsDouble(), baked.get("z").getAsDouble());
+            expect(failures, after[2][2] >= .86, "unlit: baked normal remains cardinal south");
+            double[] pivot = {8.0 / 16, 9.0 / 16, 4.02 / 16};
+            JsonArray matrix = plane.transformation();
+            for (double x : new double[]{2.0 / 16, 14.0 / 16}) {
+                for (double y : new double[]{3.0 / 16, 15.0 / 16}) {
+                    double[] point = {x, y, 4.02 / 16};
+                    double[] want = {.5, .5, .5};
+                    double[] pre = pivot.clone();
+                    for (int r = 0; r < 3; r++) {
+                        for (int c = 0; c < 3; c++) {
+                            want[r] += scale * before[c][r] * (point[c] - .5);
+                            pre[r] += after[c][r] * (point[c] - pivot[c]);
+                        }
+                    }
+                    for (int r = 0; r < 3; r++) {
+                        double value = matrix.get(r * 4 + 3).getAsDouble();
+                        for (int c = 0; c < 3; c++) {
+                            value += matrix.get(r * 4 + c).getAsDouble() * pre[c];
+                        }
+                        maxCorner = Math.max(maxCorner, Math.abs(value - want[r]));
+                    }
+                }
+            }
+            // Inverse-transpose Z is the cross of the first two columns,
+            // divided by the determinant. Check the sign as well as direction.
+            double[] normal = new double[3];
+            for (int r = 0; r < 3; r++) {
+                int a = (r + 1) % 3;
+                int b = (r + 2) % 3;
+                normal[r] = matrix.get(a * 4).getAsDouble() * matrix.get(b * 4 + 1).getAsDouble()
+                        - matrix.get(b * 4).getAsDouble() * matrix.get(a * 4 + 1).getAsDouble();
+            }
+            double det = 0;
+            double length = 0;
+            for (int r = 0; r < 3; r++) {
+                det += normal[r] * matrix.get(r * 4 + 2).getAsDouble();
+                length += normal[r] * normal[r];
+            }
+            double[] light = {.2, 1, -.7};
+            for (int r = 0; r < 3; r++) {
+                maxNormal = Math.max(maxNormal, Math.abs(normal[r] / Math.sqrt(length)
+                        * Math.signum(det) - light[r] / Math.sqrt(1.53)));
+            }
+        }
+        expect(failures, maxCorner < 1e-9, "unlit: arbitrary planes/oversized scale preserve all corners");
+        expect(failures, maxNormal < 1e-9, "unlit: native layer normal preserves fully lit source pass");
     }
 
     /** A real w x h PNG (opaque, one gray shade) — the animation sanitizer reads IHDR. */
