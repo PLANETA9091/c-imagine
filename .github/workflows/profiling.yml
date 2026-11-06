@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: restore baseline
@@ -22,24 +24,48 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: baseline
-          key: criterion-baseline-
-      - name: run benches
-        run: cargo bench --workspace
-      - name: compare against baseline (fail on >10% regression)
-        if: steps.baseline.outputs.cache-hit == 'true'
+          key: criterion-baseline-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            criterion-baseline-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-
+      - name: validate gate contracts
         run: |
-          echo "Baseline present; criterion comparison gate would run here."
-          # M1+: parse target/criterion/report and fail on regression > 10%.
+          python3 scripts/perf/test-criterion-gate.py
+          python3 scripts/perf/test-boot-budget.py
+      - name: measure parent baseline on cache miss
+        if: steps.baseline.outputs.cache-matched-key == ''
+        run: |
+          parent=$(git rev-parse HEAD^)
+          git worktree add --detach baseline-source "$parent"
+          rm -rf target/criterion
+          CARGO_TARGET_DIR="$PWD/target" cargo bench --workspace --manifest-path baseline-source/Cargo.toml
+          python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$parent"
+          rm -rf target/criterion
+      - name: run benches
+        run: |
+          rm -rf target/criterion
+          cargo bench --workspace
+      - name: compare against baseline (fail on >10% regression)
+        run: |
+          set -o pipefail
+          cp -a baseline baseline-before
+          python3 scripts/perf/criterion-gate.py compare --baseline baseline --current target/criterion --source-sha "$GITHUB_SHA" --report criterion-deltas.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: snapshot passing measurements
+        run: python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$GITHUB_SHA"
       - name: save new baseline
         uses: actions/cache/save@v4
         with:
           path: baseline
-          key: criterion-baseline-${{ github.run_id }}
+          key: criterion-baseline-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: criterion-report
-          path: target/criterion
-          if-no-files-found: ignore
+          path: |
+            target/criterion
+            baseline
+            baseline-before
+            criterion-deltas.json
+          if-no-files-found: error
 
   budget:
     name: bare vs c-imagine boot + RSS budget
@@ -101,24 +127,8 @@ jobs:
 
       - name: compare budgets
         run: |
-          boot_time() { grep -m1 -oE "Done \(([0-9.]+)s\)" "$1" | grep -oE "[0-9.]+" || echo "999"; }
-          peak_rss_kb() { sort -n "$1" | tail -1 || echo 0; }
-          A_T=$(boot_time bare/boot.log); B_T=$(boot_time modded/boot.log)
-          A_R=$(peak_rss_kb bare/rss.log); B_R=$(peak_rss_kb modded/rss.log)
-          echo "| metric | bare | c-imagine | delta |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| boot time (s) | $A_T | $B_T | $(echo "$B_T $A_T" | awk '{d=($2>0)?($1/$2-1)*100:0; printf "%.1f%%", d}') |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| peak RSS (MiB) | $((A_R/1024)) | $((B_R/1024)) | $(( (B_R-A_R)/1024 )) |" >> "$GITHUB_STEP_SUMMARY"
-          # M0 gates (relaxed per ROADMAP; tightened every milestone).
-          BOOT_RATIO=$(echo "$B_T $A_T" | awk '{r=($2>0)?$1/$2:99; printf "%.2f", r}')
-          RSS_DELTA_MIB=$(( (B_R-A_R)/1024 ))
-          if (( $(echo "$BOOT_RATIO > 1.25" | bc -l) )); then
-            echo "FAIL: boot time ratio $BOOT_RATIO exceeds 1.25 budget" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1
-          fi
-          if [ "$RSS_DELTA_MIB" -gt 400 ]; then
-            echo "FAIL: RSS delta ${RSS_DELTA_MIB} MiB exceeds 400 MiB budget" | tee -a "$GITHUB_STEP_SUMMARY"; exit 1
-          fi
-          echo "budgets OK (boot ratio $BOOT_RATIO, RSS delta ${RSS_DELTA_MIB} MiB)" | tee -a "$GITHUB_STEP_SUMMARY"
+          set -o pipefail
+          python3 scripts/perf/boot-budget.py bare modded | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()

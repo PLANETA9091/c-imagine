@@ -16,6 +16,7 @@ on:
       - "scripts/cimscene/**"
       - "scripts/fetch-visual-client.py"
       - "scripts/visual/**"
+      - "scripts/perf/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -38,6 +39,10 @@ jobs:
           python3 scripts/cimscene/test-gallery-diff.py
       - name: client download recovery
         run: python3 scripts/visual/test-fetch-client.py
+      - name: performance evidence gates
+        run: |
+          python3 scripts/perf/test-criterion-gate.py
+          python3 scripts/perf/test-boot-budget.py
       - name: embedded shell syntax
         run: python3 scripts/audit_runblocks.py
 
