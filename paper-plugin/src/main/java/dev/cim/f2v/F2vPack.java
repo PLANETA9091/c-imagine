@@ -898,6 +898,14 @@ public final class F2vPack {
         // vanilla parents resolve from the ASSETS jars (client jar), never
         // shadowing mod jars (mods first, client last, first-match-wins)
         jars.addAll(extraAssets);
+        // THE EMISSIVE TABLE loads here (before the item section): the
+        // ITEM channel needs it too — the item composite for a glowing
+        // modded item (measured: create:refined_radiance, the item-channel
+        // join ae=63497) must carry light_emission on its elements the same
+        // way the gallery block composite does. Absent file = empty table.
+        Map<String, Integer> emissiveTable =
+                readEmissiveManifest(outDir.resolve("visual-emissive.tsv"));
+        List<String> itemEmissiveBakeLog = new ArrayList<>();
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
         int itemCompositeNo = 0;
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
@@ -929,6 +937,14 @@ public final class F2vPack {
                     String comp = GalleryPack.synthesizeItemComposite(
                             jars, found, itemCompositeNo++, entries, warnings);
                     if (comp != null) {
+                        // THE ITEM EMISSIVE-BAKE: a tabled modded item's
+                        // standalone composite carries light_emission on
+                        // every element (the same contract the gallery
+                        // block composite honors) — the measured driver:
+                        // create:refined_radiance's item-cell red (ae
+                        // 63497) whose truth render is fullbright.
+                        comp = GalleryPack.applyItemEmissive(
+                                row.moddedId(), comp, emissiveTable, itemEmissiveBakeLog);
                         found = comp;
                     }
                 }
@@ -972,6 +988,9 @@ public final class F2vPack {
         // GALLERY channel (M5.5, the main pixel gate's ours leg): per-state
         // rows ride the SAME host (paper) range_dispatch as float entries.
         // The model refs resolve INSIDE GalleryPack (direct rows at original
+        for (String bake : itemEmissiveBakeLog) {
+            warnings.add("item emissive-bake applied: " + bake);
+        }
         // paths, multipart composites under c-imagine:models/gallery/).
         List<GalleryPack.Resolved> gallery = List.of();
         Path galleryManifest = outDir.resolve("visual-gallery.tsv");
@@ -987,13 +1006,8 @@ public final class F2vPack {
                 Map<String, double[]> tintTable =
                         readTintManifest(outDir.resolve("visual-tints.tsv"));
                 List<String> tintBakeLog = new ArrayList<>();
-                // EMISSIVE-BAKE channel (visual-emissive.tsv, the gallery
-                // LIGHTMAP class): the gallery composite emit sets element
-                // "light_emission" on every element of a tabled state's
-                // model JSON. Absent visual-emissive.tsv = empty table =
-                // no rewrite, the pack stays byte-identical to today's build.
-                Map<String, Integer> emissiveTable =
-                        readEmissiveManifest(outDir.resolve("visual-emissive.tsv"));
+                // EMISSIVE-BAKE channel: the table loaded ABOVE (the item
+                // section needs it too) — this block only carries the logs.
                 List<String> emissiveBakeLog = new ArrayList<>();
                 gallery = GalleryPack.build(jars, galleryInputs, entries, warnings,
                         tintTable, tintBakeLog, emissiveTable, emissiveBakeLog);

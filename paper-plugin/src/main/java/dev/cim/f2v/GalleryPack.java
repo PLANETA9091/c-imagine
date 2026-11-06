@@ -976,6 +976,46 @@ public final class GalleryPack {
         }
     }
 
+    /** THE ITEM EMISSIVE-BAKE: the item channel's standalone composites
+     *  (synthesizeItemComposite) get the same light_emission contract the
+     *  gallery block composite honors — keyed by the modded ITEM id (an
+     *  id without state props canonicalizes to itself). Returns the
+     *  re-emitted model JSON; a non-tabled id returns the input unchanged
+     *  (byte-identical). */
+    static String applyItemEmissive(String itemId, String compJson,
+                                    Map<String, Integer> emissiveTable,
+                                    List<String> emissiveLog) {
+        if (emissiveTable == null || emissiveTable.isEmpty()
+                || compJson == null || !compJson.contains("\"elements\"")) {
+            return compJson;
+        }
+        Integer level = emissiveTable.get(itemId);
+        if (level == null) {
+            level = emissiveTable.get(canonicalState(itemId));
+        }
+        if (level == null) {
+            return compJson;
+        }
+        try {
+            JsonObject obj = JsonParser.parseString(compJson).getAsJsonObject();
+            if (!obj.has("elements") || !obj.get("elements").isJsonArray()) {
+                return compJson;
+            }
+            for (JsonElement el : obj.getAsJsonArray("elements")) {
+                el.getAsJsonObject().addProperty("light_emission", level);
+            }
+            if (emissiveLog != null) {
+                emissiveLog.add(itemId + " light_emission=" + level
+                        + " (item channel, "
+                        + obj.getAsJsonArray("elements").size() + " elements)");
+            }
+            return obj.toString();
+        } catch (Exception bad) {
+            // a non-object model JSON cannot carry elements — unchanged
+            return compJson;
+        }
+    }
+
     /** Block id + re-sorted {@code prop=val} pairs — one canonical spelling
      *  of a blockstate string ({@code ns:block[a=1,b=2]} and
      *  {@code ns:block[b=2,a=1]} both land here). */
