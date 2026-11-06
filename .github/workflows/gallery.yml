@@ -1802,6 +1802,63 @@ jobs:
             grep -oE "\-\-graphicsBackend [a-z]*" visual-client/launch.txt
           fi
           mkdir -p visual-client/game
+          # 14-bo THE REAL CLIENT PROBE: run #192 measured glxinfo printing
+          # "OpenGL version string: 4.5" while the 26.3 client died exactly
+          # the same way as 42250969085 — "Couldn't find matching GLX visual
+          # / opengl_missing" (the client windows through SDL, so no external
+          # probe replicates its request). The honest probe IS the client:
+          # launch it headless-short and read its own verdict from the log.
+          # opengl_missing -> try the ladder below; the window actually
+          # coming up ("Sound engine started") -> the backend stands.
+          probe_client() {
+            OUT=$(mktemp)
+            timeout 75 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+              $(cat visual-client/launch.txt) > "$OUT" 2>&1 || true
+            if grep -q "opengl_missing" "$OUT"; then
+              echo "PROBE: opengl_missing on $1"
+              tail -4 "$OUT" | sed 's/^/PROBE: /'
+              rm -f "$OUT"; return 3
+            fi
+            if grep -qE "Sound engine started|Backend: OpenGL|Created: .*atlas" "$OUT"; then
+              echo "PROBE: window up on $1"
+              rm -f "$OUT"; return 0
+            fi
+            # inconclusive = the client is slow, not broken: opengl_missing
+            # is instant (the GLX refusal fires at window creation). Keep the
+            # current backend — the real run allows 12 minutes, not 75s.
+            echo "PROBE: inconclusive on $1 (no backend verdict in 75s) — keeping the current backend"
+            tail -4 "$OUT" | sed 's/^/PROBE: /'
+            rm -f "$OUT"; return 0
+          }
+          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          GLBACKEND=opengl
+          if ! probe_client "opengl/24bit"; then
+            # fallback 1: a 32-bit screen exposes RGBA visuals a 24-bit one lacks
+            pkill -f "Xvfb :99" 2>/dev/null || true
+            sleep 1
+            Xvfb :99 -screen 0 1280x720x32 +extension GLX +render -noreset &
+            sleep 2
+            if probe_client "opengl/32bit"; then
+              echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
+            else
+              # fallback 2: the rolled image's GLX cannot serve the client at
+              # all — but the #192 crash report showed the Vulkan device
+              # enumerating fine (llvmpipe Vulkan 1.4.318). Flip the pin,
+              # VERIFY the flip with the same probe, and let the gate MEASURE
+              # instead of crashing 8/8. The flip is LOUD: this run's parity
+              # read rides a different renderer, and the worklog names it.
+              printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > visual-client/game/options.txt
+              if probe_client "vulkan/32bit"; then
+                GLBACKEND=vulkan
+                echo "GLPROBE: FLIPPED to vulkan and verified — this run's ours parity rides lavapipe"
+              else
+                echo "GLPROBE: neither backend can start the 26.3 client on this image"
+                exit 1
+              fi
+            fi
+          else
+            echo "GLPROBE: the opengl pin stands (the client's window came up)"
+          fi
           # THE 26.3 FOV PIN (14-av, re-measured locally 2026-11-05, probe-14av.sh):
           # the old -0.65 pin was calibrated (2026-11-01) against a CI truth
           # frame that was ITSELF rendered off-contract (the whole #95-era
@@ -1814,7 +1871,9 @@ jobs:
           # The 26.3 slider maps IDENTICALLY to 1.21.1 (fov = 70 + 40*v) and
           # both legs now pin the same fov:0.0 = 70. Expected ISOLATE_SCALE
           # after the fix: the casing drops 78x79 -> ~56x57 (78*514/712).
-          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          # $GLBACKEND comes from the 14-bo probe ladder above: opengl unless
+          # the rolled image's GLX cannot serve the client's own GLFW request.
+          printf 'onboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)
