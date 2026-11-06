@@ -1,7 +1,7 @@
 name: profiling
 
 # Performance law enforcement (docs/ARCHITECTURE.md §4.6):
-#  - criterion benchmarks with cached baselines (>=10% regression fails)
+#  - criterion benchmarks with cached best-of-3 baselines (>=10% regression fails)
 #  - bare Paper vs Paper+c-imagine boot time + RSS budget gate
 on:
   workflow_dispatch: # economy mode (owner directive 2026-10-26): no nightly cron
@@ -36,21 +36,35 @@ jobs:
         run: |
           parent=$(git rev-parse HEAD^)
           git worktree add --detach baseline-source "$parent"
-          rm -rf target/criterion
-          CARGO_TARGET_DIR="$PWD/target" cargo bench --workspace --manifest-path baseline-source/Cargo.toml
-          python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$parent"
-          rm -rf target/criterion
+          # Best-of-3 parent baseline: the SAME aggregation the compare uses,
+          # so both sides of the gate carry the same noise-floor statistic.
+          rm -rf target/parent-run-*
+          for i in 1 2 3; do
+            CARGO_TARGET_DIR="$PWD/target" cargo bench --workspace --manifest-path baseline-source/Cargo.toml
+            mv target/criterion target/parent-run-$i
+          done
+          python3 scripts/perf/criterion-gate.py snapshot --current target/parent-run-1 --current target/parent-run-2 --current target/parent-run-3 --baseline baseline --source-sha "$parent"
+          rm -rf target/parent-run-*
       - name: run benches
         run: |
-          rm -rf target/criterion
-          cargo bench --workspace
+          # Best-of-3 (measured: run 42280303622 flagged ring_roundtrip_4k
+          # +13.076% with ZERO ring changes since the initial import — local
+          # re-runs reproduce the ~68.5ns baseline stably and inflate the same
+          # bench 50-76% under CPU contention). Every comparison takes the
+          # per-benchmark MIN median across the 3 runs on BOTH sides; the 10%
+          # limit itself is unchanged — a true regression shifts all 3 runs.
+          rm -rf target/criterion-run-*
+          for i in 1 2 3; do
+            cargo bench --workspace
+            mv target/criterion target/criterion-run-$i
+          done
       - name: compare against baseline (fail on >10% regression)
         run: |
           set -o pipefail
           cp -a baseline baseline-before
-          python3 scripts/perf/criterion-gate.py compare --baseline baseline --current target/criterion --source-sha "$GITHUB_SHA" --report criterion-deltas.json | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 scripts/perf/criterion-gate.py compare --baseline baseline --current target/criterion-run-1 --current target/criterion-run-2 --current target/criterion-run-3 --source-sha "$GITHUB_SHA" --report criterion-deltas.json | tee -a "$GITHUB_STEP_SUMMARY"
       - name: snapshot passing measurements
-        run: python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$GITHUB_SHA"
+        run: python3 scripts/perf/criterion-gate.py snapshot --current target/criterion-run-1 --current target/criterion-run-2 --current target/criterion-run-3 --baseline baseline --source-sha "$GITHUB_SHA"
       - name: save new baseline
         uses: actions/cache/save@v4
         with:
@@ -61,7 +75,7 @@ jobs:
         with:
           name: criterion-report
           path: |
-            target/criterion
+            target/criterion-run-*
             baseline
             baseline-before
             criterion-deltas.json
