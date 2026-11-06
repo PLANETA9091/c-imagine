@@ -143,6 +143,18 @@ final class QuadDump {
     }
 
     private static void run(Path scenes) throws Exception {
+        // Instanced geometry never reaches our VertexConsumer. Require the
+        // optional Flywheel backend's supported ordinary-renderer fallback.
+        try {
+            Class<?> backend = Class.forName("dev.engine_room.flywheel.api.backend.BackendManager");
+            boolean active = (boolean) backend.getMethod("isBackendOn").invoke(null);
+            LOGGER.info("[cimscene] quad dump flywheel backend active={}", active);
+            if (active) {
+                throw new IllegalStateException("Quad capture requires Flywheel backend=flywheel:off");
+            }
+        } catch (ClassNotFoundException absent) {
+            LOGGER.info("[cimscene] quad dump flywheel absent");
+        }
         Path out = scenes.resolve("quads");
         Files.createDirectories(out);
         TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);

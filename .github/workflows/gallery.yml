@@ -371,6 +371,11 @@ jobs:
           mkdir -p truth-client/game/mods truth-client/assets/indexes truth-client/assets/objects
           cp srv-wall/mods/*.jar truth-client/game/mods/
           printf 'onboardAccessibility:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          # GPU instances bypass the VertexConsumer used by QuadDump.
+          # Use Flywheel's ordinary BER fallback in the capture client;
+          # reference screenshot clients keep their normal renderer.
+          mkdir -p truth-client/game/config
+          printf 'backend = "flywheel:off"\n' > truth-client/game/config/flywheel-client.toml
           SCENES="$PWD/srv-wall/c-imagine/scenes"
           TRIGGER="$PWD/dump-go"
           rm -f "$TRIGGER"
@@ -775,7 +780,7 @@ jobs:
             seed-pack/f2v/pack.sha1
             seed-pack/f2v/inputs.sha1
             pack-build.log
-            client-dump.out
+            truth-client/client-dump.out
           if-no-files-found: error
 
   # ----------------------------------------------------------- wall-truth --

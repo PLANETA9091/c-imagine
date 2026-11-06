@@ -7520,3 +7520,128 @@ and excluded cells do not count as full parity. Create shard0 has72 RED,
 largest steam_whistle17/brass_door17/sticker13. Next publish the evidence
 retention slice, let its freshly invalidated seed capture authoritative
 meshes, and inspect current pack/shots meanwhile for a reproducible fix.
+
+2026-11-06T14:02:28.638552+00:00 Published76ab52b1 successfully. Next gallery will rebuild because the exact
+workflow is now part of the input stamp, and will retain raw mesh evidence.
+Downloads started for #164's source seed from its cache-producing run
+42221344849 and fresh full truth/ours shard0 frames plus truth manifests
+from rerun42226714706. The rerun used the same6a059c39 source/seed; verify
+hashes/context before staging. Current Easton still holds #129 baseline.
+Plan: reproduce a dominant Create failure with the exact new pack/plugin/
+manifest set, never mix #129 models with #164 scenes or screenshots.
+
+2026-11-06T14:03:46.499739+00:00 All #164 downloads completed. Exact seeded pack SHA1
+7855d27e3ba8846754f78258dddc5fb6c1732dab. Focused dual-stack crops saved
+create-focus164.png: gearshift has a missing central shaft; whistle geometry
+matches but surfaces are darker; pane still lacks the same narrow strip.
+These are separate mechanisms, not one global brightness/UV diagnosis.
+Located actual26.3 client locally at /home/btw/ci74/clients/v263/client.jar;
+next read ItemFeatureRenderer/shader lighting path before any material fix.
+BE capture currently constructs fresh entities at manifest positions and
+renders them against mc.level rather than the manifest Page, which is a
+possible source of runtime-state/neighbor-dependent missing shaft geometry.
+No new stand launch yet; source read precedes controlled implementation.
+
+2026-11-06T14:05:37.163642+00:00 Native26.3 item.vsh always computes minecraft_mix_light from geometric
+Normal and two light directions; shade_direction_override does not appear
+in that shader path. This explains why its format migration alone cannot
+prove ItemDisplay lighting parity. Keep the recorded no-op evidence.
+Easton already has the exact pinned real NeoForge/Create/BOP client under
+nfc-work/truth-client and existing no-window dump scaffolding. Plan: build
+the current scene harness, run a tiny isolated static-mesh capture (Create0,
+BOP40/48 only) without launching the main stand or displaying a desktop
+window. This can inspect per-vertex RGB/quad topology while full CI walks.
+A client without a world cannot prove BlockEntityRenderer parity; explicitly
+limit this probe to static meshes and retain no_level counts. Use its own
+capped unit/private Xvfb, back up the previous harness jar, restore it and
+stop the unit afterward. No production lighting workaround is chosen yet.
+
+2026-11-06T14:06:49.351374+00:00 Current scene harness BUILD SUCCESSFUL (10s). Prepared ignored standalone
+static-capture fixture with three exact #164 block manifests and no items.
+Scripts pass bash-n; archive SHA256
+63aff7b58bc4ca5c8434d709d99d5b6722a5edcc435d259f496f338ab3b1c7c0.
+Probe uses separate cim-green-static-dump unit, private Xvfb:79,6GB RAM,
+2GB swap,CPU/IOWeight1,Nice19,LP threads4; private /run,/tmp,network,pid.
+Both units confirmed inactive. Back up the previous client harness before
+replacement; driver EXIT trap restores it. Runtime bounded300s. Upload,
+verify inputs, start, collect raw quad colors/topology; restore read-back.
+
+2026-11-06T14:07:40.751923+00:00 Sequencing correction: upload returned a still-running session after its
+first poll, but the start request was already queued. That violated the
+producer-completion rule. Wait for BOTH command results now, check remote
+harness hash against local41c6e33f619052063dd11dbfc4e6c053fd56167ddca259b9852acf71342bf604,
+and stop/restore our unit if there is any mismatch or incomplete extraction.
+Do not interpret an unverified capture. Future dependent remote operations
+must follow final upload exit0, not merely a session ID or interim poll.
+
+2026-11-06T14:08:35.875805+00:00 The prematurely queued start failed safely at sha256sum (file not yet
+extracted); no unit started and no harness replacement occurred. After
+upload exit0, directory read-back confirmed all fixture files. Re-sent the
+small archive via ASCII/base64 shell input and required exact remote hash;
+verification completed successfully. Correctly sequenced start now includes
+an explicit hash equality check before invoking the stage script. This
+resolves the sequencing error; only the verified fixture may launch.
+
+2026-11-06T14:10:26.907020+00:00 Upstream Create6.0.10 bytecode reveals a concrete missing-geometry lead:
+KineticBlockEntityRenderer.renderSafe immediately RETURNS when
+VisualizationManager.supportsVisualization(level) is true. The capture
+calls the ordinary BER only; it does not capture Flywheel GPU instances.
+This can omit shafts even though the real truth screenshot contains them.
+No workflow currently pins the dump's Flywheel backend. Flywheel1.0.6
+config accepts registered backend id flywheel:off via flywheel-client.toml;
+inspect/prove actual active backend before changing capture behavior.
+A fallback capture must preserve real model geometry, not exempt the rows.
+Whistle renderer has no corresponding early return; its darkness remains
+a separate lighting problem. Next inspect new raw CI meshes and probe
+results; if instancing is active, test fallback capture against the same
+truth frames before implementation. This is a hypothesis, not yet a fix.
+
+2026-11-06T14:10:59.930936+00:00 New diagnostic CI seed127934317894 SUCCESS; seed-captured-meshes artifact
+exists35,457,359 bytes, alongside exact rebuilt seed/pack. Downloading both
+raw evidence and matching runtime seed from42230344900; never consume
+partial downloads. Easton static probe completed rc0:181 cells,181 dumped,
+181 distinct,0 failures;BER drawn0/failed0/no_level44, exactly the documented
+worldless limitation. Unit inactive; verify harness cmp restoration and
+collect raw data/logs now. No complete BE or real-mod parity claim.
+
+2026-11-06T14:13:12.021430+00:00 Authoritative raw evidence downloaded successfully from76ab52b1 seed:
+packSHA1 001bfd13d7e55777e9f24194b3c7fde41018175a; BOP high_grass has
+4 shade0 quads with constant grass tint(0.569,0.741,0.349); lumaloop_lit has
+4 shade0 quads with RGB1.000 throughout. Thus its darkness is not a captured
+color multiplier. Create pane has14 shade1/RGB1 quads; comparing all raw
+vertices to rotated emitted model gallery/g20381 gives EXACT zero corner
+error on every face. Missing pixels are not dropped rectangle positions.
+Create gearshift has only14 quads, all from static casing sprites; no shaft
+sprite. Create renderer bytecode's instancing early return explains this
+omission. Next apply Flywheel's supported backend=flywheel:off ONLY to the
+dump client so its ordinary VertexConsumer fallback emits all shaft geometry.
+Truth keeps its ordinary configuration and remains the visual reference.
+Expected observable result: raw kinetic meshes gain shaft faces and the
+same truth/ours shaft crops converge; no rows exempted or gate relaxed.
+Verify config filename/value against the real installed runtime, then
+workflow audit and full real-mod CI measurement. Also correct raw-artifact
+client log path: actual file is truth-client/client-dump.out, not root.
+
+2026-11-06T14:13:52.857361+00:00 Real installed Flywheel config confirms game/config/flywheel-client.toml
+with backend="DEFAULT"; backend registry bytecode registers flywheel:off.
+Implement seed-client-only backend="flywheel:off" after cache restore,
+plus a capture-time check of the optional public BackendManager API.
+Expected marker: [cimscene] quad dump flywheel backend active=false.
+If Flywheel remains active, fail the dump explicitly instead of baking
+silently missing GPU-only geometry. Absent Flywheel remains supported.
+This strengthens capture integrity and does not alter reference shots,
+comparison thresholds or which cells gate. Run Gradle build and workflow
+checks; real CI must confirm new shaft quads and actual pixel improvement.
+
+2026-11-06T14:14:49.598425+00:00 Fallback capture validation: scene harness Gradle BUILD SUCCESSFUL8s;
+workflow shell audit0 failures; ten report regressions PASS; diff clean.
+Configured only seed dump client's official Flywheel fallback and added
+an optional public-API check that refuses GPU-only capture. Corrected
+artifact log path to truth-client/client-dump.out. Next publish this bug fix,
+then confirm runtime marker active=false, compare raw shaft sprites/quad
+counts and same-scene screenshots in its real-mod CI run. Improvement is
+still unmeasured; do not label the remaining649 Create reds fixed.
+Independent static Easton capture matches the CI raw bytes EXACTLY for
+Create pane(qb7b3ecc37191f961),high_grass(qcb85a888b6ece251),lumaloop_lit
+(q04aa8e57d9ac8e7c), despite different client mod inventory/worldless probe.
+This confirms the measured raw geometry/color controls are reproducible.
