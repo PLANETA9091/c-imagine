@@ -74,6 +74,14 @@ def main():
     ap.add_argument("--page", default="")
     ap.add_argument("--map")
     ap.add_argument("--out")
+    ap.add_argument("--gate-mapped", action="store_true",
+                    help="the flipped verdict: GREEN iff the ours stream "
+                         "answers every truth event's MAPPED target at the "
+                         "same position (raw modded-id equality is "
+                         "impossible by construction — truth records "
+                         "modded ids, ours records post-rewrite vanilla "
+                         "ids). Requires --map; without the flag the "
+                         "verdict stays the raw one (today's behavior).")
     args = ap.parse_args()
 
     label = f"ns={args.ns or '?'} page={args.page or '?'}"
@@ -96,19 +104,53 @@ def main():
     # in registry order; both legs run the same manifest)
     ordered_equal = truth == ours
 
-    verdict = "GREEN" if (ordered_equal and not missing and not extra) else "RED"
-    print(f"sound-diff: {label} {verdict} truth={len(truth)} ours={len(ours)} "
-          f"missing={len(missing)} extra={len(extra)} ordered_equal={ordered_equal}")
-    for s in missing[:MAX_ROWS]:
-        print(f"  MISSING {s}")
-    for s in extra[:MAX_ROWS]:
-        print(f"  EXTRA   {s}")
-
-    # REPORT-ONLY flip preview (--map): how many truth events, resolved
-    # through the mapping, are answered by the ours stream at the SAME
-    # position — the shape of the future flipped verdict, never the verdict
+    # THE MAPPED VERDICT (--gate-mapped, requires --map): resolve every
+    # truth event through the mapping and require the ours stream to match
+    # EXACTLY, in order. An unmapped truth id resolves to itself, which
+    # the ours stream (post-rewrite vanilla ids) can never answer — the
+    # honest pressure to extend the mapping instead of a silent pass.
+    # Without the flag the verdict stays the raw one (the gallery calls
+    # unflagged until the owner flips).
+    gate_error = None
     mapped = None
-    if args.map:
+    if args.gate_mapped:
+        if not args.map:
+            print(f"sound-diff: {label} --gate-mapped requires --map")
+            if args.out:
+                pathlib.Path(args.out).write_text(json.dumps({
+                    "ns": args.ns, "page": args.page,
+                    "verdict": "GATE-CONFIG-ERROR",
+                    "gate_error": "--gate-mapped requires --map"}, indent=1))
+            return 4
+        try:
+            m = load_mapping(args.map)
+            expected = [m.get(s, s) for s in truth]
+            hits = sum(1 for i, e in enumerate(expected)
+                       if i < len(ours) and ours[i] == e)
+            order_exact = expected == ours
+            mapped = {"expected": len(expected), "position_hits": hits,
+                      "order_exact": order_exact}
+            verdict = "GREEN" if order_exact else "RED"
+            raw_ordered_equal = ordered_equal
+            print(f"sound-diff: {label} {verdict} MAPPED-GATE "
+                  f"hits={hits}/{len(expected)} raw_ordered_equal={raw_ordered_equal}")
+        except OSError as ose:
+            gate_error = str(ose)
+            print(f"sound-diff: {label} map unreadable: {gate_error}")
+            verdict = "RED"
+    else:
+        verdict = "GREEN" if (ordered_equal and not missing and not extra) else "RED"
+        print(f"sound-diff: {label} {verdict} truth={len(truth)} ours={len(ours)} "
+              f"missing={len(missing)} extra={len(extra)} ordered_equal={ordered_equal}")
+        for s in missing[:MAX_ROWS]:
+            print(f"  MISSING {s}")
+        for s in extra[:MAX_ROWS]:
+            print(f"  EXTRA   {s}")
+
+    # REPORT-ONLY flip preview (--map without --gate-mapped): how many
+    # truth events, resolved through the mapping, are answered by the ours
+    # stream at the SAME position
+    if args.map and not args.gate_mapped:
         try:
             m = load_mapping(args.map)
             expected = [m.get(s, s) for s in truth]
@@ -127,6 +169,8 @@ def main():
             "truth_count": len(truth), "ours_count": len(ours),
             "missing": missing, "extra": extra,
             "ordered_equal": ordered_equal,
+            "gate_mapped": bool(args.gate_mapped),
+            "gate_error": gate_error,
             "mapped_preview": mapped}, indent=1))
     return 0 if verdict == "GREEN" else 2
 
