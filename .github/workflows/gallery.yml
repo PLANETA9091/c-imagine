@@ -1538,6 +1538,8 @@ jobs:
               sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-fl-$NS$p.png"
+              sleep 2   # 14-bw the fluid self-consistency pair (the 14-aj mob / 14-br block pattern): every fluid row is dyn=1 and never had a second frame, so the flowing/chemical fluids (30 measured REDs, ae 370K-1.2M) red-gated forever although the content is animated by construction — the second shot names the time-varying cells (ANIMATED) with measured evidence instead
+              bash scripts/visual/shot.sh "truth-shots/gal-fl-$NS$p-self.png"
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS fluid walk hit the MAXP cap without exhausted"; exit 1; }
@@ -2489,6 +2491,8 @@ jobs:
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-fl-$NS$p.png"
               test -s "ours-shots/ours-gal-fl-$NS$p.png" || { echo "$NS fluid page $p shot missing"; exit 1; }
+              sleep 2   # 14-bw the fluid self-consistency pair (the truth-leg mirror)
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-fl-$NS$p-self.png"
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "ours $NS fluid replay hit the MAXP cap"; exit 1; }
@@ -2803,10 +2807,17 @@ jobs:
               O="ours-shots/ours-gal-fl-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth fluid shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours fluid shot p$p"; GATE=1; continue; }
+              # 14-bw the fluid self-consistency pair: feed the second frames
+              # when present so a cell that moves against ITSELF on either leg
+              # demotes to ANIMATED (the 14-bf law's honest escape hatch) —
+              # absent frames keep the page gated exactly as before
+              ST=""; SO=""
+              [ -f "truth-shots/gal-fl-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-fl-$NS$p-self.png"
+              [ -f "ours-shots/ours-gal-fl-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-fl-$NS$p-self.png"
               python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-fluid-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-fluid-$NS-p$p" \
-                --pitch 2 --gate 240000 || GATE=1
+                $ST $SO --pitch 2 --gate 240000 || GATE=1
             done
           done
           echo "=== SOUND pages: census-style stream join (DIAGNOSTIC — the flip law lives in coverage-gate.py) ==="
