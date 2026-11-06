@@ -31,7 +31,8 @@ printf 'online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=min
 mkdir -p truth-client/game/mods truth-client/game/config
 find truth-client/game/mods -maxdepth 1 -type f -name '*.jar' -delete
 cp srv-wall/mods/*.jar truth-client/game/mods/
-printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\nrenderClouds:false\n' > truth-client/game/options.txt
+OPTS='tutorialStep:none\nonboardAccessibility:false\nfov:0.0\nrenderClouds:false\nchatVisibility:2\njoinedFirstServer:true\nnotificationDisplayTime:0.5\n'
+printf "$OPTS" > truth-client/game/options.txt
 python3 scripts/visual/make_servers_dat.py truth-client/game
 wait_rcon || { tail -40 srv-wall/boot.log; exit 2; }
 $RC 'gamerule doDaylightCycle false' 'time set noon' 'gamerule doWeatherCycle false' 'weather clear' \
@@ -47,13 +48,20 @@ $RC "cimscene gallery gui-scan $NS" >/dev/null
 sleep 1
 N=$(find srv-wall/c-imagine/scenes -maxdepth 1 -name "gallery-gui-$NS-p*.tsv" | wc -l)
 stamp "truth walk: $N menus, slice $SI/$K"
-$RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
+# Recipe toasts come from picking items up, so unlock them all now and let them pass.
+$RC 'tp cimviewer 0.5 -60 0.5 0 0' 'recipe give cimviewer *' >/dev/null
+sleep 8
 for p in $(seq "$SI" "$K" $((N-1))); do
   $RC list | grep -q cimviewer || { stamp "viewer lost before page $p, rejoining"; client; wait_viewer; sleep 6; $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; }
+  M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.done"
+  B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
-  sleep 2.5
+  for i in $(seq 1 30); do [ "$(cat "$M" 2>/dev/null || echo none)" != "$B" ] && break; sleep 0.2; done
+  # The cursor returns to the centre whenever a screen opens, and on software rendering
+  # that lands after the server says so, so park it only once the screen is up.
+  sleep 2
   $KEY MOUSEOFF || true
-  sleep 0.4
+  sleep 0.8
   $SHOT "truth-shots/gal-gui-$NS$p.png" || true
 done
 stamp "truth done: $(find srv-wall/c-imagine/screens -name '*.png' | wc -l) screens captured"
@@ -97,7 +105,7 @@ printf 'online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=min
 [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client
 sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
 mkdir -p visual-client/game
-printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+printf "${OPTS}preferredGraphicsBackend:opengl\n" > visual-client/game/options.txt
 python3 scripts/visual/make_servers_dat.py visual-client/game
 wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
 $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
@@ -106,7 +114,7 @@ export SDL_VIDEODRIVER=x11
 setsid bash -c "cd visual-client && $J25/bin/java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
 wait_viewer || { tail -30 visual-client/client.out; exit 2; }
 for i in $(seq 1 40); do [ "$(grep -c 'Reloading ResourceManager' visual-client/client.out)" -ge 2 ] && break; sleep 1; done
-sleep 5
+sleep 10   # the join toasts pass
 stamp ours joined
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
 for p in $(seq "$SI" "$K" $((N-1))); do
