@@ -947,6 +947,22 @@ public final class F2vPack {
                                 row.moddedId(), comp, emissiveTable, itemEmissiveBakeLog);
                         found = comp;
                     }
+                } else if (quadModel == null && found != null) {
+                    // THE SPRITE EMISSIVE UPGRADE: a tabled item whose model
+                    // is an item/generated SPRITE (no elements — the element
+                    // light_emission lever does not exist there) upgrades to
+                    // a flat-quad composite carrying the sprite texture on
+                    // the faces + light_emission. Geometry-compatible with
+                    // the sprite (a flat quad), but fullbright — measured:
+                    // create:refined_radiance, the truth item renders
+                    // fullbright while ours renders the dim sprite.
+                    String upgraded = GalleryPack.synthesizeSpriteEmissive(
+                            jars, found, row.moddedId(), itemCompositeNo,
+                            emissiveTable, entries, warnings);
+                    if (upgraded != null) {
+                        itemCompositeNo++;
+                        found = upgraded;
+                    }
                 }
                 if (found == null) {
                     warnings.add("no item model found for " + row.moddedId()
