@@ -30,7 +30,7 @@ public final class LiveMenus {
     private static final Logger LOG = LoggerFactory.getLogger("cimlive");
 
     private static FacadeLevel level;
-    private static final Map<UUID, SessionPlayer> SESSIONS = new HashMap<>();
+    private static final Map<UUID, SessionServerPlayer> SESSIONS = new HashMap<>();
 
     private LiveMenus() {
     }
@@ -45,13 +45,13 @@ public final class LiveMenus {
     }
 
     /** The session for a Paper player, made on first use. */
-    public static synchronized SessionPlayer session(UUID id, String name) {
-        return SESSIONS.computeIfAbsent(id, k -> new SessionPlayer(level(), new GameProfile(k, name)));
+    public static synchronized SessionServerPlayer session(UUID id, String name) {
+        return SESSIONS.computeIfAbsent(id, k -> SessionServerPlayer.create(level(), new GameProfile(k, name)));
     }
 
     /** Ends a player's session: the menu's own removed() runs, as on close. */
     public static synchronized void end(UUID id) {
-        SessionPlayer p = SESSIONS.remove(id);
+        SessionServerPlayer p = SESSIONS.remove(id);
         if (p != null) {
             p.closeContainer();
         }
@@ -61,14 +61,14 @@ public final class LiveMenus {
      * Opens a held-item menu the way the client's right click does: the item's own use().
      * Returns the menu the mod built, or null when its code opened none.
      */
-    public static AbstractContainerMenu useHeld(SessionPlayer player, ItemStack stack) {
+    public static AbstractContainerMenu useHeld(SessionServerPlayer player, ItemStack stack) {
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
         stack.use(level(), player, InteractionHand.MAIN_HAND);
         return player.opened();
     }
 
     /** A slot click, exactly as the server applies a container click packet. */
-    public static void click(SessionPlayer player, int slot, int button, ClickType type) {
+    public static void click(SessionServerPlayer player, int slot, int button, ClickType type) {
         AbstractContainerMenu menu = player.opened();
         if (menu != null && menu.isValidSlotIndex(slot)) {
             menu.clicked(slot, button, type, player);
@@ -88,7 +88,7 @@ public final class LiveMenus {
      */
     static void selfTest(String itemId) {
         try {
-            SessionPlayer player = session(UUID.nameUUIDFromBytes("cimlive-selftest".getBytes(StandardCharsets.UTF_8)),
+            SessionServerPlayer player = session(UUID.nameUUIDFromBytes("cimlive-selftest".getBytes(StandardCharsets.UTF_8)),
                     "cimlive");
             ItemStack held = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
             AbstractContainerMenu menu = useHeld(player, held);
