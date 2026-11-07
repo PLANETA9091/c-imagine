@@ -21,7 +21,12 @@ ids = set()
 def scan(z):
     for name in z.namelist():
         if name == 'META-INF/neoforge.mods.toml':
-            ids.update(re.findall(r'^\s*modId\s*=\s*"([^"]+)"', z.read(name).decode('utf-8', 'replace'), re.M))
+            # Only the [[mods]] tables name a mod; [[dependencies]] name what it needs.
+            for block in re.split(r'^\[\[', z.read(name).decode('utf-8', 'replace'), flags=re.M)[1:]:
+                if block.startswith('mods]]'):
+                    m = re.search(r'^\s*modId\s*=\s*"([^"]+)"', block, re.M)
+                    if m:
+                        ids.add(m.group(1))
         elif name.startswith('META-INF/jarjar/') and name.endswith('.jar'):
             scan(zipfile.ZipFile(io.BytesIO(z.read(name))))
 for jar in glob.glob('mods-ladder/*.jar'):
