@@ -452,39 +452,39 @@ jobs:
               CI="cim/shots/gal-item-$NS.png"; CH="cim/shots/gal-held-$NS.png"
               if [ ! -f "$TI" ] || [ ! -f "$CI" ]; then
                 echo "[ladder] $NS: the item leg is absent on a side (honest absence: a registry-empty ns or a skipped leg) — SKIPPED, named"
-                continue
-              fi
-              # PAIRING GUARD: both sides must have walked the SAME manifest
-              # row — the two dispatches must ride the same locked inputs
-              # (mods.lock); a mismatch would make every datum garbage.
-              TF=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' "$TC/gallery-item-$NS-p0.tsv")
-              CF=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' "$SC/gallery-item-$NS-p0.tsv")
-              if [ -z "$TF" ] || [ "$TF" != "$CF" ]; then
-                echo "LADDER ITEM DESYNC ($NS): truth first row '$TF' != c-imagine first row '$CF' — the two dispatches rode different inputs"
-                exit 1
-              fi
-              echo "[ladder] $NS: paired item row = $TF"
-              # appearance sanity (the item must be IN the slot-0 crop on
-              # both sides — the same contract the cimtest icon sanity uses)
-              AE_ti=$(java -cp vtools PixelDiff truth/shots/t00-baseline.png "$TI" 375 663 48 48)
-              AE_ci=$(java -cp vtools PixelDiff cim/shots/00-baseline.png "$CI" 375 663 48 48)
-              echo "AE(icon appearance: truth)=$AE_ti AE(icon appearance: c-imagine)=$AE_ci"
-              [ "$AE_ti" -gt "500" ] || { echo "[ladder] $NS: the real modded item never appeared in the truth hotbar"; exit 1; }
-              [ "$AE_ci" -gt "500" ] || { echo "[ladder] $NS: the pack carrier never appeared in the c-imagine hotbar"; exit 1; }
-              # THE ITEM IDENTITY datum (ungated REPORT — the GUI crop path,
-              # the same math the cimtest icon datum measured at 2300/2304;
-              # each ns item locks its own gate after its first dispatch)
-              AE_ii=$(java -cp vtools PixelDiff "$TI" "$CI" 375 663 48 48)
-              echo "AE(item identity $NS: truth vs c-imagine) = $AE_ii  <-- LADDER ITEM IDENTITY DATUM (ungated report)"
-              # HELD first-person identity: the gallery held class' full-frame
-              # framediff join (EMPTY names a dead side, CONTENT measures the
-              # divergence; DIAGNOSTIC-ONLY per the flip law — no gate here)
-              if [ -f "$TH" ] && [ -f "$CH" ]; then
-                python3 scripts/cimscene/framediff.py --truth "$TH" --ours "$CH" \
-                  --ns "$NS" --page 0 --class-name held \
-                  --out "parity-identity/held-$NS.json" || true
               else
-                echo "[ladder] $NS: the held shot is missing on a side — held identity SKIPPED, named"
+                # PAIRING GUARD: both sides must have walked the SAME manifest
+                # row — the two dispatches must ride the same locked inputs
+                # (mods.lock); a mismatch would make every datum garbage.
+                TF=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' "$TC/gallery-item-$NS-p0.tsv")
+                CF=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' "$SC/gallery-item-$NS-p0.tsv")
+                if [ -z "$TF" ] || [ "$TF" != "$CF" ]; then
+                  echo "LADDER ITEM DESYNC ($NS): truth first row '$TF' != c-imagine first row '$CF' — the two dispatches rode different inputs"
+                  exit 1
+                fi
+                echo "[ladder] $NS: paired item row = $TF"
+                # appearance sanity (the item must be IN the slot-0 crop on
+                # both sides — the same contract the cimtest icon sanity uses)
+                AE_ti=$(java -cp vtools PixelDiff truth/shots/t00-baseline.png "$TI" 375 663 48 48)
+                AE_ci=$(java -cp vtools PixelDiff cim/shots/00-baseline.png "$CI" 375 663 48 48)
+                echo "AE(icon appearance: truth)=$AE_ti AE(icon appearance: c-imagine)=$AE_ci"
+                [ "$AE_ti" -gt "500" ] || { echo "[ladder] $NS: the real modded item never appeared in the truth hotbar"; exit 1; }
+                [ "$AE_ci" -gt "500" ] || { echo "[ladder] $NS: the pack carrier never appeared in the c-imagine hotbar"; exit 1; }
+                # THE ITEM IDENTITY datum (ungated REPORT — the GUI crop path,
+                # the same math the cimtest icon datum measured at 2300/2304;
+                # each ns item locks its own gate after its first dispatch)
+                AE_ii=$(java -cp vtools PixelDiff "$TI" "$CI" 375 663 48 48)
+                echo "AE(item identity $NS: truth vs c-imagine) = $AE_ii  <-- LADDER ITEM IDENTITY DATUM (ungated report)"
+                # HELD first-person identity: the gallery held class' full-frame
+                # framediff join (EMPTY names a dead side, CONTENT measures the
+                # divergence; DIAGNOSTIC-ONLY per the flip law — no gate here)
+                if [ -f "$TH" ] && [ -f "$CH" ]; then
+                  python3 scripts/cimscene/framediff.py --truth "$TH" --ours "$CH" \
+                    --ns "$NS" --page 0 --class-name held \
+                    --out "parity-identity/held-$NS.json" || true
+                else
+                  echo "[ladder] $NS: the held shot is missing on a side — held identity SKIPPED, named"
+                fi
               fi
               # SOUND ordered-stream identity: sound-diff.py joins the truth
               # capture (the packet-capture mixin's window) against the ours
