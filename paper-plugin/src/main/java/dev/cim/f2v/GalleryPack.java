@@ -307,22 +307,51 @@ public final class GalleryPack {
                     cmd += 1.0f;
                     continue;
                 }
-                // 14-bq THE SLIDING DOORS (decompiled SlidingDoorRenderer +
-                // SlidingDoorBlock.getRenderShape, measured on the #188 p30
-                // crops): the truth's upper half NEVER draws the BER panel
-                // (the upper BE keeps bridgeTicks up -> shouldRenderSpecial
-                // false; getRenderShape returns ENTITYBLOCK_ANIMATED when
-                // visible=false, so the static is hidden too) — an upper
-                // visible=false cell renders NOTHING, while ours rides the
-                // static panel and measures ae 129K–483K (78 RED cells).
-                // And the lower visible=false open=true cell renders the
-                // CLOSED panel (open is RESET in the BER path) TRANSLATED by
-                // the settled slide — value²·13/16 along movementDirection
-                // (facing.clockWise, opposite when hinge=left) + value2/32
-                // along facing; the alignment search clamps at ±6px against
-                // a ~40px slide (ae 108K–465K, 15 regular-door REDs).
-                if (UPPER_INVISIBLE_DOOR.matcher(bareState).matches()) {
-                    String ref = synthesizeEmptyComposite(compositeIdx, entries);
+                // 14-ck THE SLIDING-DOOR BER TRUTH (decompiled
+                // SlidingDoorRenderer + SlidingDoorBlockEntity, re-read after
+                // the 14-bq «upper renders NOTHING» reading was refuted by
+                // the full-page evidence): shouldRenderSpecial returns TRUE
+                // for EVERY visible=false state (isVisible ? bridgeTicks !=
+                // 0 : true), so the BER panel draws in EVERY visible=false
+                // cell — upper ones included. The BER path resets
+                // open=false and renders BOTH DoubleBlockHalf halves of the
+                // closed blockstate model anchored AT THE CELL: lower half
+                // at y+0, upper half at y+0.998 (a full two-block panel
+                // rising from the cell, spilling into the neighbour above),
+                // and the BE constructor starts the animation at
+                // startWithValue(isOpen ? 1 : 0) — the settled gallery cell
+                // with open=true rides the FULL slide (value²·13/16 along
+                // movementDirection + value2/32 along facing). The folding
+                // copper/andesite branch is a separate 91° rotation class:
+                // its settled open=true panels fold, so only the open=false
+                // flat state rides this route.
+                if (isHiddenSlidingPanel(bareState)) {
+                    boolean open = bareState.contains("open=true");
+                    String closed = bareState.replace("open=true", "open=false");
+                    StateRef sLower = parseState(closed.replace("half=upper", "half=lower"));
+                    StateRef sUpper = parseState(closed.replace("half=lower", "half=upper"));
+                    List<Part> parts = new ArrayList<>();
+                    parts.addAll(resolveStateParts(jars, sLower, entries, warnings));
+                    for (Part p : resolveStateParts(jars, sUpper, entries, warnings)) {
+                        parts.add(new Part(p.modelRef(), p.xRot(), p.yRot(), p.uvlock(), 0.998));
+                    }
+                    if (parts.isEmpty()) {
+                        warnings.add("gallery: no matching model for " + state + " — row dropped");
+                        continue;
+                    }
+                    String ref = synthesizeComposite(jars, bareState, parts,
+                            compositeIdx, entries, warnings, ctCtx, tintTable, bakeLog,
+                            emissiveTable, emissiveLog);
+                    if (ref == null) {
+                        warnings.add("gallery: composite failed for " + state + " — row dropped");
+                        continue;
+                    }
+                    if (open) {
+                        double[] slide = slideDoorOffset(bareState);
+                        if (slide != null) {
+                            translateCompositeElements(ref, slide, entries);
+                        }
+                    }
                     compositeIdx++;
                     out.add(new Resolved(state, cmd, ref, 0, 0, true));
                     cmd += 1.0f;
@@ -404,7 +433,47 @@ public final class GalleryPack {
 
     /** One resolved render part: model ref + the rotation it must carry
      * (+ the blockstate's uvlock flag, 14-ah). */
-    private record Part(String modelRef, int xRot, int yRot, boolean uvlock) {
+    private record Part(String modelRef, int xRot, int yRot, boolean uvlock, double yOff) {
+    }
+
+    /**
+     * 14-ck: the visible=false door states whose BER panel our pack must
+     * reproduce as the full two-block closed panel (both halves anchored at
+     * the cell). Sliding doors (brass/framed_glass/train) always; the
+     * folding copper/andesite doors only in the flat open=false settled
+     * state (their open=true panels fold 91° — a separate class).
+     */
+    private static boolean isHiddenSlidingPanel(String state) {
+        if (!state.startsWith("create:") || !state.contains("visible=false")) {
+            return false;
+        }
+        if (state.startsWith("create:copper_door[")
+                || state.startsWith("create:andesite_door[")) {
+            return !state.contains("open=true");
+        }
+        return state.startsWith("create:brass_door[")
+                || state.startsWith("create:framed_glass_door[")
+                || state.startsWith("create:train_door[");
+    }
+
+    /** Shifts every element of a baked array by {@code dy} model units on Y. */
+    private static JsonArray shiftElementsY(JsonArray elements, double dy) {
+        JsonArray out = new JsonArray();
+        for (JsonElement el : elements) {
+            JsonObject e = el.getAsJsonObject().deepCopy();
+            if (e.has("from") && e.has("to")) {
+                JsonArray from = e.getAsJsonArray("from").deepCopy();
+                JsonArray to = e.getAsJsonArray("to").deepCopy();
+                from.set(1, new com.google.gson.JsonPrimitive(
+                        from.get(1).getAsDouble() + dy));
+                to.set(1, new com.google.gson.JsonPrimitive(
+                        to.get(1).getAsDouble() + dy));
+                e.add("from", from);
+                e.add("to", to);
+            }
+            out.add(e);
+        }
+        return out;
     }
 
     /**
@@ -446,7 +515,7 @@ public final class GalleryPack {
                 boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
                 } else {
                     warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
                             + " -> " + model);
@@ -504,7 +573,7 @@ public final class GalleryPack {
                 boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
                 }
                 // a missing multipart part model: recorded, the composite
                 // synthesizes from what resolved (honest partial render)
@@ -523,7 +592,7 @@ public final class GalleryPack {
                 boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                 String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
                 if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock));
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
                     warnings.add("wall-post injected for " + s.ns() + ":"
                             + " one-connection wall (the connectivity rule)");
                 }
@@ -893,6 +962,9 @@ public final class GalleryPack {
                 textures.put(prefix + t.getKey(), t.getValue());
             }
             JsonArray baked = bakeRotation(mg.elements, p.xRot(), p.yRot(), p.uvlock());
+            if (p.yOff() != 0.0) {
+                baked = shiftElementsY(baked, p.yOff() * 16.0);
+            }
             for (JsonElement el : baked) {
                 mergedElements.add(renameTextureRefs(
                         inflateDegenerate(el.getAsJsonObject()), prefix));
@@ -1361,8 +1433,9 @@ public final class GalleryPack {
             return null;
         }
         String props = m.group(2);
-        if (!props.contains("half=lower") || !props.contains("visible=false")
-                || !props.contains("open=true")) {
+        // 14-ck: both halves ride the same slide (the BER anchors both
+        // DoubleBlockHalf halves at the cell) — the half check is gone.
+        if (!props.contains("visible=false") || !props.contains("open=true")) {
             return null;
         }
         java.util.regex.Matcher fm = java.util.regex.Pattern.compile("facing=(\\w+)")
