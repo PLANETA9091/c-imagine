@@ -480,13 +480,9 @@ def main():
             # are caught by the ANIMATED self-pair rule below — the walk
             # shoots every gated page twice per leg for exactly this.
             row_ns = state.split(":", 1)[0] if ":" in state else "minecraft"
-            # 14-bf law (restored after the gate_dyn default inversion):
-            # the MODDED-namespace dyn rows demote by default — their picture
-            # is drawn by the mod's own renderer code, the pack channel
-            # structurally cannot reproduce it, the gate is the real-client
-            # leg (M5.6). args.gate_dyn = the owner's opt-in to gate them.
-            # The minecraft-namespace dyn rows stay gate-hard (14-bf: both
-            # legs render real vanilla entities/BEs).
+            # --gate-dyn opts modded dynamic rows into the pixel gate.
+            # Vanilla dynamic rows always gate; explicit family exceptions
+            # below remain separately reported and do not prove full parity.
             # 14-by THE RUNTIME-GEOMETRY FAMILY DEMOTION: the 14-bx seed-side
             # flip never reached the join — the join reads the TRUTH manifests
             # (the truth walk writes dyn=0 for the BE-less DT blocks) and runs
@@ -498,7 +494,7 @@ def main():
             # regardless of gate-dyn, and the demotion counts LOUD.
             fam = any(rx.match(state) for rx in demote_rx)
             fam_demoted += 1 if fam else 0
-            gated_dyn = (dyn or fam) and (row_ns == "minecraft" or not args.gate_dyn)
+            gated_dyn = (dyn or fam) and (row_ns == "minecraft" or args.gate_dyn)
             if fam:
                 gated_dyn = False
             verdict = classify(v > args.gate, dyn or fam, gated_dyn, air, animated, sn)
