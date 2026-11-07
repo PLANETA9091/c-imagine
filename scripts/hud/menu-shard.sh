@@ -41,7 +41,7 @@ python3 scripts/visual/make_servers_dat.py truth-client/game 127.0.0.1:$GAME_POR
 wait_rcon || { tail -40 srv-wall/boot.log; exit 2; }
 $RC 'gamerule doDaylightCycle false' 'time set noon' 'gamerule doWeatherCycle false' 'weather clear' \
     'gamerule doMobSpawning false' 'gamerule randomTickSpeed 0' >/dev/null
-LAUNCH=$(sed "s#^java #$J21/bin/java -Dcim.screenart=$ROOT/srv-wall/c-imagine/screens #" truth-client/launch.txt)
+LAUNCH=$(sed -e "s#127.0.0.1:25565#127.0.0.1:$GAME_PORT#g" -e "s#^java #$J21/bin/java -Dcim.screenart=$ROOT/srv-wall/c-imagine/screens #" truth-client/launch.txt)
 client() { setsid bash -c "cd truth-client && $LAUNCH >> client.out 2>&1" < /dev/null > /dev/null 2>&1 & }
 client
 wait_viewer || { tail -30 truth-client/client.out; exit 2; }
@@ -173,7 +173,7 @@ printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=min
 [ -f srv-ours/paper.jar ] || { URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['downloads']['server:default']['url'])"); curl -sL --max-time 200 -o srv-ours/paper.jar "$URL"; }
 ( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client
-sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
+sed -i -e "s#127.0.0.1:25565#127.0.0.1:$GAME_PORT#g" -e 's/^java /java -Xmx1G /' visual-client/launch.txt
 mkdir -p visual-client/game
 printf "${OPTS}preferredGraphicsBackend:opengl\n" > visual-client/game/options.txt
 python3 scripts/visual/make_servers_dat.py visual-client/game 127.0.0.1:$GAME_PORT
