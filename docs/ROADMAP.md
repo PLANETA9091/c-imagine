@@ -604,7 +604,16 @@ button flips Create's own flag, and the filter then behaves as a whitelist.
       never loaded), mod jars had no folders (Dynamic Trees' seeds), mod configs
       were never loaded (Mekanism), and an AT field entry narrowed a same-named
       method (NeoForge's `BiomeSpecialEffects$Builder.fogColor`).
-      Open: wiring the HUD's clicks on Paper to the session.
+      Wired to Paper (`LiveBridge`, `ScreenHud`): cimlive publishes one
+      `Function<String,String>` (`cim.live`); a held-item right click runs the item's
+      own `use()`, slot clicks are the real `menu.clicked`, the close is the menu's own
+      `removed()`, and stacks cross as the mod's codec JSON (its data components ride
+      in the Paper stack's persistent data; drops land at the player). Measured
+      2026-11-07 on Paper 26.3 + layer + Create for a connected player (`live.yml`
+      paper job): Create's FilterMenu (54 slots) opened by Create's code, the move
+      left a ghost diamond x1 with x5 on the cursor, the close returned the 5 diamonds
+      to the Paper inventory. Open: block menus on Paper (the bridge binds the facade's
+      sparse blocks to Paper blocks), the gallery's slot-move rows on the layer stack.
 - [ ] 3. Widget to packet: the filter whitelist button toggles Create's real flag,
       read back from the item; the press row shows the state from that flag.
 - [ ] 4. Block-entity menus: the mod's block entity lives in the layer, bound to its
