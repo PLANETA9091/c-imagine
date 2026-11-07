@@ -180,6 +180,7 @@ python3 scripts/visual/make_servers_dat.py visual-client/game 127.0.0.1:$GAME_PO
 wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
 $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
 ARGS=$(sed 's/^java //' visual-client/launch.txt)
+export SDL_VIDEODRIVER=x11
 setsid bash -c "cd visual-client && $J25/bin/java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
 wait_viewer || { tail -30 visual-client/client.out; exit 2; }
 for i in $(seq 1 40); do [ "$(grep -c 'Reloading ResourceManager' visual-client/client.out)" -ge 2 ] && break; sleep 1; done
