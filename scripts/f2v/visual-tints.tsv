@@ -77,3 +77,13 @@ dynamictrees:mangrove_roots[layer=EXPOSED,radius=3,waterlogged=false]	0.913	0.90
 dynamictrees:mangrove_roots[layer=EXPOSED,radius=4,waterlogged=false]	0.913	0.913	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=4,waterlogged=false]@gallery-dynamictrees-p8:c5,r1|n=1152|class=luma+chroma
 dynamictrees:mangrove_roots[layer=EXPOSED,radius=5,waterlogged=false]	0.9187	0.913	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=5,waterlogged=false]@gallery-dynamictrees-p8:c7,r1|n=845|class=luma+chroma
 dynamictrees:mangrove_roots[layer=EXPOSED,radius=6,waterlogged=false]	0.9187	0.913	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=6,waterlogged=false]@gallery-dynamictrees-p8:c9,r1|n=609|class=luma+chroma
+# 14-cc THE #231 RECALIBRATION (run 42359045079 crops, post-14-by tile alpha):
+# the content-mask ratios went TIGHT across the leaf families (the black-tile
+# contamination gone) and the 14-cb resolver fix (the ok flag no longer
+# poisoned by the parent-less block/block holder) let the leaf states resolve
+# at all. New rows: red_maple (the strongest leaf solve), snowblossom (a hair
+# above 1 — the row is within epsilon of the earlier refusal, kept for the
+# measured consistency), anomaly (the item channel).
+biomesoplenty:block/red_maple_leaves	1.2323	1.1972	1.1724	biomesoplenty:red_maple_leaves[distance=1,persistent=false,waterlogged=false]@gallery-biomesoplenty-p8:c0,r0|n=2048|class=luma+chroma;biomesoplenty:red_maple_leaves[distance=2,persistent=false,waterlogged=false]@gallery-biomesoplenty-p8:c2,r0|n=2119|class=luma+chroma
+biomesoplenty:block/snowblossom_leaves	1.0277	1.0269	1.0262	biomesoplenty:snowblossom_leaves[distance=1,persistent=false,waterlogged=false]@gallery-biomesoplenty-p95:c0,r5|n=2317|class=luma-uniform
+biomesoplenty:block/anomaly	0.9877	0.9231	0.9643	biomesoplenty:anomaly@gallery-item-biomesoplenty-p0:c1,r0|n=3080|class=tint

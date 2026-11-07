@@ -140,11 +140,16 @@ class JarAssets:
             ptext, pok = self.model_textures(mns, parent, depth + 1)
             out |= ptext
             ok = ok and pok
-        else:
-            # the parent-less terminal: block/block (the display/ambient
-            # holder) carries no elements BY DESIGN — the chain's geometry
-            # guarantee is satisfied by the textures the child collected
-            ok = ok and (("elements" in data) or bool(out))
+        # 14-cb: the ok flag = "no MISSING model in the chain" — nothing else.
+        # The old terminal check (("elements" in data) or bool(out)) evaluated
+        # in the TERMINAL's own frame and poisoned every chain that ends at a
+        # parent-less display holder: minecraft:block/block carries no
+        # elements and no own textures BY DESIGN, so block/leaves ->
+        # block/block returned ok=False and EVERY BOP/DK leaf state resolved
+        # to None ("multi/ambiguous: unresolved") although the chain had
+        # collected the leaf texture one hop up. The empty-texture chains
+        # still refuse downstream (the caller's len(texs)!=1 guard), so the
+        # geometry guarantee the check was protecting is intact.
         return out, ok
 
     def state_textures(self, state: str):
