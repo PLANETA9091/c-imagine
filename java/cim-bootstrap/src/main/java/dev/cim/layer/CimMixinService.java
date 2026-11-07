@@ -338,8 +338,111 @@ public class CimMixinService extends MixinServiceAbstract {
             byte[] bytes = ShadowClassLoader.get().classBytesFor(name);
             ClassNode node = new ClassNode();
             new org.objectweb.asm.ClassReader(bytes).accept(node, readerFlags);
+            if (isMixin(node)) {
+                relocateAnnotations(node);
+            }
             return node;
         }
+    }
+
+    private static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
+    private static final java.util.regex.Pattern REF = java.util.regex.Pattern.compile("L([A-Za-z0-9_$/]+);");
+    private static final java.util.regex.Pattern DOTTED = java.util.regex.Pattern.compile("[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)+");
+
+    private static boolean isMixin(ClassNode node) {
+        for (List<org.objectweb.asm.tree.AnnotationNode> list : java.util.Arrays.asList(
+                node.invisibleAnnotations, node.visibleAnnotations)) {
+            if (list != null) {
+                for (org.objectweb.asm.tree.AnnotationNode a : list) {
+                    if (MIXIN_DESC.equals(a.desc)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A mod's mixin names its targets in annotation strings ({@code @At(target = "Lnet/...;m()V")},
+     * {@code @Inject(method = "m(Lnet/...;)V")}, {@code @Mixin(targets = "net.minecraft...")}).
+     * The relocation pass leaves annotation strings raw (FML scans them as written), so the
+     * mixin's view is relocated here, through the same table, or an injector scans 0 targets
+     * in the relocated class (measured: AE2's AnvilMenuMixin, a critical injector).
+     */
+    static void relocateAnnotations(ClassNode node) {
+        relocateAll(node.visibleAnnotations);
+        relocateAll(node.invisibleAnnotations);
+        if (node.methods != null) {
+            for (org.objectweb.asm.tree.MethodNode m : node.methods) {
+                relocateAll(m.visibleAnnotations);
+                relocateAll(m.invisibleAnnotations);
+            }
+        }
+        if (node.fields != null) {
+            for (org.objectweb.asm.tree.FieldNode f : node.fields) {
+                relocateAll(f.visibleAnnotations);
+                relocateAll(f.invisibleAnnotations);
+            }
+        }
+    }
+
+    private static void relocateAll(List<org.objectweb.asm.tree.AnnotationNode> list) {
+        if (list != null) {
+            for (org.objectweb.asm.tree.AnnotationNode a : list) {
+                relocate(a);
+            }
+        }
+    }
+
+    private static void relocate(org.objectweb.asm.tree.AnnotationNode a) {
+        if (a.values == null) {
+            return;
+        }
+        for (int i = 1; i < a.values.size(); i += 2) {
+            a.values.set(i, relocateValue(a.values.get(i)));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object relocateValue(Object v) {
+        if (v instanceof String str) {
+            return relocateString(str);
+        }
+        if (v instanceof org.objectweb.asm.tree.AnnotationNode nested) {
+            relocate(nested);
+            return nested;
+        }
+        if (v instanceof List<?> items) {
+            List<Object> out = new java.util.ArrayList<>(items.size());
+            for (Object o : items) {
+                out.add(relocateValue(o));
+            }
+            return out;
+        }
+        if (v instanceof org.objectweb.asm.Type t && (t.getSort() == org.objectweb.asm.Type.OBJECT
+                || t.getSort() == org.objectweb.asm.Type.ARRAY)) {
+            return org.objectweb.asm.Type.getType(relocateString(t.getDescriptor()));
+        }
+        return v;
+    }
+
+    static String relocateString(String s) {
+        if (s.indexOf('L') >= 0 && s.indexOf(';') > 0) {
+            java.util.regex.Matcher m = REF.matcher(s);
+            StringBuilder out = new StringBuilder();
+            while (m.find()) {
+                String mapped = ShadowClassLoader.mapInternalName(m.group(1));
+                m.appendReplacement(out, java.util.regex.Matcher.quoteReplacement(
+                        "L" + (mapped == null ? m.group(1) : mapped) + ";"));
+            }
+            m.appendTail(out);
+            return out.toString();
+        }
+        if (DOTTED.matcher(s).matches()) {
+            return MixinConfigs.mapDotted(s);
+        }
+        return s;
     }
 
     private static final class ShadowClassTracker implements IClassTracker {
