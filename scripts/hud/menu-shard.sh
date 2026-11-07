@@ -2,22 +2,25 @@
 # One slice of the menu gate: real NeoForge frames, then ours, then the pixel verdict.
 # Usage: menu-shard.sh <namespace> <index> <count>. Env: J21, J25 (JDK homes), SLUGS unused.
 set -uo pipefail
+# Ports and display are per slice, so several slices can run side by side on one host.
+GAME_PORT=${GAME_PORT:-25565}; RCON_PORT=${RCON_PORT:-25575}; PACK_PORT=${PACK_PORT:-25580}; DISP=${DISP:-99}
 NS=$1; SI=$2; K=$3
 ROOT=$PWD
 SCR=srv-wall/c-imagine/screens
-RC="python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate"
-export DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe LP_NUM_THREADS=4
+RC="python3 scripts/cimscene/rcon.py 127.0.0.1 $RCON_PORT cimgate"
+export DISPLAY=:$DISP LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe LP_NUM_THREADS=4
 stamp() { echo "[$(date +%T)] $*"; }
 wait_rcon() { for i in $(seq 1 240); do $RC list 2>/dev/null | grep -q 'players' && return 0; sleep 1; done; return 1; }
 wait_viewer() { for i in $(seq 1 180); do $RC list 2>/dev/null | grep -q cimviewer && return 0; sleep 1; done; return 1; }
 
 mkdir -p truth-shots ours-shots vtools gallery-report
 "$J21/bin/javac" -d vtools scripts/visual/Shot.java scripts/visual/Key.java
-Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
+Xvfb :$DISP -screen 0 1280x720x24 +extension GLX +render -noreset &
 SHOT="$J21/bin/java -cp vtools Shot"; KEY="$J21/bin/java -cp vtools Key"
 
 # --- the plugin builds while the real server and client boot
-( JAVA_HOME=$J25 mvn -B -ntp -q -DskipTests -Dpaper.version="$(bash scripts/resolve-paper-version.sh 26.3)" package -f paper-plugin/pom.xml \
+( JAVA_HOME=$J25 [ -f paper-plugin/target/cim-paper-plugin.jar ] && [ -f paper-plugin/target/selftest-cp.txt ] && exit 0
+mvn -B -ntp -q -DskipTests -Dpaper.version="$(bash scripts/resolve-paper-version.sh 26.3)" package -f paper-plugin/pom.xml \
     && cd paper-plugin && JAVA_HOME=$J25 mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt ) \
     > plugin-build.log 2>&1 &
 BUILD=$!
@@ -27,14 +30,14 @@ stamp truth boot
 cp -r layer-srv srv-wall; mkdir -p srv-wall/mods srv-wall/c-imagine/screens
 cp scene-mod/build/libs/cimscene-1.0.0.jar mods-ladder/*.jar srv-wall/mods/
 echo eula=true > srv-wall/eula.txt
-printf 'online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nenable-rcon=true\nrcon.port=25575\nrcon.password=cimgate\n' > srv-wall/server.properties
+printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\n" > srv-wall/server.properties
 ( cd srv-wall && setsid bash -c "$J21/bin/java -Xmx2G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 mkdir -p truth-client/game/mods truth-client/game/config
 find truth-client/game/mods -maxdepth 1 -type f -name '*.jar' -delete
 cp srv-wall/mods/*.jar truth-client/game/mods/
 OPTS='tutorialStep:none\nonboardAccessibility:false\nfov:0.0\nrenderClouds:false\nchatVisibility:2\njoinedFirstServer:true\nnotificationDisplayTime:0.5\n'
 printf "$OPTS" > truth-client/game/options.txt
-python3 scripts/visual/make_servers_dat.py truth-client/game
+python3 scripts/visual/make_servers_dat.py truth-client/game 127.0.0.1:$GAME_PORT
 wait_rcon || { tail -40 srv-wall/boot.log; exit 2; }
 $RC 'gamerule doDaylightCycle false' 'time set noon' 'gamerule doWeatherCycle false' 'weather clear' \
     'gamerule doMobSpawning false' 'gamerule randomTickSpeed 0' >/dev/null
@@ -166,14 +169,14 @@ SHA1=$(sha1sum pack.zip | cut -d' ' -f1); echo "$SHA1" > srv-ours/c-imagine/f2v/
 cp srv-wall/c-imagine/f2v/*.tsv scripts/f2v/visual-blocks.tsv srv-ours/c-imagine/f2v/
 cp srv-wall/c-imagine/scenes/gallery-gui-*.tsv srv-ours/c-imagine/scenes/
 echo eula=true > srv-ours/eula.txt
-printf 'online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft\\:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nenable-rcon=true\nrcon.port=25575\nrcon.password=cimgate\nresource-pack=http\\://127.0.0.1\\:25580/cim-f2v-pack.zip\nresource-pack-sha1=%s\n' "$SHA1" > srv-ours/server.properties
+printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft\\\\:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\nresource-pack=http\\\\://127.0.0.1\\\\:$PACK_PORT/cim-f2v-pack.zip\nresource-pack-sha1=%s\n" "$SHA1" > srv-ours/server.properties
 [ -f srv-ours/paper.jar ] || { URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['downloads']['server:default']['url'])"); curl -sL --max-time 200 -o srv-ours/paper.jar "$URL"; }
-( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client
 sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
 mkdir -p visual-client/game
 printf "${OPTS}preferredGraphicsBackend:opengl\n" > visual-client/game/options.txt
-python3 scripts/visual/make_servers_dat.py visual-client/game
+python3 scripts/visual/make_servers_dat.py visual-client/game 127.0.0.1:$GAME_PORT
 wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
 $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
 ARGS=$(sed 's/^java //' visual-client/launch.txt)

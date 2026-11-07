@@ -5,13 +5,14 @@
 # leaves the scan in plan-scenes/ for the slices.
 # Env: J21 (JDK home). Per slice: about this many menus.
 set -uo pipefail
+RCON_PORT=${RCON_PORT:-25575}
 PER_SLICE=${PER_SLICE:-8}   # small slices run in parallel; a slice costs one boot, so not too small
-RC="python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate"
+RC="python3 scripts/cimscene/rcon.py 127.0.0.1 $RCON_PORT cimgate"
 
 cp -r layer-srv srv-plan; mkdir -p srv-plan/mods
 cp scene-mod/build/libs/cimscene-1.0.0.jar mods-ladder/*.jar srv-plan/mods/
 echo eula=true > srv-plan/eula.txt
-printf 'online-mode=false\nlevel-type=minecraft:flat\nenable-rcon=true\nrcon.port=25575\nrcon.password=cimgate\nview-distance=4\nsimulation-distance=4\n' > srv-plan/server.properties
+printf "online-mode=false\nlevel-type=minecraft:flat\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\nview-distance=4\nsimulation-distance=4\n" > srv-plan/server.properties
 ( cd srv-plan && setsid bash -c "$J21/bin/java -Xmx3G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 
 # Every mod id the jars declare, nested jars included.
