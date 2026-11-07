@@ -77,7 +77,7 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   # is reopened whenever one of them replaces it.
   if grep -q '^cell' "srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv" 2>/dev/null; then
     IDX=0
-    for round in 1 2 3 4; do
+    for round in $(seq 1 12); do
       rm -f "$SCR/crawl-done"; echo "$IDX" > "$SCR/crawl-go"
       for i in $(seq 1 90); do [ -f "$SCR/crawl-done" ] && break; sleep 0.2; done
       [ -f "$SCR/crawl-done" ] || { rm -f "$SCR/crawl-go"; break; }

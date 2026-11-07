@@ -215,6 +215,7 @@ jobs:
             srv-ours/boot.log
             truth-client/client.out
             visual-client/client.out
+            srv-wall/c-imagine/screens/*.presses
             plugin-build.log
           if-no-files-found: warn
 

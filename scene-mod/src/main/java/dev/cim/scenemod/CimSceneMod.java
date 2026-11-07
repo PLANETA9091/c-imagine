@@ -1707,6 +1707,10 @@ public final class CimSceneMod {
         String plain = opener.replace("sneak+", "");
         if (plain.startsWith("cube")) {
             guiBuildCube(level, player, rig, plain);
+        } else if (plain.startsWith("settle+use+item:")) {
+            // The block first; the item is used once it has ticked (see guiActOnce).
+            String block = plain.substring(plain.indexOf('@') + 1);
+            level.setBlock(rig, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(block)).defaultBlockState(), 3);
         } else if (plain.startsWith("block:")) {
             ResourceLocation id = ResourceLocation.parse(plain.substring("block:".length()));
             level.setBlock(rig, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
@@ -1802,7 +1806,7 @@ public final class CimSceneMod {
      */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
         boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:")
-                || opener.contains("cube");
+                || opener.contains("cube") || opener.contains("settle+use+item:");
         Direction[] faces = block
                 ? new Direction[]{Direction.UP, Direction.SOUTH, Direction.NORTH, Direction.EAST, Direction.WEST}
                 : new Direction[]{Direction.UP};
@@ -1823,7 +1827,26 @@ public final class CimSceneMod {
         String plain = opener.replace("sneak+", "");
         player.setShiftKeyDown(sneak);
         try {
-            if (guiEntity != null && plain.contains("+item:")) {
+            if (plain.startsWith("settle+use+item:")) {
+                // A tool on a block that has ticked: the way a player uses a network tool on a
+                // node, after the mod's own first-tick setup made it one.
+                String[] pair = plain.substring("settle+use+item:".length()).split("@", 2);
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(pair[0])));
+                player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                Vec3 at = Vec3.atCenterOf(rig).relative(face, 0.5);
+                BlockHitResult hit = new BlockHitResult(at, face, rig, false);
+                BlockState state = level.getBlockState(rig);
+                net.minecraft.world.ItemInteractionResult result = state.useItemOn(stack, level, player,
+                        InteractionHand.MAIN_HAND, hit);
+                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION
+                        && !state.useWithoutItem(level, player, hit).consumesAction()) {
+                    stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                } else if (!result.consumesAction()
+                        && result != net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                    stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                }
+                player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            } else if (guiEntity != null && plain.contains("+item:")) {
                 if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
                     guiEntity.interact(player, InteractionHand.MAIN_HAND);
                 }
@@ -2224,7 +2247,24 @@ public final class CimSceneMod {
                 wanted.add(ids.get(page));
             }
         }
-        List<String> cubes = wanted.isEmpty() ? List.of() : guiCubeCandidates(namespace);
+        List<String> cubes = wanted.isEmpty() ? new ArrayList<>() : new ArrayList<>(guiCubeCandidates(namespace));
+        // Single blocks too, for the tools used on them once they have ticked.
+        List<String> tools = new ArrayList<>();
+        if (!wanted.isEmpty()) {
+            for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+                if (b.getNamespace().equals(namespace)
+                        && BuiltInRegistries.BLOCK.get(b) instanceof net.minecraft.world.level.block.EntityBlock) {
+                    cubes.add("single:" + b);
+                }
+            }
+            for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+                if (i.getNamespace().equals(namespace)
+                        && !(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
+                    tools.add(i.toString());
+                }
+            }
+            tools.sort(Comparator.naturalOrder());
+        }
         // Each mod's pass gets its own ground: the passes overlap in time, and one clearing
         // its cubes must not take down another's before that one is clicked.
         BlockPos base = new BlockPos(GUI_PROBE_XZ + 64, 100, GUI_PROBE_XZ + 400 * SETTLE_SLOT++);
@@ -2248,7 +2288,14 @@ public final class CimSceneMod {
         for (int i = 0; i < cubes.size(); i++) {
             probe.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
             try {
-                guiBuildCube(level, probe, rigs.get(i), cubes.get(i), false);
+                if (cubes.get(i).startsWith("single:")) {
+                    level.setBlock(rigs.get(i), BuiltInRegistries.BLOCK.get(ResourceLocation.parse(
+                            cubes.get(i).substring("single:".length()))).defaultBlockState(), 3);
+                    GUI_CUBE_BLOCKS.add(rigs.get(i));
+                    guiCubeClick = rigs.get(i);
+                } else {
+                    guiBuildCube(level, probe, rigs.get(i), cubes.get(i), false);
+                }
             } catch (Throwable t) {
                 LOGGER.info("[cimscene] gallery-gui settle build {} threw {}", cubes.get(i), t.toString());
             }
@@ -2268,6 +2315,26 @@ public final class CimSceneMod {
                 one.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
                 one.candidate = cubes.get(i);
                 guiCubeClick = clicks.get(i);
+                if (cubes.get(i).startsWith("single:")) {
+                    String block = cubes.get(i).substring("single:".length());
+                    for (String tool : tools) {
+                        String opener = "settle+use+item:" + tool + "@" + block;
+                        one.seen = null;
+                        one.candidate = opener;
+                        try {
+                            guiActOnce(level, one, rigs.get(i), opener, Direction.UP);
+                        } catch (Throwable t) {
+                            // a tool that throws on this block is simply not its opener
+                        }
+                        if (one.seen != null && wanted.contains(one.seen)) {
+                            openers.computeIfAbsent(one.seen, k -> new ArrayList<>()).add(opener);
+                            seen.putIfAbsent(one.seen, one);
+                            one = new GuiProbe(level);
+                            one.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
+                        }
+                    }
+                    continue;
+                }
                 try {
                     guiAct(level, one, rigs.get(i), cubes.get(i));
                 } catch (Throwable t) {
@@ -2413,7 +2480,7 @@ public final class CimSceneMod {
                 }
             }
             String chosen = opener;
-            runAfterTicks(level.getServer(), chosen != null && (chosen.contains("entity:") || chosen.startsWith("cube"))
+            runAfterTicks(level.getServer(), chosen != null && (chosen.contains("entity:") || chosen.startsWith("cube") || chosen.contains("settle+"))
                             ? 40 : GUI_SETTLE_TICKS,
                     () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig));
             return 1;
