@@ -1848,6 +1848,9 @@ public final class CimSceneMod {
     }
 
     /** Every non-block item of the namespace on every block of it that holds a block entity. */
+    private static final java.util.Set<net.minecraft.world.entity.EntityType<?>> PAIR_ENTITIES_LOGGED =
+            new java.util.HashSet<>();
+
     private static List<String> guiPairCandidates(String namespace) {
         List<String> items = new ArrayList<>();
         for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
@@ -1931,6 +1934,12 @@ public final class CimSceneMod {
             if (probe.seen != null) {
                 wanted.remove(probe.seen);
                 onFound.accept(probe);
+            }
+            // A use that put an entity into the world is the rare, telling case: say what
+            // came of clicking it, so a menu that still does not open can be read from the log.
+            if (c >= singles && guiEntity != null && PAIR_ENTITIES_LOGGED.add(guiEntity.getType())) {
+                LOGGER.info("[cimscene] gallery-gui pair {} made {} alive={} opened={}", candidate,
+                        BuiltInRegistries.ENTITY_TYPE.getKey(guiEntity.getType()), guiEntity.isAlive(), probe.seen);
             }
             guiClearRig(level, probe, rig);
             if (c >= singles && wanted.isEmpty()) {
