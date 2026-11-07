@@ -192,13 +192,8 @@ public final class F2vPack {
             String dir = rest2.substring(0, slash2);             // fluid | block | liquid
             String base = rest2.substring(slash2 + 1);           // <name>.png
             String sprite = base.substring(0, base.length() - 4); // <name> (no .png)
-            // 14-cf: the model file sits ONE level under models/ — the 26.3
-            // CuboidModel pass resolves exactly models/<dir>/<file>.json and
-            // WARNs "Missing block model" for anything deeper (measured on
-            // run #238: every models/fluid/<ns>/<sprite>.json and
-            // models/fluidcube/<ns>/<id>.json was missing client-side while
-            // the flat models/gallery/g<N>.json composites load). The flat
-            // index name mirrors the proven gallery shape.
+            // Model identifiers are relative to models/: native
+            // FileToIdConverter prepends that directory during lookup.
             String modelPath = "assets/c-imagine/models/fluid/f" + i + ".json";
             if (entries.containsKey(modelPath)) {
                 continue;
@@ -210,7 +205,7 @@ public final class F2vPack {
                     + "\"textures\": {\"layer0\": \"" + texRef + "\"}}";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
             out.add(new FluidTexture(fluidIdFromTexture(ns, base),
-                    400000f + i, "c-imagine:models/fluid/f" + i));
+                    400000f + i, "c-imagine:fluid/f" + i));
             i++;
         }
         return out;
@@ -313,14 +308,12 @@ public final class F2vPack {
                         + fluidId.replace(':', '_') + ".png";
                 entries.put(texPath, frame);
             }
-            String texRef = "c-imagine:textures/fluidcube/"
+            String texRef = "c-imagine:fluidcube/"
                     + fluidId.replace(':', '_');
             // the 14/16 liquid surface box: the vanilla source block with a
             // non-fluid above renders its top at 14/16 — the sides show the
-            // texture's lower 14 rows (uv v 2..16). 14-cf: the model file
-            // sits ONE level under models/ (the 26.3 CuboidModel listing
-            // resolves exactly models/<dir>/<file>.json — the nested ids
-            // measured "Missing block model" on run #238).
+            // texture's lower 14 rows (uv v 2..16). Model and sprite ids
+            // omit the models/ and textures/ archive roots, respectively.
             String faces = "\"north\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
                     + "\"south\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
                     + "\"west\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
@@ -337,7 +330,7 @@ public final class F2vPack {
                     + "\"faces\": {" + faces + "}}]}";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
             out.add(new FluidCube(fluidId, 410000f + i,
-                    "c-imagine:models/fluidcube/f" + i));
+                    "c-imagine:fluidcube/f" + i));
             i++;
         }
         return out;
@@ -3128,6 +3121,36 @@ public final class F2vPack {
                     readFluidManifest(out.resolve("visual-fluid-cubes.tsv"));
             expect(failures, selfCubes.containsKey("fixture:water"),
                     "pack: fixture water_still derives the fixture:water cube row");
+            // Native FileToIdConverter adds models/ and textures/ itself.
+            // Verify the references consumed by the client, not just manifests.
+            try (ZipFile pack = new ZipFile(out.resolve("pack.zip").toFile())) {
+                JsonArray dispatch = JsonParser.parseString(new String(pack.getInputStream(
+                        pack.getEntry("assets/minecraft/items/paper.json")).readAllBytes(),
+                        StandardCharsets.UTF_8)).getAsJsonObject().getAsJsonObject("model")
+                        .getAsJsonArray("entries");
+                int fluidModels = 0;
+                for (var entry : dispatch) {
+                    JsonObject row = entry.getAsJsonObject();
+                    float threshold = row.get("threshold").getAsFloat();
+                    if (threshold < 400000 || threshold >= 420000) continue;
+                    fluidModels++;
+                    String ref = row.getAsJsonObject("model").get("model").getAsString();
+                    String modelPath = "assets/" + ref.replace(":", "/models/") + ".json";
+                    ZipEntry model = pack.getEntry(modelPath);
+                    expect(failures, model != null, "pack: fluid dispatch resolves " + ref);
+                    if (model == null) continue;
+                    JsonObject textures = JsonParser.parseString(new String(
+                            pack.getInputStream(model).readAllBytes(), StandardCharsets.UTF_8))
+                            .getAsJsonObject().getAsJsonObject("textures");
+                    for (var texture : textures.entrySet()) {
+                        String sprite = texture.getValue().getAsString();
+                        String spritePath = "assets/" + sprite.replace(":", "/textures/") + ".png";
+                        expect(failures, pack.getEntry(spritePath) != null,
+                                "pack: fluid sprite resolves " + sprite);
+                    }
+                }
+                expect(failures, fluidModels == 2, "pack: flat and cube fluid models exercised");
+            }
             Files.createDirectories(out.resolve("overlay/assets/fixture"));
             Files.writeString(out.resolve("overlay/assets/fixture/evidence.txt"), "overlay input");
             Files.createDirectory(out.resolve("quads"));
