@@ -276,8 +276,8 @@ public final class GalleryPack {
                     }
                 }
                 if (ctCtx != null && ctCtx.startsWith("q")) {
-                    String quadRef = synthesizeQuadComposite(jars, ctCtx.substring(1), compositeIdx,
-                            entries, warnings, tintTable);
+                    String quadRef = synthesizeQuadComposite(jars, ctCtx.substring(1), bareState,
+                            compositeIdx, entries, warnings, tintTable);
                     if (quadRef == null) {
                         warnings.add("gallery: quad mesh failed for " + state + " — row dropped");
                         continue;
@@ -887,6 +887,12 @@ public final class GalleryPack {
         // VALUES change — the raw texture at its original path keeps serving
         // every untinted consumer.
         bakeCompositeTextures(jars, textures, tintTable, entries, bakeLog);
+        // STATE-KEYED tint route (the visual-tints.tsv rows keyed by the
+        // STATE): rewrite this composite's texture refs to per-state baked
+        // siblings — the shared vanilla texture keeps serving the vanilla
+        // block (the per-texture pass above never touches vanilla-namespace
+        // sprites, the calibrator routes them here instead).
+        applyStateTint(jars, state, textures, tintTable, entries, bakeLog);
         // EMISSIVE-BAKE (visual-emissive.tsv): set the tabled state's
         // light_emission on EVERY merged element BEFORE the wrapper is
         // emitted — the element property rides the emitted JSON verbatim.
@@ -965,8 +971,20 @@ public final class GalleryPack {
      */
     static String bakeTintedSprite(List<Path> jars, String sprite, double[] tint,
                                    TreeMap<String, byte[]> entries, List<String> bakeLog) {
+        return bakeTintedSprite(jars, sprite, tint, TINT_SUFFIX, entries, bakeLog);
+    }
+
+    /**
+     * Same bake at a caller-chosen sibling suffix — the STATE-KEYED route
+     * re-hosts the shared vanilla texture per state ({@code _cimtint_s<hash>})
+     * so two states of one texture never collide and the raw path keeps
+     * serving the vanilla block.
+     */
+    static String bakeTintedSprite(List<Path> jars, String sprite, double[] tint,
+                                   String suffix, TreeMap<String, byte[]> entries,
+                                   List<String> bakeLog) {
         String rawPng = spritePathPng(sprite);
-        String bakedPng = rawPng.substring(0, rawPng.length() - 4) + TINT_SUFFIX + ".png";
+        String bakedPng = rawPng.substring(0, rawPng.length() - 4) + suffix + ".png";
         try {
             byte[] raw = readPngFromJars(jars, rawPng);
             if (raw == null) {
@@ -976,11 +994,81 @@ public final class GalleryPack {
             entries.put(bakedPng, baked);
             if (bakeLog != null) {
                 bakeLog.add(sprite + " <- (" + tint[0] + ", " + tint[1] + ", "
-                        + tint[2] + ") baked at " + sprite + TINT_SUFFIX);
+                        + tint[2] + ") baked at " + sprite + suffix);
             }
-            return sprite + TINT_SUFFIX;
+            return sprite + suffix;
         } catch (Exception bad) {
             return null; // the composite falls back to the raw sprite
+        }
+    }
+
+    /**
+     * THE STATE-KEYED tint route (visual-tints.tsv rows keyed by the STATE,
+     * not the texture): the modded states whose models resolve to
+     * minecraft-namespace textures (the DT roots render vanilla log textures
+     * under the mod's IBlockColor tint) SHARE those PNGs with the vanilla
+     * blocks — a per-TEXTURE bake would tint the vanilla consumer too. This
+     * rewrites EVERY texture ref of the STATE's own composite to a
+     * state-suffixed sibling ({@code ..._cimtint_s<hash8>}, hash of the state
+     * string) and bakes the multiply there; the raw path keeps serving the
+     * vanilla block and every untinted consumer. Lookup: exact manifest state
+     * string, then the canonical form (the same rule applyEmissive carries).
+     * No row for the state = no-op (byte-identical output). Values already
+     * re-hosted by the per-texture bake ({@code _cimtint}) are skipped —
+     * one multiply per pixel, never two.
+     */
+    /** The state-keyed tint row for a composite's state (the exact manifest
+     *  string first, then the canonical property order — the same rule
+     *  applyEmissive carries), or null. */
+    private static double[] stateTintFor(String state, Map<String, double[]> tintTable) {
+        if (tintTable == null || tintTable.isEmpty() || state == null) {
+            return null;
+        }
+        double[] tint = tintTable.get(state);
+        return tint != null ? tint : tintTable.get(canonicalState(state));
+    }
+
+    private static void applyStateTint(List<Path> jars, String state,
+                                       Map<String, String> textures,
+                                       Map<String, double[]> tintTable,
+                                       TreeMap<String, byte[]> entries,
+                                       List<String> bakeLog) {
+        if (tintTable == null || tintTable.isEmpty() || textures.isEmpty()) {
+            return;
+        }
+        double[] tint = stateTintFor(state, tintTable);
+        if (tint == null) {
+            return;
+        }
+        String suffix = TINT_SUFFIX + "_s" + stateHash(state);
+        final double[] ftint = tint; // the bake lambda's capture
+        Map<String, String> bakedRefs = new TreeMap<>();
+        for (Map.Entry<String, String> e : textures.entrySet()) {
+            String sprite = e.getValue();
+            if (!sprite.contains(":") || sprite.contains(TINT_SUFFIX)) {
+                continue;
+            }
+            String baked = bakedRefs.computeIfAbsent(sprite,
+                    s -> bakeTintedSprite(jars, s, ftint, suffix, entries, bakeLog));
+            if (baked != null) {
+                e.setValue(baked);
+            }
+        }
+    }
+
+    /** 8 hex chars of the state string's SHA-1 — a deterministic,
+     *  filesystem-safe discriminator between states sharing one texture. */
+    private static String stateHash(String state) {
+        try {
+            byte[] d = java.security.MessageDigest.getInstance("SHA-1")
+                    .digest(state.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(8);
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format("%02x", d[i]));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            return String.format("%08x", state.hashCode());
         }
     }
 
@@ -1447,12 +1535,12 @@ public final class GalleryPack {
      * textures, neighbour-aware meshes and culled see-through faces arrive
      * already resolved, whichever mod produced them.
      */
-    private static String synthesizeQuadComposite(List<Path> jars, String hash, int idx,
+    private static String synthesizeQuadComposite(List<Path> jars, String hash, String stateKey, int idx,
                                                   TreeMap<String, byte[]> entries,
                                                   List<String> warnings,
                                                   Map<String, double[]> tintTable) throws IOException {
         return synthesizeQuadModel(jars, hash, WRAPPER_PREFIX + idx + ".json", WRAPPER_REF_PREFIX + idx,
-                entries, warnings, true, tintTable);
+                entries, warnings, true, tintTable, stateKey);
     }
 
     /** The item's mesh from the real ItemRenderer, when the dump captured one. */
@@ -1464,7 +1552,7 @@ public final class GalleryPack {
             return null;
         }
         return synthesizeQuadModel(jars, hash, "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json",
-                WRAPPER_NS + ":items/i" + itemNo, entries, warnings, false, null);
+                WRAPPER_NS + ":items/i" + itemNo, entries, warnings, false, null, null);
     }
 
     private static Map<String, String> itemQuadMap;
@@ -1488,7 +1576,8 @@ public final class GalleryPack {
     private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
                                               TreeMap<String, byte[]> entries,
                                               List<String> warnings, boolean block,
-                                              Map<String, double[]> tintTable) throws IOException {
+                                              Map<String, double[]> tintTable,
+                                              String stateKey) throws IOException {
         Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
             warnings.add("gallery: quad mesh missing: " + hash);
@@ -1523,6 +1612,22 @@ public final class GalleryPack {
                     String sibling = bakeTintedSprite(jars, c[0], tint, entries, warnings);
                     if (sibling != null) {
                         hosted = sibling;
+                    }
+                }
+                // STATE-KEYED tint route (the rows keyed by the STATE): the
+                // quad meshes the DT/BOP states share with vanilla blocks —
+                // the per-tex table never carries minecraft-namespace rows,
+                // so this is the only bake that reaches them. Each state
+                // re-hosts its own suffixed sibling (_cimtint_s<hash>), the
+                // shared raw texture keeps serving the vanilla consumer.
+                if (!hosted.contains(TINT_SUFFIX)) {
+                    double[] stint = stateTintFor(stateKey, tintTable);
+                    if (stint != null) {
+                        String sib = bakeTintedSprite(jars, c[0], stint,
+                                TINT_SUFFIX + "_s" + stateHash(stateKey), entries, warnings);
+                        if (sib != null) {
+                            hosted = sib;
+                        }
                     }
                 }
                 textures.put(key, hosted);
