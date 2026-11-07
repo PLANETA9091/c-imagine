@@ -60,6 +60,8 @@ public final class HudPack {
                 freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeDarkId()) + ".json",
                 font(HudLayout.freeDarkId()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeTextId()) + ".json",
+                font(HudLayout.freeTextId()).toString().getBytes(StandardCharsets.UTF_8));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeShadowId()) + ".json",
                 font(HudLayout.freeShadowId()).toString().getBytes(StandardCharsets.UTF_8));
         for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
@@ -306,6 +308,8 @@ public final class HudPack {
                 freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeDarkId()) + ".json",
                 font(HudLayout.freeDarkId()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeTextId()) + ".json",
+                font(HudLayout.freeTextId()).toString().getBytes(StandardCharsets.UTF_8));
         entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeShadowId()) + ".json",
                 font(HudLayout.freeShadowId()).toString().getBytes(StandardCharsets.UTF_8));
         for (HudLayout.Anchor a : HudLayout.Anchor.values()) {

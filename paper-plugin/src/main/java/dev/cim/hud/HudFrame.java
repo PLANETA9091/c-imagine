@@ -52,7 +52,9 @@ public final class HudFrame {
         int w = HudText.width(s);
         parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeShadowId()))
                 .color(TextColor.color(HudLayout.freeColor(x + 1, y + 1))).shadowColor(ShadowColor.none()));
-        return free(x, y, s, w);
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeTextId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
+        return this;
     }
 
     /** ASCII at a pixel in label grey, for text on a light panel. */
