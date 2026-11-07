@@ -165,6 +165,17 @@ final class FacadeLevel extends Level {
         return true;
     }
 
+    /** Every spot a session looks at is loaded: the block is there or it is air. */
+    @Override
+    public boolean hasChunk(int chunkX, int chunkZ) {
+        return true;
+    }
+
+    @Override
+    public net.neoforged.neoforge.common.world.AuxiliaryLightManager getAuxLightManager(net.minecraft.world.level.ChunkPos pos) {
+        return null;
+    }
+
     /** Drops every block a session placed. */
     void clearBlocks() {
         blockEntities.values().forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);

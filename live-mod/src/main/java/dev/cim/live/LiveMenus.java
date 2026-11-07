@@ -134,6 +134,10 @@ public final class LiveMenus {
             }
         }
         items.sort(java.util.Comparator.comparing(ResourceLocation::toString));
+        // Sessions run on a started server, where SERVER configs are loaded (defaults on a
+        // fresh world); the self-test runs at setup, before that, on both stacks alike.
+        net.neoforged.fml.config.ConfigTracker.INSTANCE.loadDefaultServerConfigs();
+
         int menus = 0;
         int threw = 0;
         java.util.Set<String> kinds = new java.util.TreeSet<>();
@@ -158,9 +162,6 @@ public final class LiveMenus {
                 SESSIONS.remove(uuid);
             }
         }
-        // Sessions run on a started server, where SERVER configs are loaded (defaults on a
-        // fresh world); the self-test runs at setup, before that, on both stacks alike.
-        net.neoforged.fml.config.ConfigTracker.INSTANCE.loadDefaultServerConfigs();
         // Blocks: every block of these mods that holds a block entity, put down on its own
         // spot and right-clicked with an empty hand, in the order the server tries a click.
         java.util.List<ResourceLocation> blocks = new java.util.ArrayList<>();
