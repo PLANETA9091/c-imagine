@@ -15,12 +15,18 @@ import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.FloatTag;
+import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
@@ -159,6 +165,27 @@ public final class CimSceneMod {
     private void serverStarted(ServerStartedEvent event) {
         writeCensus("scene-manifest.tsv");
         LOGGER.info("[cimscene] server started ok (census emitter armed)");
+        // THE PARTICLE-FILLER SELFARM (the individual test contract): a
+        // marker file "c-imagine/scenes/particle-selfarm" carrying
+        // "<namespace> <page>" runs the gallery-particle spawn once from the
+        // server's own console source and HALTS the server — the test boots,
+        // the manifest + the [cimscene] log lines land, the process exits.
+        // The CI gallery boots never carry the marker (the same contract the
+        // cimtest-heavy selfarm rides).
+        try {
+            java.nio.file.Path marker = Path.of("c-imagine", "scenes", "particle-selfarm");
+            if (Files.isRegularFile(marker)) {
+                String[] parts = Files.readString(marker).trim().split("\\s+");
+                MinecraftServer server = event.getServer();
+                int page = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+                LOGGER.info("[cimscene] particle selfarm: ns={} page={} (halting after)",
+                        parts[0], page);
+                galleryParticle(server.createCommandSourceStack(), parts[0], page);
+                server.execute(() -> server.halt(false));
+            }
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] particle selfarm failed (stays disarmed): {}", t.toString());
+        }
     }
 
     // --- census -----------------------------------------------------------
@@ -1108,6 +1135,18 @@ public final class CimSceneMod {
         List<String> heard = ParticleCapture.begin();
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
+            if (id.getPath().equals("null")) {
+                // A dead registration artifact: a mod pushed a null path into
+                // the registry (measured biomesoplenty:null — #231 RED at ae
+                // 178943; the id renders nothing meaningful on either stack).
+                // The row stays LOUD (skip + the reason), the spawn is not
+                // attempted — both legs skip identically, the cell never
+                // compares and never gates.
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\t")
+                        .append("null-path-dead-id\n");
+                continue;
+            }
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             int x = GALLERY_X0 + col, y = GALLERY_Y0 + row, z = GALLERY_Z;
             ResolvedOptions resolved = resolveParticleOptions(
@@ -1179,6 +1218,16 @@ public final class CimSceneMod {
      *       refuses (the DataResult carries the error, surfaced in the
      *       note). Whether a given modded codec accepts empty data is
      *       FIRST-RUN-measured, not asserted.</li>
+     *   <li>THE ERROR-DRIVEN DEFAULT FILLER (rung 3): the refusal names the
+     *       MISSING keys ("No key speed in MapLike[{}]"), so fill every
+     *       missing key with the current candidate and re-parse; when
+     *       nothing is missing but the parse still refuses, advance the
+     *       candidate (a typed value was rejected) and rebuild. Deterministic
+     *       BY CONSTRUCTION — both legs run the same codec over the same
+     *       candidate ladder and land on the SAME options, the cell compares
+     *       like with like. Measured #30: 8/13 create particles refuse the
+     *       empty compound (fluid refs, rgb triples, speed/drag floats) —
+     *       the generic filler is the answer, zero per-mod code anywhere.</li>
      * </ol>
      */
     private static ResolvedOptions resolveParticleOptions(ParticleType<?> type) {
@@ -1186,18 +1235,245 @@ public final class CimSceneMod {
             return new ResolvedOptions(simple, null);
         }
         try {
-            DataResult<? extends ParticleOptions> res = type.codec().codec()
-                    .parse(NbtOps.INSTANCE, new CompoundTag());
-            ParticleOptions opts = res.result().orElse(null);
-            if (opts != null) {
-                return new ResolvedOptions(opts, null);
+            var codec = type.codec().codec();
+            DataResult<? extends ParticleOptions> res =
+                    codec.parse(NbtOps.INSTANCE, new CompoundTag());
+            if (res.result().isPresent()) {
+                return new ResolvedOptions(res.result().get(), null);
             }
-            String err = res.error().map(e -> e.message()).orElse("empty-decode");
-            return new ResolvedOptions(null, "no-simple-options:" + err);
+            String firstErr = res.error().map(e -> e.message()).orElse("empty-decode");
+            // RUNG 3 — the error-driven default filler (see the ladder doc).
+            // PER-KEY cursors with key-name hints: a mixed-type codec (a
+            // string id beside numeric fields) has NO uniform candidate —
+            // measured: the scalar-only ladder left (string + 5 numerics)
+            // and the fluid trio unsolved. Each key starts at its hint
+            // index; a type-error round advances every key's cursor.
+            CompoundTag probe = new CompoundTag();
+            Map<String, Integer> cursors = new LinkedHashMap<>();
+            List<String> trace = new ArrayList<>();
+            for (int round = 0; round < OPTION_FILL_CANDIDATES_LENGTH + 2; round++) {
+                DataResult<? extends ParticleOptions> r =
+                        codec.parse(NbtOps.INSTANCE, probe);
+                if (r.result().isPresent()) {
+                    return new ResolvedOptions(r.result().get(), null);
+                }
+                String err = r.error().map(e -> e.message()).orElse("");
+                trace.add("r" + round + "[" + probe + "]:" + err);
+                List<String> missing = missingOptionKeys(err);
+                if (!missing.isEmpty()) {
+                    // THE FILL LANDS ON THE NODE THE REFUSAL NAMED: the fluid
+                    // holder's keys live INSIDE the nested {Name:...} map —
+                    // measured r1-r4: a root-level fill the codec ignores,
+                    // the error repeating verbatim. The target = the deepest
+                    // compound whose serialized form the error quotes.
+                    FillTarget target = findFillTarget(probe, err);
+                    for (String key : missing) {
+                        String cpath = target.path().isEmpty()
+                                ? key : target.path() + "." + key;
+                        target.node().put(key, fillCandidate(cursors
+                                .computeIfAbsent(cpath,
+                                        k -> hintIndex(key)).intValue()));
+                    }
+                    continue;
+                }
+                // a type-error round: THE ZERO-VALUED KEYS MOVE FIRST — a
+                // "Value must be positive: 0" refusal targets the zeros, and
+                // bumping the keys the codec already ACCEPTED would destroy
+                // the solved structure (measured: the lockstep walk replaced
+                // the accepted {Name, amount, id} map with "x"). A bare type
+                // mismatch (Not a string / Not a map) still advances every
+                // key — the hints missed for it.
+                boolean zeroComplaint = err.contains("positive")
+                        || err.contains("must be") || err.contains("range")
+                        || err.contains("smaller than")
+                        || err.contains("bigger than");
+                boolean advanced = false;
+                List<String> bumped = new ArrayList<>();
+                for (Map.Entry<String, Integer> e : cursors.entrySet()) {
+                    Tag cur = tagAtPath(probe, e.getKey());
+                    boolean zeroLike = cur instanceof net.minecraft.nbt.NumericTag n
+                            && n.getAsDouble() == 0.0;
+                    if ((zeroLike || !zeroComplaint)
+                            && e.getValue() + 1 < OPTION_FILL_CANDIDATES_LENGTH) {
+                        cursors.put(e.getKey(), e.getValue() + 1);
+                        bumped.add(e.getKey());
+                        advanced = true;
+                    }
+                }
+                if (!advanced) {
+                    LOGGER.info("[cimscene] particle filler trace: {}",
+                            String.join(" | ", trace));
+                    return new ResolvedOptions(null,
+                            "no-simple-options:filler-cursor-exhausted:" + err);
+                }
+                for (String path : bumped) {
+                    setAtPath(probe, path, fillCandidate(cursors.get(path)));
+                }
+                firstErr = err; // the last refusal rides the exhausted note
+            }
+            LOGGER.info("[cimscene] particle filler trace: {}",
+                    String.join(" | ", trace));
+            return new ResolvedOptions(null,
+                    "no-simple-options:filler-rounds-exhausted:" + firstErr);
         } catch (Throwable t) {
             return new ResolvedOptions(null,
                     "no-simple-options:" + t.getClass().getName());
         }
+    }
+
+    /**
+     * The filler candidates, mildest first: zero for numerics (speed, xyz,
+     * scale, ages — a NumericTag decodes as any numeric), false for flags
+     * (NbtOps reads a boolean from any number), unit-scale numerics (rgb,
+     * unit scales), then the registry-ref string ids (fluids, block refs),
+     * the empty string, and the MAP shapes a registry-entry codec reads on
+     * NbtOps ({@code {Name: ...}} the vanilla form, {@code {id: ...}} the
+     * NeoForge holder form) — measured: the create fluid-particle keys
+     * refuse every scalar and accept only a map. A value that renders
+     * nothing on BOTH legs identically is the honest floor — the join
+     * compares like with like.
+     */
+    private static final int OPTION_FILL_CANDIDATES_LENGTH = 13;
+
+    /** Fresh tag per use (tags are shared-mutable; the probe owns its copy). */
+    private static Tag fillCandidate(int i) {
+        return switch (Math.floorMod(i, OPTION_FILL_CANDIDATES_LENGTH)) {
+            case 0 -> IntTag.valueOf(0);
+            case 1 -> ByteTag.valueOf(false);
+            case 2 -> FloatTag.valueOf(1.0f);
+            case 3 -> StringTag.valueOf("minecraft:water");
+            case 4 -> StringTag.valueOf("minecraft:air");
+            case 5 -> StringTag.valueOf("minecraft:block");
+            case 6 -> StringTag.valueOf("");
+            case 7 -> ByteTag.valueOf(true);
+            case 8 -> FloatTag.valueOf(0.5f);
+            case 9 -> mapRef("Name", "minecraft:water");
+            case 10 -> mapRef("id", "minecraft:water");
+            case 11 -> StringTag.valueOf("x"); // the axis enum's first member
+            default -> StringTag.valueOf("north"); // the Direction enum's member
+        };
+    }
+
+    /** A one-entry registry-reference map ({@code {Name: "minecraft:water"}}). */
+    private static CompoundTag mapRef(String key, String id) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString(key, id);
+        return tag;
+    }
+
+    /** Where a missing key lands: the node + its cursor path. */
+    private record FillTarget(CompoundTag node, String path) {
+    }
+
+    /** The tag at a dotted cursor path ({@code fluid.amount} → the nested). */
+    private static Tag tagAtPath(CompoundTag root, String path) {
+        CompoundTag node = root;
+        int dot = path.lastIndexOf('.');
+        if (dot >= 0) {
+            node = node.getCompound(path.substring(0, dot));
+        }
+        return node.get(path.substring(dot + 1));
+    }
+
+    /** In-place write at a dotted cursor path (the parent maps exist). */
+    private static void setAtPath(CompoundTag root, String path, Tag value) {
+        CompoundTag node = root;
+        int dot = path.lastIndexOf('.');
+        if (dot >= 0) {
+            node = node.getCompound(path.substring(0, dot));
+        }
+        node.put(path.substring(dot + 1), value);
+    }
+
+    /**
+     * The deepest compound in the probe whose serialized form the codec
+     * refusal quotes (the DFU MapLike[...] renders the parsed node's NBT) —
+     * the root always matches its own {@code MapLike[{}]}, a nested holder
+     * matches only when the refusal descends into it, so the longest match
+     * is the node the missing keys belong to.
+     */
+    private static FillTarget findFillTarget(CompoundTag probe, String err) {
+        String[] best = {"", ""}; // path, serialization (the root is the fallback)
+        findFillTargetWalk(probe, "", err, best);
+        if (best[0].isEmpty()) {
+            return new FillTarget(probe, "");
+        }
+        CompoundTag node = probe;
+        for (String part : best[0].split("\\.")) {
+            node = node.getCompound(part);
+        }
+        return new FillTarget(node, best[0]);
+    }
+
+    private static void findFillTargetWalk(CompoundTag node, String path,
+                                           String err, String[] best) {
+        String ser = node.getAsString();
+        // the refusal quotes the node it parsed (DFU's MapLike[...] renders
+        // the node's NBT verbatim) — the LONGEST quoted compound is the
+        // innermost failing map the missing keys belong to
+        if (err.contains(ser) && ser.length() > best[1].length()) {
+            best[0] = path;
+            best[1] = ser;
+        }
+        for (String k : node.getAllKeys()) {
+            if (node.get(k) instanceof CompoundTag child) {
+                findFillTargetWalk(child, path.isEmpty() ? k : path + "." + k,
+                        err, best);
+            }
+        }
+    }
+
+    /**
+     * The per-key STARTING candidate from the key's own name: fluid keys
+     * begin at the registry-map form, id/name/type keys at the string form,
+     * boolean-looking keys at false, everything else at the zero numeric.
+     * Deterministic — the same key name starts at the same candidate on
+     * both legs.
+     */
+    private static int hintIndex(String key) {
+        String k = key.toLowerCase(java.util.Locale.ROOT);
+        if (k.equals("axis") || k.endsWith("_axis")) {
+            return 11; // the axis enum's "x" member (measured: create's
+                       // axis/color options codec wants a valid enum name,
+                       // the numeric fields beside it accept the zero)
+        }
+        if (k.equals("direction") || k.equals("facing")) {
+            return 12; // a Direction member (measured: mekanism's jetpack
+                       // flame options want direction=north beside numerics)
+        }
+        if (k.equals("fluid") || k.endsWith("_fluid")) {
+            return 9; // {Name: minecraft:water}
+        }
+        if (k.equals("id") || k.equals("name") || k.equals("type")
+                || k.equals("target") || k.equals("block") || k.equals("item")) {
+            return 3; // a string registry id
+        }
+        if (k.equals("hot") || k.equals("glow") || k.startsWith("is_")
+                || k.endsWith("_flag") || k.equals("gravity")) {
+            return 1; // false
+        }
+        return 0; // the zero numeric
+    }
+
+    /**
+     * The missing keys a codec refusal named: the DataResult message shape
+     * "No key &lt;name&gt; in MapLike[...]" (one per absent field, "; "
+     * separated when several are absent — the #30 notes carry them).
+     */
+    private static List<String> missingOptionKeys(String error) {
+        List<String> keys = new ArrayList<>();
+        if (error == null || error.isEmpty()) {
+            return keys;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("No key ([A-Za-z0-9_]+) in MapLike")
+                .matcher(error);
+        while (m.find()) {
+            if (!keys.contains(m.group(1))) {
+                keys.add(m.group(1));
+            }
+        }
+        return keys;
     }
 
     // --- fluid gallery (every registered FLUID of the namespace) -----------
