@@ -14,19 +14,23 @@ public final class CaptureBufferTest {
         var ctor = type.getDeclaredConstructor(List.class, float.class);
         ctor.setAccessible(true);
         Object capture = ctor.newInstance(List.of(), 0f);
-        var getBuffer = type.getDeclaredMethod("bufferFor", Object.class, String.class);
+        var getBuffer = type.getDeclaredMethod("bufferFor", Object.class, String.class, boolean.class);
         getBuffer.setAccessible(true);
         Object solid = new Object(), cutout = new Object();
         String state = "texture[Optional[minecraft:textures/atlas/blocks.png]]";
-        VertexConsumer a = (VertexConsumer) getBuffer.invoke(capture, solid, state);
-        VertexConsumer b = (VertexConsumer) getBuffer.invoke(capture, cutout, state);
+        VertexConsumer a = (VertexConsumer) getBuffer.invoke(capture, solid, state, false);
+        VertexConsumer b = (VertexConsumer) getBuffer.invoke(capture, cutout, state, true);
         if (a == b) throw new AssertionError("different materials share a mutable consumer");
+        if (field(a.getClass(), "rawShade").getBoolean(a)
+                || !field(b.getClass(), "rawShade").getBoolean(b)) {
+            throw new AssertionError("source shader lighting was not retained per material");
+        }
         vertex(a, 0, 0, 255, 0);
         vertex(b, 10, 0, 0, 255);
         vertex(b, 11, 0, 0, 255);
         vertex(b, 11, 1, 0, 255);
         vertex(b, 10, 1, 0, 255);
-        if (getBuffer.invoke(capture, solid, state) != a) {
+        if (getBuffer.invoke(capture, solid, state, false) != a) {
             throw new AssertionError("retained consumer replaced before its quad finished");
         }
         vertex(a, 1, 0, 255, 0);

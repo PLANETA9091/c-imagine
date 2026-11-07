@@ -614,14 +614,18 @@ final class QuadDump {
 
         @Override
         public VertexConsumer getBuffer(RenderType type) {
-            return bufferFor(type, type.toString());
+            // Standard chunk materials consume already-lit vertex RGB;
+            // their native shaders do not call minecraft_mix_light.
+            boolean shaderDiffuse = type != RenderType.solid() && type != RenderType.cutout()
+                    && type != RenderType.cutoutMipped() && type != RenderType.translucent();
+            return bufferFor(type, type.toString(), shaderDiffuse);
         }
 
-        private VertexConsumer bufferFor(Object key, String state) {
+        private VertexConsumer bufferFor(Object key, String state, boolean shaderDiffuse) {
             if (state.contains("glint")) {
                 return discard;
             }
-            return buffers.computeIfAbsent(key, ignored -> new RecordingBuffer(state));
+            return buffers.computeIfAbsent(key, ignored -> new RecordingBuffer(state, shaderDiffuse));
         }
 
         void flush() {
@@ -634,12 +638,14 @@ final class QuadDump {
             final List<TextureAtlasSprite> boundSprites;
             final boolean captureAtlasPixels;
             final String texture;
+            final boolean rawShade;
             final float[][] pos = new float[4][3];
             final float[][] uv = new float[4][2];
             final float[][] rgb = new float[4][4];
             int n = -1;
 
-            RecordingBuffer(String state) {
+            RecordingBuffer(String state, boolean shaderDiffuse) {
+                rawShade = shaderDiffuse;
                 String direct = CaptureTexture.fromRenderState(state);
                 List<TextureAtlasSprite> atlasSprites = sprites;
                 boolean customAtlas = false;
@@ -707,8 +713,8 @@ final class QuadDump {
             void flush() {
                 if (n == 3) {
                     if (texture != null) {
-                        appendRow(out, texture, true, -1, pos, uv, rgb);
-                    } else if (!writeQuad(out, null, boundSprites, true, -1, pos, uv, rgb, captureAtlasPixels)) {
+                        appendRow(out, texture, rawShade, -1, pos, uv, rgb);
+                    } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb, captureAtlasPixels)) {
                         foreign++;
                     }
                     n = -1;
