@@ -843,7 +843,36 @@ public final class FmlHost {
         return delta;
     }
 
+    /**
+     * Mod configs, as FML loads them before setup: STARTUP and COMMON from the config folder
+     * (written with their defaults when absent). Without them a mod's first config read
+     * throws "Cannot get config value before config is loaded" (measured: Mekanism's
+     * dosimeter and geiger counter, in the layer only). SERVER configs load with a world.
+     */
+    private static void loadModConfigs() {
+        try {
+            Class<?> tracker = Class.forName("cim.shadow.neoforge.net.neoforged.fml.config.ConfigTracker");
+            Object instance = tracker.getField("INSTANCE").get(null);
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            Class<? extends Enum> type = (Class<? extends Enum>) Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.config.ModConfig$Type").asSubclass(Enum.class);
+            String game = System.getProperty("cim.gamedir", ".");
+            Path dir = Path.of(game).resolve("config");
+            java.nio.file.Files.createDirectories(dir);
+            Method load = tracker.getMethod("loadConfigs", type, Path.class);
+            for (String t : new String[] {"STARTUP", "COMMON"}) {
+                @SuppressWarnings("unchecked")
+                Object value = Enum.valueOf(type, t);
+                load.invoke(instance, value, dir);
+            }
+            System.out.println(LOG + " mod configs loaded (STARTUP, COMMON) from " + dir);
+        } catch (Throwable t) {
+            System.out.println(LOG + " mod configs NOT loaded: " + t);
+        }
+    }
+
     private static void fireSetupEvents(List<Object> containers) throws Exception {
+        loadModConfigs();
         Class<?> ctxCls = Class.forName(MOD_LOADING_CONTEXT);
         Object ctx = ctxCls.getMethod("get").invoke(null);
         Method setActive = ctxCls.getMethod("setActiveContainer", Class.forName(MOD_CONTAINER));
