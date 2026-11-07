@@ -65,7 +65,8 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   # A disconnected client sits on its error screen, so it is replaced, not waited for.
   $RC list | grep -q cimviewer || { stamp "viewer lost before page $p, relaunching"; pkill -f 'cim.screenart' || true; sleep 1; client; wait_viewer; sleep 8; $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; }
   # Every page starts from the same inventory: an earlier page's slot move left items behind.
-  $RC 'clear cimviewer' 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
+  # The stack sits in the main inventory, never the hand: the walk empties the hand.
+  $RC 'clear cimviewer' 'item replace entity cimviewer inventory.26 with minecraft:diamond 5' >/dev/null
   M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.done"
   B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
@@ -190,7 +191,8 @@ stamp ours joined
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
 for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   # Every page starts from the same inventory: an earlier page's slot move left items behind.
-  $RC 'cim guiclose' 'clear cimviewer' 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
+  # The stack sits in the main inventory, never the hand: the walk empties the hand.
+  $RC 'cim guiclose' 'clear cimviewer' 'item replace entity cimviewer inventory.26 with minecraft:diamond 5' >/dev/null
   $RC "cim gallerypage-gui $NS $p" >/dev/null
   sleep 0.6
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true
