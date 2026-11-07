@@ -1453,6 +1453,7 @@ public final class F2vPack {
                 .append("zip entries:     ").append(entries.size()).append('\n')
                 .append("zip bytes:       ").append(zip.length).append('\n')
                 .append("replaced wrappers omitted: ").append(replacedWrappers).append('\n')
+                .append("tile hash collisions resolved: ").append(ObjMesh.tileHashCollisions()).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
                 .append("warnings:        ").append(warnings.size()).append('\n');
         for (String w : warnings) {
@@ -3346,6 +3347,30 @@ public final class F2vPack {
         ObjMesh.resetBaker();
         GalleryPack.resetJarCache();
         try {
+            int[] pixelsA = {0xff808080, 0xff808080, 0xff808080, 0xff808080};
+            int[] pixelsB = pixelsA.clone();
+            pixelsB[0] += 0x10000;
+            pixelsB[1] -= 31 * 0x10000;
+            expect(failures, java.util.Arrays.hashCode(pixelsA) == java.util.Arrays.hashCode(pixelsB)
+                            && java.util.Arrays.hashCode(java.util.Arrays.copyOf(pixelsA, 2))
+                            == java.util.Arrays.hashCode(java.util.Arrays.copyOf(pixelsB, 2)),
+                    "tile: regression fixture collides in both legacy hashes");
+            var tileA = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            var tileB = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            tileA.setRGB(0, 0, 2, 2, pixelsA, 0, 2);
+            tileB.setRGB(0, 0, 2, 2, pixelsB, 0, 2);
+            int[] atA = ObjMesh.placeExactTile(tileA), atB = ObjMesh.placeExactTile(tileB);
+            expect(failures, !java.util.Arrays.equals(atA, atB), "tile: hash collision cannot substitute pixels");
+            expect(failures, java.util.Arrays.equals(atA, ObjMesh.placeExactTile(tileA))
+                            && java.util.Arrays.equals(atB, ObjMesh.placeExactTile(tileB)),
+                    "tile: each colliding tile still reuses its own allocation");
+            expect(failures, ObjMesh.tileHashCollisions() == 1, "tile: collision report counts new distinct tiles once");
+            TreeMap<String, byte[]> collisionEntries = new TreeMap<>();
+            ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, collisionEntries);
+            var collisionSheet = decodePng(collisionEntries.get("assets/c-imagine/textures/block/objcut/sheet0.png"));
+            expect(failures, java.util.Arrays.equals(pixelsA, collisionSheet.getRGB(atA[1], atA[2], 2, 2, null, 0, 2))
+                            && java.util.Arrays.equals(pixelsB, collisionSheet.getRGB(atB[1], atB[2], 2, 2, null, 0, 2)),
+                    "tile: colliding source pixels survive PNG publication exactly");
             var source = new java.awt.image.BufferedImage(16, 16,
                     java.awt.image.BufferedImage.TYPE_INT_ARGB);
             for (int y = 0; y < 16; y++) {

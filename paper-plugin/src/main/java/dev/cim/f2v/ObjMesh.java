@@ -512,6 +512,10 @@ final class ObjMesh {
         BAKER.reset();
     }
 
+    static int tileHashCollisions() {
+        return BAKER.hashCollisions;
+    }
+
     /**
      * 14-bs: an exact-pixel tile for a rect face's sprite window. The
      * near-miss statics sample the direct sprites through each leg's atlas;
@@ -543,11 +547,12 @@ final class ObjMesh {
         static final int SIZE = 1024;
         static final String SHEET = "objcut/sheet";
         private final List<BufferedImage> sheets = new ArrayList<>();
-        private final Map<String, int[]> tiles = new HashMap<>();
+        private final Map<String, List<int[]>> tiles = new HashMap<>();
         private final Map<String, BufferedImage> images = new HashMap<>();
         private int x;
         private int y;
         private int shelf;
+        private int hashCollisions;
 
         void reset() {
             sheets.clear();
@@ -556,6 +561,7 @@ final class ObjMesh {
             x = 0;
             y = 0;
             shelf = 0;
+            hashCollisions = 0;
         }
 
         BufferedImage image(String sprite, SpriteReader reader, List<String> warnings) throws IOException {
@@ -576,9 +582,12 @@ final class ObjMesh {
         int[] place(int[] argb, int w, int h) {
             String key = w + "x" + h + ":" + java.util.Arrays.hashCode(argb) + ":"
                     + java.util.Arrays.hashCode(java.util.Arrays.copyOf(argb, argb.length / 2));
-            int[] hit = tiles.get(key);
-            if (hit != null) {
-                return hit;
+            List<int[]> hits = tiles.get(key);
+            if (hits != null) {
+                for (int[] hit : hits) {
+                    if (samePixels(hit, argb, w, h)) return hit;
+                }
+                hashCollisions++;
             }
             if (sheets.isEmpty() || x + w + 2 > SIZE) {
                 x = 0;
@@ -596,8 +605,19 @@ final class ObjMesh {
             sheets.get(sheet).setRGB(at[1], at[2], w, h, argb, 0, w);
             x += w + 2;
             shelf = Math.max(shelf, h + 2);
-            tiles.put(key, at);
+            tiles.computeIfAbsent(key, ignored -> new ArrayList<>()).add(at);
             return at;
+        }
+
+        /** Hashes select candidates; the sheet's actual ARGB pixels prove identity. */
+        private boolean samePixels(int[] at, int[] argb, int w, int h) {
+            BufferedImage sheet = sheets.get(at[0]);
+            for (int row = 0; row < h; row++) {
+                for (int col = 0; col < w; col++) {
+                    if (sheet.getRGB(at[1] + col, at[2] + row) != argb[row * w + col]) return false;
+                }
+            }
+            return true;
         }
 
         void flush(String spriteNs, Map<String, byte[]> entries) throws IOException {
