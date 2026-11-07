@@ -1904,7 +1904,7 @@ public final class CimSceneMod {
         return both;
     }
 
-    private static int SETTLE_LOGGED;
+    private static int SETTLE_SLOT;
 
     /** Where a built structure is clicked; set by guiBuildCube. */
     private static BlockPos guiCubeClick;
@@ -2225,7 +2225,9 @@ public final class CimSceneMod {
             }
         }
         List<String> cubes = wanted.isEmpty() ? List.of() : guiCubeCandidates(namespace);
-        BlockPos base = new BlockPos(GUI_PROBE_XZ + 64, 100, GUI_PROBE_XZ);
+        // Each mod's pass gets its own ground: the passes overlap in time, and one clearing
+        // its cubes must not take down another's before that one is clicked.
+        BlockPos base = new BlockPos(GUI_PROBE_XZ + 64, 100, GUI_PROBE_XZ + 400 * SETTLE_SLOT++);
         GuiProbe probe = new GuiProbe(level);
         List<BlockPos> rigs = new ArrayList<>();
         java.util.Set<Long> chunks = new java.util.HashSet<>();
