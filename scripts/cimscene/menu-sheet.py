@@ -140,9 +140,9 @@ def main():
                 continue
             # Each shard shoots one stride of the pages. The stride is checked by
             # number, so a page this shard owed and failed to shoot still counts RED.
-            if a.stride and int(page) % a.stride[1] != a.stride[0]:
-                continue
             menu, opened, note, slots = read
+            if a.stride and int(page) % a.stride[1] != a.stride[0] and note != "opened-by:crawl":
+                continue
             art = os.path.join(a.art, menu.replace(":", "_").replace("/", "_") + ".png") if a.art else None
             result = compare(truth, ours, slots, a.scale, art)
             verdict, why = judge(menu, opened, note, result)

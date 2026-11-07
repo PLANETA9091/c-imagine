@@ -12,12 +12,18 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import org.slf4j.Logger;
@@ -55,6 +61,7 @@ public final class ScreenArt {
     public static void init() {
         if (System.getProperty("cim.screenart") != null) {
             NeoForge.EVENT_BUS.addListener(ScreenArt::onRender);
+            NeoForge.EVENT_BUS.addListener(ScreenArt::onTick);
             LOGGER.info("[cimscene] screen art capture on: {}", System.getProperty("cim.screenart"));
         }
     }
@@ -80,6 +87,7 @@ public final class ScreenArt {
         }
         if (id != null && DONE.add(id)) {
             try {
+                event.getGuiGraphics().flush();
                 capture(screen, id);
             } catch (Throwable t) {
                 LOGGER.warn("[cimscene] screen art failed for {}: {}", id, t.toString());
@@ -87,10 +95,108 @@ public final class ScreenArt {
         }
     }
 
+    // --- the crawl: some menus only open from a button in another menu
+
+    private static final int CRAWL_STEP_TICKS = 6;
+    private static final int CRAWL_WAIT_TICKS = 70;
+    private static final int CRAWL_MAX_WIDGETS = 18;
+
+    /** Pressing through one open screen. */
+    private static final class Crawl {
+        final Screen parent;
+        final List<int[]> targets = new ArrayList<>();
+        int next;
+        int wait;
+
+        Crawl(AbstractContainerScreen<?> screen, int start) {
+            parent = screen;
+            next = start;
+            for (GuiEventListener child : screen.children()) {
+                if (child instanceof AbstractWidget w && w.visible && w.active && !(w instanceof EditBox)
+                        && targets.size() < CRAWL_MAX_WIDGETS) {
+                    targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2});
+                }
+            }
+        }
+    }
+
+    private static Crawl crawl;
+    private static int crawlTicks;
+
+    private static void finishCrawl(int next) {
+        crawl = null;
+        try {
+            Files.writeString(Path.of(System.getProperty("cim.screenart"), "crawl-done"), String.valueOf(next));
+        } catch (IOException e) {
+            LOGGER.warn("[cimscene] crawl marker failed: {}", e.toString());
+        }
+    }
+
+    private static boolean newMenuUp(Minecraft mc) {
+        if (!(mc.screen instanceof AbstractContainerScreen<?> screen)) {
+            return false;
+        }
+        try {
+            return !DONE.contains(BuiltInRegistries.MENU.getKey(screen.getMenu().getType()));
+        } catch (UnsupportedOperationException noType) {
+            return false;
+        }
+    }
+
+    private static void onTick(ClientTickEvent.Post event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (crawl == null) {
+            Path go = Path.of(System.getProperty("cim.screenart"), "crawl-go");
+            if (Files.exists(go) && mc.screen instanceof AbstractContainerScreen<?> screen) {
+                try {
+                    int start = Integer.parseInt(Files.readString(go).trim());
+                    Files.delete(go);
+                    crawl = new Crawl(screen, start);
+                    crawlTicks = 0;
+                } catch (IOException | NumberFormatException e) {
+                    LOGGER.warn("[cimscene] crawl start failed: {}", e.toString());
+                }
+            }
+            return;
+        }
+        if (++crawlTicks % CRAWL_STEP_TICKS != 0) {
+            return;
+        }
+        if (mc.screen != crawl.parent) {
+            if (newMenuUp(mc) && crawl.wait++ < CRAWL_WAIT_TICKS / CRAWL_STEP_TICKS) {
+                return;   // onRender is capturing it
+            }
+            if (mc.screen instanceof AbstractContainerScreen<?> || mc.screen == null) {
+                finishCrawl(crawl.next);   // the server has moved on, so the parent must be reopened
+            } else {
+                mc.setScreen(crawl.parent);   // a client-only page: step back out
+            }
+            return;
+        }
+        if (crawl.next >= crawl.targets.size()) {
+            finishCrawl(-1);
+            return;
+        }
+        int[] at = crawl.targets.get(crawl.next++);
+        crawl.wait = 0;
+        try {
+            crawl.parent.mouseClicked(at[0], at[1], 0);
+            crawl.parent.mouseReleased(at[0], at[1], 0);
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] crawl press threw {}", t.toString());
+        }
+    }
+
     private static void capture(AbstractContainerScreen<?> screen, ResourceLocation id) throws IOException {
         Minecraft mc = Minecraft.getInstance();
         int w = mc.getWindow().getWidth();
         int h = mc.getWindow().getHeight();
+        // The frame as a player sees it, for a menu no server command can reopen.
+        Path frameDir = Path.of(System.getProperty("cim.screenart"));
+        Files.createDirectories(frameDir);
+        try (NativeImage frame = Screenshot.takeScreenshot(mc.getMainRenderTarget())) {
+            frame.writeToFile(frameDir.resolve(id.getNamespace() + "_" + id.getPath().replace('/', '_') + ".frame"));
+        }
         TextureTarget target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
         target.setClearColor(0f, 0f, 0f, 0f);
         target.clear(Minecraft.ON_OSX);

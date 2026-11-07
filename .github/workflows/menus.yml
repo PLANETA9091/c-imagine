@@ -155,7 +155,9 @@ jobs:
           path: all
       - name: GREEN or RED
         run: |
-          find all -name menus.md -exec cat {} + | grep -E '^\| ' | grep -v '^| menu' | sort -u > all.md
+          # A crawl can reach a menu from another slice: its best verdict stands.
+          find all -name menus.md -exec cat {} + | grep -E '^\| ' | grep -v '^| menu' | sort -u \
+            | awk -F'|' '{k=$2; g=($3 ~ /GREEN/); if(!(k in r) || g || (r[k] ~ /not opened/ && $0 !~ /not opened/)) r[k]=$0} END{for(k in r) print r[k]}' | sort > all.md
           G=$(grep -c '| GREEN |' all.md || true); T=$(wc -l < all.md)
           { echo "### Menus: $G of $T GREEN"; echo; echo '| menu | verdict | detail |'; echo '|---|---|---|'; cat all.md; } >> "$GITHUB_STEP_SUMMARY"
           echo "menus: $G of $T GREEN"

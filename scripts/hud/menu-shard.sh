@@ -60,8 +60,47 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   for i in $(seq 1 30); do [ "$(cat "$M" 2>/dev/null || echo none)" != "$B" ] && break; sleep 0.2; done
   sleep 3
   $SHOT "truth-shots/gal-gui-$NS$p.png" || true
+  # Menus behind this menu's buttons: the client presses through them, and the parent
+  # is reopened whenever one of them replaces it.
+  if grep -q '^cell' "srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv" 2>/dev/null; then
+    IDX=0
+    for round in 1 2 3 4; do
+      rm -f "$SCR/crawl-done"; echo "$IDX" > "$SCR/crawl-go"
+      for i in $(seq 1 90); do [ -f "$SCR/crawl-done" ] && break; sleep 0.2; done
+      [ -f "$SCR/crawl-done" ] || { rm -f "$SCR/crawl-go"; break; }
+      IDX=$(cat "$SCR/crawl-done"); [ "$IDX" = "-1" ] && break
+      $RC "cimscene gallery gui $NS $p" >/dev/null; sleep 3
+    done
+  fi
 done
-stamp "truth done: $(find srv-wall/c-imagine/screens -name '*.png' | wc -l) screens captured"
+stamp "truth done: $(find srv-wall/c-imagine/screens -maxdepth 1 -name '*.png' | wc -l) screens captured"
+# A menu the crawl reached has no opener, so its capture becomes its page.
+python3 - "$NS" <<'PY' > crawl-pages.txt
+import glob, os, shutil, sys
+ns = sys.argv[1]
+pages = {}
+for f in glob.glob(f'srv-wall/c-imagine/scenes/gallery-gui-{ns}-p*.tsv'):
+    rows = [l.rstrip('\n').split('\t') for l in open(f, encoding='utf-8', errors='replace')]
+    for r in rows:
+        if r[0] == 'skip' and len(r) > 4:
+            pages[r[4]] = f
+for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
+    rows = [l.rstrip('\n').split('\t') for l in open(tsv, encoding='utf-8')]
+    menu = next((r for r in rows if r[0] == 'menu'), None)
+    frame = tsv[:-4] + '.frame'
+    if not menu or menu[1] not in pages or not os.path.isfile(frame):
+        continue
+    page_file = pages[menu[1]]
+    page = page_file.rsplit('-p', 1)[1][:-4]
+    with open(page_file, 'w', encoding='utf-8') as out:
+        out.write('cell\tx\ty\tz\tmenu\tnote\n')
+        out.write(f'cell\t0\t0\t0\t{menu[1]}\topened-by:crawl\t{menu[2]}\n')
+        for i, r in enumerate(x for x in rows if x[0] == 'slot'):
+            out.write(f'slot\t{i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
+    shutil.copy(frame, f'truth-shots/gal-gui-{ns}{page}.png')
+    print(page)
+PY
+stamp "crawl reached $(wc -l < crawl-pages.txt) more menus"
 $RC stop >/dev/null 2>&1 || true
 sleep 2
 pkill -f 'cim.screenart' || true
@@ -114,7 +153,7 @@ for i in $(seq 1 40); do [ "$(grep -c 'Reloading ResourceManager' visual-client/
 sleep 10   # the join toasts pass
 stamp ours joined
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
-for p in $(seq "$SI" "$K" $((N-1))); do
+for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   $RC "cim gallerypage-gui $NS $p" >/dev/null
   sleep 1.2
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true

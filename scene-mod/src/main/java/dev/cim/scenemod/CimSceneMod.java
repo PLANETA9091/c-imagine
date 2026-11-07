@@ -1778,7 +1778,17 @@ public final class CimSceneMod {
                 out.add("entity:" + e);
             }
         }
-        out.sort(Comparator.naturalOrder());
+        // The plainest action first: the first thing that opens a menu is its opener, and a
+        // held-item menu reached through a placement path would lose the item in the frame.
+        List<String> ranks = List.of("block:", "item:", "place+", "hang+", "entity:");
+        out.sort(Comparator.<String>comparingInt(c -> {
+            for (int i = 0; i < ranks.size(); i++) {
+                if (c.startsWith(ranks.get(i))) {
+                    return i;
+                }
+            }
+            return ranks.size();
+        }).thenComparing(Comparator.naturalOrder()));
         List<String> both = new ArrayList<>(out);
         for (String each : out) {
             both.add("sneak+" + each);
