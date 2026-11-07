@@ -40,6 +40,14 @@ for i in $(seq 1 240); do $RC list 2>/dev/null | grep -q players && break; sleep
 for ns in $(cat mod-ids.txt); do
   $RC "cimscene gallery gui-scan $ns" >/dev/null 2>&1 || true
 done
+# Structures form over real ticks: build every guess at once per mod, then wait for the click pass.
+for ns in $(cat mod-ids.txt); do
+  rm -f "srv-plan/c-imagine/scenes/settle-$ns.done"
+  $RC "cimscene gallery gui-settle $ns" >/dev/null 2>&1 || true
+done
+for ns in $(cat mod-ids.txt); do
+  for i in $(seq 1 100); do [ -f "srv-plan/c-imagine/scenes/settle-$ns.done" ] && break; sleep 0.3; done
+done
 sleep 2
 $RC stop >/dev/null 2>&1 || true
 mkdir -p plan-scenes; cp srv-plan/c-imagine/scenes/gallery-gui-*.tsv plan-scenes/ 2>/dev/null || true

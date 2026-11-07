@@ -314,6 +314,10 @@ public final class CimSceneMod {
                                                 StringArgumentType.getString(ctx, "namespace")))))
                         // Closes the viewer's menu, so whatever it held is back in the inventory
                         // before the harness resets that inventory for the next page.
+                        .then(Commands.literal("gui-settle")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .executes(ctx -> galleryGuiSettle(ctx.getSource().getLevel(),
+                                                StringArgumentType.getString(ctx, "namespace")))))
                         .then(Commands.literal("gui-close")
                                 .executes(ctx -> {
                                     ServerPlayer viewer = ctx.getSource().getServer().getPlayerList()
@@ -2178,6 +2182,130 @@ public final class CimSceneMod {
         return found;
     }
 
+    private static String guiManifestOpener(String namespace, int page) {
+        Path file = Path.of("c-imagine", "scenes", "gallery-gui-" + namespace + "-p" + page + ".tsv");
+        try {
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String[] p = line.split("\t");
+                if (p.length > 5 && p[0].equals("opener")) {
+                    return p[5];
+                }
+            }
+        } catch (IOException ignored) {
+            // no manifest: no opener
+        }
+        return null;
+    }
+
+    /**
+     * The settled pass, for menus the scan's one-tick clicks did not open. Every structure
+     * guess (a hollow cube of each block entity block, 3 and 5 wide) is built at once on its
+     * own spot, the server ticks for real (a mod forms structures in its level tick, not in
+     * the block entity's), and then each is clicked. A page that opens is rewritten with its
+     * opener; c-imagine/scenes/settle-NS.done marks the end.
+     */
+    private static int galleryGuiSettle(ServerLevel level, String namespace) {
+        java.util.Set<ResourceLocation> wanted = new java.util.TreeSet<>();
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
+        ids.removeIf(id -> !id.getNamespace().equals(namespace));
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        for (int page = 0; page < ids.size(); page++) {
+            if (guiManifestOpener(namespace, page) == null) {
+                wanted.add(ids.get(page));
+            }
+        }
+        List<String> cubes = wanted.isEmpty() ? List.of() : guiCubeCandidates(namespace);
+        BlockPos base = new BlockPos(GUI_PROBE_XZ + 64, 100, GUI_PROBE_XZ);
+        GuiProbe probe = new GuiProbe(level);
+        List<BlockPos> rigs = new ArrayList<>();
+        java.util.Set<Long> chunks = new java.util.HashSet<>();
+        for (int i = 0; i < cubes.size(); i++) {
+            BlockPos rig = base.offset((i % 16) * 8, 0, (i / 16) * 10);
+            rigs.add(rig);
+            for (int dx = -3; dx <= 3; dx += 3) {
+                for (int dz = -6; dz <= 3; dz += 3) {
+                    net.minecraft.world.level.ChunkPos c = new net.minecraft.world.level.ChunkPos(rig.offset(dx, 0, dz));
+                    if (chunks.add(c.toLong())) {
+                        level.setChunkForced(c.x, c.z, true);
+                        level.getChunk(c.x, c.z);
+                    }
+                }
+            }
+        }
+        List<BlockPos> clicks = new ArrayList<>();
+        for (int i = 0; i < cubes.size(); i++) {
+            probe.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
+            try {
+                guiBuildCube(level, probe, rigs.get(i), cubes.get(i));
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui settle build {} threw {}", cubes.get(i), t.toString());
+            }
+            clicks.add(guiCubeClick);
+        }
+        List<BlockPos> built = new ArrayList<>(GUI_CUBE_BLOCKS);
+        GUI_CUBE_BLOCKS.clear();
+        LOGGER.info("[cimscene] gallery-gui settle ns={} missing={} structures={}", namespace, wanted.size(), cubes.size());
+        runAfterTicks(level.getServer(), 60, () -> {
+            Map<ResourceLocation, List<String>> openers = new java.util.TreeMap<>();
+            Map<ResourceLocation, GuiProbe> seen = new HashMap<>();
+            for (int i = 0; i < cubes.size(); i++) {
+                if (clicks.get(i) == null) {
+                    continue;
+                }
+                GuiProbe one = new GuiProbe(level);
+                one.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
+                one.candidate = cubes.get(i);
+                guiCubeClick = clicks.get(i);
+                try {
+                    guiAct(level, one, rigs.get(i), cubes.get(i));
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] gallery-gui settle click {} threw {}", cubes.get(i), t.toString());
+                }
+                if (one.seen != null && wanted.contains(one.seen)) {
+                    openers.computeIfAbsent(one.seen, k -> new ArrayList<>()).add(one.candidate);
+                    seen.putIfAbsent(one.seen, one);
+                }
+            }
+            guiCubeClick = null;
+            for (BlockPos p : built) {
+                level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+            }
+            for (Map.Entry<ResourceLocation, GuiProbe> e : seen.entrySet()) {
+                GuiProbe one = e.getValue();
+                int page = ids.indexOf(e.getKey());
+                StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+                tsv.append("cell\t0\t0\t0\t").append(e.getKey()).append("\topened-by:")
+                        .append(openers.get(e.getKey()).get(0)).append('\t').append(one.seenClass).append('\n');
+                tsv.append("title\t-\t-\t-\t").append(e.getKey()).append('\t')
+                        .append(one.seenTitle.replace('\t', ' ')).append('\n');
+                for (String each : openers.get(e.getKey())) {
+                    tsv.append("opener\t-\t-\t-\t").append(e.getKey()).append('\t').append(each).append('\n');
+                }
+                int index = 0;
+                for (String slot : one.seenSlots) {
+                    String[] p = slot.split("\t");
+                    tsv.append("slot\t").append(index++).append('\t').append(p[0]).append('\t').append(p[1])
+                            .append('\t').append(e.getKey()).append('\t').append(p[2]).append('\t').append(p[3]).append('\n');
+                }
+                try {
+                    Files.writeString(Path.of("c-imagine", "scenes", "gallery-gui-" + namespace + "-p" + page + ".tsv"),
+                            tsv.toString(), StandardCharsets.UTF_8);
+                } catch (IOException ioe) {
+                    LOGGER.error("[cimscene] gallery-gui settle write failed {}: {}", e.getKey(), ioe.toString());
+                }
+            }
+            LOGGER.info("[cimscene] gallery-gui settle ns={} opened={}", namespace, seen.keySet());
+            try {
+                Files.createDirectories(Path.of("c-imagine", "scenes"));
+                Files.writeString(Path.of("c-imagine", "scenes", "settle-" + namespace + ".done"),
+                        String.valueOf(seen.size()), StandardCharsets.UTF_8);
+            } catch (IOException ioe) {
+                LOGGER.error("[cimscene] gallery-gui settle marker failed: {}", ioe.toString());
+            }
+        });
+        return cubes.size();
+    }
+
     /** Tries every block and item of the namespace once and keeps what opened a menu. */
     private static Map<ResourceLocation, String> guiOpeners(ServerLevel level, ServerPlayer viewer, String namespace) {
         Map<ResourceLocation, String> known = GUI_OPENERS.get(namespace);
@@ -2250,6 +2378,11 @@ public final class CimSceneMod {
             // what a player does. The block entity must reach the client first, or
             // the screen reads a null holder and the client disconnects.
             String opener = guiOpeners(level, viewer, namespace).get(id);
+            if (opener == null) {
+                // The plan's settled pass found what a click in one tick cannot: a structure that
+                // forms over real ticks. Its opener is in the page manifest the plan wrote.
+                opener = guiManifestOpener(namespace, page);
+            }
             if (opener != null) {
                 guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
@@ -2261,7 +2394,8 @@ public final class CimSceneMod {
                     viewer.inventoryMenu.broadcastChanges();
                 }
             }
-            runAfterTicks(level.getServer(), opener != null && opener.contains("entity:") ? 40 : GUI_SETTLE_TICKS,
+            runAfterTicks(level.getServer(), opener != null && (opener.contains("entity:") || opener.startsWith("cube"))
+                            ? 40 : GUI_SETTLE_TICKS,
                     () -> finishGuiPage(level, viewer, namespace, page, id, opener, rig));
             return 1;
         }
