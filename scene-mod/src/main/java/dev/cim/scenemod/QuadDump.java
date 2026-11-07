@@ -390,7 +390,7 @@ final class QuadDump {
         @Override
         public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
                                 float a, int[] light, int overlay, boolean readAlpha) {
-            appendQuad(out, q, sprites, offset, brightness, r, g, b);
+            appendQuad(out, q, sprites, offset, brightness, r, g, b, a, readAlpha);
         }
 
         @Override
@@ -425,11 +425,11 @@ final class QuadDump {
     }
 
     private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites, Vec3 off,
-                                   float[] brightness, float r, float g, float b) {
+                                   float[] brightness, float r, float g, float b, float a, boolean readColor) {
         int[] v = q.getVertices();
         float[][] pos = new float[4][3];
         float[][] uv = new float[4][2];
-        float[][] rgb = new float[4][3];
+        float[][] rgb = new float[4][4];
         for (int i = 0; i < 4; i++) {
             int o = i * STRIDE;
             pos[i][0] = Float.intBitsToFloat(v[o]) + (float) off.x;
@@ -437,11 +437,22 @@ final class QuadDump {
             pos[i][2] = Float.intBitsToFloat(v[o + 2]) + (float) off.z;
             uv[i][0] = Float.intBitsToFloat(v[o + UV]);
             uv[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
-            rgb[i][0] = brightness[i] * r;
-            rgb[i][1] = brightness[i] * g;
-            rgb[i][2] = brightness[i] * b;
+            bakedColor(rgb[i], v[o + 3], brightness[i], r, g, b, a, readColor);
         }
         writeQuad(sb, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), pos, uv, rgb);
+    }
+
+    /** Match the native BLOCK byte layout and VertexConsumer's final byte quantization. */
+    private static void bakedColor(float[] out, int packed, float brightness,
+                                   float r, float g, float b, float a, boolean readColor) {
+        // Native VertexConsumer reads bytes from a native-order IntBuffer.
+        int rgba = java.nio.ByteOrder.nativeOrder() == java.nio.ByteOrder.LITTLE_ENDIAN
+                ? packed : Integer.reverseBytes(packed);
+        out[0] = (int) (readColor ? (rgba & 255) * brightness * r : brightness * r * 255f) / 255f;
+        out[1] = (int) (readColor ? ((rgba >>> 8) & 255) * brightness * g : brightness * g * 255f) / 255f;
+        out[2] = (int) (readColor ? ((rgba >>> 16) & 255) * brightness * b : brightness * b * 255f) / 255f;
+        out[3] = (readColor ? (int) ((a * ((rgba >>> 24) & 255) / 255f) * 255)
+                : (int) (a * 255)) / 255f;
     }
 
     /** Positions in 0..1 block space, UVs in atlas space; a null sprite is looked up by UV. */
@@ -710,11 +721,7 @@ final class QuadDump {
                     p[i][2] = at.z + origin;
                     t[i][0] = Float.intBitsToFloat(v[o + UV]);
                     t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
-                    c[i][0] = brightness[i] * r;
-                    c[i][1] = brightness[i] * g;
-                    c[i][2] = brightness[i] * b;
-                    // Match VertexConsumer's byte-quantized packed alpha.
-                    c[i][3] = (int) (a * (readAlpha ? ((v[o + 3] >>> 24) & 255) : 255)) / 255f;
+                    bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
                 if (texture != null) {
                     appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);

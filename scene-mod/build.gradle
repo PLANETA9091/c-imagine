@@ -52,3 +52,12 @@ tasks.register('captureBufferTest', JavaExec) {
 }
 
 check.dependsOn captureBufferTest
+
+tasks.register('captureColorTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureColorTest'
+    systemProperty 'java.awt.headless', 'true'
+}
+
+check.dependsOn captureColorTest
