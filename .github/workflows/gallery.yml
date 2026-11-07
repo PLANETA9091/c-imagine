@@ -116,9 +116,10 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: gallery-${{ github.ref }}
-  # several agents push to main: cancelling starved the gate, killing runs in their last
-  # stage. A started run finishes; the group keeps only the newest pending one behind it.
+  group: gallery-${{ github.ref }}-${{ github.sha }}
+  # Validate distinct source revisions concurrently. A branch-wide queue
+  # replaced pending proofs on each push. Started runs still finish, and
+  # duplicate runs of the same revision remain grouped.
   cancel-in-progress: false
 
 env:
