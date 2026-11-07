@@ -45,8 +45,14 @@ wait_viewer || { tail -30 truth-client/client.out; exit 2; }
 for i in $(seq 1 40); do grep -qE 'Loaded [0-9]+ advancements' truth-client/client.out && break; sleep 1; done
 sleep 4
 stamp truth joined
-$RC "cimscene gallery gui-scan $NS" >/dev/null
-sleep 1
+# The plan job already scanned every mod; a slice only scans when run on its own.
+mkdir -p srv-wall/c-imagine/scenes
+if ls plan-scenes/gallery-gui-"$NS"-p*.tsv >/dev/null 2>&1; then
+  cp plan-scenes/gallery-gui-"$NS"-p*.tsv srv-wall/c-imagine/scenes/
+else
+  $RC "cimscene gallery gui-scan $NS" >/dev/null
+  sleep 1
+fi
 N=$(find srv-wall/c-imagine/scenes -maxdepth 1 -name "gallery-gui-$NS-p*.tsv" | wc -l)
 stamp "truth walk: $N menus, slice $SI/$K"
 # Recipe toasts come from picking items up, so unlock them all now and let them pass.

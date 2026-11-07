@@ -20,25 +20,14 @@ concurrency:
   group: menus-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  LADDER_SLUGS: create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade
 
 jobs:
-  slice:
-    name: menus ${{ matrix.ns }} ${{ matrix.si }}/${{ matrix.k }}
+  plan:
+    name: menus plan (mods and menu counts from the jars)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { ns: create, si: 0, k: 1 }
-          - { ns: ae2, si: 0, k: 2 }
-          - { ns: ae2, si: 1, k: 2 }
-          - { ns: mekanism, si: 0, k: 3 }
-          - { ns: mekanism, si: 1, k: 3 }
-          - { ns: mekanism, si: 2, k: 3 }
-          - { ns: sophisticatedbackpacks, si: 0, k: 1 }
+    timeout-minutes: 15
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
       - uses: gradle/actions/setup-gradle@v4
@@ -94,7 +83,81 @@ jobs:
           key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
       - name: fetch mods (cache miss)
         if: steps.mods.outputs.cache-hit != 'true'
-        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
+      - name: count every mod's menus
+        id: plan
+        env:
+          J21: ${{ steps.jdk21.outputs.path }}
+        run: bash scripts/hud/menu-plan.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plan-scenes
+          path: plan-scenes
+
+  slice:
+    name: menus ${{ matrix.ns }} ${{ matrix.si }}/${{ matrix.k }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [plan]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache: false
+      - uses: actions/setup-java@v4
+        id: jdk25
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: paper-plugin/pom.xml
+      - uses: actions/setup-java@v4
+        id: jdk21
+        with:
+          distribution: temurin
+          java-version: 21
+      # NeoForge's decompile is the slow part of a harness build, and it never changes.
+      - name: restore Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            scene-mod/build/moddev
+            scene-mod/.gradle
+          key: menus-gradle-${{ hashFiles('scene-mod/build.gradle', 'scene-mod/gradle.properties') }}
+      - name: restore scene jar
+        id: jars
+        uses: actions/cache@v4
+        with:
+          path: scene-mod/build/libs
+          key: menus-scene-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*') }}
+      - name: build scene jar (cache miss)
+        if: steps.jars.outputs.cache-hit != 'true'
+        run: gradle build --no-daemon -p scene-mod
+      - name: restore NeoForge server
+        id: layer
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge server (cache miss)
+        if: steps.layer.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
       - name: restore NeoForge client
         id: nfc
         uses: actions/cache@v4
@@ -125,6 +188,10 @@ jobs:
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
           done
           if [ -n "$NEED" ]; then sudo apt-get update -qq; sudo apt-get install -y -qq $NEED; fi
+      - uses: actions/download-artifact@v4
+        with:
+          name: plan-scenes
+          path: plan-scenes
       - name: truth, ours and the pixel verdict
         env:
           J21: ${{ steps.jdk21.outputs.path }}
@@ -147,7 +214,7 @@ jobs:
   verdict:
     name: menus verdict
     runs-on: ubuntu-latest
-    needs: [slice]
+    needs: [plan, slice]
     if: always()
     steps:
       - uses: actions/download-artifact@v4
