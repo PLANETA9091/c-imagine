@@ -3,6 +3,7 @@ package dev.cim.scenemod;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
@@ -173,7 +174,11 @@ final class QuadDump {
         Files.createDirectories(out);
         capturedTextures = out.resolve("textures");
         capturedSpriteNames.clear();
-        TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);
+        Minecraft mc = Minecraft.getInstance();
+        // Like LevelRenderer immediately before entities/BERs. Tick capture
+        // otherwise inherits the last GUI pass's CPU diffuse-light state.
+        setupCaptureLighting(mc.level != null && mc.level.effects().constantAmbientLight());
+        TextureAtlas atlas = mc.getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);
         List<TextureAtlasSprite> sprites = new ArrayList<>(atlas.getTextures().values());
         TreeSet<String> rows = new TreeSet<>();
         int cells = 0;
@@ -292,6 +297,11 @@ final class QuadDump {
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
                         + "block_entities drawn={} failed={} no_level={} not_rendered={}",
                 cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel, berNotRendered);
+    }
+
+    static void setupCaptureLighting(boolean constantAmbientLight) {
+        if (constantAmbientLight) Lighting.setupNetherLevel();
+        else Lighting.setupLevel();
     }
 
     /**

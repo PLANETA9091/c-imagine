@@ -45,7 +45,31 @@ public final class CaptureBufferTest {
         if (field(type, "foreign").getLong(capture) != 2) {
             throw new AssertionError("both pending buffers were not flushed");
         }
-        System.out.println("capture retained/interleaved buffer tests: ALL OK");
+        checkNativeLighting();
+        System.out.println("capture retained/interleaved buffer and native lighting tests: ALL OK");
+    }
+
+    private static void checkNativeLighting() throws Exception {
+        com.mojang.blaze3d.systems.RenderSystem.initRenderThread();
+        var lightsField = com.mojang.blaze3d.systems.RenderSystem.class.getDeclaredField("shaderLightDirections");
+        lightsField.setAccessible(true);
+        // Use native inventory state as the independently reproduced contaminant.
+        com.mojang.blaze3d.platform.Lighting.setupForEntityInInventory();
+        org.joml.Vector3f[] lights = (org.joml.Vector3f[]) lightsField.get(null);
+        if (lights[0].y >= 0) throw new AssertionError("native inventory-light precondition");
+        QuadDump.setupCaptureLighting(false);
+        lights = (org.joml.Vector3f[]) lightsField.get(null);
+        org.joml.Vector3f first = new org.joml.Vector3f(.2f, 1, -.7f).normalize();
+        org.joml.Vector3f second = new org.joml.Vector3f(-.2f, 1, .7f).normalize();
+        if (lights[0].distance(first) > 1e-6 || lights[1].distance(second) > 1e-6) {
+            throw new AssertionError("capture retained stale GUI lighting instead of native world lighting");
+        }
+        QuadDump.setupCaptureLighting(true);
+        lights = (org.joml.Vector3f[]) lightsField.get(null);
+        second.y = -second.y;
+        if (lights[0].distance(first) > 1e-6 || lights[1].distance(second) > 1e-6) {
+            throw new AssertionError("capture lost native constant-ambient dimension lighting");
+        }
     }
 
     private static void vertex(VertexConsumer buffer, float x, float y, int red, int green) {
