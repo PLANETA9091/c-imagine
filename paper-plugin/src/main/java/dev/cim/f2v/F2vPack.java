@@ -1429,6 +1429,7 @@ public final class F2vPack {
         // never exceed the sprite; clamp every emitted model's face uv into
         // [0,16]. String-level surgery: models without an offending uv array
         // stay byte-identical (the pack sha1 moves only with real fixes).
+        int replacedWrappers = GalleryPack.removeReplacedBlockWrappers(entries);
         sanitizeFaceUvs(entries, warnings);
 
         ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
@@ -1451,6 +1452,7 @@ public final class F2vPack {
                 .append("items requested: ").append(rows.size()).append('\n')
                 .append("zip entries:     ").append(entries.size()).append('\n')
                 .append("zip bytes:       ").append(zip.length).append('\n')
+                .append("replaced wrappers omitted: ").append(replacedWrappers).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
                 .append("warnings:        ").append(warnings.size()).append('\n');
         for (String w : warnings) {
@@ -3250,6 +3252,16 @@ public final class F2vPack {
                 String dispatch = itemDef("paper", List.of(Map.entry(100000f, ref)));
                 expect(failures, dispatch.contains("minecraft:composite") && dispatch.contains("transformation"),
                         "unlit: range dispatch carries the native composite and matrix");
+                int before = entries.size();
+                expect(failures, GalleryPack.removeReplacedBlockWrappers(entries) == 1
+                                && entries.size() == before - 1
+                                && !entries.containsKey("assets/c-imagine/models/gallery/g0.json"),
+                        "unlit: unreferenced backing wrapper omitted from client reload");
+                for (var child : node.getAsJsonArray("models")) {
+                    String model = child.getAsJsonObject().get("model").getAsString();
+                    expect(failures, entries.containsKey("assets/" + model.replace(":", "/models/") + ".json"),
+                            "unlit: every rendered child survives backing-wrapper removal");
+                }
                 String itemRef = GalleryPack.synthesizeItemQuads(List.of(), "fixture:item", 0, entries, warnings);
                 expect(failures, itemRef != null && GalleryPack.itemNode(itemRef) == null,
                         "unlit: identical ITEM capture retains native item lighting");
