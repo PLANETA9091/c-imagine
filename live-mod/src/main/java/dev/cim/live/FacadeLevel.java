@@ -165,6 +165,19 @@ final class FacadeLevel extends Level {
         return true;
     }
 
+    private final java.util.Map<Long, net.minecraft.world.level.chunk.LevelChunk> chunks = new java.util.HashMap<>();
+
+    /**
+     * An empty chunk, made when a mod asks for one (to mark it dirty, to read a biome). The
+     * blocks stay in the sparse store above; the chunk only answers what a chunk is asked.
+     */
+    @Override
+    public net.minecraft.world.level.chunk.ChunkAccess getChunk(int x, int z,
+            net.minecraft.world.level.chunk.status.ChunkStatus status, boolean create) {
+        return chunks.computeIfAbsent(net.minecraft.world.level.ChunkPos.asLong(x, z),
+                k -> new net.minecraft.world.level.chunk.LevelChunk(this, new net.minecraft.world.level.ChunkPos(x, z)));
+    }
+
     /** Every spot a session looks at is loaded: the block is there or it is air. */
     @Override
     public boolean hasChunk(int chunkX, int chunkZ) {
@@ -181,6 +194,7 @@ final class FacadeLevel extends Level {
         blockEntities.values().forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
         blockEntities.clear();
         states.clear();
+        chunks.clear();
     }
 
     // --- no chunks: what is not a block above is Paper's

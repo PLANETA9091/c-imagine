@@ -33,10 +33,21 @@ final class LiveRegistries {
     static RegistryAccess.Frozen build() {
         MappedRegistry<DimensionType> dimensions = bootstrap(Registries.DIMENSION_TYPE, DimensionTypes::bootstrap);
         MappedRegistry<DamageType> damage = bootstrap(Registries.DAMAGE_TYPE, DamageTypes::bootstrap);
+        // One biome, for the chunk a mod may ask for: plains as a bare record (no features,
+        // no spawns), so no feature, carver or structure registry is ever needed.
+        MappedRegistry<net.minecraft.world.level.biome.Biome> biomes = bootstrap(Registries.BIOME, ctx ->
+                ctx.register(net.minecraft.world.level.biome.Biomes.PLAINS, new net.minecraft.world.level.biome.Biome.BiomeBuilder()
+                        .hasPrecipitation(true).temperature(0.8f).downfall(0.4f)
+                        .specialEffects(new net.minecraft.world.level.biome.BiomeSpecialEffects.Builder()
+                                .fogColor(0xC0D8FF).waterColor(0x3F76E4).waterFogColor(0x050533).skyColor(0x78A7FF).build())
+                        .mobSpawnSettings(net.minecraft.world.level.biome.MobSpawnSettings.EMPTY)
+                        .generationSettings(net.minecraft.world.level.biome.BiomeGenerationSettings.EMPTY)
+                        .build()));
         List<Registry<?>> all = new ArrayList<>();
         BuiltInRegistries.REGISTRY.forEach(all::add);
         all.add(dimensions);
         all.add(damage);
+        all.add(biomes);
         return new RegistryAccess.ImmutableRegistryAccess(all).freeze();
     }
 
