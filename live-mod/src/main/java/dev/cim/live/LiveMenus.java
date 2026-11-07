@@ -167,6 +167,9 @@ public final class LiveMenus {
                 threw++;
                 // The simple class name only: the layer's classes carry relocated packages.
                 LOG.info("[cimlive] selftest item {} threw {}", id, t.getClass().getSimpleName());
+                // Outside the compared lines: names differ by relocation, the cause does not.
+                StackTraceElement at = t.getStackTrace().length > 0 ? t.getStackTrace()[0] : null;
+                LOG.info("[cimlive] detail {}: {} at {}", id, t.getMessage(), at);
                 SESSIONS.remove(uuid);
             }
         }

@@ -673,8 +673,12 @@ public final class FmlHost {
                 (proxy, method, args) -> switch (method.getName()) {
                     case "moduleDataProvider" -> mdp;
                     case "name" -> mod.id();
-                    case "getPrimaryPath", "getRootPath" -> jarPath;
-                    case "getPath" -> extractEntry(jarPath, joinPaths(args), extracted);
+                    case "getPrimaryPath" -> jarPath;
+                    // As on FML, the root is the jar's own filesystem: a mod walks folders in it
+                    // (measured: Dynamic Trees reads its tree packs from trees/, and every seed
+                    // was missing from the layer while getPath could only extract single files).
+                    case "getRootPath" -> jarRoot(jarPath, jarPath);
+                    case "getPath" -> jarPathOf(jarPath, joinPaths(args), extracted);
                     case "getManifestSigners", "getTrustedManifestEntries" -> null;
                     case "verifyAndGetSigners" -> null;
                     case "hasSecurityData" -> false;
@@ -709,6 +713,31 @@ public final class FmlHost {
     }
 
     private static final Map<String, Path> EXTRACT_ROOT = new HashMap<>();
+
+    private static final Map<Path, java.nio.file.FileSystem> JAR_FS = new HashMap<>();
+
+    /** The root of a jar's zip filesystem, or the fallback when the jar cannot be opened as one. */
+    private static synchronized Path jarRoot(Path jar, Path fallback) {
+        java.nio.file.FileSystem fs = JAR_FS.computeIfAbsent(jar, j -> {
+            try {
+                return java.nio.file.FileSystems.newFileSystem(j, (ClassLoader) null);
+            } catch (Exception e) {
+                System.out.println("[c-imagine] jar filesystem unavailable for " + j + ": " + e);
+                return null;
+            }
+        });
+        return fs == null ? fallback : fs.getPath("/");
+    }
+
+    /** A path inside the jar: files and folders alike, read and walked in place. */
+    private static Path jarPathOf(Path jar, String entryPath, Map<String, Path> extracted) {
+        Path root = jarRoot(jar, null);
+        if (root == null) {
+            return extractEntry(jar, entryPath, extracted);
+        }
+        String rel = entryPath.startsWith("/") ? entryPath.substring(1) : entryPath;
+        return rel.isEmpty() ? root : root.resolve(rel);
+    }
 
     private static Path extractEntry(Path jar, String entryPath, Map<String, Path> cache) {
         return cache.computeIfAbsent(entryPath, k -> {
