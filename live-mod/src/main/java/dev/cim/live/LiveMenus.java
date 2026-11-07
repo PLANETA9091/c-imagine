@@ -76,6 +76,17 @@ public final class LiveMenus {
         }
     }
 
+    static String inventoryLine(SessionServerPlayer player) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = player.getInventory().getItem(i);
+            if (!stack.isEmpty()) {
+                out.append(out.length() == 0 ? "" : ", ").append(i).append('=').append(describe(stack));
+            }
+        }
+        return out.length() == 0 ? "empty" : out.toString();
+    }
+
     static String describe(ItemStack stack) {
         return stack.isEmpty() ? "empty"
                 : BuiltInRegistries.ITEM.getKey(stack.getItem()) + " x" + stack.getCount();
@@ -129,6 +140,12 @@ public final class LiveMenus {
                 }
             }
             end(player.getUUID());
+            StringBuilder said = new StringBuilder();
+            for (net.minecraft.network.protocol.Packet<?> packet : player.session().drain()) {
+                said.append(' ').append(packet.getClass().getSimpleName());
+            }
+            LOG.info("[cimlive] selftest close: the menu sent{}; inventory now {}", said.length() == 0 ? " nothing" : said,
+                    inventoryLine(player));
             LOG.info("[cimlive] selftest ok");
         } catch (Throwable t) {
             LOG.error("[cimlive] selftest FAILED: {}", t.toString(), t);

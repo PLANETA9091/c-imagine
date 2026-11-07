@@ -39,14 +39,7 @@ public final class SessionServerPlayer extends ServerPlayer {
 
     static SessionServerPlayer create(Level level, GameProfile profile) {
         SessionPlayer template = new SessionPlayer(level, profile);
-        SessionServerPlayer self;
-        try {
-            Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            self = (SessionServerPlayer) ((sun.misc.Unsafe) f.get(null)).allocateInstance(SessionServerPlayer.class);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("cannot allocate the session player", e);
-        }
+        SessionServerPlayer self = allocate(SessionServerPlayer.class);
         Map<Object, Boolean> rewired = new IdentityHashMap<>();
         for (Class<?> c = Player.class; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field field : c.getDeclaredFields()) {
@@ -68,7 +61,24 @@ public final class SessionServerPlayer extends ServerPlayer {
             }
         }
         self.containerMenu = self.inventoryMenu;
+        self.connection = SessionConnection.create(self);
         return self;
+    }
+
+    /** An instance with no constructor run: the classes a running server alone would construct. */
+    static <T> T allocate(Class<T> type) {
+        try {
+            Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            f.setAccessible(true);
+            return type.cast(((sun.misc.Unsafe) f.get(null)).allocateInstance(type));
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot allocate " + type.getSimpleName(), e);
+        }
+    }
+
+    /** The session's network side: what the mod's code sent to this player. */
+    public SessionConnection session() {
+        return (SessionConnection) connection;
     }
 
     private static void rewire(Object part, Object from, Object to) throws IllegalAccessException {
