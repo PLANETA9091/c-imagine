@@ -99,11 +99,13 @@ jobs:
           bash scripts/build-bootstrap.sh
           CIM_BOOTSTRAP_JAR="$PWD/java/cim-bootstrap/build/cim-bootstrap.jar" \
             bash scripts/package-module.sh
-          # THE TICK-LOAD PROBE needs the cimtest multi-mod jar (the 5th
+          # THE TICK-LOAD PROBE needs the cimtest multi-mod jar (the
           # mod, cimtest_heavy, rides it) staged into the modded boot mods
           # dir — without it the layer reports "no jars in mods", the FML
           # seed skips, and the selfarm marker has nothing to arm
           JAVA_HOME="$JAVA_HOME_21_X64" gradle build --no-daemon -p test-mods
+          PV=$(bash scripts/resolve-paper-version.sh 26.3)
+          mvn -B -ntp -f paper-plugin/pom.xml -Dpaper.version="$PV" package
 
 
       - name: scaffold Paper 26.3 (shared template)
@@ -118,6 +120,20 @@ jobs:
           simulation-distance=4
           max-players=5
           PROPS
+
+      - name: restore NeoForge runtime (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer1211
+          key: neoforge-layer-21.1.265
+
+      - name: install NeoForge runtime (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fLsS --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          "$JAVA_HOME_21_X64/bin/java" -jar nf-installer.jar --installServer layer1211
 
       - name: boot A — bare Paper
         run: |
@@ -134,6 +150,10 @@ jobs:
           cp -r tmpl modded
           unzip -o dist/module-imagine.zip -d modded/modules/
           cp java/cim-bootstrap/build/cim-bootstrap.jar modded/modules/imagine/cim-bootstrap.jar
+          mkdir -p modded/crus modded/plugins
+          printf '%s\n' '{"layerDir":"../layer1211/libraries"}' > modded/crus/c-imagine.json
+          cp paper-plugin/target/cim-paper-plugin.jar modded/plugins/
+          cp scripts/log4j2-layer.xml modded/
           # THE TICK-LOAD PROBE (cimtest-heavy, Tier-1): the selfarm marker
           # arms a deterministic 10ms/tick burn for 600 ticks on world
           # start — the boot log carries the [cimtest_heavy] load-done
@@ -153,6 +173,10 @@ jobs:
       - name: compare budgets
         run: |
           set -o pipefail
+          # Paper reaching Done is insufficient if the hosted layer failed.
+          grep -Fq '[c-imagine] layer boot ok' modded/boot.log
+          grep -Fq '[c-imagine] mod execution ok' modded/boot.log
+          grep -Fq '[cimtest_heavy] mod constructed' modded/boot.log
           python3 scripts/perf/boot-budget.py bare modded | tee -a "$GITHUB_STEP_SUMMARY"
           python3 scripts/perf/tick-budget.py modded/boot.log | tee -a "$GITHUB_STEP_SUMMARY"
 
