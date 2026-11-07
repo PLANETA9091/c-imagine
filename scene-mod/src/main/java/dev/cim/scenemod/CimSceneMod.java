@@ -143,6 +143,9 @@ public final class CimSceneMod {
      */
     private void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) return;
+        if (GUI_JOINED != null && !(event.getEntity() instanceof net.minecraft.world.entity.player.Player)) {
+            GUI_JOINED.add(event.getEntity());
+        }
         if (!(event.getEntity() instanceof ItemEntity item)) return;
         Vec3 pos = item.position();
         if (GALLERY_DROP_BOX.contains(pos.x, pos.y, pos.z)) {
@@ -1696,10 +1699,14 @@ public final class CimSceneMod {
                 level.setBlock(against, Blocks.STONE.defaultBlockState(), 3);
                 level.setBlock(against.above(), Blocks.STONE.defaultBlockState(), 3);
             }
-            stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
+            GUI_JOINED = new ArrayList<>();
+            try {
+                stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
+                        new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
+            } finally {
+                guiEntity = guiJoined(guiEntity);
+            }
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
-            guiEntity = guiSpawnedNear(level, rig, guiEntity);
         } else if (plain.startsWith("use+item:")) {
             String[] pair = plain.substring("use+item:".length()).split("@", 2);
             level.setBlock(rig, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pair[1])).defaultBlockState(), 3);
@@ -1708,11 +1715,16 @@ public final class CimSceneMod {
             BlockHitResult hit = new BlockHitResult(new Vec3(rig.getX() + 0.5, rig.getY() + 1, rig.getZ() + 0.5),
                     Direction.UP, rig, false);
             BlockState state = level.getBlockState(rig);
-            net.minecraft.world.ItemInteractionResult result = state.useItemOn(stack, level, player,
-                    InteractionHand.MAIN_HAND, hit);
+            GUI_JOINED = new ArrayList<>();
+            net.minecraft.world.ItemInteractionResult result;
             net.minecraft.world.InteractionResult used = null;
-            if (!result.consumesAction()) {
-                used = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+            try {
+                result = state.useItemOn(stack, level, player, InteractionHand.MAIN_HAND, hit);
+                if (!result.consumesAction()) {
+                    used = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                }
+            } finally {
+                guiEntity = guiJoined(guiEntity);
             }
             if (PAIR_USES_LOGGED < 400 && (result.consumesAction() || (used != null && used.consumesAction()))) {
                 PAIR_USES_LOGGED++;
@@ -1720,7 +1732,6 @@ public final class CimSceneMod {
             }
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             // Whatever the use put into the world is what the player clicks next.
-            guiEntity = guiSpawnedNear(level, rig, guiEntity);
         } else if (plain.startsWith("entity:")) {
             net.minecraft.world.entity.Entity entity = BuiltInRegistries.ENTITY_TYPE.get(
                     ResourceLocation.parse(plain.substring("entity:".length()))).create(level);
@@ -1731,27 +1742,31 @@ public final class CimSceneMod {
                 // puts it (a robit with no charge pad to call home) removes itself, and its
                 // menu has to come from the way a player really places it, the item pairs.
                 entity.tick();
+                GUI_SPAWNED.add(entity);
                 guiEntity = entity.isRemoved() ? null : entity;
             }
         }
     }
 
+    /** Entities that joined the level while a use ran; null when no use is running. */
+    private static List<net.minecraft.world.entity.Entity> GUI_JOINED;
+    /** Everything a use spawned, so the rig can be cleared of it. */
+    private static final List<net.minecraft.world.entity.Entity> GUI_SPAWNED = new ArrayList<>();
+
     /**
-     * What a use put into the world next to the rig. Not {@code getEntities(box)}: that only
-     * sees sections whose entity data finished loading, and the rig's chunk was forced this
-     * tick, so a robit the item just placed is in the level but not yet in a visible section.
+     * What the use just put into the world, from the join event. A box query cannot see it:
+     * {@code getEntities} reads only sections whose entity data finished loading, and the rig's
+     * chunk is forced in the same tick, so a robit the item just placed is in the level but
+     * not in any visible section.
      */
-    private static net.minecraft.world.entity.Entity guiSpawnedNear(ServerLevel level, BlockPos rig,
-                                                                   net.minecraft.world.entity.Entity fallback) {
-        net.minecraft.world.entity.Entity found = fallback;
-        net.minecraft.world.phys.Vec3 at = Vec3.atCenterOf(rig);
-        for (net.minecraft.world.entity.Entity e : level.getAllEntities()) {
-            if (!(e instanceof net.minecraft.world.entity.player.Player) && !e.isRemoved()
-                    && e.position().distanceToSqr(at) <= 9.0) {
-                found = e;
-            }
+    private static net.minecraft.world.entity.Entity guiJoined(net.minecraft.world.entity.Entity fallback) {
+        List<net.minecraft.world.entity.Entity> joined = GUI_JOINED;
+        GUI_JOINED = null;
+        if (joined == null || joined.isEmpty()) {
+            return fallback;
         }
-        return found;
+        GUI_SPAWNED.addAll(joined);
+        return joined.get(joined.size() - 1);
     }
 
     private static boolean guiOpened(ServerPlayer player) {
@@ -1898,14 +1913,12 @@ public final class CimSceneMod {
         for (BlockPos p : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
             level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
         }
-        // The full lookup, as guiSpawnedNear reads it: a hidden section's entity stays otherwise.
-        List<net.minecraft.world.entity.Entity> near = new ArrayList<>();
-        net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(rig).inflate(6);
-        for (net.minecraft.world.entity.Entity e : level.getAllEntities()) {
-            if (!(e instanceof net.minecraft.world.entity.player.Player) && box.contains(e.position())) {
-                near.add(e);
-            }
-        }
+        List<net.minecraft.world.entity.Entity> near = new ArrayList<>(level.getEntities(
+                (net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(rig).inflate(6),
+                e -> !(e instanceof net.minecraft.world.entity.player.Player)));
+        // A spawn in a section not yet visible is missing from the box query: it is known by its join.
+        near.addAll(GUI_SPAWNED);
+        GUI_SPAWNED.clear();
         near.forEach(net.minecraft.world.entity.Entity::discard);
         guiEntity = null;
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
