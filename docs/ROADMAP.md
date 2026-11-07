@@ -537,9 +537,20 @@ keybinding, 1:1 and smooth. Contract and measured coverage:
 - [x] Slots, item icons, titles, buttons, right-click opening.
 - [x] Menu gate in CI (`menus.yml`, ~10 min): real NeoForge frame beside ours,
       pixel for pixel, plus a row per interaction (slot move, every button).
-      Measured 2026-11-07: 101 of 127 menus GREEN.
-- [ ] Every menu GREEN: menus that need world state (multiblocks, owned robits,
-      crafting jobs, sub-menus) opened by the walk building that state.
+      Measured 2026-11-07 (run 42383139543, ~9 min): 101 of 127 menus GREEN, and
+      every menu that opens is pixel identical except two (Create's crafting
+      blueprint never really opens on the truth; Mekanism's QIO exporter, 67 px of
+      fractional-scale text). Stack counts, vanilla item icons, the lightmap's
+      0xFC text and 0x3E shadow, toasts and per-page inventory are all measured.
+      A RED row ships a full-resolution truth | ours | diff crop.
+- [ ] The 24 menus that do not open: multiblocks (dynamic tank, induction
+      matrix, boilers, SPS, evaporation), robits (the robit item on a charge pad),
+      AE2 crafting and network-status sub-menus, Create stock keeper and factory
+      panel, Mekanism seismic reader and digital miner config, backpack settings.
+      Each needs the walk to build the world state a player would.
+- [ ] Interaction rows: 45 of 606 GREEN. The REDs are the mod's own logic that ours
+      does not run yet (a trash slot deleting, an ME terminal absorbing a stack, a
+      slot refusing an item). This is M6.3, not a picture problem.
 - [ ] Real map-mod colour code on the server, through a scanner and an adapter.
 - [ ] Mod HUD layers (goggles, train HUD), from live data (M6.3).
 
