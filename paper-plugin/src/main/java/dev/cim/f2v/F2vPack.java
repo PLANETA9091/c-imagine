@@ -165,7 +165,19 @@ public final class F2vPack {
                     }
                     paths.add(ns + ":" + file);
                     if (!entries.containsKey(n)) {
-                        entries.put(n, zf.getInputStream(e).readAllBytes());
+                        // 14-cf: the strip NEVER enters the atlas raw. The
+                        // still textures are animated strips (16xN: the
+                        // mekanism liquid canvas 16x512, the create fluids
+                        // 16x320) — hosting the raw strip grew the atlas
+                        // layout and the mip generation bled the neighbours'
+                        // pixels into the high-frequency faces (measured on
+                        // run #238: the ae2 chiseled quartz pages, solid
+                        // green on #231, corrupted into per-pixel RGB noise
+                        // across 162 cells the moment the 16x512 canvases
+                        // joined the atlas). The hosted sprite = the static
+                        // 16x16 frame 0 under the SAME sprite id — the
+                        // deterministic surface, the atlas keeps its size.
+                        entries.put(n, stillFramePng(zf.getInputStream(e).readAllBytes()));
                     }
                 }
             }
@@ -180,7 +192,14 @@ public final class F2vPack {
             String dir = rest2.substring(0, slash2);             // fluid | block | liquid
             String base = rest2.substring(slash2 + 1);           // <name>.png
             String sprite = base.substring(0, base.length() - 4); // <name> (no .png)
-            String modelPath = "assets/c-imagine/models/fluid/" + ns + "/" + sprite + ".json";
+            // 14-cf: the model file sits ONE level under models/ — the 26.3
+            // CuboidModel pass resolves exactly models/<dir>/<file>.json and
+            // WARNs "Missing block model" for anything deeper (measured on
+            // run #238: every models/fluid/<ns>/<sprite>.json and
+            // models/fluidcube/<ns>/<id>.json was missing client-side while
+            // the flat models/gallery/g<N>.json composites load). The flat
+            // index name mirrors the proven gallery shape.
+            String modelPath = "assets/c-imagine/models/fluid/f" + i + ".json";
             if (entries.containsKey(modelPath)) {
                 continue;
             }
@@ -191,10 +210,35 @@ public final class F2vPack {
                     + "\"textures\": {\"layer0\": \"" + texRef + "\"}}";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
             out.add(new FluidTexture(fluidIdFromTexture(ns, base),
-                    400000f + i, "c-imagine:models/fluid/" + ns + "/" + sprite));
+                    400000f + i, "c-imagine:models/fluid/f" + i));
             i++;
         }
         return out;
+    }
+
+    /** The static 16x16 frame-0 crop of a still-texture strip, re-encoded:
+     *  the atlas-safe hosting of the fluid sprites (14-cf — the raw strips
+     *  grew the atlas and bled the neighbours, see the scan comment). */
+    private static byte[] stillFramePng(byte[] raw) throws IOException {
+        try {
+            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(raw));
+            if (img == null) {
+                return raw;
+            }
+            int w = Math.min(16, img.getWidth());
+            int h = Math.min(16, img.getHeight());
+            java.awt.image.BufferedImage frame = new java.awt.image.BufferedImage(
+                    w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g = frame.createGraphics();
+            g.drawImage(img, 0, 0, w, h, 0, 0, w, h, null);
+            g.dispose();
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(frame, "png", bos);
+            return bos.toByteArray();
+        } catch (Exception bad) {
+            return raw; // an unreadable png keeps its bytes (the loader will name it)
+        }
     }
 
     /** Read the fluid-color manifest (14-cd): fluidId -> {r,g,b} 0..255.
@@ -248,10 +292,6 @@ public final class F2vPack {
         List<FluidCube> out = new ArrayList<>();
         int i = 0;
         for (String fluidId : new java.util.TreeSet<>(fluidIds)) {
-            if (entries.containsKey("assets/c-imagine/models/fluidcube/"
-                    + fluidId.replace(':', '/') + ".json")) {
-                continue;
-            }
             String texPath;
             int[] color = colorTable.get(fluidId);
             if (color != null) {
@@ -277,33 +317,38 @@ public final class F2vPack {
                     + fluidId.replace(':', '_');
             // the 14/16 liquid surface box: the vanilla source block with a
             // non-fluid above renders its top at 14/16 — the sides show the
-            // texture's lower 14 rows (uv v 2..16)
+            // texture's lower 14 rows (uv v 2..16). 14-cf: the model file
+            // sits ONE level under models/ (the 26.3 CuboidModel listing
+            // resolves exactly models/<dir>/<file>.json — the nested ids
+            // measured "Missing block model" on run #238).
             String faces = "\"north\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
                     + "\"south\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
                     + "\"west\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
                     + "\"east\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
                     + "\"up\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]},"
                     + "\"down\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]}";
+            String modelPath = "assets/c-imagine/models/fluidcube/f" + i + ".json";
+            if (entries.containsKey(modelPath)) {
+                continue;
+            }
             String json = "{\"parent\": \"minecraft:block/block\", "
                     + "\"textures\": {\"all\": \"" + texRef + "\"}, "
                     + "\"elements\": [{\"from\": [0, 0, 0], \"to\": [16, 14, 16], "
                     + "\"faces\": {" + faces + "}}]}";
-            String modelPath = "assets/c-imagine/models/fluidcube/"
-                    + fluidId.replace(':', '/') + ".json";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
             out.add(new FluidCube(fluidId, 410000f + i,
-                    "c-imagine:models/fluidcube/" + fluidId.replace(':', '/')));
+                    "c-imagine:models/fluidcube/f" + i));
             i++;
         }
         return out;
     }
 
-    /** The static frame 0 (16x16) of a scanned still texture for a fluid id:
-     *  looks the texture up among the already-hosted entries under the three
-     *  scan conventions, decodes it, crops the first frame, re-encodes.
+    /** The static frame texture for a fluid id: the scan already hosts the
+     *  16x16 frame-0 crops under the jar paths (14-cf), so this just looks
+     *  the id up among the hosted entries under the three scan conventions.
      *  Null when the id has no hosted still texture. */
     private static byte[] stillFrameZero(TreeMap<String, byte[]> entries,
-                                         String fluidId) throws IOException {
+                                         String fluidId) {
         int colon = fluidId.indexOf(':');
         if (colon <= 0) {
             return null;
@@ -312,26 +357,11 @@ public final class F2vPack {
         String name = fluidId.substring(colon + 1);
         for (String dir : new String[]{"fluid/", "block/", "liquid/"}) {
             for (String suffix : new String[]{"_still", ""}) {
-                String path = "assets/" + ns + "/textures/" + dir + name + suffix + ".png";
-                byte[] raw = entries.get(path);
-                if (raw == null) {
-                    continue;
+                byte[] raw = entries.get("assets/" + ns + "/textures/" + dir
+                        + name + suffix + ".png");
+                if (raw != null) {
+                    return raw;
                 }
-                java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(
-                        new java.io.ByteArrayInputStream(raw));
-                if (img == null) {
-                    return null;
-                }
-                int fw = img.getWidth();
-                int fh = Math.min(16, img.getHeight());
-                java.awt.image.BufferedImage frame = new java.awt.image.BufferedImage(
-                        fw, fh, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-                java.awt.Graphics2D g = frame.createGraphics();
-                g.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh, null);
-                g.dispose();
-                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-                javax.imageio.ImageIO.write(frame, "png", bos);
-                return bos.toByteArray();
             }
         }
         return null;
