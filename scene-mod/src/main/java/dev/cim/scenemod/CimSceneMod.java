@@ -15,9 +15,14 @@ import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.FloatTag;
+import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
@@ -1179,6 +1184,16 @@ public final class CimSceneMod {
      *       refuses (the DataResult carries the error, surfaced in the
      *       note). Whether a given modded codec accepts empty data is
      *       FIRST-RUN-measured, not asserted.</li>
+     *   <li>THE ERROR-DRIVEN DEFAULT FILLER (rung 3): the refusal names the
+     *       MISSING keys ("No key speed in MapLike[{}]"), so fill every
+     *       missing key with the current candidate and re-parse; when
+     *       nothing is missing but the parse still refuses, advance the
+     *       candidate (a typed value was rejected) and rebuild. Deterministic
+     *       BY CONSTRUCTION — both legs run the same codec over the same
+     *       candidate ladder and land on the SAME options, the cell compares
+     *       like with like. Measured #30: 8/13 create particles refuse the
+     *       empty compound (fluid refs, rgb triples, speed/drag floats) —
+     *       the generic filler is the answer, zero per-mod code anywhere.</li>
      * </ol>
      */
     private static ResolvedOptions resolveParticleOptions(ParticleType<?> type) {
@@ -1186,18 +1201,95 @@ public final class CimSceneMod {
             return new ResolvedOptions(simple, null);
         }
         try {
-            DataResult<? extends ParticleOptions> res = type.codec().codec()
-                    .parse(NbtOps.INSTANCE, new CompoundTag());
-            ParticleOptions opts = res.result().orElse(null);
-            if (opts != null) {
-                return new ResolvedOptions(opts, null);
+            var codec = type.codec().codec();
+            DataResult<? extends ParticleOptions> res =
+                    codec.parse(NbtOps.INSTANCE, new CompoundTag());
+            if (res.result().isPresent()) {
+                return new ResolvedOptions(res.result().get(), null);
             }
-            String err = res.error().map(e -> e.message()).orElse("empty-decode");
-            return new ResolvedOptions(null, "no-simple-options:" + err);
+            String firstErr = res.error().map(e -> e.message()).orElse("empty-decode");
+            // RUNG 3 — the error-driven default filler (see the ladder doc)
+            CompoundTag probe = new CompoundTag();
+            int cursor = 0;
+            for (int round = 0; round < OPTION_FILL_CANDIDATES_LENGTH + 2; round++) {
+                DataResult<? extends ParticleOptions> r =
+                        codec.parse(NbtOps.INSTANCE, probe);
+                if (r.result().isPresent()) {
+                    return new ResolvedOptions(r.result().get(), null);
+                }
+                String err = r.error().map(e -> e.message()).orElse("");
+                List<String> missing = missingOptionKeys(err);
+                if (!missing.isEmpty()) {
+                    Tag fill = fillCandidate(cursor);
+                    for (String key : missing) {
+                        probe.put(key, fill.copy());
+                    }
+                    continue;
+                }
+                cursor++;
+                if (cursor >= OPTION_FILL_CANDIDATES_LENGTH) {
+                    return new ResolvedOptions(null, "no-simple-options:" + err);
+                }
+                // every present value takes the next candidate
+                CompoundTag next = new CompoundTag();
+                Tag fill = fillCandidate(cursor);
+                for (String key : probe.getAllKeys()) {
+                    next.put(key, fill.copy());
+                }
+                probe = next;
+            }
+            return new ResolvedOptions(null,
+                    "no-simple-options:filler-exhausted:" + firstErr);
         } catch (Throwable t) {
             return new ResolvedOptions(null,
                     "no-simple-options:" + t.getClass().getName());
         }
+    }
+
+    /**
+     * The filler candidates, mildest first: zero for numerics (speed, xyz,
+     * scale, ages — a NumericTag decodes as any numeric), false for flags
+     * (NbtOps reads a boolean from any number), unit-scale numerics (rgb,
+     * unit scales), then the registry-ref string ids (fluids, block refs)
+     * and the empty string. A value that renders nothing on BOTH legs
+     * identically is the honest floor — the join compares like with like.
+     */
+    private static final int OPTION_FILL_CANDIDATES_LENGTH = 9;
+
+    /** Fresh tag per use (tags are shared-mutable; the probe owns its copy). */
+    private static Tag fillCandidate(int i) {
+        return switch (Math.floorMod(i, OPTION_FILL_CANDIDATES_LENGTH)) {
+            case 0 -> IntTag.valueOf(0);
+            case 1 -> ByteTag.valueOf(false);
+            case 2 -> FloatTag.valueOf(1.0f);
+            case 3 -> StringTag.valueOf("minecraft:water");
+            case 4 -> StringTag.valueOf("minecraft:air");
+            case 5 -> StringTag.valueOf("minecraft:block");
+            case 6 -> StringTag.valueOf("");
+            case 7 -> ByteTag.valueOf(true);
+            default -> FloatTag.valueOf(0.5f);
+        };
+    }
+
+    /**
+     * The missing keys a codec refusal named: the DataResult message shape
+     * "No key &lt;name&gt; in MapLike[...]" (one per absent field, "; "
+     * separated when several are absent — the #30 notes carry them).
+     */
+    private static List<String> missingOptionKeys(String error) {
+        List<String> keys = new ArrayList<>();
+        if (error == null || error.isEmpty()) {
+            return keys;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("No key ([A-Za-z0-9_]+) in MapLike")
+                .matcher(error);
+        while (m.find()) {
+            if (!keys.contains(m.group(1))) {
+                keys.add(m.group(1));
+            }
+        }
+        return keys;
     }
 
     // --- fluid gallery (every registered FLUID of the namespace) -----------
