@@ -1518,13 +1518,13 @@ public final class GalleryPack {
                 String key = "b" + (bakeNo++);
                 textures.put(key, WRAPPER_NS + ":block/objcut/sheet" + at[0]);
                 face.addProperty("texture", "#" + key);
-                double su = 16.0 / spanU;
-                double sv = 16.0 / spanV;
+                // A sheet sprite contains many tiles. Sample only this
+                // allocation, preserving each source axis's orientation.
                 JsonArray nuv = new JsonArray();
-                nuv.add((u0 - Math.min(u0, u1)) * su);
-                nuv.add((v0 - Math.min(v0, v1)) * sv);
-                nuv.add((u1 - Math.min(u0, u1)) * su);
-                nuv.add((v1 - Math.min(v0, v1)) * sv);
+                nuv.add(ObjMesh.sheetUv(at[1] + (u0 > u1 ? pw : 0)));
+                nuv.add(ObjMesh.sheetUv(at[2] + (v0 > v1 ? ph : 0)));
+                nuv.add(ObjMesh.sheetUv(at[1] + (u1 > u0 ? pw : 0)));
+                nuv.add(ObjMesh.sheetUv(at[2] + (v1 > v0 ? ph : 0)));
                 face.add("uv", nuv);
             }
         }

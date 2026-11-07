@@ -528,6 +528,11 @@ final class ObjMesh {
         return BAKER.place(argb, w, h);
     }
 
+    /** Model UV units of a pixel coordinate on a shared baked sheet. */
+    static double sheetUv(double pixel) {
+        return pixel / Baker.SIZE * 16;
+    }
+
     /** Writes the baked sheets into the pack; call once, after every model is emitted. */
     static void flushBaker(String spriteNs, Map<String, byte[]> entries) throws IOException {
         BAKER.flush(spriteNs, entries);

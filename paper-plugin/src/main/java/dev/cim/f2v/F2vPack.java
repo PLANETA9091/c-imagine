@@ -3016,6 +3016,7 @@ public final class F2vPack {
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
         freshOutputSelftest(failures);
+        exactFaceTileSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -3098,6 +3099,81 @@ public final class F2vPack {
             GalleryPack.resetModelScales();
             GalleryPack.setQuadDir(null);
             deleteRecursively(quads);
+        }
+    }
+
+    private static void exactFaceTileSelftest(List<String> failures) throws IOException {
+        Path jar = Files.createTempFile("f2v-face-tile", ".jar");
+        ObjMesh.resetBaker();
+        GalleryPack.resetJarCache();
+        try {
+            var source = new java.awt.image.BufferedImage(16, 16,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) source.setRGB(x, y, 0xFF000080 | x << 20 | y << 12);
+            }
+            var bytes = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(source, "png", bytes);
+            TreeMap<String, byte[]> files = new TreeMap<>();
+            files.put("assets/ae2/textures/block/chiseled_quartz_test.png", bytes.toByteArray());
+            files.put("assets/ae2/blockstates/tile.json", ("{\"variants\":{\"\":{"
+                    + "\"model\":\"ae2:block/tile\"}}}").getBytes(StandardCharsets.UTF_8));
+            double[][] windows = {{2,4,14,12}, {14,4,2,12}, {2,12,14,4}, {14,12,2,4}};
+            JsonArray elements = new JsonArray();
+            for (double[] window : windows) {
+                JsonObject element = JsonParser.parseString("{\"from\":[0,0,0],\"to\":[16,16,16],"
+                        + "\"faces\":{\"south\":{\"texture\":\"#all\",\"rotation\":90}}}")
+                        .getAsJsonObject();
+                JsonArray uv = new JsonArray();
+                for (double value : window) uv.add(value);
+                element.getAsJsonObject("faces").getAsJsonObject("south").add("uv", uv);
+                elements.add(element);
+            }
+            JsonObject model = JsonParser.parseString("{\"textures\":{\"all\":"
+                    + "\"ae2:block/chiseled_quartz_test\"}}").getAsJsonObject();
+            model.add("elements", elements);
+            files.put("assets/ae2/models/block/tile.json", model.toString().getBytes(StandardCharsets.UTF_8));
+            writeJar(jar, files);
+            ObjMesh.placeExactTile(new java.awt.image.BufferedImage(7, 9,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB)); // occupy an earlier tile
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            var built = GalleryPack.build(List.of(jar), List.of(new GalleryPack.Input("ae2:tile")),
+                    entries, new ArrayList<>(), Map.of(), null);
+            expect(failures, built.size() == 1, "tile: composite fixture resolves");
+            ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+            JsonObject output = JsonParser.parseString(new String(
+                    entries.get("assets/c-imagine/models/gallery/g0.json"), StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+            for (int i = 0; i < windows.length; i++) {
+                JsonObject face = output.getAsJsonArray("elements").get(i).getAsJsonObject()
+                        .getAsJsonObject("faces").getAsJsonObject("south");
+                JsonArray uv = face.getAsJsonArray("uv");
+                String texture = output.getAsJsonObject("textures")
+                        .get(face.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get("assets/" + texture.replace(":", "/textures/") + ".png"));
+                double x0 = uv.get(0).getAsDouble() * sheet.getWidth() / 16;
+                double y0 = uv.get(1).getAsDouble() * sheet.getHeight() / 16;
+                double x1 = uv.get(2).getAsDouble() * sheet.getWidth() / 16;
+                double y1 = uv.get(3).getAsDouble() * sheet.getHeight() / 16;
+                expect(failures, Math.abs(x1 - x0) == 12 && Math.abs(y1 - y0) == 8,
+                        "tile: face samples allocated window instead of entire sheet " + i);
+                boolean pixelsMatch = true;
+                for (int y = 0; y < 8; y++) {
+                    for (int x = 0; x < 12; x++) {
+                        int sx = (int) Math.floor(x0 + (x + .5) / 12 * (x1 - x0));
+                        int sy = (int) Math.floor(y0 + (y + .5) / 8 * (y1 - y0));
+                        int tx = windows[i][0] < windows[i][2] ? 2 + x : 13 - x;
+                        int ty = windows[i][1] < windows[i][3] ? 4 + y : 11 - y;
+                        pixelsMatch &= sheet.getRGB(sx, sy) == source.getRGB(tx, ty);
+                    }
+                }
+                expect(failures, pixelsMatch, "tile: source texels and mirrored orientation preserved " + i);
+                expect(failures, face.get("rotation").getAsInt() == 90, "tile: face rotation preserved");
+            }
+        } finally {
+            ObjMesh.resetBaker();
+            GalleryPack.resetJarCache();
+            Files.deleteIfExists(jar);
         }
     }
 
