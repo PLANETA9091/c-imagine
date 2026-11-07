@@ -1321,7 +1321,7 @@ public final class CimSceneMod {
      * nothing on BOTH legs identically is the honest floor — the join
      * compares like with like.
      */
-    private static final int OPTION_FILL_CANDIDATES_LENGTH = 12;
+    private static final int OPTION_FILL_CANDIDATES_LENGTH = 13;
 
     /** Fresh tag per use (tags are shared-mutable; the probe owns its copy). */
     private static Tag fillCandidate(int i) {
@@ -1337,7 +1337,8 @@ public final class CimSceneMod {
             case 8 -> FloatTag.valueOf(0.5f);
             case 9 -> mapRef("Name", "minecraft:water");
             case 10 -> mapRef("id", "minecraft:water");
-            default -> StringTag.valueOf("x"); // the axis enum's first member
+            case 11 -> StringTag.valueOf("x"); // the axis enum's first member
+            default -> StringTag.valueOf("north"); // the Direction enum's member
         };
     }
 
@@ -1423,6 +1424,10 @@ public final class CimSceneMod {
             return 11; // the axis enum's "x" member (measured: create's
                        // axis/color options codec wants a valid enum name,
                        // the numeric fields beside it accept the zero)
+        }
+        if (k.equals("direction") || k.equals("facing")) {
+            return 12; // a Direction member (measured: mekanism's jetpack
+                       // flame options want direction=north beside numerics)
         }
         if (k.equals("fluid") || k.endsWith("_fluid")) {
             return 9; // {Name: minecraft:water}
