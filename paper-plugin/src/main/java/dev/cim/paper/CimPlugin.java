@@ -2564,6 +2564,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 2 && args[0].equalsIgnoreCase("hudpress")) {
+            String done = callSync(() -> dev.cim.hud.HudBootstrap.pressForHarness(
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer"), args[1]));
+            sender.sendMessage(LOG_PREFIX + "hudpress " + done);
+            return true;
+        }
         if (args.length == 1 && args[0].equalsIgnoreCase("hudlist")) {
             try {
                 Path list = Path.of(System.getProperty("user.dir"), "c-imagine", "hud-screens.txt");

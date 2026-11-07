@@ -156,6 +156,18 @@ def main():
                 json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
                            "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
             rows.append((menu, verdict, why))
+            # Every recorded interaction is a row of its own, judged the same way.
+            for t in sorted(glob.glob(os.path.join(a.truth, f"gal-guiw-{ns}{page}-*.png"))):
+                tag = t.rsplit("-", 1)[1][:-4]
+                o = os.path.join(a.ours, f"ours-gal-guiw-{ns}{page}-{tag}.png")
+                state = (art[:-4] + "." + tag + ".png") if art and tag != "move" else art
+                res = compare(t, o, slots, a.scale, state)
+                v, w2 = judge(menu, True, note, res)
+                label = f"{menu} {'slot move' if tag == 'move' else 'press ' + tag[1:]}"
+                with open(os.path.join(a.report, f"join-menu-{name}-{tag}.json"), "w", encoding="utf-8") as f:
+                    json.dump({"verdict": v, "cells": 1, "red": int(v == "RED"), "dynamic": 0, "skipped": 0,
+                               "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)
+                rows.append((label, v, w2))
     green = sum(1 for r in rows if r[1] == "GREEN")
     with open(os.path.join(a.out, "menus.md"), "w", encoding="utf-8") as f:
         f.write(f"### Menus: {green} of {len(rows)} GREEN\n\n| menu | verdict | detail |\n|---|---|---|\n")

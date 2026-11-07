@@ -110,6 +110,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         final int originY;
         ItemStack cursor;
         boolean pointerShown = true;
+        /** The recorded state on screen, after the last press that has one. */
+        List<ScreenPack.Piece> pieces;
 
         Session(ScreenPack.Scene scene, GuiCaptures.Capture capture, Pointer pointer) {
             this.scene = scene;
@@ -342,6 +344,33 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return "aimed " + target + " at " + x + "," + y + " widgets=" + s.scene.widgets().size();
     }
 
+    /** Harness: presses widget {@code i} the way a click on it does. */
+    public String press(Player player, int i) {
+        Session s = open.get(player.getUniqueId());
+        if (s == null || i >= s.scene.widgets().size()) {
+            return "no widget " + i;
+        }
+        ScreenPack.Widget w = s.scene.widgets().get(i);
+        s.pointer.moveTo(s.originX + w.x() + w.w() / 2, s.originY + w.y() + w.h() / 2);
+        click(player, "left");
+        return "pressed " + w.label();
+    }
+
+    /** Harness: the slot move the real client made, done the way two clicks do it. */
+    public String move(Player player) {
+        Session s = open.get(player.getUniqueId());
+        int[] m = s == null || s.scene.captured() == null ? null : s.scene.captured().move();
+        if (m == null) {
+            return "no move";
+        }
+        for (int slot : m) {
+            GuiCaptures.Slot at = s.capture.slots().get(slot);
+            s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
+            click(player, "left");
+        }
+        return "moved " + m[0] + " to " + m[1];
+    }
+
     /** Opens the screen of one menu; the gallery's ours leg uses this. */
     public boolean openMenu(Player player, String menuId, String menuClass) {
         refreshCaptures();
@@ -434,7 +463,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         frame.free(-HudPack.BACKDROP_W / 2, -HudPack.BACKDROP_H / 2, String.valueOf(HudPack.BACKDROP),
                 HudPack.BACKDROP_W + 1);
         boolean panel = false;
-        for (ScreenPack.Piece piece : s.scene.pieces()) {
+        for (ScreenPack.Piece piece : s.pieces != null ? s.pieces : s.scene.pieces()) {
             int[] at = s.panelAt();
             if (piece.floating() && at == null) {
                 continue;
@@ -486,8 +515,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         int px = s.pointer.x() - s.originX;
         int py = s.pointer.y() - s.originY;
-        for (ScreenPack.Widget w : s.scene.widgets()) {
+        for (int wi = 0; wi < s.scene.widgets().size(); wi++) {
+            ScreenPack.Widget w = s.scene.widgets().get(wi);
             if (px >= w.x() && px < w.x() + w.w() && py >= w.y() && py < w.y() + w.h()) {
+                // A recording of the screen the real mod showed after this press. The press
+                // itself only reaches the mod once the layer hosts players.
+                if (s.scene.captured() != null && s.scene.captured().states().containsKey(wi)) {
+                    s.pieces = s.scene.captured().states().get(wi);
+                }
                 org.bukkit.Bukkit.getPluginManager().callEvent(new ScreenWidgetEvent(player, s.scene.className(), w.label()));
                 log.info("[cim-screen] " + player.getName() + " " + button + " widget '" + w.label()
                         + "' in " + s.scene.shortName());

@@ -55,6 +55,7 @@ sleep 8
 for p in $(seq "$SI" "$K" $((N-1))); do
   # A disconnected client sits on its error screen, so it is replaced, not waited for.
   $RC list | grep -q cimviewer || { stamp "viewer lost before page $p, relaunching"; pkill -f 'cim.screenart' || true; sleep 1; client; wait_viewer; sleep 8; $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; }
+  $RC 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
   M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.done"
   B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
@@ -100,6 +101,20 @@ for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
             out.write(f'slot\t{i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
     shutil.copy(frame, f'truth-shots/gal-gui-{ns}{page}.png')
     print(page)
+# Interactions: each recorded state's frame becomes a page of its own.
+for f in glob.glob(f'srv-wall/c-imagine/scenes/gallery-gui-{ns}-p*.tsv'):
+    cell = next((l.rstrip('\n').split('\t') for l in open(f, encoding='utf-8', errors='replace')
+                 if l.startswith('cell\t') and not l.startswith('cell\tx')), None)
+    if not cell:
+        continue
+    base = 'srv-wall/c-imagine/screens/' + cell[4].replace(':', '_').replace('/', '_')
+    page = f.rsplit('-p', 1)[1][:-4]
+    if os.path.isfile(base + '.presses'):
+        for line in open(base + '.presses', encoding='utf-8'):
+            q = line.split('\t')
+            tag = 'move' if q[0] == 'move' else 'w' + q[1]
+            if os.path.isfile(f'{base}.{tag}.frame'):
+                shutil.copy(f'{base}.{tag}.frame', f'truth-shots/gal-guiw-{ns}{page}-{tag}.png')
 # The art and this frame are one render, so an animation is the same moment in both.
 for f in glob.glob(f'srv-wall/c-imagine/scenes/gallery-gui-{ns}-p*.tsv'):
     cell = next((l.rstrip('\n').split('\t') for l in open(f, encoding='utf-8', errors='replace')
@@ -164,9 +179,17 @@ sleep 10   # the join toasts pass
 stamp ours joined
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
 for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
+  $RC 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
   $RC "cim gallerypage-gui $NS $p" >/dev/null
   sleep 1.2
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true
+  # The same interactions, in the order the real client made them.
+  TAGS=$( { [ -f "truth-shots/gal-guiw-$NS$p-move.png" ] && echo move; ls truth-shots | grep -oE "^gal-guiw-$NS$p-w[0-9]+\.png$" | grep -oE 'w[0-9]+\.png$' | tr -d '.png' | sort -t w -k2 -n; } )
+  for T in $TAGS; do
+    if [ "$T" = move ]; then $RC "cim hudpress move" >/dev/null; else $RC "cim hudpress ${T#w}" >/dev/null; fi
+    sleep 0.8
+    $SHOT "ours-shots/ours-gal-guiw-$NS$p-$T.png" || true
+  done
 done
 stamp ours done
 

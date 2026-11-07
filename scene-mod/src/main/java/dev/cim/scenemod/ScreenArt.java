@@ -70,6 +70,17 @@ public final class ScreenArt {
         if (capturing || !(event.getScreen() instanceof AbstractContainerScreen<?> screen)) {
             return;
         }
+        if (pendingState != null && crawl != null && screen == crawl.parent) {
+            try {
+                event.getGuiGraphics().flush();
+                stateCapture(screen, pendingState);
+            } catch (Throwable t) {
+                LOGGER.warn("[cimscene] state capture failed: {}", t.toString());
+            }
+            pendingState = null;
+            stateSaved = true;
+            return;
+        }
         if (current != screen) {
             current = screen;
             frames = 0;
@@ -104,20 +115,83 @@ public final class ScreenArt {
     /** Pressing through one open screen. */
     private static final class Crawl {
         final Screen parent;
+        final String name;
+        final int left;
+        final int top;
         final List<int[]> targets = new ArrayList<>();
         int next;
         int wait;
+        /** The press waiting for its result to be captured, or -1. */
+        int pressed = -1;
+        int settleAt;
+        boolean moveDone;
 
         Crawl(AbstractContainerScreen<?> screen, int start) {
             parent = screen;
             next = start;
+            moveDone = start > 0;
+            left = screen.getGuiLeft();
+            top = screen.getGuiTop();
+            String id;
+            try {
+                ResourceLocation key = BuiltInRegistries.MENU.getKey(screen.getMenu().getType());
+                id = key.getNamespace() + "_" + key.getPath().replace('/', '_');
+            } catch (UnsupportedOperationException noType) {
+                id = "unknown";
+            }
+            name = id;
             for (GuiEventListener child : screen.children()) {
                 if (child instanceof AbstractWidget w && w.visible && w.active && !(w instanceof EditBox)
                         && targets.size() < CRAWL_MAX_WIDGETS) {
-                    targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2});
+                    targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2,
+                            w.getX(), w.getY(), w.getWidth(), w.getHeight()});
                 }
             }
         }
+    }
+
+    /** Set by the crawl, taken by the next render of the parent: a state to save. */
+    private static String pendingState;
+    private static final int CRAWL_SETTLE_TICKS = 24;
+
+    private static void record(Crawl c, String line) {
+        try {
+            Files.writeString(Path.of(System.getProperty("cim.screenart"), c.name + ".presses"), line + "\n",
+                    StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            LOGGER.warn("[cimscene] press record failed: {}", e.toString());
+        }
+    }
+
+    /**
+     * The real move a player makes first: a stack from the inventory into the menu's first
+     * free slot. Indices count only the slots on screen, as the capture lists them.
+     */
+    private static boolean slotMove(Minecraft mc, AbstractContainerScreen<?> screen, Crawl c) {
+        List<Slot> shown = screen.getMenu().slots.stream().filter(Slot::isActive).toList();
+        int from = -1;
+        int to = -1;
+        for (int i = 0; i < shown.size(); i++) {
+            Slot slot = shown.get(i);
+            boolean mine = slot.container == mc.player.getInventory();
+            if (from < 0 && mine && slot.hasItem()) {
+                from = i;
+            }
+            if (to < 0 && !mine && !slot.hasItem()) {
+                to = i;
+            }
+        }
+        if (from < 0 || to < 0) {
+            return false;
+        }
+        int id = screen.getMenu().containerId;
+        mc.gameMode.handleInventoryMouseClick(id, shown.get(from).index, 0,
+                net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
+        mc.gameMode.handleInventoryMouseClick(id, shown.get(to).index, 0,
+                net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
+        record(c, "move\t" + from + "\t" + to);
+        return true;
     }
 
     private static Crawl crawl;
@@ -173,18 +247,80 @@ public final class ScreenArt {
             }
             return;
         }
+        // A press that kept this screen: wait for its effect, then save what it looks like.
+        if (crawl.pressed >= 0) {
+            if (crawlTicks < crawl.settleAt) {
+                return;
+            }
+            if (pendingState == null) {
+                if (stateSaved) {
+                    stateSaved = false;
+                    if (crawl.pressed < CRAWL_MOVE) {
+                        int[] at = crawl.targets.get(crawl.pressed);
+                        record(crawl, "press\t" + crawl.pressed + "\t" + (at[2] - crawl.left) + "\t"
+                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5]);
+                    }
+                    crawl.pressed = -1;
+                } else {
+                    pendingState = crawl.name + (crawl.pressed == CRAWL_MOVE ? ".move" : ".w" + crawl.pressed);
+                }
+            }
+            return;
+        }
+        if (!crawl.moveDone) {
+            crawl.moveDone = true;
+            if (crawl.parent instanceof AbstractContainerScreen<?> screen && slotMove(mc, screen, crawl)) {
+                crawl.pressed = CRAWL_MOVE;
+                crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
+                return;
+            }
+        }
         if (crawl.next >= crawl.targets.size()) {
             finishCrawl(-1);
             return;
         }
-        int[] at = crawl.targets.get(crawl.next++);
+        int index = crawl.next++;
+        int[] at = crawl.targets.get(index);
         crawl.wait = 0;
         try {
             crawl.parent.mouseClicked(at[0], at[1], 0);
             crawl.parent.mouseReleased(at[0], at[1], 0);
+            crawl.pressed = index;
+            crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
         } catch (Throwable t) {
             LOGGER.info("[cimscene] crawl press threw {}", t.toString());
         }
+    }
+
+    private static final int CRAWL_MOVE = 1000;
+    private static boolean stateSaved;
+
+    /** One state of a screen, the same two pictures a first capture takes. */
+    private static void stateCapture(AbstractContainerScreen<?> screen, String base) throws IOException {
+        Minecraft mc = Minecraft.getInstance();
+        int w = mc.getWindow().getWidth();
+        int h = mc.getWindow().getHeight();
+        Path dir = Path.of(System.getProperty("cim.screenart"));
+        try (NativeImage frame = Screenshot.takeScreenshot(mc.getMainRenderTarget())) {
+            frame.writeToFile(dir.resolve(base + ".frame"));
+        }
+        TextureTarget target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
+        target.setClearColor(0f, 0f, 0f, 0f);
+        target.clear(Minecraft.ON_OSX);
+        target.bindWrite(true);
+        List<ItemStack> lifted = lift(mc);
+        capturing = true;
+        try {
+            GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+            screen.render(graphics, -10000, -10000, 0f);
+            graphics.flush();
+        } finally {
+            capturing = false;
+            restore(mc, lifted);
+        }
+        save(target, w, h, dir.resolve(base + ".png"));
+        mc.getMainRenderTarget().bindWrite(true);
+        target.destroyBuffers();
     }
 
     private static void capture(AbstractContainerScreen<?> screen, ResourceLocation id) throws IOException {

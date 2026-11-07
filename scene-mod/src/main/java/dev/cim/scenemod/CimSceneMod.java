@@ -1704,6 +1704,26 @@ public final class CimSceneMod {
                     e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
                 guiEntity = e;
             }
+        } else if (plain.startsWith("use+item:")) {
+            String[] pair = plain.substring("use+item:".length()).split("@", 2);
+            level.setBlock(rig, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pair[1])).defaultBlockState(), 3);
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(pair[0])));
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            BlockHitResult hit = new BlockHitResult(new Vec3(rig.getX() + 0.5, rig.getY() + 1, rig.getZ() + 0.5),
+                    Direction.UP, rig, false);
+            BlockState state = level.getBlockState(rig);
+            net.minecraft.world.ItemInteractionResult result = state.useItemOn(stack, level, player,
+                    InteractionHand.MAIN_HAND, hit);
+            if (!result.consumesAction()) {
+                stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+            }
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            // Whatever the use put into the world is what the player clicks next.
+            for (net.minecraft.world.entity.Entity e : level.getEntities((net.minecraft.world.entity.Entity) null,
+                    new net.minecraft.world.phys.AABB(rig).inflate(2),
+                    e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
+                guiEntity = e;
+            }
         } else if (plain.startsWith("entity:")) {
             net.minecraft.world.entity.Entity entity = BuiltInRegistries.ENTITY_TYPE.get(
                     ResourceLocation.parse(plain.substring("entity:".length()))).create(level);
@@ -1724,7 +1744,7 @@ public final class CimSceneMod {
      * only from one side, and twice, because some items claim an owner on the first use.
      */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
-        boolean block = opener.contains("block:") || opener.contains("place+item:");
+        boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:");
         Direction[] faces = block
                 ? new Direction[]{Direction.UP, Direction.SOUTH, Direction.NORTH, Direction.EAST, Direction.WEST}
                 : new Direction[]{Direction.UP};
@@ -1746,8 +1766,10 @@ public final class CimSceneMod {
         player.setShiftKeyDown(sneak);
         try {
             if (guiEntity != null && plain.contains("+item:")) {
-                guiEntity.interact(player, InteractionHand.MAIN_HAND);
-            } else if (plain.startsWith("block:") || plain.startsWith("place+item:")) {
+                if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
+                    guiEntity.interact(player, InteractionHand.MAIN_HAND);
+                }
+            } else if (plain.startsWith("block:") || plain.startsWith("place+item:") || plain.startsWith("use+item:")) {
                 // Low in the cell: a part placed on the floor sits there, a full block does not care.
                 Vec3 at = face == Direction.UP ? new Vec3(rig.getX() + 0.5, rig.getY() + 0.06, rig.getZ() + 0.5)
                         : Vec3.atCenterOf(rig).relative(face, 0.5);
@@ -1821,6 +1843,33 @@ public final class CimSceneMod {
         return both;
     }
 
+    /** Every non-block item of the namespace on every block of it that holds a block entity. */
+    private static List<String> guiPairCandidates(String namespace) {
+        List<String> items = new ArrayList<>();
+        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+            if (i.getNamespace().equals(namespace)
+                    && !(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
+                items.add(i.toString());
+            }
+        }
+        List<String> blocks = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)
+                    && BuiltInRegistries.BLOCK.get(b) instanceof net.minecraft.world.level.block.EntityBlock) {
+                blocks.add(b.toString());
+            }
+        }
+        items.sort(Comparator.naturalOrder());
+        blocks.sort(Comparator.naturalOrder());
+        List<String> out = new ArrayList<>(items.size() * blocks.size());
+        for (String block : blocks) {
+            for (String item : items) {
+                out.add("use+item:" + item + "@" + block);
+            }
+        }
+        return out;
+    }
+
     private static void guiClearRig(ServerLevel level, ServerPlayer player, BlockPos rig) {
         for (BlockPos p : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
             level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
@@ -1845,8 +1894,23 @@ public final class CimSceneMod {
         level.setBlock(rig.below(), Blocks.STONE.defaultBlockState(), 3);
         GuiProbe probe = new GuiProbe(level);
         probe.setPos(rig.getX() + 0.5, rig.getY(), rig.getZ() + 2.5);
-        List<String> candidates = guiCandidates(namespace);
-        for (String candidate : candidates) {
+        List<String> candidates = new ArrayList<>(guiCandidates(namespace));
+        java.util.Set<ResourceLocation> wanted = new java.util.HashSet<>();
+        for (ResourceLocation id : BuiltInRegistries.MENU.keySet()) {
+            if (id.getNamespace().equals(namespace)) {
+                wanted.add(id);
+            }
+        }
+        int singles = candidates.size();
+        for (int c = 0; c < candidates.size(); c++) {
+            String candidate = candidates.get(c);
+            if (c == singles && !wanted.isEmpty()) {
+                // What no single click opened may need a tool used on a machine, the way a
+                // player tries a card, a cell or a robit on a block.
+                List<String> pairs = guiPairCandidates(namespace);
+                LOGGER.info("[cimscene] gallery-gui pairs ns={} missing={} pairs={}", namespace, wanted.size(), pairs.size());
+                candidates.addAll(pairs);
+            }
             probe.seen = null;
             probe.candidate = candidate;
             try {
@@ -1856,9 +1920,13 @@ public final class CimSceneMod {
                 LOGGER.info("[cimscene] gallery-gui candidate {} threw {}", candidate, t.toString());
             }
             if (probe.seen != null) {
+                wanted.remove(probe.seen);
                 onFound.accept(probe);
             }
             guiClearRig(level, probe, rig);
+            if (c >= singles && wanted.isEmpty()) {
+                break;
+            }
         }
         level.setBlock(rig.below(), Blocks.AIR.defaultBlockState(), 3);
         level.setChunkForced(chunk.x, chunk.z, false);

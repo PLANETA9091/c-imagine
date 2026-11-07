@@ -32,6 +32,13 @@ public final class HudBootstrap {
                 : screens.aim(player, target);
     }
 
+    public static String pressForHarness(org.bukkit.entity.Player player, String what) {
+        if (screens == null || player == null) {
+            return "no hud";
+        }
+        return what.equals("move") ? screens.move(player) : screens.press(player, Integer.parseInt(what));
+    }
+
     public static java.util.List<String> listForHarness() {
         return screens == null ? java.util.List.of() : screens.listForHarness();
     }

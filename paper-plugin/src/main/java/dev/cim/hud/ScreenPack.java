@@ -55,7 +55,13 @@ public final class ScreenPack {
      * Set when the art is the mod's real rendered screen: where its corner sits
      * from the screen centre, and its slots. Title and widgets are in the pixels.
      */
-    public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots) {
+    /**
+     * {@code states} holds what the screen looked like after each recorded press, by widget
+     * index: a recording of the real mod's screen, not its logic. {@code move} is the slot
+     * move the real client made first, or null.
+     */
+    public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
+                           Map<Integer, List<Piece>> states, int[] move) {
     }
 
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
@@ -90,7 +96,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v8");
+        StringBuilder out = new StringBuilder("v9");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -112,6 +118,17 @@ public final class ScreenPack {
             if (s.captured() != null) {
                 out.append("captured\t").append(s.captured().originX()).append('\t')
                         .append(s.captured().originY()).append('\n');
+                if (s.captured().move() != null) {
+                    out.append("move\t").append(s.captured().move()[0]).append('\t')
+                            .append(s.captured().move()[1]).append('\n');
+                }
+                for (var st : s.captured().states().entrySet()) {
+                    for (Piece q : st.getValue()) {
+                        out.append("spiece\t").append(st.getKey()).append('\t').append((int) q.glyph()).append('\t')
+                                .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
+                                .append(q.h()).append('\n');
+                    }
+                }
                 for (GuiCaptures.Slot slot : s.captured().slots()) {
                     out.append("cslot\t").append(slot.x()).append('\t').append(slot.y()).append('\t')
                             .append(slot.player()).append('\t').append(slot.index()).append('\n');
@@ -144,7 +161,18 @@ public final class ScreenPack {
             } else if (p[0].equals("captured")) {
                 Scene last = out.remove(out.size() - 1);
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
-                        pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>())));
+                        pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>(),
+                        new HashMap<>(), null)));
+            } else if (p[0].equals("move")) {
+                Scene last = out.remove(out.size() - 1);
+                Captured c = last.captured();
+                out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
+                        last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
+                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])})));
+            } else if (p[0].equals("spiece")) {
+                out.get(out.size() - 1).captured().states().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
+                        .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
+                                Integer.parseInt(p[5]), Integer.parseInt(p[6]), false));
             } else if (p[0].equals("cslot")) {
                 out.get(out.size() - 1).captured().slots().add(new GuiCaptures.Slot(
                         Integer.parseInt(p[1]), Integer.parseInt(p[2]), Boolean.parseBoolean(p[3]),
@@ -422,7 +450,7 @@ public final class ScreenPack {
      * Real rendered screens from {@code ScreenArt}. They replace any scanned scene for
      * the same menu, because they are what the mod actually draws.
      */
-    private static void addCaptures(Path dir, List<Scene> scenes, Map<Character, BufferedImage> art,
+    private static void addCaptures(Path dir, List<Scene> scenes, Map<Character, BufferedImage> art2,
                                     Map<Character, Integer> heights) throws IOException {
         if (!Files.isDirectory(dir)) {
             return;
@@ -482,7 +510,7 @@ public final class ScreenPack {
             if (menu == null || image == null) {
                 continue;
             }
-            List<Piece> pieces = captureTiles(opaque(image), scale, left, top, art, heights);
+            List<Piece> pieces = captureTiles(opaque(image), scale, left, top, art2, heights);
             if (pieces.isEmpty()) {
                 continue;
             }
@@ -491,7 +519,28 @@ public final class ScreenPack {
             // the capture has their pixels but not where a click should land.
             String key = menu;
             List<Widget> widgets = new ArrayList<>();
-            if (classUses.getOrDefault(key, 0) == 1) {
+            Map<Integer, List<Piece>> states = new HashMap<>();
+            int[] move = null;
+            Path presses = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".presses"));
+            if (Files.isRegularFile(presses)) {
+                // What the real client pressed is the exact list of controls, in order.
+                for (String line : Files.readAllLines(presses, StandardCharsets.UTF_8)) {
+                    String[] q = line.split("\t");
+                    if (q[0].equals("move") && move == null) {
+                        move = new int[]{Integer.parseInt(q[1]), Integer.parseInt(q[2])};
+                    } else if (q[0].equals("press")) {
+                        int i = widgets.size();
+                        widgets.add(new Widget(Integer.parseInt(q[2]), Integer.parseInt(q[3]), Integer.parseInt(q[4]),
+                                Integer.parseInt(q[5]), "press " + q[1]));
+                        Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
+                        BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
+                        if (stateImage != null) {
+                            states.put(i, captureTiles(opaque(stateImage), scale, left, top, art2, heights));
+                        }
+                    }
+                }
+            }
+            if (widgets.isEmpty() && classUses.getOrDefault(key, 0) == 1) {
                 for (Scene s : scenes) {
                     if (s.captured() == null && key.equals(s.menu())) {
                         widgets.addAll(s.widgets());
@@ -502,7 +551,7 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move)));
         }
     }
 
