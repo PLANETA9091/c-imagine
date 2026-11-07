@@ -154,11 +154,13 @@ public final class LiveMenus {
                 // The simple class name only: the layer's classes carry relocated packages.
                 LOG.info("[cimlive] selftest item {} threw {}", id, t.getClass().getSimpleName());
                 // Outside the compared lines: names differ by relocation, the cause does not.
-                StackTraceElement at = t.getStackTrace().length > 0 ? t.getStackTrace()[0] : null;
-                LOG.info("[cimlive] detail {}: {} at {}", id, t.getMessage(), at);
+                LOG.info("[cimlive] detail {}: {}", id, detail(t));
                 SESSIONS.remove(uuid);
             }
         }
+        // Sessions run on a started server, where SERVER configs are loaded (defaults on a
+        // fresh world); the self-test runs at setup, before that, on both stacks alike.
+        net.neoforged.fml.config.ConfigTracker.INSTANCE.loadDefaultServerConfigs();
         // Blocks: every block of these mods that holds a block entity, put down on its own
         // spot and right-clicked with an empty hand, in the order the server tries a click.
         java.util.List<ResourceLocation> blocks = new java.util.ArrayList<>();
@@ -193,8 +195,7 @@ public final class LiveMenus {
             } catch (Throwable t) {
                 blockThrew++;
                 LOG.info("[cimlive] selftest block {} threw {}", id, t.getClass().getSimpleName());
-                StackTraceElement at = t.getStackTrace().length > 0 ? t.getStackTrace()[0] : null;
-                LOG.info("[cimlive] detail {}: {} at {}", id, t.getMessage(), at);
+                LOG.info("[cimlive] detail {}: {}", id, detail(t));
                 SESSIONS.remove(uuid);
             }
         }
@@ -242,6 +243,27 @@ public final class LiveMenus {
         }
         return type + " (" + menu.slots.size() + " slots, " + own + " own); move: " + move + "; close sent "
                 + (said.length() == 0 ? "nothing" : said) + "; inventory " + inventoryLine(player);
+    }
+
+    /** The root cause and the first frames that are not the JDK's: where a mod met the facade. */
+    private static String detail(Throwable t) {
+        Throwable root = t;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        StringBuilder out = new StringBuilder(root.getClass().getSimpleName()).append(": ").append(root.getMessage());
+        int shown = 0;
+        for (StackTraceElement e : root.getStackTrace()) {
+            if (e.getClassName().startsWith("java.") || e.getClassName().startsWith("com.google.")) {
+                continue;
+            }
+            out.append(" | ").append(e.getClassName().substring(e.getClassName().lastIndexOf('.') + 1))
+                    .append('.').append(e.getMethodName()).append(':').append(e.getLineNumber());
+            if (++shown == 5) {
+                break;
+            }
+        }
+        return out.toString();
     }
 
     private static ResourceLocation menuType(AbstractContainerMenu menu) {

@@ -181,8 +181,41 @@ final class FacadeLevel extends Level {
 
     @Override
     protected LevelEntityGetter<Entity> getEntities() {
-        throw new UnsupportedOperationException("the facade level holds no entities");
+        return NO_ENTITIES;
     }
+
+    /** Entities are Paper's: a query here finds none, as in an empty part of a world. */
+    private static final LevelEntityGetter<Entity> NO_ENTITIES = new LevelEntityGetter<>() {
+        @Override
+        public Entity get(int id) {
+            return null;
+        }
+
+        @Override
+        public Entity get(java.util.UUID id) {
+            return null;
+        }
+
+        @Override
+        public Iterable<Entity> getAll() {
+            return List.of();
+        }
+
+        @Override
+        public <U extends Entity> void get(net.minecraft.world.level.entity.EntityTypeTest<Entity, U> test,
+                                           net.minecraft.util.AbortableIterationConsumer<U> consumer) {
+        }
+
+        @Override
+        public void get(net.minecraft.world.phys.AABB box, java.util.function.Consumer<Entity> consumer) {
+        }
+
+        @Override
+        public <U extends Entity> void get(net.minecraft.world.level.entity.EntityTypeTest<Entity, U> test,
+                                           net.minecraft.world.phys.AABB box,
+                                           net.minecraft.util.AbortableIterationConsumer<U> consumer) {
+        }
+    };
 
     @Override
     public Entity getEntity(int id) {

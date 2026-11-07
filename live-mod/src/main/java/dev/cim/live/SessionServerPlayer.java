@@ -146,6 +146,15 @@ public final class SessionServerPlayer extends ServerPlayer {
     }
 
     @Override
+    public void awardStat(net.minecraft.stats.Stat<?> stat, int amount) {
+        // Statistics are the Paper player's: the server keeps them, not the session.
+    }
+
+    @Override
+    public void resetStat(net.minecraft.stats.Stat<?> stat) {
+    }
+
+    @Override
     public boolean isSpectator() {
         return false;
     }
