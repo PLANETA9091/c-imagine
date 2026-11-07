@@ -55,7 +55,7 @@ public final class CaptureColorTest {
         expected.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, new int[4], 0, readColor);
         for (String name : List.of("ItemCapture", "Capture")) {
             var type = Arrays.stream(QuadDump.class.getDeclaredClasses())
-                    .filter(c -> c.getSimpleName().equals(className)).findFirst().orElseThrow();
+                    .filter(c -> c.getSimpleName().equals(name)).findFirst().orElseThrow();
             Object capture;
             VertexConsumer consumer;
             if (name.equals("Capture")) {
