@@ -4,6 +4,7 @@
 set -uo pipefail
 NS=$1; SI=$2; K=$3
 ROOT=$PWD
+SCR=srv-wall/c-imagine/screens
 RC="python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate"
 export DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe LP_NUM_THREADS=4
 stamp() { echo "[$(date +%T)] $*"; }
