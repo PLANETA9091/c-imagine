@@ -347,6 +347,7 @@ public class CimMixinService extends MixinServiceAbstract {
 
     private static final String MIXIN_DESC = "Lorg/spongepowered/asm/mixin/Mixin;";
     private static final java.util.regex.Pattern REF = java.util.regex.Pattern.compile("L([A-Za-z0-9_$/]+);");
+    private static final java.util.regex.Pattern OWNER = java.util.regex.Pattern.compile("^([A-Za-z_$][\\w$]*(?:/[A-Za-z_$][\\w$]*)+)(?=[.;:(]|$)");
     private static final java.util.regex.Pattern DOTTED = java.util.regex.Pattern.compile("[A-Za-z_$][\\w$]*(\\.[A-Za-z_$][\\w$]*)+");
 
     private static boolean isMixin(ClassNode node) {
@@ -428,6 +429,14 @@ public class CimMixinService extends MixinServiceAbstract {
     }
 
     static String relocateString(String s) {
+        // Mixin's other selector form, an owner without L...; before the member:
+        // "net/minecraft/world/item/ItemStack.isDamageableItem()Z" (measured: AE2).
+        java.util.regex.Matcher owner = OWNER.matcher(s);
+        if (owner.find()) {
+            String mapped = ShadowClassLoader.mapInternalName(owner.group(1));
+            String rest = relocateString(s.substring(owner.end(1)));
+            return (mapped == null ? owner.group(1) : mapped) + rest;
+        }
         if (s.indexOf('L') >= 0 && s.indexOf(';') > 0) {
             java.util.regex.Matcher m = REF.matcher(s);
             StringBuilder out = new StringBuilder();
