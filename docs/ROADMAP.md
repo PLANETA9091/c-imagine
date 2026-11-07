@@ -579,10 +579,17 @@ button flips Create's own flag, and the filter then behaves as a whitelist.
    data values and flags), so the HUD shows whatever state the logic produced.
 
 **Steps, each gated in `menus.yml` or integration:**
-- [ ] 1. Facade level and session player boot in the layer; integration asserts a
-      real Create `FilterMenu` (18 + 36 slots) built from a held filter.
-- [ ] 2. Slot clicks through `menu.clicked`: Create's ghost slots copy, not move, and
-      the gallery's slot-move rows stay GREEN with real semantics.
+- [x] 1. Facade level and session player boot in the layer (`live-mod/`, the
+      `cimlive` mod; `live.yml`). Measured 2026-11-07, identical on real NeoForge
+      and in the layer: Create's real `FilterMenu` (54 slots, 18 its own) built from
+      the held filter through the item's own `use()`. The facade level holds only the
+      static registries plus dimension and damage types (up in 31-40 ms); the session
+      player is an allocated `ServerPlayer` (mods check `instanceof`) with a
+      connection that keeps what the mod sends.
+- [~] 2. Slot clicks through `menu.clicked`: measured identical on both stacks, a
+      stack moved onto the filter's first slot leaves a ghost copy (x1) and keeps x5
+      on the cursor; on close the menu sends a ContainerSetSlot and the stack is back
+      in the inventory. Open: wiring the HUD's clicks to the session.
 - [ ] 3. Widget to packet: the filter whitelist button toggles Create's real flag,
       read back from the item; the press row shows the state from that flag.
 - [ ] 4. Block-entity menus: the mod's block entity lives in the layer, bound to its
