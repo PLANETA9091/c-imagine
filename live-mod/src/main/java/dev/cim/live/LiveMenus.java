@@ -324,7 +324,7 @@ public final class LiveMenus {
                 String after = "-";
                 for (String line : closed.split("\n")) {
                     if (line.startsWith("inv\t0\t")) {
-                        after = fingerprint(line.substring(6));
+                        after = itemChange(held, line.substring(6));
                     }
                 }
                 LOG.info("[cimlive] selftest button item {} #{} '{}' {}: {} | held after: {}", id, b[2], b[3],
@@ -349,6 +349,9 @@ public final class LiveMenus {
                 level().setBlock(pos, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
                 SessionServerPlayer player = session(uuid, "cimlive");
                 player.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 2.5);
+                net.minecraft.world.level.block.entity.BlockEntity before = level().getBlockEntity(pos);
+                net.minecraft.nbt.CompoundTag was = before == null ? new net.minecraft.nbt.CompoundTag()
+                        : before.saveWithoutMetadata(level().registryAccess());
                 String result;
                 try {
                     clickBlock(player, pos);
@@ -362,7 +365,7 @@ public final class LiveMenus {
                 }
                 LiveProtocol.call("close\t" + uuid);
                 net.minecraft.world.level.block.entity.BlockEntity be = level().getBlockEntity(pos);
-                String after = be == null ? "-" : fingerprint(be.saveWithoutMetadata(level().registryAccess()).toString());
+                String after = be == null ? "-" : changedKeys(was, be.saveWithoutMetadata(level().registryAccess()));
                 LOG.info("[cimlive] selftest button block {} #{} '{}' {}: {} | block entity after: {}", id, b[2], b[3],
                         simple(b[4]), result, after);
             }
@@ -412,6 +415,43 @@ public final class LiveMenus {
 
     private static String simple(String internal) {
         return internal.substring(internal.lastIndexOf('/') + 1);
+    }
+
+    /**
+     * What a press changed in a block entity: the keys whose values differ, not the values. A
+     * block entity may hold a random id (Create's toolbox does), so a hash of all of it would
+     * differ between any two runs; the change is what the mod's code did.
+     */
+    private static String changedKeys(net.minecraft.nbt.CompoundTag was, net.minecraft.nbt.CompoundTag now) {
+        java.util.Set<String> keys = new java.util.TreeSet<>(was.getAllKeys());
+        keys.addAll(now.getAllKeys());
+        java.util.List<String> changed = new java.util.ArrayList<>();
+        for (String k : keys) {
+            if (!java.util.Objects.equals(was.get(k), now.get(k))) {
+                changed.add(k);
+            }
+        }
+        return changed.isEmpty() ? "unchanged" : "changed " + changed;
+    }
+
+    /** What a press changed on the held item: the data components that differ, with their values. */
+    private static String itemChange(String beforeJson, String afterJson) {
+        ItemStack before = LiveProtocol.decode(beforeJson);
+        ItemStack after = LiveProtocol.decode(afterJson);
+        java.util.List<String> changed = new java.util.ArrayList<>();
+        java.util.Set<net.minecraft.core.component.DataComponentType<?>> types = new java.util.LinkedHashSet<>();
+        before.getComponents().forEach(c -> types.add(c.type()));
+        after.getComponents().forEach(c -> types.add(c.type()));
+        for (net.minecraft.core.component.DataComponentType<?> t : types) {
+            Object a = before.get(t);
+            Object b = after.get(t);
+            if (!java.util.Objects.equals(a, b)) {
+                String v = String.valueOf(b);
+                changed.add(BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(t) + "=" + (v.length() > 80 ? v.substring(0, 80) + "..." : v));
+            }
+        }
+        changed.sort(null);
+        return changed.isEmpty() ? "unchanged" : "changed " + changed;
     }
 
     /** A short, stack-independent stamp of some data: its length and hash. */

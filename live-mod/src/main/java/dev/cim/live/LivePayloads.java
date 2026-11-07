@@ -103,7 +103,7 @@ final class LivePayloads {
         ctor.setAccessible(true);
         Object[] values = new Object[args.size()];
         for (int i = 0; i < values.length; i++) {
-            values[i] = argument(args.get(i), player, menu, type.getClassLoader());
+            values[i] = fit(argument(args.get(i), player, menu, type.getClassLoader()), params[i]);
         }
         Object payload = ctor.newInstance(values);
         if (!(payload instanceof CustomPacketPayload custom)) {
@@ -114,7 +114,12 @@ final class LivePayloads {
 
     @SuppressWarnings({"unchecked", "rawtypes"})
     static String dispatch(SessionServerPlayer player, CustomPacketPayload payload) throws Exception {
-        NetworkRegistry.setup();
+        // The server sets the registry up once at start; only a self-test before that does it here.
+        Field ready = NetworkRegistry.class.getDeclaredField("setup");
+        ready.setAccessible(true);
+        if (!ready.getBoolean(null)) {
+            NetworkRegistry.setup();
+        }
         Field f = NetworkRegistry.class.getDeclaredField("PAYLOAD_REGISTRATIONS");
         f.setAccessible(true);
         Map<?, Map<ResourceLocation, PayloadRegistration<?>>> all = (Map) f.get(null);
@@ -132,6 +137,29 @@ final class LivePayloads {
         }
         registration.handler().handle(payload, new Context(player));
         return "handled " + id;
+    }
+
+    /**
+     * A menu member is the thing the position or id is read from (the scanner proves
+     * {@code MENU_BLOCK_POS} from the menu's block entity field, as Create's toolbox does):
+     * the constructor's parameter type says which of its facts is meant.
+     */
+    static Object fit(Object value, Class<?> param) {
+        if (value == null || param.isInstance(value) || param.isPrimitive()) {
+            return value;
+        }
+        if (param == net.minecraft.core.BlockPos.class) {
+            if (value instanceof net.minecraft.world.level.block.entity.BlockEntity be) {
+                return be.getBlockPos();
+            }
+            if (value instanceof net.minecraft.world.entity.Entity e) {
+                return e.blockPosition();
+            }
+        }
+        if (param == java.util.UUID.class && value instanceof net.minecraft.world.entity.Entity e) {
+            return e.getUUID();
+        }
+        return value;
     }
 
     private static Field findField(Class<?> c, String name) throws NoSuchFieldException {
