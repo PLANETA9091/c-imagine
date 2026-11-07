@@ -5,7 +5,7 @@
 # leaves the scan in plan-scenes/ for the slices.
 # Env: J21 (JDK home). Per slice: about this many menus.
 set -uo pipefail
-PER_SLICE=${PER_SLICE:-22}
+PER_SLICE=${PER_SLICE:-8}   # small slices run in parallel; a slice costs one boot, so not too small
 RC="python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate"
 
 cp -r layer-srv srv-plan; mkdir -p srv-plan/mods

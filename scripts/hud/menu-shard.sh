@@ -65,8 +65,8 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.done"
   B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
-  for i in $(seq 1 30); do [ "$(cat "$M" 2>/dev/null || echo none)" != "$B" ] && break; sleep 0.2; done
-  sleep 3
+  for i in $(seq 1 60); do [ "$(cat "$M" 2>/dev/null || echo none)" != "$B" ] && break; sleep 0.2; done
+  sleep 1
   $SHOT "truth-shots/gal-gui-$NS$p.png" || true
   # Menus behind this menu's buttons: the client presses through them, and the parent
   # is reopened whenever one of them replaces it.
@@ -77,7 +77,7 @@ for p in $(seq "$SI" "$K" $((N-1))); do
       for i in $(seq 1 90); do [ -f "$SCR/crawl-done" ] && break; sleep 0.2; done
       [ -f "$SCR/crawl-done" ] || { rm -f "$SCR/crawl-go"; break; }
       IDX=$(cat "$SCR/crawl-done"); [ "$IDX" = "-1" ] && break
-      $RC "cimscene gallery gui $NS $p" >/dev/null; sleep 3
+      $RC "cimscene gallery gui $NS $p" >/dev/null; sleep 1
     done
   fi
 done
@@ -187,13 +187,13 @@ $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
 for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   $RC 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
   $RC "cim gallerypage-gui $NS $p" >/dev/null
-  sleep 1.2
+  sleep 0.6
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true
   # The same interactions, in the order the real client made them.
   TAGS=$( { [ -f "truth-shots/gal-guiw-$NS$p-move.png" ] && echo move; ls truth-shots | grep -oE "^gal-guiw-$NS$p-w[0-9]+\.png$" | grep -oE 'w[0-9]+\.png$' | tr -d '.png' | sort -t w -k2 -n; } )
   for T in $TAGS; do
     if [ "$T" = move ]; then $RC "cim hudpress move" >/dev/null; else $RC "cim hudpress ${T#w}" >/dev/null; fi
-    sleep 0.8
+    sleep 0.5
     $SHOT "ours-shots/ours-gal-guiw-$NS$p-$T.png" || true
   done
 done
