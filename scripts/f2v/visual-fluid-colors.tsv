@@ -1,24 +1,19 @@
-# c-imagine F2V 2.0 fluid-color manifest (14-cd: the modded chemical fluid
+# c-imagine F2V 2.0 fluid-color manifest (14-cd/14-ch: the modded fluid
 # cube channel)
 #
 # Format (TSV): fluid_id <TAB> r <TAB> g <TAB> b   (the cube texture color,
-# 0..255 — the PRE-SHADE surface color: the model's own directional face
-# shading applies on top, so rendered_face = color * face_shade * lightmap).
+# 0..255 — the PRE-SHADE surface color: the 14-ch model bakes the liquid
+# renderer's directional face shading into per-face textures on top, so the
+# rendered front face = color * 0.8 * lightmap, the top = color * 1.0).
 #
 # DERIVATION (measured from run #231's truth crops, scripts/
-# measure_fluid_tints.py): the mekanism chemical fluids render through the
-# generic gray canvas assets/mekanism/textures/liquid/liquid.png (opaque
-# mean 212.4) tinted per chemical by the mod's client code; the truth page
-# shots are the only surface that carries the rendered tint. The sampled
-# patch mean (the case interior, front face, shade 0.8) divided by 0.8 gives
-# the pre-shade color. The colors are the L1-optimal flat approximation of
-# the truth's surface (the canvas noise detail is uncorrelated between the
-# legs' texture chains — the flat mean minimizes the expected |diff|).
-#
-# create/biomesoplenty fluids are NOT here: their jars carry real per-fluid
-# still textures (assets/create/textures/fluid/*_still.png,
-# assets/biomesoplenty/textures/block/*_still.png) — the cube channel hosts
-# their static frame 0 verbatim (the F2vPack scan).
+# measure_fluid_tints.py: the sampled case-interior patch mean / 0.8 front
+# shade): the mekanism chemical fluids render the generic gray liquid.png
+# canvas (opaque mean 212.4) tinted per chemical by the mod's client code;
+# the truth page shots are the only surface carrying the rendered tint. The
+# create/biomesoplenty rows (14-ch) ride the SAME calibration (the flat
+# L1-optimal surface replaces the animated-strip frame mismatch their real
+# textures measured at ae 268-500K on #250).
 mekanism:brine	154	155	128
 mekanism:chlorine	143	156	81
 mekanism:ethene	154	143	161
@@ -37,3 +32,8 @@ mekanism:sulfuric_acid	105	118	86
 mekanism:superheated_sodium	144	129	118
 mekanism:uranium_hexafluoride	114	140	127
 mekanism:uranium_oxide	150	173	134
+create:chocolate	139	85	75
+create:honey	194	160	71
+create:potion	121	121	140
+create:tea	175	143	130
+biomesoplenty:blood	128	71	71

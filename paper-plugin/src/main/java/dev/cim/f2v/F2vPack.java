@@ -290,11 +290,31 @@ public final class F2vPack {
             String texPath;
             int[] color = colorTable.get(fluidId);
             if (color != null) {
-                // the calibrated flat surface: one opaque uniform 16x16 PNG
-                texPath = "assets/c-imagine/textures/fluidcube/"
-                        + fluidId.replace(':', '_') + ".png";
+                // 14-ch THE SHADED SURFACE SET: the truth's liquid renders
+                // through the chunk pipeline's DIRECTIONAL face shading (the
+                // top 1.0, the north/south 0.8, the east/west 0.6, the
+                // bottom 0.5) while the item_display pipeline renders the
+                // model FLAT — the #250 measured the unshaded cube at ae
+                // 246-421K against the 240K gate with IDENTICAL ae on the
+                // run before the gate flip (the structure, not the pixels).
+                // The shading bakes into four per-face textures; the model
+                // picks them per face and the fit absorbs the rest.
+                String id = fluidId.replace(':', '_');
+                texPath = "assets/c-imagine/textures/fluidcube/" + id + ".png";
                 if (!entries.containsKey(texPath)) {
                     entries.put(texPath, uniformPng(color[0], color[1], color[2]));
+                }
+                String nsPath = "assets/c-imagine/textures/fluidcube/" + id + "_ns.png";
+                if (!entries.containsKey(nsPath)) {
+                    entries.put(nsPath, uniformPng(shade(color, 0.8)));
+                }
+                String ewPath = "assets/c-imagine/textures/fluidcube/" + id + "_ew.png";
+                if (!entries.containsKey(ewPath)) {
+                    entries.put(ewPath, uniformPng(shade(color, 0.6)));
+                }
+                String bPath = "assets/c-imagine/textures/fluidcube/" + id + "_b.png";
+                if (!entries.containsKey(bPath)) {
+                    entries.put(bPath, uniformPng(shade(color, 0.5)));
                 }
             } else {
                 // the real still texture's static frame 0, re-hosted under
@@ -314,18 +334,28 @@ public final class F2vPack {
             // non-fluid above renders its top at 14/16 — the sides show the
             // texture's lower 14 rows (uv v 2..16). Model and sprite ids
             // omit the models/ and textures/ archive roots, respectively.
-            String faces = "\"north\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
-                    + "\"south\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
-                    + "\"west\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
-                    + "\"east\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
+            // 14-ch: the color-route faces carry the per-face shaded
+            // textures (the item_display pipeline applies no directional
+            // shade of its own — the #250 structure gap).
+            String textures = color != null
+                    ? "\"all\": \"" + texRef + "\", \"ns\": \"" + texRef + "_ns\", "
+                      + "\"ew\": \"" + texRef + "_ew\", \"b\": \"" + texRef + "_b\""
+                    : "\"all\": \"" + texRef + "\"";
+            String sideTex = color != null ? "#ns" : "#all";
+            String ewTex = color != null ? "#ew" : "#all";
+            String downTex = color != null ? "#b" : "#all";
+            String faces = "\"north\": {\"texture\": \"" + sideTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"south\": {\"texture\": \"" + sideTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"west\": {\"texture\": \"" + ewTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"east\": {\"texture\": \"" + ewTex + "\", \"uv\": [0, 2, 16, 16]},"
                     + "\"up\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]},"
-                    + "\"down\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]}";
+                    + "\"down\": {\"texture\": \"" + downTex + "\", \"uv\": [0, 0, 16, 16]}";
             String modelPath = "assets/c-imagine/models/fluidcube/f" + i + ".json";
             if (entries.containsKey(modelPath)) {
                 continue;
             }
             String json = "{\"parent\": \"minecraft:block/block\", "
-                    + "\"textures\": {\"all\": \"" + texRef + "\"}, "
+                    + "\"textures\": {" + textures + "}, "
                     + "\"elements\": [{\"from\": [0, 0, 0], \"to\": [16, 14, 16], "
                     + "\"faces\": {" + faces + "}}]}";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
@@ -373,6 +403,16 @@ public final class F2vPack {
         java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
         javax.imageio.ImageIO.write(img, "png", bos);
         return bos.toByteArray();
+    }
+
+    /** One color's channel-wise shade multiply, rounded and clamped — the
+     *  14-ch per-face shading bake (the liquid renderer's directional
+     *  shades: top 1.0, north/south 0.8, east/west 0.6, bottom 0.5). */
+    private static int[] shade(int[] color, double k) {
+        return new int[]{
+                (int) Math.round(Math.min(255, color[0] * k)),
+                (int) Math.round(Math.min(255, color[1] * k)),
+                (int) Math.round(Math.min(255, color[2] * k))};
     }
 
     /** Read the fluid-texture manifest the build wrote (fluidId -> cmd). */
