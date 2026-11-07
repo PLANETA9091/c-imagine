@@ -1715,8 +1715,32 @@ public final class CimSceneMod {
         }
     }
 
-    /** Acts the way a player's right click does, in the same order the game tries things. */
+    private static boolean guiOpened(ServerPlayer player) {
+        return player instanceof GuiProbe probe ? probe.seen != null : guiOpenMenu(player) != null;
+    }
+
+    /**
+     * Clicks the way a persistent player would: every face of a block, because some open
+     * only from one side, and twice, because some items claim an owner on the first use.
+     */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        boolean block = opener.contains("block:") || opener.contains("place+item:");
+        Direction[] faces = block
+                ? new Direction[]{Direction.UP, Direction.SOUTH, Direction.NORTH, Direction.EAST, Direction.WEST}
+                : new Direction[]{Direction.UP};
+        for (int pass = 0; pass < 2; pass++) {
+            for (Direction face : faces) {
+                guiActOnce(level, player, rig, opener, face);
+                if (guiOpened(player)) {
+                    return;
+                }
+            }
+        }
+    }
+
+    /** One right click, in the same order the game tries things. */
+    private static void guiActOnce(ServerLevel level, ServerPlayer player, BlockPos rig, String opener,
+                                   Direction face) {
         boolean sneak = opener.startsWith("sneak+");
         String plain = opener.replace("sneak+", "");
         player.setShiftKeyDown(sneak);
@@ -1725,8 +1749,9 @@ public final class CimSceneMod {
                 guiEntity.interact(player, InteractionHand.MAIN_HAND);
             } else if (plain.startsWith("block:") || plain.startsWith("place+item:")) {
                 // Low in the cell: a part placed on the floor sits there, a full block does not care.
-                BlockHitResult hit = new BlockHitResult(new Vec3(rig.getX() + 0.5, rig.getY() + 0.06, rig.getZ() + 0.5),
-                        Direction.UP, rig, false);
+                Vec3 at = face == Direction.UP ? new Vec3(rig.getX() + 0.5, rig.getY() + 0.06, rig.getZ() + 0.5)
+                        : Vec3.atCenterOf(rig).relative(face, 0.5);
+                BlockHitResult hit = new BlockHitResult(at, face, rig, false);
                 BlockState state = level.getBlockState(rig);
                 net.minecraft.world.ItemInteractionResult result = state.useItemOn(
                         player.getItemInHand(InteractionHand.MAIN_HAND), level, player, InteractionHand.MAIN_HAND, hit);

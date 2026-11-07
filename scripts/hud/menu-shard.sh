@@ -100,6 +100,15 @@ for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
             out.write(f'slot\t{i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
     shutil.copy(frame, f'truth-shots/gal-gui-{ns}{page}.png')
     print(page)
+# The art and this frame are one render, so an animation is the same moment in both.
+for f in glob.glob(f'srv-wall/c-imagine/scenes/gallery-gui-{ns}-p*.tsv'):
+    cell = next((l.rstrip('\n').split('\t') for l in open(f, encoding='utf-8', errors='replace')
+                 if l.startswith('cell\t') and not l.startswith('cell\tx')), None)
+    if cell:
+        frame = 'srv-wall/c-imagine/screens/' + cell[4].replace(':', '_').replace('/', '_') + '.frame'
+        shot = 'truth-shots/gal-gui-%s%s.png' % (ns, f.rsplit('-p', 1)[1][:-4])
+        if os.path.isfile(frame) and os.path.isfile(shot):
+            shutil.copy(frame, shot)
 PY
 stamp "crawl reached $(wc -l < crawl-pages.txt) more menus"
 $RC stop >/dev/null 2>&1 || true
