@@ -1,0 +1,135 @@
+name: live
+
+# Roadmap M6.3, live menus: the mod's own menu code runs for a session player in the
+# c-imagine layer, in the server's own heap. Every step is dual-stack: the same
+# cimlive self-test runs on a real NeoForge 1.21.1 server (truth) and in the layer,
+# and the two logs must say the same thing about the menu and every click.
+
+on:
+  push:
+    branches: [ci/menu-compare-2]
+    paths:
+      - 'live-mod/**'
+      - 'java/**'
+      - 'crates/**'
+      - '.github/workflows/live.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: live-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The first gate of M6.3 (owner example): Create's list filter, opened from the held item.
+  CIM_LIVE_SELFTEST: create:filter
+
+jobs:
+  truth:
+    name: live self-test on real NeoForge (truth)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build cimlive
+        run: gradle build --no-daemon -p live-mod
+      - name: restore NeoForge server
+        id: layer
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge server (cache miss)
+        if: steps.layer.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+      - name: fetch Create
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: boot, run the self-test, stop
+        run: |
+          mkdir -p layer-srv/mods
+          cp mods-create/*.jar live-mod/build/libs/cimlive-1.0.0.jar layer-srv/mods/
+          cd layer-srv
+          echo eula=true > eula.txt
+          printf 'online-mode=false\nlevel-type=minecraft:flat\n' > server.properties
+          (echo stop | timeout 600 java -Xmx3G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui > boot.log 2>&1) || true
+          grep '\[cimlive\]' boot.log | tee ../truth-live.txt
+          grep -q "\[cimlive\] selftest ok" boot.log || { tail -80 boot.log; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-truth
+          path: |
+            truth-live.txt
+            layer-srv/boot.log
+
+  layer:
+    name: live self-test in the c-imagine layer
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build rust (release)
+        run: cargo build --release --quiet
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+      - name: build cimlive
+        run: gradle build --no-daemon -p live-mod
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer1211
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-installer.jar --installServer layer1211
+      - name: fetch Create
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: run the layer with Create and cimlive
+        run: |
+          mkdir -p mods
+          cp mods-create/*.jar live-mod/build/libs/cimlive-1.0.0.jar mods/
+          bash scripts/run-m2-harness.sh layer1211/libraries mods out-live || true
+          grep '\[cimlive\]' out-live/harness.log | tee layer-live.txt
+          grep -q "\[cimlive\] selftest ok" out-live/harness.log || { grep -n 'cimlive\|Exception' out-live/harness.log | tail -60; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-layer
+          path: |
+            layer-live.txt
+            out-live/harness.log
+
+  parity:
+    name: live parity (layer vs real NeoForge)
+    runs-on: ubuntu-latest
+    needs: [truth, layer]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - name: same menu, same click results
+        run: |
+          # Timestamps and timings differ; what the menu is and what each click did may not.
+          norm() { grep -oE '\[cimlive\] selftest .*' "$1" | grep -v 'facade level' ; }
+          norm all/live-truth/truth-live.txt > truth.txt
+          norm all/live-layer/layer-live.txt > layer.txt
+          echo "--- truth"; cat truth.txt; echo "--- layer"; cat layer.txt
+          diff truth.txt layer.txt && echo "live parity: IDENTICAL"
