@@ -27,6 +27,7 @@ import java.util.function.Function;
  *       slot TAB n TAB menuIndex TAB player|menu TAB containerSlot TAB stack   (active slots, in order)
  *       carried TAB stack
  *       inv TAB i TAB stack
+ *       drop TAB stack            (what the mod's code dropped from the player)
  * </pre>
  */
 public final class LiveProtocol {
@@ -113,6 +114,9 @@ public final class LiveProtocol {
             if (!stack.isEmpty()) {
                 out.append("inv\t").append(i).append('\t').append(encode(stack)).append('\n');
             }
+        }
+        for (ItemStack stack : player.takeDropped()) {
+            out.append("drop\t").append(encode(stack)).append('\n');
         }
         return out.toString();
     }

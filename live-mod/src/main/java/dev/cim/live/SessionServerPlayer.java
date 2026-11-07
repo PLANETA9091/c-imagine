@@ -145,6 +145,28 @@ public final class SessionServerPlayer extends ServerPlayer {
         containerMenu = inventoryMenu;
     }
 
+    /** Stacks the mod's code dropped from this player; Paper drops them at the real player. */
+    private java.util.List<net.minecraft.world.item.ItemStack> dropped;
+
+    @Override
+    public net.minecraft.world.entity.item.ItemEntity drop(net.minecraft.world.item.ItemStack stack,
+                                                          boolean randomly, boolean thrower) {
+        if (!stack.isEmpty()) {
+            if (dropped == null) {
+                dropped = new java.util.ArrayList<>();
+            }
+            dropped.add(stack.copy());
+        }
+        return null;
+    }
+
+    /** What was dropped since the last call. */
+    public java.util.List<net.minecraft.world.item.ItemStack> takeDropped() {
+        java.util.List<net.minecraft.world.item.ItemStack> out = dropped == null ? java.util.List.of() : dropped;
+        dropped = null;
+        return out;
+    }
+
     @Override
     public void awardStat(net.minecraft.stats.Stat<?> stat, int amount) {
         // Statistics are the Paper player's: the server keeps them, not the session.

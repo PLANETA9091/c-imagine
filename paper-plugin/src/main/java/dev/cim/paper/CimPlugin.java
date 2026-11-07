@@ -519,6 +519,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
             log().info(LOG_PREFIX + "f2v net: bot joined name=" + bot.getName());
+            // M6.3 end to end (live.yml): a mod item's menu run by the mod's own code in the
+            // layer, for a real connected player, and the Paper inventory it leaves.
+            String liveItem = System.getenv("CIM_LIVETEST");
+            if (liveItem != null && !liveItem.isBlank()) {
+                Player target = bot;
+                for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveSelfTest(target, liveItem.trim()))) {
+                    log().info("[cim-live] paper " + line);
+                }
+            }
             // Attach the outbound net watch HERE, not via PlayerJoinEvent: the
             // join event did not fire on the CI wire order (measured — census
             // stayed empty), and a missed attach silently blinds the watch.

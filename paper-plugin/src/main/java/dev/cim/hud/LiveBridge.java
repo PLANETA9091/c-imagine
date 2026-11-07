@@ -33,7 +33,8 @@ final class LiveBridge {
     }
 
     /** What the layer's menu holds after a command. */
-    record State(String menuType, List<Slot> slots, String carried, String[] inventory, String error) {
+    record State(String menuType, List<Slot> slots, String carried, String[] inventory, List<String> dropped,
+                 String error) {
         boolean open() {
             return menuType != null;
         }
@@ -97,6 +98,13 @@ final class LiveBridge {
             out[to] = toPaper(state.inventory()[i]);
         }
         player.getInventory().setStorageContents(out);
+        // What the mod's code dropped from its player falls where the real player stands.
+        for (String json : state.dropped()) {
+            ItemStack stack = toPaper(json);
+            if (stack != null) {
+                player.getWorld().dropItem(player.getLocation(), stack);
+            }
+        }
     }
 
     private static String call(String request) {
@@ -109,6 +117,7 @@ final class LiveBridge {
         String error = null;
         String carried = "-";
         List<Slot> slots = new ArrayList<>();
+        List<String> dropped = new ArrayList<>();
         String[] inventory = new String[41];
         java.util.Arrays.fill(inventory, "-");
         for (String line : answer.split("\n")) {
@@ -125,12 +134,18 @@ final class LiveBridge {
                         inventory[i] = q[2];
                     }
                 }
+                case "drop" -> dropped.add(p[1]);
                 case "error" -> error = line;
                 default -> {
                 }
             }
         }
-        return new State(type, slots, carried, inventory, error);
+        return new State(type, slots, carried, inventory, dropped, error);
+    }
+
+    /** A Paper stack for a mod item, as {@link #toPaper} makes it. */
+    ItemStack stackOf(String itemId, int count) {
+        return toPaper("{\"id\":\"" + itemId + "\",\"count\":" + count + "}");
     }
 
     /** A Paper stack as the layer reads it: its own JSON when it has been there before. */
@@ -167,12 +182,15 @@ final class LiveBridge {
         } else {
             stack = carrier.apply(itemId);
         }
-        if (stack.getType().isAir()) {
-            return null;
+        boolean standIn = stack.getType().isAir();
+        if (standIn) {
+            // No carrier for this item (it has no look in the pack): a plain stand-in keeps
+            // the item itself, so a mod's stack never vanishes from the player.
+            stack = new ItemStack(Material.PAPER);
         }
         stack.setAmount(amount);
         // Only a stack with data of its own needs its JSON: a bare one rebuilds from its id.
-        if (json.contains("\"components\"")) {
+        if (standIn || json.contains("\"components\"")) {
             org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
             meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, json);
             stack.setItemMeta(meta);

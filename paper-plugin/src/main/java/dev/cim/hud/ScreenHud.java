@@ -573,6 +573,67 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
     }
 
+    /**
+     * End-to-end check of live menus on Paper (integration): the item is put in the player's
+     * hand and 5 diamonds in the inventory, the held item's own use() runs through the bridge,
+     * two clicks move the diamonds onto the menu's first own slot, and the close's inventory is
+     * applied to the Paper player. Every step is logged with what Paper ends up holding.
+     */
+    public List<String> liveSelfTest(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: live menus unavailable");
+            return out;
+        }
+        player.getInventory().clear();
+        ItemStack held = bridge.stackOf(itemId, 1);
+        player.getInventory().setItem(player.getInventory().getHeldItemSlot(), held);
+        player.getInventory().setItem(9, new ItemStack(org.bukkit.Material.DIAMOND, 5));
+        LiveBridge.State state = bridge.openHeld(player);
+        out.add("open " + itemId + " held " + paperName(held) + " -> " + (state.error() != null ? state.error()
+                : state.open() ? state.menuType() + " slots=" + state.slots().size() : "no menu"));
+        if (!state.open()) {
+            return out;
+        }
+        int from = -1;
+        int to = -1;
+        for (LiveBridge.Slot slot : state.slots()) {
+            if (slot.player() && slot.containerSlot() == 9 && from < 0) {
+                from = slot.menuIndex();
+            }
+            if (!slot.player() && to < 0) {
+                to = slot.menuIndex();
+            }
+        }
+        if (from >= 0 && to >= 0) {
+            bridge.click(player, from, 0, "PICKUP");
+            state = bridge.click(player, to, 0, "PICKUP");
+            String own = state.slots().stream().filter(sl -> !sl.player()).findFirst()
+                    .map(sl -> paperName(bridge.toPaper(sl.stack()))).orElse("none");
+            out.add("move: first own slot " + own + ", carried " + paperName(bridge.toPaper(state.carried())));
+        }
+        state = bridge.close(player);
+        bridge.applyInventory(player, state);
+        StringBuilder inv = new StringBuilder();
+        ItemStack[] contents = player.getInventory().getStorageContents();
+        for (int i = 0; i < contents.length; i++) {
+            if (contents[i] != null && !contents[i].getType().isAir()) {
+                inv.append(i).append('=').append(paperName(contents[i])).append(' ');
+            }
+        }
+        out.add("close: paper inventory " + inv.toString().trim()
+                + (state.dropped().isEmpty() ? "" : ", dropped " + state.dropped().size()));
+        return out;
+    }
+
+    private String paperName(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return "empty";
+        }
+        return itemId(stack) + " x" + stack.getAmount();
+    }
+
     /** The layer menu's state on the screen: its own slots, the cursor, the player's inventory. */
     private void applyLive(Player player, Session s, LiveBridge.State state) {
         s.liveSlots = state.slots();

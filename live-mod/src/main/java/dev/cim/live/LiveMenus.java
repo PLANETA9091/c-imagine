@@ -294,6 +294,8 @@ public final class LiveMenus {
                 out.append("carried ").append(shortStack(p[1])).append("; ");
             } else if (p[0].equals("inv")) {
                 out.append(p[1]).append('=').append(shortStack(p[2])).append(' ');
+            } else if (p[0].equals("drop")) {
+                out.append("dropped ").append(shortStack(p[1])).append(' ');
             } else if (p[0].equals("error")) {
                 out.append(line);
             }

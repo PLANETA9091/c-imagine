@@ -47,6 +47,11 @@ public final class HudBootstrap {
         return screens != null && player != null && screens.openNamed(player, name);
     }
 
+    /** Integration: live menus on Paper end to end, see {@link ScreenHud#liveSelfTest}. */
+    public static java.util.List<String> liveSelfTest(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.liveSelfTest(player, itemId);
+    }
+
     public static void closeForHarness(org.bukkit.entity.Player player) {
         if (screens != null && player != null) {
             screens.close(player);
