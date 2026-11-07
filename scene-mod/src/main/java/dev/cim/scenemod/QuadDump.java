@@ -598,145 +598,157 @@ final class QuadDump {
         }
     }
 
-    /** A buffer source whose every buffer records: baked quads whole, hand-drawn geometry vertex by vertex. */
-    private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
+    /** Independent buffers retain their own material and partially recorded quad. */
+    private static final class ItemCapture implements MultiBufferSource {
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
-        List<TextureAtlasSprite> boundSprites;
-        boolean captureAtlasPixels;
-        final float[][] pos = new float[4][3];
-        final float[][] uv = new float[4][2];
-        final float[][] rgb = new float[4][4];
-        int n = -1;
-        long foreign;
-        /** The bound buffer's texture when it is not the block atlas. */
-        String texture;
-
-        /** Item renderers centre the model on the origin; block entities draw from the corner. */
         final float origin;
+        long foreign;
+        private final Map<Object, RecordingBuffer> buffers = new java.util.LinkedHashMap<>();
+        private final VertexConsumer discard = new Discard();
 
         ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
             this.sprites = sprites;
-            this.boundSprites = sprites;
             this.origin = origin;
         }
 
-        /** Foil wraps two buffers and rejects a duplicate; the glint is an overlay, not geometry. */
-        private final VertexConsumer discard = new Discard();
-
         @Override
         public VertexConsumer getBuffer(RenderType type) {
-            String state = type.toString();
+            return bufferFor(type, type.toString());
+        }
+
+        private VertexConsumer bufferFor(Object key, String state) {
             if (state.contains("glint")) {
                 return discard;
             }
-            flush(); // a pending quad belongs to the previous buffer's texture
-            texture = CaptureTexture.fromRenderState(state);
-            boundSprites = sprites;
-            captureAtlasPixels = false;
-            String resource = CaptureTexture.resourceFromRenderState(state);
-            if (resource != null && !resource.equals(InventoryMenu.BLOCK_ATLAS.toString())) {
-                var bound = Minecraft.getInstance().getTextureManager()
-                        .getTexture(ResourceLocation.parse(resource), null);
-                if (bound instanceof TextureAtlas atlas) {
-                    texture = null;
-                    boundSprites = new ArrayList<>(atlas.getTextures().values());
-                    captureAtlasPixels = true;
-                }
-            }
-            return this;
+            return buffers.computeIfAbsent(key, ignored -> new RecordingBuffer(state));
         }
 
-        @Override
-        public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
-                                float a, int[] light, int overlay, boolean readAlpha) {
-            int[] v = q.getVertices();
-            float[][] p = new float[4][3];
-            float[][] t = new float[4][2];
-            float[][] c = new float[4][4];
-            Vector3f at = new Vector3f();
-            for (int i = 0; i < 4; i++) {
-                int o = i * STRIDE;
-                pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
-                        Float.intBitsToFloat(v[o + 2]), at);
-                p[i][0] = at.x + origin;
-                p[i][1] = at.y + origin;
-                p[i][2] = at.z + origin;
-                t[i][0] = Float.intBitsToFloat(v[o + UV]);
-                t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
-                c[i][0] = brightness[i] * r;
-                c[i][1] = brightness[i] * g;
-                c[i][2] = brightness[i] * b;
-                // Match VertexConsumer's byte-quantized packed alpha.
-                c[i][3] = (int) (a * (readAlpha ? ((v[o + 3] >>> 24) & 255) : 255)) / 255f;
-            }
-            if (texture != null) {
-                appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
-            } else {
-                writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
-                        q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
-            }
-        }
-
-        @Override
-        public VertexConsumer addVertex(float x, float y, float z) {
-            flush();
-            n++;
-            pos[n][0] = x + origin;
-            pos[n][1] = y + origin;
-            pos[n][2] = z + origin;
-            rgb[n][0] = 1;
-            rgb[n][1] = 1;
-            rgb[n][2] = 1;
-            rgb[n][3] = 1;
-            return this;
-        }
-
-        /** Vertices only complete a quad on the next one, so the last needs a push. */
         void flush() {
-            if (n == 3) {
-                if (texture != null) {
-                    appendRow(out, texture, true, -1, pos, uv, rgb);
-                } else if (!writeQuad(out, null, boundSprites, true, -1, pos, uv, rgb, captureAtlasPixels)) {
-                    foreign++;
+            for (RecordingBuffer buffer : buffers.values()) {
+                buffer.flush();
+            }
+        }
+
+        private final class RecordingBuffer implements VertexConsumer {
+            final List<TextureAtlasSprite> boundSprites;
+            final boolean captureAtlasPixels;
+            final String texture;
+            final float[][] pos = new float[4][3];
+            final float[][] uv = new float[4][2];
+            final float[][] rgb = new float[4][4];
+            int n = -1;
+
+            RecordingBuffer(String state) {
+                String direct = CaptureTexture.fromRenderState(state);
+                List<TextureAtlasSprite> atlasSprites = sprites;
+                boolean customAtlas = false;
+                String resource = CaptureTexture.resourceFromRenderState(state);
+                if (resource != null && !resource.equals(InventoryMenu.BLOCK_ATLAS.toString())) {
+                    var bound = Minecraft.getInstance().getTextureManager()
+                            .getTexture(ResourceLocation.parse(resource), null);
+                    if (bound instanceof TextureAtlas atlas) {
+                        direct = null;
+                        atlasSprites = new ArrayList<>(atlas.getTextures().values());
+                        customAtlas = true;
+                    }
                 }
-                n = -1;
+                texture = direct;
+                boundSprites = atlasSprites;
+                captureAtlasPixels = customAtlas;
             }
-        }
 
-        @Override
-        public VertexConsumer setColor(int r, int g, int b, int a) {
-            if (n >= 0) {
-                rgb[n][0] = r / 255f;
-                rgb[n][1] = g / 255f;
-                rgb[n][2] = b / 255f;
-                rgb[n][3] = a / 255f;
+            @Override
+            public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
+                                    float a, int[] light, int overlay, boolean readAlpha) {
+                int[] v = q.getVertices();
+                float[][] p = new float[4][3];
+                float[][] t = new float[4][2];
+                float[][] c = new float[4][4];
+                Vector3f at = new Vector3f();
+                for (int i = 0; i < 4; i++) {
+                    int o = i * STRIDE;
+                    pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
+                            Float.intBitsToFloat(v[o + 2]), at);
+                    p[i][0] = at.x + origin;
+                    p[i][1] = at.y + origin;
+                    p[i][2] = at.z + origin;
+                    t[i][0] = Float.intBitsToFloat(v[o + UV]);
+                    t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
+                    c[i][0] = brightness[i] * r;
+                    c[i][1] = brightness[i] * g;
+                    c[i][2] = brightness[i] * b;
+                    // Match VertexConsumer's byte-quantized packed alpha.
+                    c[i][3] = (int) (a * (readAlpha ? ((v[o + 3] >>> 24) & 255) : 255)) / 255f;
+                }
+                if (texture != null) {
+                    appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
+                } else {
+                    writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
+                            q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
+                }
             }
-            return this;
-        }
 
-        @Override
-        public VertexConsumer setUv(float u, float v) {
-            if (n >= 0) {
-                uv[n][0] = u;
-                uv[n][1] = v;
+            @Override
+            public VertexConsumer addVertex(float x, float y, float z) {
+                flush();
+                n++;
+                pos[n][0] = x + origin;
+                pos[n][1] = y + origin;
+                pos[n][2] = z + origin;
+                rgb[n][0] = 1;
+                rgb[n][1] = 1;
+                rgb[n][2] = 1;
+                rgb[n][3] = 1;
+                return this;
             }
-            return this;
-        }
 
-        @Override
-        public VertexConsumer setUv1(int u, int v) {
-            return this;
-        }
+            /** Vertices only complete a quad on the next one, so the last needs a push. */
+            void flush() {
+                if (n == 3) {
+                    if (texture != null) {
+                        appendRow(out, texture, true, -1, pos, uv, rgb);
+                    } else if (!writeQuad(out, null, boundSprites, true, -1, pos, uv, rgb, captureAtlasPixels)) {
+                        foreign++;
+                    }
+                    n = -1;
+                }
+            }
 
-        @Override
-        public VertexConsumer setUv2(int u, int v) {
-            return this;
-        }
+            @Override
+            public VertexConsumer setColor(int r, int g, int b, int a) {
+                if (n >= 0) {
+                    rgb[n][0] = r / 255f;
+                    rgb[n][1] = g / 255f;
+                    rgb[n][2] = b / 255f;
+                    rgb[n][3] = a / 255f;
+                }
+                return this;
+            }
 
-        @Override
-        public VertexConsumer setNormal(float x, float y, float z) {
-            return this;
+            @Override
+            public VertexConsumer setUv(float u, float v) {
+                if (n >= 0) {
+                    uv[n][0] = u;
+                    uv[n][1] = v;
+                }
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv1(int u, int v) {
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv2(int u, int v) {
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setNormal(float x, float y, float z) {
+                return this;
+            }
         }
     }
 

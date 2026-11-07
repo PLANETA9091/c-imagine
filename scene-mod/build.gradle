@@ -30,7 +30,9 @@ repositories {
 sourceSets {
     captureTest {
         compileClasspath += sourceSets.main.output
+        compileClasspath += sourceSets.main.compileClasspath
         runtimeClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath
     }
 }
 
@@ -41,3 +43,12 @@ tasks.register('captureTextureTest', JavaExec) {
 }
 
 check.dependsOn captureTextureTest
+
+tasks.register('captureBufferTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureBufferTest'
+    systemProperty 'java.awt.headless', 'true'
+}
+
+check.dependsOn captureBufferTest
