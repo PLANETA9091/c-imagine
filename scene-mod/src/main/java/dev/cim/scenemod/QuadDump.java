@@ -333,8 +333,13 @@ final class QuadDump {
         ItemCapture capture = new ItemCapture(sprites, liquidCaptureOrigin(pos));
         VertexConsumer consumer = capture.bufferFor("liquid",
                 "texture[Optional[minecraft:textures/atlas/blocks.png]]", false);
-        mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
-        capture.flush();
+        page.nativeFluidLighting = true;
+        try {
+            mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
+            capture.flush();
+        } finally {
+            page.nativeFluidLighting = false;
+        }
         if (capture.foreign != 0 || capture.out.length() == 0) {
             throw new IllegalStateException("native liquid renderer produced missing/unbound geometry");
         }
@@ -779,10 +784,10 @@ final class QuadDump {
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
                 if (texture != null) {
-                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c);
+                    appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
                 } else {
                     writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
-                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
+                            q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
                 }
             }
 
@@ -867,6 +872,7 @@ final class QuadDump {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
         final Map<BlockPos, String> beTags = new HashMap<>();
         boolean requireSnapshot;
+        boolean nativeFluidLighting;
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
@@ -919,14 +925,23 @@ final class QuadDump {
 
         @Override
         public float getShade(Direction side, boolean shade) {
-            return Minecraft.getInstance().level.getShade(side, shade);
+            // 14-co: the block capture keeps the proven CPU-diffuse=1 policy
+            // (the ours client applies its own directional light); only the
+            // liquid capture records the native level diffuse.
+            if (nativeFluidLighting) {
+                return Minecraft.getInstance().level.getShade(side, shade);
+            }
+            return 1;
         }
 
         @Override
         public float getShade(float normalX, float normalY, float normalZ, boolean shade) {
-            // NeoForge's lighter supports non-axis normals; the real level
-            // applies its dimension's shading rather than nearest-face rounding.
-            return Minecraft.getInstance().level.getShade(normalX, normalY, normalZ, shade);
+            // NeoForge's lighter supports non-axis normals; only the native
+            // liquid capture wants the real dimension shading.
+            if (nativeFluidLighting) {
+                return Minecraft.getInstance().level.getShade(normalX, normalY, normalZ, shade);
+            }
+            return 1;
         }
 
         @Override
