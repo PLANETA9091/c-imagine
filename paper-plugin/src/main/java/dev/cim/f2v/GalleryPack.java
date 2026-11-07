@@ -507,18 +507,29 @@ public final class GalleryPack {
             }
             if (bestKey != null) {
                 JsonElement v = variants.get(bestKey);
-                JsonObject entry = v.isJsonArray() ? v.getAsJsonArray().get(0).getAsJsonObject()
-                        : v.getAsJsonObject();
-                String model = entry.get("model").getAsString();
-                int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
-                int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
-                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
-                String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
-                if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
+                // 14-cl: a variant may carry MULTIPLE models (an ARRAY) — the
+                // real client renders every entry (BOP null_leaves[""] =
+                // null_leaves + null_leaves_alt; taking only get(0) dropped
+                // the alt layer and measured ae 313–336K on the p66 crops).
+                List<JsonElement> entriesToApply = new ArrayList<>();
+                if (v.isJsonArray()) {
+                    v.getAsJsonArray().forEach(entriesToApply::add);
                 } else {
-                    warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
-                            + " -> " + model);
+                    entriesToApply.add(v);
+                }
+                for (JsonElement ve : entriesToApply) {
+                    JsonObject entry = ve.getAsJsonObject();
+                    String model = entry.get("model").getAsString();
+                    int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
+                    int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                    boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
+                    String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
+                    if (ref != null) {
+                        parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
+                    } else {
+                        warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
+                                + " -> " + model);
+                    }
                 }
             }
             return parts;
@@ -565,18 +576,25 @@ public final class GalleryPack {
                     continue;
                 }
                 JsonElement apply = part.get("apply");
-                JsonObject entry = apply.isJsonArray()
-                        ? apply.getAsJsonArray().get(0).getAsJsonObject() : apply.getAsJsonObject();
-                String model = entry.get("model").getAsString();
-                int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
-                int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
-                boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
-                String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
-                if (ref != null) {
-                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
+                List<JsonElement> applyList = new ArrayList<>();
+                if (apply.isJsonArray()) {
+                    apply.getAsJsonArray().forEach(applyList::add);
+                } else {
+                    applyList.add(apply);
                 }
-                // a missing multipart part model: recorded, the composite
-                // synthesizes from what resolved (honest partial render)
+                for (JsonElement apEl : applyList) {
+                    JsonObject entry = apEl.getAsJsonObject();
+                    String model = entry.get("model").getAsString();
+                    int x = entry.has("x") ? entry.get("x").getAsInt() : 0;
+                    int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
+                    boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
+                    String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
+                    if (ref != null) {
+                        parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
+                    }
+                    // a missing multipart part model: recorded, the composite
+                    // synthesizes from what resolved (honest partial render)
+                }
             }
             if (!matchedPost && matchedArms == 1 && postCase != null) {
                 // inject the blockstate's own post case (its model + its
