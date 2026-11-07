@@ -1570,12 +1570,22 @@ public final class GalleryPack {
         bakeFaceTiles(elements, textures, jars, entries, warnings);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
-        wrapper.addProperty("render_type", "minecraft:cutout");
         // 14-bv: the cutout render type — the composites inherit the block/block
         // SOLID layer where the transparent PNG pixels render their RGB (the
         // framed-glass panes, the window glass, the scaffold and DT-leaf holes
         // all measured BLACK panes at ae 60K-693K); the cutout discards the
-        // alpha<0.1 pixels and the see-through classes render the wall behind
+        // alpha<0.1 pixels and the see-through classes render the wall behind.
+        // 14-bz CHANNEL SPLIT (measured #230): the ITEM quads must ride the
+        // TRANSLUCENT sheet, not cutout — the truth's item pages render real
+        // items through the vanilla item sheet (alpha BLEND, soft pixels mix
+        // with the backdrop), while a cutout composite BINARY-discards the
+        // faint texels and every soft-alpha item fell off the gate the moment
+        // the 14-by tile alpha landed (create:experience_block 63K,
+        // experience_nugget 65K — green on the #229 opaque-black tiles by
+        // accident: the dark wall made the black-mix look like the blend).
+        // The block channel keeps cutout: the truth renders its blocks on the
+        // chunk cutout layer (binary), the alpha=0 holes discard on BOTH legs.
+        wrapper.addProperty("render_type", block ? "minecraft:cutout" : "minecraft:translucent");
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());
