@@ -204,6 +204,7 @@ public final class LiveMenus {
         }
         blocks.sort(java.util.Comparator.comparing(ResourceLocation::toString));
         int blockMenus = 0;
+        java.util.List<ResourceLocation> openedBlocks = new java.util.ArrayList<>();
         int blockThrew = 0;
         for (int i = 0; i < blocks.size(); i++) {
             ResourceLocation id = blocks.get(i);
@@ -220,6 +221,7 @@ public final class LiveMenus {
                     end(uuid);
                 } else {
                     blockMenus++;
+                    openedBlocks.add(id);
                     kinds.add(String.valueOf(menuType(menu)));
                     LOG.info("[cimlive] selftest block {} opens {}", id, exercise(player, menu, uuid));
                 }
@@ -232,6 +234,7 @@ public final class LiveMenus {
         }
         level().clearBlocks();
         LOG.info("[cimlive] selftest blocks: blocks={} menus={} threw={}", blocks.size(), blockMenus, blockThrew);
+        pressButtons(opened, openedBlocks);
         LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
         LOG.info("[cimlive] selftest kinds {}", kinds);
         LOG.info("[cimlive] selftest ok");
@@ -274,6 +277,146 @@ public final class LiveMenus {
         }
         return type + " (" + menu.slots.size() + " slots, " + own + " own); move: " + move + "; close sent "
                 + (said.length() == 0 ? "nothing" : said) + "; inventory " + inventoryLine(player);
+    }
+
+    /**
+     * Every scanner-proven button of every menu that opened: a fresh menu, the button's own
+     * payload built and handed to the mod's handler, then what the mod changed (the held
+     * item's data for item menus, the block entity's data for block menus).
+     */
+    private static void pressButtons(java.util.List<ResourceLocation> items, java.util.List<ResourceLocation> blocks) {
+        String file = System.getenv("CIM_LIVE_BUTTONS");
+        if (file == null || file.isBlank()) {
+            return;
+        }
+        java.util.List<String[]> buttons = new java.util.ArrayList<>();
+        try {
+            for (String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of(file), StandardCharsets.UTF_8)) {
+                String[] p = line.split("\t", -1);
+                if (p.length >= 6) {
+                    buttons.add(p);
+                }
+            }
+        } catch (java.io.IOException e) {
+            LOG.info("[cimlive] selftest buttons: cannot read {}: {}", file, e.toString());
+            return;
+        }
+        int pressed = 0;
+        int handled = 0;
+        for (ResourceLocation id : items) {
+            for (String[] b : forMenuOf(buttons, () -> {
+                SessionServerPlayer probe = session(UUID.randomUUID(), "probe");
+                AbstractContainerMenu m = useHeld(probe, new ItemStack(BuiltInRegistries.ITEM.get(id)));
+                String c = m == null ? null : m.getClass().getName();
+                end(probe.getUUID());
+                return c;
+            })) {
+                pressed++;
+                UUID uuid = UUID.nameUUIDFromBytes(("cimlive-button-" + id + b[2] + b[4]).getBytes(StandardCharsets.UTF_8));
+                String held = LiveProtocol.encode(new ItemStack(BuiltInRegistries.ITEM.get(id)));
+                LiveProtocol.call("open-item\t" + uuid + "\tcimlive\ninv\t0\t" + held);
+                String answer = LiveProtocol.call(buttonCommand(uuid, b));
+                String result = firstLine(answer);
+                if (result.startsWith("pressed handled")) {
+                    handled++;
+                }
+                String closed = LiveProtocol.call("close\t" + uuid);
+                String after = "-";
+                for (String line : closed.split("\n")) {
+                    if (line.startsWith("inv\t0\t")) {
+                        after = fingerprint(line.substring(6));
+                    }
+                }
+                LOG.info("[cimlive] selftest button item {} #{} '{}' {}: {} | held after: {}", id, b[2], b[3],
+                        simple(b[4]), result, after);
+            }
+        }
+        for (int i = 0; i < blocks.size(); i++) {
+            ResourceLocation id = blocks.get(i);
+            net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(i * 4, 80, 8);
+            java.util.function.Supplier<String> menuClass = () -> {
+                level().setBlock(pos, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
+                SessionServerPlayer probe = session(UUID.randomUUID(), "probe");
+                AbstractContainerMenu m = clickBlock(probe, pos);
+                String c = m == null ? null : m.getClass().getName();
+                end(probe.getUUID());
+                return c;
+            };
+            for (String[] b : forMenuOf(buttons, menuClass)) {
+                pressed++;
+                UUID uuid = UUID.nameUUIDFromBytes(("cimlive-bbutton-" + id + b[2] + b[4]).getBytes(StandardCharsets.UTF_8));
+                level().setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                level().setBlock(pos, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
+                SessionServerPlayer player = session(uuid, "cimlive");
+                player.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 2.5);
+                String result;
+                try {
+                    clickBlock(player, pos);
+                    String answer = LiveProtocol.call(buttonCommand(uuid, b));
+                    result = firstLine(answer);
+                } catch (Throwable t) {
+                    result = "threw " + t.getClass().getSimpleName();
+                }
+                if (result.startsWith("pressed handled")) {
+                    handled++;
+                }
+                LiveProtocol.call("close\t" + uuid);
+                net.minecraft.world.level.block.entity.BlockEntity be = level().getBlockEntity(pos);
+                String after = be == null ? "-" : fingerprint(be.saveWithoutMetadata(level().registryAccess()).toString());
+                LOG.info("[cimlive] selftest button block {} #{} '{}' {}: {} | block entity after: {}", id, b[2], b[3],
+                        simple(b[4]), result, after);
+            }
+        }
+        level().clearBlocks();
+        LOG.info("[cimlive] selftest buttons: proven={} pressed={} handled={}", buttons.size(), pressed, handled);
+    }
+
+    /** The buttons whose screen belongs to the menu class the opener produces (or a superclass of it). */
+    private static java.util.List<String[]> forMenuOf(java.util.List<String[]> buttons,
+                                                     java.util.function.Supplier<String> opener) {
+        String cls;
+        try {
+            cls = opener.get();
+        } catch (Throwable t) {
+            return java.util.List.of();
+        }
+        if (cls == null) {
+            return java.util.List.of();
+        }
+        java.util.Set<String> chain = new java.util.HashSet<>();
+        try {
+            for (Class<?> c = Class.forName(cls, false, LiveMenus.class.getClassLoader()); c != null; c = c.getSuperclass()) {
+                chain.add(c.getName().replace('.', '/'));
+            }
+        } catch (Throwable t) {
+            chain.add(cls.replace('.', '/'));
+        }
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        for (String[] b : buttons) {
+            if (chain.contains(b[0])) {
+                out.add(b);
+            }
+        }
+        return out;
+    }
+
+    private static String buttonCommand(UUID uuid, String[] b) {
+        StringBuilder cmd = new StringBuilder("button\t").append(uuid).append('\t').append(b[4]).append('\t').append(b[5]);
+        for (int k = 6; k < b.length; k++) {
+            if (!b[k].isEmpty()) {
+                cmd.append('\t').append(b[k]);
+            }
+        }
+        return cmd.toString();
+    }
+
+    private static String simple(String internal) {
+        return internal.substring(internal.lastIndexOf('/') + 1);
+    }
+
+    /** A short, stack-independent stamp of some data: its length and hash. */
+    private static String fingerprint(String data) {
+        return data.length() + "#" + Integer.toHexString(data.hashCode());
     }
 
     private static String firstLine(String state) {

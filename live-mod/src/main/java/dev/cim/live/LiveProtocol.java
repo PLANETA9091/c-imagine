@@ -61,6 +61,13 @@ public final class LiveProtocol {
                             ClickType.valueOf(head[4]));
                     yield state(player, player.opened());
                 }
+                case "button" -> {
+                    // button TAB uuid TAB payloadClass TAB constructorDesc TAB arg...
+                    SessionServerPlayer player = LiveMenus.session(id, "cimlive");
+                    java.util.List<String> args = new java.util.ArrayList<>(java.util.Arrays.asList(head).subList(4, head.length));
+                    String pressed = LivePayloads.press(player, head[2], head[3], args);
+                    yield "pressed\t" + pressed + "\n" + state(player, player.opened());
+                }
                 case "close" -> {
                     SessionServerPlayer player = LiveMenus.session(id, "cimlive");
                     player.closeContainer();
