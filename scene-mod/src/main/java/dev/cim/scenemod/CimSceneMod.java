@@ -1904,6 +1904,8 @@ public final class CimSceneMod {
         return both;
     }
 
+    private static int SETTLE_LOGGED;
+
     /** Where a built structure is clicked; set by guiBuildCube. */
     private static BlockPos guiCubeClick;
     /** Every block a structure put down, so the rig can be cleared of it. */
@@ -1919,6 +1921,11 @@ public final class CimSceneMod {
      * formed before the click, with no knowledge of any mod.
      */
     private static void guiBuildCube(ServerLevel level, ServerPlayer player, BlockPos rig, String plain) {
+        guiBuildCube(level, player, rig, plain, true);
+    }
+
+    private static void guiBuildCube(ServerLevel level, ServerPlayer player, BlockPos rig, String plain,
+                                     boolean tickNow) {
         int n = Integer.parseInt(plain.substring("cube".length(), plain.indexOf(':')));
         BlockState state = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(plain.substring(plain.indexOf(':') + 1)))
                 .defaultBlockState();
@@ -1944,6 +1951,9 @@ public final class CimSceneMod {
         }
         GUI_CUBE_BLOCKS.addAll(placed);
         guiCubeClick = rig.above(half);
+        if (!tickNow) {
+            return;   // the level ticks it for real: onLoad and the mod's own structure pass
+        }
         // A block entity's onLoad (where a mod joins it to its structure) runs at the start of
         // the next level tick; the probe clicks in this one, so the load happens here.
         for (BlockPos p : placed) {
@@ -2236,7 +2246,7 @@ public final class CimSceneMod {
         for (int i = 0; i < cubes.size(); i++) {
             probe.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
             try {
-                guiBuildCube(level, probe, rigs.get(i), cubes.get(i));
+                guiBuildCube(level, probe, rigs.get(i), cubes.get(i), false);
             } catch (Throwable t) {
                 LOGGER.info("[cimscene] gallery-gui settle build {} threw {}", cubes.get(i), t.toString());
             }
@@ -2260,6 +2270,13 @@ public final class CimSceneMod {
                     guiAct(level, one, rigs.get(i), cubes.get(i));
                 } catch (Throwable t) {
                     LOGGER.info("[cimscene] gallery-gui settle click {} threw {}", cubes.get(i), t.toString());
+                }
+                if (one.seen == null && cubes.get(i).startsWith("cube3:")) {
+                    BlockPos at = clicks.get(i);
+                    net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(at);
+                    LOGGER.info("[cimscene] gallery-gui settle {} at {} block={} be={} ticks={}", cubes.get(i), at.toShortString(),
+                            BuiltInRegistries.BLOCK.getKey(level.getBlockState(at).getBlock()),
+                            be == null ? null : be.getClass().getSimpleName(), level.getServer().getTickCount());
                 }
                 if (one.seen != null && wanted.contains(one.seen)) {
                     openers.computeIfAbsent(one.seen, k -> new ArrayList<>()).add(one.candidate);
