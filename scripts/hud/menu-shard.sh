@@ -30,7 +30,7 @@ stamp truth boot
 cp -r layer-srv srv-wall; mkdir -p srv-wall/mods srv-wall/c-imagine/screens
 cp scene-mod/build/libs/cimscene-1.0.0.jar mods-ladder/*.jar srv-wall/mods/
 echo eula=true > srv-wall/eula.txt
-printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\n" > srv-wall/server.properties
+printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nserver-port=$GAME_PORT\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\n" > srv-wall/server.properties
 ( cd srv-wall && setsid bash -c "$J21/bin/java -Xmx2G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 mkdir -p truth-client/game/mods truth-client/game/config
 find truth-client/game/mods -maxdepth 1 -type f -name '*.jar' -delete
@@ -169,7 +169,7 @@ SHA1=$(sha1sum pack.zip | cut -d' ' -f1); echo "$SHA1" > srv-ours/c-imagine/f2v/
 cp srv-wall/c-imagine/f2v/*.tsv scripts/f2v/visual-blocks.tsv srv-ours/c-imagine/f2v/
 cp srv-wall/c-imagine/scenes/gallery-gui-*.tsv srv-ours/c-imagine/scenes/
 echo eula=true > srv-ours/eula.txt
-printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft\\\\:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\nresource-pack=http\\\\://127.0.0.1\\\\:$PACK_PORT/cim-f2v-pack.zip\nresource-pack-sha1=%s\n" "$SHA1" > srv-ours/server.properties
+printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft\\\\:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nserver-port=$GAME_PORT\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\nresource-pack=http\\\\://127.0.0.1\\\\:$PACK_PORT/cim-f2v-pack.zip\nresource-pack-sha1=%s\n" "$SHA1" > srv-ours/server.properties
 [ -f srv-ours/paper.jar ] || { URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['downloads']['server:default']['url'])"); curl -sL --max-time 200 -o srv-ours/paper.jar "$URL"; }
 ( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client
