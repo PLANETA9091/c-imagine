@@ -77,10 +77,11 @@ import net.minecraft.nbt.NbtIo;
  * <p>Writes, beside the manifests: {@code gallery-<ns>-p<p>.ctx.tsv} rows
  * {@code x y z q<hash>}; {@code quads/<hash>.tsv}, one quad per line (sprite,
  * shade, tint, x y z u v per vertex, then r g b per vertex; model units,
- * sprite-local 0..16 UVs, colour = ambient occlusion x tint; a sprite prefixed
+ * sprite-local 0..16 UVs, colour = native diffuse x ambient occlusion x tint x baked color; a sprite prefixed
  * with @ is an exact PNG resource such as @mekanism:render/jetpack.png;
  * ~hash names a decoded custom-atlas sprite under quads/textures/hash.png;
- * optional four vertex-alpha multipliers follow the twelve RGB fields);
+ * optional four vertex-alpha multipliers follow the twelve RGB fields, and
+ * native liquid rows append their registered homogeneous chunk material);
  * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
  */
 final class QuadDump {
@@ -332,13 +333,8 @@ final class QuadDump {
         ItemCapture capture = new ItemCapture(sprites, liquidCaptureOrigin(pos));
         VertexConsumer consumer = capture.bufferFor("liquid",
                 "texture[Optional[minecraft:textures/atlas/blocks.png]]", false);
-        page.nativeFluidLighting = true;
-        try {
-            mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
-            capture.flush();
-        } finally {
-            page.nativeFluidLighting = false;
-        }
+        mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
+        capture.flush();
         if (capture.foreign != 0 || capture.out.length() == 0) {
             throw new IllegalStateException("native liquid renderer produced missing/unbound geometry");
         }
@@ -492,7 +488,9 @@ final class QuadDump {
             uv[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
             bakedColor(rgb[i], v[o + 3], brightness[i], r, g, b, a, readColor);
         }
-        writeQuad(sb, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), pos, uv, rgb);
+        // Chunk shaders consume the renderer's already-shaded RGB directly.
+        // Replaying q.isShade here would add the item shader's unrelated light.
+        writeQuad(sb, q.getSprite(), sprites, false, q.getTintIndex(), pos, uv, rgb);
     }
 
     /** Match the native BLOCK byte layout and VertexConsumer's final byte quantization. */
@@ -781,10 +779,10 @@ final class QuadDump {
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
                 if (texture != null) {
-                    appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
+                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c);
                 } else {
                     writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
-                            q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
+                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
                 }
             }
 
@@ -869,7 +867,6 @@ final class QuadDump {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
         final Map<BlockPos, String> beTags = new HashMap<>();
         boolean requireSnapshot;
-        boolean nativeFluidLighting;
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
@@ -922,10 +919,14 @@ final class QuadDump {
 
         @Override
         public float getShade(Direction side, boolean shade) {
-            if (nativeFluidLighting) {
-                return Minecraft.getInstance().level.getShade(side, shade);
-            }
-            return 1; // the ours client applies its own directional light; only AO + tint are baked
+            return Minecraft.getInstance().level.getShade(side, shade);
+        }
+
+        @Override
+        public float getShade(float normalX, float normalY, float normalZ, boolean shade) {
+            // NeoForge's lighter supports non-axis normals; the real level
+            // applies its dimension's shading rather than nearest-face rounding.
+            return Minecraft.getInstance().level.getShade(normalX, normalY, normalZ, shade);
         }
 
         @Override
