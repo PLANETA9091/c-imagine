@@ -194,7 +194,7 @@ ABSENCE_NOTES = {
     "entity-dyn": ("dissolved", "no-instance", "failed", "client-crash-banned"),
     "entity-large": ("dissolved", "no-instance", "failed", "client-crash-banned"),
     "item": ("summon-failed",),
-    "particle": ("no-simple-options",),
+    "particle": ("no-simple-options", "null-path-dead-id"),
     "fluid": ("no-channel", "no-truth-surface"),
     "sound": ("play-failed",),
     "gui": ("open-failed", "no-viewer"),

@@ -335,6 +335,20 @@ def main():
         print("N particle absence RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
+    # A literal resource path "null" does not justify removing a registered type.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-particle-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tparticle\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tcreate:null\t1\tnull-path-dead-id\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "create:null(null-path-dead-id)" in r.stdout
+        print("N2 name-based particle exclusion RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
     # O: fluid no-channel row -> RED, named (12-as)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
