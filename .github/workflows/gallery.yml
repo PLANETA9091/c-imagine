@@ -189,7 +189,7 @@ env:
   # mapped preview; on = the sound join's verdict is the mapped-identity
   # result (--gate-mapped in sound-diff.py). Flip after mapped-identity
   # measured stable on two consecutive full runs.
-  SOUND_FLIP: "off"
+  SOUND_FLIP: "on"
 
 jobs:
   # ---------------------------------------------------------------- seed --
@@ -2845,7 +2845,12 @@ jobs:
                 # impossible by construction: truth records modded ids,
                 # ours records the post-rewrite vanilla ids). The sound
                 # flip law: flip after mapped-identity measured stable on
-                # two consecutive runs; SOUND_FLIP=on is the single switch.
+                # two consecutive runs; SOUND_FLIP=on is the single switch. FLIPPED 2026-11-07:
+                # the last two full runs measured mapped-identity PERFECT in all six
+                # namespaces (#214, #226 — position_hits == expected, order_exact on
+                # every diag; the #226 preview: ae2 1/1, bop 11/11, combat_roll 2/2,
+                # create 77/77, dynamictrees 11/11, mekanism 46/46) — the report-only
+                # preview had zero disagreements to show, the gate rides it now.
                 GATE_FLAG=""
                 [ "$SOUND_FLIP" = "on" ] && GATE_FLAG="--gate-mapped"
                 python3 scripts/cimscene/sound-diff.py --truth "$TL" --ours "$OL" \
