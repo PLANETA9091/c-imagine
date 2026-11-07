@@ -2354,11 +2354,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      *   <li>{@code block} — vanilla-namespace rows are placed as REAL liquid
      *       states (Bukkit BlockData) inside their glass cases — the vanilla
      *       client renders them through the same liquid surface the truth
-     *       client uses, so vanilla fluids can be GREEN; MODDED rows split:
-     *       a SOURCE (level=0) rides the 14-cd fluid-cube rig (the stock
-     *       client cannot draw the modded liquid state); a FALLING level
-     *       decays on the truth within the shot window (the #231 crops:
-     *       case-only) — ours keeps the case (caseonly);</li>
+     *       client uses; modded rows replay the settled native liquid capture
+     *       with its registered material, geometry and vertex RGBA. A default
+     *       falling state that settled to vanilla air replays that exact state;</li>
      *   <li>{@code mod-tank} — the per-cell native capture includes the settled
      *       tank block and its actual block-entity-rendered contents;</li>
      *   <li>{@code texture-model} — the fluid id resolves through the pack's
@@ -2461,13 +2459,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 // THE MULTI-SURFACE LADDER's ours side (round 2 + 14-cd):
                 // block rows replay as real vanilla liquid states (unchanged);
-                // MODDED block rows split by the placed level: a SOURCE
-                // (level=0) rides the fluid-cube rig (the stock client cannot
-                // draw the modded liquid state — the 14/16 box replays the
-                // truth's settled surface); a FALLING level decays to an
-                // empty case on the truth within the shot window (the #231
-                // crops measured the flowing cells case-only) — ours keeps
-                // the same case and nothing else (caseonly); mod-tank rows
+                // Modded block rows replay their exact native liquid mesh;
+                // a missing capture remains nochannel. The settled state may
+                // genuinely be vanilla air, which replays as air. Mod-tank rows
                 // replay the native captured tank and its filled contents;
                 // texture-model rows
                 // keep the flat fluid-texture rig. Everything else is
@@ -2478,23 +2472,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 if (channel.equals("block")) {
                     if (extra.startsWith("minecraft:")) {
                         tankState = extra;
-                    } else if (extra.contains("level=0")) {
-                        rigCmd = f2v != null ? f2v.fluidCubes().get(row[4]) : null;
-                        if (rigCmd == null) {
-                            // no cube row (an unknown fluid id or a stale
-                            // pack): the case stays, the cell is named
-                            caseOnly = true;
-                            log().warning(LOG_PREFIX + "f2v gallery-fluid: no pack fluid-cube row for "
-                                    + row[4] + " — cell " + row[1] + "," + row[2] + ","
-                                    + row[3] + " case-only");
-                        }
                     } else {
-                        // a falling legacy state: the truth's fluid decays
-                        // (nothing above feeds it) — the case-only surface
-                        caseOnly = true;
-                        log().info(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
-                                + " falling (" + extra + ") — cell " + row[1] + ","
-                                + row[2] + "," + row[3] + " case-only (the truth decays)");
+                        // Replay the actual settled native liquid mesh, including
+                        // height, flow UVs, tint/alpha and translucent material.
+                        var liquid = capturedTanks.get(row[1] + "," + row[2] + "," + row[3]);
+                        if (liquid == null) {
+                            nochannel++;
+                            log().warning(LOG_PREFIX + "f2v gallery-fluid: no native liquid capture for "
+                                    + row[4] + " at " + row[1] + "," + row[2] + "," + row[3]);
+                            continue;
+                        }
+                        rigCmd = liquid.cmd();
                     }
                 } else if (channel.equals("mod-tank")) {
                     // The captured model includes the real settled tank AND its BER contents.
@@ -2543,7 +2531,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         w.spawn(at, org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                            if (channel.equals("mod-tank")) {
+                            if (channel.equals("mod-tank") || channel.equals("block")) {
                                 e.setTransformation(new org.bukkit.util.Transformation(
                                         new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
                                         new org.joml.Quaternionf().rotationY((float) Math.PI),
@@ -2551,7 +2539,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                         new org.joml.Quaternionf()));
                             }
                             e.setBrightness(new org.bukkit.entity.Display.Brightness(
-                                    channel.equals("mod-tank") ? 0 : 15, 15));
+                                    (channel.equals("mod-tank") || channel.equals("block")) ? 0 : 15, 15));
                         });
                         log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
                                 + " cell " + row[1] + "," + row[2] + "," + row[3]

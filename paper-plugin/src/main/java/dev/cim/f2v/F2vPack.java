@@ -3248,6 +3248,28 @@ public final class F2vPack {
                 expect(failures, GalleryPack.itemNode(ref) == null,
                         "unlit: repeated builds cannot inherit previous item layers");
             }
+            // Native liquid chunk materials and alpha survive the unlit
+            // child split; legacy captures retain their existing material.
+            for (String material : List.of("solid", "cutout", "translucent")) {
+                GalleryPack.resetModelScales();
+                String nativeFace = face.strip() + "\t1\t1\t1".repeat(4)
+                        + "\t0.3".repeat(4) + "\t" + material + "\n";
+                Files.writeString(quads.resolve("fixture.tsv"), nativeFace);
+                entries.clear();
+                rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:fluid#qfixture")),
+                        entries, warnings, Map.of(), new ArrayList<>());
+                expect(failures, rows.size() == 1, "native liquid: captured row resolves " + material);
+                int models = 0;
+                for (var entry : entries.entrySet()) {
+                    if (!entry.getKey().startsWith("assets/c-imagine/models/gallery/")) continue;
+                    JsonObject model = JsonParser.parseString(new String(entry.getValue(), StandardCharsets.UTF_8))
+                            .getAsJsonObject();
+                    expect(failures, model.get("render_type").getAsString().equals("minecraft:" + material),
+                            "native liquid: material retained through child model " + material);
+                    models++;
+                }
+                expect(failures, models >= 2, "native liquid: unlit child checked " + material);
+            }
             // A non-planar first quad splits in two. Its output count must
             // never shift the second quad's explicit shade:false metadata.
             String nonplanar = face.replace("\t0\t-1", "\t1\t-1")

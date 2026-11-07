@@ -197,13 +197,15 @@ final class QuadDump {
             Page page = new Page();
             page.requireSnapshot = fluidPage;
             Map<BlockPos, String> names = new HashMap<>();
+            Map<BlockPos, BlockState> targets = new HashMap<>();
+            java.util.Set<BlockPos> liquids = new java.util.HashSet<>();
             for (String line : lines.subList(1, lines.size())) {
                 String[] c = line.split("\t");
                 if (c.length < 5 || !c[0].equals("cell") || c[1].equals("x")) {
                     continue;
                 }
                 if (fluidPage) {
-                    if (c.length < 8 || !c[6].equals("mod-tank")) continue;
+                    if (c.length < 8 || !(c[6].equals("mod-tank") || c[6].equals("block"))) continue;
                     c[4] = c[7].split("\\|", 2)[0];
                 }
                 BlockPos pos = new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]), Integer.parseInt(c[3]));
@@ -214,6 +216,10 @@ final class QuadDump {
                                     c[4].toLowerCase(Locale.ROOT), false)
                             .blockState());
                     names.put(pos, c[4]);
+                    targets.put(pos, page.cells.get(pos));
+                    if (fluidPage && c[6].equals("block")) {
+                        liquids.add(pos);
+                    }
                 } catch (Exception bad) {
                     failed++;
                     LOGGER.info("[cimscene] quad dump skip {}: {}", c[4], bad.toString());
@@ -250,20 +256,32 @@ final class QuadDump {
                 }
             }
             page.beTags.putAll(beTags);
-            for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
+            // Rebuild the same sealed six-face cases as CimSceneMod; support
+            // blocks are context, not additional capture targets.
+            for (BlockPos pos : liquids) {
+                for (Direction face : Direction.values()) {
+                    BlockPos shell = pos.relative(face);
+                    if (shell.getY() >= FLOOR_Y + 1) {
+                        page.cells.putIfAbsent(shell, Blocks.GLASS.defaultBlockState());
+                    }
+                }
+            }
+            for (Map.Entry<BlockPos, BlockState> e : targets.entrySet()) {
                 cells++;
-                if (fluidPage && !page.beTags.containsKey(e.getKey())) {
+                if (fluidPage && !liquids.contains(e.getKey()) && !page.beTags.containsKey(e.getKey())) {
                     failed++;
                     LOGGER.info("[cimscene] quad dump fluid tank missing real BE snapshot {} at {}",
                             names.get(e.getKey()), e.getKey());
                     continue;
                 }
                 try {
-                    if (fluidPage && page.getBlockEntity(e.getKey()) == null) {
+                    if (fluidPage && !liquids.contains(e.getKey()) && page.getBlockEntity(e.getKey()) == null) {
                         throw new IllegalStateException("native tank BE unavailable");
                     }
                     long priorBerFailures = berFailed;
-                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites);
+                    String mesh = liquids.contains(e.getKey())
+                            ? liquidMeshFor(page, e.getKey(), e.getValue(), sprites)
+                            : meshFor(page, e.getKey(), e.getValue(), sprites);
                     if (fluidPage && berFailed != priorBerFailures) {
                         throw new IllegalStateException("native tank renderer failed");
                     }
@@ -297,6 +315,41 @@ final class QuadDump {
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
                         + "block_entities drawn={} failed={} no_level={} not_rendered={}",
                 cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel, berNotRendered);
+    }
+
+    /** Native liquid vertices use chunk-local coordinates on each axis. */
+    static Vec3 liquidCaptureOrigin(BlockPos pos) {
+        return new Vec3(-(pos.getX() & 15), -(pos.getY() & 15), -(pos.getZ() & 15));
+    }
+
+    private static String liquidMeshFor(Page page, BlockPos pos, BlockState state,
+                                        List<TextureAtlasSprite> sprites) {
+        FluidState fluid = state.getFluidState();
+        // A flowing registry entry may genuinely settle to air in the sealed
+        // rig. The settled manifest replays that exact vanilla air state.
+        if (fluid.isEmpty()) return null;
+        Minecraft mc = Minecraft.getInstance();
+        ItemCapture capture = new ItemCapture(sprites, liquidCaptureOrigin(pos));
+        VertexConsumer consumer = capture.bufferFor("liquid",
+                "texture[Optional[minecraft:textures/atlas/blocks.png]]", false);
+        page.nativeFluidLighting = true;
+        try {
+            mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
+            capture.flush();
+        } finally {
+            page.nativeFluidLighting = false;
+        }
+        if (capture.foreign != 0 || capture.out.length() == 0) {
+            throw new IllegalStateException("native liquid renderer produced missing/unbound geometry");
+        }
+        // Preserve the real registered chunk material, not a guessed alpha mode.
+        RenderType layer = net.minecraft.client.renderer.ItemBlockRenderTypes.getRenderLayer(fluid);
+        String material;
+        if (layer == RenderType.translucent()) material = "translucent";
+        else if (layer == RenderType.solid()) material = "solid";
+        else if (layer == RenderType.cutout()) material = "cutout";
+        else throw new IllegalStateException("unsupported native liquid layer: " + layer);
+        return capture.out.toString().replace("\n", "\t" + material + "\n");
     }
 
     static void setupCaptureLighting(boolean constantAmbientLight) {
@@ -642,12 +695,16 @@ final class QuadDump {
     private static final class ItemCapture implements MultiBufferSource {
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
-        final float origin;
+        final Vec3 origin;
         long foreign;
         private final Map<Object, RecordingBuffer> buffers = new java.util.LinkedHashMap<>();
         private final VertexConsumer discard = new Discard();
 
         ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
+            this(sprites, new Vec3(origin, origin, origin));
+        }
+
+        ItemCapture(List<TextureAtlasSprite> sprites, Vec3 origin) {
             this.sprites = sprites;
             this.origin = origin;
         }
@@ -716,9 +773,9 @@ final class QuadDump {
                     int o = i * STRIDE;
                     pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
                             Float.intBitsToFloat(v[o + 2]), at);
-                    p[i][0] = at.x + origin;
-                    p[i][1] = at.y + origin;
-                    p[i][2] = at.z + origin;
+                    p[i][0] = at.x + (float) origin.x;
+                    p[i][1] = at.y + (float) origin.y;
+                    p[i][2] = at.z + (float) origin.z;
                     t[i][0] = Float.intBitsToFloat(v[o + UV]);
                     t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
@@ -735,9 +792,9 @@ final class QuadDump {
             public VertexConsumer addVertex(float x, float y, float z) {
                 flush();
                 n++;
-                pos[n][0] = x + origin;
-                pos[n][1] = y + origin;
-                pos[n][2] = z + origin;
+                pos[n][0] = x + (float) origin.x;
+                pos[n][1] = y + (float) origin.y;
+                pos[n][2] = z + (float) origin.z;
                 rgb[n][0] = 1;
                 rgb[n][1] = 1;
                 rgb[n][2] = 1;
@@ -812,6 +869,7 @@ final class QuadDump {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
         final Map<BlockPos, String> beTags = new HashMap<>();
         boolean requireSnapshot;
+        boolean nativeFluidLighting;
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
@@ -864,6 +922,9 @@ final class QuadDump {
 
         @Override
         public float getShade(Direction side, boolean shade) {
+            if (nativeFluidLighting) {
+                return Minecraft.getInstance().level.getShade(side, shade);
+            }
             return 1; // the ours client applies its own directional light; only AO + tint are baked
         }
 

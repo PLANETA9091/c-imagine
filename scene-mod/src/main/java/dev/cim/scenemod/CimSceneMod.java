@@ -1541,6 +1541,7 @@ public final class CimSceneMod {
 
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n");
         int placed = 0, failed = 0;
+        int settleTicks = BLOCK_SETTLE_TICKS;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % FLUID_COLS, row = i / FLUID_COLS;
@@ -1554,6 +1555,9 @@ public final class CimSceneMod {
                 BlockState legacy = fs.createLegacyBlock();
                 // (a) the placeable liquid in the sealed case
                 if (!legacy.isAir()) {
+                    // Let a falling default state execute its actual scheduled
+                    // fluid tick before naming the captured settled surface.
+                    settleTicks = Math.max(settleTicks, Math.multiplyExact(2, fluid.getTickDelay(level)));
                     buildFluidShell(level, x, y, z);
                     level.setBlock(new BlockPos(x, y, z), legacy, 3);
                     channel = "block";
@@ -1633,11 +1637,19 @@ public final class CimSceneMod {
         final int filledCells = placed, failedCells = failed;
         // Snapshot real contents after native connectivity/client updates settle.
         // The done marker follows the files, so seed capture cannot race them.
-        runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> {
+        runAfterTicks(level.getServer(), settleTicks, () -> {
             StringBuilder settled = new StringBuilder();
             StringBuilder tags = new StringBuilder("cell\tx\ty\tz\tnbt\n");
             for (String line : tsv.toString().split("\n")) {
                 String[] row = line.split("\t", -1);
+                if (row.length >= 8 && row[0].equals("cell") && !row[1].equals("x")
+                        && row[6].equals("block")) {
+                    BlockPos pos = new BlockPos(Integer.parseInt(row[1]),
+                            Integer.parseInt(row[2]), Integer.parseInt(row[3]));
+                    BlockState now = level.getBlockState(pos);
+                    row[7] = stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()));
+                    line = String.join("\t", row);
+                }
                 if (row.length >= 8 && row[0].equals("cell") && row[6].equals("mod-tank")) {
                     BlockPos pos = new BlockPos(Integer.parseInt(row[1]),
                             Integer.parseInt(row[2]), Integer.parseInt(row[3]));

@@ -1795,6 +1795,7 @@ public final class GalleryPack {
         }
         List<ObjMesh.Face> faces = new ArrayList<>();
         List<int[]> flags = new ArrayList<>();
+        String material = null;
         Map<String, String> textures = new LinkedHashMap<>();
         Map<String, String> keyOf = new LinkedHashMap<>();
         int vertex = 0;
@@ -1803,6 +1804,15 @@ public final class GalleryPack {
             if (c.length < 23) {
                 continue;
             }
+            String faceMaterial = c.length >= 40 ? c[39]
+                    : (block ? "cutout" : "translucent");
+            if (!(faceMaterial.equals("solid") || faceMaterial.equals("cutout") || faceMaterial.equals("translucent"))) {
+                throw new IOException("gallery: unsupported captured material " + faceMaterial);
+            }
+            if (material != null && !material.equals(faceMaterial)) {
+                throw new IOException("gallery: mixed captured materials need separate model layers");
+            }
+            material = faceMaterial;
             String key = keyOf.get(c[0]);
             if (key == null) {
                 key = "q" + keyOf.size();
@@ -1913,7 +1923,7 @@ public final class GalleryPack {
         // accident: the dark wall made the black-mix look like the blend).
         // The block channel keeps cutout: the truth renders its blocks on the
         // chunk cutout layer (binary), the alpha=0 holes discard on BOTH legs.
-        wrapper.addProperty("render_type", block ? "minecraft:cutout" : "minecraft:translucent");
+        wrapper.addProperty("render_type", "minecraft:" + material);
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());

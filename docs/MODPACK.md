@@ -194,7 +194,15 @@ features function in the layer, visual diff within contract threshold.
   glass case, (b) the bucket item rig, (c) the mod's own `fluid_tank` block
   (placed AND its contents filled through NeoForge's BLOCK fluid
   capability — round 3b; zero create imports, the note records the
-  accepted amount). Settled tank BE data is saved beside the manifest;
+  accepted amount). Placeable liquid rows are re-read after at least two
+  native fluid tick delays, retaining genuinely settled air states. Their
+  native LiquidBlockRenderer capture uses the sealed-case neighbors,
+  per-axis chunk-origin normalization, native directional shade, fluid tint
+  including alpha, and the registered chunk material. The replay resolves
+  the exact captured mesh rather than an approximate fluid cube. The
+  optional 40th quad column names the homogeneous model material; legacy
+  23/35/39-column meshes retain their original defaults. Unsupported or
+  mixed explicit materials fail the pack build. Settled tank BE data is saved beside the manifest;
   native model/BER capture supplies a per-cell mesh including its contents,
   and ours resolves that exact mesh (a missing capture remains a failure).
   Pixel and coverage gates remain hard. (d) the

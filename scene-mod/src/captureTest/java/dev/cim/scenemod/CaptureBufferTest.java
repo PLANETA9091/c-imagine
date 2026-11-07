@@ -45,6 +45,21 @@ public final class CaptureBufferTest {
         if (field(type, "foreign").getLong(capture) != 2) {
             throw new AssertionError("both pending buffers were not flushed");
         }
+        // LiquidBlockRenderer emits independently chunk-relative x/y/z,
+        // including negative world coordinates. Exercise the real recorder.
+        var vectorCtor = type.getDeclaredConstructor(List.class, net.minecraft.world.phys.Vec3.class);
+        vectorCtor.setAccessible(true);
+        for (var pos : List.of(new net.minecraft.core.BlockPos(-5, -60, 9),
+                new net.minecraft.core.BlockPos(-1, -1, -1), new net.minecraft.core.BlockPos(16, 32, 0))) {
+            Object liquid = vectorCtor.newInstance(List.of(), QuadDump.liquidCaptureOrigin(pos));
+            var vertices = (VertexConsumer) getBuffer.invoke(liquid, new Object(), state, false);
+            vertices.addVertex((pos.getX() & 15) + .25f, (pos.getY() & 15) + .5f,
+                    (pos.getZ() & 15) + .75f);
+            float[][] normalized = (float[][]) field(vertices.getClass(), "pos").get(vertices);
+            if (!Arrays.equals(normalized[0], new float[]{.25f, .5f, .75f})) {
+                throw new AssertionError("liquid chunk-origin normalization failed: " + pos);
+            }
+        }
         checkNativeLighting();
         System.out.println("capture retained/interleaved buffer and native lighting tests: ALL OK");
     }
