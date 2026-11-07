@@ -228,10 +228,11 @@ final class QuadDump {
                     beTags.clear();
                 }
             }
+            page.beTags.putAll(beTags);
             for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
                 cells++;
                 try {
-                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites, beTags);
+                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites);
                     if (mesh == null) {
                         continue;
                     }
@@ -268,8 +269,7 @@ final class QuadDump {
      * ambient occlusion, its tint and offset, all captured at the one point
      * they reach the vertex buffer. Null when the renderer draws nothing.
      */
-    private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites,
-                                  Map<BlockPos, String> beTags) {
+    private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
         Minecraft mc = Minecraft.getInstance();
         BakedModel model = mc.getBlockRenderer().getBlockModel(state);
         ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
@@ -283,7 +283,7 @@ final class QuadDump {
                     random, seed, OverlayTexture.NO_OVERLAY, data, type);
         }
         if (state.hasBlockEntity()) {
-            appendBlockEntity(pos, state, sprites, capture.out, beTags);
+            appendBlockEntity(page, pos, state, sprites, capture.out);
         }
         return capture.out.length() == 0 ? null : capture.out.toString();
     }
@@ -298,37 +298,18 @@ final class QuadDump {
      * Mod code can fail here in any way; that costs this cell its renderer,
      * never the dump, and the final log line counts it.
      */
-    private static void appendBlockEntity(BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites,
-                                          StringBuilder out, Map<BlockPos, String> beTags) {
+    private static void appendBlockEntity(Page page, BlockPos pos, BlockState state,
+                                          List<TextureAtlasSprite> sprites, StringBuilder out) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             berNoLevel++;
             return;
         }
         try {
-            if (!(state.getBlock() instanceof EntityBlock block)) {
-                return;
-            }
-            BlockEntity be = block.newBlockEntity(pos, state);
+            // Static model data and the BER observe the same restored BE.
+            BlockEntity be = page.getBlockEntity(pos);
             if (be == null) {
                 return;
-            }
-            be.setLevel(mc.level);
-            // 14-bn: the wall's settled NBT — Speed/shifted/flow data land in
-            // the BE before its renderer runs. A failed load falls back to the
-            // fresh defaults for THIS cell (logged), never to a skipped cell.
-            String b64 = beTags == null ? null : beTags.get(pos);
-            if (b64 != null) {
-                try {
-                    // 1.21.1's NbtIo takes an NbtAccounter (the Provider overloads
-                    // came in 1.21.2); unlimitedHeap — the wall's own trusted dump
-                    be.loadWithComponents(NbtIo.readCompressed(
-                            new ByteArrayInputStream(Base64.getDecoder().decode(b64)),
-                            NbtAccounter.unlimitedHeap()), mc.level.registryAccess());
-                } catch (Throwable bad) {
-                    LOGGER.info("[cimscene] quad dump be nbt load skip {}: {}",
-                            state.getBlock(), bad.toString());
-                }
             }
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
@@ -694,6 +675,8 @@ final class QuadDump {
     /** A page's wall on its floor; the truth world holds nothing else near it. */
     private static final class Page implements BlockAndTintGetter {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
+        final Map<BlockPos, String> beTags = new HashMap<>();
+        final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
         public BlockState getBlockState(BlockPos pos) {
@@ -711,7 +694,35 @@ final class QuadDump {
 
         @Override
         public BlockEntity getBlockEntity(BlockPos pos) {
-            return null;
+            BlockEntity cached = blockEntities.get(pos);
+            if (cached != null) {
+                return cached;
+            }
+            Minecraft mc = Minecraft.getInstance();
+            BlockState state = cells.get(pos);
+            // Keep worldless static capture's original fallback. Joined
+            // capture supplies real BEs to model.getModelData as well as BERs.
+            if (mc.level == null || state == null || !(state.getBlock() instanceof EntityBlock block)) {
+                return null;
+            }
+            BlockEntity be = block.newBlockEntity(pos, state);
+            if (be == null) {
+                return null;
+            }
+            be.setLevel(mc.level);
+            blockEntities.put(pos.immutable(), be);
+            String b64 = beTags.get(pos);
+            if (b64 != null) {
+                try {
+                    be.loadWithComponents(NbtIo.readCompressed(
+                            new ByteArrayInputStream(Base64.getDecoder().decode(b64)),
+                            NbtAccounter.unlimitedHeap()), mc.level.registryAccess());
+                } catch (Throwable bad) {
+                    LOGGER.info("[cimscene] quad dump be nbt load skip {}: {}",
+                            state.getBlock(), bad.toString());
+                }
+            }
+            return be;
         }
 
         @Override
