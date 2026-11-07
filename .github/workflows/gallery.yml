@@ -2729,7 +2729,7 @@ jobs:
             SELF_T=""; SELF_O=""
             [ -f "truth-shots/gal-e$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$p-self.png"
             [ -f "ours-shots/ours-gal-e$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$p-self.png"
-            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" $SELF_T $SELF_O \
+            python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
               --manifest "$M" --out "gallery-report/join-e$p.json" \
               --diff-dir "gallery-report/diff-e$p" \
               --pitch 2 --gate 240000 || GATE=1
@@ -2750,7 +2750,7 @@ jobs:
               SELF_T=""; SELF_O=""
               [ -f "truth-shots/gal-e$SERIES$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$SERIES$p-self.png"
               [ -f "ours-shots/ours-gal-e$SERIES$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$SERIES$p-self.png"
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" $SELF_T $SELF_O \
+              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
                 --manifest "$M" --out "gallery-report/join-e-$SERIES-minecraft-p$p.json" \
                 --diff-dir "gallery-report/diff-e-$SERIES-minecraft-p$p" \
                 --pitch 2 --gate 240000 || GATE=1
@@ -2767,7 +2767,7 @@ jobs:
                 O="ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 if [ -f "$T" ] && [ -f "$O" ]; then
                   if [ "$SERIES" = mobs ]; then
-                    python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                    python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                       --manifest "$M" --out "gallery-report/join-e-$NS-$p.json" \
                       --diff-dir "gallery-report/diff-e-$NS-$p" \
                       --pitch 2 --gate 240000 || GATE=1
@@ -2793,7 +2793,7 @@ jobs:
               O="ours-shots/ours-gal-i-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth item shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours item shot p$p"; GATE=1; continue; }
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-item-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-item-$NS-p$p" || GATE=1
             done
@@ -2812,7 +2812,7 @@ jobs:
               fi
             done
           done
-          echo "=== FLUID pages: diagnostic join, no missing-shot excuses (dyn class, fixed 1s shot window, pitch-2 cases) ==="
+          echo "=== FLUID pages: gated join, no missing-shot excuses (dyn class, fixed 1s shot window, pitch-2 cases) ==="
           for NS in $LADDER_NS; do
             for M in $(find truth-meta -name "gallery-fluid-$NS-p*.tsv" | sort -V); do
               B=$(basename "$M" .tsv); p=${B##*-p}
@@ -2827,7 +2827,7 @@ jobs:
               ST=""; SO=""
               [ -f "truth-shots/gal-fl-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-fl-$NS$p-self.png"
               [ -f "ours-shots/ours-gal-fl-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-fl-$NS$p-self.png"
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-fluid-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-fluid-$NS-p$p" \
                 $ST $SO --pitch 2 --gate 240000 || GATE=1
