@@ -95,6 +95,15 @@ public final class F2vPack {
     public record FluidTexture(String fluidId, float cmd, String modelRef) {
     }
 
+    /** One FLUID CUBE row (14-cd): the ours leg's visible surface for the
+     * fluid walk's channel=block SOURCE rows — a 14/16-tall box model on the
+     * 410000+i CMD space carrying the fluid's still surface (a real texture
+     * frame, or the calibrated flat color for the modded chemicals whose
+     * appearance is code-tinted). The truth leg renders the real liquid; the
+     * cube replays the same block space (the glass case frames both). */
+    public record FluidCube(String fluidId, float cmd, String modelRef) {
+    }
+
     /** fluid id derivation from the texture file name: strip .png, then a
      *  trailing {@code _still} or {@code _flow} — the SAME convention the
      *  scene-mod walk probes (both sides agree by construction). */
@@ -140,7 +149,18 @@ public final class F2vPack {
                         continue;
                     }
                     String file = rest.substring(slash + 1);
-                    if (!file.startsWith("textures/fluid/")) {
+                    // 14-cd the scan conventions widened: create ships
+                    // textures/fluid/<p>_still.png, biomesoplenty ships
+                    // textures/block/<p>_still.png, mekanism ships
+                    // textures/liquid/<p>.png (the tinted chemical canvas —
+                    // the color table overrides those ids below). The
+                    // _still suffix keys the LIQUID surface textures; other
+                    // block textures stay out.
+                    boolean fluidPath = file.startsWith("textures/fluid/")
+                            || (file.startsWith("textures/block/")
+                                && file.endsWith("_still.png"))
+                            || file.startsWith("textures/liquid/");
+                    if (!fluidPath) {
                         continue;
                     }
                     paths.add(ns + ":" + file);
@@ -154,21 +174,182 @@ public final class F2vPack {
         int i = 0;
         for (String key : paths) {
             String ns = key.substring(0, key.indexOf(':'));
-            String file = key.substring(key.indexOf(':') + 1);   // textures/fluid/<name>.png
-            String base = file.substring("textures/fluid/".length());
+            String file = key.substring(key.indexOf(':') + 1);   // textures/<dir>/<name>.png
+            String rest2 = file.substring("textures/".length()); // <dir>/<name>.png
+            int slash2 = rest2.indexOf('/');
+            String dir = rest2.substring(0, slash2);             // fluid | block | liquid
+            String base = rest2.substring(slash2 + 1);           // <name>.png
             String sprite = base.substring(0, base.length() - 4); // <name> (no .png)
             String modelPath = "assets/c-imagine/models/fluid/" + ns + "/" + sprite + ".json";
             if (entries.containsKey(modelPath)) {
                 continue;
             }
+            // the texture ref keeps the file's OWN directory (fluid/, block/,
+            // liquid/ — the hosted path mirrors the jar path verbatim)
+            String texRef = ns + ":" + dir + "/" + sprite;
             String json = "{\"parent\": \"minecraft:item/generated\", "
-                    + "\"textures\": {\"layer0\": \"" + ns + ":fluid/" + sprite + "\"}}";
+                    + "\"textures\": {\"layer0\": \"" + texRef + "\"}}";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
             out.add(new FluidTexture(fluidIdFromTexture(ns, base),
                     400000f + i, "c-imagine:models/fluid/" + ns + "/" + sprite));
             i++;
         }
         return out;
+    }
+
+    /** Read the fluid-color manifest (14-cd): fluidId -> {r,g,b} 0..255.
+     *  Absent file = an empty table (the chemical cube channel stays off —
+     *  the pack stays byte-identical to today's build). */
+    public static java.util.Map<String, int[]> readFluidColorTable(Path tsv)
+            throws IOException {
+        java.util.Map<String, int[]> map = new java.util.HashMap<>();
+        if (!Files.isRegularFile(tsv)) {
+            return map;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) {
+                continue;
+            }
+            String[] parts = line.split("\t");
+            if (parts.length >= 4) {
+                try {
+                    map.putIfAbsent(parts[0].trim(), new int[]{
+                            Integer.parseInt(parts[1].trim()),
+                            Integer.parseInt(parts[2].trim()),
+                            Integer.parseInt(parts[3].trim())});
+                } catch (NumberFormatException nfe) {
+                    // a malformed row is skipped, never fatal
+                }
+            }
+        }
+        return map;
+    }
+
+    /**
+     * The 14-cd CUBE channel: for every walked fluid id (the modded
+     * namespace fluids the manifests name) synthesize the 14/16 box model
+     * the channel=block SOURCE rows replay through. Two texture sources:
+     * <ul>
+     *   <li>the color-table ids (the modded chemicals whose appearance is
+     *       code-tinted — mekanism): a uniform 16x16 PNG of the calibrated
+     *       color (the L1-optimal flat surface);</li>
+     *   <li>everything else with a scanned still texture (create,
+     *       biomesoplenty): the texture's STATIC frame 0 (16x16) — the
+     *       animation phase is exactly what the legs cannot share, so the
+     *       cube ships deterministic pixels.</li>
+     * </ul>
+     * Writes {@code visual-fluid-cubes.tsv} (fluidId -> cmd, the 410000+i
+     * space) beside the flat manifest. Deterministic (sorted ids).
+     */
+    static List<FluidCube> synthesizeFluidCubes(java.util.Set<String> fluidIds,
+                                                java.util.Map<String, int[]> colorTable,
+                                                TreeMap<String, byte[]> entries,
+                                                List<String> warnings) throws IOException {
+        List<FluidCube> out = new ArrayList<>();
+        int i = 0;
+        for (String fluidId : new java.util.TreeSet<>(fluidIds)) {
+            if (entries.containsKey("assets/c-imagine/models/fluidcube/"
+                    + fluidId.replace(':', '/') + ".json")) {
+                continue;
+            }
+            String texPath;
+            int[] color = colorTable.get(fluidId);
+            if (color != null) {
+                // the calibrated flat surface: one opaque uniform 16x16 PNG
+                texPath = "assets/c-imagine/textures/fluidcube/"
+                        + fluidId.replace(':', '_') + ".png";
+                if (!entries.containsKey(texPath)) {
+                    entries.put(texPath, uniformPng(color[0], color[1], color[2]));
+                }
+            } else {
+                // the real still texture's static frame 0, re-hosted under
+                // the cube namespace (the frame extraction keeps the cube
+                // deterministic — the strip's later frames never enter)
+                byte[] frame = stillFrameZero(entries, fluidId);
+                if (frame == null) {
+                    continue;
+                }
+                texPath = "assets/c-imagine/textures/fluidcube/"
+                        + fluidId.replace(':', '_') + ".png";
+                entries.put(texPath, frame);
+            }
+            String texRef = "c-imagine:textures/fluidcube/"
+                    + fluidId.replace(':', '_');
+            // the 14/16 liquid surface box: the vanilla source block with a
+            // non-fluid above renders its top at 14/16 — the sides show the
+            // texture's lower 14 rows (uv v 2..16)
+            String faces = "\"north\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"south\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"west\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"east\": {\"texture\": \"#all\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"up\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]},"
+                    + "\"down\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]}";
+            String json = "{\"parent\": \"minecraft:block/block\", "
+                    + "\"textures\": {\"all\": \"" + texRef + "\"}, "
+                    + "\"elements\": [{\"from\": [0, 0, 0], \"to\": [16, 14, 16], "
+                    + "\"faces\": {" + faces + "}}]}";
+            String modelPath = "assets/c-imagine/models/fluidcube/"
+                    + fluidId.replace(':', '/') + ".json";
+            entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
+            out.add(new FluidCube(fluidId, 410000f + i,
+                    "c-imagine:models/fluidcube/" + fluidId.replace(':', '/')));
+            i++;
+        }
+        return out;
+    }
+
+    /** The static frame 0 (16x16) of a scanned still texture for a fluid id:
+     *  looks the texture up among the already-hosted entries under the three
+     *  scan conventions, decodes it, crops the first frame, re-encodes.
+     *  Null when the id has no hosted still texture. */
+    private static byte[] stillFrameZero(TreeMap<String, byte[]> entries,
+                                         String fluidId) throws IOException {
+        int colon = fluidId.indexOf(':');
+        if (colon <= 0) {
+            return null;
+        }
+        String ns = fluidId.substring(0, colon);
+        String name = fluidId.substring(colon + 1);
+        for (String dir : new String[]{"fluid/", "block/", "liquid/"}) {
+            for (String suffix : new String[]{"_still", ""}) {
+                String path = "assets/" + ns + "/textures/" + dir + name + suffix + ".png";
+                byte[] raw = entries.get(path);
+                if (raw == null) {
+                    continue;
+                }
+                java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(
+                        new java.io.ByteArrayInputStream(raw));
+                if (img == null) {
+                    return null;
+                }
+                int fw = img.getWidth();
+                int fh = Math.min(16, img.getHeight());
+                java.awt.image.BufferedImage frame = new java.awt.image.BufferedImage(
+                        fw, fh, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                java.awt.Graphics2D g = frame.createGraphics();
+                g.drawImage(img, 0, 0, fw, fh, 0, 0, fw, fh, null);
+                g.dispose();
+                java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(frame, "png", bos);
+                return bos.toByteArray();
+            }
+        }
+        return null;
+    }
+
+    /** A uniform opaque 16x16 PNG of one RGB color (the calibrated chemical
+     *  surface). */
+    private static byte[] uniformPng(int r, int g, int b) throws IOException {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+                16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                img.setRGB(x, y, 0xFF000000 | (r << 16) | (g << 8) | b);
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", bos);
+        return bos.toByteArray();
     }
 
     /** Read the fluid-texture manifest the build wrote (fluidId -> cmd). */
@@ -1083,6 +1264,45 @@ public final class F2vPack {
                     fl.toString(), StandardCharsets.UTF_8);
         }
 
+        // 14-cd FLUID CUBE channel: the ours leg's visible surface for the
+        // fluid walk's channel=block SOURCE rows (the modded liquids the
+        // truth leg renders as real blocks — the stock 26.3 client cannot
+        // draw those states, so the replay rides the item_display rig
+        // grammar). The cube ids: the color table (the calibrated chemicals)
+        // UNION the scanned still ids (create/biomesoplenty real textures).
+        // The 410000+i CMD space joins the SAME paper.json range dispatch —
+        // re-emitted when any cube landed.
+        Map<String, int[]> fluidColors =
+                readFluidColorTable(outDir.resolve("visual-fluid-colors.tsv"));
+        java.util.Set<String> cubeIds = new java.util.HashSet<>(fluidColors.keySet());
+        for (FluidTexture ft : fluidTextures) {
+            cubeIds.add(ft.fluidId());
+        }
+        List<FluidCube> fluidCubes =
+                synthesizeFluidCubes(cubeIds, fluidColors, entries, warnings);
+        if (!fluidCubes.isEmpty()) {
+            List<Map.Entry<Float, String>> paperEntries =
+                    new ArrayList<>(paperFloatEntries);
+            for (GalleryPack.Resolved r : gallery) {
+                paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+            }
+            for (FluidTexture ft : fluidTextures) {
+                paperEntries.add(Map.entry(ft.cmd(), ft.modelRef()));
+            }
+            for (FluidCube fc : fluidCubes) {
+                paperEntries.add(Map.entry(fc.cmd(), fc.modelRef()));
+            }
+            paperEntries.sort(Map.Entry.comparingByKey());
+            entries.put("assets/minecraft/items/paper.json",
+                    itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+            StringBuilder cb = new StringBuilder();
+            for (FluidCube fc : fluidCubes) {
+                cb.append(fc.fluidId()).append('\t').append(fc.cmd()).append('\n');
+            }
+            Files.writeString(outDir.resolve("visual-fluid-cubes.tsv"),
+                    cb.toString(), StandardCharsets.UTF_8);
+        }
+
         // block channel (parity matrix "blocks", block-channel-26-3.md):
         // note_block stand-in slots -> the modded block models, ONE merged
         // blockstates override, manifest-driven slot allocation
@@ -1112,6 +1332,24 @@ public final class F2vPack {
         // vanilla stack (measured: SpriteSourceList.load = getResourceStack
         // + addAll) — only OUR sources live here, vanilla trims keep working.
         emitPaletteAtlas(jars, validPalettes, entries, warnings);
+
+        // 14-cd THE FLUID ATLAS SOURCES: the vanilla block-atlas stack scans
+        // textures/block/ only — the fluid/liquid/fluidcube directories the
+        // fluid channels host would never stitch and the model renders the
+        // magenta checker. The directory sources APPEND to whatever the
+        // palette channel put in items.json (the measured SpriteSourceList
+        // merge — this emit runs AFTER emitPaletteAtlas for exactly that);
+        // the same three ride BOTH atlas files, each model's single sprite
+        // resolves in whichever atlas bakes it.
+        if (!fluidTextures.isEmpty() || !fluidCubes.isEmpty()) {
+            String fluidSources = "{\"sources\": ["
+                    + "{\"type\": \"minecraft:directory\", \"source\": \"fluid\", \"prefix\": \"fluid/\"}, "
+                    + "{\"type\": \"minecraft:directory\", \"source\": \"liquid\", \"prefix\": \"liquid/\"}, "
+                    + "{\"type\": \"minecraft:directory\", \"source\": \"fluidcube\", \"prefix\": \"fluidcube/\"}"
+                    + "]}";
+            appendAtlasSources("assets/minecraft/atlases/blocks.json", fluidSources, entries);
+            appendAtlasSources("assets/minecraft/atlases/items.json", fluidSources, entries);
+        }
 
         // 26.3 MODEL UV SANITIZER (run #46 forensics, measured): create-1.21.1
         // models carry element-face uv rects extending PAST the sprite
@@ -1417,6 +1655,37 @@ public final class F2vPack {
             rest = rest.substring(0, rest.length() - ".png".length());
         }
         return fullResourcePath.substring(0, c) + ":" + rest;
+    }
+
+    /** Append one atlas-source JSON object's sources into the pack's existing
+     *  atlas file (the SpriteSourceList merge is additive — two emitters may
+     *  own sources in one file, the palette channel and the 14-cd fluid
+     *  channel do). Absent file = create it. */
+    private static void appendAtlasSources(String atlasPath, String sourcesJson,
+                                           TreeMap<String, byte[]> entries) {
+        JsonObject merged = new JsonObject();
+        JsonArray sources = new JsonArray();
+        byte[] existing = entries.get(atlasPath);
+        if (existing != null) {
+            try {
+                JsonObject prev = JsonParser.parseString(
+                        new String(existing, StandardCharsets.UTF_8)).getAsJsonObject();
+                if (prev.has("sources") && prev.get("sources").isJsonArray()) {
+                    for (JsonElement s : prev.getAsJsonArray("sources")) {
+                        sources.add(s);
+                    }
+                }
+            } catch (RuntimeException bad) {
+                // an unparseable predecessor: the file is machine-built, the
+                // fresh sources array replaces it (never fatal)
+            }
+        }
+        JsonObject add = JsonParser.parseString(sourcesJson).getAsJsonObject();
+        for (JsonElement s : add.getAsJsonArray("sources")) {
+            sources.add(s);
+        }
+        merged.add("sources", sources);
+        entries.put(atlasPath, merged.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     /** Copy one raw PNG resource (full {@code ns:textures/...} path) from the jars. */
@@ -2820,6 +3089,15 @@ public final class F2vPack {
             build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
             expect(failures, Files.isRegularFile(out.resolve("visual-gallery-fluids.tsv")),
                     "pack: fluid manifest can be emitted into a fresh nested output directory");
+            // 14-cd: the widened scan (fluid/ + block/*_still + liquid/) feeds
+            // the cube channel — the fixture's water_still must land BOTH the
+            // flat row and a 14/16 cube row in its own manifest
+            expect(failures, Files.isRegularFile(out.resolve("visual-fluid-cubes.tsv")),
+                    "pack: fluid cube manifest emitted beside the flat one");
+            java.util.Map<String, Float> selfCubes =
+                    readFluidManifest(out.resolve("visual-fluid-cubes.tsv"));
+            expect(failures, selfCubes.containsKey("fixture:water"),
+                    "pack: fixture water_still derives the fixture:water cube row");
             Files.createDirectories(out.resolve("overlay/assets/fixture"));
             Files.writeString(out.resolve("overlay/assets/fixture/evidence.txt"), "overlay input");
             Files.createDirectory(out.resolve("quads"));

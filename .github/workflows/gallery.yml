@@ -742,7 +742,7 @@ jobs:
           # the calibration tables ride the pack input dir: absent file =
           # byte-identical behavior (readTintManifest/readEmissiveManifest),
           # present = the measured multiplies / light_emission bake
-          for T in visual-tints.tsv visual-emissive.tsv; do
+          for T in visual-tints.tsv visual-emissive.tsv visual-fluid-colors.tsv; do
             [ -f "scripts/f2v/$T" ] && cp "scripts/f2v/$T" seed-pack/f2v/
           done
           # per-ns pack manifests, then ONE concatenated file per channel —

@@ -81,6 +81,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             List<dev.cim.f2v.F2vPack.VisualBlock> blocks,
                             List<dev.cim.f2v.GalleryPack.Resolved> gallery,
                             java.util.Map<String, Float> fluids,
+                            java.util.Map<String, Float> fluidCubes,
                             String sha1) {
     }
 
@@ -100,6 +101,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return dev.cim.f2v.F2vPack.readFluidManifest(f);
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v fluid manifest read failed " + f + ": " + ioe);
+            return java.util.Map.of();
+        }
+    }
+
+    /**
+     * The fluid-CUBE manifest (14-cd): fluidId -> pack CMD, written by the
+     * F2vPack build (visual-fluid-cubes.tsv, the 410000+i space). Read from
+     * the f2v dir in BOTH resolution paths (fast boot and full rebuild). A
+     * missing file = an empty map (the fluid walk's modded block rows then
+     * replay as case-only — the honest surface the truth's decayed flowing
+     * rows render anyway).
+     */
+    private java.util.Map<String, Float> readFluidCubeMap(Path base) {
+        Path f = base.resolve("visual-fluid-cubes.tsv");
+        if (!Files.isRegularFile(f)) {
+            return java.util.Map.of();
+        }
+        try {
+            return dev.cim.f2v.F2vPack.readFluidManifest(f);
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v fluid cube manifest read failed " + f + ": " + ioe);
             return java.util.Map.of();
         }
     }
@@ -147,7 +169,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                         base.resolve("visual-gallery.resolved.tsv"))
                                 : List.of();
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
-                        readFluidTextureMap(base), cachedSha1);
+                        readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
                 int fastPort = Integer.getInteger("cim.f2v.port", 25580);
                 dev.cim.f2v.PackHttp fastHttp =
                         dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
@@ -181,7 +203,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
             }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
-                    readFluidTextureMap(base), result.sha1());
+                    readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
             int port = Integer.getInteger("cim.f2v.port", 25580);
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
@@ -2323,15 +2345,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * Replay one truth-leg FLUID gallery page manifest:
      * {@code c-imagine/scenes/gallery-fluid-<ns>-p<page>.tsv} rows
      * {@code cell|x|y|z|fluid|dyn|channel|extra}. THE MULTI-SURFACE LADDER's
-     * ours side (round 2, 2026-11-04):
+     * ours side (round 2, 2026-11-04 + 14-cd 2026-11-07):
      * <ul>
+     *   <li>THE GLASS CASE (14-cd) builds for EVERY non-skip cell row first —
+     *       the truth leg shells every cell before the fluid goes in, the
+     *       replay must frame identically (the #231 forensics: the shell
+     *       skipped with the nochannel branch left the ours page bare sky);</li>
      *   <li>{@code block} — vanilla-namespace rows are placed as REAL liquid
      *       states (Bukkit BlockData) inside their glass cases — the vanilla
      *       client renders them through the same liquid surface the truth
-     *       client uses, so vanilla fluids can be GREEN;</li>
+     *       client uses, so vanilla fluids can be GREEN; MODDED rows split:
+     *       a SOURCE (level=0) rides the 14-cd fluid-cube rig (the stock
+     *       client cannot draw the modded liquid state); a FALLING level
+     *       decays on the truth within the shot window (the #231 crops:
+     *       case-only) — ours keeps the case (caseonly);</li>
      *   <li>{@code mod-tank} — the recorded tank BLOCK state resolves through
-     *       the pack's gallery map (the tank states are gallery rows; the
-     *       CONTENTS are not rendered — the truth note says the same);</li>
+     *       the pack's gallery map AND the 14-cd cube rig rides INSIDE the
+     *       window (the truth tank shows its contents through the glass);</li>
      *   <li>{@code texture-model} — the fluid id resolves through the pack's
      *       fluid-texture manifest (visual-gallery-fluids.tsv) to a
      *       paper+CMD item_display rig; the truth side has NO native surface
@@ -2339,21 +2369,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      *       honestly, dyn class);</li>
      *   <li>everything else (buckets on cells whose rig the pack lacks,
      *       states Paper cannot express, bare nochannel) is {@code nochannel}:
-     *       the cell stays empty and the pixel join names it (honest
+     *       the cell keeps its glass case and the pixel join names it (honest
      *       backlog, never a silent skip). Skip rows pass through untouched
      *       (both legs recorded them identically).</li>
      * </ul>
      *
-     * <p>Returns {@code [placed, nochannel, cells]}; the RCON response marker
-     * is {@code gallerypage-fluid <ns> p<page> -> placed=N nochannel=K cells=M}
-     * (cells=-1 prints as {@code cells=missing}).
+     * <p>Returns {@code [placed, nochannel, caseonly, cells]}; the RCON
+     * response marker is {@code gallerypage-fluid <ns> p<page> -> placed=N
+     * nochannel=K caseonly=J cells=M} (cells=-1 prints as {@code cells=missing}).
      */
     private int[] galleryPageFluid(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-fluid-" + ns + "-p" + page + ".tsv");
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest missing: " + mf);
-            return new int[]{0, 0, -1};
+            return new int[]{0, 0, 0, -1};
         }
         final java.util.List<String[]> rows = new java.util.ArrayList<>();
         try {
@@ -2365,11 +2395,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest read failed "
                     + mf + ": " + ioe);
-            return new int[]{0, 0, -1};
+            return new int[]{0, 0, 0, -1};
         }
         final int pagef = page;
         int[] counts = callSync(() -> {
-            int placed = 0, nochannel = 0;
+            int placed = 0, nochannel = 0, caseonly = 0;
             World w = world(worldName());
             // SAME wall sweep the truth scene runs (12-ac symmetry law) —
             // covers the pitch-2 fluid grid and its glass cases entirely
@@ -2399,33 +2429,81 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 } catch (NumberFormatException bad) {
                     continue;
                 }
-                // THE MULTI-SURFACE LADDER's ours side (round 2): block rows
-                // replay as real vanilla liquid states (unchanged); mod-tank
-                // rows resolve the recorded BLOCK state through the pack's
-                // gallery map (the tank block states ARE gallery rows — the
-                // block wall walked them); texture-model rows resolve the
-                // fluid id through the pack's fluid-texture manifest
-                // (visual-gallery-fluids.tsv) to a paper+CMD item_display
-                // rig — the truth side has no native surface for those
-                // cells (named in the join, dyn class). Everything else is
+                // THE GLASS CASE FIRST (14-cd): the truth leg builds the
+                // sealed shell for EVERY channel=block/mod-tank row BEFORE
+                // the fluid goes in — the ours replay must frame its cells
+                // identically (the #231 forensics: the nochannel branch
+                // skipped the shell too and the whole ours fluid page shot
+                // read as bare sky, ae 370K-1.8M on rows whose truth content
+                // was just the case + the neighbour spill). Skip rows keep
+                // their recorded skip (both legs named it).
+                try {
+                    org.bukkit.block.data.BlockData glass = Material.GLASS.createBlockData();
+                    int[][] faces = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
+                            {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+                    for (int[] f : faces) {
+                        int bx = x + f[0], by = y + f[1], bz = z + f[2];
+                        if (by < -60) {
+                            continue; // the floor stays
+                        }
+                        w.getBlockAt(bx, by, bz).setBlockData(glass, false);
+                    }
+                } catch (Exception caseFail) {
+                    log().warning(LOG_PREFIX + "f2v gallery-fluid: glass case failed at "
+                            + row[1] + "," + row[2] + "," + row[3] + ": " + caseFail);
+                }
+                // THE MULTI-SURFACE LADDER's ours side (round 2 + 14-cd):
+                // block rows replay as real vanilla liquid states (unchanged);
+                // MODDED block rows split by the placed level: a SOURCE
+                // (level=0) rides the fluid-cube rig (the stock client cannot
+                // draw the modded liquid state — the 14/16 box replays the
+                // truth's settled surface); a FALLING level decays to an
+                // empty case on the truth within the shot window (the #231
+                // crops measured the flowing cells case-only) — ours keeps
+                // the same case and nothing else (caseonly); mod-tank rows
+                // resolve the tank BLOCK state through the pack's gallery map
+                // AND carry the cube rig INSIDE the window (the truth tank
+                // shows its contents through the glass); texture-model rows
+                // keep the flat fluid-texture rig. Everything else is
                 // nochannel (the honest backlog).
                 Float rigCmd = null;
                 String tankState = null;
+                boolean caseOnly = false;
                 if (channel.equals("block")) {
-                    if (!extra.startsWith("minecraft:")) {
-                        nochannel++;
-                        log().warning(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
-                                + " channel=block non-vanilla — cell " + row[1]
-                                + "," + row[2] + "," + row[3] + " left empty (nochannel)");
-                        continue;
+                    if (extra.startsWith("minecraft:")) {
+                        tankState = extra;
+                    } else if (extra.contains("level=0")) {
+                        rigCmd = f2v != null ? f2v.fluidCubes().get(row[4]) : null;
+                        if (rigCmd == null) {
+                            // no cube row (an unknown fluid id or a stale
+                            // pack): the case stays, the cell is named
+                            caseOnly = true;
+                            log().warning(LOG_PREFIX + "f2v gallery-fluid: no pack fluid-cube row for "
+                                    + row[4] + " — cell " + row[1] + "," + row[2] + ","
+                                    + row[3] + " case-only");
+                        }
+                    } else {
+                        // a falling legacy state: the truth's fluid decays
+                        // (nothing above feeds it) — the case-only surface
+                        caseOnly = true;
+                        log().info(LOG_PREFIX + "f2v gallery-fluid: " + row[4]
+                                + " falling (" + extra + ") — cell " + row[1] + ","
+                                + row[2] + "," + row[3] + " case-only (the truth decays)");
                     }
-                    tankState = extra;
                 } else if (channel.equals("mod-tank")) {
-                    // extra = "<state>|contents-unattempted" — the pack
-                    // renders the tank block, NOT the fluid contents (the
-                    // truth note says the same)
+                    // extra = "<state>|contents-filled:N" — the pack renders
+                    // the tank block AND the cube rig rides inside the
+                    // window (the truth tank's content is what fills it)
                     int bar = extra.indexOf('|');
                     tankState = bar >= 0 ? extra.substring(0, bar) : extra;
+                    Float cube = f2v != null ? f2v.fluidCubes().get(row[4]) : null;
+                    if (cube != null) {
+                        rigCmd = cube;
+                    } else {
+                        log().info(LOG_PREFIX + "f2v gallery-fluid: no pack fluid-cube row for "
+                                + row[4] + " — tank cell " + row[1] + "," + row[2] + ","
+                                + row[3] + " renders the block only");
+                    }
                 } else if (channel.equals("texture-model")) {
                     // extra = the fluid id
                     rigCmd = f2v != null ? f2v.fluids().get(extra) : null;
@@ -2444,23 +2522,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
                 try {
-                    // the glass case first (the same shell the truth leg
-                    // builds) — the texture-model cells get the case too so
-                    // the rig sits in the SAME framing on both legs
-                    org.bukkit.block.data.BlockData glass = Material.GLASS.createBlockData();
-                    int[][] faces = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0},
-                            {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
-                    for (int[] f : faces) {
-                        int bx = x + f[0], by = y + f[1], bz = z + f[2];
-                        if (by < -60) {
-                            continue; // the floor stays
-                        }
-                        w.getBlockAt(bx, by, bz).setBlockData(glass, false);
-                    }
-                    if (rigCmd != null) {
-                        // the texture-model rig: the item_display grammar the
-                        // item walk proved (paper + CMD carrier, fixed
-                        // billboard, pinned brightness)
+                    if (rigCmd != null && tankState != null) {
+                        // the mod-tank pair: the tank BLOCK resolves through
+                        // the gallery map AND the 14-cd cube rig rides inside
+                        // its window — both surfaces on one cell
+                        w.getBlockAt(x, y, z).setBlockData(Bukkit.createBlockData(tankState), false);
                         ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
                         final float fcmd = rigCmd;
                         stack.editMeta(meta -> {
@@ -2477,8 +2543,38 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         });
                         log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
                                 + " cell " + row[1] + "," + row[2] + "," + row[3]
-                                + " fluid=" + row[4] + " texture-model cmd=" + rigCmd);
+                                + " fluid=" + row[4] + " tank=" + tankState + " rig cmd=" + rigCmd);
                         placed++;
+                    } else if (rigCmd != null) {
+                        // the item_display rig grammar the item walk proved
+                        // (paper + CMD carrier, fixed billboard, pinned
+                        // brightness) — the 14-cd cube and the flat
+                        // texture-model rigs share it
+                        ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
+                        final float fcmd = rigCmd;
+                        stack.editMeta(meta -> {
+                            CustomModelDataComponent c = meta.getCustomModelDataComponent();
+                            c.setFloats(List.of(fcmd));
+                            meta.setCustomModelDataComponent(c);
+                        });
+                        org.bukkit.Location at = new org.bukkit.Location(w,
+                                x + 0.5, y + 0.5, z + 0.5);
+                        w.spawn(at, org.bukkit.entity.ItemDisplay.class, e -> {
+                            e.setItemStack(stack);
+                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
+                        });
+                        log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
+                                + " cell " + row[1] + "," + row[2] + "," + row[3]
+                                + " fluid=" + row[4] + " rig cmd=" + rigCmd);
+                        placed++;
+                    } else if (caseOnly) {
+                        // the case IS the surface (the truth's decaying
+                        // falling rows render case-only too) — counted, named
+                        caseonly++;
+                        log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
+                                + " cell " + row[1] + "," + row[2] + "," + row[3]
+                                + " fluid=" + row[4] + " case-only");
                     } else if (tankState != null) {
                         w.getBlockAt(x, y, z).setBlockData(Bukkit.createBlockData(tankState), false);
                         log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
@@ -2494,9 +2590,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             + parseFail.getMessage() + ")");
                 }
             }
-            return new int[]{placed, nochannel, rows.size()};
+            return new int[]{placed, nochannel, caseonly, rows.size()};
         });
-        return counts == null ? new int[]{0, 0, -1} : counts;
+        return counts == null ? new int[]{0, 0, 0, -1} : counts;
     }
 
     /** Despawn every ItemDisplay AND every tagged gallery entity in every
