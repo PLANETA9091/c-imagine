@@ -40,17 +40,20 @@ jobs:
           CARGO_TARGET_DIR="$PWD/target" cargo bench --workspace --manifest-path baseline-source/Cargo.toml
           python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$parent"
           rm -rf target/criterion
-      - name: run benches
+      - name: run benches (two legs — the min median is the measurement, one slow leg is interference noise)
         run: |
-          rm -rf target/criterion
+          rm -rf target/criterion target/criterion-a target/criterion-b
           cargo bench --workspace
+          mv target/criterion target/criterion-a
+          cargo bench --workspace
+          mv target/criterion target/criterion-b
       - name: compare against baseline (fail on >10% regression)
         run: |
           set -o pipefail
           cp -a baseline baseline-before
-          python3 scripts/perf/criterion-gate.py compare --baseline baseline --current target/criterion --source-sha "$GITHUB_SHA" --report criterion-deltas.json | tee -a "$GITHUB_STEP_SUMMARY"
+          python3 scripts/perf/criterion-gate.py compare --baseline baseline --current target/criterion-a --current target/criterion-b --source-sha "$GITHUB_SHA" --report criterion-deltas.json | tee -a "$GITHUB_STEP_SUMMARY"
       - name: snapshot passing measurements
-        run: python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$GITHUB_SHA"
+        run: python3 scripts/perf/criterion-gate.py snapshot --current target/criterion-a --current target/criterion-b --baseline baseline --source-sha "$GITHUB_SHA"
       - name: save new baseline
         uses: actions/cache/save@v4
         with:
@@ -61,7 +64,8 @@ jobs:
         with:
           name: criterion-report
           path: |
-            target/criterion
+            target/criterion-a
+            target/criterion-b
             baseline
             baseline-before
             criterion-deltas.json
