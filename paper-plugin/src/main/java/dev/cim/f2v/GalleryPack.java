@@ -1339,10 +1339,18 @@ public final class GalleryPack {
         return out;
     }
 
-    /** The five Create sliding doors' sprites — the near-miss sampling class. */
+    /**
+     * The near-miss sampling classes — the sprites whose face windows bake
+     * into exact-pixel objcut tiles (14-bs doors, 14-cb the ae2 chiseled
+     * quartz: the highest-spatial-frequency texture in the gallery, the only
+     * family where the minified wall sampling blurred the carved lines into
+     * ae ~60-66K across the stairs/walls cells while every low-frequency
+     * neighbour stayed green).
+     */
     private static final java.util.regex.Pattern DOOR_SPRITE =
             java.util.regex.Pattern.compile(
-                    "create:block/(brass|copper|andesite|framed_glass|train)_door_.*");
+                    "create:block/(brass|copper|andesite|framed_glass|train)_door_.*"
+                    + "|ae2:block/chiseled_quartz.*");
 
     /**
      * 14-bs: bake every door-sprite face window into an exact-pixel objcut
