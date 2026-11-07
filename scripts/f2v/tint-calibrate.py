@@ -461,23 +461,27 @@ def main(argv=None) -> int:
             refused.append((state, "multi/ambiguous texture: "
                             + (",".join(sorted(texs)) if texs else "unresolved")))
             continue
-        tex = next(iter(texs))
-        for truth_path, shift, page, col, rowi in cells:
-            truth = load_rgb(truth_path)
-            ours = load_rgb(truth_path.with_name(
-                truth_path.name.replace("_truth.png", "_ours.png")))
-            solved = solve_ratio(truth, ours, shift)
-            if solved is None:
-                refused.append((state, f"no usable content pixels @ {page}:c{col},r{rowi}"))
-                continue
-            r, n = solved
-            chroma_t = float(np.median(truth.max(axis=2) - truth.min(axis=2)))
-            pkey = tex + ("\x00" + state if state in assets.vanilla_tex_states else "")
-            per_tex[pkey].append({
-                "state": state, "ratio": r, "n": n, "page": page,
-                "cell": f"c{col},r{rowi}",
-                "cls": classify(r, chroma_t),
-            })
+        # THE STATE-KEYED states collect under EVERY texture they resolve to
+        # (sorted — set iteration is hash-luck across runs) and the per-state
+        # row folds all of them below; single-texture states keep the plain key.
+        cand_texs = sorted(texs) if state_keyed else [next(iter(texs))]
+        for tex in cand_texs:
+            for truth_path, shift, page, col, rowi in cells:
+                truth = load_rgb(truth_path)
+                ours = load_rgb(truth_path.with_name(
+                    truth_path.name.replace("_truth.png", "_ours.png")))
+                solved = solve_ratio(truth, ours, shift)
+                if solved is None:
+                    refused.append((state, f"no usable content pixels @ {page}:c{col},r{rowi}"))
+                    continue
+                r, n = solved
+                chroma_t = float(np.median(truth.max(axis=2) - truth.min(axis=2)))
+                pkey = tex + ("\x00" + state if state in assets.vanilla_tex_states else "")
+                per_tex[pkey].append({
+                    "state": state, "ratio": r, "n": n, "page": page,
+                    "cell": f"c{col},r{rowi}",
+                    "cls": classify(r, chroma_t),
+                })
 
     # THE STATE-KEYED TINT ROUTE: the modded states whose models resolve
     # to minecraft-namespace textures — the per-state multiply solves from
@@ -487,17 +491,19 @@ def main(argv=None) -> int:
     state_rows = []
     state_dropped = []
     for state, texs in sorted(assets.vanilla_tex_states.items()):
-        tex = next(iter(texs))
-        key = tex + "\x00" + state
-        cells = per_tex.get(key)
-        if cells is None:
+        # every texture the state resolves to feeds the fold; the row KEYS
+        # ON THE STATE (GalleryPack looks the composite's state up here —
+        # aggregate_texture's tex arg stays first for the clip check)
+        cells = [c for t2 in sorted(texs)
+                 for c in per_tex.get(t2 + "\x00" + state, [])]
+        if not cells:
             continue
-        row, reason = aggregate_texture(tex, cells, assets,
+        row, reason = aggregate_texture(min(texs), cells, assets,
                                         args.tolerance, args.epsilon)
         if row is not None:
-            state_rows.append(row)
+            state_rows.append((state, row[1], row[2]))
         elif reason is not None:
-            state_dropped.append((tex + " [state " + state + "]", reason))
+            state_dropped.append((state + " [" + ", ".join(sorted(texs)) + "]", reason))
 
     rows, dropped = [], []
     for tex in sorted(k for k in per_tex if "\x00" not in k):

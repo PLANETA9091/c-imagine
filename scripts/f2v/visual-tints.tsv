@@ -56,3 +56,24 @@ ae2:block/chiseled_quartz_block_side	0.9697	0.977	0.9858	ae2:chiseled_quartz_wal
 biomesoplenty:block/blood_still	0.7792	0.8448	0.8447	biomesoplenty:blood@gallery-fluid-biomesoplenty-p0:c0,r0|n=12196|class=tint
 minecraft:block/tall_grass_bottom	0.9518	0.9509	0.9317	biomesoplenty:watergrassalf=lower,waterlogged=false]@gallery-biomesoplenty-p104:c1,r0|n=2362|class=luma+chroma
 minecraft:block/tall_grass_top	1.0885	1.0926	1.0569	biomesoplenty:watergrassalf=upper,waterlogged=false]@gallery-biomesoplenty-p103:c10,r6|n=336|class=luma+chroma
+# the state-keyed extension (feat/state-tint-bake): rows keyed by the STATE —
+# the quad meshes the DT root states capture render VANILLA textures
+# (mangrove_roots_side/top, mangrove_log) under the mod's tint; the pack
+# re-hosts them per state (_cimtint_s<hash>). The dark_oak_root rows stay
+# dormant until DT ships real textures (the captured sprites are runtime-
+# generated, minecraft:block/dark_oak_log_top_thick — no jar carries them);
+# the fluids are the static composite lane's target (14-bw).
+biomesoplenty:block/liquid_null_still	0.9193	0.913	0.9167	biomesoplenty:liquid_null@gallery-fluid-biomesoplenty-p0:c3,r0|n=10972|class=luma-uniform
+create:fluid/chocolate_still	0.9018	0.9018	0.8882	create:chocolate@gallery-fluid-create-p0:c0,r0|n=12254|class=luma+chroma
+create:fluid/honey_still	0.9181	0.9018	0.8909	create:honey@gallery-fluid-create-p0:c5,r0|n=12415|class=luma+chroma
+dynamictrees:dark_oak_root[grounded=true,radius=2,waterlogged=false]	0.9245	0.9187	0.9136	dynamictrees:dark_oak_root[grounded=true,radius=2,waterlogged=false]@gallery-dynamictrees-p5:c1,r0|n=2749|class=luma-uniform
+dynamictrees:dark_oak_root[grounded=true,radius=3,waterlogged=false]	0.9245	0.9187	0.9136	dynamictrees:dark_oak_root[grounded=true,radius=3,waterlogged=false]@gallery-dynamictrees-p5:c3,r0|n=2450|class=luma-uniform
+dynamictrees:dark_oak_root[grounded=true,radius=4,waterlogged=false]	0.9196	0.9141	0.913	dynamictrees:dark_oak_root[grounded=true,radius=4,waterlogged=false]@gallery-dynamictrees-p5:c5,r0|n=2116|class=luma-uniform
+dynamictrees:dark_oak_root[grounded=true,radius=5,waterlogged=false]	0.9187	0.9136	0.9085	dynamictrees:dark_oak_root[grounded=true,radius=5,waterlogged=false]@gallery-dynamictrees-p5:c7,r0|n=1444|class=luma+chroma
+dynamictrees:dark_oak_root[grounded=true,radius=6,waterlogged=false]	0.9245	0.9187	0.913	dynamictrees:dark_oak_root[grounded=true,radius=6,waterlogged=false]@gallery-dynamictrees-p5:c9,r0|n=1000|class=luma+chroma
+dynamictrees:dark_oak_root[grounded=true,radius=7,waterlogged=false]	0.913	0.9018	0.8802	dynamictrees:dark_oak_root[grounded=true,radius=7,waterlogged=false]@gallery-dynamictrees-p5:c0,r1|n=132|class=luma+chroma
+dynamictrees:mangrove_roots[layer=EXPOSED,radius=2,waterlogged=false]	0.913	0.9074	0.8963	dynamictrees:mangrove_roots[layer=EXPOSED,radius=2,waterlogged=false]@gallery-dynamictrees-p8:c1,r1|n=1277|class=luma+chroma
+dynamictrees:mangrove_roots[layer=EXPOSED,radius=3,waterlogged=false]	0.913	0.9074	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=3,waterlogged=false]@gallery-dynamictrees-p8:c3,r1|n=1218|class=luma+chroma
+dynamictrees:mangrove_roots[layer=EXPOSED,radius=4,waterlogged=false]	0.913	0.913	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=4,waterlogged=false]@gallery-dynamictrees-p8:c5,r1|n=1152|class=luma+chroma
+dynamictrees:mangrove_roots[layer=EXPOSED,radius=5,waterlogged=false]	0.9187	0.913	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=5,waterlogged=false]@gallery-dynamictrees-p8:c7,r1|n=845|class=luma+chroma
+dynamictrees:mangrove_roots[layer=EXPOSED,radius=6,waterlogged=false]	0.9187	0.913	0.9018	dynamictrees:mangrove_roots[layer=EXPOSED,radius=6,waterlogged=false]@gallery-dynamictrees-p8:c9,r1|n=609|class=luma+chroma
