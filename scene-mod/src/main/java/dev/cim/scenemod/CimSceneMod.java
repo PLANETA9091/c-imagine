@@ -1135,6 +1135,18 @@ public final class CimSceneMod {
         List<String> heard = ParticleCapture.begin();
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
+            if (id.getPath().equals("null")) {
+                // A dead registration artifact: a mod pushed a null path into
+                // the registry (measured biomesoplenty:null — #231 RED at ae
+                // 178943; the id renders nothing meaningful on either stack).
+                // The row stays LOUD (skip + the reason), the spawn is not
+                // attempted — both legs skip identically, the cell never
+                // compares and never gates.
+                failed++;
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\t1\t")
+                        .append("null-path-dead-id\n");
+                continue;
+            }
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             int x = GALLERY_X0 + col, y = GALLERY_Y0 + row, z = GALLERY_Z;
             ResolvedOptions resolved = resolveParticleOptions(
