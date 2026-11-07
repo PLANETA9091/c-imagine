@@ -502,8 +502,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 }
             }
         }
-        drawItem(frame, s.pointer.x() - 8, s.pointer.y() - 8, s.cursor);
         if (s.pointerShown) {
+            // The carried stack is part of the cursor: where vanilla draws it, at the mouse.
+            drawItem(frame, s.pointer.x() - 8, s.pointer.y() - 8, s.cursor);
             frame.free(s.pointer.x(), s.pointer.y(), String.valueOf(HudPack.CURSOR), 9);
         }
     }

@@ -192,6 +192,10 @@ def main():
                 tag = t.rsplit("-", 1)[1][:-4]
                 o = os.path.join(a.ours, f"ours-gal-guiw-{ns}{page}-{tag}.png")
                 state = (art[:-4] + "." + tag + ".png") if art and tag != "move" else art
+                # No art of its own for this state: the menu's own area still bounds the judgement,
+                # since the world behind a menu is not the menu.
+                if state and not os.path.isfile(state):
+                    state = art
                 res = compare(t, o, slots, a.scale, state)
                 v, w2 = judge(menu, True, note, res)
                 label = f"{menu} {'slot move' if tag == 'move' else 'press ' + tag[1:]}"

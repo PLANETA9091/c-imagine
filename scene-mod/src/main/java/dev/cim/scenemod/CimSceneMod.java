@@ -147,6 +147,12 @@ public final class CimSceneMod {
             GUI_JOINED.add(event.getEntity());
         }
         if (!(event.getEntity() instanceof ItemEntity item)) return;
+        // A cleared rig drops whatever its menus held, and the viewer two blocks away would
+        // pick it up: the next page's inventory would no longer be the one the harness set.
+        if (GUI_CLEARING) {
+            event.setCanceled(true);
+            return;
+        }
         Vec3 pos = item.position();
         if (GALLERY_DROP_BOX.contains(pos.x, pos.y, pos.z)) {
             event.setCanceled(true);
@@ -1934,6 +1940,14 @@ public final class CimSceneMod {
         }
         GUI_CUBE_BLOCKS.addAll(placed);
         guiCubeClick = rig.above(half);
+        // A block entity's onLoad (where a mod joins it to its structure) runs at the start of
+        // the next level tick; the probe clicks in this one, so the load happens here.
+        for (BlockPos p : placed) {
+            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+            if (be != null) {
+                be.onLoad();
+            }
+        }
         for (int t = 0; t < GUI_CUBE_TICKS; t++) {
             for (BlockPos p : placed) {
                 guiTickBlockEntity(level, p);
@@ -2007,7 +2021,18 @@ public final class CimSceneMod {
         return out;
     }
 
+    private static boolean GUI_CLEARING;
+
     private static void guiClearRig(ServerLevel level, ServerPlayer player, BlockPos rig) {
+        GUI_CLEARING = true;
+        try {
+            guiClearRigBlocks(level, player, rig);
+        } finally {
+            GUI_CLEARING = false;
+        }
+    }
+
+    private static void guiClearRigBlocks(ServerLevel level, ServerPlayer player, BlockPos rig) {
         for (BlockPos p : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
             level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
         }
