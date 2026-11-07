@@ -712,27 +712,42 @@ final class ObjMesh {
                         }
                         double u = l[0] * uvs[0][0] + l[1] * uvs[t][0] + l[2] * uvs[t + 1][0];
                         double v = l[0] * uvs[0][1] + l[1] * uvs[t][1] + l[2] * uvs[t + 1][1];
-                        // 14-bm: the native render samples the sprite LINEARLY — the
-                        // 14-bj audit measured the door panels' sub-pixel phase race
-                        // on exactly this: the tile baked NEAREST texels and the GPU's
-                        // linear filter then reproduced the staircase, not the sprite's
-                        // gradients. Sample the sprite bilinearly at the same (u,v);
-                        // the GPU's filter over the 4px/texel tile reconstructs the
-                        // linear surface instead of the nearest staircase.
-                        double sx = u / 16 * w - 0.5;
-                        double sy = v / 16 * w - 0.5; // frame 0 of an animation
+                        // 14-cc THE PURE TEXEL: the truth's chunk pipeline samples
+                        // the sprite NEAREST — one fragment, one texel. The 14-bm
+                        // bilerp bake evaluated the sprite at the 4px/texel sample
+                        // phases (0.125/0.375/0.625/0.875 of a texel) where NO
+                        // output pixel carries a pure texel (max weight 87.5%):
+                        // every texel boundary smeared over 2 bake px, and on the
+                        // CUTOUT layer those alpha-blend px render OPAQUE (the
+                        // alpha<0.1 discard only drops the nearly-empty ones) —
+                        // the leaf/vine/grass sprites' hole edges baked
+                        // alpha-blended dark halos and the high-frequency faces
+                        // lost their pixel-level contrast. Measured on the #231
+                        // crops (42359045079): 126 BOP block REDs, ONE blur class
+                        // (willow_leaves/vine, pine/mahogany leaves, high_grass
+                        // ages, bramble, the open-trapdoor faces; ae 60-151K,
+                        // ours defocused where the truth is crisp blocky texels;
+                        // sheet forensics: the objcut tiles themselves are
+                        // pre-blurred). The tile keeps the 4px/texel screen
+                        // density (the display pipeline minifies it ~0.94x onto
+                        // the 60.5px cell) — only the sampling goes pure: the
+                        // tile = the sprite's own texels x the interpolated
+                        // vertex colour, and the client's bilinear resample then
+                        // reproduces the same phase-matched staircase the truth's
+                        // nearest sampler draws. The 14-bm door-panel finding
+                        // rode the era when the door faces baked through THIS
+                        // path; since 14-bs they route to exact-pixel tiles
+                        // (DOOR_SPRITE) and the poly bake's consumer set is the
+                        // coloured/cutout families the truth renders NEAREST.
+                        double sx = u / 16 * w;
+                        double sy = v / 16 * w; // frame 0 of an animation
                         int px = (int) Math.floor(sx);
                         int py = (int) Math.floor(sy);
-                        double fx = sx - px;
-                        double fy = sy - py;
                         // vanilla atlas pads sprites by extending their edge texels
                         // (the stitcher's border pass) — clamp, never repeat
                         int tx0 = Math.min(w - 1, Math.max(0, px));
                         int ty0 = Math.min(w - 1, Math.max(0, py));
-                        int tx1 = Math.min(w - 1, Math.max(0, px + 1));
-                        int ty1 = Math.min(w - 1, Math.max(0, py + 1));
-                        int argb = bilerp(src.getRGB(tx0, ty0), src.getRGB(tx1, ty0),
-                                src.getRGB(tx0, ty1), src.getRGB(tx1, ty1), fx, fy);
+                        int argb = src.getRGB(tx0, ty0);
                         if (colors != null) {
                             int rgb = 0;
                             for (int c = 0; c < 3; c++) {
@@ -762,29 +777,6 @@ final class ObjMesh {
                 el.add(k, r.get(k));
             }
         }
-    }
-
-    /** Straight-alpha bilinear of four texels — the GPU's magnification filter, exact. */
-    private static int bilerp(int c00, int c10, int c01, int c11, double fx, double fy) {
-        double w00 = (1 - fx) * (1 - fy);
-        double w10 = fx * (1 - fy);
-        double w01 = (1 - fx) * fy;
-        double w11 = fx * fy;
-        // 14-by: the alpha channel MUST ride the weighted sum like RGB — the
-        // 0xFF000000 initializer forced every tile texel opaque, so the
-        // capture's transparent texels (alpha=0, RGB=0) baked into opaque
-        // BLACK tiles and every q-path composite with holes (the high_grass
-        // blades, the window panes, the scaffolding gaps) painted the
-        // cutout-discarded background as solid black against the truth's
-        // sky (the #229 crops: high_grass ours bg = rgb(2,2,3), truth = sky).
-        int argb = 0;
-        for (int c = 0; c < 4; c++) {
-            int shift = 8 * c;
-            double s = w00 * ((c00 >>> shift) & 255) + w10 * ((c10 >>> shift) & 255)
-                    + w01 * ((c01 >>> shift) & 255) + w11 * ((c11 >>> shift) & 255);
-            argb |= Math.min(255, Math.max(0, (int) Math.round(s))) << shift;
-        }
-        return argb;
     }
 
     private static double[] bary(double a, double b, double[] p0, double[] p1, double[] p2) {
