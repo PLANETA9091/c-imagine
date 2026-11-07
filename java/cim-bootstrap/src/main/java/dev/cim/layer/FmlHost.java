@@ -513,7 +513,7 @@ public final class FmlHost {
                     dist = String.valueOf(invokeValue(d));
                 }
             }
-            if (dist == null || dist.equals("DEDICATED_SERVER") || dist.equals("ANY")) {
+            if (dist == null || servesDedicatedServer(dist)) {
                 out.add(entry);
             } else {
                 System.out.println(LOG + " entrypoint " + entry
@@ -521,6 +521,24 @@ public final class FmlHost {
             }
         }
         return out;
+    }
+
+    /**
+     * {@code @Mod(dist = ...)} is an array: the scan hands it over as a list of enum holders
+     * ({@code [EnumHolder[desc=..., value=DEDICATED_SERVER]]}), not as one name. An entrypoint
+     * runs on a dedicated server when any listed side is DEDICATED_SERVER (measured: AE2's
+     * {@code AppEngServer} was skipped, so AE2 never loaded in the layer).
+     */
+    static boolean servesDedicatedServer(String dist) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\\b(DEDICATED_SERVER|ANY|CLIENT)\\b").matcher(dist);
+        boolean any = false;
+        while (m.find()) {
+            any = true;
+            if (!m.group(1).equals("CLIENT")) {
+                return true;
+            }
+        }
+        return !any;
     }
 
     /** One FML container per declared mod, sharing its jar's module and scan data. */
