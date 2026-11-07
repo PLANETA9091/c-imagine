@@ -1699,11 +1699,7 @@ public final class CimSceneMod {
             stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
                     new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
-            for (net.minecraft.world.entity.Entity e : level.getEntities((net.minecraft.world.entity.Entity) null,
-                    new net.minecraft.world.phys.AABB(rig).inflate(2),
-                    e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
-                guiEntity = e;
-            }
+            guiEntity = guiSpawnedNear(level, rig, guiEntity);
         } else if (plain.startsWith("use+item:")) {
             String[] pair = plain.substring("use+item:".length()).split("@", 2);
             level.setBlock(rig, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pair[1])).defaultBlockState(), 3);
@@ -1724,11 +1720,7 @@ public final class CimSceneMod {
             }
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             // Whatever the use put into the world is what the player clicks next.
-            for (net.minecraft.world.entity.Entity e : level.getEntities((net.minecraft.world.entity.Entity) null,
-                    new net.minecraft.world.phys.AABB(rig).inflate(2),
-                    e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
-                guiEntity = e;
-            }
+            guiEntity = guiSpawnedNear(level, rig, guiEntity);
         } else if (plain.startsWith("entity:")) {
             net.minecraft.world.entity.Entity entity = BuiltInRegistries.ENTITY_TYPE.get(
                     ResourceLocation.parse(plain.substring("entity:".length()))).create(level);
@@ -1742,6 +1734,24 @@ public final class CimSceneMod {
                 guiEntity = entity.isRemoved() ? null : entity;
             }
         }
+    }
+
+    /**
+     * What a use put into the world next to the rig. Not {@code getEntities(box)}: that only
+     * sees sections whose entity data finished loading, and the rig's chunk was forced this
+     * tick, so a robit the item just placed is in the level but not yet in a visible section.
+     */
+    private static net.minecraft.world.entity.Entity guiSpawnedNear(ServerLevel level, BlockPos rig,
+                                                                   net.minecraft.world.entity.Entity fallback) {
+        net.minecraft.world.entity.Entity found = fallback;
+        net.minecraft.world.phys.Vec3 at = Vec3.atCenterOf(rig);
+        for (net.minecraft.world.entity.Entity e : level.getAllEntities()) {
+            if (!(e instanceof net.minecraft.world.entity.player.Player) && !e.isRemoved()
+                    && e.position().distanceToSqr(at) <= 9.0) {
+                found = e;
+            }
+        }
+        return found;
     }
 
     private static boolean guiOpened(ServerPlayer player) {
@@ -1888,10 +1898,15 @@ public final class CimSceneMod {
         for (BlockPos p : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
             level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
         }
-        for (net.minecraft.world.entity.Entity e : level.getEntities((net.minecraft.world.entity.Entity) null,
-                new net.minecraft.world.phys.AABB(rig).inflate(6), e -> !(e instanceof net.minecraft.world.entity.player.Player))) {
-            e.discard();
+        // The full lookup, as guiSpawnedNear reads it: a hidden section's entity stays otherwise.
+        List<net.minecraft.world.entity.Entity> near = new ArrayList<>();
+        net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(rig).inflate(6);
+        for (net.minecraft.world.entity.Entity e : level.getAllEntities()) {
+            if (!(e instanceof net.minecraft.world.entity.player.Player) && box.contains(e.position())) {
+                near.add(e);
+            }
         }
+        near.forEach(net.minecraft.world.entity.Entity::discard);
         guiEntity = null;
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
     }
