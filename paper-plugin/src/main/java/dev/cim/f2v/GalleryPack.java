@@ -1648,9 +1648,14 @@ public final class GalleryPack {
             }
             float[][] colors = null;
             if (c.length >= 35) {
-                colors = new float[4][3];
+                colors = new float[4][c.length >= 39 ? 4 : 3];
                 for (int i = 0; i < 12; i++) {
                     colors[i / 3][i % 3] = Float.parseFloat(c[23 + i]);
+                }
+                if (c.length >= 39) {
+                    for (int i = 0; i < 4; i++) {
+                        colors[i][3] = Float.parseFloat(c[35 + i]);
+                    }
                 }
             }
             faces.add(new ObjMesh.Face(verts, "#" + key, colors));

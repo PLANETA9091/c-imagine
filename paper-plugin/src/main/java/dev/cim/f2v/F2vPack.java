@@ -3059,6 +3059,7 @@ public final class F2vPack {
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
         rawCaptureTextureSelftest(failures);
+        capturedAlphaSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
         if (failures.isEmpty()) {
@@ -3098,6 +3099,58 @@ public final class F2vPack {
         } finally {
             GalleryPack.resetJarCache();
             Files.deleteIfExists(jar);
+        }
+    }
+
+    private static void capturedAlphaSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-captured-alpha");
+        try {
+            var image = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 2; y++) {
+                for (int x = 0; x < 2; x++) image.setRGB(x, y, 0x80ABCDEF);
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", png);
+            Path jar = root.resolve("fixture.jar");
+            writeJar(jar, new TreeMap<>(Map.of("assets/fixture/textures/block/glass.png", png.toByteArray())));
+            String face = "fixture:block/glass\t1\t-1"
+                    + "\t0\t0\t0\t0\t0\t16\t0\t0\t16\t0"
+                    + "\t16\t16\t0\t16\t16\t0\t16\t0\t0\t16";
+            String rgb = "\t1\t1\t1".repeat(4);
+            String[] rows = {face, face + rgb, face + rgb + "\t0.3".repeat(4)};
+            int[] expected = {128, 128, 38};
+            for (int i = 0; i < rows.length; i++) {
+                ObjMesh.resetBaker();
+                GalleryPack.resetJarCache();
+                GalleryPack.setQuadDir(root);
+                Files.writeString(root.resolve("items.tsv"), "fixture:item\talpha\n");
+                Files.writeString(root.resolve("alpha.tsv"), rows[i] + "\n");
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                String ref = GalleryPack.synthesizeItemQuads(List.of(jar), "fixture:item", 0,
+                        entries, new ArrayList<>());
+                expect(failures, ref != null, "alpha capture: fixture resolves " + i);
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject model = JsonParser.parseString(new String(entries.get(
+                        "assets/c-imagine/models/items/i0.json"), StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject f = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").entrySet().iterator().next().getValue().getAsJsonObject();
+                String texture = model.getAsJsonObject("textures")
+                        .get(f.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get("assets/" + texture.replace(":", "/textures/") + ".png"));
+                JsonArray uv = f.getAsJsonArray("uv");
+                int x = (int) ((uv.get(0).getAsDouble() + uv.get(2).getAsDouble()) / 32 * sheet.getWidth());
+                int y = (int) ((uv.get(1).getAsDouble() + uv.get(3).getAsDouble()) / 32 * sheet.getHeight());
+                int pixel = sheet.getRGB(x, y);
+                expect(failures, pixel >>> 24 == expected[i],
+                        "alpha capture: legacy opacity or texture-times-vertex opacity " + i);
+                expect(failures, (pixel & 0xFFFFFF) == 0xABCDEF,
+                        "alpha capture: RGB stays unpremultiplied " + i);
+            }
+        } finally {
+            GalleryPack.setQuadDir(null);
+            GalleryPack.resetJarCache();
+            ObjMesh.resetBaker();
+            deleteRecursively(root);
         }
     }
 

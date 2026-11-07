@@ -52,7 +52,7 @@ final class ObjMesh {
     record Vert(double[] p, double[] uv, int pi, int ti) {
     }
 
-    /** {@code colors}: per-vertex rgb multipliers (ambient occlusion x tint), or null. */
+    /** Per-vertex RGB or RGBA multipliers (ambient occlusion x tint, optional opacity). */
     record Face(List<Vert> verts, String tex, float[][] colors) {
         Face(List<Vert> verts, String tex) {
             this(verts, tex, null);
@@ -686,9 +686,10 @@ final class ObjMesh {
         }
 
         private static float[][] readColors(JsonArray cs) {
-            float[][] out = new float[cs.size()][3];
+            int channels = cs.get(0).getAsJsonArray().size();
+            float[][] out = new float[cs.size()][channels];
             for (int i = 0; i < out.length; i++) {
-                for (int k = 0; k < 3; k++) {
+                for (int k = 0; k < channels; k++) {
                     out[i][k] = cs.get(i).getAsJsonArray().get(k).getAsFloat();
                 }
             }
@@ -762,6 +763,12 @@ final class ObjMesh {
                                 rgb |= Math.min(255, value) << shift;
                             }
                             argb = (argb & 0xFF000000) | rgb;
+                            if (colors[0].length >= 4) {
+                                double alpha = l[0] * colors[0][3] + l[1] * colors[t][3]
+                                        + l[2] * colors[t + 1][3];
+                                int opacity = (int) Math.round((argb >>> 24) * alpha);
+                                argb = (argb & 0xFFFFFF) | Math.clamp(opacity, 0, 255) << 24;
+                            }
                         }
                         out[j * pw + i] = argb;
                         break;

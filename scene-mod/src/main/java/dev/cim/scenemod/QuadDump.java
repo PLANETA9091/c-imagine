@@ -73,7 +73,8 @@ import net.minecraft.nbt.NbtIo;
  * {@code x y z q<hash>}; {@code quads/<hash>.tsv}, one quad per line (sprite,
  * shade, tint, x y z u v per vertex, then r g b per vertex; model units,
  * sprite-local 0..16 UVs, colour = ambient occlusion x tint; a sprite prefixed
- * with @ is an exact PNG resource such as @mekanism:render/jetpack.png);
+ * with @ is an exact PNG resource such as @mekanism:render/jetpack.png;
+ * optional four vertex-alpha multipliers follow the twelve RGB fields);
  * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
  */
 final class QuadDump {
@@ -442,6 +443,11 @@ final class QuadDump {
         for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.3f\t%.3f\t%.3f", rgb[i][0], rgb[i][1], rgb[i][2]));
         }
+        if (rgb[0].length >= 4) {
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format(Locale.ROOT, "\t%.6f", rgb[i][3]));
+            }
+        }
         sb.append('\n');
     }
 
@@ -538,7 +544,7 @@ final class QuadDump {
         final List<TextureAtlasSprite> sprites;
         final float[][] pos = new float[4][3];
         final float[][] uv = new float[4][2];
-        final float[][] rgb = new float[4][3];
+        final float[][] rgb = new float[4][4];
         int n = -1;
         long foreign;
         /** The bound buffer's texture when it is not the block atlas. */
@@ -572,7 +578,7 @@ final class QuadDump {
             int[] v = q.getVertices();
             float[][] p = new float[4][3];
             float[][] t = new float[4][2];
-            float[][] c = new float[4][3];
+            float[][] c = new float[4][4];
             Vector3f at = new Vector3f();
             for (int i = 0; i < 4; i++) {
                 int o = i * STRIDE;
@@ -586,6 +592,8 @@ final class QuadDump {
                 c[i][0] = brightness[i] * r;
                 c[i][1] = brightness[i] * g;
                 c[i][2] = brightness[i] * b;
+                // Match VertexConsumer's byte-quantized packed alpha.
+                c[i][3] = (int) (a * (readAlpha ? ((v[o + 3] >>> 24) & 255) : 255)) / 255f;
             }
             if (texture != null) {
                 appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
@@ -604,6 +612,7 @@ final class QuadDump {
             rgb[n][0] = 1;
             rgb[n][1] = 1;
             rgb[n][2] = 1;
+            rgb[n][3] = 1;
             return this;
         }
 
@@ -625,6 +634,7 @@ final class QuadDump {
                 rgb[n][0] = r / 255f;
                 rgb[n][1] = g / 255f;
                 rgb[n][2] = b / 255f;
+                rgb[n][3] = a / 255f;
             }
             return this;
         }
