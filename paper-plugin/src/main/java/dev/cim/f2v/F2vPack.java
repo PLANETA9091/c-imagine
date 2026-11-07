@@ -3060,6 +3060,7 @@ public final class F2vPack {
         unlitBlockSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
+        capturedSpriteSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
         if (failures.isEmpty()) {
@@ -3150,6 +3151,42 @@ public final class F2vPack {
             GalleryPack.setQuadDir(null);
             GalleryPack.resetJarCache();
             ObjMesh.resetBaker();
+            deleteRecursively(root);
+        }
+    }
+
+    private static void capturedSpriteSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-captured-sprite");
+        String hash = "0123456789abcdef";
+        try {
+            Path textures = Files.createDirectory(root.resolve("textures"));
+            byte[] png = f2vSelftestPng(2, 4);
+            Files.write(textures.resolve(hash + ".png"), png);
+            Files.writeString(textures.resolve(hash + ".png.mcmeta"),
+                    "{\"animation\":{\"width\":2,\"height\":2,\"frametime\":3,\"frames\":[1,0]}}");
+            GalleryPack.setQuadDir(root);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            String ref = GalleryPack.hostSprite(List.of(), "~" + hash, entries, warnings);
+            String hosted = "assets/c-imagine/textures/block/items/captured_" + hash + ".png";
+            expect(failures, ref.equals("c-imagine:block/items/captured_" + hash)
+                            && java.util.Arrays.equals(png, entries.get(hosted)),
+                    "captured sprite: generated pixels re-host without any source jar");
+            String meta = new String(entries.get(hosted + ".mcmeta"), StandardCharsets.UTF_8);
+            expect(failures, meta.contains("[1,0]") && meta.contains("\"frametime\":3"),
+                    "captured sprite: animation order and timing survive");
+            expect(failures, warnings.isEmpty(), "captured sprite: no missing-texture fallback");
+            for (String missing : List.of("~fedcba9876543210", "~../../outside")) {
+                boolean refused = false;
+                try {
+                    GalleryPack.hostSprite(List.of(), missing, entries, warnings);
+                } catch (IOException expected) {
+                    refused = true;
+                }
+                expect(failures, refused, "captured sprite: absent/invalid artifact fails: " + missing);
+            }
+        } finally {
+            GalleryPack.setQuadDir(null);
             deleteRecursively(root);
         }
     }

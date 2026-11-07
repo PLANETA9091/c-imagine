@@ -10,10 +10,15 @@ public final class CaptureTextureTest {
         check("@mod:block/custom.png", "mod:block/custom.png");
         // Only the vanilla block atlas has the recorded block-sprite UV domain.
         check("mod:atlas/blocks", "mod:textures/atlas/blocks.png");
+        String customAtlas = "mekanism:textures/atlas/robit.png";
+        if (!customAtlas.equals(CaptureTexture.resourceFromRenderState(
+                "texture[Optional[" + customAtlas + "]]"))) {
+            throw new AssertionError("custom atlas texture-manager key was rewritten");
+        }
         if (CaptureTexture.fromRenderState("texture[Optional.empty]") != null) {
             throw new AssertionError("unbound texture");
         }
-        System.out.println("capture texture tests: ALL OK (7 cases)");
+        System.out.println("capture texture tests: ALL OK (8 cases)");
     }
 
     private static void check(String expected, String resource) {

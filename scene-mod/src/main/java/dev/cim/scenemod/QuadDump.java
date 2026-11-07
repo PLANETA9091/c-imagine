@@ -1,5 +1,7 @@
 package dev.cim.scenemod;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
@@ -14,6 +16,7 @@ import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.metadata.animation.AnimationMetadataSection;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -51,6 +54,7 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -74,6 +78,7 @@ import net.minecraft.nbt.NbtIo;
  * shade, tint, x y z u v per vertex, then r g b per vertex; model units,
  * sprite-local 0..16 UVs, colour = ambient occlusion x tint; a sprite prefixed
  * with @ is an exact PNG resource such as @mekanism:render/jetpack.png;
+ * ~hash names a decoded custom-atlas sprite under quads/textures/hash.png;
  * optional four vertex-alpha multipliers follow the twelve RGB fields);
  * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
  */
@@ -93,6 +98,8 @@ final class QuadDump {
     private static int berFailed;
     private static int berNoLevel;
     private static int waited;
+    private static Path capturedTextures;
+    private static final Map<TextureAtlasSprite, String> capturedSpriteNames = new IdentityHashMap<>();
 
     private QuadDump() {
     }
@@ -164,6 +171,8 @@ final class QuadDump {
         }
         Path out = scenes.resolve("quads");
         Files.createDirectories(out);
+        capturedTextures = out.resolve("textures");
+        capturedSpriteNames.clear();
         TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);
         List<TextureAtlasSprite> sprites = new ArrayList<>(atlas.getTextures().values());
         TreeSet<String> rows = new TreeSet<>();
@@ -260,6 +269,7 @@ final class QuadDump {
         }
         Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
         dumpItems(scenes, out, sprites);
+        LOGGER.info("[cimscene] quad dump captured_atlas_sprites={}", capturedSpriteNames.size());
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
                         + "block_entities drawn={} failed={} no_level={} not_rendered={}",
                 cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel, berNotRendered);
@@ -408,6 +418,12 @@ final class QuadDump {
     /** Positions in 0..1 block space, UVs in atlas space; a null sprite is looked up by UV. */
     private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
                                      boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb) {
+        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, false);
+    }
+
+    private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
+                                     boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
+                                     boolean capturePixels) {
         float cu = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) / 4;
         float cv = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) / 4;
         // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
@@ -428,8 +444,52 @@ final class QuadDump {
             local[i][0] = (uv[i][0] - sprite.getU0()) / (sprite.getU1() - sprite.getU0());
             local[i][1] = (uv[i][1] - sprite.getV0()) / (sprite.getV1() - sprite.getV0());
         }
-        appendRow(sb, sprite.contents().name().toString(), shade, tint, pos, local, rgb);
+        appendRow(sb, capturePixels ? capturedSprite(sprite) : sprite.contents().name().toString(),
+                shade, tint, pos, local, rgb);
         return true;
+    }
+
+    /** Persist the decoded pixels, including generated atlas sources, without guessing a jar path. */
+    private static String capturedSprite(TextureAtlasSprite sprite) {
+        String existing = capturedSpriteNames.get(sprite);
+        if (existing != null) {
+            return existing;
+        }
+        try {
+            var contents = sprite.contents();
+            byte[] png = contents.getOriginalImage().asByteArray();
+            JsonObject metadata = new JsonObject();
+            contents.metadata().getSection(AnimationMetadataSection.SERIALIZER).ifPresent(animation -> {
+                JsonObject a = new JsonObject();
+                a.addProperty("width", contents.width());
+                a.addProperty("height", contents.height());
+                a.addProperty("frametime", animation.getDefaultFrameTime());
+                a.addProperty("interpolate", animation.isInterpolatedFrames());
+                JsonArray frames = new JsonArray();
+                animation.forEachFrame((index, time) -> {
+                    JsonObject frame = new JsonObject();
+                    frame.addProperty("index", index);
+                    frame.addProperty("time", time);
+                    frames.add(frame);
+                });
+                if (!frames.isEmpty()) {
+                    a.add("frames", frames);
+                }
+                metadata.add("animation", a);
+            });
+            String meta = metadata.toString();
+            String hash = sha(Base64.getEncoder().encodeToString(png) + meta);
+            Files.createDirectories(capturedTextures);
+            Files.write(capturedTextures.resolve(hash + ".png"), png);
+            if (!metadata.isEmpty()) {
+                Files.writeString(capturedTextures.resolve(hash + ".png.mcmeta"), meta, StandardCharsets.UTF_8);
+            }
+            String name = "~" + hash;
+            capturedSpriteNames.put(sprite, name);
+            return name;
+        } catch (Exception failure) {
+            throw new IllegalStateException("Cannot capture atlas sprite " + sprite.contents().name(), failure);
+        }
     }
 
     /** One quad row; {@code uv} is 0..1 across the named sprite or texture. */
@@ -542,6 +602,8 @@ final class QuadDump {
     private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
+        List<TextureAtlasSprite> boundSprites;
+        boolean captureAtlasPixels;
         final float[][] pos = new float[4][3];
         final float[][] uv = new float[4][2];
         final float[][] rgb = new float[4][4];
@@ -555,6 +617,7 @@ final class QuadDump {
 
         ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
             this.sprites = sprites;
+            this.boundSprites = sprites;
             this.origin = origin;
         }
 
@@ -569,6 +632,18 @@ final class QuadDump {
             }
             flush(); // a pending quad belongs to the previous buffer's texture
             texture = CaptureTexture.fromRenderState(state);
+            boundSprites = sprites;
+            captureAtlasPixels = false;
+            String resource = CaptureTexture.resourceFromRenderState(state);
+            if (resource != null && !resource.equals(InventoryMenu.BLOCK_ATLAS.toString())) {
+                var bound = Minecraft.getInstance().getTextureManager()
+                        .getTexture(ResourceLocation.parse(resource), null);
+                if (bound instanceof TextureAtlas atlas) {
+                    texture = null;
+                    boundSprites = new ArrayList<>(atlas.getTextures().values());
+                    captureAtlasPixels = true;
+                }
+            }
             return this;
         }
 
@@ -598,7 +673,8 @@ final class QuadDump {
             if (texture != null) {
                 appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
             } else {
-                writeQuad(out, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), p, t, c);
+                writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
+                        q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
             }
         }
 
@@ -621,7 +697,7 @@ final class QuadDump {
             if (n == 3) {
                 if (texture != null) {
                     appendRow(out, texture, true, -1, pos, uv, rgb);
-                } else if (!writeQuad(out, null, sprites, true, -1, pos, uv, rgb)) {
+                } else if (!writeQuad(out, null, boundSprites, true, -1, pos, uv, rgb, captureAtlasPixels)) {
                     foreign++;
                 }
                 n = -1;

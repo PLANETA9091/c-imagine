@@ -1781,6 +1781,28 @@ public final class GalleryPack {
      */
     static String hostSprite(List<Path> jars, String sprite, TreeMap<String, byte[]> entries,
                              List<String> warnings) throws IOException {
+        if (sprite.startsWith("~")) {
+            // A real-client decoded sprite, including generated atlas sources.
+            // Missing artifacts must fail the build rather than fabricate a texture.
+            if (!sprite.matches("~[0-9a-f]{16}") || quadDir == null) {
+                throw new IOException("gallery: invalid captured sprite reference: " + sprite);
+            }
+            String hash = sprite.substring(1);
+            Path png = quadDir.resolve("textures").resolve(hash + ".png");
+            byte[] pixels = java.nio.file.Files.readAllBytes(png);
+            String key = "items/captured_" + hash;
+            String hosted = "assets/" + WRAPPER_NS + "/textures/block/" + key + ".png";
+            entries.put(hosted, pixels);
+            Path metaFile = png.resolveSibling(hash + ".png.mcmeta");
+            if (java.nio.file.Files.isRegularFile(metaFile)) {
+                byte[] meta = sanitizeAnimationMetadata(sprite, pixels,
+                        java.nio.file.Files.readAllBytes(metaFile), warnings);
+                if (meta != null) {
+                    entries.put(hosted + ".mcmeta", meta);
+                }
+            }
+            return WRAPPER_NS + ":block/" + key;
+        }
         if (sprite.startsWith("minecraft:block/")) {
             return sprite;
         }

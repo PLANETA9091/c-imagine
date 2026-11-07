@@ -13,18 +13,28 @@ final class CaptureTexture {
 
     /** Null denotes block-atlas UVs; @ denotes an exact jar resource path. */
     static String fromRenderState(String state) {
-        Matcher match = TEXTURE.matcher(state);
-        if (!match.find()) {
+        String resource = resourceFromRenderState(state);
+        if (resource == null) {
             return null;
         }
-        String namespace = match.group(1);
-        String path = match.group(2);
+        int colon = resource.indexOf(':');
+        String namespace = resource.substring(0, colon);
+        String path = resource.substring(colon + 1);
         if (namespace.equals("minecraft") && path.equals("textures/atlas/blocks.png")) {
             return null;
         }
         if (path.startsWith("textures/")) {
             return namespace + ":" + path.substring(9, path.length() - 4);
         }
-        return "@" + namespace + ":" + path;
+        return "@" + resource;
+    }
+
+    /** Exact texture-manager key, before any sprite-path conversion. */
+    static String resourceFromRenderState(String state) {
+        Matcher match = TEXTURE.matcher(state);
+        if (!match.find()) {
+            return null;
+        }
+        return match.group(1) + ":" + match.group(2);
     }
 }
