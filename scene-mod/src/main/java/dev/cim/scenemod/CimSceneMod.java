@@ -1906,8 +1906,9 @@ public final class CimSceneMod {
             }
         }
         int singles = candidates.size();
-        for (int c = 0; c < candidates.size(); c++) {
-            String candidate = candidates.get(c);
+        for (int c = 0; ; c++) {
+            // Checked before the bound: the pairs start exactly where the singles end, so
+            // a loop bounded by the singles' count would never reach them.
             if (c == singles && !wanted.isEmpty()) {
                 // What no single click opened may need a tool used on a machine, the way a
                 // player tries a card, a cell or a robit on a block.
@@ -1915,6 +1916,10 @@ public final class CimSceneMod {
                 LOGGER.info("[cimscene] gallery-gui pairs ns={} missing={} pairs={}", namespace, wanted.size(), pairs.size());
                 candidates.addAll(pairs);
             }
+            if (c >= candidates.size()) {
+                break;
+            }
+            String candidate = candidates.get(c);
             probe.seen = null;
             probe.candidate = candidate;
             try {
@@ -2092,7 +2097,12 @@ public final class CimSceneMod {
         String how = null;
         boolean gone = opener != null && opener.contains("entity:") && (guiEntity == null || !guiEntity.isAlive());
         if (opener != null && !gone) {
-            guiAct(level, viewer, rig, opener);
+            try {
+                guiAct(level, viewer, rig, opener);
+            } catch (Throwable t) {
+                // The page still gets its manifest, so a throwing opener is a named RED row.
+                LOGGER.info("[cimscene] gallery-gui opener {} threw for the viewer: {}", opener, t.toString());
+            }
             if (guiOpenMenu(viewer) != null) {
                 how = "opened-by:" + opener;
             }
@@ -2607,8 +2617,9 @@ public final class CimSceneMod {
         for (DelayedTask t : due) {
             try {
                 t.task().run();
-            } catch (RuntimeException ex) {
-                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString());
+            } catch (Throwable ex) {
+                // A mod's Error (a NoSuchMethodError from its own bytecode) must not hide the page.
+                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString(), ex);
             }
         }
     }
