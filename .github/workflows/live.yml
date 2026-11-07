@@ -20,8 +20,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # The first gate of M6.3 (owner example): Create's list filter, opened from the held item.
-  CIM_LIVE_SELFTEST: create:filter
+  # Every item of every mod in the lock: whatever menu its own code opens gets a move and a close.
+  CIM_LIVE_SELFTEST: all
 
 jobs:
   truth:
@@ -49,12 +49,19 @@ jobs:
           curl -sL --max-time 300 -o nf-srv-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           java -jar nf-srv-installer.jar --installServer layer-srv
-      - name: fetch Create
-        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
       - name: boot, run the self-test, stop
         run: |
           mkdir -p layer-srv/mods
-          cp mods-create/*.jar live-mod/build/libs/cimlive-1.0.0.jar layer-srv/mods/
+          cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar layer-srv/mods/
           cd layer-srv
           echo eula=true > eula.txt
           printf 'online-mode=false\nlevel-type=minecraft:flat\n' > server.properties
@@ -100,12 +107,19 @@ jobs:
           curl -sL --max-time 300 -o nf-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           java -jar nf-installer.jar --installServer layer1211
-      - name: fetch Create
-        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
       - name: run the layer with Create and cimlive
         run: |
           mkdir -p mods
-          cp mods-create/*.jar live-mod/build/libs/cimlive-1.0.0.jar mods/
+          cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar mods/
           bash scripts/run-m2-harness.sh layer1211/libraries mods out-live || true
           grep '\[cimlive\]' out-live/harness.log | tee layer-live.txt
           grep -q "\[cimlive\] selftest ok" out-live/harness.log || { grep -n 'cimlive\|Exception' out-live/harness.log | tail -60; exit 1; }
@@ -131,5 +145,6 @@ jobs:
           norm() { grep -oE '\[cimlive\] selftest .*' "$1" | grep -v 'facade level' ; }
           norm all/live-truth/truth-live.txt > truth.txt
           norm all/live-layer/layer-live.txt > layer.txt
-          echo "--- truth"; cat truth.txt; echo "--- layer"; cat layer.txt
+          { echo "### live menus, real NeoForge vs layer"; echo; echo '```'; grep -E 'summary|kinds' truth.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep 'summary' truth.txt layer.txt
           diff truth.txt layer.txt && echo "live parity: IDENTICAL"

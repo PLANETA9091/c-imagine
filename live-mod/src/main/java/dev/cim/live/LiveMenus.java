@@ -93,62 +93,93 @@ public final class LiveMenus {
     }
 
     /**
-     * Integration self-test, run in the layer at common setup when CIM_LIVE_SELFTEST names an
-     * item: open its menu through the item's own code, then move a stack into the first menu
-     * slot the way two clicks do it, and log what the mod's menu made of it.
+     * Integration self-test, run in the layer at common setup. CIM_LIVE_SELFTEST names the
+     * namespaces to cover ("all" for every loaded mod but minecraft and neoforge): every
+     * item of them is used by a fresh session the way a right click uses it, and every
+     * menu that the mod's own code opens gets the first move a player makes (a stack from
+     * the inventory onto the menu's first slot of its own), then a close. One log line per
+     * item that did anything, in id order, so the real server and the layer can be diffed.
      */
-    static void selfTest(String itemId) {
+    static void selfTest(String spec) {
+        java.util.Set<String> wanted = new java.util.TreeSet<>();
+        for (String ns : spec.split("[,\\s]+")) {
+            if (!ns.isBlank()) {
+                wanted.add(ns.trim());
+            }
+        }
+        boolean all = wanted.contains("all");
+        java.util.List<ResourceLocation> items = new java.util.ArrayList<>();
+        for (ResourceLocation id : BuiltInRegistries.ITEM.keySet()) {
+            String ns = id.getNamespace();
+            if (all ? !ns.equals("minecraft") && !ns.equals("neoforge") && !ns.equals("cimlive") : wanted.contains(ns)) {
+                items.add(id);
+            }
+        }
+        items.sort(java.util.Comparator.comparing(ResourceLocation::toString));
+        int menus = 0;
+        int threw = 0;
+        java.util.Set<String> kinds = new java.util.TreeSet<>();
+        for (ResourceLocation id : items) {
+            UUID uuid = UUID.nameUUIDFromBytes(("cimlive-" + id).getBytes(StandardCharsets.UTF_8));
+            try {
+                SessionServerPlayer player = session(uuid, "cimlive");
+                AbstractContainerMenu menu = useHeld(player, new ItemStack(BuiltInRegistries.ITEM.get(id)));
+                if (menu == null) {
+                    end(uuid);
+                    continue;
+                }
+                menus++;
+                ResourceLocation type = menuType(menu);
+                kinds.add(String.valueOf(type));
+                int own = 0;
+                int firstOwn = -1;
+                int firstMine = -1;
+                for (int i = 0; i < menu.slots.size(); i++) {
+                    Slot slot = menu.slots.get(i);
+                    if (slot.container == player.getInventory()) {
+                        if (firstMine < 0 && slot.getContainerSlot() >= 9 && !slot.hasItem()) {
+                            firstMine = i;
+                        }
+                    } else {
+                        own++;
+                        if (firstOwn < 0) {
+                            firstOwn = i;
+                        }
+                    }
+                }
+                String move = "no slot of its own";
+                if (firstOwn >= 0 && firstMine >= 0) {
+                    menu.slots.get(firstMine).set(new ItemStack(Items.DIAMOND, 5));
+                    click(player, firstMine, 0, ClickType.PICKUP);
+                    click(player, firstOwn, 0, ClickType.PICKUP);
+                    move = "slot " + firstOwn + " holds " + describe(menu.slots.get(firstOwn).getItem())
+                            + ", carried " + describe(menu.getCarried());
+                }
+                end(uuid);
+                StringBuilder said = new StringBuilder();
+                for (net.minecraft.network.protocol.Packet<?> packet : player.session().drain()) {
+                    said.append(said.length() == 0 ? "" : "+").append(packet.getClass().getSimpleName());
+                }
+                LOG.info("[cimlive] selftest item {} opens {} ({} slots, {} own); move: {}; close sent {}; inventory {}",
+                        id, type, menu.slots.size(), own, move, said.length() == 0 ? "nothing" : said,
+                        inventoryLine(player));
+            } catch (Throwable t) {
+                threw++;
+                // The simple class name only: the layer's classes carry relocated packages.
+                LOG.info("[cimlive] selftest item {} threw {}", id, t.getClass().getSimpleName());
+                SESSIONS.remove(uuid);
+            }
+        }
+        LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
+        LOG.info("[cimlive] selftest kinds {}", kinds);
+        LOG.info("[cimlive] selftest ok");
+    }
+
+    private static ResourceLocation menuType(AbstractContainerMenu menu) {
         try {
-            SessionServerPlayer player = session(UUID.nameUUIDFromBytes("cimlive-selftest".getBytes(StandardCharsets.UTF_8)),
-                    "cimlive");
-            ItemStack held = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
-            AbstractContainerMenu menu = useHeld(player, held);
-            if (menu == null) {
-                LOG.info("[cimlive] selftest {}: no menu opened", itemId);
-                return;
-            }
-            int own = 0;
-            int firstOwn = -1;
-            int firstMine = -1;
-            for (int i = 0; i < menu.slots.size(); i++) {
-                Slot s = menu.slots.get(i);
-                if (s.container == player.getInventory()) {
-                    if (firstMine < 0 && s.getContainerSlot() >= 9) {
-                        firstMine = i;
-                    }
-                } else {
-                    own++;
-                    if (firstOwn < 0) {
-                        firstOwn = i;
-                    }
-                }
-            }
-            LOG.info("[cimlive] selftest menu {} class={} slots={} menuSlots={}",
-                    BuiltInRegistries.MENU.getKey(menu.getType()), menu.getClass().getSimpleName(), menu.slots.size(), own);
-            if (firstOwn >= 0 && firstMine >= 0) {
-                menu.slots.get(firstMine).set(new ItemStack(Items.DIAMOND, 5));
-                click(player, firstMine, 0, ClickType.PICKUP);
-                click(player, firstOwn, 0, ClickType.PICKUP);
-                LOG.info("[cimlive] selftest move: menu slot {} holds {}, inventory slot {} holds {}, carried {}",
-                        firstOwn, describe(menu.slots.get(firstOwn).getItem()), firstMine,
-                        describe(menu.slots.get(firstMine).getItem()), describe(menu.getCarried()));
-            }
-            for (int b = 0; b < 8; b++) {
-                boolean took = menu.clickMenuButton(player, b);
-                if (took) {
-                    LOG.info("[cimlive] selftest button {} handled by the menu", b);
-                }
-            }
-            end(player.getUUID());
-            StringBuilder said = new StringBuilder();
-            for (net.minecraft.network.protocol.Packet<?> packet : player.session().drain()) {
-                said.append(' ').append(packet.getClass().getSimpleName());
-            }
-            LOG.info("[cimlive] selftest close: the menu sent{}; inventory now {}", said.length() == 0 ? " nothing" : said,
-                    inventoryLine(player));
-            LOG.info("[cimlive] selftest ok");
-        } catch (Throwable t) {
-            LOG.error("[cimlive] selftest FAILED: {}", t.toString(), t);
+            return BuiltInRegistries.MENU.getKey(menu.getType());
+        } catch (UnsupportedOperationException none) {
+            return null;
         }
     }
 }
