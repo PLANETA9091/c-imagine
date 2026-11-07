@@ -1840,7 +1840,12 @@ jobs:
           # the visual client runtime (piston-meta, with assets) — cached
           [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           wc -c visual-client/classpath.txt visual-client/launch.txt
-          sed -i 's/^java /java -Xmx2G /' visual-client/launch.txt
+          # 14-cp: the pack grew to ~166k gallery models (the per-cell
+          # native liquid replay added ~40k over the 21c545f era) and the
+          # stock 2G heap OOM'd in ModelManager.loadBlockModels on every
+          # ours shard (runs 42413757062, 42412879537). 5G leaves headroom
+          # for the model+atlas load peak next to the 3G Paper server.
+          sed -i 's/^java /java -Xmx5G /' visual-client/launch.txt
           # THE VULKAN FALLBACK (measured 2026-11-06: the rolled runner
           # image's GLX offers GL 4.5 COMPAT while the 26.3 GlDevice
           # demands more — "Couldn't find matching GLX visual" killed every
