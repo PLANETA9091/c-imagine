@@ -1714,8 +1714,13 @@ public final class CimSceneMod {
             BlockState state = level.getBlockState(rig);
             net.minecraft.world.ItemInteractionResult result = state.useItemOn(stack, level, player,
                     InteractionHand.MAIN_HAND, hit);
+            net.minecraft.world.InteractionResult used = null;
             if (!result.consumesAction()) {
-                stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                used = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+            }
+            if (PAIR_USES_LOGGED < 400 && (result.consumesAction() || (used != null && used.consumesAction()))) {
+                PAIR_USES_LOGGED++;
+                LOGGER.info("[cimscene] gallery-gui pair use {} block={} item={}", plain, result, used);
             }
             player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             // Whatever the use put into the world is what the player clicks next.
@@ -1848,6 +1853,8 @@ public final class CimSceneMod {
     }
 
     /** Every non-block item of the namespace on every block of it that holds a block entity. */
+    private static int PAIR_USES_LOGGED;
+
     private static final java.util.Set<net.minecraft.world.entity.EntityType<?>> PAIR_ENTITIES_LOGGED =
             new java.util.HashSet<>();
 
