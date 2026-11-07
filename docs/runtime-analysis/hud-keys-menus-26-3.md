@@ -6,10 +6,9 @@ on `ci/menu-compare` and has no result yet.
 
 ## What limits this
 
-- **No live mod behind any of it.** The layer builds registries but has no
-  `MinecraftServer` or `ServerPlayer`, so no Create logic runs for a player. These
-  channels deliver the surface. A key press, slot change or HUD value does not
-  reach mod code.
+- **Live mod behaviour is M6.3.** The layer builds registries but has no session
+  `ServerPlayer` yet, so a key press, slot change or button does not reach mod code.
+  M6.3 in the roadmap is the plan that makes every click run the mod's own code.
 - **Mod HUDs, screens and key handlers are client classes.** They never run on a
   server. Each surface below is a translation, not the mod's own code running.
 - **Client-only mods.** There is no minimap: c-imagine's own was removed on the owner's
