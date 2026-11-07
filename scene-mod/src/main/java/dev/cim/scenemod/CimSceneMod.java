@@ -2394,9 +2394,10 @@ public final class CimSceneMod {
                     viewer.inventoryMenu.broadcastChanges();
                 }
             }
-            runAfterTicks(level.getServer(), opener != null && (opener.contains("entity:") || opener.startsWith("cube"))
+            String chosen = opener;
+            runAfterTicks(level.getServer(), chosen != null && (chosen.contains("entity:") || chosen.startsWith("cube"))
                             ? 40 : GUI_SETTLE_TICKS,
-                    () -> finishGuiPage(level, viewer, namespace, page, id, opener, rig));
+                    () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig));
             return 1;
         }
         writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed);

@@ -93,6 +93,13 @@ jobs:
         with:
           name: plan-scenes
           path: plan-scenes
+      - name: keep the plan's server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-log
+          path: srv-plan/boot.log
+          if-no-files-found: warn
 
   slice:
     name: menus ${{ matrix.ns }} ${{ matrix.si }}/${{ matrix.k }}
