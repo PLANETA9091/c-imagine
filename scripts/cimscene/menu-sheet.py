@@ -195,8 +195,14 @@ def main():
                 res = compare(t, o, slots, a.scale, state)
                 v, w2 = judge(menu, True, note, res)
                 label = f"{menu} {'slot move' if tag == 'move' else 'press ' + tag[1:]}"
-                if v == "RED" and res:
-                    zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"))
+                if v == "RED":
+                    sheet = Image.new("RGB", (SHEET[0] * 3 + 8, SHEET[1] + LABEL), (70, 70, 70))
+                    sheet.paste(panel(load(t), f"NeoForge: {label}", SHEET), (0, 0))
+                    sheet.paste(panel(load(o), f"c-imagine: {v}", SHEET), (SHEET[0] + 4, 0))
+                    sheet.paste(panel(res[2] if res else None, w2, SHEET), (SHEET[0] * 2 + 8, 0))
+                    sheet.save(os.path.join(a.out, f"{name}-{tag}.png"))
+                    if res:
+                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"))
                 with open(os.path.join(a.report, f"join-menu-{name}-{tag}.json"), "w", encoding="utf-8") as f:
                     json.dump({"verdict": v, "cells": 1, "red": int(v == "RED"), "dynamic": 0, "skipped": 0,
                                "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)

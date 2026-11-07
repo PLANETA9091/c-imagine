@@ -306,6 +306,17 @@ public final class CimSceneMod {
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .executes(ctx -> galleryGuiScan(ctx.getSource(),
                                                 StringArgumentType.getString(ctx, "namespace")))))
+                        // Closes the viewer's menu, so whatever it held is back in the inventory
+                        // before the harness resets that inventory for the next page.
+                        .then(Commands.literal("gui-close")
+                                .executes(ctx -> {
+                                    ServerPlayer viewer = ctx.getSource().getServer().getPlayerList()
+                                            .getPlayerByName("cimviewer");
+                                    if (viewer != null) {
+                                        viewer.closeContainer();
+                                    }
+                                    return viewer == null ? 0 : 1;
+                                }))
                         .then(Commands.literal("gui")
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))

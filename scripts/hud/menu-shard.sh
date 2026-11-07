@@ -66,7 +66,7 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   $RC list | grep -q cimviewer || { stamp "viewer lost before page $p, relaunching"; pkill -f 'cim.screenart' || true; sleep 1; client; wait_viewer; sleep 8; $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null; }
   # Every page starts from the same inventory: an earlier page's slot move left items behind.
   # The stack sits in the main inventory, never the hand: the walk empties the hand.
-  $RC 'clear cimviewer' 'item replace entity cimviewer inventory.26 with minecraft:diamond 5' >/dev/null
+  $RC 'cimscene gallery gui-close' 'clear cimviewer' 'item replace entity cimviewer inventory.26 with minecraft:diamond 5' >/dev/null
   M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.done"
   B=$(cat "$M" 2>/dev/null || echo none)
   $RC "cimscene gallery gui $NS $p" >/dev/null
