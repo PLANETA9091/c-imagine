@@ -59,6 +59,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private volatile boolean netLegStarted;
     /** F2V 2.0 visual pipeline state (M5.2). */
     private F2vState f2v;
+    private dev.cim.f2v.PackHttp visualPack;
 
     private Logger log() {
         return getLogger();
@@ -173,6 +174,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 int fastPort = Integer.getInteger("cim.f2v.port", 25580);
                 dev.cim.f2v.PackHttp fastHttp =
                         dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
+                visualPack = fastHttp;
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
                         + "serving the pre-boot build's zip, sha1=" + cachedSha1
                         + ", " + fastGallery.size() + " gallery row(s), "
@@ -207,6 +209,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             int port = Integer.getInteger("cim.f2v.port", 25580);
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
+            visualPack = http;
             log().info(LOG_PREFIX + "f2v pack: serving " + http.url()
                     + " sha1=" + result.sha1());
         } catch (Throwable t) {
@@ -217,8 +220,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /**
      * Client-side pack lifecycle — the vanilla download/apply state machine
      * reported back by every real client (and by cimbot on the wire). The
-     * SUCCESSFULY_LOADED marker is the CI assertion anchor for the F2V pack
-     * contract.
+     * SUCCESSFULLY_LOADED marker is the CI assertion anchor for a pack
+     * offered in play. Paper does not emit this event for the configuration
+     * phase's server.properties pack.
      */
     @EventHandler
     public void onResourcePackStatus(org.bukkit.event.player.PlayerResourcePackStatusEvent event) {
@@ -2629,6 +2633,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        // Offer the actual served snapshot after login so the stand can
+        // observe the client's real download AND reload protocol result.
+        if (args.length == 2 && args[0].equalsIgnoreCase("pack")) {
+            if (!sender.isOp()) {
+                sender.sendMessage(LOG_PREFIX + "pack: operator required");
+                return true;
+            }
+            var player = getServer().getPlayerExact(args[1]);
+            if (player == null || visualPack == null) {
+                sender.sendMessage(LOG_PREFIX + "pack: player or served pack unavailable");
+                return true;
+            }
+            player.setResourcePack(visualPack.url(),
+                    java.util.HexFormat.of().parseHex(visualPack.sha1()), true);
+            sender.sendMessage(LOG_PREFIX + "pack: offered " + visualPack.sha1() + " to " + player.getName());
+            return true;
+        }
         // /cim postfx <player> <id[,id...]|clear> — the M5 harness surface
         // for the post-effect channel (parity matrix "atmosphere"): request
         // pack-contributed chains for a viewer, or clear them all.

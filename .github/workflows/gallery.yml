@@ -1787,7 +1787,6 @@ jobs:
           cp -r seed-pack/f2v/. srv-wall/c-imagine/f2v/
           cp -r seed-pack/scenes/. srv-wall/c-imagine/scenes/
           ls srv-wall/c-imagine/scenes/ | wc -l
-          SHA1=$(cat srv-wall/c-imagine/f2v/pack.sha1)
           echo "eula=true" > srv-wall/eula.txt
           cat > srv-wall/server.properties <<PROPS
           online-mode=false
@@ -1802,8 +1801,6 @@ jobs:
           enable-rcon=true
           rcon.port=25575
           rcon.password=cimgate
-          resource-pack=http\://127.0.0.1\:25580/cim-f2v-pack.zip
-          resource-pack-sha1=$SHA1
           PROPS
           mkdir -p srv-wall
           URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest \
@@ -1815,7 +1812,8 @@ jobs:
           rm -rf world world_nether world_the_end
           # -Dcim.f2v.fastBoot=true: serve the seeded pack; the boot-time
           # rebuild is skipped (the same pure function ran in the seed; the
-          # sha1 pin + the client's pack hash check stay). Measured cost of
+          # play-phase offer pins the same SHA1 for the client's hash check).
+          # Measured cost of
           # the rebuild: 4.8 min of every ours boot (#35).
           setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
@@ -1985,16 +1983,27 @@ jobs:
           done
           case "$L" in *cimviewer*) echo "cim client joined: $L";;
             *) tail -30 visual-client/client.out; exit 1;; esac
-          # the SECOND reload line is the server pack applying (measured)
-          for i in $(seq 1 30); do
-            N=$(grep -c "Reloading ResourceManager" visual-client/client.out || true)
-            [ "${N:-0}" -ge 2 ] && break
+          # Offer in play: Paper's status event does not cover the login
+          # configuration phase's server.properties pack. This sends the
+          # same served ZIP and pinned SHA1 using the real player API.
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "cim pack cimviewer"
+          # A reload/advancement log is not proof that the required server
+          # pack applied. The stock client rejects packs over 250 MiB and can
+          # remain connected with fallback items; require its protocol result.
+          PACK_LOADED=0
+          for i in $(seq 1 600); do
+            if grep -Fq 'f2v pack: status cimviewer=SUCCESSFULLY_LOADED' srv-wall/boot.log; then
+              PACK_LOADED=1
+              break
+            fi
+            if grep -qE 'f2v pack: status cimviewer=(DECLINED|FAILED_DOWNLOAD|FAILED_RELOAD|INVALID_URL|DISCARDED)' srv-wall/boot.log; then
+              echo "vanilla client rejected the resource pack"
+              tail -30 visual-client/client.out
+              exit 1
+            fi
             sleep 1
           done
-          for i in $(seq 1 30); do
-            grep -qE "Loaded [0-9]+ advancements" visual-client/client.out 2>/dev/null && break
-            sleep 1
-          done
+          [ "$PACK_LOADED" = 1 ] || { echo "no successful client pack application"; tail -30 visual-client/client.out; exit 1; }
           sleep 8
 
       - name: wall replay — STRIDE (blocks + probes + isolated displays)

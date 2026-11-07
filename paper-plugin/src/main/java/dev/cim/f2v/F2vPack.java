@@ -1442,6 +1442,7 @@ public final class F2vPack {
             }
         }
         byte[] zip = zip(entries);
+        validateDownloadSize(zip.length);
         String sha1 = sha1Hex(zip);
         Files.write(outDir.resolve("pack.zip"), zip);
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
@@ -1449,6 +1450,7 @@ public final class F2vPack {
         StringBuilder report = new StringBuilder("f2v pack build report\n")
                 .append("items requested: ").append(rows.size()).append('\n')
                 .append("zip entries:     ").append(entries.size()).append('\n')
+                .append("zip bytes:       ").append(zip.length).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
                 .append("warnings:        ").append(warnings.size()).append('\n');
         for (String w : warnings) {
@@ -1987,6 +1989,13 @@ public final class F2vPack {
     }
 
     // ---- deterministic zip ------------------------------------------------------
+
+    /** The stock client rejects even required server packs above 250 MiB. */
+    static void validateDownloadSize(long bytes) throws IOException {
+        if (bytes > 262_144_000L) {
+            throw new IOException("resource pack exceeds vanilla's 250 MiB download limit: " + bytes);
+        }
+    }
 
     /** Deterministic zip: sorted entries, fixed timestamps, fixed level. */
     static byte[] zip(TreeMap<String, byte[]> entries) throws IOException {
@@ -3270,6 +3279,32 @@ public final class F2vPack {
                 }
                 expect(failures, models >= 2, "native liquid: unlit child checked " + material);
             }
+            // Equal planes across different meshes share model bytes while
+            // both draw nodes and their exact transforms remain present.
+            GalleryPack.resetModelScales();
+            String shaded = face.replace("\t0\t-1", "\t1\t-1");
+            Files.writeString(quads.resolve("first.tsv"), face
+                    + shaded.replace("minecraft:block/stone", "minecraft:block/dirt"));
+            Files.writeString(quads.resolve("second.tsv"),
+                    shaded.replace("minecraft:block/stone", "minecraft:block/gravel") + face);
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:a#qfirst"),
+                    new GalleryPack.Input("fixture:b#qsecond")), entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 2, "unlit sharing: every registry row retained");
+            if (rows.size() == 2) {
+                JsonArray first = GalleryPack.itemNode(rows.get(0).modelRef()).getAsJsonArray("models");
+                JsonArray second = GalleryPack.itemNode(rows.get(1).modelRef()).getAsJsonArray("models");
+                expect(failures, first.size() == 2 && second.size() == 2,
+                        "unlit sharing: no source draw removed");
+                expect(failures, first.get(0).equals(second.get(0)),
+                        "unlit sharing: unused textures/key names cannot duplicate an identical plane or transform");
+                expect(failures, entries.keySet().stream().filter(k -> k.contains("/gallery/unlit/")).count() == 1,
+                        "unlit sharing: identical plane stored exactly once");
+            }
+            validateDownloadSize(262_144_000L);
+            boolean oversized = false;
+            try { validateDownloadSize(262_144_001L); } catch (IOException expected) { oversized = true; }
+            expect(failures, oversized, "pack: vanilla download ceiling enforced before publication");
             // A non-planar first quad splits in two. Its output count must
             // never shift the second quad's explicit shade:false metadata.
             String nonplanar = face.replace("\t0\t-1", "\t1\t-1")

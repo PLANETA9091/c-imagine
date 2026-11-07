@@ -1942,7 +1942,6 @@ public final class GalleryPack {
                                                  TreeMap<String, byte[]> entries) {
         JsonArray ordinary = new JsonArray();
         JsonArray children = new JsonArray();
-        int plane = 0;
         for (var value : wrapper.getAsJsonArray("elements")) {
             JsonObject element = value.getAsJsonObject();
             if (!element.has("shade") || element.get("shade").getAsBoolean()) {
@@ -1950,12 +1949,11 @@ public final class GalleryPack {
                 continue;
             }
             UnlitBlockModel.Plane unlit = UnlitBlockModel.plane(element, scale);
-            String childRef = ref + "_unlit_" + plane++;
             JsonObject child = wrapper.deepCopy();
             JsonArray one = new JsonArray();
             one.add(unlit.element());
             child.add("elements", one);
-            entries.put(modelPath(childRef), child.toString().getBytes(StandardCharsets.UTF_8));
+            String childRef = sharedUnlitModel(child, entries);
             JsonObject node = modelNode(childRef);
             node.add("transformation", unlit.transformation());
             children.add(node);
@@ -1975,6 +1973,57 @@ public final class GalleryPack {
         composite.addProperty("type", "minecraft:composite");
         composite.add("models", children);
         ITEM_NODES.put(ref, composite);
+    }
+
+    /** Share identical native planes without changing draw order or node transforms. */
+    private static String sharedUnlitModel(JsonObject child, TreeMap<String, byte[]> entries) {
+        JsonObject oldTextures = child.getAsJsonObject("textures");
+        JsonObject textures = new JsonObject();
+        Map<String, String> keys = new LinkedHashMap<>();
+        for (var element : child.getAsJsonArray("elements")) {
+            for (var value : element.getAsJsonObject().getAsJsonObject("faces").entrySet()) {
+                JsonObject face = value.getValue().getAsJsonObject();
+                String sprite = unlitTexture(oldTextures, face.get("texture").getAsString());
+                String key = keys.get(sprite);
+                if (key == null) {
+                    key = "t" + keys.size();
+                    keys.put(sprite, key);
+                    textures.addProperty(key, sprite);
+                }
+                face.addProperty("texture", "#" + key);
+            }
+        }
+        // Generated native planes have no particle binding; preserve one if
+        // a future producer adds it rather than copying all unused textures.
+        if (oldTextures.has("particle")) {
+            textures.addProperty("particle", unlitTexture(oldTextures, oldTextures.get("particle").getAsString()));
+        }
+        child.add("textures", textures);
+        byte[] bytes = child.toString().getBytes(StandardCharsets.UTF_8);
+        final String hash;
+        try {
+            hash = java.util.HexFormat.of().formatHex(
+                    java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+        String ref = WRAPPER_NS + ":gallery/unlit/" + hash;
+        byte[] previous = entries.putIfAbsent(modelPath(ref), bytes);
+        if (previous != null && !java.util.Arrays.equals(previous, bytes)) {
+            throw new IllegalStateException("unlit model content hash collision");
+        }
+        return ref;
+    }
+
+    private static String unlitTexture(JsonObject textures, String sprite) {
+        int hops = 0;
+        while (sprite.startsWith("#") && hops++ < 32) {
+            var next = textures.get(sprite.substring(1));
+            if (next == null) throw new IllegalArgumentException("unlit texture missing: " + sprite);
+            sprite = next.getAsString();
+        }
+        if (sprite.startsWith("#")) throw new IllegalArgumentException("unlit texture cycle: " + sprite);
+        return sprite;
     }
 
     private static String modelPath(String ref) {
