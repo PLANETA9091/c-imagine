@@ -285,14 +285,14 @@ jobs:
             echo "=== truth ladder leg: $NS ==="
             # the item walk writes the manifest the give leg reads
             echo "cimscene gallery item $NS 0" > srv-truth/console.in
-            for i in $(seq 1 240); do
-              [ -f "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.done" ] && break
-              sleep 1
-            done
-            [ -f "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.done" ] \
-              || { echo "[ladder] $NS: the item walk never wrote its done marker"; tail -20 srv-truth/boot.log; exit 1; }
-            FIRST=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' \
-              "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.tsv")
+            ITEM_STATUS=$(bash scripts/cimscene/wait-scene-marker.sh \
+              "srv-truth/c-imagine/scenes/gallery-item-$NS-p0" 240) \
+              || { echo "[ladder] $NS: the item walk did not complete"; tail -20 srv-truth/boot.log; exit 1; }
+            FIRST=""
+            if [ "$ITEM_STATUS" = "done" ]; then
+              FIRST=$(awk -F'\t' '$1=="cell" && $2 ~ /^-?[0-9]+$/{print $5; exit}' \
+                "srv-truth/c-imagine/scenes/gallery-item-$NS-p0.tsv")
+            fi
             if [ -z "$FIRST" ]; then
               echo "[ladder] $NS: no item rows on manifest page 0 (registry empty for the class — combat_roll case) — item/held legs skipped, honest absence"
             else

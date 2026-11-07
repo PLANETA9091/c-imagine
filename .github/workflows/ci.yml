@@ -37,6 +37,7 @@ jobs:
         run: |
           pip install -q numpy pillow
           python3 scripts/cimscene/test-gallery-diff.py
+          python3 scripts/cimscene/test-wait-scene-marker.py
       - name: client download recovery
         run: python3 scripts/visual/test-fetch-client.py
       - name: performance evidence gates
