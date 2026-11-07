@@ -26,3 +26,18 @@ neoForge {
 repositories {
     mavenCentral()
 }
+
+sourceSets {
+    captureTest {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+tasks.register('captureTextureTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureTextureTest'
+}
+
+check.dependsOn captureTextureTest

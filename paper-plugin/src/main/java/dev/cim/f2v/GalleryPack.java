@@ -801,6 +801,12 @@ public final class GalleryPack {
 
     /** {@code ns:path} -> {@code assets/ns/textures/path.png}. */
     private static String spritePathPng(String sprite) {
+        // Captured direct bindings can live anywhere in assets/, e.g.
+        // Mekanism's render/jetpack.png. @ distinguishes exact resources
+        // from atlas sprite IDs, which omit textures/ and .png.
+        if (sprite.startsWith("@")) {
+            return "assets/" + sprite.substring(1).replace(':', '/');
+        }
         int c = sprite.indexOf(':');
         String ns = c > 0 ? sprite.substring(0, c) : "minecraft";
         String path = c > 0 ? sprite.substring(c + 1) : sprite;
@@ -1775,7 +1781,7 @@ public final class GalleryPack {
         }
         String png = spritePathPng(sprite);
         byte[] bytes = readPngFromJars(jars, png);
-        boolean blockPath = spritePathOf(sprite).startsWith("block/");
+        boolean blockPath = !sprite.startsWith("@") && spritePathOf(sprite).startsWith("block/");
         if (bytes == null) {
             warnings.add("gallery: quad sprite missing: " + sprite);
             // A sprite with no PNG can still be a LIVE item-atlas sprite: the
@@ -1797,7 +1803,8 @@ public final class GalleryPack {
             }
             return sprite;
         }
-        String key = "items/" + sprite.replace(':', '_').replace('/', '_');
+        String key = "items/" + (sprite.startsWith("@") ? "raw_" + sprite.substring(1) : sprite)
+                .replace(':', '_').replace('/', '_');
         putHosted(jars, key, png, bytes, entries, warnings);
         return WRAPPER_NS + ":block/" + key;
     }

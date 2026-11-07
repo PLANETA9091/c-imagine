@@ -3058,6 +3058,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        rawCaptureTextureSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
         if (failures.isEmpty()) {
@@ -3074,6 +3075,29 @@ public final class F2vPack {
     private static void expect(List<String> failures, boolean cond, String what) {
         if (!cond) {
             failures.add(what);
+        }
+    }
+
+    private static void rawCaptureTextureSelftest(List<String> failures) throws IOException {
+        Path jar = Files.createTempFile("f2v-raw-binding", ".jar");
+        try {
+            byte[] png = f2vSelftestPng(4, 4);
+            writeJar(jar, new TreeMap<>(Map.of("assets/fixture/render/gear.png", png,
+                    "assets/fixture/block/custom.png", png)));
+            GalleryPack.resetJarCache();
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            for (String path : List.of("render/gear.png", "block/custom.png")) {
+                String ref = GalleryPack.hostSprite(List.of(jar), "@fixture:" + path, entries, warnings);
+                String hostedPng = "assets/c-imagine/textures/" + ref.split(":", 2)[1] + ".png";
+                expect(failures, ref.startsWith("c-imagine:block/items/raw_")
+                                && java.util.Arrays.equals(png, entries.get(hostedPng)),
+                        "raw capture: exact resource bytes re-hosted on blocks atlas: " + path);
+            }
+            expect(failures, warnings.isEmpty(), "raw capture: no missing-texture fallback");
+        } finally {
+            GalleryPack.resetJarCache();
+            Files.deleteIfExists(jar);
         }
     }
 

@@ -55,7 +55,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeSet;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -73,7 +72,8 @@ import net.minecraft.nbt.NbtIo;
  * <p>Writes, beside the manifests: {@code gallery-<ns>-p<p>.ctx.tsv} rows
  * {@code x y z q<hash>}; {@code quads/<hash>.tsv}, one quad per line (sprite,
  * shade, tint, x y z u v per vertex, then r g b per vertex; model units,
- * sprite-local 0..16 UVs, colour = ambient occlusion x tint);
+ * sprite-local 0..16 UVs, colour = ambient occlusion x tint; a sprite prefixed
+ * with @ is an exact PNG resource such as @mekanism:render/jetpack.png);
  * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
  */
 final class QuadDump {
@@ -534,10 +534,6 @@ final class QuadDump {
 
     /** A buffer source whose every buffer records: baked quads whole, hand-drawn geometry vertex by vertex. */
     private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
-        /** A RenderType prints its texture shard as {@code Optional[ns:textures/path.png]}. */
-        private static final Pattern TEXTURE =
-                Pattern.compile("Optional\\[([a-z0-9_.-]+):textures/([a-z0-9_./-]+)\\.png\\]");
-
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
         final float[][] pos = new float[4][3];
@@ -566,8 +562,7 @@ final class QuadDump {
                 return discard;
             }
             flush(); // a pending quad belongs to the previous buffer's texture
-            Matcher m = TEXTURE.matcher(state);
-            texture = m.find() && !m.group(2).equals("atlas/blocks") ? m.group(1) + ":" + m.group(2) : null;
+            texture = CaptureTexture.fromRenderState(state);
             return this;
         }
 
