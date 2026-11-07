@@ -1730,7 +1730,11 @@ public final class CimSceneMod {
             if (entity != null) {
                 entity.moveTo(rig.getX() + 0.5, rig.getY(), rig.getZ() + 0.5, 0f, 0f);
                 level.addFreshEntity(entity);
-                guiEntity = entity;
+                // One tick of its own first: an entity that cannot live where a bare spawn
+                // puts it (a robit with no charge pad to call home) removes itself, and its
+                // menu has to come from the way a player really places it, the item pairs.
+                entity.tick();
+                guiEntity = entity.isRemoved() ? null : entity;
             }
         }
     }

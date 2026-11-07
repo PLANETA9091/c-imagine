@@ -217,11 +217,22 @@ public final class ScreenArt {
         }
     }
 
+    private static boolean captured(AbstractContainerScreen<?> screen) {
+        try {
+            ResourceLocation id = BuiltInRegistries.MENU.getKey(screen.getMenu().getType());
+            return id == null || DONE.contains(id);
+        } catch (UnsupportedOperationException noType) {
+            return true;
+        }
+    }
+
     private static void onTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (crawl == null) {
             Path go = Path.of(System.getProperty("cim.screenart"), "crawl-go");
-            if (Files.exists(go) && mc.screen instanceof AbstractContainerScreen<?> screen) {
+            // Not before this screen's own capture: the art and the base frame are the menu as
+            // it opened, and the crawl's first act is a slot move that changes what it shows.
+            if (Files.exists(go) && mc.screen instanceof AbstractContainerScreen<?> screen && captured(screen)) {
                 try {
                     int start = Integer.parseInt(Files.readString(go).trim());
                     Files.delete(go);
