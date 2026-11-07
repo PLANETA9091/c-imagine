@@ -190,7 +190,7 @@ stamp ours joined
 $RC 'tp cimviewer 0.5 -60 0.5 0 0' >/dev/null
 for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   # Every page starts from the same inventory: an earlier page's slot move left items behind.
-  $RC 'clear cimviewer' 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
+  $RC 'cim guiclose' 'clear cimviewer' 'item replace entity cimviewer hotbar.8 with minecraft:diamond 5' >/dev/null
   $RC "cim gallerypage-gui $NS $p" >/dev/null
   sleep 0.6
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true
