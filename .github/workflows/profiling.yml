@@ -31,6 +31,7 @@ jobs:
         run: |
           python3 scripts/perf/test-criterion-gate.py
           python3 scripts/perf/test-boot-budget.py
+          python3 scripts/perf/test-tick-budget.py
       - name: measure parent baseline on cache miss
         if: steps.baseline.outputs.cache-matched-key == ''
         run: |
@@ -147,23 +148,7 @@ jobs:
         run: |
           set -o pipefail
           python3 scripts/perf/boot-budget.py bare modded | tee -a "$GITHUB_STEP_SUMMARY"
-          # THE TICK-LOAD BUDGET: the cimtest-heavy load-done markers carry the
-          # per-tick overshoot of a KNOWN 10ms burn under the module — the gate:
-          # the average overshoot stays within 2ms (the scheduler/allocator charge
-          # the module may add to a known load)
-          if grep -q "load done" modded/boot.log; then
-            AVG=$(grep -o "avgOverMsPerTick=[0-9.]*" modded/boot.log | tail -1 | cut -d= -f2)
-            echo "tick-load probe (10ms burn x600 under the module): avgOverMsPerTick=$AVG" | tee -a "$GITHUB_STEP_SUMMARY"
-            python3 -c "
-          import sys
-          avg = float('$AVG' or '0')
-          limit = 2.0
-          if avg > limit:
-              print(f'TICK-LOAD BUDGET FAILED: avgOverMsPerTick={avg} > {limit}ms — the module charges the known load beyond the budget'); sys.exit(1)
-          print(f'tick-load budget ok: {avg} <= {limit}ms')"
-          else
-            echo "TICK-LOAD BUDGET INCOMPLETE: no [cimtest_heavy] load-done marker in the modded boot log — the selfarm did not fire"; exit 1
-          fi
+          python3 scripts/perf/tick-budget.py modded/boot.log | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always()
