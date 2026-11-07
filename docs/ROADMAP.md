@@ -586,10 +586,25 @@ button flips Create's own flag, and the filter then behaves as a whitelist.
       static registries plus dimension and damage types (up in 31-40 ms); the session
       player is an allocated `ServerPlayer` (mods check `instanceof`) with a
       connection that keeps what the mod sends.
-- [~] 2. Slot clicks through `menu.clicked`: measured identical on both stacks, a
-      stack moved onto the filter's first slot leaves a ghost copy (x1) and keeps x5
-      on the cursor; on close the menu sends a ContainerSetSlot and the stack is back
-      in the inventory. Open: wiring the HUD's clicks to the session.
+- [~] 2. Slot clicks through `menu.clicked`, census-driven over the whole mod lock
+      (`live.yml`, `CIM_LIVE_SELFTEST=all`). Measured 2026-11-07, line-for-line
+      identical on real NeoForge and in the layer: all 1983 mod items used as a right
+      click (27 menus), all 502 block-entity blocks placed and clicked with an empty
+      hand (157 menus), 84 menu kinds in all; each menu gets a stack moved onto its
+      first slot (ghost slots copy, filtered slots refuse, the mod decides) and a
+      close (what it sent, the inventory after). 9 throws left, the same on both:
+      Mekanism frequency data needs a MinecraftServer (6), Mekanism personal storage
+      (2), Create's potato cannon reads Create's own global registry access (1).
+      The facade grew only what mods asked for: a sparse block store with real block
+      entities, empty chunks on request over a one-biome registry, server configs,
+      no-op statistics, empty entity queries.
+      Layer defects the census found and fixed: mixin annotation strings were not
+      relocated (AE2's critical injector), mixins never ran on mod classes
+      (GlitchCore, Biomes O' Plenty), `@Mod(dist = {...})` arrays were misread (AE2
+      never loaded), mod jars had no folders (Dynamic Trees' seeds), mod configs
+      were never loaded (Mekanism), and an AT field entry narrowed a same-named
+      method (NeoForge's `BiomeSpecialEffects$Builder.fogColor`).
+      Open: wiring the HUD's clicks on Paper to the session.
 - [ ] 3. Widget to packet: the filter whitelist button toggles Create's real flag,
       read back from the item; the press row shows the state from that flag.
 - [ ] 4. Block-entity menus: the mod's block entity lives in the layer, bound to its
