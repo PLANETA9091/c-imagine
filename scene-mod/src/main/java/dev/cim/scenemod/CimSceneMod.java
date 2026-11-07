@@ -1695,7 +1695,9 @@ public final class CimSceneMod {
     /** Prepares what the opener acts on. Openers read {@code [sneak+][place+]kind:id}. */
     private static void guiPlace(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
         String plain = opener.replace("sneak+", "");
-        if (plain.startsWith("block:")) {
+        if (plain.startsWith("cube")) {
+            guiBuildCube(level, player, rig, plain);
+        } else if (plain.startsWith("block:")) {
             ResourceLocation id = ResourceLocation.parse(plain.substring("block:".length()));
             level.setBlock(rig, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
         } else if (plain.startsWith("place+item:") || plain.startsWith("hang+item:")) {
@@ -1789,7 +1791,8 @@ public final class CimSceneMod {
      * only from one side, and twice, because some items claim an owner on the first use.
      */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
-        boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:");
+        boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:")
+                || opener.contains("cube");
         Direction[] faces = block
                 ? new Direction[]{Direction.UP, Direction.SOUTH, Direction.NORTH, Direction.EAST, Direction.WEST}
                 : new Direction[]{Direction.UP};
@@ -1814,12 +1817,15 @@ public final class CimSceneMod {
                 if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
                     guiEntity.interact(player, InteractionHand.MAIN_HAND);
                 }
-            } else if (plain.startsWith("block:") || plain.startsWith("place+item:") || plain.startsWith("use+item:")) {
+            } else if (plain.startsWith("block:") || plain.startsWith("place+item:") || plain.startsWith("use+item:")
+                    || plain.startsWith("cube")) {
+                // A structure is clicked on the middle of the face the player looks at.
+                BlockPos on = plain.startsWith("cube") && guiCubeClick != null ? guiCubeClick : rig;
                 // Low in the cell: a part placed on the floor sits there, a full block does not care.
-                Vec3 at = face == Direction.UP ? new Vec3(rig.getX() + 0.5, rig.getY() + 0.06, rig.getZ() + 0.5)
-                        : Vec3.atCenterOf(rig).relative(face, 0.5);
-                BlockHitResult hit = new BlockHitResult(at, face, rig, false);
-                BlockState state = level.getBlockState(rig);
+                Vec3 at = face == Direction.UP ? new Vec3(on.getX() + 0.5, on.getY() + 0.06, on.getZ() + 0.5)
+                        : Vec3.atCenterOf(on).relative(face, 0.5);
+                BlockHitResult hit = new BlockHitResult(at, face, on, false);
+                BlockState state = level.getBlockState(on);
                 net.minecraft.world.ItemInteractionResult result = state.useItemOn(
                         player.getItemInHand(InteractionHand.MAIN_HAND), level, player, InteractionHand.MAIN_HAND, hit);
                 if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
@@ -1888,6 +1894,87 @@ public final class CimSceneMod {
         return both;
     }
 
+    /** Where a built structure is clicked; set by guiBuildCube. */
+    private static BlockPos guiCubeClick;
+    /** Every block a structure put down, so the rig can be cleared of it. */
+    private static final List<BlockPos> GUI_CUBE_BLOCKS = new ArrayList<>();
+    /** How many times a built structure's block entities tick before the click. */
+    private static final int GUI_CUBE_TICKS = 25;
+
+    /**
+     * {@code cube<n>:<block>}: an n-wide hollow cube of one block, its near face centred on
+     * the rig and the rest stretching away from the player, the way a player builds a tank
+     * or a matrix out of casing. The mod's own formation code decides whether it is a
+     * structure: its block entities tick here, so a multiblock that forms on its tick has
+     * formed before the click, with no knowledge of any mod.
+     */
+    private static void guiBuildCube(ServerLevel level, ServerPlayer player, BlockPos rig, String plain) {
+        int n = Integer.parseInt(plain.substring("cube".length(), plain.indexOf(':')));
+        BlockState state = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(plain.substring(plain.indexOf(':') + 1)))
+                .defaultBlockState();
+        Direction away = Direction.getNearest(rig.getX() + 0.5 - player.getX(), 0, rig.getZ() + 0.5 - player.getZ());
+        if (away.getAxis() == Direction.Axis.Y) {
+            away = Direction.NORTH;
+        }
+        Direction side = away.getClockWise();
+        int half = n / 2;
+        List<BlockPos> placed = new ArrayList<>();
+        for (int depth = 0; depth < n; depth++) {
+            for (int across = -half; across < n - half; across++) {
+                for (int up = 0; up < n; up++) {
+                    boolean shell = depth == 0 || depth == n - 1 || across == -half || across == n - half - 1
+                            || up == 0 || up == n - 1;
+                    if (shell) {
+                        BlockPos p = rig.relative(away, depth).relative(side, across).above(up);
+                        level.setBlock(p, state, 3);
+                        placed.add(p.immutable());
+                    }
+                }
+            }
+        }
+        GUI_CUBE_BLOCKS.addAll(placed);
+        guiCubeClick = rig.above(half);
+        for (int t = 0; t < GUI_CUBE_TICKS; t++) {
+            for (BlockPos p : placed) {
+                guiTickBlockEntity(level, p);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends net.minecraft.world.level.block.entity.BlockEntity> void guiTickBlockEntity(
+            ServerLevel level, BlockPos p) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+        if (be == null) {
+            return;
+        }
+        BlockState state = level.getBlockState(p);
+        net.minecraft.world.level.block.entity.BlockEntityTicker<T> ticker = state.getTicker(level,
+                (net.minecraft.world.level.block.entity.BlockEntityType<T>) be.getType());
+        if (ticker != null) {
+            ticker.tick(level, p, state, (T) be);
+        }
+    }
+
+    /** Hollow cubes of every block of the namespace that holds a block entity: the casing guess. */
+    private static List<String> guiCubeCandidates(String namespace) {
+        List<String> out = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)
+                    && BuiltInRegistries.BLOCK.get(b) instanceof net.minecraft.world.level.block.EntityBlock) {
+                out.add(b.toString());
+            }
+        }
+        out.sort(Comparator.naturalOrder());
+        List<String> cubes = new ArrayList<>();
+        for (int n : new int[]{3, 5}) {
+            for (String b : out) {
+                cubes.add("cube" + n + ":" + b);
+            }
+        }
+        return cubes;
+    }
+
     /** Every non-block item of the namespace on every block of it that holds a block entity. */
     private static int PAIR_USES_LOGGED;
 
@@ -1931,6 +2018,11 @@ public final class CimSceneMod {
         near.addAll(GUI_SPAWNED);
         GUI_SPAWNED.clear();
         near.forEach(net.minecraft.world.entity.Entity::discard);
+        for (BlockPos p : GUI_CUBE_BLOCKS) {
+            level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+        }
+        GUI_CUBE_BLOCKS.clear();
+        guiCubeClick = null;
         guiEntity = null;
         player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
     }
@@ -1955,6 +2047,7 @@ public final class CimSceneMod {
             }
         }
         int singles = candidates.size();
+        boolean cubesAdded = false;
         for (int c = 0; ; c++) {
             // Checked before the bound: the pairs start exactly where the singles end, so
             // a loop bounded by the singles' count would never reach them.
@@ -1964,6 +2057,13 @@ public final class CimSceneMod {
                 List<String> pairs = guiPairCandidates(namespace);
                 LOGGER.info("[cimscene] gallery-gui pairs ns={} missing={} pairs={}", namespace, wanted.size(), pairs.size());
                 candidates.addAll(pairs);
+            }
+            if (c == candidates.size() && !cubesAdded && !wanted.isEmpty()) {
+                // Still missing: menus a structure opens once it has formed.
+                cubesAdded = true;
+                List<String> cubes = guiCubeCandidates(namespace);
+                LOGGER.info("[cimscene] gallery-gui cubes ns={} missing={} cubes={}", namespace, wanted.size(), cubes.size());
+                candidates.addAll(cubes);
             }
             if (c >= candidates.size()) {
                 break;
