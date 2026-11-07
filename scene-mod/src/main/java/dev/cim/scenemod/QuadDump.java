@@ -185,15 +185,21 @@ final class QuadDump {
         }
         for (Path mf : manifests) {
             List<String> lines = Files.readAllLines(mf, StandardCharsets.UTF_8);
-            if (lines.isEmpty() || !lines.get(0).startsWith("cell\tx\ty\tz\tstate")) {
+            boolean fluidPage = !lines.isEmpty() && lines.get(0).startsWith("cell\tx\ty\tz\tfluid");
+            if (lines.isEmpty() || (!fluidPage && !lines.get(0).startsWith("cell\tx\ty\tz\tstate"))) {
                 continue;
             }
             Page page = new Page();
+            page.requireSnapshot = fluidPage;
             Map<BlockPos, String> names = new HashMap<>();
             for (String line : lines.subList(1, lines.size())) {
                 String[] c = line.split("\t");
                 if (c.length < 5 || !c[0].equals("cell") || c[1].equals("x")) {
                     continue;
+                }
+                if (fluidPage) {
+                    if (c.length < 8 || !c[6].equals("mod-tank")) continue;
+                    c[4] = c[7].split("\\|", 2)[0];
                 }
                 BlockPos pos = new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]), Integer.parseInt(c[3]));
                 try {
@@ -241,8 +247,21 @@ final class QuadDump {
             page.beTags.putAll(beTags);
             for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
                 cells++;
+                if (fluidPage && !page.beTags.containsKey(e.getKey())) {
+                    failed++;
+                    LOGGER.info("[cimscene] quad dump fluid tank missing real BE snapshot {} at {}",
+                            names.get(e.getKey()), e.getKey());
+                    continue;
+                }
                 try {
+                    if (fluidPage && page.getBlockEntity(e.getKey()) == null) {
+                        throw new IllegalStateException("native tank BE unavailable");
+                    }
+                    long priorBerFailures = berFailed;
                     String mesh = meshFor(page, e.getKey(), e.getValue(), sprites);
+                    if (fluidPage && berFailed != priorBerFailures) {
+                        throw new IllegalStateException("native tank renderer failed");
+                    }
                     if (mesh == null) {
                         continue;
                     }
@@ -775,6 +794,7 @@ final class QuadDump {
     private static final class Page implements BlockAndTintGetter {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
         final Map<BlockPos, String> beTags = new HashMap<>();
+        boolean requireSnapshot;
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
@@ -817,6 +837,7 @@ final class QuadDump {
                             new ByteArrayInputStream(Base64.getDecoder().decode(b64)),
                             NbtAccounter.unlimitedHeap()), mc.level.registryAccess());
                 } catch (Throwable bad) {
+                    if (requireSnapshot) throw new IllegalStateException("native tank snapshot could not load", bad);
                     LOGGER.info("[cimscene] quad dump be nbt load skip {}: {}",
                             state.getBlock(), bad.toString());
                 }

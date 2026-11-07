@@ -1482,9 +1482,8 @@ public final class CimSceneMod {
      *       rig grammar);</li>
      *   <li>{@code mod-tank} — the mod registers its own fluid-tank block
      *       ({@code <ns>:fluid_tank} — create's vessel): the block is
-     *       PLACED, its CONTENTS ARE NOT FILLED (the fill API is
-     *       mod-specific and unverified from this workspace — the manifest
-     *       note says so; an open question, not a claimed surface);</li>
+     *       placed and filled through NeoForge's fluid capability; the
+     *       settled BE contents are saved for native model/BER capture;</li>
      *   <li>{@code texture-model} — the server resource manager finds the
      *       fluid's still texture ({@code textures/fluid/<path>.png} or
      *       {@code <path>_still.png}): the OURS pack builder synthesizes an
@@ -1631,17 +1630,44 @@ public final class CimSceneMod {
                         .append('\t').append(extra).append('\n');
             }
         }
-        String manifest = "gallery-fluid-" + namespace + "-p" + page + ".tsv";
-        try {
-            Path parent = Path.of("c-imagine", "scenes");
-            Files.createDirectories(parent);
-            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
-        } catch (IOException ioe) {
-            LOGGER.error("[cimscene] gallery-fluid manifest write failed {}: {}", manifest, ioe.toString());
-        }
-        LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells={} failed={} first={} last={}",
-                namespace, page, placed, failed, slice.get(0), slice.get(slice.size() - 1));
-        writeDoneMarkerFile(fluidStem, false);
+        final int filledCells = placed, failedCells = failed;
+        // Snapshot real contents after native connectivity/client updates settle.
+        // The done marker follows the files, so seed capture cannot race them.
+        runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> {
+            StringBuilder settled = new StringBuilder();
+            StringBuilder tags = new StringBuilder("cell\tx\ty\tz\tnbt\n");
+            for (String line : tsv.toString().split("\n")) {
+                String[] row = line.split("\t", -1);
+                if (row.length >= 8 && row[0].equals("cell") && row[6].equals("mod-tank")) {
+                    BlockPos pos = new BlockPos(Integer.parseInt(row[1]),
+                            Integer.parseInt(row[2]), Integer.parseInt(row[3]));
+                    BlockState now = level.getBlockState(pos);
+                    int bar = row[7].indexOf('|');
+                    row[7] = stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))
+                            + (bar >= 0 ? row[7].substring(bar) : "");
+                    line = String.join("\t", row);
+                    BlockEntity tile = level.getBlockEntity(pos);
+                    String nbt = tile == null ? null : benbtB64(level, tile);
+                    if (nbt != null) {
+                        tags.append("cell\t").append(row[1]).append('\t').append(row[2])
+                                .append('\t').append(row[3]).append('\t').append(nbt).append('\n');
+                    }
+                }
+                settled.append(line).append('\n');
+            }
+            try {
+                Path parent = Path.of("c-imagine", "scenes");
+                Files.createDirectories(parent);
+                Files.writeString(parent.resolve(fluidStem + ".tsv"), settled, StandardCharsets.UTF_8);
+                Files.writeString(parent.resolve(fluidStem + ".benbt"), tags, StandardCharsets.UTF_8);
+            } catch (IOException ioe) {
+                LOGGER.error("[cimscene] gallery-fluid manifest write failed {}: {}", fluidStem, ioe.toString());
+                return; // missing done marker is a hard capture failure
+            }
+            LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells={} failed={} first={} last={}",
+                    namespace, page, filledCells, failedCells, slice.get(0), slice.get(slice.size() - 1));
+            writeDoneMarkerFile(fluidStem, false);
+        });
         return placed;
     }
 
@@ -1684,11 +1710,9 @@ public final class CimSceneMod {
      * and no build.gradle change. A lone tank block is its own controller;
      * the capability resolves (or the note says so). The quota is a fixed
      * generous 16000 mB; the tank takes what fits and the accepted amount
-     * rides the manifest's extra column — deterministic on the truth
-     * server (create is loaded there); the ours leg renders the tank BLOCK
-     * through the pack channel only (the level is BE-drawn — dyn class,
-     * no red verdict), so the note is the honest pair: truth shows a filled
-     * tank, ours shows the same tank's static model.
+     * rides the manifest's extra column. The delayed snapshot saves the
+     * real settled BE inventory; the native capture renders both the tank
+     * and its contents for the ours replay. Pixel parity remains gate-hard.
      */
     private static String fillTankContents(ServerLevel level, ResourceLocation fluidId,
                                            int x, int y, int z) {

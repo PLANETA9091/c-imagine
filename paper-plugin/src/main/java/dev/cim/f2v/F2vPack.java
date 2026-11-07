@@ -3208,6 +3208,19 @@ public final class F2vPack {
             expect(failures, GalleryPack.readSceneLines(scene).size() == 3
                             && GalleryPack.readSceneLines(scene).getFirst().startsWith("skip\t"),
                     "scene: schema header is removed; every data/skip row remains");
+            Path fluidScene = quads.resolve("gallery-fluid-fixture-p0.tsv");
+            Files.writeString(fluidScene, "cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n");
+            var firstTank = new GalleryPack.Resolved("fixture:tank#qfirst", 123, "fixture:first", 0, 0, true);
+            var secondTank = new GalleryPack.Resolved("fixture:tank#qsecond", 456, "fixture:second", 0, 0, true);
+            expect(failures, GalleryPack.capturedSceneRows(fluidScene, List.of(firstTank)).isEmpty(),
+                    "tank: missing context cannot substitute an empty/static tank");
+            Files.writeString(quads.resolve("gallery-fluid-fixture-p0.ctx.tsv"),
+                    "-5\t-60\t9\tqfirst\n-3\t-60\t9\tqsecond\n-1\t-60\t9\tqabsent\n");
+            var tanks = GalleryPack.capturedSceneRows(fluidScene, List.of(firstTank, secondTank));
+            expect(failures, tanks.get("-5,-60,9").cmd() == 123 && tanks.get("-3,-60,9").cmd() == 456,
+                    "tank: same block state replays distinct per-cell captured contents");
+            expect(failures, tanks.size() == 2 && !tanks.containsKey("-1,-60,9"),
+                    "tank: unknown captured mesh stays missing rather than substituting another fluid");
             // One unlit and one ordinary source face must remain distinct.
             Files.writeString(quads.resolve("fixture.tsv"), face + face.replace("\t0\t-1", "\t1\t-1"));
             Files.writeString(quads.resolve("items.tsv"), "fixture:item\tfixture\n");

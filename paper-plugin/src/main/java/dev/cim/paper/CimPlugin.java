@@ -2359,9 +2359,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      *       client cannot draw the modded liquid state); a FALLING level
      *       decays on the truth within the shot window (the #231 crops:
      *       case-only) — ours keeps the case (caseonly);</li>
-     *   <li>{@code mod-tank} — the recorded tank BLOCK state resolves through
-     *       the pack's gallery map AND the 14-cd cube rig rides INSIDE the
-     *       window (the truth tank shows its contents through the glass);</li>
+     *   <li>{@code mod-tank} — the per-cell native capture includes the settled
+     *       tank block and its actual block-entity-rendered contents;</li>
      *   <li>{@code texture-model} — the fluid id resolves through the pack's
      *       fluid-texture manifest (visual-gallery-fluids.tsv) to a
      *       paper+CMD item_display rig; the truth side has NO native surface
@@ -2395,6 +2394,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v gallery-fluid: manifest read failed "
                     + mf + ": " + ioe);
+            return new int[]{0, 0, 0, -1};
+        }
+        final java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> capturedTanks;
+        try {
+            capturedTanks = dev.cim.f2v.GalleryPack.capturedSceneRows(mf,
+                    f2v == null ? List.of() : f2v.gallery());
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v gallery-fluid: native mesh context read failed " + mf + ": " + ioe);
             return new int[]{0, 0, 0, -1};
         }
         final int pagef = page;
@@ -2461,9 +2468,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 // empty case on the truth within the shot window (the #231
                 // crops measured the flowing cells case-only) — ours keeps
                 // the same case and nothing else (caseonly); mod-tank rows
-                // resolve the tank BLOCK state through the pack's gallery map
-                // AND carry the cube rig INSIDE the window (the truth tank
-                // shows its contents through the glass); texture-model rows
+                // replay the native captured tank and its filled contents;
+                // texture-model rows
                 // keep the flat fluid-texture rig. Everything else is
                 // nochannel (the honest backlog).
                 Float rigCmd = null;
@@ -2491,19 +2497,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 + row[2] + "," + row[3] + " case-only (the truth decays)");
                     }
                 } else if (channel.equals("mod-tank")) {
-                    // extra = "<state>|contents-filled:N" — the pack renders
-                    // the tank block AND the cube rig rides inside the
-                    // window (the truth tank's content is what fills it)
-                    int bar = extra.indexOf('|');
-                    tankState = bar >= 0 ? extra.substring(0, bar) : extra;
-                    Float cube = f2v != null ? f2v.fluidCubes().get(row[4]) : null;
-                    if (cube != null) {
-                        rigCmd = cube;
-                    } else {
-                        log().info(LOG_PREFIX + "f2v gallery-fluid: no pack fluid-cube row for "
-                                + row[4] + " — tank cell " + row[1] + "," + row[2] + ","
-                                + row[3] + " renders the block only");
+                    // The captured model includes the real settled tank AND its BER contents.
+                    // A missing capture remains a named failure; no empty/static/cube substitute.
+                    dev.cim.f2v.GalleryPack.Resolved tank = capturedTanks.get(
+                            row[1] + "," + row[2] + "," + row[3]);
+                    if (tank == null) {
+                        nochannel++;
+                        log().warning(LOG_PREFIX + "f2v gallery-fluid: no native tank capture for " + row[4]
+                                + " at " + row[1] + "," + row[2] + "," + row[3]);
+                        continue;
                     }
+                    rigCmd = tank.cmd();
                 } else if (channel.equals("texture-model")) {
                     // extra = the fluid id
                     rigCmd = f2v != null ? f2v.fluids().get(extra) : null;
@@ -2522,30 +2526,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
                 try {
-                    if (rigCmd != null && tankState != null) {
-                        // the mod-tank pair: the tank BLOCK resolves through
-                        // the gallery map AND the 14-cd cube rig rides inside
-                        // its window — both surfaces on one cell
-                        w.getBlockAt(x, y, z).setBlockData(Bukkit.createBlockData(tankState), false);
-                        ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
-                        final float fcmd = rigCmd;
-                        stack.editMeta(meta -> {
-                            CustomModelDataComponent c = meta.getCustomModelDataComponent();
-                            c.setFloats(List.of(fcmd));
-                            meta.setCustomModelDataComponent(c);
-                        });
-                        org.bukkit.Location at = new org.bukkit.Location(w,
-                                x + 0.5, y + 0.5, z + 0.5);
-                        w.spawn(at, org.bukkit.entity.ItemDisplay.class, e -> {
-                            e.setItemStack(stack);
-                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                            e.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
-                        });
-                        log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
-                                + " cell " + row[1] + "," + row[2] + "," + row[3]
-                                + " fluid=" + row[4] + " tank=" + tankState + " rig cmd=" + rigCmd);
-                        placed++;
-                    } else if (rigCmd != null) {
+                    if (rigCmd != null) {
                         // the item_display rig grammar the item walk proved
                         // (paper + CMD carrier, fixed billboard, pinned
                         // brightness) — the 14-cd cube and the flat
@@ -2562,7 +2543,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         w.spawn(at, org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                            e.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
+                            if (channel.equals("mod-tank")) {
+                                e.setTransformation(new org.bukkit.util.Transformation(
+                                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
+                                        new org.joml.Quaternionf().rotationY((float) Math.PI),
+                                        new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
+                                        new org.joml.Quaternionf()));
+                            }
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(
+                                    channel.equals("mod-tank") ? 0 : 15, 15));
                         });
                         log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
                                 + " cell " + row[1] + "," + row[2] + "," + row[3]

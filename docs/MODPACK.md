@@ -194,8 +194,10 @@ features function in the layer, visual diff within contract threshold.
   glass case, (b) the bucket item rig, (c) the mod's own `fluid_tank` block
   (placed AND its contents filled through NeoForge's BLOCK fluid
   capability — round 3b; zero create imports, the note records the
-  accepted amount; the ours leg renders the tank block only, the level is
-  BE-drawn and stays dyn class), (d) the
+  accepted amount). Settled tank BE data is saved beside the manifest;
+  native model/BER capture supplies a per-cell mesh including its contents,
+  and ours resolves that exact mesh (a missing capture remains a failure).
+  Pixel and coverage gates remain hard. (d) the
   texture-model surface — the pack builder synthesizes a flat item model
   from the fluid's still texture (`textures/fluid/*.png`, 400000+i CMD
   space); truth has no native surface there (the join compares honestly,

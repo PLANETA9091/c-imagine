@@ -93,6 +93,26 @@ public final class GalleryPack {
         return lines;
     }
 
+    /** Resolve per-cell native meshes, including distinct BE contents of the same block state. */
+    public static Map<String, Resolved> capturedSceneRows(Path manifest, List<Resolved> gallery) throws IOException {
+        String name = manifest.getFileName().toString();
+        Path ctx = manifest.resolveSibling(name.substring(0, name.length() - 4) + ".ctx.tsv");
+        if (!Files.isRegularFile(ctx)) return Map.of();
+        Map<String, Resolved> byMesh = new LinkedHashMap<>();
+        for (Resolved row : gallery) {
+            int marker = row.stateId().indexOf("#q");
+            if (marker >= 0) byMesh.putIfAbsent(row.stateId().substring(marker + 1), row);
+        }
+        Map<String, Resolved> cells = new LinkedHashMap<>();
+        for (String line : Files.readAllLines(ctx, StandardCharsets.UTF_8)) {
+            String[] row = line.split("\t", -1);
+            if (row.length < 4) continue;
+            Resolved captured = byMesh.get(row[3]);
+            if (captured != null) cells.put(row[0] + "," + row[1] + "," + row[2], captured);
+        }
+        return cells;
+    }
+
     /** The first actual item row, in the same order the real scene walk emitted it. */
     public static String firstSceneItem(Path manifest) throws IOException {
         for (String line : readSceneLines(manifest)) {
