@@ -13,6 +13,8 @@ public final class CimLiveMod {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        // Paper drives sessions through this from now on; registries are complete here.
+        LiveProtocol.publish();
         String item = System.getenv("CIM_LIVE_SELFTEST");
         if (item != null && !item.isBlank()) {
             // Registries are complete here on both stacks, and the menu types with them.

@@ -35,7 +35,7 @@ public final class LiveMenus {
     private LiveMenus() {
     }
 
-    static synchronized FacadeLevel level() {
+    public static synchronized FacadeLevel level() {
         if (level == null) {
             long t0 = System.nanoTime();
             level = new FacadeLevel(LiveRegistries.build());
@@ -140,6 +140,7 @@ public final class LiveMenus {
 
         int menus = 0;
         int threw = 0;
+        java.util.List<ResourceLocation> opened = new java.util.ArrayList<>();
         java.util.Set<String> kinds = new java.util.TreeSet<>();
         for (ResourceLocation id : items) {
             UUID uuid = UUID.nameUUIDFromBytes(("cimlive-" + id).getBytes(StandardCharsets.UTF_8));
@@ -151,6 +152,7 @@ public final class LiveMenus {
                     continue;
                 }
                 menus++;
+                opened.add(id);
                 kinds.add(String.valueOf(menuType(menu)));
                 LOG.info("[cimlive] selftest item {} opens {}", id, exercise(player, menu, uuid));
             } catch (Throwable t) {
@@ -161,6 +163,34 @@ public final class LiveMenus {
                 LOG.info("[cimlive] detail {}: {}", id, detail(t));
                 SESSIONS.remove(uuid);
             }
+        }
+        // The protocol Paper drives sessions with, on every item that opened a menu: the item
+        // in hand and 5 diamonds in the inventory, the diamonds moved onto the menu's first
+        // slot of its own by two clicks, a close; all through text, as the plugin sends it.
+        for (ResourceLocation id : opened) {
+            UUID uuid = UUID.nameUUIDFromBytes(("cimlive-proto-" + id).getBytes(StandardCharsets.UTF_8));
+            String held = LiveProtocol.encode(new ItemStack(BuiltInRegistries.ITEM.get(id)));
+            String diamonds = LiveProtocol.encode(new ItemStack(Items.DIAMOND, 5));
+            String open = LiveProtocol.call("open-item\t" + uuid + "\tcimlive\ninv\t0\t" + held + "\ninv\t9\t" + diamonds);
+            String from = null;
+            String to = null;
+            for (String line : open.split("\n")) {
+                String[] p = line.split("\t");
+                if (p[0].equals("slot") && p[3].equals("player") && p[4].equals("9") && from == null) {
+                    from = p[2];
+                }
+                if (p[0].equals("slot") && p[3].equals("menu") && to == null) {
+                    to = p[2];
+                }
+            }
+            String after = open;
+            if (from != null && to != null) {
+                LiveProtocol.call("click\t" + uuid + "\t" + from + "\t0\tPICKUP");
+                after = LiveProtocol.call("click\t" + uuid + "\t" + to + "\t0\tPICKUP");
+            }
+            String closed = LiveProtocol.call("close\t" + uuid);
+            LOG.info("[cimlive] selftest protocol {}: {} | after move {} | after close {}", id,
+                    firstLine(open), summary(after), summary(closed));
         }
         // Blocks: every block of these mods that holds a block entity, put down on its own
         // spot and right-clicked with an empty hand, in the order the server tries a click.
@@ -244,6 +274,39 @@ public final class LiveMenus {
         }
         return type + " (" + menu.slots.size() + " slots, " + own + " own); move: " + move + "; close sent "
                 + (said.length() == 0 ? "nothing" : said) + "; inventory " + inventoryLine(player);
+    }
+
+    private static String firstLine(String state) {
+        int nl = state.indexOf('\n');
+        return nl < 0 ? state : state.substring(0, nl).replace('\t', ' ');
+    }
+
+    /** A protocol answer in short: the menu, its first own slot, the cursor, the inventory. */
+    private static String summary(String state) {
+        StringBuilder out = new StringBuilder();
+        boolean ownShown = false;
+        for (String line : state.split("\n")) {
+            String[] p = line.split("\t");
+            if (p[0].equals("slot") && p[3].equals("menu") && !ownShown) {
+                ownShown = true;
+                out.append("first own ").append(shortStack(p[5])).append("; ");
+            } else if (p[0].equals("carried")) {
+                out.append("carried ").append(shortStack(p[1])).append("; ");
+            } else if (p[0].equals("inv")) {
+                out.append(p[1]).append('=').append(shortStack(p[2])).append(' ');
+            } else if (p[0].equals("error")) {
+                out.append(line);
+            }
+        }
+        return out.toString().trim();
+    }
+
+    private static String shortStack(String json) {
+        if (json.equals("-")) {
+            return "empty";
+        }
+        ItemStack stack = LiveProtocol.decode(json);
+        return describe(stack) + (stack.getComponentsPatch().isEmpty() ? "" : "+data");
     }
 
     /** The root cause and the first frames that are not the JDK's: where a mod met the facade. */

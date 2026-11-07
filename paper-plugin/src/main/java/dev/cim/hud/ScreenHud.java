@@ -110,6 +110,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         final int originY;
         ItemStack cursor;
         boolean pointerShown = true;
+        /** The mod's own menu in the layer runs this screen's clicks (M6.3). */
+        boolean live;
+        /** The layer menu's slots, in the order the capture lists them. */
+        List<LiveBridge.Slot> liveSlots = List.of();
         /** The recorded state on screen, after the last press that has one. */
         List<ScreenPack.Piece> pieces;
 
@@ -227,6 +231,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
             }
         }
+    }
+
+    private LiveBridge live;
+
+    private LiveBridge live() {
+        if (live == null && plugin != null && LiveBridge.available()) {
+            live = new LiveBridge(plugin, this::carrier, this::itemId);
+            log.info("[cim-screen] live menus: the layer's cimlive answers, mod menus run their own code");
+        }
+        return live;
     }
 
     public void useCamera(CameraLock lock, org.bukkit.plugin.Plugin owner) {
@@ -536,6 +550,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (index < 0) {
             return;
         }
+        if (s.live && live != null && index < s.liveSlots.size()) {
+            LiveBridge.State state = live.click(player, s.liveSlots.get(index).menuIndex(),
+                    button.equals("right") ? 1 : 0, "PICKUP");
+            if (state.error() != null) {
+                log.warning("[cim-screen] live click failed: " + state.error());
+                return;
+            }
+            applyLive(player, s, state);
+            return;
+        }
         // Left swaps whole stacks, as a vanilla slot does. Nothing here is the mod's menu.
         ItemStack carried = s.cursor;
         if (s.capture.slots().get(index).player()) {
@@ -549,6 +573,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
     }
 
+    /** The layer menu's state on the screen: its own slots, the cursor, the player's inventory. */
+    private void applyLive(Player player, Session s, LiveBridge.State state) {
+        s.liveSlots = state.slots();
+        for (int k = 0; k < s.held.length; k++) {
+            LiveBridge.Slot slot = k < state.slots().size() ? state.slots().get(k) : null;
+            s.held[k] = slot == null || slot.player() ? null : live.toPaper(slot.stack());
+        }
+        s.cursor = live.toPaper(state.carried());
+        live.applyInventory(player, state);
+    }
+
     /** Whatever the player left in the screen goes back, so closing never eats items. */
     void close(Player player) {
         Session s = open.remove(player.getUniqueId());
@@ -557,6 +592,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         if (camera != null) {
             camera.release(player, "screen");
+        }
+        if (s.live && live != null) {
+            // The mod's menu closes the way it does on a server (removed(), its own give-back);
+            // the inventory it leaves is the player's.
+            LiveBridge.State state = live.close(player);
+            if (state.error() == null) {
+                live.applyInventory(player, state);
+            } else {
+                log.warning("[cim-screen] live close failed: " + state.error());
+            }
+            return;
         }
         List<ItemStack> back = new ArrayList<>();
         if (s.cursor != null) {
@@ -609,6 +655,31 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         ItemStack item = event.getItem();
         if (opener == null && item != null && !item.getType().isAir()) {
             opener = "item:" + itemId(item);
+            // The mod's own use() decides, when the layer is there: what opens is its menu.
+            LiveBridge bridge = live();
+            if (bridge != null && !player.isSneaking()) {
+                LiveBridge.State state = bridge.openHeld(player);
+                if (state.error() != null) {
+                    log.warning("[cim-screen] live open failed for " + player.getName() + ": " + state.error());
+                } else if (state.open()) {
+                    ScreenPack.Scene scene = sceneFor(state.menuType(), null);
+                    if (scene == null) {
+                        scene = sceneForOpener(opener);
+                    }
+                    if (scene != null) {
+                        event.setCancelled(true);
+                        open(player, scene);
+                        Session s = open.get(player.getUniqueId());
+                        s.live = true;
+                        applyLive(player, s, state);
+                        log.info("[cim-screen] live " + player.getName() + " opened " + state.menuType()
+                                + " (" + state.slots().size() + " slots) through the mod's own code");
+                        return;
+                    }
+                    bridge.close(player);
+                    log.warning("[cim-screen] live menu " + state.menuType() + " has no screen to draw");
+                }
+            }
         }
         // The walk recorded whether the mod wants a sneaking click, as Create's controller does.
         ScreenPack.Scene scene = opener == null ? null

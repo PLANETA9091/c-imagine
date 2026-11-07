@@ -41,7 +41,7 @@ import java.util.List;
  * M6.3 step 4). Built once and shared by every session, so a menu costs a player and a
  * menu object, not a world.
  */
-final class FacadeLevel extends Level {
+public final class FacadeLevel extends Level {
 
     private final Scoreboard scoreboard = new Scoreboard();
     private final TickRateManager ticks = new TickRateManager();
