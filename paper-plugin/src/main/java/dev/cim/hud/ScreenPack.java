@@ -275,7 +275,7 @@ public final class ScreenPack {
         for (Path file : files) {
             java.util.regex.Matcher m = java.util.regex.Pattern.compile("(.+)__(.+)_s(\\d+)\\.png")
                     .matcher(file.getFileName().toString());
-            if (!m.matches() || m.group(1).equals("minecraft")) {
+            if (!m.matches()) {
                 continue;
             }
             int size = 16 * Integer.parseInt(m.group(3));

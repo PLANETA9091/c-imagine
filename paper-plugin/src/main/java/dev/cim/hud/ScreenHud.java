@@ -425,7 +425,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         if (stack.getAmount() > 1) {
             String n = String.valueOf(stack.getAmount());
-            frame.freeText(x + 17 - HudText.width(n), y + 9, n);
+            frame.freeShadowed(x + 17 - HudText.width(n), y + 9, n);
         }
     }
 

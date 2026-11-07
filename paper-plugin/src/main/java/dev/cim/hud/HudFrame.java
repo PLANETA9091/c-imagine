@@ -46,6 +46,15 @@ public final class HudFrame {
         return free(x, y, s, HudText.width(s));
     }
 
+    /** ASCII the way vanilla draws white text with its drop shadow: the shadow a pixel down and right. */
+    public HudFrame freeShadowed(int x, int y, String raw) {
+        String s = HudText.sanitize(raw);
+        int w = HudText.width(s);
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeShadowId()))
+                .color(TextColor.color(HudLayout.freeColor(x + 1, y + 1))).shadowColor(ShadowColor.none()));
+        return free(x, y, s, w);
+    }
+
     /** ASCII at a pixel in label grey, for text on a light panel. */
     public HudFrame freeLabel(int x, int y, String raw) {
         String s = HudText.sanitize(raw);

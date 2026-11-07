@@ -19,8 +19,8 @@ Xvfb :$DISP -screen 0 1280x720x24 +extension GLX +render -noreset &
 SHOT="$J21/bin/java -cp vtools Shot"; KEY="$J21/bin/java -cp vtools Key"
 
 # --- the plugin builds while the real server and client boot
-( JAVA_HOME=$J25 [ -f paper-plugin/target/cim-paper-plugin.jar ] && [ -f paper-plugin/target/selftest-cp.txt ] && exit 0
-mvn -B -ntp -q -DskipTests -Dpaper.version="$(bash scripts/resolve-paper-version.sh 26.3)" package -f paper-plugin/pom.xml \
+( [ -f paper-plugin/target/cim-paper-plugin.jar ] && [ -f paper-plugin/target/selftest-cp.txt ] && exit 0
+JAVA_HOME=$J25 mvn -B -ntp -q -DskipTests -Dpaper.version="$(bash scripts/resolve-paper-version.sh 26.3)" package -f paper-plugin/pom.xml \
     && cd paper-plugin && JAVA_HOME=$J25 mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt ) \
     > plugin-build.log 2>&1 &
 BUILD=$!

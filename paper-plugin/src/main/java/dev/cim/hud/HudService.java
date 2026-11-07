@@ -67,6 +67,14 @@ public final class HudService implements Listener {
         }
     }
 
+    /** So would an advancement toast: an item the walk hands over can complete one. */
+    @EventHandler
+    public void onAdvancement(com.destroystokyo.paper.event.player.PlayerAdvancementCriterionGrantEvent event) {
+        if (harnessAccount(event.getPlayer().getName())) {
+            event.setCancelled(true);
+        }
+    }
+
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         attach(event.getPlayer());

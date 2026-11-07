@@ -22,7 +22,9 @@ public final class HudLayout {
         /** Any pixel: the glyph's colour carries its position, see {@link #freeColor}. */
         FREE,
         /** The same, tinted the grey of a vanilla screen label. */
-        FREE_DARK;
+        FREE_DARK,
+        /** The same, in the quarter grey vanilla draws a white text's drop shadow with (0x3F). */
+        FREE_SHADOW;
 
         public boolean right() {
             return this == TOP_RIGHT || this == MIDDLE_RIGHT || this == BOTTOM_RIGHT;
@@ -45,7 +47,7 @@ public final class HudLayout {
     }
 
     public static int rows(Anchor a) {
-        return a == Anchor.FREE || a == Anchor.FREE_DARK ? 0 : TEXT_ROWS;
+        return a == Anchor.FREE || a == Anchor.FREE_DARK || a == Anchor.FREE_SHADOW ? 0 : TEXT_ROWS;
     }
 
     public static int id(Anchor a, int row) {
@@ -57,6 +59,10 @@ public final class HudLayout {
 
     public static int freeDarkId() {
         return Anchor.FREE_DARK.ordinal() << ROW_BITS;
+    }
+
+    public static int freeShadowId() {
+        return Anchor.FREE_SHADOW.ordinal() << ROW_BITS;
     }
 
     /** The one id every freely placed glyph shares. */
@@ -139,12 +145,12 @@ public final class HudLayout {
                     int anchor = id >> ROW_BITS;
                     int row = id & ((1 << ROW_BITS) - 1);
                     pos.y -= float(bit << HEIGHT_BIT) + BASELINE;
-                    if (anchor == FREE_ANCHOR || anchor == FREE_DARK_ANCHOR) {
+                    if (anchor == FREE_ANCHOR || anchor == FREE_DARK_ANCHOR || anchor == FREE_SHADOW_ANCHOR) {
                         ivec3 c = ivec3(round(Color.rgb * 255.0));
                         // Drawn shadows carry a quarter of this colour, so runs turn them off.
                         pos.x += float((c.r << 4) | (c.g >> 4)) - FREE_ORIGIN;
                         pos.y += 0.5 * ui.y + float(((c.g & 15) << 8) | c.b) - FREE_ORIGIN + FREE_Y;
-                        float shade = anchor == FREE_DARK_ANCHOR ? 0.25 : 1.0;
+                        float shade = anchor == FREE_DARK_ANCHOR ? 0.25 : anchor == FREE_SHADOW_ANCHOR ? 63.0 / 255.0 : 1.0;
                         cimColor = vec4(shade, shade, shade, Color.a);
                         return pos;
                     }
@@ -178,6 +184,7 @@ public final class HudLayout {
                 .replace("MAX_BIT", String.valueOf(MAX_BIT))
                 .replace("ROW_BITS", String.valueOf(ROW_BITS))
                 .replace("FREE_DARK_ANCHOR", String.valueOf(Anchor.FREE_DARK.ordinal()))
+                .replace("FREE_SHADOW_ANCHOR", String.valueOf(Anchor.FREE_SHADOW.ordinal()))
                 .replace("FREE_ANCHOR", String.valueOf(Anchor.FREE.ordinal()))
                 .replace("FREE_ORIGIN", FREE_ZERO + ".0")
                 .replace("FREE_Y", "2.0")
