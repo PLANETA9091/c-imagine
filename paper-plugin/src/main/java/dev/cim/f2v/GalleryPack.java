@@ -456,6 +456,93 @@ public final class GalleryPack {
                 || state.startsWith("create:train_door[");
     }
 
+    /**
+     * 14-cm: the VANILLA MISSING MODEL stand-in (the magenta/black cube the
+     * real client renders for a blockstate variant whose model file is
+     * absent). Synthesized once per pack build; the texture is the classic
+     * missingno checkerboard (two magenta quadrants).
+     */
+    private static String missingCubeRef(TreeMap<String, byte[]> entries) {
+        String texPath = "assets/c-imagine/textures/block/missingno.png";
+        if (!entries.containsKey(texPath)) {
+            // measured on the real 1.21.1 missing-model render (ae2-p7 c0_r4
+            // truth crop): a 10-unit cube whose texture carries a dark-violet
+            // frame around a light-magenta center; frame (85,66,148),
+            // center (211,153,212) raw RGB.
+            int w = 16, h = 16;
+            byte[] px = new byte[w * h * 3];
+            for (int yy = 0; yy < h; yy++) {
+                for (int xx = 0; xx < w; xx++) {
+                    boolean frame = xx < 3 || yy < 3 || xx > 12 || yy > 12;
+                    int i = (yy * w + xx) * 3;
+                    px[i] = (byte) (frame ? 85 : 211);
+                    px[i + 1] = (byte) (frame ? 66 : 153);
+                    px[i + 2] = (byte) (frame ? 148 : 212);
+                }
+            }
+            entries.put(texPath, minimalPng(w, h, px));
+        }
+        String modelPath = "assets/c-imagine/models/gallery/missingno.json";
+        if (!entries.containsKey(modelPath)) {
+            JsonObject faces = new JsonObject();
+            for (String f : new String[]{"north", "south", "east", "west", "up", "down"}) {
+                JsonObject face = new JsonObject();
+                JsonArray uv = new JsonArray();
+                uv.add(0);
+                uv.add(0);
+                uv.add(16);
+                uv.add(16);
+                face.add("uv", uv);
+                face.addProperty("texture", "#missing");
+                faces.add(f, face);
+            }
+            JsonObject el = new JsonObject();
+            JsonArray from = new JsonArray();
+            JsonArray to = new JsonArray();
+            for (double v : new double[]{3, 3, 3}) {
+                from.add(v);
+            }
+            for (double v : new double[]{13, 13, 13}) {
+                to.add(v);
+            }
+            el.add("from", from);
+            el.add("to", to);
+            el.add("faces", faces);
+            JsonArray elements = new JsonArray();
+            elements.add(el);
+            JsonObject model = new JsonObject();
+            model.addProperty("parent", "minecraft:block/block");
+            JsonObject textures = new JsonObject();
+            textures.addProperty("missing", "c-imagine:block/missingno");
+            model.add("textures", textures);
+            model.add("elements", elements);
+            entries.put(modelPath, model.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        return "c-imagine:gallery/missingno";
+    }
+
+    /** Minimal RGB PNG encoder (8-bit, no filtering) for synthesized textures. */
+    private static byte[] minimalPng(int w, int h, byte[] rgb) {
+        try {
+            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(w, h,
+                    java.awt.image.BufferedImage.TYPE_INT_RGB);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    int i = (y * w + x) * 3;
+                    int r = rgb[i] & 0xFF;
+                    int g = rgb[i + 1] & 0xFF;
+                    int b = rgb[i + 2] & 0xFF;
+                    img.setRGB(x, y, (r << 16) | (g << 8) | b);
+                }
+            }
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(img, "png", bos);
+            return bos.toByteArray();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("missingno png encode failed", e);
+        }
+    }
+
     /** Shifts every element of a baked array by {@code dy} model units on Y. */
     private static JsonArray shiftElementsY(JsonArray elements, double dy) {
         JsonArray out = new JsonArray();
@@ -524,12 +611,18 @@ public final class GalleryPack {
                     int y = entry.has("y") ? entry.get("y").getAsInt() : 0;
                     boolean uvlock = entry.has("uvlock") && entry.get("uvlock").getAsBoolean();
                     String ref = copyModelGraph(jars, s.ns(), model, entries, warnings);
-                    if (ref != null) {
-                        parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
-                    } else {
-                        warnings.add("gallery: variant model missing for " + s.ns() + ":" + s.block()
-                                + " -> " + model);
+                    if (ref == null) {
+                        // 14-cm: the MODEL FILE itself is absent from the jars
+                        // (ae2:block/crafting/monitor_formed — an empty/absent
+                        // model the real client resolves to the VANILLA MISSING
+                        // MODEL, the magenta/black cube). Our old route dropped
+                        // the row (empty cell, ae 152–178K on 8 monitor cells);
+                        // the pack now emits the same missing-model cube.
+                        ref = missingCubeRef(entries);
+                        warnings.add("gallery: missing model -> vanilla missingno cube for "
+                                + s.ns() + ":" + s.block() + " -> " + model);
                     }
+                    parts.add(new Part(ref, normRot(x), normRot(y), uvlock, 0));
                 }
             }
             return parts;
