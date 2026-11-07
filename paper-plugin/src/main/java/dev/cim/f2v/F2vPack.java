@@ -306,15 +306,18 @@ public final class F2vPack {
                 }
                 String nsPath = "assets/c-imagine/textures/fluidcube/" + id + "_ns.png";
                 if (!entries.containsKey(nsPath)) {
-                    entries.put(nsPath, uniformPng(shade(color, 0.8)));
+                    int[] ns = shade(color, 0.8);
+                    entries.put(nsPath, uniformPng(ns[0], ns[1], ns[2]));
                 }
                 String ewPath = "assets/c-imagine/textures/fluidcube/" + id + "_ew.png";
                 if (!entries.containsKey(ewPath)) {
-                    entries.put(ewPath, uniformPng(shade(color, 0.6)));
+                    int[] ew = shade(color, 0.6);
+                    entries.put(ewPath, uniformPng(ew[0], ew[1], ew[2]));
                 }
                 String bPath = "assets/c-imagine/textures/fluidcube/" + id + "_b.png";
                 if (!entries.containsKey(bPath)) {
-                    entries.put(bPath, uniformPng(shade(color, 0.5)));
+                    int[] bb = shade(color, 0.5);
+                    entries.put(bPath, uniformPng(bb[0], bb[1], bb[2]));
                 }
             } else {
                 // the real still texture's static frame 0, re-hosted under
