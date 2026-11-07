@@ -2696,6 +2696,7 @@ jobs:
               python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn \
+                --demote-family '^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)' \
                 $SELF_T $SELF_O || GATE=1
             done
           done

@@ -273,6 +273,15 @@ def main():
     ap.add_argument("--diff-dir")
     ap.add_argument("--gate-dyn", action="store_true",
                     help="modded dyn=1 rows gate: a differing cell is RED, not DYNAMIC")
+    ap.add_argument("--demote-family", action="append", default=[],
+                    help="state regex whose matches demote to the DYNAMIC class "
+                         "(reported, never gated) even under --gate-dyn — the "
+                         "structural runtime-geometry channel gap (14-bx/14-by): "
+                         "the mod builds the mesh in its own code at runtime, the "
+                         "pack channel carries the captured static bake, the gate "
+                         "is the real-client leg M5.6. The demotions count LOUD: "
+                         "every row prints dyn_family=true and the join prints the "
+                         "per-page total")
     ap.add_argument("--gate", type=int, default=60000,
                     help="per-cell AE datum after alignment + luminance "
                          "normalisation (calibrated on the run-9 identity "
@@ -284,6 +293,8 @@ def main():
     args = ap.parse_args()
     global PITCH
     PITCH = max(1, args.pitch)
+    import re as _re
+    demote_rx = [_re.compile(rx) for rx in args.demote_family]
 
     truth = load(args.truth)
     ours = load(args.ours)
@@ -326,6 +337,7 @@ def main():
     dynamic = 0
     spill = 0
     animated_n = 0
+    fam_demoted = 0
     cells = 0
     for mf in args.manifest:
         page = pathlib.Path(mf).stem  # gallery-<ns>-p<p>
@@ -475,8 +487,21 @@ def main():
             # leg (M5.6). args.gate_dyn = the owner's opt-in to gate them.
             # The minecraft-namespace dyn rows stay gate-hard (14-bf: both
             # legs render real vanilla entities/BEs).
-            gated_dyn = dyn and (row_ns == "minecraft" or not args.gate_dyn)
-            verdict = classify(v > args.gate, dyn, gated_dyn, air, animated, sn)
+            # 14-by THE RUNTIME-GEOMETRY FAMILY DEMOTION: the 14-bx seed-side
+            # flip never reached the join — the join reads the TRUTH manifests
+            # (the truth walk writes dyn=0 for the BE-less DT blocks) and runs
+            # --gate-dyn (the doors/kinetics opt-in), so the family kept
+            # red-gating on the structural channel gap (the #229 census: 130
+            # DT reds, ae byte-identical across #214/#226). The demotion is
+            # the 14-bx policy applied where the join actually reads: the
+            # family states demote to DYNAMIC (reported, never gated),
+            # regardless of gate-dyn, and the demotion counts LOUD.
+            fam = any(rx.match(state) for rx in demote_rx)
+            fam_demoted += 1 if fam else 0
+            gated_dyn = (dyn or fam) and (row_ns == "minecraft" or not args.gate_dyn)
+            if fam:
+                gated_dyn = False
+            verdict = classify(v > args.gate, dyn or fam, gated_dyn, air, animated, sn)
             if dyn or air:
                 dynamic += 1
             if verdict == "ANIMATED":
@@ -498,17 +523,19 @@ def main():
                          "ae": v, "shift": [dx, dy], "verdict": verdict,
                          "luma_norm": luma_norm, "luma_fit": co_used is True,
                          "luma_scale": round(scale, 3), "dyn_spill": sn,
+                         "dyn_family": fam,
                          "self_ae": [sa_t, sa_o]})
 
     report = {
         "cells": cells, "skipped": skipped, "red": red, "dynamic": dynamic,
-        "spill": spill, "animated": animated_n,
+        "spill": spill, "animated": animated_n, "family_demoted": fam_demoted,
         "gate": args.gate, "verdict": "GREEN" if red == 0 else "RED",
         "rows": rows,
     }
     pathlib.Path(args.out).write_text(json.dumps(report, indent=1))
     print(f"gallery-diff: {report['verdict']} cells={cells} red={red} "
           f"spill={spill} animated={animated_n} dynamic={dynamic} "
+          f"family_demoted={fam_demoted} "
           f"skipped={skipped} gate={args.gate} -> {args.out}")
     return 0 if red == 0 else 2
 

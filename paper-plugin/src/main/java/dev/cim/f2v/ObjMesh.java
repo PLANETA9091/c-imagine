@@ -770,7 +770,14 @@ final class ObjMesh {
         double w10 = fx * (1 - fy);
         double w01 = (1 - fx) * fy;
         double w11 = fx * fy;
-        int argb = 0xFF000000;
+        // 14-by: the alpha channel MUST ride the weighted sum like RGB — the
+        // 0xFF000000 initializer forced every tile texel opaque, so the
+        // capture's transparent texels (alpha=0, RGB=0) baked into opaque
+        // BLACK tiles and every q-path composite with holes (the high_grass
+        // blades, the window panes, the scaffolding gaps) painted the
+        // cutout-discarded background as solid black against the truth's
+        // sky (the #229 crops: high_grass ours bg = rgb(2,2,3), truth = sky).
+        int argb = 0;
         for (int c = 0; c < 4; c++) {
             int shift = 8 * c;
             double s = w00 * ((c00 >>> shift) & 255) + w10 * ((c10 >>> shift) & 255)

@@ -23,10 +23,9 @@ mekanism:block/factory/infusing/infusing_factory_front	0.4008	0.3943	0.3901	meka
 mekanism:block/factory/crushing/crushing_factory_front	0.4321	0.4231	0.4179	mekanism:advanced_crushing_factory[active=false,facing=south,fluid_logged=EMPTY]@gallery-mekanism-p1:c6,r0|n=765|class=smoothlight-median
 biomesoplenty:block/bush	0.9899	1.0	0.8667	biomesoplenty:bush@gallery-item-biomesoplenty-p0:c4,r2|n=697|class=tint-wide
 biomesoplenty:block/hellbark_trapdoor	0.925	0.9214	0.9177	biomesoplenty:hellbark_trapdoor[facing=west,half=top,open=true,powered=false,waterlogged=false]@gallery-biomesoplenty-p40:c7,r0|n=1775|class=luma-uniform
-biomesoplenty:block/origin_sapling	0.9239	0.9286	0.8889	biomesoplenty:origin_sapling[stage=0]@gallery-biomesoplenty-p72:c1,r2|n=1418|class=luma+chroma
 biomesoplenty:block/snowblossom_sapling	0.9356	0.934	0.933	biomesoplenty:snowblossom_sapling[stage=0]@gallery-biomesoplenty-p95:c1,r3|n=1874|class=luma+chroma
 biomesoplenty:block/sprout	0.9455	0.8969	0.9206	biomesoplenty:sprout@gallery-item-biomesoplenty-p4:c4,r3|n=1680|class=luma+chroma
-biomesoplenty:block/willow_trapdoor	1.1591	1.1446	1.1423	biomesoplenty:willow_trapdoor[facing=south,half=top,open=true,powered=false,waterlogged=false]@gallery-biomesoplenty-p116:c5,r0|n=2549|class=luma+chroma;biomesoplenty:willow_trapdoor[facing=south,half=top,open=true,powered=true,waterlogged=false]@gallery-biomesoplenty-p116:c3,r0|n=2527|class=luma+chroma
+biomesoplenty:block/willow_trapdoor	1.0471	1.0469	1.0506	biomesoplenty:willow_trapdoor[facing=south,half=top,open=true,powered=false,waterlogged=false]@gallery-biomesoplenty-p116:c5,r0|n=2549|class=luma+chroma;biomesoplenty:willow_trapdoor[facing=south,half=top,open=true,powered=true,waterlogged=false]@gallery-biomesoplenty-p116:c3,r0|n=2527|class=luma+chroma
 block/cocoa_stage0	0.913	0.9074	0.9018	dynamictrees:cocoa[age=0,facing=north,radius_offset=4]@gallery-dynamictrees-p2:c4,r1|n=1454|class=luma+chroma
 # visual-tints.tsv — flora tint extension (14-bu): the
 # chroma-masked per-pixel median of truth/ours (see
@@ -45,3 +44,15 @@ biomesoplenty:block/watergrass	0.9589	0.9529	0.925	biomesoplenty:watergrass[half
 # high_grass (the age variants scatter past 0.47), bramble_leaves,
 # flesh_tendons (the pulsing BE). The bake rides the composite's baked
 # sibling sprite — the raw texture keeps serving every untinted consumer.
+# 14-by THE #229 CALIBRATION (run 42297037383 crops): the ae2 quartz stairs/
+# wall base-row smooth-light deficit (the 14-bq class, this time on the ae2
+# chiseled art — every evidence cell sits at r0), the BOP blood fluid's tint
+# (n=12196, the strongest single solve of the run), the watergrass vanilla-
+# texture pair (the DT/PlantBlock vanilla-texture route, safe: watergrass is
+# the ONLY ladder consumer of tall_grass_bottom/top), and the willow_trapdoor
+# refinement (the 1.1591 row over-tinted — the #229 p116 pair measured 1.047
+# on n=5262).
+ae2:block/chiseled_quartz_block_side	0.9697	0.977	0.9858	ae2:chiseled_quartz_wall[east=none,north=none,south=none,up=true,waterlogged=false,west=none]@gallery-ae2-p3:c8,r0|n=3125|class=geometry/px;ae2:chiseled_quartz_wall[east=none,north=tall,south=none,up=true,waterlogged=false,west=tall]@gallery-ae2-p4:c5,r0|n=3080|class=luma+chroma
+biomesoplenty:block/blood_still	0.7792	0.8448	0.8447	biomesoplenty:blood@gallery-fluid-biomesoplenty-p0:c0,r0|n=12196|class=tint
+minecraft:block/tall_grass_bottom	0.9518	0.9509	0.9317	biomesoplenty:watergrassalf=lower,waterlogged=false]@gallery-biomesoplenty-p104:c1,r0|n=2362|class=luma+chroma
+minecraft:block/tall_grass_top	1.0885	1.0926	1.0569	biomesoplenty:watergrassalf=upper,waterlogged=false]@gallery-biomesoplenty-p103:c10,r6|n=336|class=luma+chroma
