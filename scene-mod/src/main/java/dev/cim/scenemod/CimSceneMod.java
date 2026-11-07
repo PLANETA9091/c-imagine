@@ -2396,12 +2396,11 @@ public final class CimSceneMod {
             // A real menu needs the context its own code supplies, so the walk does
             // what a player does. The block entity must reach the client first, or
             // the screen reads a null holder and the client disconnects.
-            String opener = guiOpeners(level, viewer, namespace).get(id);
-            if (opener == null) {
-                // The plan's settled pass found what a click in one tick cannot: a structure that
-                // forms over real ticks. Its opener is in the page manifest the plan wrote.
-                opener = guiManifestOpener(namespace, page);
-            }
+            // The plan already probed every mod, settled pass included, and wrote each page's
+            // opener into its manifest; a walk run on its own probes for itself.
+            boolean planned = Files.isRegularFile(Path.of("c-imagine", "scenes",
+                    "gallery-gui-" + namespace + "-p" + page + ".tsv"));
+            String opener = planned ? guiManifestOpener(namespace, page) : guiOpeners(level, viewer, namespace).get(id);
             if (opener != null) {
                 guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
@@ -2455,6 +2454,10 @@ public final class CimSceneMod {
                 tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\topen-failed:")
                         .append(opener == null ? "no-opener:" : "opener-failed:")
                         .append(t.getClass().getName()).append('\n');
+                if (opener != null) {
+                    // Kept, so the crawl's reopen of this page tries the same opener again.
+                    tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(opener).append('\n');
+                }
                 LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed menu={} opener={} err={}",
                         namespace, page, id, opener, t.toString());
             }
@@ -2464,7 +2467,8 @@ public final class CimSceneMod {
             tsv.append("cell\t").append(rig.getX()).append('\t').append(rig.getY()).append('\t')
                     .append(rig.getZ()).append('\t').append(id).append('\t').append(how).append('\t')
                     .append(viewer.containerMenu.getClass().getName()).append('\n');
-            for (String each : GUI_ALL_OPENERS.getOrDefault(id, List.of())) {
+            List<String> all = GUI_ALL_OPENERS.getOrDefault(id, opener == null ? List.of() : List.of(opener));
+            for (String each : all) {
                 tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
             }
             // Slot geometry is server state, so every opened menu documents itself.
