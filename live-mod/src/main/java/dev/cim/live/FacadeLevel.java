@@ -86,7 +86,93 @@ final class FacadeLevel extends Level {
         return List.of();
     }
 
-    // --- the world is Paper's: nothing lives here yet
+    // --- the blocks a session touches, and nothing else
+
+    /*
+     * Sparse: only the blocks a menu needs exist here (in the server, the bridge binds them
+     * to their Paper block; the self-test places them). No chunk, no section, no palette.
+     */
+    private final java.util.Map<Long, BlockState> states = new java.util.HashMap<>();
+    private final java.util.Map<Long, net.minecraft.world.level.block.entity.BlockEntity> blockEntities =
+            new java.util.HashMap<>();
+
+    @Override
+    public BlockState getBlockState(BlockPos pos) {
+        return states.getOrDefault(pos.asLong(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+    }
+
+    @Override
+    public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
+        return getBlockState(pos).getFluidState();
+    }
+
+    @Override
+    public boolean setBlock(BlockPos pos, BlockState state, int flags, int recursionLeft) {
+        long key = pos.asLong();
+        BlockState old = getBlockState(pos);
+        if (old == state) {
+            return false;
+        }
+        if (state.isAir()) {
+            states.remove(key);
+        } else {
+            states.put(key, state);
+        }
+        if (old.getBlock() != state.getBlock()) {
+            net.minecraft.world.level.block.entity.BlockEntity gone = blockEntities.remove(key);
+            if (gone != null) {
+                gone.setRemoved();
+            }
+            if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock maker) {
+                net.minecraft.world.level.block.entity.BlockEntity made = maker.newBlockEntity(pos.immutable(), state);
+                if (made != null) {
+                    made.setLevel(this);
+                    blockEntities.put(key, made);
+                    // A world calls this when the chunk's block entities load; there is no tick here.
+                    made.onLoad();
+                }
+            }
+        } else {
+            net.minecraft.world.level.block.entity.BlockEntity same = blockEntities.get(key);
+            if (same != null) {
+                same.setBlockState(state);
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public net.minecraft.world.level.block.entity.BlockEntity getBlockEntity(BlockPos pos) {
+        return blockEntities.get(pos.asLong());
+    }
+
+    @Override
+    public void setBlockEntity(net.minecraft.world.level.block.entity.BlockEntity blockEntity) {
+        blockEntity.setLevel(this);
+        blockEntities.put(blockEntity.getBlockPos().asLong(), blockEntity);
+    }
+
+    @Override
+    public void removeBlockEntity(BlockPos pos) {
+        net.minecraft.world.level.block.entity.BlockEntity gone = blockEntities.remove(pos.asLong());
+        if (gone != null) {
+            gone.setRemoved();
+        }
+    }
+
+    @Override
+    public boolean isLoaded(BlockPos pos) {
+        return true;
+    }
+
+    /** Drops every block a session placed. */
+    void clearBlocks() {
+        blockEntities.values().forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
+        blockEntities.clear();
+        states.clear();
+    }
+
+    // --- no chunks: what is not a block above is Paper's
 
     @Override
     public ChunkSource getChunkSource() {

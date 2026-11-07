@@ -67,6 +67,24 @@ public final class LiveMenus {
         return player.opened();
     }
 
+    /**
+     * A right click on a block with an empty hand, as the server's game mode applies it:
+     * the block's item use first, then its use without an item when that passes.
+     */
+    public static AbstractContainerMenu clickBlock(SessionServerPlayer player, net.minecraft.core.BlockPos pos) {
+        net.minecraft.world.level.block.state.BlockState state = level().getBlockState(pos);
+        net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
+                net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(net.minecraft.core.Direction.SOUTH, 0.5),
+                net.minecraft.core.Direction.SOUTH, pos, false);
+        ItemStack hand = player.getItemInHand(InteractionHand.MAIN_HAND);
+        net.minecraft.world.ItemInteractionResult result = state.useItemOn(hand, level(), player,
+                InteractionHand.MAIN_HAND, hit);
+        if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+            state.useWithoutItem(level(), player, hit);
+        }
+        return player.opened();
+    }
+
     /** A slot click, exactly as the server applies a container click packet. */
     public static void click(SessionServerPlayer player, int slot, int button, ClickType type) {
         AbstractContainerMenu menu = player.opened();
@@ -129,40 +147,8 @@ public final class LiveMenus {
                     continue;
                 }
                 menus++;
-                ResourceLocation type = menuType(menu);
-                kinds.add(String.valueOf(type));
-                int own = 0;
-                int firstOwn = -1;
-                int firstMine = -1;
-                for (int i = 0; i < menu.slots.size(); i++) {
-                    Slot slot = menu.slots.get(i);
-                    if (slot.container == player.getInventory()) {
-                        if (firstMine < 0 && slot.getContainerSlot() >= 9 && !slot.hasItem()) {
-                            firstMine = i;
-                        }
-                    } else {
-                        own++;
-                        if (firstOwn < 0) {
-                            firstOwn = i;
-                        }
-                    }
-                }
-                String move = "no slot of its own";
-                if (firstOwn >= 0 && firstMine >= 0) {
-                    menu.slots.get(firstMine).set(new ItemStack(Items.DIAMOND, 5));
-                    click(player, firstMine, 0, ClickType.PICKUP);
-                    click(player, firstOwn, 0, ClickType.PICKUP);
-                    move = "slot " + firstOwn + " holds " + describe(menu.slots.get(firstOwn).getItem())
-                            + ", carried " + describe(menu.getCarried());
-                }
-                end(uuid);
-                StringBuilder said = new StringBuilder();
-                for (net.minecraft.network.protocol.Packet<?> packet : player.session().drain()) {
-                    said.append(said.length() == 0 ? "" : "+").append(packet.getClass().getSimpleName());
-                }
-                LOG.info("[cimlive] selftest item {} opens {} ({} slots, {} own); move: {}; close sent {}; inventory {}",
-                        id, type, menu.slots.size(), own, move, said.length() == 0 ? "nothing" : said,
-                        inventoryLine(player));
+                kinds.add(String.valueOf(menuType(menu)));
+                LOG.info("[cimlive] selftest item {} opens {}", id, exercise(player, menu, uuid));
             } catch (Throwable t) {
                 threw++;
                 // The simple class name only: the layer's classes carry relocated packages.
@@ -173,9 +159,89 @@ public final class LiveMenus {
                 SESSIONS.remove(uuid);
             }
         }
+        // Blocks: every block of these mods that holds a block entity, put down on its own
+        // spot and right-clicked with an empty hand, in the order the server tries a click.
+        java.util.List<ResourceLocation> blocks = new java.util.ArrayList<>();
+        for (ResourceLocation id : BuiltInRegistries.BLOCK.keySet()) {
+            String ns = id.getNamespace();
+            boolean in = all ? !ns.equals("minecraft") && !ns.equals("neoforge") && !ns.equals("cimlive") : wanted.contains(ns);
+            if (in && BuiltInRegistries.BLOCK.get(id) instanceof net.minecraft.world.level.block.EntityBlock) {
+                blocks.add(id);
+            }
+        }
+        blocks.sort(java.util.Comparator.comparing(ResourceLocation::toString));
+        int blockMenus = 0;
+        int blockThrew = 0;
+        for (int i = 0; i < blocks.size(); i++) {
+            ResourceLocation id = blocks.get(i);
+            UUID uuid = UUID.nameUUIDFromBytes(("cimlive-block-" + id).getBytes(StandardCharsets.UTF_8));
+            net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(i * 4, 64, 0);
+            try {
+                SessionServerPlayer player = session(uuid, "cimlive");
+                player.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 2.5);
+                net.minecraft.world.level.block.state.BlockState state =
+                        BuiltInRegistries.BLOCK.get(id).defaultBlockState();
+                level().setBlock(pos, state, 3);
+                AbstractContainerMenu menu = clickBlock(player, pos);
+                if (menu == null) {
+                    end(uuid);
+                } else {
+                    blockMenus++;
+                    kinds.add(String.valueOf(menuType(menu)));
+                    LOG.info("[cimlive] selftest block {} opens {}", id, exercise(player, menu, uuid));
+                }
+            } catch (Throwable t) {
+                blockThrew++;
+                LOG.info("[cimlive] selftest block {} threw {}", id, t.getClass().getSimpleName());
+                StackTraceElement at = t.getStackTrace().length > 0 ? t.getStackTrace()[0] : null;
+                LOG.info("[cimlive] detail {}: {} at {}", id, t.getMessage(), at);
+                SESSIONS.remove(uuid);
+            }
+        }
+        level().clearBlocks();
+        LOG.info("[cimlive] selftest blocks: blocks={} menus={} threw={}", blocks.size(), blockMenus, blockThrew);
         LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
         LOG.info("[cimlive] selftest kinds {}", kinds);
         LOG.info("[cimlive] selftest ok");
+    }
+
+    /**
+     * The first move a player makes in a menu (a stack from the inventory onto the menu's
+     * first slot of its own), then the close; what the mod's code made of both.
+     */
+    private static String exercise(SessionServerPlayer player, AbstractContainerMenu menu, UUID uuid) {
+        ResourceLocation type = menuType(menu);
+        int own = 0;
+        int firstOwn = -1;
+        int firstMine = -1;
+        for (int i = 0; i < menu.slots.size(); i++) {
+            Slot slot = menu.slots.get(i);
+            if (slot.container == player.getInventory()) {
+                if (firstMine < 0 && slot.getContainerSlot() >= 9 && !slot.hasItem()) {
+                    firstMine = i;
+                }
+            } else {
+                own++;
+                if (firstOwn < 0) {
+                    firstOwn = i;
+                }
+            }
+        }
+        String move = "no slot of its own";
+        if (firstOwn >= 0 && firstMine >= 0) {
+            menu.slots.get(firstMine).set(new ItemStack(Items.DIAMOND, 5));
+            click(player, firstMine, 0, ClickType.PICKUP);
+            click(player, firstOwn, 0, ClickType.PICKUP);
+            move = "slot " + firstOwn + " holds " + describe(menu.slots.get(firstOwn).getItem())
+                    + ", carried " + describe(menu.getCarried());
+        }
+        end(uuid);
+        StringBuilder said = new StringBuilder();
+        for (net.minecraft.network.protocol.Packet<?> packet : player.session().drain()) {
+            said.append(said.length() == 0 ? "" : "+").append(packet.getClass().getSimpleName());
+        }
+        return type + " (" + menu.slots.size() + " slots, " + own + " own); move: " + move + "; close sent "
+                + (said.length() == 0 ? "nothing" : said) + "; inventory " + inventoryLine(player);
     }
 
     private static ResourceLocation menuType(AbstractContainerMenu menu) {
