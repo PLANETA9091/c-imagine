@@ -94,6 +94,35 @@ def compare(truth_path, ours_path, slots, scale, art=None):
     return red, diff.size[0] * diff.size[1], diff
 
 
+def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
+    """Full-resolution truth | ours | diff around where they differ, so a RED is readable."""
+    if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
+        return
+    truth = Image.open(truth_path).convert("RGB")
+    ours = Image.open(ours_path).convert("RGB")
+    if truth.size != ours.size:
+        return
+    r, g, b = ImageChops.difference(truth, ours).split()
+    diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+    mask = art_mask(art, truth.size)
+    if mask is not None and mask.getbbox():
+        diff = ImageChops.multiply(diff, mask)
+    box = diff.getbbox()
+    if not box:
+        return
+    x0, y0 = max(0, box[0] - pad), max(0, box[1] - pad)
+    x1, y1 = min(truth.size[0], min(box[2], x0 + limit) + pad), min(truth.size[1], min(box[3], y0 + limit) + pad)
+    crop = (x0, y0, x1, y1)
+    k = max(1, min(8, 640 // max(1, x1 - x0)))
+    parts = [im.crop(crop).resize(((x1 - x0) * k, (y1 - y0) * k), Image.NEAREST)
+             for im in (truth, ours, diff.convert("RGB"))]
+    out = Image.new("RGB", (parts[0].width * 3 + 8, parts[0].height + LABEL), (70, 70, 70))
+    ImageDraw.Draw(out).text((4, 3), f"full-res crop at x={x0} y={y0}, x{k}", fill=(255, 255, 255))
+    for i, im in enumerate(parts):
+        out.paste(im, (i * (parts[0].width + 4), LABEL))
+    out.save(out_path)
+
+
 def panel(image, title, size):
     out = Image.new("RGB", (size[0], size[1] + LABEL), (24, 24, 24))
     ImageDraw.Draw(out).text((4, 3), title, fill=(255, 255, 255))
@@ -152,6 +181,8 @@ def main():
             sheet.paste(panel(load(ours), f"c-imagine: {verdict}", SHEET), (SHEET[0] + 4, 0))
             sheet.paste(panel(result[2] if result else None, why, SHEET), (SHEET[0] * 2 + 8, 0))
             sheet.save(os.path.join(a.out, f"{name}.png"))
+            if verdict == "RED" and result:
+                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"))
             with open(os.path.join(a.report, f"join-menu-{name}.json"), "w", encoding="utf-8") as f:
                 json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
                            "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
@@ -164,6 +195,8 @@ def main():
                 res = compare(t, o, slots, a.scale, state)
                 v, w2 = judge(menu, True, note, res)
                 label = f"{menu} {'slot move' if tag == 'move' else 'press ' + tag[1:]}"
+                if v == "RED" and res:
+                    zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"))
                 with open(os.path.join(a.report, f"join-menu-{name}-{tag}.json"), "w", encoding="utf-8") as f:
                     json.dump({"verdict": v, "cells": 1, "red": int(v == "RED"), "dynamic": 0, "skipped": 0,
                                "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)
