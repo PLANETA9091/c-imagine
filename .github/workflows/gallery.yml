@@ -1841,7 +1841,7 @@ jobs:
           # the visual client runtime (piston-meta, with assets) — cached
           [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           wc -c visual-client/classpath.txt visual-client/launch.txt
-          sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
+          sed -i 's/^java /java -Xmx2G /' visual-client/launch.txt
           # THE VULKAN FALLBACK (measured 2026-11-06: the rolled runner
           # image's GLX offers GL 4.5 COMPAT while the 26.3 GlDevice
           # demands more — "Couldn't find matching GLX visual" killed every
