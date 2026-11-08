@@ -1881,14 +1881,20 @@ public final class GalleryPack {
             }
             int quadBlock = -1;
             int quadSky = -1;
-            if (c.length >= 42) {
-                try {
-                    quadBlock = Integer.parseInt(c[40].trim());
-                    quadSky = Integer.parseInt(c[41].trim());
-                } catch (NumberFormatException bad) {
-                    quadBlock = -1;
-                    quadSky = -1;
+            // 14-cy.1 row shapes (the tail is optional on every producer):
+            //   39 = block capture (no material, no light)     — legacy pin
+            //   40 = native liquid (material at 39, no light)
+            //   41 = block capture + light tail (block@39, sky@40)
+            //   42 = native liquid + light tail (material@39, block@40, sky@41)
+            try {
+                if (c.length == 41 || c.length == 42) {
+                    int skyCol = c.length - 1;
+                    quadBlock = Integer.parseInt(c[skyCol - 1].trim());
+                    quadSky = Integer.parseInt(c[skyCol].trim());
                 }
+            } catch (NumberFormatException bad) {
+                quadBlock = -1;
+                quadSky = -1;
             }
             boolean fullbright = quadBlock == 15 && quadSky == 15;
             if (fullbright) {
@@ -1903,7 +1909,11 @@ public final class GalleryPack {
             if (lightGroup == LIGHT_FULLBRIGHT && !fullbright) {
                 continue;
             }
-            String faceMaterial = c.length >= 40 ? c[39]
+            // 14-cy.1: the material column exists only on the native liquid
+            // shapes (40/42); the block-capture shapes (39/41) keep the
+            // block?cutout:translucent default — their column 39 is the
+            // light tail's block nibble when the tail is present.
+            String faceMaterial = (c.length == 40 || c.length == 42) ? c[39]
                     : (block ? "cutout" : "translucent");
             if (!(faceMaterial.equals("solid") || faceMaterial.equals("cutout") || faceMaterial.equals("translucent"))) {
                 throw new IOException("gallery: unsupported captured material " + faceMaterial);

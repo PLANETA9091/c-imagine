@@ -50,9 +50,14 @@ public final class CaptureColorTest {
         }
         var quad = new BakedQuad(vertices, -1, Direction.SOUTH, sprite, true);
         float[] brightness = {1f, .87f, .53f, .4f};
+        // 14-cy: the Capture recorder rides the quad's packed light (the
+        // LevelRenderer getLightColor layout: block = bits 4-7, sky = bits
+        // 20-23); feed it a real (block 8, sky 15) sample, not zeros.
+        int[] light = new int[4];
+        Arrays.fill(light, (8 << 4) | (15 << 20));
         var expected = new NativeRecorder();
         var pose = new PoseStack().last();
-        expected.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, new int[4], 0, readColor);
+        expected.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, light, 0, readColor);
         for (String name : List.of("ItemCapture", "Capture")) {
             var type = Arrays.stream(QuadDump.class.getDeclaredClasses())
                     .filter(c -> c.getSimpleName().equals(name)).findFirst().orElseThrow();
@@ -72,14 +77,22 @@ public final class CaptureColorTest {
                 consumer = (VertexConsumer) buffer.invoke(capture, new Object(),
                         "texture[Optional[minecraft:textures/atlas/blocks.png]]", true);
             }
-            consumer.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, new int[4], 0, readColor);
+            consumer.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, light, 0, readColor);
             var out = type.getDeclaredField("out");
             out.setAccessible(true);
             String[] row = out.get(capture).toString().strip().split("\\t");
-            if (row.length != 39) throw new AssertionError(name + " lost vertex alpha: " + row.length);
+            // 14-cy: the Capture rows end with the optional (block, sky) light
+            // tail; the ItemCapture rows keep the legacy 39-column shape.
+            boolean carriesLight = name.equals("Capture");
+            if (row.length != (carriesLight ? 41 : 39)) {
+                throw new AssertionError(name + " lost vertex alpha: " + row.length);
+            }
             String shaderShade = name.equals("ItemCapture") ? "1" : "0";
             if (!row[1].equals(shaderShade)) {
                 throw new AssertionError(name + " repeats or loses source shader lighting: " + row[1]);
+            }
+            if (carriesLight && (!row[39].equals("8") || !row[40].equals("15"))) {
+                throw new AssertionError(name + " lost the packed light tail: " + row[39] + "/" + row[40]);
             }
             for (int i = 0; i < 4; i++) {
                 for (int c = 0; c < 4; c++) {
