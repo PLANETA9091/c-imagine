@@ -3280,32 +3280,42 @@ public final class F2vPack {
                 }
                 expect(failures, models >= 2, "native liquid: unlit child checked " + material);
             }
-            // 14-cy.1 captured-light census: the block-capture rows carry the
-            // (block, sky) tail (39-col row + 2 = 41 cols). A mesh mixing a
-            // scene-lit (8,15) row with a mod-override (15,15) row must pin
-            // the display to (8,15) and split the (15,15) row into the
-            // fullbright companion the replay spawns at (15,15).
+            // 14-cz captured-shade tint: the composite children carry the
+            // captured per-quad RGB as `minecraft:constant` node tints (the
+            // measured machine-wall class — ours rendered the raw texture
+            // fullbright, ours/truth ≈ 2.0). Identity rows (1.0) stay
+            // untinted; the 14-cy fullbright split is gone — one LIGHT_ALL
+            // composite per mesh (the (15,15) rows carry shaded RGB too).
             GalleryPack.resetModelScales();
-            // The real Capture rows are 39 columns (sprite, shade, tint,
-            // 4×5 pos/uv, 4×3 rgb, 4×alpha); the light tail lifts them to 41.
-            String litQuad = face.strip() + "\t1\t1\t1".repeat(4) + "\t1".repeat(4) + "\t8\t15\n";
-            String litFb = face.replace("\t0\t-1", "\t1\t-1").strip()
-                    + "\t1\t1\t1".repeat(4) + "\t1".repeat(4) + "\t15\t15\n";
-            Files.writeString(quads.resolve("lit.tsv"), litQuad + litFb);
+            // Both rows shade:false (the machine rows' real shape); only the
+            // captured RGB differs — 1.0 identity vs the 0.6 side shade.
+            String litA = face.strip() + "\t1\t1\t1".repeat(4) + "\t1".repeat(4) + "\t8\t15\n";
+            String litB = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t15\t15\n";
+            Files.writeString(quads.resolve("lit.tsv"), litA + litB);
             entries.clear();
             rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:lit#qlit")),
                     entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 2, "captured light: scene-lit mesh resolves with its fullbright companion");
-            if (rows.size() == 2) {
-                GalleryPack.Resolved lit = null;
-                GalleryPack.Resolved fb = null;
-                for (var r : rows) {
-                    if (r.stateId().endsWith("#fb")) fb = r; else lit = r;
+            expect(failures, rows.size() == 1, "captured shade: one LIGHT_ALL composite per mesh");
+            if (rows.size() == 1) {
+                JsonObject shadeNode = GalleryPack.itemNode(rows.get(0).modelRef());
+                expect(failures, shadeNode != null
+                                && shadeNode.get("type").getAsString().equals("minecraft:composite")
+                                && shadeNode.getAsJsonArray("models").size() == 2,
+                        "captured shade: composite carries both quads");
+                if (shadeNode != null) {
+                    int tinted = 0;
+                    for (var m : shadeNode.getAsJsonArray("models")) {
+                        JsonObject child = m.getAsJsonObject();
+                        if (child.has("tints")) {
+                            tinted++;
+                            JsonObject t = child.getAsJsonArray("tints").get(0).getAsJsonObject();
+                            expect(failures, t.get("type").getAsString().equals("minecraft:constant")
+                                            && t.get("value").getAsInt() == ((255 << 24) | (153 << 16) | (153 << 8) | 153),
+                                    "captured shade: the 0.6 quad rides a constant ARGB tint");
+                        }
+                    }
+                    expect(failures, tinted == 1, "captured shade: identity rows stay untinted");
                 }
-                expect(failures, lit != null && fb != null && lit.fbCmd() != 0f && fb.cmd() == lit.fbCmd(),
-                        "captured light: the (15,15) row rides its own (15,15) display cmd");
-                expect(failures, lit != null && lit.lightBlock() == 8 && lit.lightSky() == 15,
-                        "captured light: the dominant scene pair becomes the display pin");
             }
             // Equal planes across different meshes share model bytes while
             // both draw nodes and their exact transforms remain present.

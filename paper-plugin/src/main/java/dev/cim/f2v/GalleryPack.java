@@ -308,46 +308,32 @@ public final class GalleryPack {
                     }
                 }
                 if (ctCtx != null && ctCtx.startsWith("q")) {
-                    // 14-cy: the captured mesh's light census rides the build —
-                    // the scene-lit quads' dominant (block, sky) becomes the
-                    // replay's display pin, and any fullbright (mod light
-                    // override) quads split into a companion composite that
-                    // the replay spawns at (15, 15). A mesh with NO light tail
-                    // (legacy rows) keeps LIGHT_ALL semantics: the filter
-                    // never fires, the pin falls back to (emission, 15).
+                    // 14-cz: THE CAPTURED SHADE RIDES THE COMPOSITE NODES.
+                    // The measured class (the mekanism machine wall, runs
+                    // 42488225533 + 42500812578): the captured rows carry the
+                    // truth's final per-quad RGB (the vanilla block shade
+                    // constants 0.5/0.6/0.8/1.0 — flat per row) and ours
+                    // rendered the raw texture fullbright (ours/truth ≈ 2.0
+                    // on every machine cell). The 26.3 client IGNORES the
+                    // display's Brightness override for these composites (the
+                    // 14-cy pin measured a no-op) — but the item-definition
+                    // node accepts a `minecraft:constant` tint, so each
+                    // composite child multiplies by its own captured RGB.
+                    // The 14-cy fullbright split is gone: the (15,15)
+                    // light-override rows carry shaded RGB too (0.5-0.8), the
+                    // tint replays them exactly, and one LIGHT_ALL composite
+                    // keeps every quad exactly once.
                     int[] light = new int[3];
                     String quadRef = synthesizeQuadModel(jars, ctCtx.substring(1),
                             WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
-                            entries, warnings, true, tintTable, bareState,
-                            LIGHT_SCENE_LIT, light);
-                    if (quadRef == null) {
-                        // every-quad-fullbright (or legacy-empty) mesh: the
-                        // unfiltered pass, legacy pin
-                        light = new int[]{-1, -1, 0};
-                        quadRef = synthesizeQuadModel(jars, ctCtx.substring(1),
-                                WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
-                                entries, warnings, true, tintTable, bareState,
-                                LIGHT_ALL, light);
-                    }
+                            entries, warnings, true, tintTable, bareState, LIGHT_ALL, light);
                     if (quadRef == null) {
                         warnings.add("gallery: quad mesh failed for " + state + " — row dropped");
                         continue;
                     }
                     compositeIdx++;
-                    float fbCmd = 0f;
-                    if (light[2] == 1) {
-                        String fbRef = synthesizeQuadModel(jars, ctCtx.substring(1),
-                                WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
-                                entries, warnings, true, tintTable, bareState, LIGHT_FULLBRIGHT, null);
-                        if (fbRef != null) {
-                            fbCmd = cmd + 1.0f;
-                            out.add(new Resolved(state + "#fb", fbCmd, fbRef, 0, 0, true));
-                        }
-                        compositeIdx++;
-                    }
-                    out.add(new Resolved(state, cmd, quadRef, 0, 0, true,
-                            light[0], light[1], fbCmd));
-                    cmd += fbCmd != 0f ? 2.0f : 1.0f;
+                    out.add(new Resolved(state, cmd, quadRef, 0, 0, true));
+                    cmd += 1.0f;
                     continue;
                 }
                 // 14-ck THE SLIDING-DOOR BER TRUTH (decompiled
@@ -2007,9 +1993,16 @@ public final class GalleryPack {
         }
         double k = ObjMesh.fitElements(faces);
         JsonArray elements = new JsonArray();
+        // 14-cz: the captured per-quad RGB (the truth's final shaded color —
+        // the vanilla block shade constants, flat per row) rides the matching
+        // composite child as a `minecraft:constant` node tint.
+        List<double[]> elementTints = new ArrayList<>();
         for (int i = 0; i < faces.size(); i++) {
             // A non-planar source quad emits multiple triangles. All pieces
             // inherit this face's metadata; output indices are not face IDs.
+            // Biome-tinted rows keep the existing texture-bake channel: their
+            // captured RGB may already carry the tint multiply.
+            double[] rowTint = flags.get(i)[1] == -1 ? rowShadeTint(faces.get(i)) : null;
             for (var value : ObjMesh.toElements(List.of(faces.get(i)), k)) {
                 JsonObject el = value.getAsJsonObject();
                 if (flags.get(i)[0] == 0) {
@@ -2022,6 +2015,7 @@ public final class GalleryPack {
                             .addProperty("tintindex", flags.get(i)[1]);
                 }
                 elements.add(el);
+                elementTints.add(rowTint);
             }
         }
         // a re-hosted sprite exists only in the pack, not in any jar
@@ -2060,16 +2054,88 @@ public final class GalleryPack {
         recordScale(ref, k);
         entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         if (block) {
-            registerUnlitBlockLayers(wrapper, ref, k, entries);
+            registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints);
         }
         return ref;
     }
 
+    /**
+     * The captured row's flat shaded RGB as a node tint — null when the row
+     * carries no colors, is non-flat (a gradient needs per-vertex data the
+     * item node cannot express) or sits at identity 1.0 (the green classes
+     * keep byte-identical packs).
+     */
+    private static double[] rowShadeTint(ObjMesh.Face face) {
+        float[][] colors = face.colors();
+        if (colors == null || colors.length < 4 || colors[0].length < 3) {
+            return null;
+        }
+        double[] tint = new double[3];
+        for (int v = 0; v < 4; v++) {
+            for (int ch = 0; ch < 3; ch++) {
+                tint[ch] += colors[v][ch];
+            }
+        }
+        for (int ch = 0; ch < 3; ch++) {
+            tint[ch] /= 4;
+        }
+        // Non-flat rows: the mean would misplace a real gradient.
+        for (int v = 0; v < 4; v++) {
+            for (int ch = 0; ch < 3; ch++) {
+                if (Math.abs(colors[v][ch] - tint[ch]) > 0.005f) {
+                    return null;
+                }
+            }
+        }
+        if (tint[0] > 0.995 && tint[1] > 0.995 && tint[2] > 0.995) {
+            return null;
+        }
+        for (int ch = 0; ch < 3; ch++) {
+            tint[ch] = Math.min(1.0, Math.max(0.0, tint[ch]));
+        }
+        return tint;
+    }
+
+    /**
+     * The node tint multiplies a quad only when the quad's tintindex names
+     * the tint slot — mark every face of the child element (a captured row's
+     * triangles share one face family) with tintindex 0 unless a biome tint
+     * already owns the face.
+     */
+    private static void shadeTintIndex(JsonObject element) {
+        if (!element.has("faces")) {
+            return;
+        }
+        for (var value : element.getAsJsonObject("faces").entrySet()) {
+            JsonObject face = value.getValue().getAsJsonObject();
+            if (!face.has("tintindex")) {
+                face.addProperty("tintindex", 0);
+            }
+        }
+    }
+
+    /** The item-definition node tint: one {@code minecraft:constant} ARGB multiply. */
+    private static void applyShadeTint(JsonObject node, double[] tint) {
+        int r = (int) Math.round(tint[0] * 255);
+        int g = (int) Math.round(tint[1] * 255);
+        int b = (int) Math.round(tint[2] * 255);
+        int argb = (255 << 24) | (r << 16) | (g << 8) | b;
+        JsonObject entry = new JsonObject();
+        entry.addProperty("type", "minecraft:constant");
+        entry.addProperty("value", argb);
+        JsonArray tints = new JsonArray();
+        tints.add(entry);
+        node.add("tints", tints);
+    }
+
     private static void registerUnlitBlockLayers(JsonObject wrapper, String ref, double scale,
-                                                 TreeMap<String, byte[]> entries) {
+                                                 TreeMap<String, byte[]> entries,
+                                                 List<double[]> elementTints) {
         JsonArray ordinary = new JsonArray();
         JsonArray children = new JsonArray();
+        int elementIdx = -1;
         for (var value : wrapper.getAsJsonArray("elements")) {
+            elementIdx++;
             JsonObject element = value.getAsJsonObject();
             if (!element.has("shade") || element.get("shade").getAsBoolean()) {
                 ordinary.add(element);
@@ -2080,9 +2146,19 @@ public final class GalleryPack {
             JsonArray one = new JsonArray();
             one.add(unlit.element());
             child.add("elements", one);
+            double[] tint = elementTints == null ? null : elementTints.get(elementIdx);
+            if (tint != null) {
+                // The node tint reaches a quad only through its tintindex
+                // (an untinted face skips tinting entirely) — mark the shared
+                // content BEFORE it serializes.
+                shadeTintIndex(unlit.element());
+            }
             String childRef = sharedUnlitModel(child, entries);
             JsonObject node = modelNode(childRef);
             node.add("transformation", unlit.transformation());
+            if (tint != null) {
+                applyShadeTint(node, tint);
+            }
             children.add(node);
         }
         if (children.isEmpty()) {
