@@ -114,6 +114,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         boolean live;
         /** The layer menu's slots, in the order the capture lists them. */
         List<LiveBridge.Slot> liveSlots = List.of();
+        /** The layer menu's class, which picks the scanned buttons that belong to it. */
+        String liveMenuClass;
         /** The recorded state on screen, after the last press that has one. */
         List<ScreenPack.Piece> pieces;
 
@@ -187,8 +189,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Map<String, String> blockCarriers = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
 
+    private final Path modsDir;
+
     public ScreenHud(Logger log, Path modsDir) {
         this.log = log;
+        this.modsDir = modsDir;
         List<ScreenPack.Scene> found = List.of();
         Map<String, GuiCaptures.Capture> known = Map.of();
         ItemGlyphs icons = null;
@@ -538,6 +543,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 if (s.scene.captured() != null && s.scene.captured().states().containsKey(wi)) {
                     s.pieces = s.scene.captured().states().get(wi);
                 }
+                if (s.live && live != null) {
+                    LiveButtons.Button b = buttonFor(s.liveMenuClass, wi, w.label());
+                    if (b != null) {
+                        LiveBridge.State state = live.press(player, b);
+                        if (state.error() != null) {
+                            log.warning("[cim-screen] live button failed: " + state.error());
+                        } else {
+                            applyLive(player, s, state);
+                            log.info("[cim-screen] live " + player.getName() + " pressed '" + w.label() + "': "
+                                    + state.pressed());
+                        }
+                    }
+                }
                 org.bukkit.Bukkit.getPluginManager().callEvent(new ScreenWidgetEvent(player, s.scene.className(), w.label()));
                 log.info("[cim-screen] " + player.getName() + " " + button + " widget '" + w.label()
                         + "' in " + s.scene.shortName());
@@ -613,6 +631,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     .map(sl -> paperName(bridge.toPaper(sl.stack()))).orElse("none");
             out.add("move: first own slot " + own + ", carried " + paperName(bridge.toPaper(state.carried())));
         }
+        String pressLabel = System.getenv("CIM_LIVETEST_BUTTON");
+        if (pressLabel != null && !pressLabel.isBlank()) {
+            LiveButtons.Button b = buttonFor(state.menuClass(), -1, pressLabel.trim());
+            if (b == null) {
+                out.add("button '" + pressLabel + "': no scanned button of " + state.menuClass());
+            } else {
+                LiveBridge.State pressed = bridge.press(player, b);
+                out.add("button '" + pressLabel + "': " + (pressed.error() != null ? pressed.error() : pressed.pressed()));
+            }
+        }
         state = bridge.close(player);
         bridge.applyInventory(player, state);
         StringBuilder inv = new StringBuilder();
@@ -622,6 +650,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 inv.append(i).append('=').append(paperName(contents[i])).append(' ');
             }
         }
+        ItemStack after = player.getInventory().getItem(player.getInventory().getHeldItemSlot());
+        String data = after == null || !after.hasItemMeta() ? null : after.getItemMeta().getPersistentDataContainer()
+                .get(new org.bukkit.NamespacedKey(plugin, "live_stack"), org.bukkit.persistence.PersistentDataType.STRING);
+        out.add("held data: " + (data == null ? "none" : data));
         out.add("close: paper inventory " + inv.toString().trim()
                 + (state.dropped().isEmpty() ? "" : ", dropped " + state.dropped().size()));
         return out;
@@ -634,9 +666,54 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return itemId(stack) + " x" + stack.getAmount();
     }
 
+    private List<LiveButtons.Button> buttons;
+
+    /** F2V's proof of every mod screen's payload buttons, scanned once on first use. */
+    private List<LiveButtons.Button> buttons() {
+        if (buttons == null) {
+            try {
+                buttons = LiveButtons.scan(modsDir);
+                log.info("[cim-screen] live buttons: " + buttons.size() + " proven payload buttons");
+            } catch (IOException e) {
+                log.warning("[cim-screen] live button scan failed: " + e);
+                buttons = List.of();
+            }
+        }
+        return buttons;
+    }
+
+    /**
+     * The scanned button behind a widget of the open live menu: the one with the widget's
+     * label, else the widget's place among the menu's buttons in construction order.
+     */
+    LiveButtons.Button buttonFor(String menuClass, int widgetIndex, String label) {
+        if (menuClass == null) {
+            return null;
+        }
+        String menu = menuClass.replace('.', '/');
+        List<LiveButtons.Button> mine = new ArrayList<>();
+        for (LiveButtons.Button b : buttons()) {
+            if (b.menuClass().equals(menu)) {
+                mine.add(b);
+            }
+        }
+        if (label != null) {
+            for (LiveButtons.Button b : mine) {
+                if (label.equalsIgnoreCase(b.label())) {
+                    return b;
+                }
+            }
+        }
+        mine.sort(java.util.Comparator.comparingInt(LiveButtons.Button::ordinal));
+        return widgetIndex >= 0 && widgetIndex < mine.size() ? mine.get(widgetIndex) : null;
+    }
+
     /** The layer menu's state on the screen: its own slots, the cursor, the player's inventory. */
     private void applyLive(Player player, Session s, LiveBridge.State state) {
         s.liveSlots = state.slots();
+        if (state.menuClass() != null) {
+            s.liveMenuClass = state.menuClass();
+        }
         for (int k = 0; k < s.held.length; k++) {
             LiveBridge.Slot slot = k < state.slots().size() ? state.slots().get(k) : null;
             s.held[k] = slot == null || slot.player() ? null : live.toPaper(slot.stack());

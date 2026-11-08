@@ -259,6 +259,8 @@ jobs:
         env:
           # The owner's gate: Create's list filter, opened from the held item by Create's own code.
           CIM_LIVETEST: create:filter
+          # ...and one of its buttons, pressed through the scanned payload, as the HUD presses it.
+          CIM_LIVETEST_BUTTON: blacklist
           CIM_LIVE_SELFTEST: ''
         run: |
           set +e
@@ -292,7 +294,11 @@ jobs:
             || fail "the move did not go through Create's ghost slot (copy x1, cursor keeps x5)"
           grep -q "\[cim-live\] paper close: paper inventory .*minecraft:diamond x5" live-paper.txt \
             || fail "after the close the Paper inventory does not hold the 5 diamonds the menu gave back"
-          echo "live menus on Paper: Create's FilterMenu ran its own code for a connected player"
+          grep -q "\[cim-live\] paper button 'blacklist': handled create:configure_filter" live-paper.txt \
+            || fail "the blacklist button did not reach Create's FilterScreenPacket handler"
+          grep -q "\[cim-live\] paper held data: .*filter_items_blacklist\":true" live-paper.txt \
+            || fail "the filter on Paper does not carry Create's blacklist flag after the press"
+          echo "live menus on Paper: Create's FilterMenu and its blacklist button ran Create's own code for a connected player"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

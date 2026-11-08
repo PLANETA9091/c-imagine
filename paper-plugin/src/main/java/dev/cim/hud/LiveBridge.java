@@ -33,8 +33,8 @@ final class LiveBridge {
     }
 
     /** What the layer's menu holds after a command. */
-    record State(String menuType, List<Slot> slots, String carried, String[] inventory, List<String> dropped,
-                 String error) {
+    record State(String menuType, String menuClass, List<Slot> slots, String carried, String[] inventory,
+                 List<String> dropped, String pressed, String error) {
         boolean open() {
             return menuType != null;
         }
@@ -86,6 +86,16 @@ final class LiveBridge {
         return parse(call("click\t" + player.getUniqueId() + "\t" + menuIndex + "\t" + button + "\t" + type));
     }
 
+    /** A scanned button of the open menu: its payload, built in the layer, to the mod's handler. */
+    State press(Player player, LiveButtons.Button b) {
+        StringBuilder cmd = new StringBuilder("button\t").append(player.getUniqueId()).append('\t')
+                .append(b.payload()).append('\t').append(b.constructorDesc());
+        for (String a : b.args()) {
+            cmd.append('\t').append(a);
+        }
+        return parse(call(cmd.toString()));
+    }
+
     State close(Player player) {
         return parse(call("close\t" + player.getUniqueId()));
     }
@@ -114,6 +124,8 @@ final class LiveBridge {
 
     private static State parse(String answer) {
         String type = null;
+        String menuClass = null;
+        String pressed = null;
         String error = null;
         String carried = "-";
         List<Slot> slots = new ArrayList<>();
@@ -123,7 +135,11 @@ final class LiveBridge {
         for (String line : answer.split("\n")) {
             String[] p = line.split("\t", 6);
             switch (p[0]) {
-                case "menu" -> type = p[1];
+                case "menu" -> {
+                    type = p[1];
+                    menuClass = p.length > 2 ? p[2] : null;
+                }
+                case "pressed" -> pressed = p.length > 1 ? p[1] : "";
                 case "slot" -> slots.add(new Slot(Integer.parseInt(p[2]), p[3].equals("player"),
                         Integer.parseInt(p[4]), p[5]));
                 case "carried" -> carried = p[1];
@@ -140,7 +156,7 @@ final class LiveBridge {
                 }
             }
         }
-        return new State(type, slots, carried, inventory, dropped, error);
+        return new State(type, menuClass, slots, carried, inventory, dropped, pressed, error);
     }
 
     /** A Paper stack for a mod item, as {@link #toPaper} makes it. */
