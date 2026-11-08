@@ -211,18 +211,24 @@ jobs:
       - name: build cimbot (protocol bot)
         run: cargo build --release --bin cimbot --quiet
       - name: scaffold Paper 26.3 with CRUSSTY
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm i -g crussty
-          # init only warns when a release download fails (measured: GitHub 504 on
-          # launcher.jar), and the boot then dies on a missing launcher. Retry, then fail loudly.
-          for attempt in 1 2 3 4; do
-            rm -rf srv
-            crussty init --platform paper --version 26.3 --dir srv | tee init.log
-            grep -q "failed to fetch" init.log || break
-            echo "crussty init attempt $attempt could not fetch its release files; retrying"
-            sleep $((attempt * 15))
-          done
-          ! grep -q "failed to fetch" init.log || { echo "CRUSSTY release files unavailable after 4 attempts"; exit 1; }
+          crussty init --platform paper --version 26.3 --dir srv 2>&1 | tee init.log
+          # init only warns when a release download fails (measured 2026-11-08: GitHub
+          # answered 504 on the direct asset URL twice in a row, while the API endpoint
+          # served the same file). Whatever it missed comes through the API.
+          TAG=$(grep -oE 'releases/download/v[0-9.]+' init.log | head -1 | sed 's#releases/download/##')
+          [ -n "$TAG" ] || { echo "no CRUSSTY release tag in the init log"; exit 1; }
+          if [ ! -s srv/launcher/launcher.jar ]; then
+            mkdir -p srv/launcher
+            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p launcher.jar -D srv/launcher --clobber
+          fi
+          if [ ! -s srv/libcrussty_runtime.so ]; then
+            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p libcrussty_runtime.so -D srv --clobber
+          fi
+          ls -la srv/launcher/launcher.jar srv/libcrussty_runtime.so
       - name: restore NeoForge 1.21.1 layer (cache)
         id: layer-cache
         uses: actions/cache@v4
