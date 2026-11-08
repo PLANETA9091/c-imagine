@@ -34,6 +34,9 @@ public final class LiveProtocol {
 
     public static final String KEY = "cim.live";
 
+    /** The block each session opened, to hand its block entity's data back on close. */
+    private static final java.util.Map<UUID, net.minecraft.core.BlockPos> BLOCKS = new java.util.HashMap<>();
+
     private LiveProtocol() {
     }
 
@@ -55,6 +58,35 @@ public final class LiveProtocol {
                     readInventory(player, lines);
                     yield state(player, LiveMenus.useHeld(player, player.getMainHandItem()));
                 }
+                case "open-block" -> {
+                    // open-block TAB uuid TAB name TAB blockId TAB x TAB y TAB z, then inv lines and an
+                    // optional "be TAB snbt" line: the block entity's data as Paper kept it.
+                    SessionServerPlayer player = LiveMenus.session(id, head[2]);
+                    player.closeContainer();
+                    readInventory(player, lines);
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
+                            Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
+                    net.minecraft.world.level.block.state.BlockState wanted =
+                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                                    net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState();
+                    FacadeLevel level = LiveMenus.level();
+                    if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
+                        level.setBlock(pos, wanted, 3);
+                    }
+                    for (int i = 1; i < lines.length; i++) {
+                        if (lines[i].startsWith("be\t")) {
+                            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+                            if (be != null) {
+                                be.loadWithComponents(net.minecraft.nbt.TagParser.parseTag(lines[i].substring(3)),
+                                        level.registryAccess());
+                            }
+                        }
+                    }
+                    BLOCKS.put(id, pos);
+                    // Where a player stands to click it: the menu's own reach check holds.
+                    player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
+                    yield state(player, LiveMenus.clickBlock(player, pos));
+                }
                 case "click" -> {
                     SessionServerPlayer player = LiveMenus.session(id, "cimlive");
                     LiveMenus.click(player, Integer.parseInt(head[2]), Integer.parseInt(head[3]),
@@ -72,6 +104,14 @@ public final class LiveProtocol {
                     SessionServerPlayer player = LiveMenus.session(id, "cimlive");
                     player.closeContainer();
                     String out = state(player, null);
+                    net.minecraft.core.BlockPos pos = BLOCKS.remove(id);
+                    if (pos != null) {
+                        // The block entity's data after the menu closed: Paper keeps it with the block.
+                        net.minecraft.world.level.block.entity.BlockEntity be = LiveMenus.level().getBlockEntity(pos);
+                        if (be != null) {
+                            out += "be\t" + be.saveWithoutMetadata(LiveMenus.level().registryAccess()) + "\n";
+                        }
+                    }
                     LiveMenus.end(id);
                     yield out;
                 }

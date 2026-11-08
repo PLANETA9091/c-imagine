@@ -261,6 +261,8 @@ jobs:
           CIM_LIVETEST: create:filter
           # ...and one of its buttons, pressed through the scanned payload, as the HUD presses it.
           CIM_LIVETEST_BUTTON: blacklist
+          # ...and a mod block: Create's toolbox, its block entity kept by Paper between openings.
+          CIM_LIVETEST_BLOCK: create:brown_toolbox
           CIM_LIVE_SELFTEST: ''
         run: |
           set +e
@@ -274,7 +276,7 @@ jobs:
           crussty run > boot.log 2>&1 &
           SRV=$!
           for i in $(seq 1 150); do
-            grep -q "\[cim-live\] paper close" boot.log 2>/dev/null && { sleep 3; break; }
+            grep -q "\[cim-live\] paper block reopen" boot.log 2>/dev/null && { sleep 3; break; }
             grep -q "\[cim-live\] paper open .* -> \(no menu\|error\)" boot.log 2>/dev/null && break
             kill -0 "$SRV" 2>/dev/null || break
             sleep 2
@@ -298,7 +300,11 @@ jobs:
             || fail "the blacklist button did not reach Create's FilterScreenPacket handler"
           grep -q "\[cim-live\] paper held data: .*filter_items_blacklist\":true" live-paper.txt \
             || fail "the filter on Paper does not carry Create's blacklist flag after the press"
-          echo "live menus on Paper: Create's FilterMenu and its blacklist button ran Create's own code for a connected player"
+          grep -q "\[cim-live\] paper block open create:brown_toolbox -> create:toolbox" live-paper.txt \
+            || fail "the toolbox block's own use did not open its menu on Paper"
+          grep -q "\[cim-live\] paper block reopen: first own slot minecraft:diamond x5" live-paper.txt \
+            || fail "the toolbox did not keep the diamonds between two openings (block entity data through Paper)"
+          echo "live menus on Paper: Create's FilterMenu, its blacklist button and the toolbox block ran Create's own code"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

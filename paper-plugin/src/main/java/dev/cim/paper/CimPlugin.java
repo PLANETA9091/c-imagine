@@ -528,6 +528,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().info("[cim-live] paper " + line);
                 }
             }
+            String liveBlock = System.getenv("CIM_LIVETEST_BLOCK");
+            if (liveBlock != null && !liveBlock.isBlank()) {
+                Player target = bot;
+                for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveBlockTest(target, liveBlock.trim()))) {
+                    log().info("[cim-live] paper " + line);
+                }
+            }
             // Attach the outbound net watch HERE, not via PlayerJoinEvent: the
             // join event did not fire on the CI wire order (measured — census
             // stayed empty), and a missed attach silently blinds the watch.

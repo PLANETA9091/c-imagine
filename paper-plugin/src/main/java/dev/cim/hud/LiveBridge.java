@@ -34,7 +34,7 @@ final class LiveBridge {
 
     /** What the layer's menu holds after a command. */
     record State(String menuType, String menuClass, List<Slot> slots, String carried, String[] inventory,
-                 List<String> dropped, String pressed, String error) {
+                 List<String> dropped, String pressed, String blockEntity, String error) {
         boolean open() {
             return menuType != null;
         }
@@ -61,26 +61,65 @@ final class LiveBridge {
         return entry() != null;
     }
 
-    /** The held item's own use(), with the player's inventory mirrored first. */
-    State openHeld(Player player) {
-        StringBuilder in = new StringBuilder("open-item\t").append(player.getUniqueId()).append('\t')
-                .append(player.getName());
+    /**
+     * A right click on a mod block: the block's own use, on a block entity holding the data
+     * Paper kept for it (none the first time, as a freshly placed block has none).
+     */
+    State openBlock(Player player, org.bukkit.block.Block block, String blockId) {
+        StringBuilder in = new StringBuilder("open-block\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(blockId).append('\t')
+                .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
+        appendInventory(in, player, false);
+        String kept = block.getChunk().getPersistentDataContainer().get(blockKey(block), PersistentDataType.STRING);
+        if (kept != null) {
+            in.append("\nbe\t").append(kept);
+        }
+        heldSlots.put(player.getUniqueId(), 0);
+        openBlocks.put(player.getUniqueId(), block);
+        return parse(call(in.toString()));
+    }
+
+    /** Per player: the mod block whose menu is open, and the held slot the layer's slot 0 stands for. */
+    private final java.util.Map<java.util.UUID, org.bukkit.block.Block> openBlocks = new java.util.HashMap<>();
+    private final java.util.Map<java.util.UUID, Integer> heldSlots = new java.util.HashMap<>();
+
+    /** Paper keeps a mod block entity's data in its chunk, under the block's position. */
+    private NamespacedKey blockKey(org.bukkit.block.Block block) {
+        return new NamespacedKey(key.getNamespace(), "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ());
+    }
+
+    /** The block entity's data the close handed back, stored for the next opening. */
+    void keepBlockEntity(Player player, State state) {
+        org.bukkit.block.Block block = openBlocks.remove(player.getUniqueId());
+        if (block != null && state.blockEntity() != null) {
+            block.getChunk().getPersistentDataContainer().set(blockKey(block), PersistentDataType.STRING,
+                    state.blockEntity());
+        }
+    }
+
+    private void appendInventory(StringBuilder in, Player player, boolean heldFirst) {
         ItemStack[] contents = player.getInventory().getStorageContents();
         int held = player.getInventory().getHeldItemSlot();
         for (int i = 0; i < contents.length; i++) {
-            // The layer's player holds slot 0 selected: the held stack goes there, the stack
-            // there goes where the held one was, so no item is lost or doubled.
-            int to = i == held ? 0 : i == 0 ? held : i;
+            int to = !heldFirst ? i : i == held ? 0 : i == 0 ? held : i;
             String stack = toLayer(contents[i]);
             if (!stack.equals("-")) {
                 in.append("\ninv\t").append(to).append('\t').append(stack);
             }
         }
-        heldSlot = held;
+    }
+
+    /** The held item's own use(), with the player's inventory mirrored first. */
+    State openHeld(Player player) {
+        StringBuilder in = new StringBuilder("open-item\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName());
+        // The layer's player holds slot 0 selected: the held stack goes there, the stack
+        // there goes where the held one was, so no item is lost or doubled.
+        appendInventory(in, player, true);
+        heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         return parse(call(in.toString()));
     }
 
-    private int heldSlot;
 
     State click(Player player, int menuIndex, int button, String type) {
         return parse(call("click\t" + player.getUniqueId() + "\t" + menuIndex + "\t" + button + "\t" + type));
@@ -102,6 +141,7 @@ final class LiveBridge {
 
     /** The layer's inventory back on Paper, slot for slot (the held swap undone). */
     void applyInventory(Player player, State state) {
+        int heldSlot = heldSlots.getOrDefault(player.getUniqueId(), 0);
         ItemStack[] out = new ItemStack[player.getInventory().getStorageContents().length];
         for (int i = 0; i < out.length && i < state.inventory().length; i++) {
             int to = i == 0 ? heldSlot : i == heldSlot ? 0 : i;
@@ -126,6 +166,7 @@ final class LiveBridge {
         String type = null;
         String menuClass = null;
         String pressed = null;
+        String blockEntity = null;
         String error = null;
         String carried = "-";
         List<Slot> slots = new ArrayList<>();
@@ -140,6 +181,7 @@ final class LiveBridge {
                     menuClass = p.length > 2 ? p[2] : null;
                 }
                 case "pressed" -> pressed = p.length > 1 ? p[1] : "";
+                case "be" -> blockEntity = line.substring(3);
                 case "slot" -> slots.add(new Slot(Integer.parseInt(p[2]), p[3].equals("player"),
                         Integer.parseInt(p[4]), p[5]));
                 case "carried" -> carried = p[1];
@@ -156,7 +198,7 @@ final class LiveBridge {
                 }
             }
         }
-        return new State(type, menuClass, slots, carried, inventory, dropped, pressed, error);
+        return new State(type, menuClass, slots, carried, inventory, dropped, pressed, blockEntity, error);
     }
 
     /** A Paper stack for a mod item, as {@link #toPaper} makes it. */

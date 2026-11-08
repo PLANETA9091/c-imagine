@@ -659,11 +659,95 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return out;
     }
 
+    /**
+     * Block menus on Paper end to end: the mod block's own use opens its menu on a block
+     * entity, 5 diamonds go into its first own slot, the close stores the block entity's data
+     * in the Paper chunk, and a second opening must show the diamonds still there.
+     */
+    public List<String> liveBlockTest(Player player, String blockId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: live menus unavailable");
+            return out;
+        }
+        org.bukkit.block.Block block = player.getLocation().getBlock().getRelative(2, 0, 0);
+        player.getInventory().clear();
+        player.getInventory().setItem(9, new ItemStack(org.bukkit.Material.DIAMOND, 5));
+        LiveBridge.State state = bridge.openBlock(player, block, blockId);
+        out.add("block open " + blockId + " -> " + (state.error() != null ? state.error()
+                : state.open() ? state.menuType() + " slots=" + state.slots().size() : "no menu"));
+        if (!state.open()) {
+            bridge.keepBlockEntity(player, bridge.close(player));
+            return out;
+        }
+        int from = -1;
+        int to = -1;
+        for (LiveBridge.Slot slot : state.slots()) {
+            if (slot.player() && slot.containerSlot() == 9 && from < 0) {
+                from = slot.menuIndex();
+            }
+            if (!slot.player() && to < 0) {
+                to = slot.menuIndex();
+            }
+        }
+        if (from >= 0 && to >= 0) {
+            bridge.click(player, from, 0, "PICKUP");
+            state = bridge.click(player, to, 0, "PICKUP");
+            out.add("block move: first own slot " + firstOwn(bridge, state) + ", carried "
+                    + paperName(bridge.toPaper(state.carried())));
+        }
+        state = bridge.close(player);
+        bridge.applyInventory(player, state);
+        bridge.keepBlockEntity(player, state);
+        out.add("block close: kept " + (state.blockEntity() == null ? "nothing" : state.blockEntity().length() + " chars"));
+        LiveBridge.State again = bridge.openBlock(player, block, blockId);
+        out.add("block reopen: first own slot " + firstOwn(bridge, again));
+        bridge.keepBlockEntity(player, bridge.close(player));
+        return out;
+    }
+
+    private String firstOwn(LiveBridge bridge, LiveBridge.State state) {
+        return state.slots().stream().filter(sl -> !sl.player()).findFirst()
+                .map(sl -> paperName(bridge.toPaper(sl.stack()))).orElse("none");
+    }
+
     private String paperName(ItemStack stack) {
         if (stack == null || stack.getType().isAir()) {
             return "empty";
         }
         return itemId(stack) + " x" + stack.getAmount();
+    }
+
+    /**
+     * Shows what the mod's own code opened, on the screen drawn for that menu type. False when
+     * it opened nothing (the click is then the player's to keep) or there is no screen for it.
+     */
+    private boolean openLive(Player player, LiveBridge.State state, String opener) {
+        if (state.error() != null) {
+            log.warning("[cim-screen] live open failed for " + player.getName() + ": " + state.error());
+            return false;
+        }
+        if (!state.open()) {
+            live.keepBlockEntity(player, live.close(player));
+            return false;
+        }
+        ScreenPack.Scene scene = sceneFor(state.menuType(), null);
+        if (scene == null && opener != null) {
+            scene = sceneForOpener(opener);
+        }
+        if (scene == null) {
+            live.keepBlockEntity(player, live.close(player));
+            log.warning("[cim-screen] live menu " + state.menuType() + " has no screen to draw");
+            return false;
+        }
+        open(player, scene);
+        Session s = open.get(player.getUniqueId());
+        s.live = true;
+        applyLive(player, s, state);
+        log.info("[cim-screen] live " + player.getName() + " opened " + state.menuType()
+                + " (" + state.slots().size() + " slots) through the mod's own code");
+        return true;
     }
 
     private List<LiveButtons.Button> buttons;
@@ -737,6 +821,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             LiveBridge.State state = live.close(player);
             if (state.error() == null) {
                 live.applyInventory(player, state);
+                live.keepBlockEntity(player, state);
             } else {
                 log.warning("[cim-screen] live close failed: " + state.error());
             }
@@ -789,6 +874,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (block != null && block.getType() == Material.NOTE_BLOCK) {
             String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
             opener = modded == null ? null : "block:" + modded;
+            LiveBridge bridge = live();
+            if (modded != null && bridge != null && !player.isSneaking()) {
+                LiveBridge.State state = bridge.openBlock(player, block, modded);
+                if (openLive(player, state, opener)) {
+                    event.setCancelled(true);
+                    return;
+                }
+            }
         }
         ItemStack item = event.getItem();
         if (opener == null && item != null && !item.getType().isAir()) {
@@ -797,25 +890,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             LiveBridge bridge = live();
             if (bridge != null && !player.isSneaking()) {
                 LiveBridge.State state = bridge.openHeld(player);
-                if (state.error() != null) {
-                    log.warning("[cim-screen] live open failed for " + player.getName() + ": " + state.error());
-                } else if (state.open()) {
-                    ScreenPack.Scene scene = sceneFor(state.menuType(), null);
-                    if (scene == null) {
-                        scene = sceneForOpener(opener);
-                    }
-                    if (scene != null) {
-                        event.setCancelled(true);
-                        open(player, scene);
-                        Session s = open.get(player.getUniqueId());
-                        s.live = true;
-                        applyLive(player, s, state);
-                        log.info("[cim-screen] live " + player.getName() + " opened " + state.menuType()
-                                + " (" + state.slots().size() + " slots) through the mod's own code");
-                        return;
-                    }
-                    bridge.close(player);
-                    log.warning("[cim-screen] live menu " + state.menuType() + " has no screen to draw");
+                if (openLive(player, state, opener)) {
+                    event.setCancelled(true);
+                    return;
                 }
             }
         }
