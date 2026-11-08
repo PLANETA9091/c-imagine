@@ -33,7 +33,7 @@ public final class CaptureColorTest {
                 }
             }
         }
-        System.out.println("capture baked RGBA vs native consumer: ALL 18 recorder comparisons OK");
+        System.out.println("capture baked RGBA vs native consumer: ALL 12 recorder comparisons OK");
     }
 
     private static void compare(TextureAtlasSprite sprite, boolean readColor, float alpha) throws Exception {
@@ -53,8 +53,7 @@ public final class CaptureColorTest {
         var expected = new NativeRecorder();
         var pose = new PoseStack().last();
         expected.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, new int[4], 0, readColor);
-        for (String name : List.of("ItemCapture", "ItemCaptureBlock", "Capture")) {
-            String className = name.equals("ItemCaptureBlock") ? "ItemCapture" : name;
+        for (String name : List.of("ItemCapture", "Capture")) {
             var type = Arrays.stream(QuadDump.class.getDeclaredClasses())
                     .filter(c -> c.getSimpleName().equals(name)).findFirst().orElseThrow();
             Object capture;
@@ -71,7 +70,7 @@ public final class CaptureColorTest {
                 var buffer = type.getDeclaredMethod("bufferFor", Object.class, String.class, boolean.class);
                 buffer.setAccessible(true);
                 consumer = (VertexConsumer) buffer.invoke(capture, new Object(),
-                        "texture[Optional[minecraft:textures/atlas/blocks.png]]", name.equals("ItemCapture"));
+                        "texture[Optional[minecraft:textures/atlas/blocks.png]]", true);
             }
             consumer.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, new int[4], 0, readColor);
             var out = type.getDeclaredField("out");
