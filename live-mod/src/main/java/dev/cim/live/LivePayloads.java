@@ -8,7 +8,6 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import net.neoforged.neoforge.network.registration.PayloadRegistration;
 
-import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -64,8 +63,7 @@ final class LivePayloads {
             case "uuid" -> java.util.UUID.fromString(value);
             case "static" -> {
                 int dot = value.lastIndexOf('.');
-                Field f = Class.forName(value.substring(0, dot).replace('/', '.'), true, loader)
-                        .getDeclaredField(value.substring(dot + 1));
+                Field f = load(value.substring(0, dot), loader).getDeclaredField(value.substring(dot + 1));
                 f.setAccessible(true);
                 yield f.get(null);
             }
@@ -74,7 +72,7 @@ final class LivePayloads {
                     throw new IllegalStateException("no open menu for " + spec);
                 }
                 int dot = value.lastIndexOf('.');
-                Class<?> owner = Class.forName(value.substring(0, dot).replace('/', '.'), true, loader);
+                Class<?> owner = load(value.substring(0, dot), loader);
                 String name = value.substring(dot + 1);
                 if (!owner.isInstance(menu)) {
                     throw new IllegalStateException("open menu " + menu.getClass().getName() + " is not " + owner.getName());
@@ -97,9 +95,9 @@ final class LivePayloads {
             throws Exception {
         AbstractContainerMenu menu = player.opened();
         ClassLoader loader = menu != null ? menu.getClass().getClassLoader() : LivePayloads.class.getClassLoader();
-        Class<?> type = Class.forName(payloadClass.replace('/', '.'), true, loader);
-        Class<?>[] params = MethodType.fromMethodDescriptorString(constructorDesc, type.getClassLoader()).parameterArray();
-        Constructor<?> ctor = type.getDeclaredConstructor(params);
+        Class<?> type = load(payloadClass, loader);
+        Constructor<?> ctor = constructor(type, constructorDesc);
+        Class<?>[] params = ctor.getParameterTypes();
         ctor.setAccessible(true);
         Object[] values = new Object[args.size()];
         for (int i = 0; i < values.length; i++) {
@@ -160,6 +158,65 @@ final class LivePayloads {
             return e.getUUID();
         }
         return value;
+    }
+
+    /** Namespaces the c-imagine layer relocates Minecraft, NeoForge and Mojang classes into. */
+    private static final String[] RELOCATED = {"", "cim.shadow.mc1211.", "cim.shadow.neoforge.", "cim.shadow.mojang."};
+
+    /**
+     * A class named as the scanner read it from the jar. On a real server that name is the
+     * class; in the layer a game class lives under its relocated name, which this code (itself
+     * relocated by reference, not by string) cannot know at compile time.
+     */
+    static Class<?> load(String internal, ClassLoader loader) throws ClassNotFoundException {
+        String dotted = internal.replace('/', '.');
+        ClassNotFoundException first = null;
+        for (String prefix : RELOCATED) {
+            try {
+                return Class.forName(prefix + dotted, true, loader);
+            } catch (ClassNotFoundException | NoClassDefFoundError e) {
+                if (first == null) {
+                    first = e instanceof ClassNotFoundException c ? c : new ClassNotFoundException(dotted, e);
+                }
+            }
+        }
+        throw first;
+    }
+
+    /**
+     * The constructor the scanner proved, matched by its parameters' names, each allowed a
+     * relocation prefix: the descriptor carries the jar's names, the layer's classes carry
+     * the relocated ones.
+     */
+    static Constructor<?> constructor(Class<?> type, String desc) throws NoSuchMethodException {
+        String[] wanted = java.util.Arrays.stream(org.objectweb.asm.Type.getArgumentTypes(desc))
+                .map(org.objectweb.asm.Type::getClassName).toArray(String[]::new);
+        for (Constructor<?> c : type.getDeclaredConstructors()) {
+            Class<?>[] p = c.getParameterTypes();
+            if (p.length != wanted.length) {
+                continue;
+            }
+            boolean all = true;
+            for (int i = 0; i < p.length && all; i++) {
+                String have = p[i].getTypeName();
+                all = have.equals(wanted[i]) || have.endsWith("." + wanted[i]) && relocatedPrefix(have, wanted[i]);
+            }
+            if (all) {
+                c.setAccessible(true);
+                return c;
+            }
+        }
+        throw new NoSuchMethodException(type.getName() + desc);
+    }
+
+    private static boolean relocatedPrefix(String have, String wanted) {
+        String prefix = have.substring(0, have.length() - wanted.length());
+        for (String r : RELOCATED) {
+            if (r.equals(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Field findField(Class<?> c, String name) throws NoSuchFieldException {
