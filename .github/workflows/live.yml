@@ -213,7 +213,16 @@ jobs:
       - name: scaffold Paper 26.3 with CRUSSTY
         run: |
           npm i -g crussty
-          crussty init --platform paper --version 26.3 --dir srv
+          # init only warns when a release download fails (measured: GitHub 504 on
+          # launcher.jar), and the boot then dies on a missing launcher. Retry, then fail loudly.
+          for attempt in 1 2 3 4; do
+            rm -rf srv
+            crussty init --platform paper --version 26.3 --dir srv | tee init.log
+            grep -q "failed to fetch" init.log || break
+            echo "crussty init attempt $attempt could not fetch its release files; retrying"
+            sleep $((attempt * 15))
+          done
+          ! grep -q "failed to fetch" init.log || { echo "CRUSSTY release files unavailable after 4 attempts"; exit 1; }
       - name: restore NeoForge 1.21.1 layer (cache)
         id: layer-cache
         uses: actions/cache@v4
