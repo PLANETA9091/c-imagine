@@ -3201,6 +3201,19 @@ public final class F2vPack {
         }
     }
 
+    /** True when any composite child carries a tint node (the 14-da gate checks). */
+    private static boolean nodeHasConstantTint(JsonObject node) {
+        if (node == null || !node.has("models")) {
+            return false;
+        }
+        for (var m : node.getAsJsonArray("models")) {
+            if (m.getAsJsonObject().has("tints")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
         unlitPlaneSelftest(failures);
         Path quads = Files.createTempDirectory("f2v-unlit-selftest");
@@ -3319,6 +3332,71 @@ public final class F2vPack {
                     expect(failures, tinted == 1,
                             "captured shade: identity and (15,15) override rows stay untinted");
                 }
+            }
+            // 14-da TINT GATE v2 fixtures: the tint is a MESH-level decision.
+            // (a) constant (5,15) mesh (the nixie casing class) — untinted;
+            // (b) constant (8,15) mesh (the isotopic centrifuge class) — tinted;
+            // (c) constant (0,15) mesh (the wall/webbing class) — untinted;
+            // (d) mixed (0,15)+(8,15) mesh (the machine class) — the (0,15)
+            //     rows ride the tint too (the truth shaded the whole mesh).
+            String shade06 = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
+            String shade10 = face.strip() + "\t1".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
+            // (a) nixie-like constant (5,15): shaded rows stay fullbright
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("nixie.tsv"), String.format(shade06, "5", "15")
+                    + String.format(shade10, "5", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:nixie#qnixie")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: constant (5,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint v2: constant (5,15) nixie casing replays fullbright");
+            }
+            // (b) centrifuge-like constant (8,15): shaded rows ride the tint
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("cent.tsv"), String.format(shade06, "8", "15")
+                    + String.format(shade10, "8", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:cent#qcent")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: constant (8,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint v2: constant (8,15) machine glow rides the tint");
+            }
+            // (c) webbing-like constant (0,15): untinted
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("webb.tsv"), String.format(shade06, "0", "15")
+                    + String.format(shade10, "0", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:webb#qwebb")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: constant (0,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint v2: constant (0,15) wall class stays fullbright");
+            }
+            // (d) machine-like mixed mesh: the (0,15) rows inherit the scene-lit tint
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("mach.tsv"), String.format(shade06, "8", "15")
+                    + String.format(shade06, "0", "15") + String.format(shade10, "0", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:mach#qmach")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: mixed machine mesh resolves");
+            if (rows.size() == 1) {
+                JsonObject machNode = GalleryPack.itemNode(rows.get(0).modelRef());
+                int machTinted = 0;
+                if (machNode != null && machNode.has("models")) {
+                    for (var m : machNode.getAsJsonArray("models")) {
+                        if (m.getAsJsonObject().has("tints")) {
+                            machTinted++;
+                        }
+                    }
+                }
+                expect(failures, machTinted == 2,
+                        "tint v2: mixed mesh tints its (0,15) rows too (the (1.0) row skips by identity)");
             }
             // Equal planes across different meshes share model bytes while
             // both draw nodes and their exact transforms remain present.

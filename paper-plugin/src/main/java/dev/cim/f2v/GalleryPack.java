@@ -2007,6 +2007,43 @@ public final class GalleryPack {
             lightOut[2] = hasFullbright ? 1 : 0;
         }
         double k = ObjMesh.fitElements(faces);
+        // 14-da TINT GATE v2 (the P&L of runs 42500812578 = 14-cy.1, 42504059937
+        // = 14-cz blanket, 42507122046 = 14-cz.1 row gate): the tint is a
+        // MESH-level decision. The truth renders a captured mesh's quads under
+        // ONE corridor environment; the 14-cz.1 per-row gate left the machines'
+        // (0,15) rows fullbright next to their tinted (8,15) rows — an internal
+        // face contrast the truth does not have (mekanism stayed at 195 RED,
+        // exactly the pre-tint count). Measured evidence classes:
+        // - a mesh with ONE constant pair tints iff the pair sits in the
+        //   machine-glow band 6 < block < 15 (the isotopic centrifuge class);
+        //   the constant (0,15) wall/door/webbing classes were green on the
+        //   raw replay (the gate's luma normalization absorbs a uniform shade
+        //   delta) and the constant (5,15) nixie casing is a shade-disabled
+        //   BE render the captured shade constants over-dim (the blanket/gate
+        //   runs both cost ~35 nixie cells vs the untinted baseline);
+        // - a NON-constant mesh with any scene-lit row (block > 0, not the
+        //   (15,15) mod light-override art) = the truth shaded the whole
+        //   mesh: tint EVERY row except the (15,15) art and the legacy
+        //   no-tail rows (the run 42504059937 blanket flipped the machine
+        //   pages green, mekanism 212 -> 165).
+        boolean meshSceneLit = false;
+        int constBlock = -2;
+        int constSky = -2;
+        boolean meshConstant = true;
+        for (int[] f : flags) {
+            if (f[2] < 0) {
+                continue; // legacy row, no captured tail
+            }
+            if (f[2] > 0 && !(f[2] == 15 && f[3] == 15)) {
+                meshSceneLit = true;
+            }
+            if (constBlock == -2) {
+                constBlock = f[2];
+                constSky = f[3];
+            } else if (constBlock != f[2] || constSky != f[3]) {
+                meshConstant = false;
+            }
+        }
         JsonArray elements = new JsonArray();
         // 14-cz: the captured per-quad RGB (the truth's final shaded color —
         // the vanilla block shade constants, flat per row) rides the matching
@@ -2017,16 +2054,12 @@ public final class GalleryPack {
             // inherit this face's metadata; output indices are not face IDs.
             // Biome-tinted rows keep the existing texture-bake channel: their
             // captured RGB may already carry the tint multiply.
-            // 14-cz.1 TINT GATE (run 42504059937's split verdict): tint only
-            // the rows the active lightmap shaded in truth — block light > 0
-            // (the (0,15) wall/glass classes stay fullbright: they were green
-            // on the raw replay) and not the (15,15) mod light-override quads
-            // (the emissive LED art truth renders fullbright — the captured
-            // shaded RGB over-dims it: the ae2 inscriber/monitor regression).
             int[] rowFlags = flags.get(i);
-            double[] rowTint = rowFlags[1] == -1 && rowFlags[2] > 0
-                    && !(rowFlags[2] == 15 && rowFlags[3] == 15)
-                    ? rowShadeTint(faces.get(i)) : null;
+            int rb = rowFlags[2];
+            int rs = rowFlags[3];
+            boolean tintRow = rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15)
+                    && (meshConstant ? rb > 6 : meshSceneLit);
+            double[] rowTint = tintRow ? rowShadeTint(faces.get(i)) : null;
             for (var value : ObjMesh.toElements(List.of(faces.get(i)), k)) {
                 JsonObject el = value.getAsJsonObject();
                 if (flags.get(i)[0] == 0) {
