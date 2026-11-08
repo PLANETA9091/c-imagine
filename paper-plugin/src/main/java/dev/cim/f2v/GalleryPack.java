@@ -1968,7 +1968,22 @@ public final class GalleryPack {
                 }
             }
             faces.add(new ObjMesh.Face(verts, "#" + key, colors));
-            flags.add(new int[]{Integer.parseInt(c[1]), Integer.parseInt(c[2])});
+            // 14-cz.1: the row's captured light pair rides the flags — the
+            // tint gate needs it (block light > 0 = the lightmap was active
+            // in truth; (15,15) = the mod light-override quads the truth
+            // renders fullbright — both keep the raw fullbright replay).
+            int rowBlock = -1;
+            int rowSky = -1;
+            if (c.length >= 41) {
+                try {
+                    rowBlock = Integer.parseInt(c[c.length - 2].trim());
+                    rowSky = Integer.parseInt(c[c.length - 1].trim());
+                } catch (NumberFormatException bad) {
+                    rowBlock = -1;
+                    rowSky = -1;
+                }
+            }
+            flags.add(new int[]{Integer.parseInt(c[1]), Integer.parseInt(c[2]), rowBlock, rowSky});
         }
         if (faces.isEmpty()) {
             return null;
@@ -2002,7 +2017,16 @@ public final class GalleryPack {
             // inherit this face's metadata; output indices are not face IDs.
             // Biome-tinted rows keep the existing texture-bake channel: their
             // captured RGB may already carry the tint multiply.
-            double[] rowTint = flags.get(i)[1] == -1 ? rowShadeTint(faces.get(i)) : null;
+            // 14-cz.1 TINT GATE (run 42504059937's split verdict): tint only
+            // the rows the active lightmap shaded in truth — block light > 0
+            // (the (0,15) wall/glass classes stay fullbright: they were green
+            // on the raw replay) and not the (15,15) mod light-override quads
+            // (the emissive LED art truth renders fullbright — the captured
+            // shaded RGB over-dims it: the ae2 inscriber/monitor regression).
+            int[] rowFlags = flags.get(i);
+            double[] rowTint = rowFlags[1] == -1 && rowFlags[2] > 0
+                    && !(rowFlags[2] == 15 && rowFlags[3] == 15)
+                    ? rowShadeTint(faces.get(i)) : null;
             for (var value : ObjMesh.toElements(List.of(faces.get(i)), k)) {
                 JsonObject el = value.getAsJsonObject();
                 if (flags.get(i)[0] == 0) {

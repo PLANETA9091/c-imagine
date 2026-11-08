@@ -3287,11 +3287,13 @@ public final class F2vPack {
             // untinted; the 14-cy fullbright split is gone — one LIGHT_ALL
             // composite per mesh (the (15,15) rows carry shaded RGB too).
             GalleryPack.resetModelScales();
-            // Both rows shade:false (the machine rows' real shape); only the
-            // captured RGB differs — 1.0 identity vs the 0.6 side shade.
+            // 14-cz.1 tint gate: both rows shade:false; the 1.0 identity row
+            // and the (15,15) mod-light-override row stay untinted, only the
+            // (8,15) scene-lit 0.6 row rides the constant ARGB tint.
             String litA = face.strip() + "\t1\t1\t1".repeat(4) + "\t1".repeat(4) + "\t8\t15\n";
-            String litB = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t15\t15\n";
-            Files.writeString(quads.resolve("lit.tsv"), litA + litB);
+            String litB = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t8\t15\n";
+            String litFb = face.strip() + "\t0.5".repeat(12) + "\t1".repeat(4) + "\t15\t15\n";
+            Files.writeString(quads.resolve("lit.tsv"), litA + litB + litFb);
             entries.clear();
             rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:lit#qlit")),
                     entries, warnings, Map.of(), new ArrayList<>());
@@ -3300,8 +3302,8 @@ public final class F2vPack {
                 JsonObject shadeNode = GalleryPack.itemNode(rows.get(0).modelRef());
                 expect(failures, shadeNode != null
                                 && shadeNode.get("type").getAsString().equals("minecraft:composite")
-                                && shadeNode.getAsJsonArray("models").size() == 2,
-                        "captured shade: composite carries both quads");
+                                && shadeNode.getAsJsonArray("models").size() == 3,
+                        "captured shade: composite carries all three quads");
                 if (shadeNode != null) {
                     int tinted = 0;
                     for (var m : shadeNode.getAsJsonArray("models")) {
@@ -3314,7 +3316,8 @@ public final class F2vPack {
                                     "captured shade: the 0.6 quad rides a constant ARGB tint");
                         }
                     }
-                    expect(failures, tinted == 1, "captured shade: identity rows stay untinted");
+                    expect(failures, tinted == 1,
+                            "captured shade: identity and (15,15) override rows stay untinted");
                 }
             }
             // Equal planes across different meshes share model bytes while
