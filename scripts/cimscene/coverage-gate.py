@@ -151,7 +151,13 @@ CLASSES = {
 # channel measured, gui the menu-translation channel, held the
 # first-person item channel, biome the tint channel, inv the GUI crop
 # geometry — first-run-unmeasured, computed from scale-3 GUI math).
-DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv"}
+# particle joined (2026-11-08, 14-cs): the pixel join compares data-carrying
+# particles the vanilla spawn command rejected bare (no-simple-options,
+# measured #30: ALL 13 create particles) — the stream join
+# (particle-diff.py, the visual-particles.tsv rewrite) is the honest
+# channel and runs DIAGNOSTICALLY per its own docstring until measured
+# stable; the pixel gal-pa shots stay diagnostic until that flip.
+DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv", "particle"}
 
 # the series word baked between the stem and the ns infix (SHOT NAME LAW):
 # minecraft's mob walk predates the series naming (gal-e0.png), every mod
