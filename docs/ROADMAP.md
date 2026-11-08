@@ -614,8 +614,19 @@ button flips Create's own flag, and the filter then behaves as a whitelist.
       left a ghost diamond x1 with x5 on the cursor, the close returned the 5 diamonds
       to the Paper inventory. Open: block menus on Paper (the bridge binds the facade's
       sparse blocks to Paper blocks), the gallery's slot-move rows on the layer stack.
-- [ ] 3. Widget to packet: the filter whitelist button toggles Create's real flag,
-      read back from the item; the press row shows the state from that flag.
+- [x] 3. Widget to packet. `LiveButtons` exports F2V's proof of every mod screen's
+      payload buttons (payload class, constructor, each argument as a constant, an
+      enum, the player or a member of the open menu); `LivePayloads` builds that
+      payload in the session and hands it to the handler the mod registered with
+      NeoForge's NetworkRegistry. Measured 2026-11-08, identical on real NeoForge and
+      in the layer: all 26 presses of the 11 proven buttons handled by their mods
+      (filter blacklist/respect-nbt flags, attribute-filter modes, schematicannon
+      play/pause/stop, toolbox dispose-all). On Paper, for a connected player
+      (`live.yml` paper job): the HUD's widget click presses the scanned button; the
+      filter's blacklist button left Create's own `filter_items_blacklist: true`, with
+      the moved diamond in `filter_items`, on the filter the Paper player holds.
+      Open: the press rows' pictures drawn from that state, and buttons the scan
+      cannot prove yet (screen-field arguments).
 - [ ] 4. Block-entity menus: the mod's block entity lives in the layer, bound to its
       Paper block (toolbox, AE2 drive, Mekanism machines).
 - [ ] 5. Every scanned action of every mod; press rows judged against real state
