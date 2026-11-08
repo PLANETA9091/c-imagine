@@ -2523,19 +2523,6 @@ public final class GalleryPack {
         return node == null ? null : node.deepCopy();
     }
 
-    /**
-     * Native block wrappers replaced by item composites are build intermediates.
-     * Their geometry remains in the composite's child models. Vanilla eagerly
-     * parses every model file, including these otherwise unreferenced copies.
-     */
-    static int removeReplacedBlockWrappers(TreeMap<String, byte[]> entries) {
-        int removed = 0;
-        for (String ref : ITEM_NODES.keySet()) {
-            if (entries.remove(modelPath(ref)) != null) removed++;
-        }
-        return removed;
-    }
-
     /** The item definition's scale for a model ref (1 for all but oversized meshes). */
     static double modelScale(String ref) {
         return MODEL_SCALE.getOrDefault(ref, 1.0);
