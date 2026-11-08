@@ -1303,17 +1303,50 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
                 final int fEmission = Math.min(15, Math.max(0, emission));
+                // 14-cy CAPTURED LIGHT: a quad-route row carries the captured
+                // scene light its scene-lit quads rendered with — the replay
+                // pins the display to THAT light instead of (emission, 15),
+                // so the lightmap multiply matches the truth's per-face
+                // smooth-light environment (the packed-wall machines rendered
+                // ~0.52 warm at the walk; the legacy pin rendered them
+                // fullbright). Legacy rows (light < 0) keep the 14-bk pin.
+                final boolean capturedLight = r.lightBlock() >= 0 && r.lightSky() >= 0;
+                final int pinBlock = capturedLight ? Math.min(15, Math.max(0, r.lightBlock())) : fEmission;
+                final int pinSky = capturedLight ? Math.min(15, Math.max(0, r.lightSky())) : 15;
                 org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                             e.setTransformation(tr);
-                            e.setBrightness(new org.bukkit.entity.Display.Brightness(fEmission, 15));
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(pinBlock, pinSky));
                         });
                 log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                         + row[1] + "," + row[2] + "," + row[3] + " state=" + state
                         + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId());
                 n++;
+                // 14-cy FULLBRIGHT COMPANION: the mesh's mod light-override
+                // quads (the LED/window art the truth renders fullbright)
+                // split into their own composite — same transform, pinned
+                // (15, 15) so the graded scene light never dims them.
+                if (r.fbCmd() != 0f) {
+                    final float fbCmd = r.fbCmd();
+                    ItemStack fbStack = new ItemStack(material);
+                    fbStack.editMeta(meta -> {
+                        CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                        cmd.setFloats(List.of(fbCmd));
+                        meta.setCustomModelDataComponent(cmd);
+                    });
+                    org.bukkit.entity.ItemDisplay fbDisplay = world(worldName()).spawn(at,
+                            org.bukkit.entity.ItemDisplay.class, e -> {
+                                e.setItemStack(fbStack);
+                                e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                                e.setTransformation(tr);
+                                e.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
+                            });
+                    log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
+                            + row[1] + "," + row[2] + "," + row[3] + " state=" + state
+                            + " fullbright cmd=" + fbCmd + " uuid=" + fbDisplay.getUniqueId());
+                }
             }
             return n;
         });

@@ -439,7 +439,13 @@ final class QuadDump {
         @Override
         public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
                                 float a, int[] light, int overlay, boolean readAlpha) {
-            appendQuad(out, q, sprites, offset, brightness, r, g, b, a, readAlpha);
+            // 14-cy: the quad's packed light (block<<4|sky<<20 — LevelRenderer
+            // getLightColor layout) rides the row so the pack can split the
+            // composite into the scene-lit and the fullbright (mod-forced
+            // light override) quad groups, and the replay can pin each
+            // group's display to the light the truth actually rendered with.
+            int packed = light != null && light.length > 0 ? light[0] : -1;
+            appendQuad(out, q, sprites, offset, brightness, r, g, b, a, readAlpha, packed);
         }
 
         @Override
@@ -474,7 +480,8 @@ final class QuadDump {
     }
 
     private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites, Vec3 off,
-                                   float[] brightness, float r, float g, float b, float a, boolean readColor) {
+                                   float[] brightness, float r, float g, float b, float a, boolean readColor,
+                                   int packedLight) {
         int[] v = q.getVertices();
         float[][] pos = new float[4][3];
         float[][] uv = new float[4][2];
@@ -490,7 +497,7 @@ final class QuadDump {
         }
         // Chunk shaders consume the renderer's already-shaded RGB directly.
         // Replaying q.isShade here would add the item shader's unrelated light.
-        writeQuad(sb, q.getSprite(), sprites, false, q.getTintIndex(), pos, uv, rgb);
+        writeQuad(sb, q.getSprite(), sprites, false, q.getTintIndex(), pos, uv, rgb, false, packedLight);
     }
 
     /** Match the native BLOCK byte layout and VertexConsumer's final byte quantization. */
@@ -509,12 +516,18 @@ final class QuadDump {
     /** Positions in 0..1 block space, UVs in atlas space; a null sprite is looked up by UV. */
     private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
                                      boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb) {
-        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, false);
+        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, false, -1);
     }
 
     private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
                                      boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
                                      boolean capturePixels) {
+        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, capturePixels, -1);
+    }
+
+    private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
+                                     boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
+                                     boolean capturePixels, int packedLight) {
         float cu = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) / 4;
         float cv = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) / 4;
         // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
@@ -536,7 +549,7 @@ final class QuadDump {
             local[i][1] = (uv[i][1] - sprite.getV0()) / (sprite.getV1() - sprite.getV0());
         }
         appendRow(sb, capturePixels ? capturedSprite(sprite) : sprite.contents().name().toString(),
-                shade, tint, pos, local, rgb);
+                shade, tint, pos, local, rgb, packedLight);
         return true;
     }
 
@@ -586,6 +599,11 @@ final class QuadDump {
     /** One quad row; {@code uv} is 0..1 across the named sprite or texture. */
     private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
                                   float[][] pos, float[][] uv, float[][] rgb) {
+        appendRow(sb, sprite, shade, tint, pos, uv, rgb, -1);
+    }
+
+    private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
+                                  float[][] pos, float[][] uv, float[][] rgb, int packedLight) {
         sb.append(sprite).append('\t').append(shade ? 1 : 0).append('\t').append(tint);
         for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
@@ -598,6 +616,13 @@ final class QuadDump {
             for (int i = 0; i < 4; i++) {
                 sb.append(String.format(Locale.ROOT, "\t%.6f", rgb[i][3]));
             }
+        }
+        if (packedLight >= 0) {
+            // 14-cy: the captured scene light — block and sky nibbles of the
+            // renderer's packed light (the LevelRenderer getLightColor layout:
+            // block = bits 4-7, sky = bits 20-23). Absent (-1) = the legacy
+            // row shape; every consumer treats the tail as optional.
+            sb.append('\t').append((packedLight >> 4) & 15).append('\t').append((packedLight >> 20) & 15);
         }
         sb.append('\n');
     }
@@ -934,14 +959,22 @@ final class QuadDump {
             return null;
         }
 
+        // 14-cy: the capture's light queries return the JOINED level's real
+        // light at the wall — the ambient-occlusion calculator bakes the real
+        // per-vertex light structure into the recorded quads, and the pack
+        // splits fullbright (mod light-override) quads from scene-lit ones so
+        // the replay can pin each display to the light the truth rendered
+        // with. Worldless capture (the static selftest path) keeps 15.
         @Override
         public int getBrightness(LightLayer layer, BlockPos pos) {
-            return 15;
+            Minecraft mc = Minecraft.getInstance();
+            return mc.level != null ? mc.level.getBrightness(layer, pos) : 15;
         }
 
         @Override
         public int getRawBrightness(BlockPos pos, int darkening) {
-            return 15;
+            Minecraft mc = Minecraft.getInstance();
+            return mc.level != null ? mc.level.getRawBrightness(pos, darkening) : 15;
         }
 
         @Override

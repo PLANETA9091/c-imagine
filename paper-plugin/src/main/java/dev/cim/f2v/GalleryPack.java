@@ -68,9 +68,21 @@ public final class GalleryPack {
      * One resolved row: state -> cmd + the model ref the pack def points at
      * + the X/Y rotations the SPAWNING ENTITY must carry (0/0 for composite
      * rows — their rotations are baked into the merged elements).
+     *
+     * <p>14-cy CAPTURED-LIGHT FIELDS (quad-route rows only): {@code
+     * lightBlock}/{@code lightSky} = the captured scene light the mesh's
+     * scene-lit quads were rendered with (−1 = unknown — the replay keeps
+     * the legacy (emission, 15) pin); {@code fbCmd} = the cmd of the
+     * FULLBRIGHT companion composite (the mod light-override quads split
+     * out of the mesh — the replay spawns it at (15, 15)), 0 = none.</p>
      */
     public record Resolved(String stateId, float cmd, String modelRef,
-                           int xRot, int yRot, boolean composite) {
+                           int xRot, int yRot, boolean composite,
+                           int lightBlock, int lightSky, float fbCmd) {
+        public Resolved(String stateId, float cmd, String modelRef,
+                        int xRot, int yRot, boolean composite) {
+            this(stateId, cmd, modelRef, xRot, yRot, composite, -1, -1, 0f);
+        }
     }
 
     /** First auto-assigned custom_model_data float for gallery rows. */
@@ -296,15 +308,46 @@ public final class GalleryPack {
                     }
                 }
                 if (ctCtx != null && ctCtx.startsWith("q")) {
-                    String quadRef = synthesizeQuadComposite(jars, ctCtx.substring(1), bareState,
-                            compositeIdx, entries, warnings, tintTable);
+                    // 14-cy: the captured mesh's light census rides the build —
+                    // the scene-lit quads' dominant (block, sky) becomes the
+                    // replay's display pin, and any fullbright (mod light
+                    // override) quads split into a companion composite that
+                    // the replay spawns at (15, 15). A mesh with NO light tail
+                    // (legacy rows) keeps LIGHT_ALL semantics: the filter
+                    // never fires, the pin falls back to (emission, 15).
+                    int[] light = new int[3];
+                    String quadRef = synthesizeQuadModel(jars, ctCtx.substring(1),
+                            WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
+                            entries, warnings, true, tintTable, bareState,
+                            LIGHT_SCENE_LIT, light);
+                    if (quadRef == null) {
+                        // every-quad-fullbright (or legacy-empty) mesh: the
+                        // unfiltered pass, legacy pin
+                        light = new int[]{-1, -1, 0};
+                        quadRef = synthesizeQuadModel(jars, ctCtx.substring(1),
+                                WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
+                                entries, warnings, true, tintTable, bareState,
+                                LIGHT_ALL, light);
+                    }
                     if (quadRef == null) {
                         warnings.add("gallery: quad mesh failed for " + state + " — row dropped");
                         continue;
                     }
                     compositeIdx++;
-                    out.add(new Resolved(state, cmd, quadRef, 0, 0, true));
-                    cmd += 1.0f;
+                    float fbCmd = 0f;
+                    if (light[2] == 1) {
+                        String fbRef = synthesizeQuadModel(jars, ctCtx.substring(1),
+                                WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
+                                entries, warnings, true, tintTable, bareState, LIGHT_FULLBRIGHT, null);
+                        if (fbRef != null) {
+                            fbCmd = cmd + 1.0f;
+                            out.add(new Resolved(state + "#fb", fbCmd, fbRef, 0, 0, true));
+                        }
+                        compositeIdx++;
+                    }
+                    out.add(new Resolved(state, cmd, quadRef, 0, 0, true,
+                            light[0], light[1], fbCmd));
+                    cmd += fbCmd != 0f ? 2.0f : 1.0f;
                     continue;
                 }
                 // 14-ck THE SLIDING-DOOR BER TRUTH (decompiled
@@ -1750,8 +1793,13 @@ public final class GalleryPack {
                                                   List<String> warnings,
                                                   Map<String, double[]> tintTable) throws IOException {
         return synthesizeQuadModel(jars, hash, WRAPPER_PREFIX + idx + ".json", WRAPPER_REF_PREFIX + idx,
-                entries, warnings, true, tintTable, stateKey);
+                entries, warnings, true, tintTable, stateKey, 0);
     }
+
+    /** Light-group selectors for the 14-cy captured-light split. */
+    static final int LIGHT_ALL = 0;
+    static final int LIGHT_SCENE_LIT = 1;
+    static final int LIGHT_FULLBRIGHT = 2;
 
     /** The item's mesh from the real ItemRenderer, when the dump captured one. */
     static String synthesizeItemQuads(List<Path> jars, String itemId, int itemNo,
@@ -1788,6 +1836,25 @@ public final class GalleryPack {
                                               List<String> warnings, boolean block,
                                               Map<String, double[]> tintTable,
                                               String stateKey) throws IOException {
+        return synthesizeQuadModel(jars, hash, modelFile, ref, entries, warnings, block, tintTable,
+                stateKey, LIGHT_ALL);
+    }
+
+    private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
+                                              TreeMap<String, byte[]> entries,
+                                              List<String> warnings, boolean block,
+                                              Map<String, double[]> tintTable,
+                                              String stateKey, int lightGroup) throws IOException {
+        return synthesizeQuadModel(jars, hash, modelFile, ref, entries, warnings, block, tintTable,
+                stateKey, lightGroup, null);
+    }
+
+    /** lightOut (nullable, length 3): [0]=lit block, [1]=lit sky, [2]=hasFullbright(0/1). */
+    private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
+                                              TreeMap<String, byte[]> entries,
+                                              List<String> warnings, boolean block,
+                                              Map<String, double[]> tintTable,
+                                              String stateKey, int lightGroup, int[] lightOut) throws IOException {
         Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
             warnings.add("gallery: quad mesh missing: " + hash);
@@ -1799,9 +1866,41 @@ public final class GalleryPack {
         Map<String, String> textures = new LinkedHashMap<>();
         Map<String, String> keyOf = new LinkedHashMap<>();
         int vertex = 0;
+        // 14-cy captured-light census: the mesh's scene-lit quads' dominant
+        // (block, sky) pair, and whether any fullbright (15/15 mod light
+        // override) quad exists at all. Rows without the light tail count as
+        // unknown and keep the legacy replay pin.
+        int litBlock = -1;
+        int litSky = -1;
+        boolean hasFullbright = false;
+        java.util.Map<Long, Integer> litCounts = new java.util.HashMap<>();
         for (String line : java.nio.file.Files.readAllLines(file, StandardCharsets.UTF_8)) {
             String[] c = line.split("\t");
             if (c.length < 23) {
+                continue;
+            }
+            int quadBlock = -1;
+            int quadSky = -1;
+            if (c.length >= 42) {
+                try {
+                    quadBlock = Integer.parseInt(c[40].trim());
+                    quadSky = Integer.parseInt(c[41].trim());
+                } catch (NumberFormatException bad) {
+                    quadBlock = -1;
+                    quadSky = -1;
+                }
+            }
+            boolean fullbright = quadBlock == 15 && quadSky == 15;
+            if (fullbright) {
+                hasFullbright = true;
+            } else if (quadBlock >= 0 && quadSky >= 0) {
+                long key = (long) quadBlock * 16 + quadSky;
+                litCounts.merge(key, 1, Integer::sum);
+            }
+            if (lightGroup == LIGHT_SCENE_LIT && fullbright) {
+                continue;
+            }
+            if (lightGroup == LIGHT_FULLBRIGHT && !fullbright) {
                 continue;
             }
             String faceMaterial = c.length >= 40 ? c[39]
@@ -1877,6 +1976,24 @@ public final class GalleryPack {
         }
         if (faces.isEmpty()) {
             return null;
+        }
+        if (lightOut != null && lightOut.length >= 3) {
+            long best = -1;
+            int bestN = -1;
+            for (var e : litCounts.entrySet()) {
+                if (e.getValue() > bestN) {
+                    bestN = e.getValue();
+                    best = e.getKey();
+                }
+            }
+            if (best >= 0) {
+                lightOut[0] = (int) (best / 16);
+                lightOut[1] = (int) (best % 16);
+            } else {
+                lightOut[0] = -1;
+                lightOut[1] = -1;
+            }
+            lightOut[2] = hasFullbright ? 1 : 0;
         }
         double k = ObjMesh.fitElements(faces);
         JsonArray elements = new JsonArray();
