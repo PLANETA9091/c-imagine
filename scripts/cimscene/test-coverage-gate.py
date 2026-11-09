@@ -19,8 +19,10 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
      (12-aq: the ledger sees the visual class, the red is the backlog)
   L. no-walk class total=-1 (unreadable dynamic registry)     -> RED (named)
   M. no-walk classes all total=0 in the namespace             -> GREEN
-  N. particle manifest skip row no-simple-options             -> RED (named)
-     (measured #30: all 13 create particles rejected the bare spawn)
+  N. particle manifest skip row no-simple-options             -> DIAG, GREEN
+     (14-cs: particle is a diagnostic class — the absence is NAMED in the
+     verdict line, the run stays green; measured #30: all 13 create
+     particles rejected the bare spawn)
   O. fluid manifest skip row no-channel                       -> RED (named)
      (measured #30: 4 of 8 create fluids have no legacy block/bucket)
   P. shard shot lists (13-b): listing covers -> GREEN; a hole -> RED
@@ -33,9 +35,10 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
   T. inv walk (round 2): walked diagnostic class -> DIAG-OK, run GREEN;
      a missing ours inv shot -> DIAG-INCOMPLETE, run GREEN
   U. fluid no-truth-surface skip row (round 2 ladder exhausted) -> RED named
-  V. particle no-simple-options:<detail> suffix note          -> RED named
+  V. particle no-simple-options:<detail> suffix note          -> DIAG, GREEN
      (round 2: the note carries the programmatic-ladder failure reason;
-     the prefix match must keep working)
+     the prefix match must keep NAMING it — 14-cs made the class
+     diagnostic, so the name surfaces, the verdict never reds)
   W. entity client-crash-banned row (merged round 3, 14-am)   -> RED named
      (the ban list saved the client — the banned subject still reds with
      its name, the ban can never silently eat verdict content)
@@ -321,7 +324,9 @@ def main():
         print("M no-walk zeros GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # N: particle absence row -> RED, named (12-as)
+    # N: particle absence row -> NAMED, run GREEN (14-cs: particle joined
+    # DIAGNOSTIC_CLASSES — the absence is reported, the verdict never reds;
+    # the 12-as red law is retired with the flip)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -330,9 +335,11 @@ def main():
                      "skip\t-1\t-1\t-1\tcreate:rot\t1\tno-simple-options\n",
                      encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "create:rot(no-simple-options)" in r.stdout \
-            and "particle" in r.stdout
-        print("N particle absence RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "DIAG-INCOMPLETE\tparticle" in r.stdout \
+            and "create:rot(no-simple-options)" in r.stdout
+        print("N particle absence DIAG named GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     # A literal resource path "null" does not justify removing a registered type.
@@ -344,8 +351,10 @@ def main():
             "skip\t-1\t-1\t-1\tcreate:null\t1\tnull-path-dead-id\n",
             encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "create:null(null-path-dead-id)" in r.stdout
-        print("N2 name-based particle exclusion RED:",
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "create:null(null-path-dead-id)" in r.stdout \
+            and "DIAG-INCOMPLETE\tparticle" in r.stdout
+        print("N2 name-based particle exclusion DIAG GREEN:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
@@ -509,7 +518,9 @@ def main():
         failures += 0 if ok else 1
 
     # V: the particle note carries the programmatic-ladder failure detail
-    # (no-simple-options:<reason>) — the prefix match must keep reding it
+    # (no-simple-options:<reason>) — the prefix match must keep NAMING it
+    # (14-cs: the class is diagnostic, so the name surfaces in the DIAG
+    # line and the run stays green)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -519,9 +530,10 @@ def main():
                      "no-simple-options:com.mojang.serialization.DynamicOps$1\n",
                      encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "create:contraption_particle(no-simple-options:" in r.stdout \
-            and "particle" in r.stdout
-        print("V particle detailed note RED:",
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "create:contraption_particle(no-simple-options:" in r.stdout \
+            and "DIAG-INCOMPLETE\tparticle" in r.stdout
+        print("V particle detailed note DIAG named GREEN:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
