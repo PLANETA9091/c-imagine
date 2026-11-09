@@ -430,6 +430,7 @@ public final class CimSceneMod {
      */
     private static int gallery(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "block page entry");
         writeGalleryIndex(level, namespace);
         String blockStem = "gallery-" + namespace + "-p" + page;
         int swept = sweepGalleryDrops(level);
@@ -677,6 +678,15 @@ public final class CimSceneMod {
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
         writeDoneMarkerFile(blockStem, false);
+        // 14-di THE SETTLE FREEZE: the world stops HERE, at the settle frame,
+        // before the walk's settle-shot loop fires a single md5 attempt — the
+        // javadoc on setGalleryFrozen is the law. The block series is the
+        // 436-RED universe (machines, doors, nixies, walls); every BE-ticker
+        // animation phase (the door slide/fold progress, the machine active
+        // states, the nixie tickers) now pins at this pass, the same relative
+        // tick every run, on both legs (the freeze broadcasts to the joined
+        // client and stops its mcmeta/particle/gameTime clocks too).
+        setGalleryFrozen(level.getServer(), true, "settle " + blockStem);
     }
 
     // --- coverage ledger (owner directive 2026-10-31: the verdict must SEE
@@ -986,6 +996,7 @@ public final class CimSceneMod {
      */
     private static int galleryItem(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "item page entry");
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1097,6 +1108,7 @@ public final class CimSceneMod {
      */
     private static int galleryParticle(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "particle page entry");
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1509,6 +1521,7 @@ public final class CimSceneMod {
      */
     private static int galleryFluid(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "fluid page entry");
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1795,6 +1808,7 @@ public final class CimSceneMod {
      */
     private static int gallerySound(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "sound page entry");
         writeGalleryIndex(level, namespace);
         String soundStem = "gallery-sound-" + namespace + "-p" + page;
 
@@ -1956,6 +1970,7 @@ public final class CimSceneMod {
      */
     private static int galleryGui(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "gui page entry");
         writeGalleryIndex(level, namespace);
         String guiStem = "gallery-gui-" + namespace + "-p" + page;
 
@@ -2046,6 +2061,7 @@ public final class CimSceneMod {
      */
     private static int galleryBiome(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "biome page entry");
         writeGalleryIndex(level, namespace);
         String biomeStem = "gallery-biome-" + namespace + "-p" + page;
 
@@ -2137,6 +2153,7 @@ public final class CimSceneMod {
      */
     private static int galleryInv(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "inv page entry");
         writeGalleryIndex(level, namespace);
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
@@ -2251,6 +2268,7 @@ public final class CimSceneMod {
     private static int galleryEntity(CommandSourceStack src, String series,
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "entity page entry");
         // Every command (the exhausted early return included) supersedes the
         // previous page's pending settle: its subjects are about to be
         // discarded, and a late pass must not relabel them dissolved.
@@ -2525,6 +2543,67 @@ public final class CimSceneMod {
                     String.valueOf(System.currentTimeMillis()), StandardCharsets.UTF_8);
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] marker file write failed {}: {}", name, ioe.toString());
+        }
+    }
+
+    /**
+     * 14-di THE SETTLE FREEZE — the universal wobble instrument. The walk's
+     * settle-shot loop demands two identical consecutive md5s ("the frame is
+     * settled"), but the world kept ticking through it: the block walk runs at
+     * tick rate 1000 (the packet-backlog drain), so between the done marker
+     * and the client's shot the server advanced ~1000 ticks of BE-ticker
+     * animation (the door slide/fold phase, the machine active states, the
+     * nixie tickers), the scheduled block/fluid ticks kept running, and the
+     * CLIENT's own clocks (the mcmeta frame counters, the particle engine,
+     * the ambient animateTick, the client gameTime behind the scrolling
+     * text) never stopped — the shipped frame's animation phase was whatever
+     * the llvmpipe/poll timing produced, and the SAME page settled at a
+     * DIFFERENT phase the next run (the measured churn band: gantry
+     * END/START, fluix_wall, the chargepad pair; the #306→#307 pixel proof:
+     * truth moved ONLY inside the animated machine cells while the pack
+     * stood still). A state can only be honest-red or honest-green against a
+     * frame the next run can reproduce.
+     *
+     * <p>The instrument is the VANILLA freeze, flipped server-side at the
+     * settle pass's terminal point: {@code server.tickRateManager()}
+     * .setFrozen(...). Verified against the 1.21.1 sources, one call pins
+     * BOTH legs bit-deterministically — the server (BE tickers gate on
+     * runsNormally in Level.tickBlockEntities, as do the scheduled block/
+     * fluid ticks, block events, entity ticks and tickTime in
+     * ServerLevel.tick) and every CLIENT joined to it (ServerTickRateManager
+     * .setFrozen broadcasts ClientboundTickingStatePacket; the client gates
+     * textureManager.tick — the mcmeta frame counters stop advancing —
+     * particleEngine.tick, animateTick and tickTime on the same
+     * runsNormally flag in Minecraft.tick). The walk's own machinery keeps
+     * running while frozen: the server tick loop, RCON, connections and the
+     * chunk source are ungated (chunk sending continues), the settle-shot
+     * loop's {@code tp cimviewer} re-pin is a player teleport and players
+     * never freeze (TickRateManager.isEntityFrozen). The settle pass itself
+     * runs BEFORE the freeze (the fluid settle needs its ticking; the
+     * falling-block retries finish first — the terminal pass freezes, a
+     * superseded pass does not).
+     *
+     * <p>Scope of this slice: the BLOCK settle freeze only, and every
+     * gallery command entry UNFREEZES first — the seed walk and the run
+     * shards run blocks → entities → items → particles → fluids → sound →
+     * biome → gui → inv on ONE server, and a freeze left behind by the last
+     * block page would otherwise park the whole rest of the walk (its
+     * settles and mob/entity spawns need ticking). Exhaustion writes no
+     * settle pass and keeps the freeze — the next series' first command
+     * lifts it. The run-side receipts: the ANIM liveness probe's t0/t1
+     * frames on dyn pages now measure a zero delta on a frozen walk, and
+     * the determinism probe's re-shot of page 0 must md5-match the original
+     * (the same page frozen at the same settle phase).
+     */
+    private static void setGalleryFrozen(net.minecraft.server.MinecraftServer server, boolean frozen, String why) {
+        try {
+            if (server.tickRateManager().isFrozen() == frozen) {
+                return;
+            }
+            server.tickRateManager().setFrozen(frozen);
+            LOGGER.info("[cimscene] gallery freeze {} ({})", frozen ? "on" : "off", why);
+        } catch (Throwable t) {
+            LOGGER.error("[cimscene] gallery freeze switch failed ({}): {}", why, t.toString());
         }
     }
 
