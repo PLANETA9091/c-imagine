@@ -942,7 +942,15 @@ final class QuadDump {
             void flush() {
                 if (n == 3) {
                     if (texture != null) {
-                        appendRow(out, texture, rawShade, -1, pos, uv, rgb);
+                        // 14-dg: the readback textures (the font glyph atlases —
+                        // the ~ names) serve ONLY the text render types, and the
+                        // font shader ignores the lightmap (flat color x coverage).
+                        // The (15,15) tail routes the rows into the pack's
+                        // fullbright companion group — the replay pins them
+                        // Brightness(15,15) and the text renders flat-bright like
+                        // the truth, at the per-character color the renderer set.
+                        appendRow(out, texture, rawShade, -1, pos, uv, rgb,
+                                texture.startsWith("~") ? LightTexture.FULL_BRIGHT : -1);
                     } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb, captureAtlasPixels)) {
                         foreign++;
                     }

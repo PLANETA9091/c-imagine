@@ -2186,6 +2186,14 @@ public final class GalleryPack {
      */
     private static double[] ringTint(ObjMesh.Face face, int[] rowFlags,
                                      double[] ring, double[] rowTint) {
+        if (face.tex() != null && face.tex().startsWith("~")) {
+            // 14-dg guard: the captured runtime textures (the font glyph atlases
+            // — the nixie TEXT rows) never rendered when the ring k was measured
+            // (they dropped before the fix), so the dim-cluster ratio does not
+            // describe them. The text must keep the fullbright brightness the
+            // renderer recorded — the ring stays on its measured population.
+            return rowTint;
+        }
         int rb = rowFlags[2];
         int rs = rowFlags[3];
         if (rb == 15 && rs == 15) {
