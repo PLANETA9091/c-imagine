@@ -853,7 +853,12 @@ public final class F2vPack {
      * <TAB>evidence]} — one calibrated per-channel MULTIPLY per modded
      * TEXTURE ref (the pack can only apply a tint at texture granularity,
      * so the calibrator keys the table by texture, with the source
-     * block/item state carried in the ignored evidence column). Optional;
+     * block/item state carried in the ignored evidence column). 14-db: the
+     * table also carries STATE-keyed rows ({@code ns:block[props]} — the
+     * state-keyed fallback for the multi/unresolved-texture states whose
+     * per-texture fold was refused); a state row's canonical property-order
+     * spelling binds as an alias (the same rule readEmissiveManifest
+     * carries), the raw key keeps priority. Optional;
      * MISSING FILE = empty table = today's behavior byte-for-byte (no bake,
      * no pack delta). Malformed rows are skipped. {@code #} comments blank.
      */
@@ -884,7 +889,17 @@ public final class F2vPack {
                     }
                 }
                 if (sane) {
-                    map.putIfAbsent(parts[0].trim(), tint);
+                    String key = parts[0].trim();
+                    map.putIfAbsent(key, tint);
+                    // the CANONICAL spelling binds as an alias — the same rule
+                    // readEmissiveManifest carries (14-db): the manifest walk
+                    // and the table may order the same state's properties
+                    // differently, and applyStateTint's lookup (exact, then
+                    // canonical) needs both spellings present. The raw key
+                    // keeps priority (putIfAbsent, first row wins —
+                    // deterministic file order); a texture ref (no '[') maps
+                    // to itself, so the texture rows are unaffected.
+                    map.putIfAbsent(GalleryPack.canonicalState(key), tint);
                 }
             } catch (NumberFormatException ignored) {
                 // a malformed row is skipped, never fatal
@@ -2737,6 +2752,134 @@ public final class F2vPack {
             }
             expect(failures, absentClean,
                     "emissive bake: absent visual-emissive.tsv = no light_emission anywhere");
+
+            // -- 14-db STATE-KEYED TINT route asserts --------------------------------
+            // The visual-tints.tsv rows keyed by the STATE now also serve the
+            // MODDED-texture states (the qio/sorter machine class — the texture
+            // route refuses their folds: multi-texture models, two lightings on
+            // one sprite). The contract: the state's composite re-hosts EVERY
+            // texture ref to the state-suffixed sibling (_cimtint_s<hash8>),
+            // the raw sprite keeps serving every other consumer, and a
+            // per-TEXTURE row wins over a state row for the same sprite
+            // (one multiply per pixel, never two — applyStateTint skips the
+            // refs the texture route already baked).
+            Path out6 = tmp.resolve("out6");
+            Files.createDirectories(out6);
+            Files.writeString(out6.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out6.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out6.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            // the CANONICAL property order in the row (the walk emits
+            // [lit=true,power=7]) — the stateTintFor canonical fallback
+            Files.writeString(out6.resolve("visual-tints.tsv"),
+                    "# 14-db state-keyed fixture\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t0.5\t1.0\t2.0\t"
+                    + "fakemod:glow_bloom[lit=true,power=7]@gallery-fake:p1:c0,r0"
+                    + "|n=64|class=luma-uniform\n",
+                    StandardCharsets.UTF_8);
+            Result r6 = build(mods, out6, readManifest(out6.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out6.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            String glow6 = r6.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:glow_bloom[lit=true,power=7]"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !glow6.isEmpty(), "state tint: glow composite located");
+            TreeMap<String, byte[]> stateTintZip = readZip(out6.resolve("pack.zip"));
+            expect(failures, !glow6.isEmpty()
+                            && java.util.regex.Pattern
+                                    .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}")
+                                    .matcher(str(stateTintZip, glow6)).find(),
+                    "state tint: the composite references the state-suffixed baked sprite");
+            String stateSprite = null;
+            if (!glow6.isEmpty()) {
+                java.util.regex.Matcher m2 = java.util.regex.Pattern
+                        .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}")
+                        .matcher(str(stateTintZip, glow6));
+                if (m2.find()) {
+                    stateSprite = m2.group();
+                }
+            }
+            expect(failures, stateSprite != null,
+                    "state tint: the state-suffixed sprite ref is recoverable");
+            if (stateSprite != null) {
+                String bakedKey6 = "assets/fakemod/textures/block/"
+                        + stateSprite.substring(stateSprite.lastIndexOf('/') + 1) + ".png";
+                expect(failures, stateTintZip.containsKey(bakedKey6),
+                        "state tint: the baked sibling PNG rides the pack");
+                if (stateTintZip.containsKey(bakedKey6)) {
+                    java.awt.image.BufferedImage baked6 = decodePng(stateTintZip.get(bakedKey6));
+                    java.awt.image.BufferedImage raw6 = decodePng(
+                            jarEntries.get("assets/fakemod/textures/block/glow_tex.png"));
+                    boolean px6 = baked6.getWidth() == raw6.getWidth()
+                            && baked6.getHeight() == raw6.getHeight();
+                    for (int y = 0; y < raw6.getHeight() && px6; y++) {
+                        for (int x = 0; x < raw6.getWidth() && px6; x++) {
+                            int ra = raw6.getRGB(x, y);
+                            int ba = baked6.getRGB(x, y);
+                            // raw RGB is the fixture's flat 0x4080C0: x (0.5,1.0,2.0)
+                            // = (32,128,255-clamped), alpha preserved per pixel
+                            int want = (ra & 0xFF000000) | (32 << 16) | (128 << 8) | 255;
+                            px6 &= ba == want;
+                            if (ba != want) {
+                                failures.add("state tint pixel (" + x + "," + y
+                                        + "): want " + Integer.toHexString(want)
+                                        + " got " + Integer.toHexString(ba));
+                            }
+                        }
+                    }
+                    expect(failures, px6,
+                            "state tint: baked pixels = raw x (0.5,1.0,2.0), alpha preserved");
+                }
+                expect(failures, java.util.Arrays.equals(
+                                stateTintZip.get("assets/fakemod/textures/block/glow_tex.png"),
+                                jarEntries.get("assets/fakemod/textures/block/glow_tex.png")),
+                        "state tint: the RAW texture is untouched in the pack");
+            }
+            String rock6 = r6.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:rock"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !rock6.isEmpty() && !str(stateTintZip, rock6).contains("_cimtint"),
+                    "state tint: a state not in the table keeps its raw sprite");
+            // the texture row WINS over a state row for the same sprite: the
+            // composite references the plain _cimtint sibling and NO state
+            // sibling ships
+            Path out7 = tmp.resolve("out7");
+            Files.createDirectories(out7);
+            Files.writeString(out7.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out7.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out7.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            Files.writeString(out7.resolve("visual-tints.tsv"),
+                    "fakemod:block/glow_tex\t0.5\t1.0\t2.0\tthe texture row\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t0.5\t1.0\t2.0\tthe state row\n",
+                    StandardCharsets.UTF_8);
+            Result r7 = build(mods, out7, readManifest(out7.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out7.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            String glow7 = r7.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:glow_bloom[lit=true,power=7]"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            TreeMap<String, byte[]> precZip = readZip(out7.resolve("pack.zip"));
+            expect(failures, !glow7.isEmpty()
+                            && str(precZip, glow7).contains("\"fakemod:block/glow_tex_cimtint\"")
+                            && !str(precZip, glow7).contains("_cimtint_s"),
+                    "state tint: a texture row wins — the composite keeps the plain "
+                    + "_cimtint sibling, the state route skips the baked refs");
+            expect(failures, precZip.keySet().stream().noneMatch(k -> k.contains("_cimtint_s")),
+                    "state tint: no state-suffixed sibling when the texture row covers the sprite");
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));

@@ -280,13 +280,14 @@ def content_mask(ours: np.ndarray, truth: np.ndarray) -> np.ndarray:
     return ~(bluesky_o | bluesky_t) & window
 
 
-def solve_ratio(truth: np.ndarray, ours: np.ndarray,
-                shift: tuple[int, int] = (0, 0)) -> tuple[np.ndarray, int] | None:
-    """Robust median per-channel ratio truth/ours on the content mask.
+def solve_ratio_ex(truth: np.ndarray, ours: np.ndarray,
+                   shift: tuple[int, int] = (0, 0)):
+    """solve_ratio plus the per-pixel luma-ratio spread (the 14-db tint
+    signature): (rgb median ratio, usable px, MAD, quartiles) or None.
 
-    The join's shift is the roll applied to OURS to match truth
-    (gallery-diff.aligned_ae rolls b = ours by +shift); undo it before
-    comparing. Returns (rgb ratio vector, usable pixel count) or None.
+    The MAD is the median absolute deviation of the per-pixel luma ratio
+    around its own median — a pure multiply measures MAD ~ 0.01; a structural
+    mismatch (the door slide/fold phase, the bimodal heater crops) 0.16+.
     """
     dx, dy = shift
     o = np.roll(np.roll(ours, -dy, axis=0), -dx, axis=1)
@@ -299,7 +300,23 @@ def solve_ratio(truth: np.ndarray, ours: np.ndarray,
     r = np.nanmedian(ratio, axis=0)
     if not np.all(np.isfinite(r)) or np.any(r <= 0) or np.any(r > 4.0):
         return None
-    return r, n
+    luma = ratio.mean(axis=1)
+    med = float(np.median(luma))
+    mad = float(np.median(np.abs(luma - med)))
+    qs = tuple(float(x) for x in np.percentile(luma, [10, 25, 75, 90]))
+    return r, n, mad, qs
+
+
+def solve_ratio(truth: np.ndarray, ours: np.ndarray,
+                shift: tuple[int, int] = (0, 0)) -> tuple[np.ndarray, int] | None:
+    """Robust median per-channel ratio truth/ours on the content mask.
+
+    The join's shift is the roll applied to OURS to match truth
+    (gallery-diff.aligned_ae rolls b = ours by +shift); undo it before
+    comparing. Returns (rgb ratio vector, usable pixel count) or None.
+    """
+    solved = solve_ratio_ex(truth, ours, shift)
+    return None if solved is None else (solved[0], solved[1])
 
 
 def classify(r: np.ndarray, chroma_shift: float) -> str:
@@ -373,6 +390,31 @@ BAKE_RATIO_MIN = 0.5
 BAKE_RATIO_MAX = 2.0
 BAKE_CLIP_MAX = 0.01
 
+# ---- the 14-db STATE-KEYED FALLBACK guards -----------------------------------
+# When the per-TEXTURE route is unavailable or refuses the fold (multi/
+# unresolved textures, cells that disagree — two lightings on one texture),
+# a state whose OWN cells are self-consistent still gets a row keyed by the
+# STATE (GalleryPack.applyStateTint re-hosts every texture of that state's
+# composite; the raw sprite keeps serving every other consumer — a state row
+# cannot touch a green cell by construction).
+# - SHIFT: the join's shift re-aligns ours before the ratio; a shift beyond
+#   2px means the gate aligned on structure the crops do not share — the
+#   median would mix mismatched pixels (the laser_amplifier class). No row.
+# - MAD: the per-pixel luma-ratio median absolute deviation around the
+#   median — the tint-class signature (a pure multiply is tight, MAD ~ 0.01;
+#   the slide/fold door phase and the heater bimodal crops measure 0.16+
+#   on run 42519344726). A wide distribution = the residual is structural,
+#   not a multiply. No row.
+# - FLOOR 0.35: below the gate's own luma-fit floor (k in [0.5, 2.0]) the
+#   bake is the ONLY representable instrument (the qio (0,15) family
+#   measures 0.39-0.40 — the fit cannot reach it, the state bake can, and a
+#   darkening multiply never clips). The texture route keeps its 0.5 floor —
+#   a per-texture row below 0.5 would drag every other consumer of the
+#   sprite; the state route is scoped to red states only.
+STATE_SHIFT_MAX = 2
+STATE_MAD_MAX = 0.05
+STATE_BAKE_MIN = 0.35
+
 
 def clip_fraction(tex: str, tint: np.ndarray, assets: "JarAssets") -> float:
     """Fraction of the raw texture's opaque pixels whose baked RGB would clip
@@ -434,6 +476,44 @@ def aggregate_texture(tex: str, cells: list, assets: "JarAssets",
     return (tex, rounded, evidence), None
 
 
+def state_texs_of(assets: "JarAssets", state: str):
+    """The state's resolved texture set (or None) — re-read from the asset
+    graph without disturbing vanilla_tex_states bookkeeping."""
+    return assets.state_textures(state) if state not in assets.vanilla_tex_states \
+        else assets.vanilla_tex_states[state]
+
+
+def state_fallback_row(state: str, solves: list, texs, assets: "JarAssets"):
+    """Fold ONE state's own cells into a state-keyed row under the 14-db
+    guards, or refuse with a named reason (None, None = nothing to bake)."""
+    for s in solves:
+        dx, dy = s["shift"]
+        if max(abs(dx), abs(dy)) > STATE_SHIFT_MAX:
+            return None, (f"shift ({dx},{dy}) > {STATE_SHIFT_MAX}px "
+                          f"@ {s['page']}:{s['cell']} — misaligned crop")
+        if s["mad"] > STATE_MAD_MAX:
+            return None, (f"per-pixel MAD {s['mad']:.3f} > {STATE_MAD_MAX} "
+                          f"@ {s['page']}:{s['cell']} — structural, not a multiply")
+    med = np.median([s["ratio"] for s in solves], axis=0)
+    if med.min() < STATE_BAKE_MIN or med.max() > BAKE_RATIO_MAX:
+        return None, (f"multiply out of state bake family "
+                      f"[{STATE_BAKE_MIN}, {BAKE_RATIO_MAX}]: "
+                      + "/".join(f"{x:.3f}" for x in med))
+    rounded = tuple(round(float(x), 4) for x in med)
+    if all(abs(x - 1.0) <= EPSILON for x in rounded):
+        return None, None  # no measured tint (the red is another class)
+    if texs:
+        for tex in sorted(texs):
+            cf = clip_fraction(tex, med, assets)
+            if cf > BAKE_CLIP_MAX:
+                return None, (f"bake unrepresentable on {tex}: {cf:.1%} "
+                              "of opaque pixels would clip — lightmap class")
+    evidence = ";".join(
+        f"{s['state']}@{s['page']}:{s['cell']}|n={s['n']}|class={s['cls']}"
+        for s in solves)
+    return (state, rounded, evidence), None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--jars", required=True, type=pathlib.Path,
@@ -459,34 +539,49 @@ def main(argv=None) -> int:
     # per-texture evidence collection
     per_tex: dict[str, list] = defaultdict(list)
     refused: list[tuple[str, str]] = []
+    # 14-db: EVERY red state's own per-cell solves — the texture route folds
+    # them per texture; the state-keyed fallback re-uses them when that
+    # route is unavailable or refuses the fold.
+    state_solves: dict[str, list] = defaultdict(list)
+    states_of_tex: dict[str, set] = defaultdict(set)
+    multi_states: set = set()
     for state, cells in sorted(pairs.items()):
         texs = assets.state_textures(state)
         state_keyed = state in assets.vanilla_tex_states
+        solves = []
+        for truth_path, shift, page, col, rowi in cells:
+            truth = load_rgb(truth_path)
+            ours = load_rgb(truth_path.with_name(
+                truth_path.name.replace("_truth.png", "_ours.png")))
+            solved = solve_ratio_ex(truth, ours, shift)
+            if solved is None:
+                refused.append((state, f"no usable content pixels @ {page}:c{col},r{rowi}"))
+                continue
+            r, n, mad, qs = solved
+            chroma_t = float(np.median(truth.max(axis=2) - truth.min(axis=2)))
+            solves.append({
+                "state": state, "ratio": r, "n": n, "page": page,
+                "cell": f"c{col},r{rowi}",
+                "cls": classify(r, chroma_t),
+                "shift": tuple(int(x) for x in (shift or (0, 0))),
+                "mad": mad, "qs": qs,
+            })
+        state_solves[state] = solves
         if not state_keyed and (not texs or len(texs) != 1):
             refused.append((state, "multi/ambiguous texture: "
                             + (",".join(sorted(texs)) if texs else "unresolved")))
+            multi_states.add(state)
             continue
         # THE STATE-KEYED states collect under EVERY texture they resolve to
         # (sorted — set iteration is hash-luck across runs) and the per-state
         # row folds all of them below; single-texture states keep the plain key.
         cand_texs = sorted(texs) if state_keyed else [next(iter(texs))]
         for tex in cand_texs:
-            for truth_path, shift, page, col, rowi in cells:
-                truth = load_rgb(truth_path)
-                ours = load_rgb(truth_path.with_name(
-                    truth_path.name.replace("_truth.png", "_ours.png")))
-                solved = solve_ratio(truth, ours, shift)
-                if solved is None:
-                    refused.append((state, f"no usable content pixels @ {page}:c{col},r{rowi}"))
-                    continue
-                r, n = solved
-                chroma_t = float(np.median(truth.max(axis=2) - truth.min(axis=2)))
-                pkey = tex + ("\x00" + state if state in assets.vanilla_tex_states else "")
-                per_tex[pkey].append({
-                    "state": state, "ratio": r, "n": n, "page": page,
-                    "cell": f"c{col},r{rowi}",
-                    "cls": classify(r, chroma_t),
-                })
+            if "\x00" not in tex:
+                states_of_tex[tex].add(state)
+            for s in solves:
+                pkey = tex + ("\x00" + state if state_keyed else "")
+                per_tex[pkey].append(s)
 
     # THE STATE-KEYED TINT ROUTE: the modded states whose models resolve
     # to minecraft-namespace textures — the per-state multiply solves from
@@ -511,6 +606,7 @@ def main(argv=None) -> int:
             state_dropped.append((state + " [" + ", ".join(sorted(texs)) + "]", reason))
 
     rows, dropped = [], []
+    failed_texs: set = set()
     for tex in sorted(k for k in per_tex if "\x00" not in k):
         row, reason = aggregate_texture(tex, per_tex[tex], assets,
                                         args.tolerance, args.epsilon)
@@ -518,6 +614,32 @@ def main(argv=None) -> int:
             rows.append(row)
         elif reason is not None:
             dropped.append((tex, reason))
+            failed_texs.add(tex)
+
+    # THE 14-db STATE-KEYED FALLBACK: the texture route refused a fold (two
+    # lightings on one texture, the out-of-family/unrepresentable medians) or
+    # never ran (multi/unresolved textures) — a state whose OWN cells pass the
+    # shift/MAD/family guards still gets a STATE-keyed row. Scope: the raw
+    # sprite keeps serving every other consumer, so the row cannot touch a
+    # green cell; the guards keep structural classes (the door phase, the
+    # heater bimodal crops, the misaligned laser shifts) honestly OUT.
+    covered = {s for t, ss in states_of_tex.items() if t not in failed_texs
+               for s in ss}
+    fallback_states = (multi_states
+                       | {s for t in failed_texs for s in states_of_tex.get(t, set())})
+    fallback_states -= covered
+    fallback_rows = []
+    fallback_dropped = []
+    for state in sorted(fallback_states):
+        solves = state_solves.get(state) or []
+        if not solves:
+            continue
+        texs = state_texs_of(assets, state)
+        row, reason = state_fallback_row(state, solves, texs, assets)
+        if row is not None:
+            fallback_rows.append(row)
+        elif reason is not None:
+            fallback_dropped.append((state, reason))
 
     with args.out.open("w") as f:
         f.write("# visual-tints.tsv — tint-bake calibration (scripts/f2v/"
@@ -530,9 +652,20 @@ def main(argv=None) -> int:
             f.write(f"{tex}\t{r}\t{g}\t{b}\t{ev}\n")
         for state, (r, g, b), ev in state_rows:
             f.write(f"{state}\t{r}\t{g}\t{b}\t{ev}\n")
+        # 14-db: the state-keyed fallback rows (the texture route refused or
+        # never ran; GalleryPack.applyStateTint re-hosts the state's own
+        # composite — the raw sprite keeps serving every other consumer)
+        f.write("# 14-db state-keyed fallback rows — the texture route refused\n")
+        f.write("# (multi/unresolved/disagreeing) and the state's own crops pass\n")
+        f.write(f"# the shift<={STATE_SHIFT_MAX}/MAD<={STATE_MAD_MAX}/family\n")
+        f.write(f"# [{STATE_BAKE_MIN},{BAKE_RATIO_MAX}] guards.\n")
+        for state, (r, g, b), ev in fallback_rows:
+            f.write(f"{state}\t{r}\t{g}\t{b}\t{ev}\n")
 
     print(f"tints written: {len(rows)} -> {args.out}")
-    print(f"refused states: {len(refused)}; dropped textures: {len(dropped)}")
+    print(f"refused states: {len(refused)}; dropped textures: {len(dropped)}; "
+          f"state-fallback rows: {len(fallback_rows)} "
+          f"(dropped {len(fallback_dropped)})")
     if args.verbose:
         for s, why in refused:
             print(f"  refuse: {s}: {why}")
@@ -540,6 +673,10 @@ def main(argv=None) -> int:
             print(f"  drop: {t}: {why}")
         for tex, (r, g, b), ev in rows:
             print(f"  tint: {tex} = ({r}, {g}, {b})")
+        for state, (r, g, b), ev in fallback_rows:
+            print(f"  state-tint: {state} = ({r}, {g}, {b})")
+        for s, why in fallback_dropped:
+            print(f"  state-drop: {s}: {why}")
     return 0
 
 
