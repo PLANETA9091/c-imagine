@@ -2486,6 +2486,9 @@ public final class CimSceneMod {
             boolean planned = Files.isRegularFile(Path.of("c-imagine", "scenes",
                     "gallery-gui-" + namespace + "-p" + page + ".tsv"));
             String opener = planned ? guiManifestOpener(namespace, page) : guiOpeners(level, viewer, namespace).get(id);
+            if (opener == null && SpecializedOpeners.isSpecialized(id.toString())) {
+                opener = "specialized:" + id.toString();
+            }
             if (opener != null) {
                 guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
@@ -2498,8 +2501,12 @@ public final class CimSceneMod {
                 }
             }
             String chosen = opener;
-            runAfterTicks(level.getServer(), chosen != null && (chosen.contains("entity:") || chosen.startsWith("cube") || chosen.contains("settle+"))
-                            ? 40 : GUI_SETTLE_TICKS,
+            boolean slowSettle = chosen != null && (chosen.contains("entity:") || chosen.contains("robit")
+                    || chosen.startsWith("cube") || chosen.contains("settle+"));
+            if (id.toString().contains("robit")) {
+                slowSettle = true;
+            }
+            runAfterTicks(level.getServer(), slowSettle ? 40 : GUI_SETTLE_TICKS,
                     () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig));
             return 1;
         }

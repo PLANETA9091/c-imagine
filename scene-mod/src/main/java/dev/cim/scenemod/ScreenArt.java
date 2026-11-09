@@ -199,7 +199,8 @@ public final class ScreenArt {
                 net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
         mc.gameMode.handleInventoryMouseClick(id, shown.get(to).index, 0,
                 net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
-        record(c, "move\t" + from + "\t" + to);
+        boolean accepted = shown.get(to).hasItem();
+        record(c, "move\t" + from + "\t" + to + "\t" + accepted);
         return true;
     }
 

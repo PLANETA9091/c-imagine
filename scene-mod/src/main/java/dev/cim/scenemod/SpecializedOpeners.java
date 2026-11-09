@@ -24,8 +24,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public final class SpecializedOpeners {
@@ -76,9 +78,15 @@ public final class SpecializedOpeners {
             switch (menuId) {
                 case "mekanism:crafting_robit", "mekanism:inventory_robit",
                      "mekanism:repair_robit", "mekanism:smelting_robit" -> {
+                    setBlock(level, rig.below(), "minecraft:stone");
                     EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse("mekanism:robit"));
                     Entity robit = type.create(level);
                     if (robit != null) {
+                        robit.setNoGravity(true);
+                        try {
+                            Method setOwner = robit.getClass().getMethod("setOwnerUUID", java.util.UUID.class);
+                            setOwner.invoke(robit, player.getUUID());
+                        } catch (Throwable ignored) {}
                         robit.moveTo(rig.getX() + 0.5, rig.getY(), rig.getZ() + 0.5, 0f, 0f);
                         level.addFreshEntity(robit);
                         if (onEntitySpawned != null) {
@@ -133,28 +141,40 @@ public final class SpecializedOpeners {
                         } catch (Throwable ignored) {}
                     }
                 }
-                case "mekanism:seismic_reader" ->
+                case "mekanism:seismic_reader" -> {
                     player.setItemInHand(InteractionHand.MAIN_HAND,
                             new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("mekanism:seismic_reader"))));
-                case "mekanism:qio_frequency_select_item" ->
+                    player.inventoryMenu.broadcastChanges();
+                }
+                case "mekanism:qio_frequency_select_item" -> {
                     player.setItemInHand(InteractionHand.MAIN_HAND,
                             new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("mekanism:portable_qio_dashboard"))));
+                    player.inventoryMenu.broadcastChanges();
+                }
                 case "sophisticatedbackpacks:settings" ->
                     setBlock(level, rig, "sophisticatedbackpacks:backpack");
                 case "create:stock_keeper_category", "create:stock_keeper_request" ->
                     setBlock(level, rig, "create:stock_ticker");
                 case "create:factory_panel_set_item" -> {
+                    setBlock(level, rig.below(), "minecraft:stone");
+                    setBlock(level, rig.north(), "minecraft:stone");
+                    setBlock(level, rig.south(), "minecraft:stone");
+                    setBlock(level, rig.east(), "minecraft:stone");
+                    setBlock(level, rig.west(), "minecraft:stone");
                     setBlock(level, rig, "create:factory_panel");
                     BlockEntity be = level.getBlockEntity(rig);
                     if (be != null) {
                         try {
-                            Class<?> slotClass = Class.forName(
-                                    "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlock$PanelSlot", true, cl);
-                            Object panelSlot = slotClass.getEnumConstants()[0];
-                            Method addPanel = be.getClass().getMethod("addPanel", slotClass, java.util.UUID.class);
-                            addPanel.invoke(be, panelSlot, player.getUUID());
+                            Field panelsField = be.getClass().getField("panels");
+                            Map<?, ?> panels = (Map<?, ?>) panelsField.get(be);
+                            for (Object b : panels.values()) {
+                                b.getClass().getMethod("enable").invoke(b);
+                                b.getClass().getMethod("setNetwork", java.util.UUID.class).invoke(b, player.getUUID());
+                            }
+                            be.setChanged();
+                            level.sendBlockUpdated(rig, be.getBlockState(), be.getBlockState(), 3);
                         } catch (Throwable t) {
-                            LOGGER.info("[cimscene] place factory_panel addPanel note: {}", t.toString());
+                            LOGGER.info("[cimscene] place factory_panel panels enable note: {}", t.toString());
                         }
                     }
                 }
@@ -162,9 +182,11 @@ public final class SpecializedOpeners {
                     setBlock(level, rig, "ae2:chest");
                 case "ae2:craftingcpu" ->
                     setBlock(level, rig, "ae2:crafting_unit");
-                case "ae2:networkstatus" ->
+                case "ae2:networkstatus" -> {
                     player.setItemInHand(InteractionHand.MAIN_HAND,
                             new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("ae2:network_tool"))));
+                    player.inventoryMenu.broadcastChanges();
+                }
                 case "ae2:set_stock_amount" ->
                     setBlock(level, rig, "ae2:interface");
                 default -> { }
@@ -249,7 +271,13 @@ public final class SpecializedOpeners {
                     Method getProvider = tileBtnClass.getMethod("getProvider",
                             Class.forName("mekanism.common.tile.base.TileEntityMekanism", true, cl));
                     MenuProvider provider = (MenuProvider) getProvider.invoke(btn, be);
-                    player.openMenu(provider, buf -> buf.writeBlockPos(rig));
+                    player.openMenu(provider, buf -> {
+                        buf.writeBlockPos(rig);
+                        try {
+                            be.getClass().getMethod("encodeExtraContainerData",
+                                    net.minecraft.network.RegistryFriendlyByteBuf.class).invoke(be, buf);
+                        } catch (Throwable ignored) {}
+                    });
                     return true;
                 }
                 case "mekanism:thermoelectric_boiler", "mekanism:thermal_evaporation_controller", "mekanism:sps_casing" -> {
@@ -275,6 +303,7 @@ public final class SpecializedOpeners {
                         stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("mekanism:seismic_reader")));
                         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
                     }
+                    player.inventoryMenu.broadcastChanges();
                     Class<?> reg = Class.forName("mekanism.common.registries.MekanismContainerTypes", true, cl);
                     Object ro = reg.getField("SEISMIC_READER").get(null);
                     ro.getClass().getMethod("tryOpenGui", ServerPlayer.class, InteractionHand.class, ItemStack.class)
@@ -342,29 +371,44 @@ public final class SpecializedOpeners {
                     Class<?> provClass = Class.forName(
                             "com.simibubi.create.content.logistics.stockTicker.StockTickerBlockEntity$RequestMenuProvider", true, cl);
                     MenuProvider prov = (MenuProvider) provClass.getConstructor(be.getClass()).newInstance(be);
-                    player.openMenu(prov, buf -> buf.writeBlockPos(rig));
+                    player.openMenu(prov, buf -> {
+                        buf.writeBoolean(false);
+                        buf.writeBoolean(false);
+                        buf.writeBlockPos(rig);
+                    });
                     return true;
                 }
                 case "create:factory_panel_set_item" -> {
                     BlockEntity be = level.getBlockEntity(rig);
+                    if (be == null) {
+                        place(level, player, rig, menuId, null);
+                        be = level.getBlockEntity(rig);
+                    }
+                    if (be == null) {
+                        return false;
+                    }
                     Class<?> slotClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlock$PanelSlot", true, cl);
                     Object panelSlot = slotClass.getEnumConstants()[0];
-                    if (be != null) {
-                        try {
-                            Method addPanel = be.getClass().getMethod("addPanel", slotClass, java.util.UUID.class);
-                            addPanel.invoke(be, panelSlot, player.getUUID());
-                        } catch (Throwable ignored) {}
+                    Field panelsField = be.getClass().getField("panels");
+                    Map<?, ?> panels = (Map<?, ?>) panelsField.get(be);
+                    Object beh = panels.get(panelSlot);
+                    if (beh == null && !panels.isEmpty()) {
+                        beh = panels.values().iterator().next();
                     }
+                    if (beh == null) {
+                        return false;
+                    }
+                    beh.getClass().getMethod("enable").invoke(beh);
+                    beh.getClass().getMethod("setNetwork", java.util.UUID.class).invoke(beh, player.getUUID());
+                    be.setChanged();
+                    level.sendBlockUpdated(rig, be.getBlockState(), be.getBlockState(), 3);
+
                     Class<?> posClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelPosition", true, cl);
                     Object panelPos = posClass.getConstructor(BlockPos.class, slotClass).newInstance(rig, panelSlot);
                     Class<?> behClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBehaviour", true, cl);
-                    Object beh = behClass.getMethod("at", BlockAndTintGetter.class, posClass).invoke(null, level, panelPos);
-                    if (beh == null) {
-                        return false;
-                    }
                     Class<?> menuClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelSetItemMenu", true, cl);
                     Method createMethod = menuClass.getMethod("create", int.class,
@@ -372,10 +416,11 @@ public final class SpecializedOpeners {
                     net.minecraft.network.codec.StreamCodec codec =
                             (net.minecraft.network.codec.StreamCodec) posClass.getField("STREAM_CODEC").get(null);
 
+                    final Object panelBeh = beh;
                     MenuProvider prov = new SimpleMenuProvider(
                             (id, inv, p) -> {
                                 try {
-                                    return (AbstractContainerMenu) createMethod.invoke(null, id, inv, beh);
+                                    return (AbstractContainerMenu) createMethod.invoke(null, id, inv, panelBeh);
                                 } catch (Exception e) {
                                     throw new RuntimeException(e);
                                 }
@@ -399,6 +444,7 @@ public final class SpecializedOpeners {
                             stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("ae2:network_tool")));
                             player.setItemInHand(InteractionHand.MAIN_HAND, stack);
                         }
+                        player.inventoryMenu.broadcastChanges();
                         Object locator = locatorsClass.getMethod("forHand", Player.class, InteractionHand.class)
                                 .invoke(null, player, InteractionHand.MAIN_HAND);
                         openMethod.invoke(null, type, player, locator);

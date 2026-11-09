@@ -371,6 +371,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (s == null) {
             return "no screen open";
         }
+        java.util.Arrays.fill(s.held, null);
+        s.cursor = null;
+        player.getInventory().clear();
+        s.pieces = null;
         if (s.scene.captured() != null && s.scene.captured().states().containsKey(i)) {
             s.pieces = s.scene.captured().states().get(i);
         }
@@ -411,15 +415,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         GuiCaptures.Slot at = s.capture.slots().get(m[1]);
         s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
-        if (s.scene.captured() != null && s.scene.captured().movePieces() != null) {
+        if (s.scene.captured() != null && s.scene.captured().movePieces() != null && !s.scene.captured().movePieces().isEmpty()) {
             s.pieces = s.scene.captured().movePieces();
             player.getInventory().clear();
+            s.cursor = null;
         } else {
-            for (int slot : m) {
-                GuiCaptures.Slot st = s.capture.slots().get(slot);
-                s.pointer.moveTo(s.originX + st.x() + 8, s.originY + st.y() + 8);
-                click(player, "left");
+            boolean accepted = m.length <= 2 || m[2] != 0;
+            if (accepted) {
+                s.held[m[1]] = new ItemStack(org.bukkit.Material.DIAMOND, 5);
             }
+            player.getInventory().clear();
+            s.cursor = null;
         }
         return "moved " + m[0] + " to " + m[1];
     }
@@ -527,7 +533,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             frame.free(x, y, String.valueOf(piece.glyph()), piece.w() + 1);
         }
         if (s.capture != null) {
-            if (s.capture.title() != null) {
+            if (s.capture.title() != null && s.scene.captured() == null) {
                 // A centring screen uses Create's convention: on (width - 8) / 2, near the top.
                 int w = HudText.width(s.capture.title());
                 boolean centered = s.scene.titleCentered();
@@ -548,7 +554,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }
-                    drawItem(frame, x, y, slotItem(player, s, i));
+                    if (s.scene.captured() == null) {
+                        drawItem(frame, x, y, slotItem(player, s, i));
+                    } else if (s.held[i] != null && s.pieces == null) {
+                        drawItem(frame, x, y, s.held[i]);
+                    }
                     if (i == hover) {
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }

@@ -120,7 +120,11 @@ public final class ScreenPack {
                         .append(s.captured().originY()).append('\n');
                 if (s.captured().move() != null) {
                     out.append("move\t").append(s.captured().move()[0]).append('\t')
-                            .append(s.captured().move()[1]).append('\n');
+                            .append(s.captured().move()[1]);
+                    if (s.captured().move().length > 2) {
+                        out.append('\t').append(s.captured().move()[2]);
+                    }
+                    out.append('\n');
                 }
                 if (s.captured().movePieces() != null) {
                     for (Piece q : s.captured().movePieces()) {
@@ -173,9 +177,12 @@ public final class ScreenPack {
             } else if (p[0].equals("move")) {
                 Scene last = out.remove(out.size() - 1);
                 Captured c = last.captured();
+                int[] m = p.length > 3
+                        ? new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3])}
+                        : new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2]), 1};
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])}, c.movePieces())));
+                        m, c.movePieces())));
             } else if (p[0].equals("mpiece")) {
                 Captured c = out.get(out.size() - 1).captured();
                 if (c != null && c.movePieces() != null) {
@@ -541,7 +548,8 @@ public final class ScreenPack {
                 for (String line : Files.readAllLines(presses, StandardCharsets.UTF_8)) {
                     String[] q = line.split("\t");
                     if (q[0].equals("move") && move == null) {
-                        move = new int[]{Integer.parseInt(q[1]), Integer.parseInt(q[2])};
+                        boolean accepted = q.length > 3 ? Boolean.parseBoolean(q[3]) : true;
+                        move = new int[]{Integer.parseInt(q[1]), Integer.parseInt(q[2]), accepted ? 1 : 0};
                         Path moveArt = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".move.png"));
                         if (Files.isRegularFile(moveArt)) {
                             BufferedImage moveImage = ImageIO.read(moveArt.toFile());
