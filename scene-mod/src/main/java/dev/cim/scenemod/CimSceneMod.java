@@ -123,6 +123,9 @@ public final class CimSceneMod {
         NeoForge.EVENT_BUS.addListener(this::registerCommands);
         NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
         NeoForge.EVENT_BUS.addListener(this::onServerTickPost);
+        if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+            NeoForge.EVENT_BUS.addListener(this::onClientTickPost);
+        }
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()
                 && System.getProperty("cim.quaddump") != null) {
             QuadDump.register();
@@ -2501,6 +2504,52 @@ public final class CimSceneMod {
                 t.task().run();
             } catch (RuntimeException ex) {
                 LOGGER.error("[cimscene] delayed task failed: {}", ex.toString());
+            }
+        }
+    }
+
+    /** Receipt flag: the first client-side unfreeze logs once per join. */
+    private static boolean CLIENT_UNFREEZE_SEEN = false;
+
+    /**
+     * 14-dk THE CLIENT KEEPS TICKING — the freeze stays server-authoritative.
+     * The vanilla freeze broadcast ({@code ClientboundTickingStatePacket})
+     * gates the JOINED CLIENT's whole tick on the runsNormally flag — and the
+     * frozen client destroyed the walk's shots (measured run #308, the 14-di
+     * freeze run: NET -303 = FIXED 22 / NEW 325, 747 RED / 28044 states =
+     * 97.34% vs #307's 98.42%): the frozen client never finished the page's
+     * mesh catch-up (llvmpipe needs seconds per page; the freeze landed ~50ms
+     * after placement at tick rate 1000 — the shots carry half-built sections),
+     * the placement/break particles NEVER died (particleEngine.tick gated —
+     * they hang in the shots as frozen black squares over the wall, the
+     * biomesoplenty p43 fence-gate page measured 22/25 RED on them alone),
+     * the client-side render-state lerps (the sliding doors' 13/16 slide, the
+     * nixie text fades) froze mid-animation against the pack's settled
+     * composites, and the gate's t0/t1 self-pairs became identical so the
+     * ANIMATED excuse died for the dyn rows (the fluid class lost its escape).
+     *
+     * <p>The instrument is the SERVER's animation state only: BE tickers,
+     * scheduled block/fluid ticks, entity AI and the day clock gate on the
+     * SERVER's runsNormally and stay pinned (the churn band stays dead — the
+     * fluix_wall family's 12 states measured FIXED on #308). The client's own
+     * tick-rate manager is forced unfrozen every tick, so meshing, particles,
+     * the render lerps and the mcmeta residual behave exactly as they did in
+     * the measured-good pre-freeze walks. The client's manager never
+     * broadcasts, so the local flip cannot leak back to the server, and the
+     * broadcast packet fires only on a server-side flip (once per page) — the
+     * override re-arms every tick it is received.
+     */
+    private void onClientTickPost(net.neoforged.neoforge.event.tick.ClientTickEvent.Post event) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null) {
+            CLIENT_UNFREEZE_SEEN = false;
+            return;
+        }
+        if (mc.level.tickRateManager().isFrozen()) {
+            mc.level.tickRateManager().setFrozen(false);
+            if (!CLIENT_UNFREEZE_SEEN) {
+                CLIENT_UNFREEZE_SEEN = true;
+                LOGGER.info("[cimscene] 14-dk client keeps ticking (the freeze stays server-authoritative)");
             }
         }
     }
