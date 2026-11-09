@@ -2539,7 +2539,7 @@ public final class CimSceneMod {
      * broadcast packet fires only on a server-side flip (once per page) — the
      * override re-arms every tick it is received.
      */
-    private void onClientTickPost(net.neoforged.neoforge.event.tick.ClientTickEvent.Post event) {
+    private void onClientTickPost(net.neoforged.neoforge.client.event.ClientTickEvent.Post event) {
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.level == null) {
             CLIENT_UNFREEZE_SEEN = false;
