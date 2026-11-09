@@ -71,6 +71,7 @@ public final class SpecializedOpeners {
 
     public static void place(ServerLevel level, ServerPlayer player, BlockPos rig, String menuId,
                              java.util.function.Consumer<Entity> onEntitySpawned) {
+        ClassLoader cl = Block.class.getClassLoader();
         try {
             switch (menuId) {
                 case "mekanism:crafting_robit", "mekanism:inventory_robit",
@@ -87,12 +88,51 @@ public final class SpecializedOpeners {
                 }
                 case "mekanism:digital_miner_config" ->
                     setBlock(level, rig, "mekanism:digital_miner");
-                case "mekanism:boiler_stats", "mekanism:thermoelectric_boiler" ->
+                case "mekanism:boiler_stats", "mekanism:thermoelectric_boiler" -> {
                     setBlock(level, rig, "mekanism:boiler_casing");
-                case "mekanism:thermal_evaporation_controller" ->
+                    BlockEntity be = level.getBlockEntity(rig);
+                    if (be != null) {
+                        try {
+                            Method getMultiblock = be.getClass().getMethod("getMultiblock");
+                            Object mb = getMultiblock.invoke(be);
+                            mb.getClass().getMethod("setFormedForce", boolean.class).invoke(mb, true);
+                            try {
+                                mb.getClass().getField("renderLocation").set(mb, rig);
+                            } catch (Throwable ignored) {}
+                            try {
+                                mb.getClass().getField("upperRenderLocation").set(mb, rig);
+                            } catch (Throwable ignored) {}
+                        } catch (Throwable ignored) {}
+                    }
+                }
+                case "mekanism:thermal_evaporation_controller" -> {
                     setBlock(level, rig, "mekanism:thermal_evaporation_controller");
-                case "mekanism:sps_casing" ->
+                    BlockEntity be = level.getBlockEntity(rig);
+                    if (be != null) {
+                        try {
+                            Method getMultiblock = be.getClass().getMethod("getMultiblock");
+                            Object mb = getMultiblock.invoke(be);
+                            mb.getClass().getMethod("setFormedForce", boolean.class).invoke(mb, true);
+                            try {
+                                mb.getClass().getField("renderLocation").set(mb, rig);
+                            } catch (Throwable ignored) {}
+                        } catch (Throwable ignored) {}
+                    }
+                }
+                case "mekanism:sps_casing" -> {
                     setBlock(level, rig, "mekanism:sps_casing");
+                    BlockEntity be = level.getBlockEntity(rig);
+                    if (be != null) {
+                        try {
+                            Method getMultiblock = be.getClass().getMethod("getMultiblock");
+                            Object mb = getMultiblock.invoke(be);
+                            mb.getClass().getMethod("setFormedForce", boolean.class).invoke(mb, true);
+                            try {
+                                mb.getClass().getField("renderLocation").set(mb, rig);
+                            } catch (Throwable ignored) {}
+                        } catch (Throwable ignored) {}
+                    }
+                }
                 case "mekanism:seismic_reader" ->
                     player.setItemInHand(InteractionHand.MAIN_HAND,
                             new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("mekanism:seismic_reader"))));
@@ -103,8 +143,21 @@ public final class SpecializedOpeners {
                     setBlock(level, rig, "sophisticatedbackpacks:backpack");
                 case "create:stock_keeper_category", "create:stock_keeper_request" ->
                     setBlock(level, rig, "create:stock_ticker");
-                case "create:factory_panel_set_item" ->
+                case "create:factory_panel_set_item" -> {
                     setBlock(level, rig, "create:factory_panel");
+                    BlockEntity be = level.getBlockEntity(rig);
+                    if (be != null) {
+                        try {
+                            Class<?> slotClass = Class.forName(
+                                    "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlock$PanelSlot", true, cl);
+                            Object panelSlot = slotClass.getEnumConstants()[0];
+                            Method addPanel = be.getClass().getMethod("addPanel", slotClass, java.util.UUID.class);
+                            addPanel.invoke(be, panelSlot, player.getUUID());
+                        } catch (Throwable t) {
+                            LOGGER.info("[cimscene] place factory_panel addPanel note: {}", t.toString());
+                        }
+                    }
+                }
                 case "ae2:basic_cell_chest", "ae2:craftamount", "ae2:craftconfirm" ->
                     setBlock(level, rig, "ae2:chest");
                 case "ae2:craftingcpu" ->
@@ -181,6 +234,14 @@ public final class SpecializedOpeners {
                     Method getMultiblock = be.getClass().getMethod("getMultiblock");
                     Object mb = getMultiblock.invoke(be);
                     mb.getClass().getMethod("setFormedForce", boolean.class).invoke(mb, true);
+                    try {
+                        mb.getClass().getField("renderLocation").set(mb, rig);
+                    } catch (Throwable ignored) {
+                    }
+                    try {
+                        mb.getClass().getField("upperRenderLocation").set(mb, rig);
+                    } catch (Throwable ignored) {
+                    }
 
                     Class<?> tileBtnClass = Class.forName(
                             "mekanism.common.network.to_server.button.PacketTileButtonPress$ClickedTileButton", true, cl);
@@ -196,6 +257,14 @@ public final class SpecializedOpeners {
                     Method getMultiblock = be.getClass().getMethod("getMultiblock");
                     Object mb = getMultiblock.invoke(be);
                     mb.getClass().getMethod("setFormedForce", boolean.class).invoke(mb, true);
+                    try {
+                        mb.getClass().getField("renderLocation").set(mb, rig);
+                    } catch (Throwable ignored) {
+                    }
+                    try {
+                        mb.getClass().getField("upperRenderLocation").set(mb, rig);
+                    } catch (Throwable ignored) {
+                    }
                     Method openGui = be.getClass().getMethod("openGui", Player.class);
                     openGui.invoke(be, player);
                     return true;
@@ -277,15 +346,25 @@ public final class SpecializedOpeners {
                     return true;
                 }
                 case "create:factory_panel_set_item" -> {
+                    BlockEntity be = level.getBlockEntity(rig);
                     Class<?> slotClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBlock$PanelSlot", true, cl);
                     Object panelSlot = slotClass.getEnumConstants()[0];
+                    if (be != null) {
+                        try {
+                            Method addPanel = be.getClass().getMethod("addPanel", slotClass, java.util.UUID.class);
+                            addPanel.invoke(be, panelSlot, player.getUUID());
+                        } catch (Throwable ignored) {}
+                    }
                     Class<?> posClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelPosition", true, cl);
                     Object panelPos = posClass.getConstructor(BlockPos.class, slotClass).newInstance(rig, panelSlot);
                     Class<?> behClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelBehaviour", true, cl);
                     Object beh = behClass.getMethod("at", BlockAndTintGetter.class, posClass).invoke(null, level, panelPos);
+                    if (beh == null) {
+                        return false;
+                    }
                     Class<?> menuClass = Class.forName(
                             "com.simibubi.create.content.logistics.factoryBoard.FactoryPanelSetItemMenu", true, cl);
                     Method createMethod = menuClass.getMethod("create", int.class,
