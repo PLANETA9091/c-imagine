@@ -6,7 +6,7 @@ name: menus
 
 on:
   push:
-    branches: [ci/menu-compare-2]
+    branches: [ci/menu-compare-2, ci/menu-100-green]
     paths:
       - 'paper-plugin/**'
       - 'scene-mod/**'

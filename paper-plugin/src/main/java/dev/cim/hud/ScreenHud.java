@@ -371,6 +371,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (s == null) {
             return "no screen open";
         }
+        if (s.scene.captured() != null && s.scene.captured().states().containsKey(i)) {
+            s.pieces = s.scene.captured().states().get(i);
+        }
         ScreenPack.Widget w = null;
         int widgetIndex = -1;
         for (int wi = 0; wi < s.scene.widgets().size(); wi++) {
@@ -385,21 +388,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             w = s.scene.widgets().get(i);
             widgetIndex = i;
         }
-        if (w == null) {
-            return "no widget " + i;
-        }
-        s.pointer.moveTo(s.originX + w.x() + w.w() / 2, s.originY + w.y() + w.h() / 2);
-        if (s.scene.captured() != null) {
-            if (s.scene.captured().states().containsKey(i)) {
-                s.pieces = s.scene.captured().states().get(i);
-            } else if (s.scene.captured().states().containsKey(widgetIndex)) {
+        if (s.scene.captured() != null && s.pieces == null && widgetIndex >= 0) {
+            if (s.scene.captured().states().containsKey(widgetIndex)) {
                 s.pieces = s.scene.captured().states().get(widgetIndex);
             }
+        }
+        if (w != null) {
+            s.pointer.moveTo(s.originX + w.x() + w.w() / 2, s.originY + w.y() + w.h() / 2);
         }
         if (s.live && live != null) {
             click(player, "left");
         }
-        return "pressed " + w.label();
+        return w != null ? "pressed " + w.label() : "pressed " + i;
     }
 
     /** Harness: the slot move the real client made, done the way two clicks do it. */
@@ -413,6 +413,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
         if (s.scene.captured() != null && s.scene.captured().movePieces() != null) {
             s.pieces = s.scene.captured().movePieces();
+            player.getInventory().clear();
         } else {
             for (int slot : m) {
                 GuiCaptures.Slot st = s.capture.slots().get(slot);
