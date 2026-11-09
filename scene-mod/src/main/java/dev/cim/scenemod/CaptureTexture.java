@@ -7,6 +7,8 @@ import java.util.regex.Pattern;
 final class CaptureTexture {
     private static final Pattern TEXTURE =
             Pattern.compile("Optional\\[([a-z0-9_.-]+):([a-z0-9_./-]+\\.png)\\]");
+    private static final Pattern ANY_LOCATION =
+            Pattern.compile("Optional\\[([a-z0-9_.-]+:[a-z0-9_./-]+)\\]");
 
     private CaptureTexture() {
     }
@@ -36,5 +38,21 @@ final class CaptureTexture {
             return null;
         }
         return match.group(1) + ":" + match.group(2);
+    }
+
+    /**
+     * 14-dg: any Optional[...] location, not just the .png jar resources.
+     * The font glyph atlases register WITHOUT an extension (FontSet.stitch
+     * registers {@code minecraft:<font>/<n>}, e.g. minecraft:default/0), so
+     * {@link #resourceFromRenderState} misses every text RenderType and the
+     * glyph quads dropped at the sprite search. Null when no location token
+     * is present.
+     */
+    static String optionalLocation(String state) {
+        Matcher match = ANY_LOCATION.matcher(state);
+        if (!match.find()) {
+            return null;
+        }
+        return match.group(1);
     }
 }

@@ -4,14 +4,19 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.util.FastColor;
+import org.lwjgl.opengl.GL11;
 import net.minecraft.client.renderer.BiomeColors;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -98,10 +103,15 @@ final class QuadDump {
     private static int berDrawn;
     private static int berNotRendered;
     private static int berFailed;
+    private static int berForeign;
     private static int berNoLevel;
     private static int waited;
     private static Path capturedTextures;
     private static final Map<TextureAtlasSprite, String> capturedSpriteNames = new IdentityHashMap<>();
+    // 14-dg: the runtime-registered textures the replay cannot know (the font
+    // glyph atlases — the nixie text quads' texture) read back once to a
+    // captured png and every consumer row references it by the ~hash name.
+    private static final Map<AbstractTexture, String> capturedTextureNames = new IdentityHashMap<>();
 
     private QuadDump() {
     }
@@ -312,10 +322,11 @@ final class QuadDump {
         }
         Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
         dumpItems(scenes, out, sprites);
-        LOGGER.info("[cimscene] quad dump captured_atlas_sprites={}", capturedSpriteNames.size());
+        LOGGER.info("[cimscene] quad dump captured_atlas_sprites={} captured_textures={}",
+                capturedSpriteNames.size(), capturedTextureNames.size());
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
-                        + "block_entities drawn={} failed={} no_level={} not_rendered={}",
-                cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel, berNotRendered);
+                        + "block_entities drawn={} failed={} foreign={} no_level={} not_rendered={}",
+                cells, dumped, rows.size(), failed, berDrawn, berFailed, berForeign, berNoLevel, berNotRendered);
     }
 
     /** Native liquid vertices use chunk-local coordinates on each axis. */
@@ -416,6 +427,7 @@ final class QuadDump {
             renderer.render(be, 0, new PoseStack(), capture, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
             capture.flush();
             out.append(capture.out);
+            berForeign += capture.foreign;
             if (capture.out.length() > 0) {
                 berDrawn++;
             }
@@ -594,6 +606,89 @@ final class QuadDump {
         } catch (Exception failure) {
             throw new IllegalStateException("Cannot capture atlas sprite " + sprite.contents().name(), failure);
         }
+    }
+
+    /**
+     * 14-dg: read a runtime-registered texture back from the GL — the font
+     * glyph atlases exist ONLY on the GPU (FontTexture uploads each glyph via
+     * SheetGlyphInfo and keeps no NativeImage), so no object graph can reach
+     * their pixels. The readback lands as a captured png under the ~hash name
+     * (the capturedSprite convention the pack already hosts). An intensity
+     * (single-channel) atlas carries the glyph COVERAGE in red: it ships as a
+     * white RGBA texture with the coverage in alpha, so the replay's shader
+     * (texture x vertexColor) reproduces the font shader's coverage alpha —
+     * the nixie text renders the per-character color the renderer recorded.
+     * Colored atlases pass through unchanged. Null (the honest drop, counted
+     * foreign) when the readback fails for any reason.
+     */
+    private static String capturedTexture(AbstractTexture texture) {
+        String existing = capturedTextureNames.get(texture);
+        if (existing != null) {
+            return existing;
+        }
+        if (texture == MissingTextureAtlasSprite.getTexture()) {
+            return null;
+        }
+        try {
+            boolean colored = coloredTexture(texture);
+            texture.bind();
+            int width = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH);
+            int height = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT);
+            if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+                throw new IllegalStateException("bad texture size " + width + "x" + height);
+            }
+            java.nio.ByteBuffer pixels = java.nio.ByteBuffer.allocateDirect(
+                    width * height * (colored ? 4 : 1)).order(java.nio.ByteOrder.nativeOrder());
+            GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0,
+                    colored ? GL11.GL_RGBA : GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, pixels);
+            pixels.rewind();
+            NativeImage image = new NativeImage(width, height, false);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    if (colored) {
+                        int r = pixels.get() & 255;
+                        int g = pixels.get() & 255;
+                        int b = pixels.get() & 255;
+                        int a = pixels.get() & 255;
+                        image.setPixelRGBA(x, y, FastColor.ABGR32.color(a, b, g, r));
+                    } else {
+                        int coverage = pixels.get() & 255;
+                        image.setPixelRGBA(x, y, FastColor.ABGR32.color(coverage, 255, 255, 255));
+                    }
+                }
+            }
+            byte[] png = image.asByteArray();
+            image.close();
+            String hash = sha(Base64.getEncoder().encodeToString(png));
+            Files.createDirectories(capturedTextures);
+            Files.write(capturedTextures.resolve(hash + ".png"), png);
+            String name = "~" + hash;
+            capturedTextureNames.put(texture, name);
+            LOGGER.info("[cimscene] captured runtime texture {}x{} colored={} -> {}",
+                    width, height, colored, name);
+            return name;
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] texture capture failed {}: {}", texture, t.toString());
+            return null;
+        }
+    }
+
+    /** The FontTexture colored flag decides the readback format (RED vs RGBA). */
+    private static boolean coloredTexture(AbstractTexture texture) {
+        for (Class<?> c = texture.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField("colored");
+                if (f.getType() == boolean.class) {
+                    f.setAccessible(true);
+                    return f.getBoolean(texture);
+                }
+            } catch (NoSuchFieldException ignored) {
+                // walk up
+            } catch (Throwable t) {
+                break;
+            }
+        }
+        return false;
     }
 
     /** One quad row; {@code uv} is 0..1 across the named sprite or texture. */
@@ -777,6 +872,24 @@ final class QuadDump {
                         direct = null;
                         atlasSprites = new ArrayList<>(atlas.getTextures().values());
                         customAtlas = true;
+                    }
+                } else if (direct == null) {
+                    // 14-dg: the text render types name their glyph atlas WITHOUT a
+                    // .png suffix (FontSet.stitch registers minecraft:<font>/<n>),
+                    // the TEXTURE regex misses it, and the incremental glyph quads
+                    // dropped at the sprite search (the nixie text-gap class). The
+                    // atlas exists only on the GPU — read it back once to a ~png.
+                    String loc = CaptureTexture.optionalLocation(state);
+                    if (loc != null && !loc.endsWith(".png")) {
+                        var bound = Minecraft.getInstance().getTextureManager()
+                                .getTexture(ResourceLocation.parse(loc), null);
+                        if (bound instanceof TextureAtlas atlas) {
+                            direct = null;
+                            atlasSprites = new ArrayList<>(atlas.getTextures().values());
+                            customAtlas = true;
+                        } else {
+                            direct = capturedTexture(bound);
+                        }
                     }
                 }
                 texture = direct;

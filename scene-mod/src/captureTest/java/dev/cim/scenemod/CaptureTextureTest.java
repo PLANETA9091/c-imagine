@@ -18,7 +18,19 @@ public final class CaptureTextureTest {
         if (CaptureTexture.fromRenderState("texture[Optional.empty]") != null) {
             throw new AssertionError("unbound texture");
         }
-        System.out.println("capture texture tests: ALL OK (8 cases)");
+        // 14-dg: the font glyph atlases register WITHOUT a .png suffix
+        // (FontSet.stitch: minecraft:<font>/<n>) — optionalLocation resolves
+        // any Optional[...] location, the .png contract stays intact.
+        checkLocation("minecraft:default/0",
+                "text_intensity[texture[Optional[minecraft:default/0]]]");
+        checkLocation("minecraft:default/1",
+                "text[texture[Optional[minecraft:default/1]]]");
+        checkLocation("create:nixie_font/0",
+                "text_see_through[texture[Optional[create:nixie_font/0]]]");
+        checkLocation(null, "entity_solid[texture[Optional.empty]]");
+        checkLocation("mod:textures/entity/gear.png",
+                "entity_solid[texture[Optional[mod:textures/entity/gear.png]]]");
+        System.out.println("capture texture tests: ALL OK (13 cases)");
     }
 
     private static void check(String expected, String resource) {
@@ -26,6 +38,13 @@ public final class CaptureTextureTest {
                 "entity_solid[texture[Optional[" + resource + "](blur=false, mipmap=false)]]");
         if (!java.util.Objects.equals(expected, actual)) {
             throw new AssertionError(resource + ": expected " + expected + ", got " + actual);
+        }
+    }
+
+    private static void checkLocation(String expected, String state) {
+        String actual = CaptureTexture.optionalLocation(state);
+        if (!java.util.Objects.equals(expected, actual)) {
+            throw new AssertionError(state + ": expected " + expected + ", got " + actual);
         }
     }
 }
