@@ -58,10 +58,10 @@ public final class ScreenPack {
     /**
      * {@code states} holds what the screen looked like after each recorded press, by widget
      * index: a recording of the real mod's screen, not its logic. {@code move} is the slot
-     * move the real client made first, or null.
+     * move the real client made first, or null. {@code movePieces} is the visual state after move.
      */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
-                           Map<Integer, List<Piece>> states, int[] move) {
+                           Map<Integer, List<Piece>> states, int[] move, List<Piece> movePieces) {
     }
 
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
@@ -122,6 +122,13 @@ public final class ScreenPack {
                     out.append("move\t").append(s.captured().move()[0]).append('\t')
                             .append(s.captured().move()[1]).append('\n');
                 }
+                if (s.captured().movePieces() != null) {
+                    for (Piece q : s.captured().movePieces()) {
+                        out.append("mpiece\t").append((int) q.glyph()).append('\t')
+                                .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
+                                .append(q.h()).append('\n');
+                    }
+                }
                 for (var st : s.captured().states().entrySet()) {
                     for (Piece q : st.getValue()) {
                         out.append("spiece\t").append(st.getKey()).append('\t').append((int) q.glyph()).append('\t')
@@ -162,13 +169,19 @@ public final class ScreenPack {
                 Scene last = out.remove(out.size() - 1);
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>(),
-                        new HashMap<>(), null)));
+                        new HashMap<>(), null, new ArrayList<>())));
             } else if (p[0].equals("move")) {
                 Scene last = out.remove(out.size() - 1);
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])})));
+                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])}, c.movePieces())));
+            } else if (p[0].equals("mpiece")) {
+                Captured c = out.get(out.size() - 1).captured();
+                if (c != null && c.movePieces() != null) {
+                    c.movePieces().add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                            Integer.parseInt(p[4]), Integer.parseInt(p[5]), false));
+                }
             } else if (p[0].equals("spiece")) {
                 out.get(out.size() - 1).captured().states().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
@@ -521,6 +534,7 @@ public final class ScreenPack {
             List<Widget> widgets = new ArrayList<>();
             Map<Integer, List<Piece>> states = new HashMap<>();
             int[] move = null;
+            List<Piece> movePieces = null;
             Path presses = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".presses"));
             if (Files.isRegularFile(presses)) {
                 // What the real client pressed is the exact list of controls, in order.
@@ -528,14 +542,24 @@ public final class ScreenPack {
                     String[] q = line.split("\t");
                     if (q[0].equals("move") && move == null) {
                         move = new int[]{Integer.parseInt(q[1]), Integer.parseInt(q[2])};
+                        Path moveArt = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".move.png"));
+                        if (Files.isRegularFile(moveArt)) {
+                            BufferedImage moveImage = ImageIO.read(moveArt.toFile());
+                            if (moveImage != null) {
+                                movePieces = captureTiles(opaque(moveImage), scale, left, top, art2, heights);
+                            }
+                        }
                     } else if (q[0].equals("press")) {
                         int i = widgets.size();
+                        int targetId = Integer.parseInt(q[1]);
                         widgets.add(new Widget(Integer.parseInt(q[2]), Integer.parseInt(q[3]), Integer.parseInt(q[4]),
-                                Integer.parseInt(q[5]), "press " + q[1]));
-                        Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
+                                Integer.parseInt(q[5]), "press " + targetId));
+                        Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + targetId + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
                         if (stateImage != null) {
-                            states.put(i, captureTiles(opaque(stateImage), scale, left, top, art2, heights));
+                            List<Piece> tiles = captureTiles(opaque(stateImage), scale, left, top, art2, heights);
+                            states.put(targetId, tiles);
+                            states.put(i, tiles);
                         }
                     }
                 }
@@ -551,7 +575,7 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, movePieces)));
         }
     }
 

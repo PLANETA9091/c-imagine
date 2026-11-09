@@ -9,6 +9,7 @@ cargo-timing*.html
 java/cim-bootstrap/build/
 /test-mods/build/
 /scene-mod/build/
+/live-mod/build/
 
 # Vendored CRUSSTY SDK ships prebuilt bytecode helpers — keep them.
 # NOTE: negation only works when no parent dir is ignored, hence the

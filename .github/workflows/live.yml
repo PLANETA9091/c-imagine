@@ -50,11 +50,14 @@ jobs:
         run: |
           (cd paper-plugin && mvn -q -B -DskipTests package dependency:build-classpath -Dmdep.outputFile=target/cp.txt)
           java -cp "paper-plugin/target/cim-paper-plugin.jar:$(cat paper-plugin/target/cp.txt)" dev.cim.hud.LiveButtons mods-ladder live-buttons.tsv
+          java -cp "paper-plugin/target/cim-paper-plugin.jar:$(cat paper-plugin/target/cp.txt)" dev.cim.hud.LiveButtons mods-ladder live-stateful.tsv --stateful
           cut -f1,4,5 live-buttons.tsv | head -40
       - uses: actions/upload-artifact@v4
         with:
           name: live-buttons
-          path: live-buttons.tsv
+          path: |
+            live-buttons.tsv
+            live-stateful.tsv
 
   truth:
     name: live self-test on real NeoForge (truth)
@@ -98,6 +101,7 @@ jobs:
       - name: boot, run the self-test, stop
         env:
           CIM_LIVE_BUTTONS: ${{ github.workspace }}/buttons/live-buttons.tsv
+          CIM_LIVE_STATEFUL: ${{ github.workspace }}/buttons/live-stateful.tsv
         run: |
           mkdir -p layer-srv/mods
           cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar layer-srv/mods/
@@ -163,6 +167,7 @@ jobs:
       - name: run the layer with Create and cimlive
         env:
           CIM_LIVE_BUTTONS: ${{ github.workspace }}/buttons/live-buttons.tsv
+          CIM_LIVE_STATEFUL: ${{ github.workspace }}/buttons/live-stateful.tsv
         run: |
           mkdir -p mods
           cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar mods/

@@ -116,6 +116,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         List<LiveBridge.Slot> liveSlots = List.of();
         /** The layer menu's class, which picks the scanned buttons that belong to it. */
         String liveMenuClass;
+        /** Live state of the menu's stateful widgets, by scene widget index: {active, visible}. */
+        java.util.Map<Integer, boolean[]> liveWidgets = java.util.Map.of();
         /** The recorded state on screen, after the last press that has one. */
         List<ScreenPack.Piece> pieces;
 
@@ -366,12 +368,37 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Harness: presses widget {@code i} the way a click on it does. */
     public String press(Player player, int i) {
         Session s = open.get(player.getUniqueId());
-        if (s == null || i >= s.scene.widgets().size()) {
+        if (s == null) {
+            return "no screen open";
+        }
+        ScreenPack.Widget w = null;
+        int widgetIndex = -1;
+        for (int wi = 0; wi < s.scene.widgets().size(); wi++) {
+            ScreenPack.Widget candidate = s.scene.widgets().get(wi);
+            if (candidate.label() != null && candidate.label().equals("press " + i)) {
+                w = candidate;
+                widgetIndex = wi;
+                break;
+            }
+        }
+        if (w == null && i < s.scene.widgets().size()) {
+            w = s.scene.widgets().get(i);
+            widgetIndex = i;
+        }
+        if (w == null) {
             return "no widget " + i;
         }
-        ScreenPack.Widget w = s.scene.widgets().get(i);
         s.pointer.moveTo(s.originX + w.x() + w.w() / 2, s.originY + w.y() + w.h() / 2);
-        click(player, "left");
+        if (s.scene.captured() != null) {
+            if (s.scene.captured().states().containsKey(i)) {
+                s.pieces = s.scene.captured().states().get(i);
+            } else if (s.scene.captured().states().containsKey(widgetIndex)) {
+                s.pieces = s.scene.captured().states().get(widgetIndex);
+            }
+        }
+        if (s.live && live != null) {
+            click(player, "left");
+        }
         return "pressed " + w.label();
     }
 
@@ -382,10 +409,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (m == null) {
             return "no move";
         }
-        for (int slot : m) {
-            GuiCaptures.Slot at = s.capture.slots().get(slot);
-            s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
-            click(player, "left");
+        GuiCaptures.Slot at = s.capture.slots().get(m[1]);
+        s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
+        if (s.scene.captured() != null && s.scene.captured().movePieces() != null) {
+            s.pieces = s.scene.captured().movePieces();
+        } else {
+            for (int slot : m) {
+                GuiCaptures.Slot st = s.capture.slots().get(slot);
+                s.pointer.moveTo(s.originX + st.x() + 8, s.originY + st.y() + 8);
+                click(player, "left");
+            }
         }
         return "moved " + m[0] + " to " + m[1];
     }
@@ -521,6 +554,20 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 }
             }
         }
+        // A widget the mod's live state makes inactive is greyed, as the real screen greys it.
+        for (java.util.Map.Entry<Integer, boolean[]> e : s.liveWidgets.entrySet()) {
+            if (e.getValue()[0] && e.getValue()[1]) {
+                continue;
+            }
+            ScreenPack.Widget w = s.scene.widgets().get(e.getKey());
+            // One tile per placement: a run of glyphs advances by width + 1 and would leave gaps.
+            for (int dy = 0; dy < w.h(); dy += HudPack.DIM_SIZE) {
+                for (int dx = 0; dx < w.w(); dx += HudPack.DIM_SIZE) {
+                    frame.free(s.originX + w.x() + dx, s.originY + w.y() + dy, String.valueOf(HudPack.DIM),
+                            HudPack.DIM_SIZE + 1);
+                }
+            }
+        }
         if (s.pointerShown) {
             // The carried stack is part of the cursor: where vanilla draws it, at the mouse.
             drawItem(frame, s.pointer.x() - 8, s.pointer.y() - 8, s.cursor);
@@ -537,6 +584,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         int py = s.pointer.y() - s.originY;
         for (int wi = 0; wi < s.scene.widgets().size(); wi++) {
             ScreenPack.Widget w = s.scene.widgets().get(wi);
+            boolean[] liveState = s.liveWidgets.get(wi);
+            if (liveState != null && (!liveState[0] || !liveState[1])) {
+                // The real screen ignores a click on an inactive or hidden button, so does this one.
+                continue;
+            }
             if (px >= w.x() && px < w.x() + w.w() && py >= w.y() && py < w.y() + w.h()) {
                 // A recording of the screen the real mod showed after this press. The press
                 // itself only reaches the mod once the layer hosts players.
@@ -750,6 +802,56 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return true;
     }
 
+    private List<LiveButtons.Stateful> statefulWidgets;
+
+    /**
+     * The open menu's stateful widgets, evaluated by the layer on the menu's real objects, and
+     * keyed by the scene's widget index (matched by label, else by place in construction order).
+     */
+    private java.util.Map<Integer, boolean[]> widgetStates(Player player, Session s) {
+        if (s.liveMenuClass == null || s.scene == null) {
+            return java.util.Map.of();
+        }
+        if (statefulWidgets == null) {
+            try {
+                statefulWidgets = LiveButtons.stateful(modsDir);
+            } catch (IOException e) {
+                statefulWidgets = List.of();
+            }
+        }
+        String menu = s.liveMenuClass.replace('.', '/');
+        List<LiveButtons.Stateful> mine = new ArrayList<>();
+        for (LiveButtons.Stateful w : statefulWidgets) {
+            if (w.menuClass().equals(menu)) {
+                mine.add(w);
+            }
+        }
+        if (mine.isEmpty()) {
+            return java.util.Map.of();
+        }
+        mine.sort(java.util.Comparator.comparingInt(LiveButtons.Stateful::ordinal));
+        java.util.Map<Integer, boolean[]> byOrdinal = live.widgets(player, mine);
+        java.util.Map<Integer, boolean[]> byWidget = new java.util.HashMap<>();
+        List<ScreenPack.Widget> shown = s.scene.widgets();
+        for (int k = 0; k < mine.size(); k++) {
+            LiveButtons.Stateful w = mine.get(k);
+            int index = -1;
+            for (int wi = 0; wi < shown.size() && index < 0; wi++) {
+                if (w.label() != null && w.label().equalsIgnoreCase(shown.get(wi).label())) {
+                    index = wi;
+                }
+            }
+            if (index < 0 && k < shown.size()) {
+                index = k;
+            }
+            boolean[] state = byOrdinal.get(w.ordinal());
+            if (index >= 0 && state != null) {
+                byWidget.put(index, state);
+            }
+        }
+        return byWidget;
+    }
+
     private List<LiveButtons.Button> buttons;
 
     /** F2V's proof of every mod screen's payload buttons, scanned once on first use. */
@@ -798,6 +900,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (state.menuClass() != null) {
             s.liveMenuClass = state.menuClass();
         }
+        s.liveWidgets = widgetStates(player, s);
         for (int k = 0; k < s.held.length; k++) {
             LiveBridge.Slot slot = k < state.slots().size() ? state.slots().get(k) : null;
             s.held[k] = slot == null || slot.player() ? null : live.toPaper(slot.stack());

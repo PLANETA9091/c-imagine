@@ -33,7 +33,62 @@ public final class LiveButtons {
         }
     }
 
+    /** A widget whose look the scan ties to live server state, for the menus its screen serves. */
+    public record Stateful(String menuClass, int ordinal, String label, String active, String visible) {
+    }
+
     private LiveButtons() {
+    }
+
+    /** Every stateful widget, per concrete menu class of its screen. */
+    public static List<Stateful> stateful(Path modsDir) throws IOException {
+        List<Path> jars;
+        try (Stream<Path> st = Files.list(modsDir)) {
+            jars = st.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
+        }
+        List<Stateful> out = new ArrayList<>();
+        for (Path jar : jars) {
+            ModScanner.Profile profile;
+            try {
+                profile = ModScanner.scan(jar);
+            } catch (Exception e) {
+                continue;
+            }
+            Map<String, List<String>> menuOf = menus(profile);
+            for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
+                for (ClientSurfaceScanner.Action a : surface.actions) {
+                    if ((a.widgetActivePredicate == null && a.widgetVisiblePredicate == null) || a.sourceScreen == null) {
+                        continue;
+                    }
+                    for (String menu : menuOf.getOrDefault(a.sourceScreen.replace('.', '/'), List.of())) {
+                        out.add(new Stateful(menu, a.widgetOrdinal, a.widgetLabel,
+                                a.widgetActivePredicate == null ? "" : a.widgetActivePredicate.toString(),
+                                a.widgetVisiblePredicate == null ? "" : a.widgetVisiblePredicate.toString()));
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    private static Map<String, List<String>> menus(ModScanner.Profile profile) {
+        Map<String, List<String>> menuOf = new HashMap<>();
+        for (ModScanner.ScreenInfo i : profile.screens) {
+            List<String> menus = new ArrayList<>();
+            if (i.menuClass != null) {
+                menus.add(i.menuClass.replace('.', '/'));
+            }
+            for (String m : i.menuClasses) {
+                String slashed = m.replace('.', '/');
+                if (!menus.contains(slashed)) {
+                    menus.add(slashed);
+                }
+            }
+            if (!menus.isEmpty()) {
+                menuOf.put(i.screenClass.replace('.', '/'), menus);
+            }
+        }
+        return menuOf;
     }
 
     public static List<Button> scan(Path modsDir) throws IOException {
@@ -123,8 +178,44 @@ public final class LiveButtons {
         return List.of(specs);
     }
 
+    /** Every widget whose look the scan ties to live server state: screen, ordinal, label, predicates. */
+    public static List<String> statefulWidgets(Path modsDir) throws IOException {
+        List<Path> jars;
+        try (Stream<Path> st = Files.list(modsDir)) {
+            jars = st.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
+        }
+        List<String> out = new ArrayList<>();
+        for (Path jar : jars) {
+            ModScanner.Profile profile;
+            try {
+                profile = ModScanner.scan(jar);
+            } catch (Exception e) {
+                continue;
+            }
+            for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
+                for (ClientSurfaceScanner.Action a : surface.actions) {
+                    if (a.widgetActivePredicate != null || a.widgetVisiblePredicate != null) {
+                        out.add(a.sourceScreen + "\t" + a.widgetOrdinal + "\t" + a.widgetLabel + "\tactive="
+                                + a.widgetActivePredicate + "\tvisible=" + a.widgetVisiblePredicate);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
     /** {@code LiveButtons <modsDir> <out.tsv>}: the button table the live self-test presses. */
     public static void main(String[] args) throws IOException {
+        if (args.length > 2 && args[2].equals("--stateful")) {
+            List<String> rows = new ArrayList<>();
+            for (Stateful w : stateful(Path.of(args[0]))) {
+                rows.add(String.join("\t", w.menuClass(), String.valueOf(w.ordinal()),
+                        w.label() == null ? "" : w.label().replace('\t', ' '), w.active(), w.visible()));
+            }
+            Files.write(Path.of(args[1]), rows, StandardCharsets.UTF_8);
+            System.out.println("stateful widgets: " + rows.size());
+            return;
+        }
         List<Button> buttons = scan(Path.of(args[0]));
         List<String> lines = new ArrayList<>();
         for (Button b : buttons) {

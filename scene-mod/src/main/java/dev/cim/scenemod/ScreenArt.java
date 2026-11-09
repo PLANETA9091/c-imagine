@@ -140,11 +140,20 @@ public final class ScreenArt {
                 id = "unknown";
             }
             name = id;
-            for (GuiEventListener child : screen.children()) {
-                if (child instanceof AbstractWidget w && w.visible && w.active && !(w instanceof EditBox)
-                        && targets.size() < CRAWL_MAX_WIDGETS) {
-                    targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2,
-                            w.getX(), w.getY(), w.getWidth(), w.getHeight()});
+            collectWidgets(screen, targets);
+        }
+
+        private void collectWidgets(GuiEventListener listener, List<int[]> targets) {
+            if (targets.size() >= CRAWL_MAX_WIDGETS) {
+                return;
+            }
+            if (listener instanceof AbstractWidget w && w.visible && w.active && !(w instanceof EditBox)) {
+                targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2,
+                        w.getX(), w.getY(), w.getWidth(), w.getHeight()});
+            }
+            if (listener instanceof net.minecraft.client.gui.components.events.ContainerEventHandler ceh) {
+                for (GuiEventListener child : ceh.children()) {
+                    collectWidgets(child, targets);
                 }
             }
         }

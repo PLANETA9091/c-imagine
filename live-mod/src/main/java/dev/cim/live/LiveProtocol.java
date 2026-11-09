@@ -87,6 +87,25 @@ public final class LiveProtocol {
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
                     yield state(player, LiveMenus.clickBlock(player, pos));
                 }
+                case "widgets" -> {
+                    // widgets TAB uuid, then one line per widget: ordinal TAB active-expr TAB visible-expr.
+                    // Answers each widget's live state on the open menu: ordinal TAB active TAB visible.
+                    SessionServerPlayer player = LiveMenus.session(id, "cimlive");
+                    net.minecraft.world.inventory.AbstractContainerMenu menu = player.opened();
+                    net.minecraft.core.BlockPos pos = BLOCKS.get(id);
+                    Object be = pos == null ? null : LiveMenus.level().getBlockEntity(pos);
+                    StringBuilder out = new StringBuilder();
+                    for (int k = 1; k < lines.length && menu != null; k++) {
+                        String[] w = lines[k].split("\t", -1);
+                        if (w.length < 3) {
+                            continue;
+                        }
+                        Boolean active = w[1].isEmpty() || w[1].equals("null") ? Boolean.TRUE : LivePredicates.eval(w[1], menu, be);
+                        Boolean visible = w[2].isEmpty() || w[2].equals("null") ? Boolean.TRUE : LivePredicates.eval(w[2], menu, be);
+                        out.append("widget\t").append(w[0]).append('\t').append(active).append('\t').append(visible).append('\n');
+                    }
+                    yield out.toString();
+                }
                 case "click" -> {
                     SessionServerPlayer player = LiveMenus.session(id, "cimlive");
                     LiveMenus.click(player, Integer.parseInt(head[2]), Integer.parseInt(head[3]),

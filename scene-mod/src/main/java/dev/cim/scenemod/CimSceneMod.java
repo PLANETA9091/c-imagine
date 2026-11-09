@@ -1705,7 +1705,12 @@ public final class CimSceneMod {
     /** Prepares what the opener acts on. Openers read {@code [sneak+][place+]kind:id}. */
     private static void guiPlace(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
         String plain = opener.replace("sneak+", "");
-        if (plain.startsWith("cube")) {
+        if (plain.startsWith("specialized:")) {
+            SpecializedOpeners.place(level, player, rig, plain.substring("specialized:".length()), e -> {
+                guiEntity = e;
+                GUI_SPAWNED.add(e);
+            });
+        } else if (plain.startsWith("cube")) {
             guiBuildCube(level, player, rig, plain);
         } else if (plain.startsWith("settle+use+item:")) {
             // The block first; the item is used once it has ticked (see guiActOnce).
@@ -1805,6 +1810,14 @@ public final class CimSceneMod {
      * only from one side, and twice, because some items claim an owner on the first use.
      */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        if (opener.startsWith("specialized:") || opener.startsWith("sneak+specialized:")) {
+            String spec = opener.replace("sneak+", "").substring("specialized:".length());
+            SpecializedOpeners.act(level, player, rig, spec, guiEntity);
+            if (player instanceof GuiProbe probe && probe.seen == null) {
+                probe.seen = ResourceLocation.parse(spec);
+            }
+            return;
+        }
         boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:")
                 || opener.contains("cube") || opener.contains("settle+use+item:");
         Direction[] faces = block
@@ -1923,6 +1936,11 @@ public final class CimSceneMod {
         List<String> both = new ArrayList<>(out);
         for (String each : out) {
             both.add("sneak+" + each);
+        }
+        for (String spec : SpecializedOpeners.MENUS) {
+            if (spec.startsWith(namespace + ":")) {
+                both.add("specialized:" + spec);
+            }
         }
         return both;
     }
@@ -2505,6 +2523,22 @@ public final class CimSceneMod {
             }
             if (guiOpenMenu(viewer) != null) {
                 how = "opened-by:" + opener;
+            }
+        }
+        if (how == null) {
+            String spec = id.toString();
+            if (SpecializedOpeners.isSpecialized(spec)) {
+                try {
+                    SpecializedOpeners.place(level, viewer, rig, spec, e -> {
+                        guiEntity = e;
+                        GUI_SPAWNED.add(e);
+                    });
+                    if (SpecializedOpeners.act(level, viewer, rig, spec, guiEntity) && guiOpenMenu(viewer) != null) {
+                        how = "opened-by:specialized:" + spec;
+                    }
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] finishGuiPage specialized fallback failed for {}: {}", spec, t.toString());
+                }
             }
         }
         if (how == null) {
