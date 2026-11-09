@@ -46,6 +46,43 @@ def read_manifest(path):
     return None if menu is None else (menu, opened, note, slots)
 
 
+def read_bounds(path):
+    """(left, top, xSize, ySize) in GUI coords from the art tsv, or None."""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                p = line.rstrip("\n").split("\t")
+                if p and p[0] == "bounds" and len(p) >= 5:
+                    return tuple(int(v) for v in p[1:5])
+    except OSError:
+        return None
+    return None
+
+
+def bound_mask(bounds, scale, size, margin=32):
+    """Framebuffer-pixel rect around the screen's own panel (plus a margin
+    so the widget tabs that hang off the panel edge stay judged). Menus that
+    draw their own full-screen dim inside render() (the Mekanism robit
+    family) otherwise make the art mask cover the whole frame, and the
+    worlds behind the two legs are not the same world — 627984 of 921600
+    pixels of backdrop noise judged as menu content."""
+    if not bounds:
+        return None
+    left, top, w, h = bounds
+    im = Image.new("L", size, 0)
+    d = ImageDraw.Draw(im)
+    x0 = max(0, (left - margin) * scale)
+    y0 = max(0, (top - margin) * scale)
+    x1 = min(size[0], (left + w + margin) * scale)
+    y1 = min(size[1], (top + h + margin) * scale)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    d.rectangle((x0, y0, x1 - 1, y1 - 1), fill=255)
+    return im
+
+
 def menu_box(frame_size, slots, scale):
     """Pixel rectangle of the menu, from its slots, centred on the frame."""
     if slots:
@@ -70,7 +107,7 @@ def art_mask(path, size):
     return solid.point(lambda v: 255 if v else 0)
 
 
-def compare(truth_path, ours_path, slots, scale, art=None):
+def compare(truth_path, ours_path, slots, scale, art=None, bounds=None):
     """Returns (differing pixels, total pixels, mask image), or None without both frames."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return None
@@ -80,6 +117,11 @@ def compare(truth_path, ours_path, slots, scale, art=None):
         return None
     mask = art_mask(art, truth.size)
     if mask is not None and mask.getbbox():
+        bm = bound_mask(bounds, scale, truth.size)
+        if bm is not None:
+            mask = ImageChops.multiply(mask, bm)
+        if not mask.getbbox():
+            return None
         r, g, b = ImageChops.difference(truth, ours).split()
         diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
         diff = ImageChops.multiply(diff, mask)
@@ -94,7 +136,7 @@ def compare(truth_path, ours_path, slots, scale, art=None):
     return red, diff.size[0] * diff.size[1], diff
 
 
-def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
+def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96, scale=3, bounds=None):
     """Full-resolution truth | ours | diff around where they differ, so a RED is readable."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return
@@ -106,6 +148,9 @@ def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
     diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
     mask = art_mask(art, truth.size)
     if mask is not None and mask.getbbox():
+        bm = bound_mask(bounds, scale, truth.size)
+        if bm is not None:
+            mask = ImageChops.multiply(mask, bm)
         diff = ImageChops.multiply(diff, mask)
     box = diff.getbbox()
     if not box:
@@ -173,7 +218,8 @@ def main():
             if a.stride and int(page) % a.stride[1] != a.stride[0] and note != "opened-by:crawl":
                 continue
             art = os.path.join(a.art, menu.replace(":", "_").replace("/", "_") + ".png") if a.art else None
-            result = compare(truth, ours, slots, a.scale, art)
+            bounds = read_bounds(art[:-4] + ".tsv") if art else None
+            result = compare(truth, ours, slots, a.scale, art, bounds)
             verdict, why = judge(menu, opened, note, result)
             name = menu.replace(":", "_")
             sheet = Image.new("RGB", (SHEET[0] * 3 + 8, SHEET[1] + LABEL), (70, 70, 70))
@@ -182,7 +228,7 @@ def main():
             sheet.paste(panel(result[2] if result else None, why, SHEET), (SHEET[0] * 2 + 8, 0))
             sheet.save(os.path.join(a.out, f"{name}.png"))
             if verdict == "RED" and result:
-                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"))
+                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"), scale=a.scale, bounds=bounds)
             with open(os.path.join(a.report, f"join-menu-{name}.json"), "w", encoding="utf-8") as f:
                 json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
                            "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
@@ -196,7 +242,7 @@ def main():
                 # since the world behind a menu is not the menu.
                 if state and not os.path.isfile(state):
                     state = art
-                res = compare(t, o, slots, a.scale, state)
+                res = compare(t, o, slots, a.scale, state, bounds)
                 v, w2 = judge(menu, True, note, res)
                 label = f"{menu} {'slot move' if tag == 'move' else 'press ' + tag[1:]}"
                 if v == "RED":
@@ -206,7 +252,7 @@ def main():
                     sheet.paste(panel(res[2] if res else None, w2, SHEET), (SHEET[0] * 2 + 8, 0))
                     sheet.save(os.path.join(a.out, f"{name}-{tag}.png"))
                     if res:
-                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"))
+                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"), scale=a.scale, bounds=bounds)
                 with open(os.path.join(a.report, f"join-menu-{name}-{tag}.json"), "w", encoding="utf-8") as f:
                     json.dump({"verdict": v, "cells": 1, "red": int(v == "RED"), "dynamic": 0, "skipped": 0,
                                "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)
