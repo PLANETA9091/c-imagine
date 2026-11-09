@@ -42,9 +42,18 @@ from PIL import Image
 
 LOW_SIGNAL = 40.0
 MIN_CONTENT_PX = 40
-DIM_LO, DIM_HI = 0.25, 0.82
+# 14-dh: the #304 verdict measured the #302-solved k as an OVERSHOOT — the
+# dim cluster caught the DARK INNER FEATURES (ratio ~0.42) while the real
+# casing mismatch sat at ~0.86, exactly in the dead zone between the old
+# DIM_HI 0.82 and MATCH_LO 0.88 (the entangloporter cells: ours303 mean 98.7
+# vs truth 85.1 = 0.86; the ring shipped 0.424 and crashed the render to
+# 46.5 = 1.83x too dark). The dim band now reaches the mild population and
+# the k family accepts a mild darkening; the cluster MEDIAN stays the
+# instrument (the dominant population wins the median, the minority dark
+# features stay a named residual).
+DIM_LO, DIM_HI = 0.25, 0.88
 MATCH_LO, MATCH_HI = 0.88, 1.15
-K_MIN, K_MAX = 0.30, 0.85
+K_MIN, K_MAX = 0.30, 0.92
 CHANNEL_SPREAD_MAX = 0.15
 MIN_DIM_PX = 60
 
@@ -116,9 +125,17 @@ def cell_ring(truth: np.ndarray, ours: np.ndarray, shift: tuple[int, int]):
     if n_dim < MIN_DIM_PX or n_dim < MIN_DIM_FRAC * n_content:
         return None, (f"dim cluster too small ({n_dim}/{n_content}, "
                       f"match {n_match})")
-    if n_match < n_dim * 0.5:
-        return None, (f"no matched frame population ({n_match} vs dim "
-                      f"{n_dim}) — not the ring class")
+    # 14-dh: the guard is now the DOMINANCE law (the #304 verdict measured the
+    # old guard as backwards): a STATE-level k multiplies every ambient row it
+    # cannot attribute, so it is only the honest instrument when the dim
+    # population DOMINATES the cell (the casing class, the uniform ambient
+    # gap). A matched MAJORITY with a dim minority (the entangloporter: dim
+    # 300 vs match 1888, the minority k 0.424 crashed 85% of the cell 2.1x
+    # too dark) is the contested-texture law — the residual stays named for a
+    # row-level instrument.
+    if n_match > n_dim:
+        return None, (f"matched majority ({n_match} vs dim {n_dim}) — "
+                      f"the dim minority is not a state-level class")
     k = np.nanmedian(ratio[dim], axis=0)
     if not np.all(np.isfinite(k)) or np.any(k < K_MIN) or np.any(k > K_MAX):
         return None, ("k out of family [" + str(K_MIN) + "," + str(K_MAX)
