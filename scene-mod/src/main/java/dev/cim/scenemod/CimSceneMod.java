@@ -2198,6 +2198,9 @@ public final class CimSceneMod {
      */
     private static int galleryGuiScan(CommandSourceStack src, String namespace) {
         ServerLevel level = src.getLevel();
+        // 14-dj: the probe builds and tool sweeps need real BE/world ticking —
+        // a freeze left behind by the last gui page's terminal would park them.
+        setGalleryFrozen(level.getServer(), false, "gui scan entry");
         Map<ResourceLocation, List<String>> openers = new HashMap<>();
         Map<ResourceLocation, String> classes = new HashMap<>();
         Map<ResourceLocation, String> titles = new HashMap<>();
@@ -2270,6 +2273,9 @@ public final class CimSceneMod {
      * opener; c-imagine/scenes/settle-NS.done marks the end.
      */
     private static int galleryGuiSettle(ServerLevel level, String namespace) {
+        // 14-dj: the settle pass builds rigs, spawns entities and sweeps tools —
+        // it needs the ticking world, so it unfreezes like every page entry.
+        setGalleryFrozen(level.getServer(), false, "gui settle entry");
         java.util.Set<ResourceLocation> wanted = new java.util.TreeSet<>();
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
         ids.removeIf(id -> !id.getNamespace().equals(namespace));
@@ -2522,15 +2528,15 @@ public final class CimSceneMod {
                 slowSettle = true;
             }
             runAfterTicks(level.getServer(), slowSettle ? 40 : GUI_SETTLE_TICKS,
-                    () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig));
+                    () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig, src));
             return 1;
         }
-        writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed);
+        writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed, src);
         return placed;
     }
 
     private static void finishGuiPage(ServerLevel level, ServerPlayer viewer, String namespace, int page,
-                                      ResourceLocation id, String opener, BlockPos rig) {
+                                      ResourceLocation id, String opener, BlockPos rig, CommandSourceStack src) {
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
         int placed = 0;
         int failed = 0;
@@ -2602,11 +2608,37 @@ public final class CimSceneMod {
                         .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\t').append(slot.getContainerSlot()).append('\n');
             }
         }
-        writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed);
+        writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed, src);
     }
 
     private static void writeGuiManifest(String namespace, int page, ResourceLocation id, String guiStem,
-                                         StringBuilder tsv, int placed, int failed) {
+                                         StringBuilder tsv, int placed, int failed, CommandSourceStack src) {
+        // 14-dj THE GUI SETTLE PIN + FREEZE — the menus lane's half of the
+        // settle-freeze instrument (the block half graduated in 14-di). The
+        // menus crawl's shots were framed against a LIVE world: the day clock
+        // ran the sky gradient wherever each leg's boot/settle timing had
+        // brought it (the measured robit-class backdrop: the truth leg stood
+        // in morning light, the ours leg in near-darkness — 627984 ae across
+        // the whole backdrop on every robit press page, while the GUI panel
+        // itself matched pixel for pixel), and the weather timer dimmed the
+        // sky whenever its own clock said so. A menu can only be honest-red
+        // or honest-green against a backdrop the next run can reproduce: the
+        // terminal point pins the day clock at noon and clears the weather
+        // through the proven quiet dispatcher (runQuiet — the same surface
+        // the biome walk uses for fillbiome, zero new mojmap), THEN freezes
+        // the world at that exact frame — the same vanilla tickRateManager
+        // freeze 14-di verified on the 1.21.1 decompile: the server's day
+        // clock, BE tickers and scheduled ticks gate on runsNormally, and
+        // the broadcast ClientboundTickingStatePacket stops the joined
+        // client's sky/particle/texture clocks on the same flag. Every page
+        // therefore shoots the identical noon sky on both legs and across
+        // runs; the widget crawl's press pages inherit the frozen frame (the
+        // press packets ride the network stack, which never freezes). Every
+        // gui command entry (page, scan, settle) unfreezes first — the
+        // openers' settles and the probe builds need the ticking world.
+        runQuiet(src, "time set 6000");
+        runQuiet(src, "weather clear");
+        setGalleryFrozen(src.getServer(), true, "gui " + guiStem);
         String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
