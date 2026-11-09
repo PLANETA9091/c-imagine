@@ -715,7 +715,7 @@ public final class F2vPack {
         Path scratch = Files.createTempDirectory(base, "verify-");
         try {
             for (String name : List.of("visual-gallery.tsv", "visual-tints.tsv",
-                    "visual-emissive.tsv", "quads", "overlay")) {
+                    "visual-emissive.tsv", "visual-rings.tsv", "quads", "overlay")) {
                 Path source = base.resolve(name);
                 if (!Files.exists(source)) {
                     continue;
@@ -1283,12 +1283,18 @@ public final class F2vPack {
                 // pack stays byte-identical to today's build.
                 Map<String, double[]> tintTable =
                         readTintManifest(outDir.resolve("visual-tints.tsv"));
+                // 14-df RING channel: the same row parser, a separate table
+                // (the ring rows key the STATE to a corridor factor, not a
+                // texture multiply — the ring never rewrites a sprite).
+                // Absent visual-rings.tsv = empty table = byte-identical.
+                Map<String, double[]> ringTable =
+                        readTintManifest(outDir.resolve("visual-rings.tsv"));
                 List<String> tintBakeLog = new ArrayList<>();
                 // EMISSIVE-BAKE channel: the table loaded ABOVE (the item
                 // section needs it too) — this block only carries the logs.
                 List<String> emissiveBakeLog = new ArrayList<>();
                 gallery = GalleryPack.build(jars, galleryInputs, entries, warnings,
-                        tintTable, tintBakeLog, emissiveTable, emissiveBakeLog);
+                        tintTable, tintBakeLog, emissiveTable, emissiveBakeLog, ringTable);
                 for (String bake : tintBakeLog) {
                     warnings.add("tint-bake applied: " + bake);
                 }
@@ -2881,6 +2887,86 @@ public final class F2vPack {
             expect(failures, precZip.keySet().stream().noneMatch(k -> k.contains("_cimtint_s")),
                     "state tint: no state-suffixed sibling when the texture row covers the sprite");
 
+            // -- 14-df CORRIDOR RING route asserts -----------------------------------
+            // The visual-rings.tsv row scales the state's ambient-lit captured
+            // rows by the solved corridor factor: the shaded rows ride
+            // current x k (the gate's captured tint where the gate applied
+            // one, 1.0 on the non-flat rows the gradient refusal kept raw),
+            // the identity rows (the fullbright frame/LED art) and the
+            // (15,15) mod-light rows stay untinted, and an absent rings file
+            // leaves the 14-da gate behavior exactly as it was.
+            Path outRing = tmp.resolve("out-ring");
+            Files.createDirectories(outRing);
+            Files.createDirectories(outRing.resolve("quads"));
+            Files.writeString(outRing.resolve("visual-gallery.tsv"),
+                    "fixture:ringblock#qringfixture\n", StandardCharsets.UTF_8);
+            // 4 verts x (x y z u v): a full-face quad on the z=0 plane, uv 0..16
+            String quadGeom = "\t0\t0\t0\t0\t0\t16\t0\t0\t16\t0\t16\t16\t0\t16\t16\t0\t16\t0\t0\t16";
+            String ringQuadTsv = ""
+                    // row 1: shaded flat (the casing class) — gate tints 0.6/0.6/0.7
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t0.600\t0.600\t0.700\t0.600\t0.600\t0.700\t0.600\t0.600\t0.700\t0.600\t0.600\t0.700"
+                    + "\t1.0\t1.0\t1.0\t1.0\t8\t15\n"
+                    // row 2: identity flat (the fullbright frame art) — never tinted
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000"
+                    + "\t1.0\t1.0\t1.0\t1.0\t8\t15\n"
+                    // row 3: shaded flat under the (15,15) mod-light override — never tinted
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800"
+                    + "\t1.0\t1.0\t1.0\t1.0\t15\t15\n"
+                    // row 4: shaded NON-flat (the legacy gradient refusal class) —
+                    // the gate keeps it raw, the ring dims it by k
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t0.600\t0.600\t0.600\t0.600\t0.600\t0.600\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800"
+                    + "\t1.0\t1.0\t1.0\t1.0\t8\t15\n";
+            Files.writeString(outRing.resolve("quads/ringfixture.tsv"), ringQuadTsv,
+                    StandardCharsets.UTF_8);
+            Result rRingPlain = build(mods, outRing, List.of(), List.of(), List.of(),
+                    List.of(), List.of());
+            String ringRef = rRingPlain.gallery().stream()
+                    .filter(r -> r.stateId().startsWith("fixture:ringblock"))
+                    .findFirst().map(r -> r.modelRef()).orElse("");
+            expect(failures, !ringRef.isEmpty(), "ring: the quad composite located; warnings="
+                    + rRingPlain.warnings());
+            JsonObject plainComposite = ringRef.isEmpty() ? null
+                    : GalleryPack.itemNode(ringRef);
+            java.util.function.Function<JsonObject, java.util.List<Integer>> tintValues =
+                    comp -> {
+                        java.util.List<Integer> vals = new ArrayList<>();
+                        if (comp != null && comp.has("models")) {
+                            for (var child : comp.getAsJsonArray("models")) {
+                                JsonObject node = child.getAsJsonObject();
+                                if (node.has("tints")) {
+                                    for (var t : node.getAsJsonArray("tints")) {
+                                        vals.add(t.getAsJsonObject().get("value").getAsInt());
+                                    }
+                                }
+                            }
+                        }
+                        return vals;
+                    };
+            // 0.7f parses to 0.699999988079071 — x255 = 178.4999... rounds to 178
+            int gateArgb = (255 << 24) | (153 << 16) | (153 << 8) | 178;
+            expect(failures, tintValues.apply(plainComposite).size() == 1
+                            && tintValues.apply(plainComposite).get(0) == gateArgb,
+                    "ring: absent rings file = the 14-da gate tint only (0.6/0.6/0.7)");
+            Files.writeString(outRing.resolve("visual-rings.tsv"),
+                    "# 14-df ring fixture\n"
+                    + "fixture:ringblock\t0.5\t0.5\t0.5\tfixture@gallery-fake-p0:c0,r0"
+                    + "|n_dim=90|n_match=120|mad=0.03|match=1.00\n",
+                    StandardCharsets.UTF_8);
+            Result rRing = build(mods, outRing, List.of(), List.of(), List.of(),
+                    List.of(), List.of());
+            JsonObject ringComposite = GalleryPack.itemNode(ringRef);
+            int ringShadedArgb = (255 << 24) | (77 << 16) | (77 << 8) | 89;
+            int ringRawArgb = (255 << 24) | (128 << 16) | (128 << 8) | 128;
+            java.util.List<Integer> ringTints = tintValues.apply(ringComposite);
+            expect(failures, ringTints.size() == 2 && ringTints.contains(ringShadedArgb)
+                            && ringTints.contains(ringRawArgb),
+                    "ring: shaded rows ride current x k (0.3/0.3/0.35 gate-tinted, "
+                    + "0.5/0.5/0.5 on the gradient refusal class), got " + ringTints);
+
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
             // 26.3 UV SANITIZER (run #46): the zmotor fixture rides the bad
@@ -3361,7 +3447,7 @@ public final class F2vPack {
         unlitPlaneSelftest(failures);
         Path quads = Files.createTempDirectory("f2v-unlit-selftest");
         try {
-            String face = "minecraft:block/stone\t0\t-1"
+            String face = "fakemod:block/glow_tex\t0\t-1"
                     + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
                     + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n";
             Path scene = quads.resolve("gallery-item-fixture-p0.tsv");
@@ -3743,7 +3829,7 @@ public final class F2vPack {
             Files.createDirectories(out.resolve("overlay/assets/fixture"));
             Files.writeString(out.resolve("overlay/assets/fixture/evidence.txt"), "overlay input");
             Files.createDirectory(out.resolve("quads"));
-            Files.writeString(out.resolve("quads/fixture.tsv"), "minecraft:block/stone\t0\t-1"
+            Files.writeString(out.resolve("quads/fixture.tsv"), "fakemod:block/glow_tex\t0\t-1"
                     + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
                     + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n");
             Files.writeString(out.resolve("visual-gallery.tsv"), "fixture:block#qfixture\n");

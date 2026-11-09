@@ -275,6 +275,30 @@ public final class GalleryPack {
                                 Map<String, Integer> emissiveTable,
                                 List<String> emissiveLog)
             throws IOException {
+        return build(jars, inputs, entries, warnings, tintTable, bakeLog,
+                emissiveTable, emissiveLog, Map.of());
+    }
+
+    /**
+     * Build with the TINT-BAKE, EMISSIVE-BAKE and 14-df RING channels.
+     * {@code ringTable} maps a blockstate string to the corridor ring
+     * factor (visual-rings.tsv, scripts/f2v/ring-solve.py): the captured
+     * mesh rows carry the seed scene's shade constants, the gallery
+     * corridor renders the same ambient-lit rows darker (the wall's
+     * directional/ambient contribution — ours/truth 2.5-3x on the casing
+     * class, the frames matching at identity). The quad synthesis scales
+     * each ambient-lit row's node tint by the state's ring factor; the
+     * identity (fullbright art) and (15,15) rows stay untouched. Absent
+     * table = no-op (byte-identical output).
+     */
+    static List<Resolved> build(List<Path> jars, List<Input> inputs,
+                                TreeMap<String, byte[]> entries, List<String> warnings,
+                                Map<String, double[]> tintTable,
+                                List<String> bakeLog,
+                                Map<String, Integer> emissiveTable,
+                                List<String> emissiveLog,
+                                Map<String, double[]> ringTable)
+            throws IOException {
         // deterministic order + dedupe (a repeated state reuses the first cmd)
         List<Input> sorted = new ArrayList<>(inputs);
         sorted.sort(Comparator.comparing(Input::stateId));
@@ -326,7 +350,8 @@ public final class GalleryPack {
                     int[] light = new int[3];
                     String quadRef = synthesizeQuadModel(jars, ctCtx.substring(1),
                             WRAPPER_PREFIX + compositeIdx + ".json", WRAPPER_REF_PREFIX + compositeIdx,
-                            entries, warnings, true, tintTable, bareState, LIGHT_ALL, light);
+                            entries, warnings, true, tintTable, bareState, LIGHT_ALL, light,
+                            ringTable);
                     if (quadRef == null) {
                         warnings.add("gallery: quad mesh failed for " + state + " — row dropped");
                         continue;
@@ -1822,8 +1847,8 @@ public final class GalleryPack {
                                               List<String> warnings, boolean block,
                                               Map<String, double[]> tintTable,
                                               String stateKey) throws IOException {
-        return synthesizeQuadModel(jars, hash, modelFile, ref, entries, warnings, block, tintTable,
-                stateKey, LIGHT_ALL);
+        return synthesizeQuadModel(jars, hash, modelFile, ref, entries, warnings, block,
+                tintTable, stateKey, LIGHT_ALL, null, Map.of());
     }
 
     private static String synthesizeQuadModel(List<Path> jars, String hash, String modelFile, String ref,
@@ -1831,8 +1856,8 @@ public final class GalleryPack {
                                               List<String> warnings, boolean block,
                                               Map<String, double[]> tintTable,
                                               String stateKey, int lightGroup) throws IOException {
-        return synthesizeQuadModel(jars, hash, modelFile, ref, entries, warnings, block, tintTable,
-                stateKey, lightGroup, null);
+        return synthesizeQuadModel(jars, hash, modelFile, ref, entries, warnings, block,
+                tintTable, stateKey, lightGroup, null, Map.of());
     }
 
     /** lightOut (nullable, length 3): [0]=lit block, [1]=lit sky, [2]=hasFullbright(0/1). */
@@ -1840,7 +1865,8 @@ public final class GalleryPack {
                                               TreeMap<String, byte[]> entries,
                                               List<String> warnings, boolean block,
                                               Map<String, double[]> tintTable,
-                                              String stateKey, int lightGroup, int[] lightOut) throws IOException {
+                                              String stateKey, int lightGroup, int[] lightOut,
+                                              Map<String, double[]> ringTable) throws IOException {
         Path file = quadDir == null ? null : quadDir.resolve(hash + ".tsv");
         if (file == null || !java.nio.file.Files.isRegularFile(file)) {
             warnings.add("gallery: quad mesh missing: " + hash);
@@ -2060,6 +2086,21 @@ public final class GalleryPack {
             boolean tintRow = rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15)
                     && (meshConstant ? rb > 6 : meshSceneLit);
             double[] rowTint = tintRow ? rowShadeTint(faces.get(i)) : null;
+            // 14-df CORRIDOR RING ROUTE (visual-rings.tsv): the captured
+            // shade constants were recorded under the seed scene's light
+            // pair; the gallery corridor renders the same ambient-lit rows
+            // darker (the wall's directional/ambient contribution —
+            // ours/truth 2.5-3x on the casing class, the frames matching at
+            // identity). The ring factor scales the row's CURRENT node
+            // factor (the gate's captured tint where the gate applied one,
+            // 1.0 where it did not — the legacy/non-flat rows render raw):
+            // final = current x measured_ratio lands exactly on the target
+            // because the ratio was measured on top of that same render.
+            double[] ring = ringTable == null || ringTable.isEmpty()
+                    ? null : ringLookup(ringTable, stateKey);
+            if (ring != null) {
+                rowTint = ringTint(faces.get(i), rowFlags, ring, rowTint);
+            }
             for (var value : ObjMesh.toElements(List.of(faces.get(i)), k)) {
                 JsonObject el = value.getAsJsonObject();
                 if (flags.get(i)[0] == 0) {
@@ -2114,6 +2155,64 @@ public final class GalleryPack {
             registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints);
         }
         return ref;
+    }
+
+    /**
+     * The 14-df ring row for a composite's state (the exact manifest string
+     * first, then the canonical property order — the same rule
+     * {@link #stateTintFor} carries), or null.
+     */
+    private static double[] ringLookup(Map<String, double[]> ringTable, String state) {
+        if (ringTable == null || ringTable.isEmpty() || state == null) {
+            return null;
+        }
+        double[] ring = ringTable.get(state);
+        return ring != null ? ring : ringTable.get(canonicalState(state));
+    }
+
+    /**
+     * The 14-df corridor ring tint of ONE captured row. The ambient-lit
+     * discriminator is the captured mean RGB: the identity rows are the
+     * fullbright frame/LED art the truth renders unshaded (the 14-de
+     * frame-match measurement) — the ring route must not touch them; the
+     * shaded rows (the casing/panel population the capture recorded at
+     * 0.4-0.8) scale by the solved corridor factor. The base is the row's
+     * CURRENT node factor — the gate's captured tint where the 14-da gate
+     * applied one, 1.0 where it did not (the legacy rows without a light
+     * tail and the non-flat rows the gradient refusal kept raw) — so the
+     * composition lands exactly on the measured target. The (15,15)
+     * mod-light-override rows stay fullbright (the 14-cz.1 law). Rows
+     * without captured colors are out of reach of any tint route.
+     */
+    private static double[] ringTint(ObjMesh.Face face, int[] rowFlags,
+                                     double[] ring, double[] rowTint) {
+        int rb = rowFlags[2];
+        int rs = rowFlags[3];
+        if (rb == 15 && rs == 15) {
+            return rowTint;
+        }
+        float[][] colors = face.colors();
+        if (colors == null || colors.length < 4 || colors[0].length < 3) {
+            return rowTint;
+        }
+        double[] mean = new double[3];
+        for (int v = 0; v < 4; v++) {
+            for (int ch = 0; ch < 3; ch++) {
+                mean[ch] += colors[v][ch];
+            }
+        }
+        for (int ch = 0; ch < 3; ch++) {
+            mean[ch] /= 4;
+        }
+        if (mean[0] >= 0.995 && mean[1] >= 0.995 && mean[2] >= 0.995) {
+            return rowTint; // the fullbright art population
+        }
+        double[] base = rowTint != null ? rowTint : new double[]{1.0, 1.0, 1.0};
+        double[] out = new double[3];
+        for (int ch = 0; ch < 3; ch++) {
+            out[ch] = Math.max(0.0, Math.min(1.0, base[ch] * ring[ch]));
+        }
+        return out;
     }
 
     /**
