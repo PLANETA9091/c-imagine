@@ -299,25 +299,49 @@ public final class F2vPack {
                 // run before the gate flip (the structure, not the pixels).
                 // The shading bakes into four per-face textures; the model
                 // picks them per face and the fit absorbs the rest.
+                // 14-dm THE CANVAS SURFACE: the uniform flat fill measured
+                // 249-484K against the pinned truth (the #310 chemical
+                // giants' self_ae measured 0.6-4K — the truth surface is
+                // STATIC once the 14-dl pin holds, and the flat fill's
+                // residual is the canvas's spatial detail, not phase). The
+                // mod's still canvas is hosted frame-0 under its own sprite
+                // path (mekanism ships textures/liquid/liquid.png for the
+                // chemicals, steam.png for steam; create/bop ship
+                // _still.png), so the cube texture becomes the REAL canvas
+                // pixels scaled per channel by (calibrated color / canvas
+                // mean) — the L1-optimal tint is preserved as the scale, the
+                // spatial detail survives, and truth (pinned frame 0 of the
+                // same canvas, tinted by the mod's code) meets ours at the
+                // pipeline gap. The uniform fill stays the fallback when no
+                // canvas is hosted.
                 String id = fluidId.replace(':', '_');
+                byte[] canvas = canvasFrameZero(entries, fluidId);
                 texPath = "assets/c-imagine/textures/fluidcube/" + id + ".png";
                 if (!entries.containsKey(texPath)) {
-                    entries.put(texPath, uniformPng(color[0], color[1], color[2]));
+                    entries.put(texPath, canvas != null
+                            ? tintedCanvasPng(canvas, color)
+                            : uniformPng(color[0], color[1], color[2]));
                 }
                 String nsPath = "assets/c-imagine/textures/fluidcube/" + id + "_ns.png";
                 if (!entries.containsKey(nsPath)) {
                     int[] ns = shade(color, 0.8);
-                    entries.put(nsPath, uniformPng(ns[0], ns[1], ns[2]));
+                    entries.put(nsPath, canvas != null
+                            ? tintedCanvasPng(canvas, ns)
+                            : uniformPng(ns[0], ns[1], ns[2]));
                 }
                 String ewPath = "assets/c-imagine/textures/fluidcube/" + id + "_ew.png";
                 if (!entries.containsKey(ewPath)) {
                     int[] ew = shade(color, 0.6);
-                    entries.put(ewPath, uniformPng(ew[0], ew[1], ew[2]));
+                    entries.put(ewPath, canvas != null
+                            ? tintedCanvasPng(canvas, ew)
+                            : uniformPng(ew[0], ew[1], ew[2]));
                 }
                 String bPath = "assets/c-imagine/textures/fluidcube/" + id + "_b.png";
                 if (!entries.containsKey(bPath)) {
                     int[] bb = shade(color, 0.5);
-                    entries.put(bPath, uniformPng(bb[0], bb[1], bb[2]));
+                    entries.put(bPath, canvas != null
+                            ? tintedCanvasPng(canvas, bb)
+                            : uniformPng(bb[0], bb[1], bb[2]));
                 }
             } else {
                 // the real still texture's static frame 0, re-hosted under
@@ -391,6 +415,92 @@ public final class F2vPack {
             }
         }
         return null;
+    }
+
+    /** The still canvas for a color-route fluid id: the direct-name lookups
+     *  (the three scan conventions) first, then the mod's GENERIC liquid
+     *  canvas — mekanism ships one shared textures/liquid/liquid.png that
+     *  its chemical fluids render tinted by code (the 14-cd derivation's
+     *  "generic gray canvas"; steam rides its own steam.png via the direct
+     *  lookup). Null when neither exists. */
+    private static byte[] canvasFrameZero(TreeMap<String, byte[]> entries,
+                                          String fluidId) {
+        byte[] direct = stillFrameZero(entries, fluidId);
+        if (direct != null) {
+            return direct;
+        }
+        int colon = fluidId.indexOf(':');
+        if (colon <= 0) {
+            return null;
+        }
+        String ns = fluidId.substring(0, colon);
+        return entries.get("assets/" + ns + "/textures/liquid/liquid.png");
+    }
+
+    /** The canvas surface scaled per channel by (target color / canvas
+     *  mean): the 14-dm chemical cube texture. The spatial detail of the
+     *  real canvas survives; the calibrated L1-optimal tint rides as the
+     *  scale so the measured calibration (the 14-cd derivation) is kept
+     *  exactly. Alpha is preserved; unreadable PNGs fall back to the raw
+     *  bytes (the loader names it). Deterministic: ImageIO's PNG encode is
+     *  byte-stable for the same input pixels. */
+    private static byte[] tintedCanvasPng(byte[] canvas, int[] color)
+            throws IOException {
+        java.awt.image.BufferedImage img;
+        try {
+            img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(canvas));
+        } catch (Exception bad) {
+            return canvas;
+        }
+        if (img == null) {
+            return canvas;
+        }
+        int w = Math.min(16, img.getWidth());
+        int h = Math.min(16, img.getHeight());
+        double[] sum = new double[3];
+        int n = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = img.getRGB(x, y);
+                if (((argb >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                sum[0] += (argb >> 16) & 0xFF;
+                sum[1] += (argb >> 8) & 0xFF;
+                sum[2] += argb & 0xFF;
+                n++;
+            }
+        }
+        if (n == 0) {
+            return canvas;
+        }
+        double[] scale = new double[3];
+        for (int c = 0; c < 3; c++) {
+            double mean = sum[c] / n;
+            scale[c] = mean < 1.0 ? 1.0 : color[c] / mean;
+        }
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(
+                w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = img.getRGB(x, y);
+                int a = (argb >>> 24) & 0xFF;
+                if (a == 0) {
+                    out.setRGB(x, y, 0);
+                    continue;
+                }
+                int r = (int) Math.max(0, Math.min(255,
+                        Math.round(((argb >> 16) & 0xFF) * scale[0])));
+                int g = (int) Math.max(0, Math.min(255,
+                        Math.round(((argb >> 8) & 0xFF) * scale[1])));
+                int b = (int) Math.max(0, Math.min(255,
+                        Math.round((argb & 0xFF) * scale[2])));
+                out.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(out, "png", bos);
+        return bos.toByteArray();
     }
 
     /** A uniform opaque 16x16 PNG of one RGB color (the calibrated chemical
