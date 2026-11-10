@@ -8527,3 +8527,20 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
 - STRUCTURAL, recorded with the measured ae: ae2:fluix_hoe 65715 (the truth's tool render is hue-shifted toward purple with the blue channel ABOVE the source texture's channel maxima — no multiply or lighting transform can produce it; the captured texture is byte-identical to the jar png and AE2's InitItemColors registers no tool colors — no in-jar source; class: truth-side render state the pack cannot express); dynamictrees:acacia_seed 75836 (the acorn sprite itself matches pixel-for-pixel; the cell's right half renders a stretched gray band + dark bar on ours — the composite's texel-band reconstruction over the sprite's transparent region; the quads dump is not in the run artifacts so the band geometry could not be re-derived offline); ae2:crank[facing=up/down] 78169/97584 (the crank's BER rotates the handle by the BE tick counter, frozen per session by the 14-di freeze — the dump session's frozen angle differs from the walk shot's frozen angle; self_ae 0/0 both, spill-class dyn rows); ae2:spatial_pylon[powered_on=false] x2 142971/109734 (the AE2 SpatialPylonBakedModel swaps the inner-cube texture dim/red by the LIVE ClientState.online() and base/dim by the cluster axis position — the wall's adjacent pylons render the offline/END textures; the pack's per-state bake is neighbor- and cluster-agnostic; ours = the isolated DIM bake, the truth = the clustered RED).
 - VERIFIED offline: F2vPack --selftest ALL OK (the captured-alpha, captured-sprite and animation-fixture blocks updated to the new laws; the placeholder phase assertion added); the locked-jars offline pack build + the entry diff vs the pristine baseline = exactly 69 size-crops (the animated strips -> their frame-0 boxes) + 5 texture mcmetas removed + the 4 blood fluid-cube canvases re-derived from the true frame 0 (max pixel delta 1, the calibrated means intact) + zero behavior change elsewhere (0 non-png diffs).
 - EXPECTED NEXT-RUN EFFECT: the anim-frame rows collapse (singularity, mysterious_cube item+block, not_so_mysterious_cube, anomaly item, crg, fluix_wall x7 — the frame-phase residual dies; the GREEN animated items keep their noise floor), the facade + fe_p2p_tunnel faces match the truth's missing-sprite phase (the gray anchor notch already matched), the huge_lily_pad cell renders the pad (the alpha-0 tiles turn opaque). The four structural classes stay RED with this run's aes as their honest ledger; the chiseled_quartz_stairs row (66115) is NOT explained by any of the three landed classes (the ours crop renders the chiseled pattern where the truth shows the stair profile's sky — left for the next artifact pass with the quads dump downloaded).
+
+### Green campaign — keep the server host in the NeoForge class space
+- Analysis: the native bridge loaded LayerServerHost through the bootstrap
+  URLClassLoader, but its Class.forName calls require the prepared isolated
+  ShadowClassLoader, exactly as LayerMain/FmlHost already do. Bootstrap now
+  exposes installLayerServer and resolves the host through that same loader;
+  the JNI call targets this entry point. An unprepared layer fails explicitly.
+- A local startup probe against the real installed 21.1.265 runtime exposed
+  unrelocated authlib names. Use the established cim.shadow.mojang namespace
+  for authlib, DataFixer and Lifecycle, and the actual storage.WorldData API.
+  Native DedicatedServerProperties confirms the intended superflat preset is
+  minecraft:flat; minecraft:superflat silently selected normal generation.
+- Expected behavior: host registration retains the isolated class identity;
+  native server construction resolves actual declared API types, with no
+  fallback classes or synthetic lifecycle receipts. The local probe reaches
+  DedicatedServer.initServer/loadLevel, then exposes a separate Aquifer method
+  access failure during generation. Startup is still not claimed GREEN.

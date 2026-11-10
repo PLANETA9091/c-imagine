@@ -278,6 +278,13 @@ public final class Bootstrap {
         }
     }
 
+    /** Install the server host in the same isolated class space as FmlHost. */
+    public static void installLayerServer(Object plugin) throws ReflectiveOperationException {
+        ClassLoader shadow = ShadowClassLoader.get();
+        Class.forName("dev.cim.layer.LayerServerHost", true, shadow)
+                .getMethod("install", Object.class).invoke(null, plugin);
+    }
+
     /**
      * Rewrite the manifest in place for shadow-space consumption:
      * entrypoint binary names, annotation class names and {@code L…;}

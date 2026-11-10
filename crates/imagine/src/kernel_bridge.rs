@@ -212,7 +212,7 @@ fn bridge_loop() -> Result<(), String> {
     let _ = attached("layer server install", |env| {
         let loader = unsafe { JObject::from_raw(loader_idx as jobject) };
         let name = env
-            .new_string("dev.cim.layer.LayerServerHost")
+            .new_string("dev.cim.bootstrap.Bootstrap")
             .map_err(|e| format!("new_string: {e}"))?;
         let host_cls = env
             .call_method(
@@ -221,13 +221,13 @@ fn bridge_loop() -> Result<(), String> {
                 "(Ljava/lang/String;)Ljava/lang/Class;",
                 &[JValue::Object(&name)],
             )
-            .map_err(|e| format!("loadClass(LayerServerHost): {e}"))?
+            .map_err(|e| format!("loadClass(Bootstrap): {e}"))?
             .l()
             .map_err(|e| format!("class l(): {e}"))?;
         let host: JClass = host_cls.into();
         env.call_static_method(
             &host,
-            "install",
+            "installLayerServer",
             "(Ljava/lang/Object;)V",
             &[JValue::Object(plugin_obj)],
         )

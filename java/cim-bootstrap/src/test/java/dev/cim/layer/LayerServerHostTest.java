@@ -30,6 +30,15 @@ public final class LayerServerHostTest {
         Path dir = Files.createTempDirectory("layer-server-host-test");
         System.setProperty("user.dir", dir.toString());
 
+        // The public bridge must fail before plugin contact without a prepared layer.
+        try {
+            dev.cim.bootstrap.Bootstrap.installLayerServer(null);
+            throw new AssertionError("unprepared layer accepted a server host");
+        } catch (IllegalStateException expected) {
+            expect(expected.getMessage().equals("ShadowClassLoader not prepared"),
+                    "unprepared layer is reported explicitly");
+        }
+
         // 1) the gate: disabled = no plugin contact, marker printed
         System.setProperty("cim.layerServer", "false");
         String out = capture(() -> LayerServerHost.install(null));

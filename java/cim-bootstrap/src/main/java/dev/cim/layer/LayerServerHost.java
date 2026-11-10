@@ -106,7 +106,7 @@ public final class LayerServerHost {
     private static final String CHUNK_PROGRESS_FACTORY = NS + "server.level.progress.ChunkProgressListenerFactory";
     private static final String LOGGER_PROGRESS = NS + "server.level.progress.LoggerChunkProgressListener";
     private static final String LIFECYCLE_HOOKS = NEOFORGE_NS + "neoforge.server.ServerLifecycleHooks";
-    private static final String YGGDRASIL = "com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService";
+    private static final String YGGDRASIL = "cim.shadow.mojang.com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService";
 
     // Paper-side names resolved through the PLUGIN's classloader
     private static final String TICK_END_EVENT =
@@ -281,7 +281,7 @@ public final class LayerServerHost {
             // Main: properties + eula (the layer-owned copies, written once)
             writeOnce(root.resolve("server.properties"), """
                     level-name=layer-world
-                    level-type=minecraft\\:superflat
+                    level-type=minecraft\\:flat
                     generate-structures=false
                     online-mode=false
                     server-port=0
@@ -400,7 +400,7 @@ public final class LayerServerHost {
                     .getMethod("compositeAccess").invoke(layeredRegistries);
             Object worldData = stem.getClass().getMethod("worldData").invoke(stem);
             accessCls.getMethod("saveDataTag",
-                    Class.forName(REGISTRY_ACCESS), Class.forName(NS + "world.level.WorldData"))
+                    Class.forName(REGISTRY_ACCESS), Class.forName(NS + "world.level.storage.WorldData"))
                     .invoke(access, registries, worldData);
 
             // the REAL DedicatedServer; the server thread IS Paper main
@@ -416,7 +416,7 @@ public final class LayerServerHost {
             server = serverCls.getConstructor(Thread.class, accessCls,
                     Class.forName(NS + "server.packs.repository.PackRepository"),
                     Class.forName(WORLD_STEM), settingsCls,
-                    Class.forName("com.mojang.datafixers.DataFixer"), servicesCls,
+                    Class.forName("cim.shadow.mojang.com.mojang.datafixers.DataFixer"), servicesCls,
                     factoryIf2)
                     .newInstance(Thread.currentThread(), access, packs, stem, settings,
                             fixer, services, progressFactory);
@@ -507,7 +507,7 @@ public final class LayerServerHost {
         Object lifecycle = completeCls.getMethod("lifecycle").invoke(complete);
         Object worldgenLifecycle = datapackWorldgen.getClass()
                 .getMethod("allRegistriesLifecycle").invoke(datapackWorldgen);
-        Class<?> lifecycleCls = Class.forName("com.mojang.serialization.Lifecycle");
+        Class<?> lifecycleCls = Class.forName("cim.shadow.mojang.com.mojang.serialization.Lifecycle");
         Object combined = lifecycleCls.getMethod("add", lifecycleCls)
                 .invoke(lifecycle, worldgenLifecycle);
         Class<?> specialPropertyCls = Class.forName(
