@@ -66,16 +66,30 @@ final class LiveBridge {
      * Paper kept for it (none the first time, as a freshly placed block has none).
      */
     State openBlock(Player player, org.bukkit.block.Block block, String blockId) {
+        return openBlock(player, block, blockId, false);
+    }
+
+    /**
+     * {@code fresh}: the block as just placed, whatever was there before (the gallery places a
+     * new block for every page, as the truth walk does); its kept data is dropped too.
+     */
+    State openBlock(Player player, org.bukkit.block.Block block, String blockId, boolean fresh) {
         StringBuilder in = new StringBuilder("open-block\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(blockId).append('\t')
                 .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
         appendInventory(in, player, false);
-        String kept = block.getChunk().getPersistentDataContainer().get(blockKey(block), PersistentDataType.STRING);
+        org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
+        if (fresh) {
+            chunk.remove(blockKey(block, blockId));
+            in.append("\nfresh");
+        }
+        String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
         if (kept != null) {
             in.append("\nbe\t").append(kept);
         }
         heldSlots.put(player.getUniqueId(), 0);
         openBlocks.put(player.getUniqueId(), block);
+        openBlockIds.put(player.getUniqueId(), blockId);
         return parse(call(in.toString()));
     }
 
@@ -83,16 +97,25 @@ final class LiveBridge {
     private final java.util.Map<java.util.UUID, org.bukkit.block.Block> openBlocks = new java.util.HashMap<>();
     private final java.util.Map<java.util.UUID, Integer> heldSlots = new java.util.HashMap<>();
 
-    /** Paper keeps a mod block entity's data in its chunk, under the block's position. */
-    private NamespacedKey blockKey(org.bukkit.block.Block block) {
-        return new NamespacedKey(key.getNamespace(), "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ());
+    private final java.util.Map<java.util.UUID, String> openBlockIds = new java.util.HashMap<>();
+
+    /**
+     * Paper keeps a mod block entity's data in its chunk, under the block's position and id: a
+     * different block put there later never reads it (measured: a vibration chamber opened with
+     * the previous page's machine contents in its fuel slot).
+     */
+    private NamespacedKey blockKey(org.bukkit.block.Block block, String blockId) {
+        String id = blockId.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._-]", "_");
+        return new NamespacedKey(key.getNamespace(),
+                "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ() + "_" + id);
     }
 
     /** The block entity's data the close handed back, stored for the next opening. */
     void keepBlockEntity(Player player, State state) {
         org.bukkit.block.Block block = openBlocks.remove(player.getUniqueId());
-        if (block != null && state.blockEntity() != null) {
-            block.getChunk().getPersistentDataContainer().set(blockKey(block), PersistentDataType.STRING,
+        String id = openBlockIds.remove(player.getUniqueId());
+        if (block != null && id != null && state.blockEntity() != null) {
+            block.getChunk().getPersistentDataContainer().set(blockKey(block, id), PersistentDataType.STRING,
                     state.blockEntity());
         }
     }
@@ -150,6 +173,19 @@ final class LiveBridge {
             }
         }
         return out;
+    }
+
+    /** The open menu as it is now. */
+    State state(Player player) {
+        return parse(call("state\t" + player.getUniqueId()));
+    }
+
+    /** One tick of the open live block menus, once per Paper tick. */
+    static void tick() {
+        Function<String, String> fn = entry();
+        if (fn != null) {
+            fn.apply("tick\t-");
+        }
     }
 
     State close(Player player) {

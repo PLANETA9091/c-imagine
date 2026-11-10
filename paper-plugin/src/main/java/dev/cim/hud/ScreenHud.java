@@ -120,6 +120,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         java.util.Map<Integer, boolean[]> liveWidgets = java.util.Map.of();
         /** The recorded state on screen, after the last press that has one. */
         List<ScreenPack.Piece> pieces;
+        /** Which press state that is (its widget index), or -1 for the menu as opened. */
+        int stateIndex = -1;
 
         Session(ScreenPack.Scene scene, GuiCaptures.Capture capture, Pointer pointer) {
             this.scene = scene;
@@ -276,9 +278,46 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private LiveBridge live() {
         if (live == null && plugin != null && LiveBridge.available()) {
             live = new LiveBridge(plugin, this::carrier, this::itemId);
+            startLiveTick();
             log.info("[cim-screen] live menus: the layer's cimlive answers, mod menus run their own code");
         }
         return live;
+    }
+
+    private boolean ticking;
+    private long liveTicks;
+
+    /** Paper's tick drives the open live menus' block entities; refreshes the screens that moved. */
+    private void startLiveTick() {
+        if (ticking || plugin == null) {
+            return;
+        }
+        ticking = true;
+        org.bukkit.Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (live == null) {
+                return;
+            }
+            boolean any = false;
+            for (Session s : open.values()) {
+                any |= s.live;
+            }
+            if (!any) {
+                return;
+            }
+            LiveBridge.tick();
+            // Every 4 ticks the screens show what the ticks did (a machine's slots, its output).
+            if (++liveTicks % 4 == 0) {
+                for (Map.Entry<UUID, Session> e : new ArrayList<>(open.entrySet())) {
+                    Player p = org.bukkit.Bukkit.getPlayer(e.getKey());
+                    if (p != null && e.getValue().live) {
+                        LiveBridge.State state = live.state(p);
+                        if (state.error() == null && state.open()) {
+                            applyLive(p, e.getValue(), state);
+                        }
+                    }
+                }
+            }
+        }, 1L, 1L);
     }
 
     public void useCamera(CameraLock lock, org.bukkit.plugin.Plugin owner) {
@@ -445,7 +484,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             state = bridge.openHeld(player);
         } else if (opener.startsWith("block:")) {
             state = bridge.openBlock(player, player.getLocation().getBlock().getRelative(2, 0, 0),
-                    opener.substring("block:".length()));
+                    opener.substring("block:".length()), true);
         } else {
             return false;
         }
@@ -597,24 +636,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }
-                    drawItem(frame, x, y, slotItem(player, s, i));
+                    // A press state that draws over this slot (a window) hides its item, as the real screen does.
+                    boolean hidden = s.stateIndex >= 0 && s.scene.captured() != null
+                            && s.scene.captured().covered().getOrDefault(s.stateIndex, java.util.Set.of()).contains(i);
+                    if (!hidden) {
+                        drawItem(frame, x, y, slotItem(player, s, i));
+                    }
                     if (i == hover) {
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }
-                }
-            }
-        }
-        // A widget the mod's live state makes inactive is greyed, as the real screen greys it.
-        for (java.util.Map.Entry<Integer, boolean[]> e : s.liveWidgets.entrySet()) {
-            if (e.getValue()[0] && e.getValue()[1]) {
-                continue;
-            }
-            ScreenPack.Widget w = s.scene.widgets().get(e.getKey());
-            // One tile per placement: a run of glyphs advances by width + 1 and would leave gaps.
-            for (int dy = 0; dy < w.h(); dy += HudPack.DIM_SIZE) {
-                for (int dx = 0; dx < w.w(); dx += HudPack.DIM_SIZE) {
-                    frame.free(s.originX + w.x() + dx, s.originY + w.y() + dy, String.valueOf(HudPack.DIM),
-                            HudPack.DIM_SIZE + 1);
                 }
             }
         }
@@ -644,6 +674,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 // itself only reaches the mod once the layer hosts players.
                 if (s.scene.captured() != null && s.scene.captured().states().containsKey(wi)) {
                     s.pieces = s.scene.captured().states().get(wi);
+                    s.stateIndex = wi;
                 }
                 if (s.live && live != null) {
                     LiveButtons.Button b = buttonFor(s.liveMenuClass, wi, w.label());
@@ -874,7 +905,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         String menu = s.liveMenuClass.replace('.', '/');
         List<LiveButtons.Stateful> mine = new ArrayList<>();
         for (LiveButtons.Stateful w : statefulWidgets) {
-            if (w.menuClass().equals(menu)) {
+            // A constant says nothing about the live look (measured: Mekanism's side tabs
+            // carry active=false and the real screen shows them on); only real conditions count.
+            if (w.menuClass().equals(menu) && w.label() != null && (live(w.active()) || live(w.visible()))) {
                 mine.add(w);
             }
         }
@@ -893,15 +926,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     index = wi;
                 }
             }
-            if (index < 0 && k < shown.size()) {
-                index = k;
-            }
             boolean[] state = byOrdinal.get(w.ordinal());
             if (index >= 0 && state != null) {
                 byWidget.put(index, state);
             }
         }
         return byWidget;
+    }
+
+    private static boolean live(String expr) {
+        return expr != null && !expr.isEmpty() && !expr.equals("true") && !expr.equals("false") && !expr.equals("null");
     }
 
     private List<LiveButtons.Button> buttons;

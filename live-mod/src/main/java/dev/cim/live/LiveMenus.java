@@ -49,6 +49,11 @@ public final class LiveMenus {
         return SESSIONS.computeIfAbsent(id, k -> SessionServerPlayer.create(level(), new GameProfile(k, name)));
     }
 
+    /** Every live session, for the tick. */
+    static synchronized java.util.List<SessionServerPlayer> openSessions() {
+        return new java.util.ArrayList<>(SESSIONS.values());
+    }
+
     /** Ends a player's session: the menu's own removed() runs, as on close. */
     public static synchronized void end(UUID id) {
         SessionServerPlayer p = SESSIONS.remove(id);

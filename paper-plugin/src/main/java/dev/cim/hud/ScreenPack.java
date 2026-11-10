@@ -60,8 +60,16 @@ public final class ScreenPack {
      * index: a recording of the real mod's screen, not its logic. {@code move} is the slot
      * move the real client made first, or null.
      */
+    /**
+     * {@code covered}: per press state, the slots its art draws over (a window, a popup). In the
+     * real screen whatever such a state covers hides the slot's item beneath it.
+     */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
-                           Map<Integer, List<Piece>> states, int[] move) {
+                           Map<Integer, List<Piece>> states, int[] move, Map<Integer, java.util.Set<Integer>> covered) {
+        public Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
+                        Map<Integer, List<Piece>> states, int[] move) {
+            this(originX, originY, slots, states, move, new HashMap<>());
+        }
     }
 
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
@@ -96,7 +104,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v9");
+        StringBuilder out = new StringBuilder("v10");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -127,6 +135,11 @@ public final class ScreenPack {
                         out.append("spiece\t").append(st.getKey()).append('\t').append((int) q.glyph()).append('\t')
                                 .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
                                 .append(q.h()).append('\n');
+                    }
+                }
+                for (var cv : s.captured().covered().entrySet()) {
+                    for (int slot : cv.getValue()) {
+                        out.append("covered\t").append(cv.getKey()).append('\t').append(slot).append('\n');
                     }
                 }
                 for (GuiCaptures.Slot slot : s.captured().slots()) {
@@ -168,7 +181,10 @@ public final class ScreenPack {
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])})));
+                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])}, c.covered())));
+            } else if (p[0].equals("covered")) {
+                out.get(out.size() - 1).captured().covered()
+                        .computeIfAbsent(Integer.parseInt(p[1]), k -> new java.util.HashSet<>()).add(Integer.parseInt(p[2]));
             } else if (p[0].equals("spiece")) {
                 out.get(out.size() - 1).captured().states().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
@@ -520,6 +536,7 @@ public final class ScreenPack {
             String key = menu;
             List<Widget> widgets = new ArrayList<>();
             Map<Integer, List<Piece>> states = new HashMap<>();
+            Map<Integer, java.util.Set<Integer>> covered = new HashMap<>();
             int[] move = null;
             Path presses = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".presses"));
             if (Files.isRegularFile(presses)) {
@@ -536,6 +553,10 @@ public final class ScreenPack {
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
                         if (stateImage != null) {
                             states.put(i, captureTiles(opaque(stateImage), scale, left, top, art2, heights));
+                            java.util.Set<Integer> over = coveredSlots(image, stateImage, slots, scale, left, top);
+                            if (!over.isEmpty()) {
+                                covered.put(i, over);
+                            }
                         }
                     }
                 }
@@ -551,8 +572,48 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covered)));
         }
+    }
+
+    /**
+     * The slots a press state draws over: where the state's art differs from the base art in
+     * more than a tenth of a slot's 16x16 square (both captured with the inventory lifted, so
+     * only the screen itself differs). Measured: Mekanism's Upgrades window covers the menu
+     * slots under it, and the real screen shows no item there.
+     */
+    static java.util.Set<Integer> coveredSlots(BufferedImage base, BufferedImage state, List<GuiCaptures.Slot> slots,
+                                               int scale, int left, int top) {
+        java.util.Set<Integer> out = new java.util.HashSet<>();
+        if (base.getWidth() != state.getWidth() || base.getHeight() != state.getHeight()) {
+            return out;
+        }
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int size = 16 * scale;
+            int differ = 0;
+            int total = 0;
+            for (int y = y0; y < y0 + size; y++) {
+                for (int x = x0; x < x0 + size; x++) {
+                    if (x < 0 || y < 0 || x >= base.getWidth() || y >= base.getHeight()) {
+                        continue;
+                    }
+                    total++;
+                    if (base.getRGB(x, y) != state.getRGB(x, y)) {
+                        differ++;
+                    }
+                }
+            }
+            if (total > 0 && differ * 10 > total) {
+                out.add(i);
+            }
+        }
+        return out;
     }
 
     /**

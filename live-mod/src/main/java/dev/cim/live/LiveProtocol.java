@@ -50,6 +50,9 @@ public final class LiveProtocol {
         try {
             String[] lines = request.split("\n");
             String[] head = lines[0].split("\t");
+            if (head[0].equals("tick")) {
+                return tick();
+            }
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
@@ -70,6 +73,14 @@ public final class LiveProtocol {
                             net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                                     net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState();
                     FacadeLevel level = LiveMenus.level();
+                    boolean fresh = false;
+                    for (int i = 1; i < lines.length; i++) {
+                        fresh |= lines[i].equals("fresh");
+                    }
+                    if (fresh) {
+                        // As just placed: the old block entity goes with the old block.
+                        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    }
                     if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
                         level.setBlock(pos, wanted, 3);
                     }
@@ -86,6 +97,11 @@ public final class LiveProtocol {
                     // Where a player stands to click it: the menu's own reach check holds.
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
                     yield state(player, LiveMenus.clickBlock(player, pos));
+                }
+                case "state" -> {
+                    // What the open menu holds now, after ticks moved it.
+                    SessionServerPlayer player = LiveMenus.session(id, "cimlive");
+                    yield state(player, player.opened());
                 }
                 case "widgets" -> {
                     // widgets TAB uuid, then one line per widget: ordinal TAB active-expr TAB visible-expr.
@@ -139,6 +155,41 @@ public final class LiveProtocol {
         } catch (Throwable t) {
             return "error\t" + t.getClass().getSimpleName() + ": " + t.getMessage();
         }
+    }
+
+    /**
+     * One server tick for the block entities of open menus, driven by Paper's own tick: a
+     * machine works, a condenser destroys what was put into its trash slot, at the rate the
+     * real server runs them. Nothing else in the facade ticks.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static String tick() {
+        FacadeLevel level = LiveMenus.level();
+        int ticked = 0;
+        for (net.minecraft.core.BlockPos pos : new java.util.HashSet<>(BLOCKS.values())) {
+            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+            if (be == null) {
+                continue;
+            }
+            net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+            net.minecraft.world.level.block.entity.BlockEntityTicker ticker =
+                    state.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType) be.getType());
+            if (ticker == null) {
+                continue;
+            }
+            try {
+                ticker.tick(level, pos, state, be);
+                ticked++;
+            } catch (Throwable t) {
+                // A machine that cannot run here stops ticking; its menu stays as it is.
+            }
+        }
+        for (SessionServerPlayer p : LiveMenus.openSessions()) {
+            if (p.opened() != null) {
+                p.opened().broadcastChanges();
+            }
+        }
+        return "ticked\t" + ticked;
     }
 
     private static void readInventory(SessionServerPlayer player, String[] lines) {
