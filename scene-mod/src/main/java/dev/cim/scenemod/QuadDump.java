@@ -904,6 +904,7 @@ final class QuadDump {
             final float[][] uv = new float[4][2];
             final float[][] rgb = new float[4][4];
             int n = -1;
+            int packedLight = -1;
 
             RecordingBuffer(String state, boolean shaderDiffuse) {
                 this.state = state;
@@ -948,6 +949,13 @@ final class QuadDump {
             public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
                                     float a, int[] light, int overlay, boolean readAlpha) {
                 int[] v = q.getVertices();
+                // Match native applyBakedLighting's unsigned channel maxima.
+                // The quad format carries one pair, as for static block capture.
+                int quadLight = -1;
+                if (light != null && light.length > 0) {
+                    quadLight = Math.max(light[0] & 0xffff, v[6] & 0xffff)
+                            | (Math.max((light[0] >>> 16) & 0xffff, (v[6] >>> 16) & 0xffff) << 16);
+                }
                 float[][] p = new float[4][3];
                 float[][] t = new float[4][2];
                 float[][] c = new float[4][4];
@@ -964,10 +972,11 @@ final class QuadDump {
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
                 if (texture != null) {
-                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c);
+                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
+                            texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight);
                 } else {
                     writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
-                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels);
+                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight);
                 }
             }
 
@@ -975,6 +984,7 @@ final class QuadDump {
             public VertexConsumer addVertex(float x, float y, float z) {
                 flush();
                 n++;
+                if (n == 0) packedLight = -1;
                 pos[n][0] = x + (float) origin.x;
                 pos[n][1] = y + (float) origin.y;
                 pos[n][2] = z + (float) origin.z;
@@ -997,8 +1007,9 @@ final class QuadDump {
                         // Brightness(15,15) and the text renders flat-bright like
                         // the truth, at the per-character color the renderer set.
                         appendRow(out, texture, rawShade, -1, pos, uv, rgb,
-                                texture.startsWith("~") ? LightTexture.FULL_BRIGHT : -1);
-                    } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb, captureAtlasPixels)) {
+                                texture.startsWith("~") ? LightTexture.FULL_BRIGHT : packedLight);
+                    } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb,
+                            captureAtlasPixels, packedLight)) {
                         foreign++;
                     }
                     n = -1;
@@ -1032,6 +1043,7 @@ final class QuadDump {
 
             @Override
             public VertexConsumer setUv2(int u, int v) {
+                if (n == 0) packedLight = (u & 0xffff) | ((v & 0xffff) << 16);
                 return this;
             }
 

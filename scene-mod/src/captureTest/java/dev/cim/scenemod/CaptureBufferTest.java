@@ -61,7 +61,42 @@ public final class CaptureBufferTest {
             }
         }
         checkNativeLighting();
+        checkRecordedLight(type, ctor, getBuffer, flush, state);
         System.out.println("capture retained/interleaved buffer and native lighting tests: ALL OK");
+    }
+
+    private static void checkRecordedLight(Class<?> type, java.lang.reflect.Constructor<?> ctor,
+                                           java.lang.reflect.Method getBuffer,
+                                           java.lang.reflect.Method flush, String state) throws Exception {
+        Object capture = ctor.newInstance(List.of(), 0f);
+        VertexConsumer buffer = (VertexConsumer) getBuffer.invoke(capture, new Object(), state, false);
+        // A named fixture texture avoids initializing the GPU atlas in this transport test.
+        field(buffer.getClass(), "texture").set(buffer, "fixture:textures/light.png");
+        for (int quad = 0; quad < 3; quad++) {
+            for (int v = 0; v < 4; v++) {
+                vertex(buffer, v & 1, v >> 1, 255, 255);
+                if (quad == 0) buffer.setUv2(3 << 4, 12 << 4);
+                if (quad == 2) buffer.setUv2(15 << 4, 15 << 4);
+            }
+        }
+        flush.invoke(capture);
+        int[] baked = new int[32];
+        for (int v = 0; v < 4; v++) {
+            baked[v * 8 + 3] = -1;
+            baked[v * 8 + 6] = (7 << 4) | (4 << 20);
+        }
+        buffer.putBulkData(new com.mojang.blaze3d.vertex.PoseStack().last(),
+                new net.minecraft.client.renderer.block.model.BakedQuad(
+                        baked, -1, net.minecraft.core.Direction.UP, null, false),
+                new float[]{1, 1, 1, 1}, 1, 1, 1, 1,
+                new int[]{(3 << 4) | (12 << 20), 0, 0, 0}, 0, false);
+        String[] rows = field(type, "out").get(capture).toString().split("\n");
+        if (rows.length != 4 || !rows[0].endsWith("\t3\t12")
+                || rows[1].split("\t").length != 39 || !rows[2].endsWith("\t15\t15")
+                || !rows[3].endsWith("\t7\t12")) {
+            throw new AssertionError("native stream/baked light lost, leaked or merged incorrectly: "
+                    + Arrays.toString(rows));
+        }
     }
 
     private static void checkNativeLighting() throws Exception {

@@ -81,17 +81,15 @@ public final class CaptureColorTest {
             var out = type.getDeclaredField("out");
             out.setAccessible(true);
             String[] row = out.get(capture).toString().strip().split("\\t");
-            // 14-cy: the Capture rows end with the optional (block, sky) light
-            // tail; the ItemCapture rows keep the legacy 39-column shape.
-            boolean carriesLight = name.equals("Capture");
-            if (row.length != (carriesLight ? 41 : 39)) {
+            // Both native block and BER/item recorders retain the supplied light.
+            if (row.length != 41) {
                 throw new AssertionError(name + " lost vertex alpha: " + row.length);
             }
             String shaderShade = name.equals("ItemCapture") ? "1" : "0";
             if (!row[1].equals(shaderShade)) {
                 throw new AssertionError(name + " repeats or loses source shader lighting: " + row[1]);
             }
-            if (carriesLight && (!row[39].equals("8") || !row[40].equals("15"))) {
+            if (!row[39].equals("8") || !row[40].equals("15")) {
                 throw new AssertionError(name + " lost the packed light tail: " + row[39] + "/" + row[40]);
             }
             for (int i = 0; i < 4; i++) {
