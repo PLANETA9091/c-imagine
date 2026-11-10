@@ -550,20 +550,19 @@ public final class ShadowClassLoader extends ClassLoader {
                 if (name.endsWith("/") || name.endsWith("module-info.class")) {
                     continue;
                 }
-                if (name.endsWith(".class")) {
-                    String internal = name.substring(0, name.length() - ".class".length());
-                    map.putIfAbsent(name, new IndexEntry(i, name, internal));
-                } else {
-                    map.putIfAbsent(name, new IndexEntry(i, name));
-                }
-                if (name.endsWith(".class")) {
-                    String internal = name.substring(0, name.length() - ".class".length());
+                boolean classEntry = name.endsWith(".class");
+                String internal = classEntry ? name.substring(0, name.length() - ".class".length()) : "";
+                // Both paths describe the same jar entry. Share its metadata
+                // rather than retaining a second record and internal-name copy.
+                IndexEntry hit = new IndexEntry(i, name, internal);
+                map.putIfAbsent(name, hit);
+                if (classEntry) {
                     String relocated = NativeReloc.mapInternal(internal);
                     if (relocated != null && !relocated.equals(internal)) {
                         // The relocated key must carry the ORIGINAL internal
                         // name: the native relocation stage rewrites by the
                         // on-disk name (the requested name is already shadow).
-                        map.put(relocated + ".class", new IndexEntry(i, name, internal));
+                        map.put(relocated + ".class", hit);
                     }
                 }
             }
