@@ -362,7 +362,22 @@ final class QuadDump {
         else if (layer == RenderType.solid()) material = "solid";
         else if (layer == RenderType.cutout()) material = "cutout";
         else throw new IllegalStateException("unsupported native liquid layer: " + layer);
-        return capture.out.toString().replace("\n", "\t" + material + "\n");
+        return withLiquidMaterial(capture.out.toString(), material);
+    }
+
+    static String withLiquidMaterial(String mesh, String material) {
+        StringBuilder out = new StringBuilder();
+        for (String line : mesh.lines().toList()) {
+            String[] row = line.split("\t", -1);
+            if (row.length != 39 && row.length != 41) {
+                throw new IllegalArgumentException("unexpected liquid vertex row: " + row.length);
+            }
+            // Material precedes the optional BLOCK/SKY tail in both producer and reader.
+            out.append(String.join("\t", java.util.Arrays.copyOf(row, 39))).append('\t').append(material);
+            if (row.length == 41) out.append('\t').append(row[39]).append('\t').append(row[40]);
+            out.append('\n');
+        }
+        return out.toString();
     }
 
     static void setupCaptureLighting(boolean constantAmbientLight) {

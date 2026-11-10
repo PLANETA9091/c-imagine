@@ -97,6 +97,14 @@ public final class CaptureBufferTest {
             throw new AssertionError("native stream/baked light lost, leaked or merged incorrectly: "
                     + Arrays.toString(rows));
         }
+        String[] fluid = QuadDump.withLiquidMaterial(String.join("\n", rows) + "\n", "translucent")
+                .split("\n");
+        if (!fluid[0].endsWith("\ttranslucent\t3\t12")
+                || fluid[0].split("\t").length != 42
+                || !fluid[1].endsWith("\ttranslucent") || fluid[1].split("\t").length != 40
+                || !fluid[3].endsWith("\ttranslucent\t7\t12")) {
+            throw new AssertionError("liquid material overwrote or followed the packed light tail");
+        }
     }
 
     private static void checkNativeLighting() throws Exception {
