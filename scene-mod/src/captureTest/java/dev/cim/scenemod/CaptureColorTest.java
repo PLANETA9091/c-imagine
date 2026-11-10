@@ -29,14 +29,18 @@ public final class CaptureColorTest {
                     contents, 16, 16, 0, 0);
             for (boolean readColor : new boolean[]{true, false}) {
                 for (float alpha : new float[]{1f, .37f, .73f}) {
-                    compare(sprite, readColor, alpha);
+                    for (int[] light : new int[][]{{0, 8, 15},
+                            {(15 << 4) | (4 << 20), 8, 15}, {(3 << 4) | (12 << 20), 8, 5}}) {
+                        compare(sprite, readColor, alpha, light[0], light[1], light[2]);
+                    }
                 }
             }
         }
-        System.out.println("capture baked RGBA vs native consumer: ALL 12 recorder comparisons OK");
+        System.out.println("capture baked RGBA vs native consumer: ALL 36 recorder comparisons OK");
     }
 
-    private static void compare(TextureAtlasSprite sprite, boolean readColor, float alpha) throws Exception {
+    private static void compare(TextureAtlasSprite sprite, boolean readColor, float alpha,
+                                int bakedLight, int sceneBlock, int sceneSky) throws Exception {
         int[] vertices = new int[32];
         int[] colors = {0x4c3399dd, 0x81e14023, 0x00ffffff, 0xffffffff};
         for (int i = 0; i < 4; i++) {
@@ -47,14 +51,14 @@ public final class CaptureColorTest {
                     ? colors[i] : Integer.reverseBytes(colors[i]);
             vertices[offset + 4] = Float.floatToIntBits(i == 1 || i == 2 ? 1 : 0);
             vertices[offset + 5] = Float.floatToIntBits(i >= 2 ? 1 : 0);
+            vertices[offset + 6] = bakedLight;
         }
         var quad = new BakedQuad(vertices, -1, Direction.SOUTH, sprite, true);
         float[] brightness = {1f, .87f, .53f, .4f};
-        // 14-cy: the Capture recorder rides the quad's packed light (the
-        // LevelRenderer getLightColor layout: block = bits 4-7, sky = bits
-        // 20-23); feed it a real (block 8, sky 15) sample, not zeros.
+        // Compare the emitted native UV2 after combining scene and baked
+        // light. The serialized BLOCK/SKY tail uses the level nibbles.
         int[] light = new int[4];
-        Arrays.fill(light, (8 << 4) | (15 << 20));
+        Arrays.fill(light, (sceneBlock << 4) | (sceneSky << 20));
         var expected = new NativeRecorder();
         var pose = new PoseStack().last();
         expected.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, light, 0, readColor);
@@ -89,7 +93,8 @@ public final class CaptureColorTest {
             if (!row[1].equals(shaderShade)) {
                 throw new AssertionError(name + " repeats or loses source shader lighting: " + row[1]);
             }
-            if (!row[39].equals("8") || !row[40].equals("15")) {
+            if (!row[39].equals(Integer.toString((expected.light[0][0] >> 4) & 15))
+                    || !row[40].equals(Integer.toString((expected.light[0][1] >> 4) & 15))) {
                 throw new AssertionError(name + " lost the packed light tail: " + row[39] + "/" + row[40]);
             }
             for (int i = 0; i < 4; i++) {
@@ -109,6 +114,7 @@ public final class CaptureColorTest {
 
     private static final class NativeRecorder implements VertexConsumer {
         final int[][] colors = new int[4][4];
+        final int[][] light = new int[4][2];
         int vertex = -1;
         public VertexConsumer addVertex(float x, float y, float z) { vertex++; return this; }
         public VertexConsumer setColor(int r, int g, int b, int a) {
@@ -116,7 +122,7 @@ public final class CaptureColorTest {
         }
         public VertexConsumer setUv(float u, float v) { return this; }
         public VertexConsumer setUv1(int u, int v) { return this; }
-        public VertexConsumer setUv2(int u, int v) { return this; }
+        public VertexConsumer setUv2(int u, int v) { light[vertex] = new int[]{u, v}; return this; }
         public VertexConsumer setNormal(float x, float y, float z) { return this; }
     }
 }

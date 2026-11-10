@@ -508,7 +508,8 @@ final class QuadDump {
             // composite into the scene-lit and the fullbright (mod-forced
             // light override) quad groups, and the replay can pin each
             // group's display to the light the truth actually rendered with.
-            int packed = light != null && light.length > 0 ? light[0] : -1;
+            int packed = light != null && light.length > 0
+                    ? mergePackedLight(light[0], q.getVertices()[6]) : -1;
             appendQuad(out, q, sprites, offset, brightness, r, g, b, a, readAlpha, packed);
         }
 
@@ -541,6 +542,12 @@ final class QuadDump {
         public VertexConsumer setNormal(float x, float y, float z) {
             return this;
         }
+    }
+
+    /** Native applyBakedLighting takes the unsigned maximum of each UV2 channel. */
+    private static int mergePackedLight(int scene, int baked) {
+        return Math.max(scene & 0xffff, baked & 0xffff)
+                | (Math.max((scene >>> 16) & 0xffff, (baked >>> 16) & 0xffff) << 16);
     }
 
     private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites, Vec3 off,
@@ -976,8 +983,7 @@ final class QuadDump {
                 // The quad format carries one pair, as for static block capture.
                 int quadLight = -1;
                 if (light != null && light.length > 0) {
-                    quadLight = Math.max(light[0] & 0xffff, v[6] & 0xffff)
-                            | (Math.max((light[0] >>> 16) & 0xffff, (v[6] >>> 16) & 0xffff) << 16);
+                    quadLight = mergePackedLight(light[0], v[6]);
                 }
                 float[][] p = new float[4][3];
                 float[][] t = new float[4][2];
