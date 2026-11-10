@@ -173,7 +173,21 @@ cp srv-wall/c-imagine/scenes/gallery-gui-*.tsv srv-ours/c-imagine/scenes/
 echo eula=true > srv-ours/eula.txt
 printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft\\\\:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nserver-port=$GAME_PORT\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\nresource-pack=http\\\\://127.0.0.1\\\\:$PACK_PORT/cim-f2v-pack.zip\nresource-pack-sha1=%s\n" "$SHA1" > srv-ours/server.properties
 [ -f srv-ours/paper.jar ] || { URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['downloads']['server:default']['url'])"); curl -sL --max-time 200 -o srv-ours/paper.jar "$URL"; }
-( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+if [ -n "${OURS_CRUSSTY:-}" ]; then
+  # Ours on the c-imagine stack: Paper under CRUSSTY with the layer, the same mods as the
+  # truth and cimlive, so every open, slot move and button press runs the mod's own code.
+  cp -r "$OURS_CRUSSTY/." srv-ours/
+  unzip -oq dist/module-imagine.zip -d srv-ours/modules/
+  mkdir -p srv-ours/crus srv-ours/mods
+  printf '{"layerDir": "%s"}\n' "$ROOT/layer-srv/libraries" > srv-ours/crus/c-imagine.json
+  sed -i 's/memory = "[0-9]*G"/memory = "5G"/' srv-ours/crussty.toml
+  cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar srv-ours/mods/
+  cp scripts/log4j2-layer.xml srv-ours/
+  ( cd srv-ours && PATH="$J25/bin:$PATH" JAVA_HOME="$J25" CIM_F2V_PORT=$PACK_PORT CIM_F2V_FASTBOOT=true \
+      setsid bash -c "crussty run >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+else
+  ( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+fi
 [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client
 sed -i -e "s#127.0.0.1:25565#127.0.0.1:$GAME_PORT#g" -e 's/^java /java -Xmx1G /' visual-client/launch.txt
 mkdir -p visual-client/game

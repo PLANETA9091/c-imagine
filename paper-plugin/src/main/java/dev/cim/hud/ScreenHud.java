@@ -392,6 +392,56 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return "moved " + m[0] + " to " + m[1];
     }
 
+    /**
+     * The gallery's ours leg through the mod's own code: the opener the walk proved (a held
+     * item, a block) is used for real in the layer, and the screen is drawn from the menu it
+     * opened. False when the layer is absent, the opener is of another kind, or the mod's code
+     * opened a different menu; the caller then shows the recorded screen.
+     */
+    public boolean openMenuLive(Player player, String menuId, String menuClass, String heldId, String opener) {
+        LiveBridge bridge = live();
+        if (bridge == null || opener == null) {
+            return false;
+        }
+        refreshCaptures();
+        close(player);
+        LiveBridge.State state;
+        if (opener.startsWith("item:")) {
+            ItemStack hand = player.getInventory().getItemInMainHand();
+            if ((hand == null || hand.getType().isAir()) && heldId != null) {
+                player.getInventory().setItemInMainHand(bridge.stackOf(heldId, 1));
+            }
+            state = bridge.openHeld(player);
+        } else if (opener.startsWith("block:")) {
+            state = bridge.openBlock(player, player.getLocation().getBlock().getRelative(2, 0, 0),
+                    opener.substring("block:".length()));
+        } else {
+            return false;
+        }
+        if (state.error() != null || !state.open() || !menuId.equals(state.menuType())) {
+            log.info("[cim-screen] live harness open of " + menuId + " by " + opener + " -> "
+                    + (state.error() != null ? state.error() : state.menuType()) + "; recorded screen instead");
+            if (state.error() == null) {
+                bridge.keepBlockEntity(player, bridge.close(player));
+            }
+            return false;
+        }
+        ScreenPack.Scene scene = sceneFor(menuId, menuClass);
+        if (scene == null) {
+            bridge.keepBlockEntity(player, bridge.close(player));
+            return false;
+        }
+        harnessFrame = true;
+        open(player, scene);
+        harnessFrame = false;
+        Session s = open.get(player.getUniqueId());
+        s.pointerShown = false;
+        s.live = true;
+        applyLive(player, s, state);
+        log.info("[cim-screen] live harness opened " + menuId + " by " + opener + " (" + state.slots().size() + " slots)");
+        return true;
+    }
+
     /** Opens the screen of one menu; the gallery's ours leg uses this. */
     public boolean openMenu(Player player, String menuId, String menuClass) {
         refreshCaptures();

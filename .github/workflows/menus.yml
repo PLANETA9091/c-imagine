@@ -13,6 +13,9 @@ on:
       - 'scripts/hud/**'
       - 'scripts/cimscene/menu-sheet.py'
       - 'scripts/visual/**'
+      - 'live-mod/**'
+      - 'java/**'
+      - 'crates/**'
       - '.github/workflows/menus.yml'
   workflow_dispatch: {}
 
@@ -199,10 +202,37 @@ jobs:
         with:
           name: plan-scenes
           path: plan-scenes
+      # Ours is the c-imagine stack: Paper under CRUSSTY with the layer and cimlive, so every
+      # open, slot move and button press runs the mod's own code (roadmap M6.3).
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: build the layer (bootstrap, module, cimlive)
+        env:
+          JAVA_HOME: ${{ steps.jdk21.outputs.path }}
+        run: |
+          bash scripts/build-bootstrap.sh
+          CIM_BOOTSTRAP_JAR="$PWD/java/cim-bootstrap/build/cim-bootstrap.jar" bash scripts/package-module.sh
+          gradle build --no-daemon -p live-mod
+      - name: scaffold Paper 26.3 with CRUSSTY
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm i -g crussty
+          crussty init --platform paper --version 26.3 --dir srv-crus 2>&1 | tee init.log
+          # init only warns when a release download fails (GitHub 504 on the direct asset
+          # URL, measured); whatever it missed comes through the API.
+          TAG=$(grep -oE 'releases/download/v[0-9.]+' init.log | head -1 | sed 's#releases/download/##')
+          [ -s srv-crus/launcher/launcher.jar ] || { mkdir -p srv-crus/launcher; gh release download "$TAG" -R PLANETA9091/CRUSSTY -p launcher.jar -D srv-crus/launcher --clobber; }
+          [ -s srv-crus/libcrussty_runtime.so ] || gh release download "$TAG" -R PLANETA9091/CRUSSTY -p libcrussty_runtime.so -D srv-crus --clobber
+          ls -la srv-crus/launcher/launcher.jar srv-crus/libcrussty_runtime.so
       - name: truth, ours and the pixel verdict
         env:
           J21: ${{ steps.jdk21.outputs.path }}
           J25: ${{ steps.jdk25.outputs.path }}
+          OURS_CRUSSTY: ${{ github.workspace }}/srv-crus
         run: bash scripts/hud/menu-shard.sh ${{ matrix.ns }} ${{ matrix.si }} ${{ matrix.k }}
       - name: keep the evidence
         if: always()

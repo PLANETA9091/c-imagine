@@ -66,12 +66,22 @@ public final class HudBootstrap {
     /** The gallery's ours leg: shows the menu it recorded, to the harness account too. */
     public static boolean openForHarness(org.bukkit.entity.Player player, String menuId, String menuClass,
                                          String heldId) {
+        return openForHarness(player, menuId, menuClass, heldId, null);
+    }
+
+    /**
+     * The gallery's ours leg with the opener the walk used: when the layer answers, the page's
+     * menu is opened by the mod's own code (the held item's use, the block's use), so every
+     * press and slot move after it runs the mod's logic; otherwise the recorded screen.
+     */
+    public static boolean openForHarness(org.bukkit.entity.Player player, String menuId, String menuClass,
+                                         String heldId, String opener) {
         if (screens == null) {
             return false;
         }
         hud.show(player);
         player.getInventory().setItemInMainHand(screens.carrier(heldId));
-        return screens.openMenu(player, menuId, menuClass);
+        return screens.openMenuLive(player, menuId, menuClass, heldId, opener) || screens.openMenu(player, menuId, menuClass);
     }
 
     public static void enable(JavaPlugin plugin) {
