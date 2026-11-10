@@ -569,7 +569,9 @@ public final class CimSceneMod {
      */
     private static String benbtB64(ServerLevel level, BlockEntity tile) {
         try {
-            CompoundTag tag = tile.saveWithoutMetadata(level.registryAccess());
+            CompoundTag tag = CaptureBlockEntityData.snapshot(
+                    tile.saveWithoutMetadata(level.registryAccess()),
+                    tile.getUpdateTag(level.registryAccess()));
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             NbtIo.writeCompressed(tag, bos);
             return Base64.getEncoder().encodeToString(bos.toByteArray());

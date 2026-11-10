@@ -1091,9 +1091,11 @@ final class QuadDump {
             String b64 = beTags.get(pos);
             if (b64 != null) {
                 try {
-                    be.loadWithComponents(NbtIo.readCompressed(
+                    CaptureBlockEntityData.restore(NbtIo.readCompressed(
                             new ByteArrayInputStream(Base64.getDecoder().decode(b64)),
-                            NbtAccounter.unlimitedHeap()), mc.level.registryAccess());
+                            NbtAccounter.unlimitedHeap()),
+                            tag -> be.loadWithComponents(tag, mc.level.registryAccess()),
+                            tag -> be.handleUpdateTag(tag, mc.level.registryAccess()));
                 } catch (Throwable bad) {
                     if (requireSnapshot) throw new IllegalStateException("native tank snapshot could not load", bad);
                     LOGGER.info("[cimscene] quad dump be nbt load skip {}: {}",
