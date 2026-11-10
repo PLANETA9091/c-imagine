@@ -915,6 +915,8 @@ jobs:
             srv-wall/c-imagine/scenes/quads
             seed-pack/scenes/*.ctx.tsv
             srv-wall/c-imagine/scenes/*.ctx.tsv
+            seed-pack/scenes/*.light
+            srv-wall/c-imagine/scenes/*.light
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-items.resolved.tsv
             seed-pack/f2v/pack.sha1

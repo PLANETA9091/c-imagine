@@ -668,6 +668,8 @@ public final class CimSceneMod {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
             Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+            Files.writeString(parent.resolve(manifest.replace(".tsv", ".light")),
+                    CaptureLightData.snapshot(level, tsv.toString()), StandardCharsets.UTF_8);
             if (benbtRows > 0) {
                 String benbtFile = "gallery-" + namespace + "-p" + page + ".benbt";
                 Files.writeString(parent.resolve(benbtFile), benbt.toString(), StandardCharsets.UTF_8);
@@ -1689,6 +1691,8 @@ public final class CimSceneMod {
                 Path parent = Path.of("c-imagine", "scenes");
                 Files.createDirectories(parent);
                 Files.writeString(parent.resolve(fluidStem + ".tsv"), settled, StandardCharsets.UTF_8);
+                Files.writeString(parent.resolve(fluidStem + ".light"),
+                        CaptureLightData.snapshot(level, settled.toString()), StandardCharsets.UTF_8);
                 Files.writeString(parent.resolve(fluidStem + ".benbt"), tags, StandardCharsets.UTF_8);
             } catch (IOException ioe) {
                 LOGGER.error("[cimscene] gallery-fluid manifest write failed {}: {}", fluidStem, ioe.toString());

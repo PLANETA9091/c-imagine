@@ -206,6 +206,12 @@ final class QuadDump {
                 continue;
             }
             Page page = new Page();
+            Path lightFile = mf.resolveSibling(mf.getFileName().toString().replaceAll("\\.tsv$", ".light"));
+            if (Files.exists(lightFile)) {
+                page.light = CaptureLightData.parse(Files.readString(lightFile, StandardCharsets.UTF_8));
+            } else {
+                LOGGER.warn("[cimscene] quad dump legacy page without settled light {}", mf.getFileName());
+            }
             page.requireSnapshot = fluidPage;
             Map<BlockPos, String> names = new HashMap<>();
             Map<BlockPos, BlockState> targets = new HashMap<>();
@@ -432,7 +438,8 @@ final class QuadDump {
                 return;
             }
             ItemCapture capture = new ItemCapture(sprites, 0);
-            renderer.render(be, 0, new PoseStack(), capture, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            renderer.render(be, 0, new PoseStack(), capture,
+                    net.minecraft.client.renderer.LevelRenderer.getLightColor(page, pos), OverlayTexture.NO_OVERLAY);
             capture.flush();
             out.append(capture.out);
             berForeign += capture.foreign;
@@ -1053,6 +1060,7 @@ final class QuadDump {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
         final Map<BlockPos, String> beTags = new HashMap<>();
         boolean requireSnapshot;
+        CaptureLightData light;
         final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
@@ -1122,20 +1130,19 @@ final class QuadDump {
             return null;
         }
 
-        // 14-cy: the capture's light queries return the JOINED level's real
-        // light at the wall — the ambient-occlusion calculator bakes the real
-        // per-vertex light structure into the recorded quads, and the pack
-        // splits fullbright (mod light-override) quads from scene-lit ones so
-        // the replay can pin each display to the light the truth rendered
-        // with. Worldless capture (the static selftest path) keeps 15.
+        // The live world holds the last walked page when the dump runs.
+        // Native AO and BER lighting must read this page's settled snapshot.
+        // Older captures without a sidecar retain their explicit legacy path.
         @Override
         public int getBrightness(LightLayer layer, BlockPos pos) {
+            if (light != null) return light.brightness(layer, pos);
             Minecraft mc = Minecraft.getInstance();
             return mc.level != null ? mc.level.getBrightness(layer, pos) : 15;
         }
 
         @Override
         public int getRawBrightness(BlockPos pos, int darkening) {
+            if (light != null) return light.rawBrightness(pos, darkening);
             Minecraft mc = Minecraft.getInstance();
             return mc.level != null ? mc.level.getRawBrightness(pos, darkening) : 15;
         }
