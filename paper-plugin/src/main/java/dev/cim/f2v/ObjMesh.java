@@ -766,13 +766,24 @@ final class ObjMesh {
                         // (DOOR_SPRITE) and the poly bake's consumer set is the
                         // coloured/cutout families the truth renders NEAREST.
                         double sx = u / 16 * w;
-                        double sy = v / 16 * w; // frame 0 of an animation
+                        // frame 0 of an animation: the strip's frame height is w
+                        // (h = frames*w, h > w) — but a PLAIN sprite taller-or-wider
+                        // than square maps v over its full height h; multiplying by
+                        // w on a wide sprite (w > h) sent sy past h-1 and the bake
+                        // died on getRGB (measured: the 14-dq run's seed, the
+                        // supplementaries/farmersdelight sprites — AIOOBE at
+                        // ByteInterleavedRaster). The shape rule: h a multiple of
+                        // w with h > w = the animation strip (frame height w);
+                        // anything else maps over h.
+                        double fh = (h > w && h % w == 0) ? w : h;
+                        double sy = v / 16 * fh;
                         int px = (int) Math.floor(sx);
                         int py = (int) Math.floor(sy);
                         // vanilla atlas pads sprites by extending their edge texels
-                        // (the stitcher's border pass) — clamp, never repeat
+                        // (the stitcher's border pass) — clamp, never repeat, to the
+                        // ACTUAL bounds of each axis
                         int tx0 = Math.min(w - 1, Math.max(0, px));
-                        int ty0 = Math.min(w - 1, Math.max(0, py));
+                        int ty0 = Math.min(h - 1, Math.max(0, py));
                         int argb = src.getRGB(tx0, ty0);
                         if (colors != null) {
                             int rgb = 0;
