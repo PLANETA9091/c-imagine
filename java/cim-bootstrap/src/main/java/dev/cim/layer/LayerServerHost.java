@@ -321,7 +321,8 @@ public final class LayerServerHost {
                     .invoke(null, root);
             Object access = storageCls.getMethod("validateAndCreateAccess", String.class)
                     .invoke(storage, levelName);
-            Class<?> accessCls = access.getClass();
+            Class<?> accessCls = Class.forName(
+                    NS + "world.level.storage.LevelStorageSource$LevelStorageAccess");
             Object levelTag = (Boolean) accessCls.getMethod("hasWorldData").invoke(access)
                     ? accessCls.getMethod("getDataTag").invoke(access) : null;
             Object packs = Class.forName(SERVER_PACKS_SOURCE)
@@ -404,6 +405,7 @@ public final class LayerServerHost {
 
             // the REAL DedicatedServer; the server thread IS Paper main
             Class<?> serverCls = Class.forName(DEDICATED_SERVER);
+            Class<?> minecraftServerCls = Class.forName(NS + "server.MinecraftServer");
             Class<?> factoryIf2 = Class.forName(CHUNK_PROGRESS_FACTORY);
             Object progressFactory = Proxy.newProxyInstance(factoryIf2.getClassLoader(),
                     new Class<?>[] {factoryIf2},
@@ -426,7 +428,8 @@ public final class LayerServerHost {
                 throw new IllegalStateException("DedicatedServer.initServer returned false");
             }
             // ServerStartedEvent through the native hook (runServer's next line)
-            Class.forName(LIFECYCLE_HOOKS).getMethod("handleServerStarted", serverCls)
+            Class.forName(LIFECYCLE_HOOKS)
+                    .getMethod("handleServerStarted", minecraftServerCls)
                     .invoke(null, server);
 
             // runServer's pre-loop state + the reflective handles for the driver
@@ -469,7 +472,8 @@ public final class LayerServerHost {
             // Main's existing-world branch: resume the stored level
             Object ldd = Class.forName(LEVEL_STORAGE_SOURCE)
                     .getMethod("getLevelDataAndDimensions", levelTag.getClass(),
-                            dataConfiguration.getClass(), levelStemRegistry.getClass(), frozenCls)
+                            Class.forName(NS + "world.level.WorldDataConfiguration"),
+                            Class.forName(NS + "core.Registry"), frozenCls)
                     .invoke(null, levelTag, dataConfiguration, levelStemRegistry, datapackWorldgen);
             Class<?> lddCls = ldd.getClass();
             Object data = lddCls.getMethod("worldData").invoke(ldd);
@@ -493,7 +497,7 @@ public final class LayerServerHost {
                         dataConfiguration);
         Object worldOptions = field(properties, "worldOptions").get(properties);
         Object dimensions = properties.getClass()
-                .getMethod("createDimensions", datapackWorldgen.getClass())
+                .getMethod("createDimensions", Class.forName(NS + "core.RegistryAccess"))
                 .invoke(properties, datapackWorldgen);
         Class<?> completeCls = Class.forName(
                 NS + "world.level.levelgen.WorldDimensions$Complete");
@@ -503,7 +507,8 @@ public final class LayerServerHost {
         Object lifecycle = completeCls.getMethod("lifecycle").invoke(complete);
         Object worldgenLifecycle = datapackWorldgen.getClass()
                 .getMethod("allRegistriesLifecycle").invoke(datapackWorldgen);
-        Object combined = lifecycle.getClass().getMethod("add", lifecycle.getClass())
+        Class<?> lifecycleCls = Class.forName("com.mojang.serialization.Lifecycle");
+        Object combined = lifecycleCls.getMethod("add", lifecycleCls)
                 .invoke(lifecycle, worldgenLifecycle);
         Class<?> specialPropertyCls = Class.forName(
                 NS + "world.level.storage.PrimaryLevelData$SpecialWorldProperty");
@@ -511,7 +516,7 @@ public final class LayerServerHost {
                 .getConstructor(settingsCls,
                         Class.forName(NS + "world.level.levelgen.WorldOptions"),
                         specialPropertyCls,
-                        Class.forName("com.mojang.serialization.Lifecycle"))
+                        lifecycleCls)
                 .newInstance(levelSettings, worldOptions,
                         completeCls.getMethod("specialWorldProperty").invoke(complete),
                         combined);
