@@ -37,6 +37,13 @@ not evidence that a full NeoForge dedicated-server runtime already runs in Paper
   paths are translated at the facade and which require actual packet handling.
   Prove ordering, state synchronization and absence of modded-id leaks with real
   mod traffic and a vanilla client, including interactions and reconnects.
+  MEASURED AUDIT (2026-11-10):
+  `runtime-analysis/f2v-translation-coverage.md` records the per-path table —
+  every outbound family is vanilla-clean at the source (facade projection /
+  pack channel / native Paper), the measured modded-id leak count is 0, and the
+  two genuinely absent paths are named (incoming player actions into the layer,
+  reconnect/state-sync measurement); the sound/particle replays stay
+  substituted, not reproduced, per the fidelity audit below.
 - [ ] **M5/M6/M7: prove visuals and server mechanics together.** Resource packs,
   custom model data and display entities already provide visual representations;
   the gallery does not prove the corresponding machine/entity logic runs inside
