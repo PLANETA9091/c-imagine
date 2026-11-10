@@ -594,6 +594,32 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS item walk hit the MAXP cap without exhausted"; exit 1; }
           done
+          # 14-dw the particle walk needs a LIVE viewer: sendParticles
+          # broadcasts only to players in range — the 14-ds forensics measured
+          # the dump client dead before the particle series on three
+          # consecutive runs (the seed manifests all skip-only
+          # 'no-simple-options:empty-broadcast', the ours replay sent 0
+          # packets, the mapped-identity stuck 0/38 byte-identical, the sound
+          # control 148/148 on the same runs) — the sound flip's bar can never
+          # be measured from empty manifests. The quad dump's own relaunch
+          # idiom, pulled BEFORE the series (the launch file exists since the
+          # walk step's start; block parity is banked, the walk may relaunch
+          # freely per the dump step's own comment).
+          if ! grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null \
+             || grep -qiE "disconnected|connection lost" truth-client/client-dump.out 2>/dev/null; then
+            echo "the dump client did not survive to the particle walk — relaunching so sendParticles has a viewer"
+            pkill -f cim.quaddump 2>/dev/null || true
+            rm -f truth-client/client-dump.out
+            LAUNCH=$(cat launch-dump.txt)
+            setsid bash -c "cd truth-client && timeout 900 bash -c \"$LAUNCH\" > client-dump.out 2>&1" < /dev/null > /dev/null 2>&1 &
+            for i in $(seq 1 600); do
+              grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null && break
+              sleep 1
+            done
+            grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
+              || { echo "relaunched particle-walk viewer failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
+            sleep 5
+          fi
           # PARTICLE walk (per ladder ns, to exhaustion)
           for NS in $LADDER_NS; do
             EX=0
