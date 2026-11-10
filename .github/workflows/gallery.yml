@@ -877,16 +877,21 @@ jobs:
             seed-pack/scenes seed-pack/f2v/visual-particles.tsv
           test -f seed-pack/f2v/visual-sounds.tsv
           test -f seed-pack/f2v/visual-particles.tsv
-          # 14-dy the placeholder ledger: the texture-fidelity audit's named
-          # backlog (source sprite + build context + uses per fallback) —
-          # the file exists even when EMPTY (the header-only receipt that
-          # the build substituted nothing), like the replay .subs.tsv files
-          test -f seed-pack/f2v/placeholders.tsv
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets visual-client/client.jar 2>&1 | tee pack-build.log
+          # 14-dy the placeholder ledger: the texture-fidelity audit's named
+          # backlog (source sprite + build context + uses per fallback) —
+          # the file exists even when EMPTY (the header-only receipt that
+          # the build substituted nothing), like the replay .subs.tsv files.
+          # THE BUILD WRITES IT (F2vPack drains the ledger at the end of
+          # --build; the dump side rides quads/placeholders.tsv) — the assert
+          # sits AFTER the build (measured: asserted before the build it
+          # failed every run since 14-dy landed, hidden behind the robit
+          # disconnect that died the seed earlier).
+          test -f seed-pack/f2v/placeholders.tsv
           # Keep the exact captured vertices/colors for parity diagnosis and
           # cache-hit runs, outside the f2v directory served to ours shards.
           mv seed-pack/f2v/quads seed-pack/quads
