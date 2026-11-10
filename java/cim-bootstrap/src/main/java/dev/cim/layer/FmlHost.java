@@ -423,6 +423,13 @@ public final class FmlHost {
 
             // 7) lifecycle: common setup + dedicated server setup, per container
             fireSetupEvents(containers);
+            // CommonModLoader.load initializes capabilities and registry data
+            // maps after setup; world reloads require these registrations.
+            Method registrationInit = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.neoforge.internal.RegistrationEvents")
+                    .getDeclaredMethod("init");
+            registrationInit.setAccessible(true);
+            registrationInit.invoke(null);
 
             // 8) start the game bus (mirrors ServerModLoader: after registration)
             Object gameBus = getStatic(Class.forName(NEOFORGE), "EVENT_BUS");
@@ -639,16 +646,10 @@ public final class FmlHost {
     }
 
     /**
-     * A {@code SecureJar} proxy over the mod jar file.
-     *
-     * <p>The real {@code SecureJar.from(Path)} needs the
-     * {@code UnionFileSystemProvider} installed at JVM boot
-     * ({@code FileSystemProvider.installedProviders()} is immutable after
-     * startup and our jars are never on the system classpath), so the
-     * interface is served by hand: the manifest is read through a plain
-     * {@code JarFile}, and resource lookups ({@code getPath}) extract single
-     * entries to a temp dir — the only consumer on this path is
-     * {@code ModFileParser.modsTomlParser} reading {@code neoforge.mods.toml}.
+     * SecureJar metadata over a JDK ZIP filesystem. Native PathPackResources
+     * requires a directory root with working traversal, not an archive filename
+     * or individually extracted metadata files. No boot-installed union provider
+     * is needed for this single-archive resource tree.
      */
     private static Object proxySecureJar(ModSpec mod) throws Exception {
         Class<?> sjIf = Class.forName(SECURE_JAR);
@@ -657,15 +658,25 @@ public final class FmlHost {
         java.util.jar.Manifest manifest = readManifest(jarPath);
         Object moduleDescriptor = java.lang.module.ModuleDescriptor
                 .newOpenModule(mod.id()).build();
-        Map<String, Path> extracted = new HashMap<>();
+        java.nio.file.FileSystem resources = java.nio.file.FileSystems.newFileSystem(jarPath);
+        Path resourceRoot = resources.getPath("/");
 
         Object mdp = Proxy.newProxyInstance(shadowLoader(), new Class<?>[] {mdpIf},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "name" -> mod.id();
                     case "descriptor" -> moduleDescriptor;
                     case "uri" -> jarPath.toUri();
-                    case "findFile" -> java.util.Optional.empty();
-                    case "open" -> java.util.Optional.empty();
+                    case "findFile" -> {
+                        Path resource = resourceRoot.resolve((String) args[0]);
+                        yield java.nio.file.Files.exists(resource)
+                                ? java.util.Optional.of(resource.toUri()) : java.util.Optional.empty();
+                    }
+                    case "open" -> {
+                        Path resource = resourceRoot.resolve((String) args[0]);
+                        yield java.nio.file.Files.isRegularFile(resource)
+                                ? java.util.Optional.of(java.nio.file.Files.newInputStream(resource))
+                                : java.util.Optional.empty();
+                    }
                     case "getManifest" -> manifest;
                     case "verifyAndGetSigners" -> null;
                     default -> defaultValue(method);
@@ -675,13 +686,17 @@ public final class FmlHost {
                 (proxy, method, args) -> switch (method.getName()) {
                     case "moduleDataProvider" -> mdp;
                     case "name" -> mod.id();
-                    case "getPrimaryPath", "getRootPath" -> jarPath;
-                    case "getPath" -> extractEntry(jarPath, joinPaths(args), extracted);
+                    case "getPrimaryPath" -> jarPath;
+                    case "getRootPath" -> resourceRoot;
+                    case "getPath" -> resourceRoot.resolve(joinPaths(args));
                     case "getManifestSigners", "getTrustedManifestEntries" -> null;
                     case "verifyAndGetSigners" -> null;
                     case "hasSecurityData" -> false;
                     case "verifyPath", "getFileStatus" -> defaultValue(method);
-                    case "close" -> null;
+                    case "close" -> {
+                        resources.close();
+                        yield null;
+                    }
                     default -> defaultValue(method);
                 });
     }

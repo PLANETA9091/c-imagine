@@ -8594,3 +8594,23 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
 - These local driver calls are startup diagnostics, not Paper-tick, heavy-load,
   real-mod parity, or performance proof. Full integration and profiling must
   supply those receipts with the existing gates unchanged.
+
+### Green campaign — expose actual mod resource trees to native data reloads
+- Normal-world startup now passed the repaired Aquifer access but failed in
+  MonsterRoomHooks: its real registry data map had no monster-room weights.
+  Upstream CommonModLoader.load calls RegistrationEvents.init after setup;
+  restore that native step (capabilities, data maps and component hooks).
+- Registration alone still reproduced the empty data map. Native
+  ResourcePackLoader.createPackForMod passes SecureJar.getRootPath into
+  PathPackResources: our proxy returned the archive FILE, so directory walks
+  could not see data resources. Provide a JDK ZIP filesystem directory root,
+  resolve getPath/findFile/open against it, retain the primary archive path,
+  and close its filesystem through SecureJar.close. No union provider, copied
+  world data, fabricated tags, or hard-coded spawn weights are introduced.
+- Validation: bootstrap build and both Java contract suites PASS. Against
+  actual 21.1.265 plus the unchanged current test-mod jar, the previously
+  failing normal-world probe now starts and stops cleanly (three diagnostic
+  driver calls); native capability registration and heavy's no-selfarm receipt
+  occur. Earlier field-AT, missing scan, unloaded config, and empty resource
+  tree failures remain in ignored artifacts for comparison. First-party
+  startup diagnostics do not prove Create parity or the CI heavy-load budget.
