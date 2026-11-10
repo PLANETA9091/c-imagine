@@ -8484,3 +8484,20 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   (the bridge remains the content channel), gameplay-behavior parity, the M4
   translation paths, the sound/particle fidelity items — each needs its own
   measured slice.
+
+### Fidelity audit — the sound/particle substitution ledger (per-source, per-page receipts)
+- THE SLICE: the content-fidelity audit's items 1-2 ("report every substitution
+  against its source ID ... require zero unexplained fallbacks") gain their
+  instrument: BOTH replay channels (sound, particle) now write a per-page
+  SUBSTITUTION LEDGER `c-imagine/scenes/gallery-{sound,particle}-<ns>-p<p>
+  .subs.tsv` — rows `source<TAB>resolved<TAB>reason` ({@code unmapped} = no
+  mapping row, {@code drift:<target>} = the mapped target absent from the live
+  registry and degraded to the documented default) — and the ledger is written
+  for EVERY replay page even when EMPTY: the header-only file is the receipt
+  that the page substituted nothing, so "zero unexplained fallbacks" becomes a
+  measured claim instead of an absent one. The capture log's positional stream
+  format is untouched (the join reads it unchanged); the replay summary line
+  adds substituted=N. NO gate change, no verdict change — the ledger is the
+  evidence layer the fidelity flip (real ogg hosting in the pack's sounds.json)
+  will be measured against.
+- VERIFIED: the offline plugin build compiles clean; F2vPack --selftest ALL OK.

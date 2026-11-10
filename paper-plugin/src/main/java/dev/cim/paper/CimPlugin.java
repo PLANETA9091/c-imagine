@@ -1700,16 +1700,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 Object handle = viewer.getClass().getMethod("getHandle").invoke(viewer);
                 Object listener = NetWatch.connectionField(handle.getClass(), "connection").get(handle);
                 java.util.List<String> stream = new java.util.ArrayList<>();
+                java.util.List<String> subs = new java.util.ArrayList<>();
                 int fallbacks = 0;
                 int misses = 0;
                 for (String[] cell : cells) {
                     String target = mapping.get(cell[3]);
                     if (target == null) {
+                        subs.add(cell[3] + "\t" + DEFAULT_SOUND_TARGET + "\tunmapped");
                         target = DEFAULT_SOUND_TARGET;
                         fallbacks++;
                     }
                     Object holder = soundHolder(target);
                     if (holder == null && !target.equals(DEFAULT_SOUND_TARGET)) {
+                        subs.add(cell[3] + "\t" + DEFAULT_SOUND_TARGET + "\tdrift:" + target);
                         fallbacks++;
                         target = DEFAULT_SOUND_TARGET;
                         holder = soundHolder(target);
@@ -1731,10 +1734,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     stream.add(target);
                 }
                 writeCapture("gallery-sound-" + nsf + "-p" + pagef + ".log", stream);
+                writeSubstitutions("gallery-sound-" + nsf + "-p" + pagef + ".subs.tsv", subs);
                 log().warning(LOG_PREFIX + "f2v gallery-sound: page " + pagef
                         + " sent=" + stream.size() + " unmapped-fallback=" + fallbacks
-                        + " miss=" + misses
-                        + " (the post-rewrite stream the vanilla client received)");
+                        + " substituted=" + subs.size() + " miss=" + misses
+                        + " (the post-rewrite stream the vanilla client received;"
+                        + " the per-source substitutions ride the .subs.tsv ledger)");
                 return Integer.valueOf(stream.size());
             } catch (Throwable t) {
                 log().warning(LOG_PREFIX + "f2v gallery-sound: replay failed: " + t);
@@ -1947,6 +1952,32 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     StandardCharsets.UTF_8);
         } catch (IOException ioe) {
             log().warning(LOG_PREFIX + "f2v capture log write failed "
+                    + cap + ": " + ioe);
+        }
+    }
+
+    /**
+     * THE SUBSTITUTION LEDGER (the content-fidelity audit, 2026-11-10): one
+     * row per SUBSTITUTED source id — {@code source<TAB>resolved<TAB>reason}
+     * ({@code unmapped} = no mapping row; {@code drift:<target>} = the mapped
+     * target was absent from the live registry and degraded to the documented
+     * default). Written for EVERY replay page even when empty: the
+     * header-only file is the receipt that the page substituted nothing, so
+     * "zero unexplained fallbacks" becomes a measured claim instead of an
+     * absent one. The capture log's stream format stays untouched (the join
+     * reads it positionally).
+     */
+    private void writeSubstitutions(String name, java.util.List<String> subs) {
+        Path cap = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes", name);
+        try {
+            Files.createDirectories(cap.getParent());
+            StringBuilder sb = new StringBuilder("source\tresolved\treason\n");
+            for (String row : subs) {
+                sb.append(row).append('\n');
+            }
+            Files.writeString(cap, sb.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v substitution ledger write failed "
                     + cap + ": " + ioe);
         }
     }
@@ -2331,11 +2362,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 Object handle = viewer.getClass().getMethod("getHandle").invoke(viewer);
                 Object listener = NetWatch.connectionField(handle.getClass(), "connection").get(handle);
                 java.util.List<String> stream = new java.util.ArrayList<>();
+                java.util.List<String> subs = new java.util.ArrayList<>();
                 int fallbacks = 0;
                 int misses = 0;
                 for (String[] cell : cells) {
                     String target = mapping.get(cell[3]);
                     if (target == null) {
+                        subs.add(cell[3] + "\t" + DEFAULT_PARTICLE_TARGET + "\tunmapped");
                         target = DEFAULT_PARTICLE_TARGET;
                         fallbacks++;
                     }
@@ -2345,6 +2378,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         continue;
                     }
                     if (!resolved.id().equals(target)) {
+                        subs.add(cell[3] + "\t" + resolved.id() + "\tdrift:" + target);
                         fallbacks++;
                     }
                     Object packet = clientboundLevelParticlesPacket(resolved.options(),
@@ -2359,10 +2393,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     stream.add(resolved.id());
                 }
                 writeCapture("gallery-particle-" + nsf + "-p" + pagef + ".log", stream);
+                writeSubstitutions("gallery-particle-" + nsf + "-p" + pagef + ".subs.tsv", subs);
                 log().warning(LOG_PREFIX + "f2v gallery-particle: page " + pagef
                         + " sent=" + stream.size() + " unmapped-fallback=" + fallbacks
-                        + " miss=" + misses
-                        + " (the post-rewrite stream the vanilla client received)");
+                        + " substituted=" + subs.size() + " miss=" + misses
+                        + " (the post-rewrite stream the vanilla client received;"
+                        + " the per-source substitutions ride the .subs.tsv ledger)");
                 return Integer.valueOf(stream.size());
             } catch (Throwable t) {
                 log().warning(LOG_PREFIX + "f2v gallery-particle: replay failed: " + t);
