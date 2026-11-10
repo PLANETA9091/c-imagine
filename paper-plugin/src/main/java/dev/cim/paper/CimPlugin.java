@@ -2219,7 +2219,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 if (slotName.startsWith("hotbar.")) {
                     bukkitSlot = Integer.parseInt(slotName.substring("hotbar.".length()));
                 } else if (slotName.startsWith("inventory.")) {
-                    bukkitSlot = Integer.parseInt(slotName.substring("inventory.".length()));
+                    // THE VANILLA SLOT SEMANTICS (measured #302): the
+                    // manifest's inventory.N names the vanilla MAIN slot N
+                    // (0..26) — the truth's rcon `item replace` passes it
+                    // raw — and Bukkit numbers the same slot N+9 (0..8
+                    // hotbar, 9..35 main). The old direct parse filled the
+                    // main row N-9 while the truth filled row N: the 9-slot
+                    // permutation the join measured.
+                    bukkitSlot = Integer.parseInt(slotName.substring("inventory.".length())) + 9;
                 } else {
                     continue;
                 }

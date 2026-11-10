@@ -2184,8 +2184,17 @@ public final class CimSceneMod {
 
         StringBuilder tsv = new StringBuilder("slot\titem\n");
         for (int i = 0; i < slice.size(); i++) {
-            // vanilla slot naming: 0..8 = hotbar.N, 9..35 = inventory.N
-            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + i);
+            // THE VANILLA SLOT SEMANTICS (measured: run #302's ae2 p0 pair
+            // shifted the truth's items down one row item-for-item — the
+            // writer emitted CONTAINER numbering (Bukkit 9..35) under the
+            // vanilla-looking inventory.N name, and the truth's rcon
+            // `item replace entity cimviewer $slot` passes the name RAW,
+            // where vanilla inventory.N indexes the 27 MAIN slots 0..26:
+            // manifest inventory.9 filled the truth's middle row while ours
+            // filled the top row). 0..8 = hotbar.N; 9..35 = inventory.(i-9)
+            // — the manifest names the slots the vanilla command fills, so
+            // BOTH legs place the same item in the same slot.
+            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + (i - 9));
             tsv.append(slot).append('\t').append(slice.get(i)).append('\n');
         }
         String manifest = "gallery-inv-" + namespace + "-p" + page + ".tsv";

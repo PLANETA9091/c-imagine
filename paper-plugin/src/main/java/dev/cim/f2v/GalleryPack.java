@@ -1035,6 +1035,28 @@ public final class GalleryPack {
         }
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
+        // THE GUI IDENTITY (measured on the #302 gal-inv-ae20 pair: the hotbar
+        // cube matched at ae 5585 while every main-slot item rendered oversized
+        // and rotated — the quad dump captures the item meshes ALREADY in the
+        // gui frame (the same ItemRenderer output the truth leg draws), and the
+        // block/block parent's gui transform (30/225/0.625) re-rotated and
+        // re-scaled them. The identity gui display draws the captured mesh 1:1
+        // in the 16-gui square — the vanilla inventory renders what the dump
+        // captured, exactly what the truth leg renders. The item PAGE renders
+        // ride display-entity contexts (fixed/thirdperson) — untouched.
+        JsonObject gui = new JsonObject();
+        JsonArray rot = new JsonArray();
+        rot.add(0); rot.add(0); rot.add(0);
+        gui.add("rotation", rot);
+        JsonArray tr = new JsonArray();
+        tr.add(0.0); tr.add(0.0); tr.add(0.0);
+        gui.add("translation", tr);
+        JsonArray sc = new JsonArray();
+        sc.add(1.0); sc.add(1.0); sc.add(1.0);
+        gui.add("scale", sc);
+        JsonObject display = new JsonObject();
+        display.add("gui", gui);
+        wrapper.add("display", display);
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());
@@ -2163,6 +2185,29 @@ public final class GalleryPack {
         // The block channel keeps cutout: the truth renders its blocks on the
         // chunk cutout layer (binary), the alpha=0 holes discard on BOTH legs.
         wrapper.addProperty("render_type", "minecraft:" + material);
+        if (!block) {
+            // THE GUI IDENTITY for the item-channel quad models (the #302
+            // gal-inv-ae20 measurement): the dump captured the item meshes
+            // already in the gui frame — the block/block parent's gui
+            // transform (30/225/0.625) re-rotated and enlarged them in the
+            // vanilla inventory (the oversized cable icons, the hotbar cube
+            // matching at ae 5585 because ITS captured frame already agreed).
+            // Identity = the vanilla inventory draws the captured mesh 1:1;
+            // the item PAGE renders ride display-entity contexts — untouched.
+            JsonObject gui = new JsonObject();
+            JsonArray rot = new JsonArray();
+            rot.add(0); rot.add(0); rot.add(0);
+            gui.add("rotation", rot);
+            JsonArray tr = new JsonArray();
+            tr.add(0.0); tr.add(0.0); tr.add(0.0);
+            gui.add("translation", tr);
+            JsonArray sc = new JsonArray();
+            sc.add(1.0); sc.add(1.0); sc.add(1.0);
+            gui.add("scale", sc);
+            JsonObject display = new JsonObject();
+            display.add("gui", gui);
+            wrapper.add("display", display);
+        }
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());
