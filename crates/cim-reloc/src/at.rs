@@ -179,6 +179,31 @@ mod tests {
     }
 
     #[test]
+    fn a_field_entry_is_not_a_method_entry() {
+        // NeoForge 21.1.265: the field and the builder method share the name fogColor.
+        let t = AccessTransformTable::parse(
+            "protected net.minecraft.world.level.biome.BiomeSpecialEffects$Builder fogColor # fogColor\n\
+             public net.minecraft.world.level.biome.Biome$BiomeBuilder *()\n",
+        );
+        let builder = "net/minecraft/world/level/biome/BiomeSpecialEffects$Builder";
+        assert!(
+            t.for_member(builder, "fogColor").is_some(),
+            "the field entry"
+        );
+        assert!(
+            t.for_member(
+                builder,
+                "fogColor(I)Lnet/minecraft/world/level/biome/BiomeSpecialEffects$Builder;"
+            )
+            .is_none(),
+            "no method entry of that name and descriptor"
+        );
+        assert!(t
+            .for_member("net/minecraft/world/level/biome/Biome$BiomeBuilder", "*()")
+            .is_some());
+    }
+
+    #[test]
     fn apply_widens_and_clears_final() {
         let at = AccessTransform {
             visibility: ACC_PUBLIC,

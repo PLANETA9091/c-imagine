@@ -426,9 +426,7 @@ public final class ShadowClassLoader extends ClassLoader {
         try {
             if (source.jarIdx() >= modJarStart) {
                 // M2 mod class: keep the original binary name; rewrite only
-                // the references into the layer namespaces. Mixin never
-                // transforms mod classes here (their @Mixin targets are
-                // layer classes and arrive through the branch below).
+                // the references into the layer namespaces.
                 relocated = NativeReloc.relocateMod(source.internalName(), bytes);
             } else {
                 relocated = NativeReloc.relocate(source.internalName(), bytes);
@@ -436,17 +434,16 @@ public final class ShadowClassLoader extends ClassLoader {
         } catch (Throwable t) {
             throw new ClassNotFoundException(name + " (relocation failed: " + t + ")", t);
         }
-        if (source.jarIdx() < modJarStart) {
-            // §8 point 3: the mixin transformer sees every LAYER (game)
-            // class before definition — the same point where the real
-            // modlauncher chain applies transformations. The processor was
-            // initialized before the first game class load (Bootstrap.init
-            // order), and its config targets were translated through the
-            // SAME relocation table, so names match.
-            ClassBytecodeHook hook = bytecodeHook;
-            if (hook != null) {
-                relocated = hook.transform(name, relocated);
-            }
+        // §8 point 3: the mixin transformer sees every class before definition, game
+        // and mod alike, the same point where the real modlauncher chain applies
+        // transformations. Mods mix into mod classes too (measured: GlitchCore fills
+        // its own Environment through a mixin; skipped, Biomes O' Plenty's
+        // construction threw UnsupportedOperationException from the unfilled stub).
+        // Game classes arrive relocated and mod classes under their own names, so
+        // the processor's translated targets match both.
+        ClassBytecodeHook hook = bytecodeHook;
+        if (hook != null) {
+            relocated = hook.transform(name, relocated);
         }
         return relocated;
     }

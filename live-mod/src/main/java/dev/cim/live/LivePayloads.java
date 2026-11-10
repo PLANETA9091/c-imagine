@@ -1,0 +1,282 @@
+package dev.cim.live;
+
+import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
+import net.neoforged.neoforge.network.registration.PayloadRegistration;
+
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
+
+/**
+ * A mod screen's button, run on the server the way the mod runs it: the client would build
+ * the mod's payload and send it; here the same payload is built from what F2V's
+ * ClientSurfaceScanner proved about that button (payload class, constructor, every argument
+ * as a constant, an enum constant or a member of the open menu), and handed to the handler
+ * the mod registered for it, with the session player as the sender. Nothing is recorded.
+ */
+final class LivePayloads {
+
+    private LivePayloads() {
+    }
+
+    /**
+     * One proven argument, as the protocol carries it: {@code bool:true}, {@code int:3},
+     * {@code long:..}, {@code double:..}, {@code string:..}, {@code uuid:..},
+     * {@code static:owner/Name.FIELD}, {@code menu-field:owner/Menu.name},
+     * {@code menu-method:owner/Menu.name}.
+     */
+    static Object argument(String spec, SessionServerPlayer player, AbstractContainerMenu menu, ClassLoader loader)
+            throws Exception {
+        switch (spec) {
+            case "player" -> {
+                return player;
+            }
+            case "player-id" -> {
+                return player.getId();
+            }
+            case "player-uuid" -> {
+                return player.getUUID();
+            }
+            default -> {
+            }
+        }
+        int colon = spec.indexOf(':');
+        String kind = spec.substring(0, colon);
+        String value = spec.substring(colon + 1);
+        return switch (kind) {
+            case "bool" -> Boolean.parseBoolean(value);
+            case "int" -> Integer.parseInt(value);
+            case "long" -> Long.parseLong(value);
+            case "double" -> Double.parseDouble(value);
+            case "float" -> (float) Double.parseDouble(value);
+            case "string" -> value;
+            case "uuid" -> java.util.UUID.fromString(value);
+            case "static" -> {
+                int dot = value.lastIndexOf('.');
+                Field f = load(value.substring(0, dot), loader).getDeclaredField(value.substring(dot + 1));
+                f.setAccessible(true);
+                yield f.get(null);
+            }
+            case "menu-field", "menu-method" -> {
+                if (menu == null) {
+                    throw new IllegalStateException("no open menu for " + spec);
+                }
+                int dot = value.lastIndexOf('.');
+                Class<?> owner = load(value.substring(0, dot), loader);
+                String name = value.substring(dot + 1);
+                if (!owner.isInstance(menu)) {
+                    throw new IllegalStateException("open menu " + menu.getClass().getName() + " is not " + owner.getName());
+                }
+                if (kind.equals("menu-field")) {
+                    Field f = findField(owner, name);
+                    f.setAccessible(true);
+                    yield f.get(menu);
+                }
+                Method m = findMethod(owner, name);
+                m.setAccessible(true);
+                yield m.invoke(menu);
+            }
+            default -> throw new IllegalArgumentException("unknown argument kind " + kind);
+        };
+    }
+
+    /** Builds the payload with its proven constructor and lets the mod's handler take it. */
+    static String press(SessionServerPlayer player, String payloadClass, String constructorDesc, List<String> args)
+            throws Exception {
+        AbstractContainerMenu menu = player.opened();
+        ClassLoader loader = menu != null ? menu.getClass().getClassLoader() : LivePayloads.class.getClassLoader();
+        Class<?> type = load(payloadClass, loader);
+        Constructor<?> ctor = constructor(type, constructorDesc);
+        Class<?>[] params = ctor.getParameterTypes();
+        ctor.setAccessible(true);
+        Object[] values = new Object[args.size()];
+        for (int i = 0; i < values.length; i++) {
+            values[i] = fit(argument(args.get(i), player, menu, type.getClassLoader()), params[i]);
+        }
+        Object payload = ctor.newInstance(values);
+        if (!(payload instanceof CustomPacketPayload custom)) {
+            return "not a payload: " + type.getName();
+        }
+        return dispatch(player, custom);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    static String dispatch(SessionServerPlayer player, CustomPacketPayload payload) throws Exception {
+        // The server sets the registry up once at start; only a self-test before that does it here.
+        Field ready = NetworkRegistry.class.getDeclaredField("setup");
+        ready.setAccessible(true);
+        if (!ready.getBoolean(null)) {
+            NetworkRegistry.setup();
+        }
+        Field f = NetworkRegistry.class.getDeclaredField("PAYLOAD_REGISTRATIONS");
+        f.setAccessible(true);
+        Map<?, Map<ResourceLocation, PayloadRegistration<?>>> all = (Map) f.get(null);
+        ResourceLocation id = payload.type().id();
+        PayloadRegistration registration = null;
+        for (Map<ResourceLocation, PayloadRegistration<?>> byId : all.values()) {
+            PayloadRegistration<?> r = byId.get(id);
+            if (r != null && r.matchesFlow(PacketFlow.SERVERBOUND)) {
+                registration = r;
+                break;
+            }
+        }
+        if (registration == null) {
+            return "no serverbound handler for " + id;
+        }
+        registration.handler().handle(payload, new Context(player));
+        return "handled " + id;
+    }
+
+    /**
+     * A menu member is the thing the position or id is read from (the scanner proves
+     * {@code MENU_BLOCK_POS} from the menu's block entity field, as Create's toolbox does):
+     * the constructor's parameter type says which of its facts is meant.
+     */
+    static Object fit(Object value, Class<?> param) {
+        if (value == null || param.isInstance(value) || param.isPrimitive()) {
+            return value;
+        }
+        if (param == net.minecraft.core.BlockPos.class) {
+            if (value instanceof net.minecraft.world.level.block.entity.BlockEntity be) {
+                return be.getBlockPos();
+            }
+            if (value instanceof net.minecraft.world.entity.Entity e) {
+                return e.blockPosition();
+            }
+        }
+        if (param == java.util.UUID.class && value instanceof net.minecraft.world.entity.Entity e) {
+            return e.getUUID();
+        }
+        return value;
+    }
+
+    /** Namespaces the c-imagine layer relocates Minecraft, NeoForge and Mojang classes into. */
+    private static final String[] RELOCATED = {"", "cim.shadow.mc1211.", "cim.shadow.neoforge.", "cim.shadow.mojang."};
+
+    /**
+     * A class named as the scanner read it from the jar. On a real server that name is the
+     * class; in the layer a game class lives under its relocated name, which this code (itself
+     * relocated by reference, not by string) cannot know at compile time.
+     */
+    static Class<?> load(String internal, ClassLoader loader) throws ClassNotFoundException {
+        String dotted = internal.replace('/', '.');
+        ClassNotFoundException first = null;
+        for (String prefix : RELOCATED) {
+            try {
+                return Class.forName(prefix + dotted, true, loader);
+            } catch (ClassNotFoundException | NoClassDefFoundError e) {
+                if (first == null) {
+                    first = e instanceof ClassNotFoundException c ? c : new ClassNotFoundException(dotted, e);
+                }
+            }
+        }
+        throw first;
+    }
+
+    /**
+     * The constructor the scanner proved, matched by its parameters' names, each allowed a
+     * relocation prefix: the descriptor carries the jar's names, the layer's classes carry
+     * the relocated ones.
+     */
+    static Constructor<?> constructor(Class<?> type, String desc) throws NoSuchMethodException {
+        String[] wanted = java.util.Arrays.stream(org.objectweb.asm.Type.getArgumentTypes(desc))
+                .map(org.objectweb.asm.Type::getClassName).toArray(String[]::new);
+        for (Constructor<?> c : type.getDeclaredConstructors()) {
+            Class<?>[] p = c.getParameterTypes();
+            if (p.length != wanted.length) {
+                continue;
+            }
+            boolean all = true;
+            for (int i = 0; i < p.length && all; i++) {
+                String have = p[i].getTypeName();
+                all = have.equals(wanted[i]) || have.endsWith("." + wanted[i]) && relocatedPrefix(have, wanted[i]);
+            }
+            if (all) {
+                c.setAccessible(true);
+                return c;
+            }
+        }
+        throw new NoSuchMethodException(type.getName() + desc);
+    }
+
+    private static boolean relocatedPrefix(String have, String wanted) {
+        String prefix = have.substring(0, have.length() - wanted.length());
+        for (String r : RELOCATED) {
+            if (r.equals(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Field findField(Class<?> c, String name) throws NoSuchFieldException {
+        for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+            try {
+                return k.getDeclaredField(name);
+            } catch (NoSuchFieldException ignored) {
+                // up the hierarchy
+            }
+        }
+        throw new NoSuchFieldException(c.getName() + "." + name);
+    }
+
+    private static Method findMethod(Class<?> c, String name) throws NoSuchMethodException {
+        for (Class<?> k = c; k != null; k = k.getSuperclass()) {
+            for (Method m : k.getDeclaredMethods()) {
+                if (m.getName().equals(name) && m.getParameterCount() == 0) {
+                    return m;
+                }
+            }
+        }
+        throw new NoSuchMethodException(c.getName() + "." + name + "()");
+    }
+
+    /** The handler's view of the sender: the session player, its connection, work run now. */
+    private record Context(SessionServerPlayer player) implements IPayloadContext {
+        @Override
+        public net.neoforged.neoforge.common.extensions.ICommonPacketListener listener() {
+            return player.connection;
+        }
+
+        @Override
+        public CompletableFuture<Void> enqueueWork(Runnable task) {
+            task.run();
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public <T> CompletableFuture<T> enqueueWork(Supplier<T> task) {
+            return CompletableFuture.completedFuture(task.get());
+        }
+
+        @Override
+        public PacketFlow flow() {
+            return PacketFlow.SERVERBOUND;
+        }
+
+        @Override
+        public void handle(CustomPacketPayload payload) {
+            // A reply to the client: kept with the rest of what the mod sent.
+            player.connection.send(new net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket(payload));
+        }
+
+        @Override
+        public void finishCurrentTask(net.minecraft.server.network.ConfigurationTask.Type task) {
+        }
+    }
+
+    /** For the self-test: every widget payload of every screen, as a spec list per argument. */
+    static List<String> specs(String... raw) {
+        return new ArrayList<>(List.of(raw));
+    }
+}

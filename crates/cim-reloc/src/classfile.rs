@@ -662,7 +662,11 @@ impl ClassFile {
                 .utf8(member.name)
                 .and_then(|b| std::str::from_utf8(b).ok())
             {
-                if let Some(a) = at.for_member(original_name, name) {
+                // A bare name in an AT is a field; `*` is every field.
+                if let Some(a) = at
+                    .for_member(original_name, name)
+                    .or_else(|| at.for_member(original_name, "*"))
+                {
                     member.access = crate::at::apply(member.access, a);
                 }
             }
@@ -674,8 +678,19 @@ impl ClassFile {
                 self.utf8(member.descriptor)
                     .and_then(|b| std::str::from_utf8(b).ok()),
             ) {
+                // A method entry always carries its descriptor; `*()` is every method. A bare
+                // name is a field: NeoForge widens the FIELD BiomeSpecialEffects$Builder.fogColor
+                // to protected, and matching it by name narrowed the public METHOD fogColor(int)
+                // too (measured: IllegalAccessError in the layer only).
                 let key = format!("{name}{desc}");
+<<<<<<< HEAD
                 if let Some(a) = at.for_member(original_name, &key) {
+=======
+                if let Some(a) = at
+                    .for_member(original_name, &key)
+                    .or_else(|| at.for_member(original_name, "*()"))
+                {
+>>>>>>> origin/feat/gui-integration
                     member.access = crate::at::apply(member.access, a);
                 }
             }

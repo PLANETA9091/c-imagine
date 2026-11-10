@@ -9,7 +9,69 @@ import org.bukkit.plugin.java.JavaPlugin;
 /** Wires the player-facing translation channels into the plugin. */
 public final class HudBootstrap {
 
+    private static ScreenHud screens;
+    private static HudService hud;
+    private static VirtualKeyboard keyboard;
+    private static CameraLock camera;
+
+    /** Nobody may stay on a seat that outlives the plugin. */
+    public static void disable() {
+        if (camera != null) {
+            camera.releaseAll();
+        }
+    }
+
     private HudBootstrap() {
+    }
+
+    public static String aimForHarness(org.bukkit.entity.Player player, String target) {
+        if (screens == null || player == null) {
+            return "no hud";
+        }
+        return target.startsWith("k") ? keyboard.aim(player, Integer.parseInt(target.substring(1)))
+                : screens.aim(player, target);
+    }
+
+    public static String pressForHarness(org.bukkit.entity.Player player, String what) {
+        if (screens == null || player == null) {
+            return "no hud";
+        }
+        return what.equals("move") ? screens.move(player) : screens.press(player, Integer.parseInt(what));
+    }
+
+    public static java.util.List<String> listForHarness() {
+        return screens == null ? java.util.List.of() : screens.listForHarness();
+    }
+
+    public static boolean openNamedForHarness(org.bukkit.entity.Player player, String name) {
+        return screens != null && player != null && screens.openNamed(player, name);
+    }
+
+    /** Integration: live menus on Paper end to end, see {@link ScreenHud#liveSelfTest}. */
+    public static java.util.List<String> liveSelfTest(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.liveSelfTest(player, itemId);
+    }
+
+    /** Integration: block menus on Paper end to end, see {@link ScreenHud#liveBlockTest}. */
+    public static java.util.List<String> liveBlockTest(org.bukkit.entity.Player player, String blockId) {
+        return screens == null ? java.util.List.of("no screens") : screens.liveBlockTest(player, blockId);
+    }
+
+    public static void closeForHarness(org.bukkit.entity.Player player) {
+        if (screens != null && player != null) {
+            screens.close(player);
+        }
+    }
+
+    /** The gallery's ours leg: shows the menu it recorded, to the harness account too. */
+    public static boolean openForHarness(org.bukkit.entity.Player player, String menuId, String menuClass,
+                                         String heldId) {
+        if (screens == null) {
+            return false;
+        }
+        hud.show(player);
+        player.getInventory().setItemInMainHand(screens.carrier(heldId));
+        return screens.openMenu(player, menuId, menuClass);
     }
 
     public static void enable(JavaPlugin plugin) {
@@ -21,7 +83,8 @@ public final class HudBootstrap {
             keys = List.of();
         }
         plugin.getLogger().info("[cim-key] census: " + keys.size() + " mod key(s)");
-        VirtualKeyboard keyboard = new VirtualKeyboard(plugin.getLogger(), keys);
+        camera = new CameraLock(plugin);
+        VirtualKeyboard keyboard = new VirtualKeyboard(plugin.getLogger(), keys, camera);
         plugin.getServer().getPluginManager().registerEvents(keyboard, plugin);
         PluginCommand command = plugin.getCommand("keyboard");
         if (command != null) {
@@ -29,8 +92,21 @@ public final class HudBootstrap {
         }
         HudService hud = new HudService();
         hud.register(keyboard);
-        if (Boolean.getBoolean("cim.hud.debug")) {
+        HudBootstrap.keyboard = keyboard;
+        screens = new ScreenHud(plugin.getLogger(), Path.of(System.getProperty("user.dir"), "mods"));
+        plugin.getServer().getPluginManager().registerEvents(screens, plugin);
+        hud.register(screens);
+        screens.busyWhen(keyboard::isOpen);
+        screens.useCamera(camera, plugin);
+        HudBootstrap.hud = hud;
+        PluginCommand screen = plugin.getCommand("modscreen");
+        if (screen != null) {
+            screen.setExecutor(screens);
+        }
+        if (Boolean.getBoolean("cim.hud.probe")) {
             hud.register(HudService.anchorProbe());
+        }
+        if (Boolean.getBoolean("cim.hud.debug")) {
             plugin.getServer().getScheduler().runTaskTimer(plugin, () -> plugin.getLogger().info(
                     "[cim-hud] frames=" + hud.sentFrames()), 200L, 200L);
         }

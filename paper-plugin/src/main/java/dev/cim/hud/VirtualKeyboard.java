@@ -1,21 +1,12 @@
 package dev.cim.hud;
 
-import io.papermc.paper.connection.PlayerGameConnection;
-import io.papermc.paper.dialog.Dialog;
-import io.papermc.paper.event.player.PlayerCustomClickEvent;
-import io.papermc.paper.registry.data.dialog.ActionButton;
-import io.papermc.paper.registry.data.dialog.DialogBase;
-import io.papermc.paper.registry.data.dialog.action.DialogAction;
-import io.papermc.paper.registry.data.dialog.body.DialogBody;
-import io.papermc.paper.registry.data.dialog.type.DialogType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.logging.Logger;
-import net.kyori.adventure.key.Key;
-import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -24,36 +15,32 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.ProxiedCommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.player.PlayerAnimationEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.EquipmentSlot;
 
 /**
- * {@code /keyboard}: a keyboard drawn by the vanilla dialog screen.
+ * {@code /keyboard}: a keyboard floating on the HUD.
  *
- * <p>A vanilla client never tells the server about a key the server has no
- * packet for, so a mod's bindings have no way in. Dialog buttons do: each one
- * answers with a custom click, and {@code after_action: none} keeps the screen
- * up, so typing does not flicker. The dialog is only resent when something it
- * shows changed. {@code pause: false} keeps the world running behind it.
+ * <p>A vanilla client never tells the server about a key the server has no packet
+ * for, so a mod's bindings have no way in. This draws keycaps over the game with
+ * no screen open: the world stays sharp, the player keeps walking, and the look
+ * direction moves a pointer that attack and use packets click. Keycaps go out as
+ * one text run per row, so a frame stays small.
  */
 public final class VirtualKeyboard implements Listener, CommandExecutor, HudService.Layer {
 
-    private static final String NS = "c-imagine";
-    private static final Key CLOSE = Key.key(NS, "kb/close");
-    private static final Key HOLD = Key.key(NS, "kb/hold");
-    private static final Key PAGE_KEYS = Key.key(NS, "kb/page/keys");
-    private static final Key PAGE_MODS = Key.key(NS, "kb/page/mods");
-    private static final String PRESS_PREFIX = "kb/key/";
-    private static final String BINDING_PREFIX = "kb/bind/";
-    private static final int KEY_WIDTH = 25;
-    private static final int BINDING_WIDTH = 190;
-
-    private enum Page { KEYS, MODS }
-
     private static final class Session {
         final KeyboardState state;
-        Page page = Page.MODS;
+        ScreenHud.Pointer pointer;
+        boolean onBindings;
+        int page;
         boolean open;
+        long lastClick = -1;
 
         Session(List<KeyCensus.ModKey> census) {
             state = new KeyboardState(census);
@@ -62,11 +49,19 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
 
     private final Logger log;
     private final List<KeyCensus.ModKey> census;
+    private final CameraLock camera;
     private final Map<UUID, Session> sessions = new HashMap<>();
 
-    public VirtualKeyboard(Logger log, List<KeyCensus.ModKey> census) {
+    public VirtualKeyboard(Logger log, List<KeyCensus.ModKey> census, CameraLock camera) {
         this.log = log;
         this.census = census;
+        this.camera = camera;
+    }
+
+    /** True while a player's clicks belong to the keyboard. */
+    public boolean isOpen(Player player) {
+        Session s = sessions.get(player.getUniqueId());
+        return s != null && s.open;
     }
 
     @Override
@@ -79,53 +74,150 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
         }
         Session s = session(player);
         if (s.open) {
-            close(player, s);
+            closeKeyboard(player, s);
         } else {
-            s.page = census.isEmpty() ? Page.KEYS : Page.MODS;
-            show(player, s);
+            s.open = true;
+            s.pointer = new ScreenHud.Pointer(213, 118, player.getYaw(), player.getPitch());
+            camera.engage(player, "keyboard", () -> closeKeyboard(player, s));
+            log.info("[cim-key] " + player.getName() + " keyboard open");
         }
         return true;
     }
 
-    /** A latched key outlives the dialog, so the HUD keeps showing it. */
+    private void closeKeyboard(Player player, Session s) {
+        if (s.open) {
+            s.open = false;
+            camera.release(player, "keyboard");
+            log.info("[cim-key] " + player.getName() + " keyboard closed");
+        }
+    }
+
+    private List<KeyboardLayout.Cap> caps(Session s) {
+        return s.onBindings ? KeyboardLayout.bindings(census, s.page) : KeyboardLayout.keys();
+    }
+
+    private boolean lit(Session s, KeyboardLayout.Cap cap) {
+        int action = cap.action();
+        if (action == KeyboardState.CELL_HOLD) {
+            return s.state.holdMode();
+        }
+        if (action <= KeyboardLayout.BINDING) {
+            int key = census.get(KeyboardLayout.BINDING - action).defaultKey();
+            return key >= 0 && s.state.isHeld(key);
+        }
+        return action >= 0 && s.state.isHeld(action);
+    }
+
+    private static boolean wide(KeyboardLayout.Cap cap) {
+        return cap.w() != KeyboardLayout.KEY_W;
+    }
+
     @Override
     public void draw(Player player, HudFrame frame) {
         Session s = sessions.get(player.getUniqueId());
         if (s == null) {
             return;
         }
-        List<String> names = s.state.heldKeys().stream().map(KeyboardState::keyName).toList();
-        if (!names.isEmpty()) {
-            frame.text(HudLayout.Anchor.BOTTOM_LEFT, HudLayout.TEXT_ROWS - 1,
-                    "Held: " + String.join(" ", names), NamedTextColor.GREEN);
+        if (!s.open) {
+            // A latched key outlives the keyboard, so the HUD keeps showing it.
+            List<String> names = s.state.heldKeys().stream().map(KeyboardState::keyName).toList();
+            if (!names.isEmpty()) {
+                frame.text(HudLayout.Anchor.BOTTOM_LEFT, HudLayout.TEXT_ROWS - 1,
+                        "Held: " + String.join(" ", names), NamedTextColor.GREEN);
+            }
+            return;
+        }
+        s.pointer.look(player.getYaw(), player.getPitch());
+        List<KeyboardLayout.Cap> caps = caps(s);
+        Map<Integer, List<KeyboardLayout.Cap>> rows = new TreeMap<>();
+        for (KeyboardLayout.Cap c : caps) {
+            rows.computeIfAbsent(c.y(), y -> new ArrayList<>()).add(c);
+        }
+        for (var row : rows.entrySet()) {
+            List<KeyboardLayout.Cap> line = new ArrayList<>(row.getValue());
+            line.sort((a, b) -> a.x() - b.x());
+            int start = line.get(0).x();
+            int pen = start;
+            StringBuilder glyphs = new StringBuilder();
+            for (KeyboardLayout.Cap c : line) {
+                glyphs.append(HudFrame.move(c.x() - pen)).append(wide(c) ? HudPack.KEY_WIDE : HudPack.KEY);
+                pen = c.x() + c.w() + 1;
+            }
+            frame.free(start, row.getKey(), glyphs.toString(), pen - start);
+        }
+        for (KeyboardLayout.Cap c : caps) {
+            if (lit(s, c)) {
+                frame.free(c.x(), c.y(), String.valueOf(wide(c) ? HudPack.KEY_WIDE_LIT : HudPack.KEY_LIT), c.w() + 1);
+            }
+        }
+        for (var row : rows.entrySet()) {
+            List<KeyboardLayout.Cap> line = new ArrayList<>(row.getValue());
+            line.sort((a, b) -> a.x() - b.x());
+            int start = line.get(0).x();
+            int pen = start;
+            StringBuilder text = new StringBuilder();
+            for (KeyboardLayout.Cap c : line) {
+                int w = HudText.width(c.label());
+                int at = c.x() + (c.w() - w) / 2 + 1;
+                text.append(HudFrame.move(at - pen)).append(c.label());
+                pen = at + w;
+            }
+            frame.freeRun(start, row.getKey() + 3, text.toString(), pen - start);
+        }
+        KeyboardLayout.Cap hover = KeyboardLayout.at(caps, s.pointer.x(), s.pointer.y());
+        if (hover != null) {
+            frame.free(hover.x(), hover.y(), String.valueOf(wide(hover) ? HudPack.KEY_WIDE_HOVER : HudPack.KEY_HOVER),
+                    hover.w() + 1);
+        }
+        frame.free(s.pointer.x(), s.pointer.y(), String.valueOf(HudPack.CURSOR), 9);
+    }
+
+    /** One physical click can reach the server as both a swing and a use. */
+    private void click(Player player, Session s) {
+        long now = Bukkit.getCurrentTick();
+        if (now == s.lastClick) {
+            return;
+        }
+        s.lastClick = now;
+        KeyboardLayout.Cap cap = KeyboardLayout.at(caps(s), s.pointer.x(), s.pointer.y());
+        if (cap == null) {
+            return;
+        }
+        int action = cap.action();
+        if (action == KeyboardLayout.CLOSE) {
+            closeKeyboard(player, s);
+        } else if (action == KeyboardState.CELL_HOLD) {
+            s.state.toggleHoldMode();
+        } else if (action == KeyboardState.CELL_PAGE) {
+            s.onBindings = !s.onBindings;
+            s.page = 0;
+        } else if (action == KeyboardLayout.NEXT) {
+            s.page = (s.page + 1) % KeyboardLayout.pages(census.size());
+        } else if (action <= KeyboardLayout.BINDING) {
+            pressBinding(player, s, census.get(KeyboardLayout.BINDING - action));
+        } else {
+            deliver(player, s.state.click(action));
         }
     }
 
-    @EventHandler
-    public void onClick(PlayerCustomClickEvent event) {
-        Key id = event.getIdentifier();
-        if (!NS.equals(id.namespace()) || !id.value().startsWith("kb/")
-                || !(event.getCommonConnection() instanceof PlayerGameConnection game)) {
-            return;
+    @EventHandler(priority = EventPriority.LOW)
+    public void onSwing(PlayerAnimationEvent event) {
+        Session s = sessions.get(event.getPlayer().getUniqueId());
+        if (s != null && s.open) {
+            event.setCancelled(true);
+            click(event.getPlayer(), s);
         }
-        Player player = game.getPlayer();
-        Session s = session(player);
-        String value = id.value();
-        if (id.equals(CLOSE)) {
-            s.open = false;
-            player.closeDialog();
-        } else if (id.equals(HOLD)) {
-            s.state.toggleHoldMode();
-            show(player, s);
-        } else if (id.equals(PAGE_KEYS) || id.equals(PAGE_MODS)) {
-            s.page = id.equals(PAGE_KEYS) ? Page.KEYS : Page.MODS;
-            show(player, s);
-        } else if (value.startsWith(PRESS_PREFIX)) {
-            press(player, s, parse(value, PRESS_PREFIX));
-        } else if (value.startsWith(BINDING_PREFIX)) {
-            int index = parse(value, BINDING_PREFIX);
-            if (index >= 0 && index < census.size()) {
-                pressBinding(player, s, census.get(index));
+    }
+
+    /** While open the hands are on the keyboard: nothing is mined, placed or used. */
+    @EventHandler(priority = EventPriority.LOW)
+    public void onUse(PlayerInteractEvent event) {
+        Session s = sessions.get(event.getPlayer().getUniqueId());
+        if (s != null && s.open) {
+            event.setCancelled(true);
+            if (event.getHand() == EquipmentSlot.HAND
+                    && (event.getAction() == Action.RIGHT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_BLOCK)) {
+                click(event.getPlayer(), s);
             }
         }
     }
@@ -134,15 +226,9 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
     public void onQuit(PlayerQuitEvent event) {
         Session s = sessions.remove(event.getPlayer().getUniqueId());
         if (s != null) {
+            s.open = false;
+            camera.release(event.getPlayer(), "keyboard");
             deliver(event.getPlayer(), s.state.releaseAll());
-        }
-    }
-
-    private static int parse(String value, String prefix) {
-        try {
-            return Integer.parseInt(value.substring(prefix.length()));
-        } catch (NumberFormatException e) {
-            return Integer.MIN_VALUE;
         }
     }
 
@@ -150,21 +236,10 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
         return sessions.computeIfAbsent(player.getUniqueId(), u -> new Session(census));
     }
 
-    private void press(Player player, Session s, int key) {
-        if (KeyboardState.LAYOUT.stream().noneMatch(c -> c.key() == key && key >= 0)) {
-            return;
-        }
-        List<KeyboardState.Transition> steps = s.state.click(key);
-        deliver(player, steps);
-        if (steps.size() == 1) {
-            show(player, s);
-        }
-    }
-
     /** A binding whose default is not on the board has nothing to hold, so it taps. */
     private void pressBinding(Player player, Session s, KeyCensus.ModKey binding) {
         if (KeyboardState.LAYOUT.stream().anyMatch(c -> c.key() == binding.defaultKey())) {
-            press(player, s, binding.defaultKey());
+            deliver(player, s.state.click(binding.defaultKey()));
             return;
         }
         List<KeyCensus.ModKey> only = List.of(binding);
@@ -182,67 +257,17 @@ public final class VirtualKeyboard implements Listener, CommandExecutor, HudServ
         }
     }
 
-    private void close(Player player, Session s) {
-        s.open = false;
-        player.closeDialog();
-    }
-
-    private void show(Player player, Session s) {
-        s.open = true;
-        List<ActionButton> buttons = s.page == Page.KEYS ? keyButtons(s) : bindingButtons(s);
-        int columns = s.page == Page.KEYS ? KeyboardState.COLUMNS : 2;
-        Component hint = s.page == Page.KEYS
-                ? Component.text("Shift, Ctrl and Alt stay down until clicked again.", NamedTextColor.GRAY)
-                : Component.text(census.isEmpty() ? "No mod on this server registers a key."
-                        : "Keys the mods on this server register.", NamedTextColor.GRAY);
-        DialogBase base = DialogBase.builder(Component.text("Keyboard"))
-                .canCloseWithEscape(true)
-                .pause(false)
-                .afterAction(DialogBase.DialogAfterAction.NONE)
-                .body(List.of(DialogBody.plainMessage(hint, 400)))
-                .build();
-        ActionButton exit = click(Component.text("Close"), null, 120, CLOSE);
-        player.showDialog(Dialog.create(b -> b.empty().base(base)
-                .type(DialogType.multiAction(buttons, exit, columns))));
-    }
-
-    private List<ActionButton> keyButtons(Session s) {
-        List<ActionButton> out = new ArrayList<>(KeyboardState.LAYOUT.size());
-        for (KeyboardState.Cell cell : KeyboardState.LAYOUT) {
-            if (cell.key() == KeyboardState.CELL_HOLD) {
-                out.add(click(lit(cell.label(), s.state.holdMode()),
-                        Component.text("While lit, a clicked key stays down until clicked again."), KEY_WIDTH, HOLD));
-            } else if (cell.key() == KeyboardState.CELL_PAGE) {
-                out.add(click(Component.text(cell.label()), Component.text("Show the keys mods register."),
-                        KEY_WIDTH, PAGE_MODS));
-            } else {
-                List<KeyCensus.ModKey> bound = s.state.bindingsFor(cell.key());
-                Component tip = bound.isEmpty() ? null : Component.text(
-                        String.join(", ", bound.stream().map(KeyCensus.ModKey::label).toList()));
-                out.add(click(lit(cell.label(), s.state.isHeld(cell.key())), tip, KEY_WIDTH,
-                        Key.key(NS, PRESS_PREFIX + cell.key())));
-            }
+    /** Test harness: turns the look so the pointer lands on the cap with this action. */
+    public String aim(Player player, int action) {
+        Session s = sessions.get(player.getUniqueId());
+        if (s == null || !s.open) {
+            return "keyboard closed";
         }
-        return out;
-    }
-
-    private List<ActionButton> bindingButtons(Session s) {
-        List<ActionButton> out = new ArrayList<>(census.size() + 1);
-        for (int i = 0; i < census.size(); i++) {
-            KeyCensus.ModKey k = census.get(i);
-            String name = k.label() + " [" + KeyboardState.keyName(k.defaultKey()) + "]";
-            out.add(click(lit(name, k.defaultKey() >= 0 && s.state.isHeld(k.defaultKey())),
-                    Component.text(k.modId()), BINDING_WIDTH, Key.key(NS, BINDING_PREFIX + i)));
+        KeyboardLayout.Cap cap = caps(s).stream().filter(c -> c.action() == action).findFirst().orElse(null);
+        if (cap == null) {
+            return "no cap " + action;
         }
-        out.add(click(Component.text("Full keyboard"), null, BINDING_WIDTH, PAGE_KEYS));
-        return out;
-    }
-
-    private static Component lit(String label, boolean on) {
-        return on ? Component.text(label, NamedTextColor.GREEN) : Component.text(label);
-    }
-
-    private static ActionButton click(Component label, Component tooltip, int width, Key id) {
-        return ActionButton.create(label, tooltip, width, DialogAction.customClick(id, null));
+        s.pointer.moveTo(cap.x() + cap.w() / 2, cap.y() + 7);
+        return "aimed cap " + cap.label();
     }
 }

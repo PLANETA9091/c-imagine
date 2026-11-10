@@ -82,6 +82,9 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec2;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -106,6 +109,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -156,6 +160,7 @@ public final class CimSceneMod {
         NeoForge.EVENT_BUS.addListener(this::onServerTickPost);
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
             NeoForge.EVENT_BUS.addListener(this::onClientTickPost);
+            ScreenArt.init();
         }
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()
                 && System.getProperty("cim.quaddump") != null) {
@@ -179,7 +184,16 @@ public final class CimSceneMod {
      */
     private void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) return;
+        if (GUI_JOINED != null && !(event.getEntity() instanceof net.minecraft.world.entity.player.Player)) {
+            GUI_JOINED.add(event.getEntity());
+        }
         if (!(event.getEntity() instanceof ItemEntity item)) return;
+        // A cleared rig drops whatever its menus held, and the viewer two blocks away would
+        // pick it up: the next page's inventory would no longer be the one the harness set.
+        if (GUI_CLEARING) {
+            event.setCanceled(true);
+            return;
+        }
         Vec3 pos = item.position();
         if (GALLERY_DROP_BOX.contains(pos.x, pos.y, pos.z)) {
             event.setCanceled(true);
@@ -356,6 +370,25 @@ public final class CimSceneMod {
                                                 .executes(ctx -> gallerySound(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("gui-scan")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .executes(ctx -> galleryGuiScan(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "namespace")))))
+                        // Closes the viewer's menu, so whatever it held is back in the inventory
+                        // before the harness resets that inventory for the next page.
+                        .then(Commands.literal("gui-settle")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .executes(ctx -> galleryGuiSettle(ctx.getSource().getLevel(),
+                                                StringArgumentType.getString(ctx, "namespace")))))
+                        .then(Commands.literal("gui-close")
+                                .executes(ctx -> {
+                                    ServerPlayer viewer = ctx.getSource().getServer().getPlayerList()
+                                            .getPlayerByName("cimviewer");
+                                    if (viewer != null) {
+                                        viewer.closeContainer();
+                                    }
+                                    return viewer == null ? 0 : 1;
+                                }))
                         .then(Commands.literal("gui")
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
@@ -2890,6 +2923,810 @@ public final class CimSceneMod {
     // --- gui gallery (the MENU channel census, 2026-11-04 — DIAGNOSTIC
     // --- first: one menu per page, the open attempt IS the measurement)
 
+    /** Per namespace: which block or item opens each menu, found by trying them all. */
+    private static final Map<String, Map<ResourceLocation, String>> GUI_OPENERS = new HashMap<>();
+    /** Every block and item seen opening a menu: dyed variants share one menu. */
+    private static final Map<ResourceLocation, List<String>> GUI_ALL_OPENERS = new HashMap<>();
+    private static final int GUI_SETTLE_TICKS = 10;
+    private static final int GUI_PROBE_XZ = 20000;
+    private static net.minecraft.world.entity.Entity guiEntity;
+
+    /** Inside menu reach, in front of the viewer, so {@code stillValid} keeps the screen up. */
+    private static BlockPos guiRigPos(ServerPlayer viewer) {
+        return viewer.blockPosition().relative(viewer.getDirection(), 2);
+    }
+
+    private static ResourceLocation guiOpenMenu(ServerPlayer viewer) {
+        if (viewer.containerMenu == viewer.inventoryMenu) {
+            return null;
+        }
+        try {
+            return BuiltInRegistries.MENU.getKey(viewer.containerMenu.getType());
+        } catch (UnsupportedOperationException noType) {
+            return null;
+        }
+    }
+
+    /** Records what would open without telling any client, whose block is about to vanish. */
+    private static final class GuiProbe extends ServerPlayer {
+        ResourceLocation seen;
+        String candidate;
+        String seenClass;
+        String seenTitle;
+        List<String> seenSlots;
+
+        /**
+         * A real ServerPlayer, not a FakePlayer: mods refuse fake players on purpose, to
+         * stop automation opening menus. Only its network handler is borrowed.
+         */
+        GuiProbe(ServerLevel level) {
+            super(level.getServer(), level, PROFILE, net.minecraft.server.level.ClientInformation.createDefault());
+            this.connection = new net.neoforged.neoforge.common.util.FakePlayer(level, PROFILE).connection;
+        }
+
+        private static final com.mojang.authlib.GameProfile PROFILE = new com.mojang.authlib.GameProfile(
+                java.util.UUID.nameUUIDFromBytes("cimscene-gui".getBytes(StandardCharsets.UTF_8)), "cimscene-gui");
+
+        private java.util.OptionalInt record(net.minecraft.world.MenuProvider provider) {
+            try {
+                net.minecraft.world.inventory.AbstractContainerMenu menu = provider.createMenu(1, getInventory(), this);
+                seen = BuiltInRegistries.MENU.getKey(menu.getType());
+                seenClass = menu.getClass().getName();
+                seenTitle = provider.getDisplayName().getString();
+                seenSlots = new ArrayList<>();
+                for (net.minecraft.world.inventory.Slot slot : menu.slots) {
+                    seenSlots.add(slot.x + "\t" + slot.y + "\t"
+                            + (slot.container == getInventory() ? "player" : "menu") + "\t"
+                            + slot.getContainerSlot());
+                }
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui probe createMenu threw {}", t.toString());
+            }
+            return java.util.OptionalInt.empty();
+        }
+
+        @Override
+        public java.util.OptionalInt openMenu(net.minecraft.world.MenuProvider provider) {
+            return record(provider);
+        }
+
+        @Override
+        public java.util.OptionalInt openMenu(net.minecraft.world.MenuProvider provider,
+                java.util.function.Consumer<net.minecraft.network.RegistryFriendlyByteBuf> extra) {
+            return record(provider);
+        }
+    }
+
+    /** Prepares what the opener acts on. Openers read {@code [sneak+][place+]kind:id}. */
+    private static void guiPlace(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        String plain = opener.replace("sneak+", "");
+        if (plain.startsWith("specialized:")) {
+            SpecializedOpeners.place(level, player, rig, plain.substring("specialized:".length()), e -> {
+                guiEntity = e;
+                GUI_SPAWNED.add(e);
+            });
+        } else if (plain.startsWith("cube")) {
+            guiBuildCube(level, player, rig, plain);
+        } else if (plain.startsWith("settle+use+item:")) {
+            // The block first; the item is used once it has ticked (see guiActOnce).
+            String block = plain.substring(plain.indexOf('@') + 1);
+            level.setBlock(rig, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(block)).defaultBlockState(), 3);
+        } else if (plain.startsWith("block:")) {
+            ResourceLocation id = ResourceLocation.parse(plain.substring("block:".length()));
+            level.setBlock(rig, BuiltInRegistries.BLOCK.get(id).defaultBlockState(), 3);
+        } else if (plain.startsWith("place+item:") || plain.startsWith("hang+item:")) {
+            // Parts and placed entities exist only through their item's own placement code.
+            boolean hang = plain.startsWith("hang+item:");
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
+                    ResourceLocation.parse(plain.substring(plain.indexOf(':') + 1))));
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            BlockPos against = hang ? rig.north() : rig.below();
+            Direction face = hang ? Direction.SOUTH : Direction.UP;
+            if (hang) {
+                level.setBlock(against, Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(against.above(), Blocks.STONE.defaultBlockState(), 3);
+            }
+            GUI_JOINED = new ArrayList<>();
+            try {
+                stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
+                        new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
+            } finally {
+                guiEntity = guiJoined(guiEntity);
+            }
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        } else if (plain.startsWith("use+item:")) {
+            String[] pair = plain.substring("use+item:".length()).split("@", 2);
+            level.setBlock(rig, BuiltInRegistries.BLOCK.get(ResourceLocation.parse(pair[1])).defaultBlockState(), 3);
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(pair[0])));
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            BlockHitResult hit = new BlockHitResult(new Vec3(rig.getX() + 0.5, rig.getY() + 1, rig.getZ() + 0.5),
+                    Direction.UP, rig, false);
+            BlockState state = level.getBlockState(rig);
+            GUI_JOINED = new ArrayList<>();
+            net.minecraft.world.ItemInteractionResult result;
+            net.minecraft.world.InteractionResult used = null;
+            try {
+                result = state.useItemOn(stack, level, player, InteractionHand.MAIN_HAND, hit);
+                if (!result.consumesAction()) {
+                    used = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                }
+            } finally {
+                guiEntity = guiJoined(guiEntity);
+            }
+            if (PAIR_USES_LOGGED < 400 && (result.consumesAction() || (used != null && used.consumesAction()))) {
+                PAIR_USES_LOGGED++;
+                LOGGER.info("[cimscene] gallery-gui pair use {} block={} item={}", plain, result, used);
+            }
+            player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            // Whatever the use put into the world is what the player clicks next.
+        } else if (plain.startsWith("entity:")) {
+            net.minecraft.world.entity.Entity entity = BuiltInRegistries.ENTITY_TYPE.get(
+                    ResourceLocation.parse(plain.substring("entity:".length()))).create(level);
+            if (entity != null) {
+                entity.moveTo(rig.getX() + 0.5, rig.getY(), rig.getZ() + 0.5, 0f, 0f);
+                level.addFreshEntity(entity);
+                // One tick of its own first: an entity that cannot live where a bare spawn
+                // puts it (a robit with no charge pad to call home) removes itself, and its
+                // menu has to come from the way a player really places it, the item pairs.
+                entity.tick();
+                GUI_SPAWNED.add(entity);
+                guiEntity = entity.isRemoved() ? null : entity;
+            }
+        }
+    }
+
+    /** Entities that joined the level while a use ran; null when no use is running. */
+    private static List<net.minecraft.world.entity.Entity> GUI_JOINED;
+    /** Everything a use spawned, so the rig can be cleared of it. */
+    private static final List<net.minecraft.world.entity.Entity> GUI_SPAWNED = new ArrayList<>();
+
+    /**
+     * What the use just put into the world, from the join event. A box query cannot see it:
+     * {@code getEntities} reads only sections whose entity data finished loading, and the rig's
+     * chunk is forced in the same tick, so a robit the item just placed is in the level but
+     * not in any visible section.
+     */
+    private static net.minecraft.world.entity.Entity guiJoined(net.minecraft.world.entity.Entity fallback) {
+        List<net.minecraft.world.entity.Entity> joined = GUI_JOINED;
+        GUI_JOINED = null;
+        if (joined == null || joined.isEmpty()) {
+            return fallback;
+        }
+        GUI_SPAWNED.addAll(joined);
+        return joined.get(joined.size() - 1);
+    }
+
+    private static boolean guiOpened(ServerPlayer player) {
+        return player instanceof GuiProbe probe ? probe.seen != null : guiOpenMenu(player) != null;
+    }
+
+    /**
+     * Clicks the way a persistent player would: every face of a block, because some open
+     * only from one side, and twice, because some items claim an owner on the first use.
+     */
+    private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        if (opener.startsWith("specialized:") || opener.startsWith("sneak+specialized:")) {
+            String spec = opener.replace("sneak+", "").substring("specialized:".length());
+            SpecializedOpeners.act(level, player, rig, spec, guiEntity);
+            if (player instanceof GuiProbe probe && probe.seen == null) {
+                probe.seen = ResourceLocation.parse(spec);
+            }
+            return;
+        }
+        boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:")
+                || opener.contains("cube") || opener.contains("settle+use+item:");
+        Direction[] faces = block
+                ? new Direction[]{Direction.UP, Direction.SOUTH, Direction.NORTH, Direction.EAST, Direction.WEST}
+                : new Direction[]{Direction.UP};
+        for (int pass = 0; pass < 2; pass++) {
+            for (Direction face : faces) {
+                guiActOnce(level, player, rig, opener, face);
+                if (guiOpened(player)) {
+                    return;
+                }
+            }
+        }
+    }
+
+    /** One right click, in the same order the game tries things. */
+    private static void guiActOnce(ServerLevel level, ServerPlayer player, BlockPos rig, String opener,
+                                   Direction face) {
+        boolean sneak = opener.startsWith("sneak+");
+        String plain = opener.replace("sneak+", "");
+        player.setShiftKeyDown(sneak);
+        try {
+            if (plain.startsWith("settle+use+item:")) {
+                // A tool on a block that has ticked: the way a player uses a network tool on a
+                // node, after the mod's own first-tick setup made it one.
+                String[] pair = plain.substring("settle+use+item:".length()).split("@", 2);
+                ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(pair[0])));
+                player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                Vec3 at = Vec3.atCenterOf(rig).relative(face, 0.5);
+                BlockHitResult hit = new BlockHitResult(at, face, rig, false);
+                BlockState state = level.getBlockState(rig);
+                net.minecraft.world.ItemInteractionResult result = state.useItemOn(stack, level, player,
+                        InteractionHand.MAIN_HAND, hit);
+                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION
+                        && !state.useWithoutItem(level, player, hit).consumesAction()) {
+                    stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                } else if (!result.consumesAction()
+                        && result != net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                    stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
+                }
+                player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+            } else if (guiEntity != null && plain.contains("+item:")) {
+                if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
+                    guiEntity.interact(player, InteractionHand.MAIN_HAND);
+                }
+            } else if (plain.startsWith("block:") || plain.startsWith("place+item:") || plain.startsWith("use+item:")
+                    || plain.startsWith("cube")) {
+                // A structure is clicked on the middle of the face the player looks at.
+                BlockPos on = plain.startsWith("cube") && guiCubeClick != null ? guiCubeClick : rig;
+                // Low in the cell: a part placed on the floor sits there, a full block does not care.
+                Vec3 at = face == Direction.UP ? new Vec3(on.getX() + 0.5, on.getY() + 0.06, on.getZ() + 0.5)
+                        : Vec3.atCenterOf(on).relative(face, 0.5);
+                BlockHitResult hit = new BlockHitResult(at, face, on, false);
+                BlockState state = level.getBlockState(on);
+                net.minecraft.world.ItemInteractionResult result = state.useItemOn(
+                        player.getItemInHand(InteractionHand.MAIN_HAND), level, player, InteractionHand.MAIN_HAND, hit);
+                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                    state.useWithoutItem(level, player, hit);
+                }
+            } else if (plain.startsWith("entity:")) {
+                if (guiEntity != null) {
+                    // The order a client's click takes: the exact spot first, then the entity.
+                    if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
+                        guiEntity.interact(player, InteractionHand.MAIN_HAND);
+                    }
+                }
+            } else if (plain.startsWith("item:")) {
+                ItemStack stack = player.getItemInHand(InteractionHand.MAIN_HAND);
+                ResourceLocation id = ResourceLocation.parse(plain.substring("item:".length()));
+                if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(id)) {
+                    stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
+                    player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                }
+                stack.use(level, player, InteractionHand.MAIN_HAND);
+            }
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery-gui opener {} threw {}", opener, t.toString());
+        } finally {
+            player.setShiftKeyDown(false);
+        }
+    }
+
+    /** What a namespace offers a player's hand: every block, item and entity, plain and sneaking. */
+    private static List<String> guiCandidates(String namespace) {
+        List<String> out = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)) {
+                out.add("block:" + b);
+            }
+        }
+        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+            if (i.getNamespace().equals(namespace)) {
+                out.add("item:" + i);
+                if (!(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
+                    out.add("place+item:" + i);
+                    out.add("hang+item:" + i);
+                }
+            }
+        }
+        for (ResourceLocation e : BuiltInRegistries.ENTITY_TYPE.keySet()) {
+            if (e.getNamespace().equals(namespace)) {
+                out.add("entity:" + e);
+            }
+        }
+        // The plainest action first: the first thing that opens a menu is its opener, and a
+        // held-item menu reached through a placement path would lose the item in the frame.
+        List<String> ranks = List.of("block:", "item:", "place+", "hang+", "entity:");
+        out.sort(Comparator.<String>comparingInt(c -> {
+            for (int i = 0; i < ranks.size(); i++) {
+                if (c.startsWith(ranks.get(i))) {
+                    return i;
+                }
+            }
+            return ranks.size();
+        }).thenComparing(Comparator.naturalOrder()));
+        List<String> both = new ArrayList<>(out);
+        for (String each : out) {
+            both.add("sneak+" + each);
+        }
+        for (String spec : SpecializedOpeners.MENUS) {
+            if (spec.startsWith(namespace + ":")) {
+                both.add("specialized:" + spec);
+            }
+        }
+        return both;
+    }
+
+    private static int SETTLE_SLOT;
+
+    /** Where a built structure is clicked; set by guiBuildCube. */
+    private static BlockPos guiCubeClick;
+    /** Every block a structure put down, so the rig can be cleared of it. */
+    private static final List<BlockPos> GUI_CUBE_BLOCKS = new ArrayList<>();
+    /** How many times a built structure's block entities tick before the click. */
+    private static final int GUI_CUBE_TICKS = 25;
+
+    /**
+     * {@code cube<n>:<block>}: an n-wide hollow cube of one block, its near face centred on
+     * the rig and the rest stretching away from the player, the way a player builds a tank
+     * or a matrix out of casing. The mod's own formation code decides whether it is a
+     * structure: its block entities tick here, so a multiblock that forms on its tick has
+     * formed before the click, with no knowledge of any mod.
+     */
+    private static void guiBuildCube(ServerLevel level, ServerPlayer player, BlockPos rig, String plain) {
+        guiBuildCube(level, player, rig, plain, true);
+    }
+
+    private static void guiBuildCube(ServerLevel level, ServerPlayer player, BlockPos rig, String plain,
+                                     boolean tickNow) {
+        int n = Integer.parseInt(plain.substring("cube".length(), plain.indexOf(':')));
+        BlockState state = BuiltInRegistries.BLOCK.get(ResourceLocation.parse(plain.substring(plain.indexOf(':') + 1)))
+                .defaultBlockState();
+        Direction away = Direction.getNearest(rig.getX() + 0.5 - player.getX(), 0, rig.getZ() + 0.5 - player.getZ());
+        if (away.getAxis() == Direction.Axis.Y) {
+            away = Direction.NORTH;
+        }
+        Direction side = away.getClockWise();
+        int half = n / 2;
+        List<BlockPos> placed = new ArrayList<>();
+        for (int depth = 0; depth < n; depth++) {
+            for (int across = -half; across < n - half; across++) {
+                for (int up = 0; up < n; up++) {
+                    boolean shell = depth == 0 || depth == n - 1 || across == -half || across == n - half - 1
+                            || up == 0 || up == n - 1;
+                    if (shell) {
+                        BlockPos p = rig.relative(away, depth).relative(side, across).above(up);
+                        level.setBlock(p, state, 3);
+                        placed.add(p.immutable());
+                    }
+                }
+            }
+        }
+        GUI_CUBE_BLOCKS.addAll(placed);
+        guiCubeClick = rig.above(half);
+        if (!tickNow) {
+            return;   // the level ticks it for real: onLoad and the mod's own structure pass
+        }
+        // A block entity's onLoad (where a mod joins it to its structure) runs at the start of
+        // the next level tick; the probe clicks in this one, so the load happens here.
+        for (BlockPos p : placed) {
+            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+            if (be != null) {
+                be.onLoad();
+            }
+        }
+        for (int t = 0; t < GUI_CUBE_TICKS; t++) {
+            for (BlockPos p : placed) {
+                guiTickBlockEntity(level, p);
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends net.minecraft.world.level.block.entity.BlockEntity> void guiTickBlockEntity(
+            ServerLevel level, BlockPos p) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+        if (be == null) {
+            return;
+        }
+        BlockState state = level.getBlockState(p);
+        net.minecraft.world.level.block.entity.BlockEntityTicker<T> ticker = state.getTicker(level,
+                (net.minecraft.world.level.block.entity.BlockEntityType<T>) be.getType());
+        if (ticker != null) {
+            ticker.tick(level, p, state, (T) be);
+        }
+    }
+
+    /** Hollow cubes of every block of the namespace that holds a block entity: the casing guess. */
+    private static List<String> guiCubeCandidates(String namespace) {
+        List<String> out = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)
+                    && BuiltInRegistries.BLOCK.get(b) instanceof net.minecraft.world.level.block.EntityBlock) {
+                out.add(b.toString());
+            }
+        }
+        out.sort(Comparator.naturalOrder());
+        List<String> cubes = new ArrayList<>();
+        for (int n : new int[]{3, 5}) {
+            for (String b : out) {
+                cubes.add("cube" + n + ":" + b);
+            }
+        }
+        return cubes;
+    }
+
+    /** Every non-block item of the namespace on every block of it that holds a block entity. */
+    private static int PAIR_USES_LOGGED;
+
+    private static final java.util.Set<net.minecraft.world.entity.EntityType<?>> PAIR_ENTITIES_LOGGED =
+            new java.util.HashSet<>();
+
+    private static List<String> guiPairCandidates(String namespace) {
+        List<String> items = new ArrayList<>();
+        for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+            if (i.getNamespace().equals(namespace)
+                    && !(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
+                items.add(i.toString());
+            }
+        }
+        List<String> blocks = new ArrayList<>();
+        for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+            if (b.getNamespace().equals(namespace)
+                    && BuiltInRegistries.BLOCK.get(b) instanceof net.minecraft.world.level.block.EntityBlock) {
+                blocks.add(b.toString());
+            }
+        }
+        items.sort(Comparator.naturalOrder());
+        blocks.sort(Comparator.naturalOrder());
+        List<String> out = new ArrayList<>(items.size() * blocks.size());
+        for (String block : blocks) {
+            for (String item : items) {
+                out.add("use+item:" + item + "@" + block);
+            }
+        }
+        return out;
+    }
+
+    private static boolean GUI_CLEARING;
+
+    private static void guiClearRig(ServerLevel level, ServerPlayer player, BlockPos rig) {
+        GUI_CLEARING = true;
+        try {
+            guiClearRigBlocks(level, player, rig);
+        } finally {
+            GUI_CLEARING = false;
+        }
+    }
+
+    private static void guiClearRigBlocks(ServerLevel level, ServerPlayer player, BlockPos rig) {
+        for (BlockPos p : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
+            level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+        }
+        List<net.minecraft.world.entity.Entity> near = new ArrayList<>(level.getEntities(
+                (net.minecraft.world.entity.Entity) null, new net.minecraft.world.phys.AABB(rig).inflate(6),
+                e -> !(e instanceof net.minecraft.world.entity.player.Player)));
+        // A spawn in a section not yet visible is missing from the box query: it is known by its join.
+        near.addAll(GUI_SPAWNED);
+        GUI_SPAWNED.clear();
+        near.forEach(net.minecraft.world.entity.Entity::discard);
+        for (BlockPos p : GUI_CUBE_BLOCKS) {
+            level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+        }
+        GUI_CUBE_BLOCKS.clear();
+        guiCubeClick = null;
+        guiEntity = null;
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+    }
+
+    /** One probe pass; every result lands in {@code onFound}. */
+    private static int guiProbeAll(ServerLevel level, String namespace,
+                                   java.util.function.Consumer<GuiProbe> onFound) {
+        // Far from every player: no client tracks this spot, so an entity whose spawn
+        // data only works in context cannot reach one and disconnect it.
+        BlockPos rig = new BlockPos(GUI_PROBE_XZ, 100, GUI_PROBE_XZ);
+        net.minecraft.world.level.ChunkPos chunk = new net.minecraft.world.level.ChunkPos(rig);
+        level.setChunkForced(chunk.x, chunk.z, true);
+        level.getChunk(chunk.x, chunk.z);
+        level.setBlock(rig.below(), Blocks.STONE.defaultBlockState(), 3);
+        GuiProbe probe = new GuiProbe(level);
+        probe.setPos(rig.getX() + 0.5, rig.getY(), rig.getZ() + 2.5);
+        List<String> candidates = new ArrayList<>(guiCandidates(namespace));
+        java.util.Set<ResourceLocation> wanted = new java.util.HashSet<>();
+        for (ResourceLocation id : BuiltInRegistries.MENU.keySet()) {
+            if (id.getNamespace().equals(namespace)) {
+                wanted.add(id);
+            }
+        }
+        int singles = candidates.size();
+        boolean cubesAdded = false;
+        for (int c = 0; ; c++) {
+            // Checked before the bound: the pairs start exactly where the singles end, so
+            // a loop bounded by the singles' count would never reach them.
+            if (c == singles && !wanted.isEmpty()) {
+                // What no single click opened may need a tool used on a machine, the way a
+                // player tries a card, a cell or a robit on a block.
+                List<String> pairs = guiPairCandidates(namespace);
+                LOGGER.info("[cimscene] gallery-gui pairs ns={} missing={} pairs={}", namespace, wanted.size(), pairs.size());
+                candidates.addAll(pairs);
+            }
+            if (c == candidates.size() && !cubesAdded && !wanted.isEmpty()) {
+                // Still missing: menus a structure opens once it has formed.
+                cubesAdded = true;
+                List<String> cubes = guiCubeCandidates(namespace);
+                LOGGER.info("[cimscene] gallery-gui cubes ns={} missing={} cubes={}", namespace, wanted.size(), cubes.size());
+                candidates.addAll(cubes);
+            }
+            if (c >= candidates.size()) {
+                break;
+            }
+            String candidate = candidates.get(c);
+            probe.seen = null;
+            probe.candidate = candidate;
+            try {
+                guiPlace(level, probe, rig, candidate);
+                guiAct(level, probe, rig, candidate);
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui candidate {} threw {}", candidate, t.toString());
+            }
+            if (probe.seen != null) {
+                wanted.remove(probe.seen);
+                onFound.accept(probe);
+            }
+            // A use that put an entity into the world is the rare, telling case: say what
+            // came of clicking it, so a menu that still does not open can be read from the log.
+            if (c >= singles && guiEntity != null && PAIR_ENTITIES_LOGGED.add(guiEntity.getType())) {
+                LOGGER.info("[cimscene] gallery-gui pair {} made {} alive={} opened={}", candidate,
+                        BuiltInRegistries.ENTITY_TYPE.getKey(guiEntity.getType()), guiEntity.isAlive(), probe.seen);
+            }
+            guiClearRig(level, probe, rig);
+            if (c >= singles && wanted.isEmpty()) {
+                break;
+            }
+        }
+        level.setBlock(rig.below(), Blocks.AIR.defaultBlockState(), 3);
+        level.setChunkForced(chunk.x, chunk.z, false);
+        return candidates.size();
+    }
+
+    /**
+     * Writes every menu's manifest with no client involved: the probe's server-side
+     * menu object already knows its class and slots. Both gallery legs and a real
+     * server can use this, and no disconnect can cut it short.
+     */
+    private static int galleryGuiScan(CommandSourceStack src, String namespace) {
+        ServerLevel level = src.getLevel();
+        // 14-dj: the probe builds and tool sweeps need real BE/world ticking —
+        // a freeze left behind by the last gui page's terminal would park them.
+        setGalleryFrozen(level.getServer(), false, "gui scan entry");
+        Map<ResourceLocation, List<String>> openers = new HashMap<>();
+        Map<ResourceLocation, String> classes = new HashMap<>();
+        Map<ResourceLocation, String> titles = new HashMap<>();
+        Map<ResourceLocation, List<String>> slots = new HashMap<>();
+        int tried = guiProbeAll(level, namespace, probe -> {
+            openers.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(probe.candidate);
+            classes.putIfAbsent(probe.seen, probe.seenClass);
+            titles.putIfAbsent(probe.seen, probe.seenTitle);
+            slots.putIfAbsent(probe.seen, probe.seenSlots);
+        });
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
+        ids.removeIf(id -> !id.getNamespace().equals(namespace));
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        int found = 0;
+        for (int page = 0; page < ids.size(); page++) {
+            ResourceLocation id = ids.get(page);
+            StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+            if (classes.containsKey(id)) {
+                found++;
+                tsv.append("cell\t0\t0\t0\t").append(id).append("\topened-by:")
+                        .append(openers.get(id).get(0)).append('\t').append(classes.get(id)).append('\n');
+                tsv.append("title\t-\t-\t-\t").append(id).append('\t')
+                        .append(titles.get(id).replace('\t', ' ')).append('\n');
+                for (String each : openers.get(id)) {
+                    tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
+                }
+                int index = 0;
+                for (String slot : slots.get(id)) {
+                    String[] p = slot.split("\t");
+                    tsv.append("slot\t").append(index++).append('\t').append(p[0]).append('\t').append(p[1])
+                            .append('\t').append(id).append('\t').append(p[2]).append('\t').append(p[3]).append('\n');
+                }
+            } else {
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tno-opener\n");
+            }
+            try {
+                Path parent = Path.of("c-imagine", "scenes");
+                Files.createDirectories(parent);
+                Files.writeString(parent.resolve("gallery-gui-" + namespace + "-p" + page + ".tsv"),
+                        tsv.toString(), StandardCharsets.UTF_8);
+            } catch (IOException ioe) {
+                LOGGER.error("[cimscene] gallery-gui-scan write failed {}: {}", id, ioe.toString());
+            }
+        }
+        LOGGER.info("[cimscene] gallery-gui-scan ns={} tried={} menus={} found={}",
+                namespace, tried, ids.size(), found);
+        return found;
+    }
+
+    private static String guiManifestOpener(String namespace, int page) {
+        Path file = Path.of("c-imagine", "scenes", "gallery-gui-" + namespace + "-p" + page + ".tsv");
+        try {
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String[] p = line.split("\t");
+                if (p.length > 5 && p[0].equals("opener")) {
+                    return p[5];
+                }
+            }
+        } catch (IOException ignored) {
+            // no manifest: no opener
+        }
+        return null;
+    }
+
+    /**
+     * The settled pass, for menus the scan's one-tick clicks did not open. Every structure
+     * guess (a hollow cube of each block entity block, 3 and 5 wide) is built at once on its
+     * own spot, the server ticks for real (a mod forms structures in its level tick, not in
+     * the block entity's), and then each is clicked. A page that opens is rewritten with its
+     * opener; c-imagine/scenes/settle-NS.done marks the end.
+     */
+    private static int galleryGuiSettle(ServerLevel level, String namespace) {
+        // 14-dj: the settle pass builds rigs, spawns entities and sweeps tools —
+        // it needs the ticking world, so it unfreezes like every page entry.
+        setGalleryFrozen(level.getServer(), false, "gui settle entry");
+        java.util.Set<ResourceLocation> wanted = new java.util.TreeSet<>();
+        List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
+        ids.removeIf(id -> !id.getNamespace().equals(namespace));
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        for (int page = 0; page < ids.size(); page++) {
+            if (guiManifestOpener(namespace, page) == null) {
+                wanted.add(ids.get(page));
+            }
+        }
+        List<String> cubes = wanted.isEmpty() ? new ArrayList<>() : new ArrayList<>(guiCubeCandidates(namespace));
+        // Single blocks too, for the tools used on them once they have ticked.
+        List<String> tools = new ArrayList<>();
+        if (!wanted.isEmpty()) {
+            for (ResourceLocation b : BuiltInRegistries.BLOCK.keySet()) {
+                if (b.getNamespace().equals(namespace)
+                        && BuiltInRegistries.BLOCK.get(b) instanceof net.minecraft.world.level.block.EntityBlock) {
+                    cubes.add("single:" + b);
+                }
+            }
+            for (ResourceLocation i : BuiltInRegistries.ITEM.keySet()) {
+                if (i.getNamespace().equals(namespace)
+                        && !(BuiltInRegistries.ITEM.get(i) instanceof net.minecraft.world.item.BlockItem)) {
+                    tools.add(i.toString());
+                }
+            }
+            tools.sort(Comparator.naturalOrder());
+        }
+        // Each mod's pass gets its own ground: the passes overlap in time, and one clearing
+        // its cubes must not take down another's before that one is clicked.
+        BlockPos base = new BlockPos(GUI_PROBE_XZ + 64, 100, GUI_PROBE_XZ + 400 * SETTLE_SLOT++);
+        GuiProbe probe = new GuiProbe(level);
+        List<BlockPos> rigs = new ArrayList<>();
+        java.util.Set<Long> chunks = new java.util.HashSet<>();
+        for (int i = 0; i < cubes.size(); i++) {
+            BlockPos rig = base.offset((i % 16) * 8, 0, (i / 16) * 10);
+            rigs.add(rig);
+            for (int dx = -3; dx <= 3; dx += 3) {
+                for (int dz = -6; dz <= 3; dz += 3) {
+                    net.minecraft.world.level.ChunkPos c = new net.minecraft.world.level.ChunkPos(rig.offset(dx, 0, dz));
+                    if (chunks.add(c.toLong())) {
+                        level.setChunkForced(c.x, c.z, true);
+                        level.getChunk(c.x, c.z);
+                    }
+                }
+            }
+        }
+        List<BlockPos> clicks = new ArrayList<>();
+        for (int i = 0; i < cubes.size(); i++) {
+            probe.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
+            try {
+                if (cubes.get(i).startsWith("single:")) {
+                    level.setBlock(rigs.get(i), BuiltInRegistries.BLOCK.get(ResourceLocation.parse(
+                            cubes.get(i).substring("single:".length()))).defaultBlockState(), 3);
+                    GUI_CUBE_BLOCKS.add(rigs.get(i));
+                    guiCubeClick = rigs.get(i);
+                } else {
+                    guiBuildCube(level, probe, rigs.get(i), cubes.get(i), false);
+                }
+            } catch (Throwable t) {
+                LOGGER.info("[cimscene] gallery-gui settle build {} threw {}", cubes.get(i), t.toString());
+            }
+            clicks.add(guiCubeClick);
+        }
+        List<BlockPos> built = new ArrayList<>(GUI_CUBE_BLOCKS);
+        GUI_CUBE_BLOCKS.clear();
+        LOGGER.info("[cimscene] gallery-gui settle ns={} missing={} structures={}", namespace, wanted.size(), cubes.size());
+        runAfterTicks(level.getServer(), 60, () -> {
+            Map<ResourceLocation, List<String>> openers = new java.util.TreeMap<>();
+            Map<ResourceLocation, GuiProbe> seen = new HashMap<>();
+            for (int i = 0; i < cubes.size(); i++) {
+                if (clicks.get(i) == null) {
+                    continue;
+                }
+                GuiProbe one = new GuiProbe(level);
+                one.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
+                one.candidate = cubes.get(i);
+                guiCubeClick = clicks.get(i);
+                if (cubes.get(i).startsWith("single:")) {
+                    String block = cubes.get(i).substring("single:".length());
+                    for (String tool : tools) {
+                        String opener = "settle+use+item:" + tool + "@" + block;
+                        one.seen = null;
+                        one.candidate = opener;
+                        try {
+                            guiActOnce(level, one, rigs.get(i), opener, Direction.UP);
+                        } catch (Throwable t) {
+                            // a tool that throws on this block is simply not its opener
+                        }
+                        if (one.seen != null && wanted.contains(one.seen)) {
+                            openers.computeIfAbsent(one.seen, k -> new ArrayList<>()).add(opener);
+                            seen.putIfAbsent(one.seen, one);
+                            one = new GuiProbe(level);
+                            one.setPos(rigs.get(i).getX() + 0.5, rigs.get(i).getY(), rigs.get(i).getZ() + 2.5);
+                        }
+                    }
+                    continue;
+                }
+                try {
+                    guiAct(level, one, rigs.get(i), cubes.get(i));
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] gallery-gui settle click {} threw {}", cubes.get(i), t.toString());
+                }
+                if (one.seen == null && cubes.get(i).startsWith("cube3:")) {
+                    BlockPos at = clicks.get(i);
+                    net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(at);
+                    LOGGER.info("[cimscene] gallery-gui settle {} at {} block={} be={} ticks={}", cubes.get(i), at.toShortString(),
+                            BuiltInRegistries.BLOCK.getKey(level.getBlockState(at).getBlock()),
+                            be == null ? null : be.getClass().getSimpleName(), level.getServer().getTickCount());
+                }
+                if (one.seen != null && wanted.contains(one.seen)) {
+                    openers.computeIfAbsent(one.seen, k -> new ArrayList<>()).add(one.candidate);
+                    seen.putIfAbsent(one.seen, one);
+                }
+            }
+            guiCubeClick = null;
+            for (BlockPos p : built) {
+                level.setBlock(p, Blocks.AIR.defaultBlockState(), 3);
+            }
+            for (Map.Entry<ResourceLocation, GuiProbe> e : seen.entrySet()) {
+                GuiProbe one = e.getValue();
+                int page = ids.indexOf(e.getKey());
+                StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+                tsv.append("cell\t0\t0\t0\t").append(e.getKey()).append("\topened-by:")
+                        .append(openers.get(e.getKey()).get(0)).append('\t').append(one.seenClass).append('\n');
+                tsv.append("title\t-\t-\t-\t").append(e.getKey()).append('\t')
+                        .append(one.seenTitle.replace('\t', ' ')).append('\n');
+                for (String each : openers.get(e.getKey())) {
+                    tsv.append("opener\t-\t-\t-\t").append(e.getKey()).append('\t').append(each).append('\n');
+                }
+                int index = 0;
+                for (String slot : one.seenSlots) {
+                    String[] p = slot.split("\t");
+                    tsv.append("slot\t").append(index++).append('\t').append(p[0]).append('\t').append(p[1])
+                            .append('\t').append(e.getKey()).append('\t').append(p[2]).append('\t').append(p[3]).append('\n');
+                }
+                try {
+                    Files.writeString(Path.of("c-imagine", "scenes", "gallery-gui-" + namespace + "-p" + page + ".tsv"),
+                            tsv.toString(), StandardCharsets.UTF_8);
+                } catch (IOException ioe) {
+                    LOGGER.error("[cimscene] gallery-gui settle write failed {}: {}", e.getKey(), ioe.toString());
+                }
+            }
+            LOGGER.info("[cimscene] gallery-gui settle ns={} opened={}", namespace, seen.keySet());
+            try {
+                Files.createDirectories(Path.of("c-imagine", "scenes"));
+                Files.writeString(Path.of("c-imagine", "scenes", "settle-" + namespace + ".done"),
+                        String.valueOf(seen.size()), StandardCharsets.UTF_8);
+            } catch (IOException ioe) {
+                LOGGER.error("[cimscene] gallery-gui settle marker failed: {}", ioe.toString());
+            }
+        });
+        return cubes.size();
+    }
+
+    /** Tries every block and item of the namespace once and keeps what opened a menu. */
+    private static Map<ResourceLocation, String> guiOpeners(ServerLevel level, ServerPlayer viewer, String namespace) {
+        Map<ResourceLocation, String> known = GUI_OPENERS.get(namespace);
+        if (known != null) {
+            return known;
+        }
+        Map<ResourceLocation, String> found = new HashMap<>();
+        int tried = guiProbeAll(level, namespace, probe -> {
+            found.putIfAbsent(probe.seen, probe.candidate);
+            GUI_ALL_OPENERS.computeIfAbsent(probe.seen, k -> new ArrayList<>()).add(probe.candidate);
+        });
+        LOGGER.info("[cimscene] gallery-gui openers ns={} tried={} found={}", namespace, tried, found.size());
+        GUI_OPENERS.put(namespace, found);
+        return found;
+    }
+
     /**
      * The universal GUI gallery: EVERY {@link MenuType} registered by the
      * namespace, sorted by id, ONE per page — the server opens the menu for
@@ -2941,27 +3778,148 @@ public final class CimSceneMod {
                     namespace, page, id);
         } else {
             viewer.closeContainer();   // the previous page's screen, if any
+            BlockPos rig = guiRigPos(viewer);
+            guiClearRig(level, viewer, rig);
+            // A real menu needs the context its own code supplies, so the walk does
+            // what a player does. The block entity must reach the client first, or
+            // the screen reads a null holder and the client disconnects.
+            // The plan already probed every mod, settled pass included, and wrote each page's
+            // opener into its manifest; a walk run on its own probes for itself.
+            boolean planned = Files.isRegularFile(Path.of("c-imagine", "scenes",
+                    "gallery-gui-" + namespace + "-p" + page + ".tsv"));
+            String opener = planned ? guiManifestOpener(namespace, page) : guiOpeners(level, viewer, namespace).get(id);
+            if (opener == null && SpecializedOpeners.isSpecialized(id.toString())) {
+                opener = "specialized:" + id.toString();
+            }
+            if (opener != null) {
+                guiPlace(level, viewer, rig, opener);
+                // The same race for items: a held-item menu looks up its host in the
+                // client's inventory, so the stack has to arrive first.
+                String plain = opener.replace("sneak+", "");
+                if (plain.startsWith("item:")) {
+                    viewer.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(BuiltInRegistries.ITEM.get(
+                            ResourceLocation.parse(plain.substring("item:".length())))));
+                    viewer.inventoryMenu.broadcastChanges();
+                }
+            }
+            String chosen = opener;
+            boolean slowSettle = chosen != null && (chosen.contains("entity:") || chosen.contains("robit")
+                    || chosen.startsWith("cube") || chosen.contains("settle+"));
+            if (id.toString().contains("robit")) {
+                slowSettle = true;
+            }
+            runAfterTicks(level.getServer(), slowSettle ? 40 : GUI_SETTLE_TICKS,
+                    () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig, src));
+            return 1;
+        }
+        writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed, src);
+        return placed;
+    }
+
+    private static void finishGuiPage(ServerLevel level, ServerPlayer viewer, String namespace, int page,
+                                      ResourceLocation id, String opener, BlockPos rig, CommandSourceStack src) {
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
+        int placed = 0;
+        int failed = 0;
+        String how = null;
+        boolean gone = opener != null && opener.contains("entity:") && (guiEntity == null || !guiEntity.isAlive());
+        if (opener != null && !gone) {
+            try {
+                guiAct(level, viewer, rig, opener);
+            } catch (Throwable t) {
+                // The page still gets its manifest, so a throwing opener is a named RED row.
+                LOGGER.info("[cimscene] gallery-gui opener {} threw for the viewer: {}", opener, t.toString());
+            }
+            if (guiOpenMenu(viewer) != null) {
+                how = "opened-by:" + opener;
+            }
+        }
+        if (how == null) {
+            String spec = id.toString();
+            if (SpecializedOpeners.isSpecialized(spec)) {
+                try {
+                    SpecializedOpeners.place(level, viewer, rig, spec, e -> {
+                        guiEntity = e;
+                        GUI_SPAWNED.add(e);
+                    });
+                    if (SpecializedOpeners.act(level, viewer, rig, spec, guiEntity) && guiOpenMenu(viewer) != null) {
+                        how = "opened-by:specialized:" + spec;
+                    }
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] finishGuiPage specialized fallback failed for {}: {}", spec, t.toString());
+                }
+            }
+        }
+        if (how == null) {
             try {
                 MenuType<?> type = BuiltInRegistries.MENU.get(id);
-                // empty extra data: factories that read block/menu context
-                // throw here (recorded honestly); context-free menus open
                 net.minecraft.network.RegistryFriendlyByteBuf extra = new net.minecraft.network.RegistryFriendlyByteBuf(
                         Unpooled.buffer(), viewer.server.registryAccess());
                 viewer.openMenu(new SimpleMenuProvider(
                         (windowId, inv, player) -> type.create(windowId, inv, extra),
                         Component.literal(id.toString())));
-                placed++;
-                tsv.append("cell\t").append(GALLERY_X0).append('\t')
-                        .append(GALLERY_Y0).append('\t').append(GALLERY_Z)
-                        .append('\t').append(id).append("\tok\n");
+                how = "opened-empty";
             } catch (Throwable t) {
                 failed++;
-                tsv.append("skip\t-1\t-1\t-1\t").append(id)
-                        .append("\topen-failed:").append(t.getClass().getName()).append('\n');
-                LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed "
-                                + "menu={} err={}", namespace, page, id, t.toString());
+                tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\topen-failed:")
+                        .append(opener == null ? "no-opener:" : "opener-failed:")
+                        .append(t.getClass().getName()).append('\n');
+                if (opener != null) {
+                    // Kept, so the crawl's reopen of this page tries the same opener again.
+                    tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(opener).append('\n');
+                }
+                LOGGER.info("[cimscene] gallery-gui skip ns={} page={} reason=open-failed menu={} opener={} err={}",
+                        namespace, page, id, opener, t.toString());
             }
         }
+        if (how != null) {
+            placed++;
+            tsv.append("cell\t").append(rig.getX()).append('\t').append(rig.getY()).append('\t')
+                    .append(rig.getZ()).append('\t').append(id).append('\t').append(how).append('\t')
+                    .append(viewer.containerMenu.getClass().getName()).append('\n');
+            List<String> all = GUI_ALL_OPENERS.getOrDefault(id, opener == null ? List.of() : List.of(opener));
+            for (String each : all) {
+                tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
+            }
+            // Slot geometry is server state, so every opened menu documents itself.
+            int slotIndex = 0;
+            for (net.minecraft.world.inventory.Slot slot : viewer.containerMenu.slots) {
+                tsv.append("slot\t").append(slotIndex++).append('\t').append(slot.x).append('\t')
+                        .append(slot.y).append('\t').append(id).append('\t')
+                        .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\t').append(slot.getContainerSlot()).append('\n');
+            }
+        }
+        writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed, src);
+    }
+
+    private static void writeGuiManifest(String namespace, int page, ResourceLocation id, String guiStem,
+                                         StringBuilder tsv, int placed, int failed, CommandSourceStack src) {
+        // 14-dj THE GUI SETTLE PIN + FREEZE — the menus lane's half of the
+        // settle-freeze instrument (the block half graduated in 14-di). The
+        // menus crawl's shots were framed against a LIVE world: the day clock
+        // ran the sky gradient wherever each leg's boot/settle timing had
+        // brought it (the measured robit-class backdrop: the truth leg stood
+        // in morning light, the ours leg in near-darkness — 627984 ae across
+        // the whole backdrop on every robit press page, while the GUI panel
+        // itself matched pixel for pixel), and the weather timer dimmed the
+        // sky whenever its own clock said so. A menu can only be honest-red
+        // or honest-green against a backdrop the next run can reproduce: the
+        // terminal point pins the day clock at noon and clears the weather
+        // through the proven quiet dispatcher (runQuiet — the same surface
+        // the biome walk uses for fillbiome, zero new mojmap), THEN freezes
+        // the world at that exact frame — the same vanilla tickRateManager
+        // freeze 14-di verified on the 1.21.1 decompile: the server's day
+        // clock, BE tickers and scheduled ticks gate on runsNormally, and
+        // the broadcast ClientboundTickingStatePacket stops the joined
+        // client's sky/particle/texture clocks on the same flag. Every page
+        // therefore shoots the identical noon sky on both legs and across
+        // runs; the widget crawl's press pages inherit the frozen frame (the
+        // press packets ride the network stack, which never freezes). Every
+        // gui command entry (page, scan, settle) unfreezes first — the
+        // openers' settles and the probe builds need the ticking world.
+        runQuiet(src, "time set 6000");
+        runQuiet(src, "weather clear");
+        setGalleryFrozen(src.getServer(), true, "gui " + guiStem);
         String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
@@ -2973,7 +3931,6 @@ public final class CimSceneMod {
         LOGGER.info("[cimscene] gallery-gui done ns={} page={} cells={} failed={} menu={}",
                 namespace, page, placed, failed, id);
         writeDoneMarkerFile(guiStem, false);
-        return placed;
     }
 
     // --- biome-tint gallery (the BOP P1 channel proof surface, 2026-11-04
@@ -3446,8 +4403,9 @@ public final class CimSceneMod {
         for (DelayedTask t : due) {
             try {
                 t.task().run();
-            } catch (RuntimeException ex) {
-                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString());
+            } catch (Throwable ex) {
+                // A mod's Error (a NoSuchMethodError from its own bytecode) must not hide the page.
+                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString(), ex);
             }
         }
     }

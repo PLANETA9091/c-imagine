@@ -51,12 +51,28 @@ public final class HudService implements Listener {
     static Layer anchorProbe() {
         return (player, frame) -> {
             for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
-                if (a != HudLayout.Anchor.MAP && HudLayout.rows(a) > 0) {
+                if (HudLayout.rows(a) > 0) {
                     frame.text(a, 0, a.name(), net.kyori.adventure.text.format.NamedTextColor.YELLOW);
                     frame.text(a, 1, "second line", net.kyori.adventure.text.format.NamedTextColor.AQUA);
                 }
             }
         };
+    }
+
+    /** A recipe toast would sit over the frame the gallery compares. */
+    @EventHandler
+    public void onRecipe(org.bukkit.event.player.PlayerRecipeDiscoverEvent event) {
+        if (harnessAccount(event.getPlayer().getName())) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** So would an advancement toast: an item the walk hands over can complete one. */
+    @EventHandler
+    public void onAdvancement(com.destroystokyo.paper.event.player.PlayerAdvancementCriterionGrantEvent event) {
+        if (harnessAccount(event.getPlayer().getName())) {
+            event.setCancelled(true);
+        }
     }
 
     @EventHandler
@@ -80,7 +96,14 @@ public final class HudService implements Listener {
     }
 
     private void attach(Player player) {
-        if (harnessAccount(player.getName())) {
+        if (!harnessAccount(player.getName())) {
+            show(player);
+        }
+    }
+
+    /** Gives a player the carrier regardless of account. */
+    void show(Player player) {
+        if (carriers.containsKey(player.getUniqueId())) {
             return;
         }
         BossBar bar = BossBar.bossBar(Component.empty(), 0f, BossBar.Color.YELLOW, BossBar.Overlay.PROGRESS);

@@ -269,6 +269,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     @Override
     public void onDisable() {
+        dev.cim.hud.HudBootstrap.disable();
         log().info(LOG_PREFIX + "paper plugin disabled");
     }
 
@@ -544,6 +545,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
             log().info(LOG_PREFIX + "f2v net: bot joined name=" + bot.getName());
+            // M6.3 end to end (live.yml): a mod item's menu run by the mod's own code in the
+            // layer, for a real connected player, and the Paper inventory it leaves.
+            String liveItem = System.getenv("CIM_LIVETEST");
+            if (liveItem != null && !liveItem.isBlank()) {
+                Player target = bot;
+                for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveSelfTest(target, liveItem.trim()))) {
+                    log().info("[cim-live] paper " + line);
+                }
+            }
+            String liveBlock = System.getenv("CIM_LIVETEST_BLOCK");
+            if (liveBlock != null && !liveBlock.isBlank()) {
+                Player target = bot;
+                for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveBlockTest(target, liveBlock.trim()))) {
+                    log().info("[cim-live] paper " + line);
+                }
+            }
             // Attach the outbound net watch HERE, not via PlayerJoinEvent: the
             // join event did not fire on the CI wire order (measured — census
             // stayed empty), and a missed attach silently blinds the watch.
@@ -2002,10 +2019,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return new int[]{0, 0, -1};
         }
         int cells = 0;
+        String menuClass = null;
+        String opener = "";
+        String menuId = null;
         try {
             for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
                     cells++;
+                    String[] row = line.split("\t", -1);
+                    if (row.length > 6) {
+                        menuClass = row[6];
+                    }
+                    if (row.length > 4) {
+                        menuId = row[4];
+                    }
+                    if (row.length > 5) {
+                        opener = row[5].replace("opened-by:", "").replace("sneak+", "");
+                    }
                 }
                 // header / skip rows (open-failed notes pass through — the
                 // join reads them from the manifest, not from here)
@@ -2016,11 +2046,18 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return new int[]{0, 0, -1};
         }
         final int cellsf = cells;
+        final String hudClass = menuClass;
+        final String hudId = menuId;
+        // The truth leg holds the item that opened the menu, and its slot shows it.
+        final String heldId = opener.startsWith("item:") ? opener.substring("item:".length()) : null;
         callSync(() -> {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer != null) {
                 viewer.closeInventory();
+                if (hudId != null) {
+                    dev.cim.hud.HudBootstrap.openForHarness(viewer, hudId, hudClass, heldId);
+                }
             }
             World w = world(worldName());
             for (int bx = -6; bx <= 6; bx++) {
@@ -2724,6 +2761,41 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             player.setResourcePack(visualPack.url(),
                     java.util.HexFormat.of().parseHex(visualPack.sha1()), true);
             sender.sendMessage(LOG_PREFIX + "pack: offered " + visualPack.sha1() + " to " + player.getName());
+            return true;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("hudpress")) {
+            String done = callSync(() -> dev.cim.hud.HudBootstrap.pressForHarness(
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer"), args[1]));
+            sender.sendMessage(LOG_PREFIX + "hudpress " + done);
+            return true;
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("hudlist")) {
+            try {
+                Path list = Path.of(System.getProperty("user.dir"), "c-imagine", "hud-screens.txt");
+                Files.write(list, dev.cim.hud.HudBootstrap.listForHarness(), StandardCharsets.UTF_8);
+                sender.sendMessage(LOG_PREFIX + "hudlist " + list);
+            } catch (IOException e) {
+                sender.sendMessage(LOG_PREFIX + "hudlist failed: " + e);
+            }
+            return true;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("hudopen")) {
+            boolean opened = callSync(() -> dev.cim.hud.HudBootstrap.openNamedForHarness(
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer"), args[1]));
+            sender.sendMessage(LOG_PREFIX + "hudopen " + opened);
+            return true;
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("hudaim")) {
+            String aimed = callSync(() -> dev.cim.hud.HudBootstrap.aimForHarness(
+                    org.bukkit.Bukkit.getPlayerExact("cimviewer"), args[1]));
+            sender.sendMessage(LOG_PREFIX + "hudaim " + aimed);
+            return true;
+        }
+        if (args.length == 1 && args[0].equalsIgnoreCase("guiclose")) {
+            callSync(() -> {
+                dev.cim.hud.HudBootstrap.closeForHarness(org.bukkit.Bukkit.getPlayerExact("cimviewer"));
+                return 0;
+            });
             return true;
         }
         // /cim postfx <player> <id[,id...]|clear> — the M5 harness surface

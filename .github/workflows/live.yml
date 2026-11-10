@@ -1,0 +1,338 @@
+name: live
+
+# Roadmap M6.3, live menus: the mod's own menu code runs for a session player in the
+# c-imagine layer, in the server's own heap. Every step is dual-stack: the same
+# cimlive self-test runs on a real NeoForge 1.21.1 server (truth) and in the layer,
+# and the two logs must say the same thing about the menu and every click.
+
+on:
+  push:
+    branches: [ci/menu-compare-2]
+    paths:
+      - 'live-mod/**'
+      - 'java/**'
+      - 'crates/**'
+      - 'paper-plugin/**'
+      - '.github/workflows/live.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: live-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Every item of every mod in the lock: whatever menu its own code opens gets a move and a close.
+  CIM_LIVE_SELFTEST: all
+
+jobs:
+  buttons:
+    name: live buttons (F2V scan of every mod screen's payload buttons)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: paper-plugin/pom.xml
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
+      - name: scan the buttons
+        run: |
+          (cd paper-plugin && mvn -q -B -DskipTests package dependency:build-classpath -Dmdep.outputFile=target/cp.txt)
+          java -cp "paper-plugin/target/cim-paper-plugin.jar:$(cat paper-plugin/target/cp.txt)" dev.cim.hud.LiveButtons mods-ladder live-buttons.tsv
+          java -cp "paper-plugin/target/cim-paper-plugin.jar:$(cat paper-plugin/target/cp.txt)" dev.cim.hud.LiveButtons mods-ladder live-stateful.tsv --stateful
+          cut -f1,4,5 live-buttons.tsv | head -40
+      - uses: actions/upload-artifact@v4
+        with:
+          name: live-buttons
+          path: |
+            live-buttons.tsv
+            live-stateful.tsv
+
+  truth:
+    name: live self-test on real NeoForge (truth)
+    runs-on: ubuntu-latest
+    needs: [buttons]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build cimlive
+        run: gradle build --no-daemon -p live-mod
+      - name: restore NeoForge server
+        id: layer
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge server (cache miss)
+        if: steps.layer.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
+      - uses: actions/download-artifact@v4
+        with:
+          name: live-buttons
+          path: buttons
+      - name: boot, run the self-test, stop
+        env:
+          CIM_LIVE_BUTTONS: ${{ github.workspace }}/buttons/live-buttons.tsv
+          CIM_LIVE_STATEFUL: ${{ github.workspace }}/buttons/live-stateful.tsv
+        run: |
+          mkdir -p layer-srv/mods
+          cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar layer-srv/mods/
+          cd layer-srv
+          echo eula=true > eula.txt
+          printf 'online-mode=false\nlevel-type=minecraft:flat\n' > server.properties
+          (echo stop | timeout 600 java -Xmx3G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui > boot.log 2>&1) || true
+          grep '\[cimlive\]' boot.log | tee ../truth-live.txt
+          grep -q "\[cimlive\] selftest ok" boot.log || { tail -80 boot.log; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-truth
+          path: |
+            truth-live.txt
+            layer-srv/boot.log
+
+  layer:
+    name: live self-test in the c-imagine layer
+    runs-on: ubuntu-latest
+    needs: [buttons]
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build rust (release)
+        run: cargo build --release --quiet
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+      - name: build cimlive
+        run: gradle build --no-daemon -p live-mod
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer1211
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-installer.jar --installServer layer1211
+      - name: restore mods
+        id: mods
+        uses: actions/cache@v4
+        with:
+          path: mods-ladder
+          key: menus-mods-${{ hashFiles('scripts/cimscene/mods.lock') }}
+      - name: fetch mods (cache miss)
+        if: steps.mods.outputs.cache-hit != 'true'
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $(grep -vE '^\s*(#|$)' scripts/cimscene/mods.lock | cut -d= -f1)
+      - uses: actions/download-artifact@v4
+        with:
+          name: live-buttons
+          path: buttons
+      - name: run the layer with Create and cimlive
+        env:
+          CIM_LIVE_BUTTONS: ${{ github.workspace }}/buttons/live-buttons.tsv
+          CIM_LIVE_STATEFUL: ${{ github.workspace }}/buttons/live-stateful.tsv
+        run: |
+          mkdir -p mods
+          cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar mods/
+          bash scripts/run-m2-harness.sh layer1211/libraries mods out-live || true
+          grep '\[cimlive\]' out-live/harness.log | tee layer-live.txt
+          grep -q "\[cimlive\] selftest ok" out-live/harness.log || { grep -n 'cimlive\|Exception' out-live/harness.log | tail -60; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-layer
+          path: |
+            layer-live.txt
+            out-live/harness.log
+
+  paper:
+    name: live menus on Paper 26.3 with the layer (a connected player)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build cimlive
+        run: gradle build --no-daemon -p live-mod
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+      - name: build paper plugin jar
+        working-directory: paper-plugin
+        run: mvn -q -B package
+      - name: build + package module
+        env:
+          CIM_BOOTSTRAP_JAR: ${{ github.workspace }}/java/cim-bootstrap/build/cim-bootstrap.jar
+        run: bash scripts/package-module.sh
+      - name: build cimbot (protocol bot)
+        run: cargo build --release --bin cimbot --quiet
+      - name: scaffold Paper 26.3 with CRUSSTY
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm i -g crussty
+          crussty init --platform paper --version 26.3 --dir srv 2>&1 | tee init.log
+          # init only warns when a release download fails (measured 2026-11-08: GitHub
+          # answered 504 on the direct asset URL twice in a row, while the API endpoint
+          # served the same file). Whatever it missed comes through the API.
+          TAG=$(grep -oE 'releases/download/v[0-9.]+' init.log | head -1 | sed 's#releases/download/##')
+          [ -n "$TAG" ] || { echo "no CRUSSTY release tag in the init log"; exit 1; }
+          if [ ! -s srv/launcher/launcher.jar ]; then
+            mkdir -p srv/launcher
+            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p launcher.jar -D srv/launcher --clobber
+          fi
+          if [ ! -s srv/libcrussty_runtime.so ]; then
+            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p libcrussty_runtime.so -D srv --clobber
+          fi
+          ls -la srv/launcher/launcher.jar srv/libcrussty_runtime.so
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: srv/layer1211
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          JAVA_HOME="$JAVA_HOME_21_X64" java -jar nf-installer.jar --installServer srv/layer1211
+      - name: fetch Create
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: install module, plugin and mods
+        run: |
+          mkdir -p srv/crus
+          printf '{"layerDir": "layer1211/libraries"}\n' > srv/crus/c-imagine.json
+          sed -i 's/memory = "2G"/memory = "6G"/' srv/crussty.toml
+          unzip -o dist/module-imagine.zip -d srv/modules/
+          mkdir -p srv/plugins srv/mods
+          cp paper-plugin/target/cim-paper-plugin.jar srv/plugins/
+          cp mods-create/*.jar live-mod/build/libs/cimlive-1.0.0.jar srv/mods/
+          cp scripts/log4j2-layer.xml srv/
+          echo "eula=true" > srv/eula.txt
+          printf 'online-mode=false\nwhite-list=false\nlevel-type=minecraft:flat\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\n' > srv/server.properties
+      - name: boot, the player joins, the live leg runs
+        env:
+          # The owner's gate: Create's list filter, opened from the held item by Create's own code.
+          CIM_LIVETEST: create:filter
+          # ...and one of its buttons, pressed through the scanned payload, as the HUD presses it.
+          CIM_LIVETEST_BUTTON: blacklist
+          # ...and a mod block: Create's toolbox, its block entity kept by Paper between openings.
+          CIM_LIVETEST_BLOCK: create:brown_toolbox
+          CIM_LIVE_SELFTEST: ''
+        run: |
+          set +e
+          (
+            for i in $(seq 1 120); do grep -q "Done (" srv/boot.log 2>/dev/null && break; sleep 2; done
+            ./target/release/cimbot --host 127.0.0.1 --port 25565 --name cimbot --timeout 60 --no-expect-block \
+              --report cimbot-report.json > cimbot.log 2>&1
+            echo $? > cimbot-exit
+          ) &
+          cd srv
+          crussty run > boot.log 2>&1 &
+          SRV=$!
+          for i in $(seq 1 150); do
+            grep -q "\[cim-live\] paper block reopen" boot.log 2>/dev/null && { sleep 3; break; }
+            grep -q "\[cim-live\] paper open .* -> \(no menu\|error\)" boot.log 2>/dev/null && break
+            kill -0 "$SRV" 2>/dev/null || break
+            sleep 2
+          done
+          timeout 90 crussty stop || true
+          for i in $(seq 1 60); do pgrep -f onload.pidFile >/dev/null || break; sleep 2; done
+          pgrep -f onload.pidFile >/dev/null && pkill -9 -f onload.pidFile
+          cd ..
+          grep -E '\[cim-live\]|live menus:|mod execution|layer boot' srv/boot.log | tee live-paper.txt
+          true
+      - name: the mod's own logic, on Paper
+        run: |
+          fail() { echo "ASSERTION FAILED: $1"; tail -60 srv/boot.log; exit 1; }
+          grep -q "\[cim-live\] paper open create:filter .* -> create:filter slots=54" live-paper.txt \
+            || fail "Create's own use() did not open its FilterMenu for the Paper player"
+          grep -q "\[cim-live\] paper move: first own slot create\|\[cim-live\] paper move: first own slot minecraft:diamond x1, carried minecraft:diamond x5" live-paper.txt \
+            || fail "the move did not go through Create's ghost slot (copy x1, cursor keeps x5)"
+          grep -q "\[cim-live\] paper close: paper inventory .*minecraft:diamond x5" live-paper.txt \
+            || fail "after the close the Paper inventory does not hold the 5 diamonds the menu gave back"
+          grep -q "\[cim-live\] paper button 'blacklist': handled create:configure_filter" live-paper.txt \
+            || fail "the blacklist button did not reach Create's FilterScreenPacket handler"
+          grep -q "\[cim-live\] paper held data: .*filter_items_blacklist\":true" live-paper.txt \
+            || fail "the filter on Paper does not carry Create's blacklist flag after the press"
+          grep -q "\[cim-live\] paper block open create:brown_toolbox -> create:toolbox" live-paper.txt \
+            || fail "the toolbox block's own use did not open its menu on Paper"
+          grep -q "\[cim-live\] paper block reopen: first own slot minecraft:diamond x5" live-paper.txt \
+            || fail "the toolbox did not keep the diamonds between two openings (block entity data through Paper)"
+          echo "live menus on Paper: Create's FilterMenu, its blacklist button and the toolbox block ran Create's own code"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-paper
+          path: |
+            live-paper.txt
+            srv/boot.log
+            cimbot.log
+
+  parity:
+    name: live parity (layer vs real NeoForge)
+    runs-on: ubuntu-latest
+    needs: [truth, layer]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: all
+      - name: same menu, same click results
+        run: |
+          # Timestamps and timings differ; what the menu is and what each click did may not.
+          norm() { grep -oE '\[cimlive\] selftest .*' "$1" | grep -v 'facade level' ; }
+          norm all/live-truth/truth-live.txt > truth.txt
+          norm all/live-layer/layer-live.txt > layer.txt
+          { echo "### live menus, real NeoForge vs layer"; echo; echo '```'; grep -E 'summary|kinds' truth.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          grep 'summary' truth.txt layer.txt
+          diff truth.txt layer.txt && echo "live parity: IDENTICAL"

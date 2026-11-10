@@ -217,6 +217,10 @@ public final class KeyCensus {
             }
         }
 
+        static int operands(int op) {
+            return OPERANDS[op];
+        }
+
         static List<Object> read(byte[] cls) throws IOException {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(cls));
             if (in.readInt() != 0xCAFEBABE) {

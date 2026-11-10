@@ -14,14 +14,29 @@ public final class HudPack {
 
     public static final String NS = "cimhud";
 
-    /** Private-use glyphs present in every HUD font. */
-    public static final char CELL = '\uE000';
-    public static final char ARROW_BASE = '\uE010';
-    public static final int ARROWS = 8;
     /** A run of these moves the pen; bit {@code n} of the distance picks {@code SPACE_BASE + n}. */
     public static final char SPACE_BASE = '\uE100';
     public static final char BACK_BASE = '\uE120';
     public static final int SPACE_BITS = 11;
+
+    public static final char CURSOR = '\uE020';
+    public static final char BACKDROP = '\uE021';
+    public static final char SLOT = '\uE022';
+    public static final char SLOT_HOVER = '\uE023';
+    /** A 4x4 dark tile: a disabled widget is drawn under it, as vanilla greys an inactive button. */
+    public static final char DIM = '\uE02B';
+    public static final int DIM_SIZE = 4;
+    /** Plate under a scanned icon button. */
+    public static final char BUTTON = '\uE024';
+    public static final char KEY = '\uE025';
+    public static final char KEY_LIT = '\uE026';
+    public static final char KEY_HOVER = '\uE027';
+    public static final char KEY_WIDE = '\uE028';
+    public static final char KEY_WIDE_LIT = '\uE029';
+    public static final char KEY_WIDE_HOVER = '\uE02A';
+    public static final int BACKDROP_W = 1024;
+    public static final int BACKDROP_H = 640;
+    private static final int BACKDROP_SCALE = 16;
 
     private static final String[] ASCII_ROWS = asciiRows();
 
@@ -36,10 +51,23 @@ public final class HudPack {
         byte[] clear = png(new BufferedImage(182, 5, BufferedImage.TYPE_INT_ARGB));
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_background.png", clear);
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_progress.png", clear);
-        entries.put("assets/" + NS + "/textures/font/cell.png", png(cell()));
-        for (int i = 0; i < ARROWS; i++) {
-            entries.put("assets/" + NS + "/textures/font/arrow" + i + ".png", png(arrow(i)));
+        entries.put("assets/" + NS + "/textures/font/cursor.png", png(cursor()));
+        entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
+        entries.put("assets/" + NS + "/textures/font/slot.png", png(slot()));
+        entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(hover()));
+        entries.put("assets/" + NS + "/textures/font/dim.png", png(dim()));
+        entries.put("assets/" + NS + "/textures/font/button.png", png(button()));
+        for (int i = 0; i < 6; i++) {
+            entries.put("assets/" + NS + "/textures/font/key" + i + ".png", png(keycap(i)));
         }
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
+                freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeDarkId()) + ".json",
+                font(HudLayout.freeDarkId()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeTextId()) + ".json",
+                font(HudLayout.freeTextId()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeShadowId()) + ".json",
+                font(HudLayout.freeShadowId()).toString().getBytes(StandardCharsets.UTF_8));
         for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
             for (int row = 0; row < HudLayout.rows(a); row++) {
                 int id = HudLayout.id(a, row);
@@ -47,6 +75,49 @@ public final class HudPack {
                         font(id).toString().getBytes(StandardCharsets.UTF_8));
             }
         }
+    }
+
+    /** The free font, plus the given extra bitmap providers (one per scanned screen). */
+    static JsonObject freeFont(JsonArray screens) {
+        JsonObject font = font(HudLayout.freeId());
+        JsonArray providers = font.getAsJsonArray("providers");
+        int ascent = HudLayout.ascent(HudLayout.freeId());
+        JsonObject cursor = bitmap(NS + ":font/cursor.png", 12, ascent);
+        JsonArray c = new JsonArray();
+        c.add(String.valueOf(CURSOR));
+        cursor.add("chars", c);
+        providers.add(cursor);
+        JsonObject backdrop = bitmap(NS + ":font/backdrop.png", BACKDROP_H, ascent);
+        JsonArray b = new JsonArray();
+        b.add(String.valueOf(BACKDROP));
+        backdrop.add("chars", b);
+        providers.add(backdrop);
+        JsonObject dim = bitmap(NS + ":font/dim.png", DIM_SIZE, ascent);
+        JsonArray dimChars = new JsonArray();
+        dimChars.add(String.valueOf(DIM));
+        dim.add("chars", dimChars);
+        providers.add(dim);
+        for (boolean hover : new boolean[]{false, true}) {
+            JsonObject slot = bitmap(NS + ":font/" + (hover ? "slot_hover" : "slot") + ".png", hover ? 16 : 18, ascent);
+            JsonArray chars = new JsonArray();
+            chars.add(String.valueOf(hover ? SLOT_HOVER : SLOT));
+            slot.add("chars", chars);
+            providers.add(slot);
+        }
+        for (int i = 0; i < 6; i++) {
+            JsonObject key = bitmap(NS + ":font/key" + i + ".png", KeyboardLayout.CAP_H, ascent);
+            JsonArray keyChars = new JsonArray();
+            keyChars.add(String.valueOf((char) (KEY + i)));
+            key.add("chars", keyChars);
+            providers.add(key);
+        }
+        JsonObject button = bitmap(NS + ":font/button.png", 18, ascent);
+        JsonArray buttonChars = new JsonArray();
+        buttonChars.add(String.valueOf(BUTTON));
+        button.add("chars", buttonChars);
+        providers.add(button);
+        providers.addAll(screens);
+        return font;
     }
 
     private static JsonObject font(int id) {
@@ -71,20 +142,6 @@ public final class HudPack {
         }
         ascii.add("chars", chars);
         providers.add(ascii);
-
-        JsonObject cell = bitmap(NS + ":font/cell.png", HudLayout.MAP_CELL, ascent);
-        JsonArray cellChars = new JsonArray();
-        cellChars.add(String.valueOf(CELL));
-        cell.add("chars", cellChars);
-        providers.add(cell);
-
-        for (int i = 0; i < ARROWS; i++) {
-            JsonObject arrow = bitmap(NS + ":font/arrow" + i + ".png", 9, ascent);
-            JsonArray arrowChars = new JsonArray();
-            arrowChars.add(String.valueOf((char) (ARROW_BASE + i)));
-            arrow.add("chars", arrowChars);
-            providers.add(arrow);
-        }
 
         JsonObject root = new JsonObject();
         root.add("providers", providers);
@@ -114,41 +171,121 @@ public final class HudPack {
         return rows;
     }
 
-    private static BufferedImage cell() {
-        BufferedImage img = new BufferedImage(3, 3, BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < 3; y++) {
-            for (int x = 0; x < 3; x++) {
-                img.setRGB(x, y, 0xFFFFFFFF);
+    /** Keycaps, in {@link #KEY} order: normal, held, hover, then the same three wide. */
+    private static BufferedImage keycap(int kind) {
+        int w = kind < 3 ? KeyboardLayout.KEY_W : KeyboardLayout.WIDE_W;
+        int h = KeyboardLayout.CAP_H;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        int style = kind % 3;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                boolean corner = (x == 0 || x == w - 1) && (y == 0 || y == h - 1);
+                int c;
+                if (style == 2) {
+                    c = 0x60FFFFFF;
+                } else if (corner) {
+                    c = 0;
+                } else if (x == 0 || y == 0) {
+                    c = style == 1 ? 0xF0A4F0A4 : 0xE8FFFFFF;
+                } else if (x == w - 1 || y == h - 1) {
+                    c = style == 1 ? 0xF02E7D32 : 0xE8585858;
+                } else {
+                    c = style == 1 ? 0xF066D06A : 0xE8C6C6C6;
+                }
+                img.setRGB(x, y, c);
+            }
+        }
+        // Corners are clear, and a glyph's advance comes from its last solid column.
+        img.setRGB(w - 1, h - 1, style == 2 ? 0x60FFFFFF : 0x01000000);
+        return img;
+    }
+
+    /** A raised 18px button: light top and left, dark bottom and right. */
+    private static BufferedImage button() {
+        BufferedImage img = new BufferedImage(18, 18, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 18; y++) {
+            for (int x = 0; x < 18; x++) {
+                int c = 0xFF9C9C9C;
+                if (x == 0 || y == 0) {
+                    c = 0xFFD8D8D8;
+                } else if (x == 17 || y == 17) {
+                    c = 0xFF4A4A4A;
+                }
+                img.setRGB(x, y, c);
             }
         }
         return img;
     }
 
-    /** A player marker pointing along {@code step * 45} degrees, 0 being north. */
-    private static BufferedImage arrow(int step) {
-        int size = 9;
-        BufferedImage img = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-        double angle = Math.toRadians(step * 45.0);
-        double dx = Math.sin(angle);
-        double dy = -Math.cos(angle);
-        double c = (size - 1) / 2.0;
-        for (int y = 0; y < size; y++) {
-            for (int x = 0; x < size; x++) {
-                double px = x - c;
-                double py = y - c;
-                double along = px * dx + py * dy;
-                double across = Math.abs(px * -dy + py * dx);
-                boolean inside = along >= -3.2 && along <= 4.2 && across <= (4.2 - along) * 0.45;
-                boolean notch = along < -1.2 && across < (-1.2 - along) * 1.1;
-                if (inside && !notch) {
-                    boolean edge = across > (4.2 - along) * 0.45 - 1.0 || along < -2.4;
-                    img.setRGB(x, y, edge ? 0xFF000000 : 0xFFFFFFFF);
+    /** An 18px inventory slot, with vanilla's bevel. */
+    private static BufferedImage slot() {
+        BufferedImage img = new BufferedImage(18, 18, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 18; y++) {
+            for (int x = 0; x < 18; x++) {
+                int c = 0xFF8B8B8B;
+                if (x == 0 || y == 0) {
+                    c = 0xFF373737;
+                } else if (x == 17 || y == 17) {
+                    c = 0xFFFFFFFF;
+                }
+                img.setRGB(x, y, c);
+            }
+        }
+        return img;
+    }
+
+    /** Vanilla's slot highlight: half-transparent white over whatever the mod's slot is. */
+    private static BufferedImage dim() {
+        BufferedImage img = new BufferedImage(DIM_SIZE, DIM_SIZE, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < DIM_SIZE; y++) {
+            for (int x = 0; x < DIM_SIZE; x++) {
+                img.setRGB(x, y, 0x90000000);
+            }
+        }
+        return img;
+    }
+
+    private static BufferedImage hover() {
+        BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                img.setRGB(x, y, 0x80FFFFFF);
+            }
+        }
+        return img;
+    }
+
+    /** The vanilla arrow pointer shape, 8 wide and 12 tall. */
+    private static BufferedImage cursor() {
+        String[] shape = {"X.......", "XX......", "XOX.....", "XOOX....", "XOOOX...", "XOOOOX..",
+                "XOOOOOX.", "XOOOOOOX", "XOOOXXXX", "XOXOOX..", "XX.XOOX.", "....XX.."};
+        BufferedImage img = new BufferedImage(8, 12, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 12; y++) {
+            for (int x = 0; x < 8; x++) {
+                char c = shape[y].charAt(x);
+                if (c != '.') {
+                    img.setRGB(x, y, c == 'X' ? 0xFF000000 : 0xFFFFFFFF);
                 }
             }
         }
-        // A glyph's advance comes from its rightmost non-clear pixel. This one is
-        // below the shader's alpha cutoff: invisible, but it fixes all eight at 10.
-        img.setRGB(size - 1, size - 1, 0x01000000);
+        img.setRGB(7, 11, 0x01000000);
+        return img;
+    }
+
+    /**
+     * Dims the world while a screen is up, the way a vanilla screen does. Font
+     * glyphs must fit a 256px atlas page, so this is small and the provider's
+     * height scales it up.
+     */
+    private static BufferedImage backdrop() {
+        int w = BACKDROP_W / BACKDROP_SCALE;
+        int h = BACKDROP_H / BACKDROP_SCALE;
+        BufferedImage img = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                img.setRGB(x, y, 0xC0101010);
+            }
+        }
         return img;
     }
 
@@ -168,6 +305,9 @@ public final class HudPack {
         java.util.TreeMap<String, byte[]> entries = new java.util.TreeMap<>();
         contribute(entries);
         if (args.length >= 2 && args[0].equals("--emit")) {
+            if (args.length == 3) {
+                System.out.println("screens baked: " + ScreenPack.contribute(entries, java.nio.file.Path.of(args[2])));
+            }
             try (java.util.zip.ZipOutputStream z = new java.util.zip.ZipOutputStream(
                     java.nio.file.Files.newOutputStream(java.nio.file.Path.of(args[1])))) {
                 z.putNextEntry(new java.util.zip.ZipEntry("pack.mcmeta"));
@@ -183,6 +323,14 @@ public final class HudPack {
             return;
         }
         int bad = 0;
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
+                freeFont(new JsonArray()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeDarkId()) + ".json",
+                font(HudLayout.freeDarkId()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeTextId()) + ".json",
+                font(HudLayout.freeTextId()).toString().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/" + NS + "/font/" + HudLayout.fontName(HudLayout.freeShadowId()) + ".json",
+                font(HudLayout.freeShadowId()).toString().getBytes(StandardCharsets.UTF_8));
         for (HudLayout.Anchor a : HudLayout.Anchor.values()) {
             for (int row = 0; row < HudLayout.rows(a); row++) {
                 int id = HudLayout.id(a, row);
@@ -199,6 +347,15 @@ public final class HudPack {
             }
         }
         bad += check(true, "every anchor and row encodes, decodes and has a font");
+        for (int[] p : new int[][]{{0, 0}, {-320, -180}, {319, 179}, {-2048, 2047}}) {
+            int c = HudLayout.freeColor(p[0], p[1]);
+            int r = c >> 16 & 255;
+            int g = c >> 8 & 255;
+            int b = c & 255;
+            int x = ((r << 4) | (g >> 4)) - 2048;
+            int y = (((g & 15) << 8) | b) - 2048;
+            bad += check(x == p[0] && y == p[1], "the shader decodes a free position: " + p[0] + "," + p[1]);
+        }
         bad += check(HudLayout.decode(300) == -1, "ordinary GUI text is not decoded");
         String vsh = HudLayout.vertexShader();
         bad += check(!vsh.matches("(?s).*\\b(HEIGHT_BIT|MAX_BIT|ROW_BITS|MAP_[A-Z]+|BASELINE|MARGIN|TEXT_[A-Z_]+|BOTTOM_CLEAR)\\b.*"),
@@ -212,11 +369,6 @@ public final class HudPack {
         }
         bad += check(HudText.width("Hi") == 8 && HudText.width(" ") == 4, "known glyph widths");
         bad += check(HudText.sanitize("za\u017C").equals("za?"), "non-ASCII prints as ?");
-        for (int i = 0; i < ARROWS; i++) {
-            BufferedImage arrow = ImageIO.read(new java.io.ByteArrayInputStream(
-                    entries.get("assets/" + NS + "/textures/font/arrow" + i + ".png")));
-            bad += check(arrow.getRGB(8, 8) >>> 24 != 0, "arrow " + i + " keeps its fixed advance");
-        }
         if (args.length > 1) {
             try (java.util.zip.ZipFile jar = new java.util.zip.ZipFile(args[1])) {
                 BufferedImage ascii = ImageIO.read(jar.getInputStream(
