@@ -45,6 +45,7 @@ public final class FacadeServerLevel extends ServerLevel {
     private FacadeLevel store;
     private FacadeServer server;
     private DimensionDataStorage data;
+    private FacadeChunkCache chunks;
     private ServerScoreboard scoreboard;
 
     private FacadeServerLevel() {
@@ -135,6 +136,33 @@ public final class FacadeServerLevel extends ServerLevel {
     @Override
     public PotionBrewing potionBrewing() {
         return store.potionBrewing();
+    }
+
+    @Override
+    public net.minecraft.server.level.ServerChunkCache getChunkSource() {
+        if (chunks == null) {
+            chunks = FacadeChunkCache.create(this);
+        }
+        return chunks;
+    }
+
+    // NeoForge's capability caches listen for block changes on a real level; nothing caches here.
+
+    @Override
+    public void invalidateCapabilities(BlockPos pos) {
+    }
+
+    @Override
+    public void invalidateCapabilities(net.minecraft.world.level.ChunkPos pos) {
+    }
+
+    @Override
+    public void registerCapabilityListener(BlockPos pos,
+                                           net.neoforged.neoforge.capabilities.ICapabilityInvalidationListener listener) {
+    }
+
+    @Override
+    public void cleanCapabilityListenerReferences() {
     }
 
     // --- blocks, chunks, entities: the sparse store
