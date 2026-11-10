@@ -1872,6 +1872,17 @@ public final class GalleryPack {
             warnings.add("gallery: quad mesh missing: " + hash);
             return null;
         }
+        List<String> capturedRows = Files.readAllLines(file, StandardCharsets.UTF_8);
+        if (capturedRows.equals(List.of("# cimscene native empty mesh v1"))) {
+            // An observed native no-draw is content, not a missing capture.
+            JsonObject empty = new JsonObject();
+            empty.addProperty("parent", "minecraft:block/block");
+            empty.add("textures", new JsonObject());
+            empty.add("elements", new JsonArray());
+            recordScale(ref, 1.0);
+            entries.put(modelFile, empty.toString().getBytes(StandardCharsets.UTF_8));
+            return ref;
+        }
         List<ObjMesh.Face> faces = new ArrayList<>();
         List<int[]> flags = new ArrayList<>();
         String material = null;
@@ -1886,7 +1897,7 @@ public final class GalleryPack {
         int litSky = -1;
         boolean hasFullbright = false;
         java.util.Map<Long, Integer> litCounts = new java.util.HashMap<>();
-        for (String line : java.nio.file.Files.readAllLines(file, StandardCharsets.UTF_8)) {
+        for (String line : capturedRows) {
             String[] c = line.split("\t");
             if (c.length < 23) {
                 continue;

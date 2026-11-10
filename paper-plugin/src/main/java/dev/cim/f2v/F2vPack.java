@@ -3409,6 +3409,7 @@ public final class F2vPack {
         unlitBlockSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
+        capturedEmptyMeshSelftest(failures);
         capturedSpriteSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
@@ -3526,6 +3527,49 @@ public final class F2vPack {
             GalleryPack.setQuadDir(null);
             GalleryPack.resetJarCache();
             ObjMesh.resetBaker();
+            deleteRecursively(root);
+        }
+    }
+
+    private static void capturedEmptyMeshSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-native-empty");
+        try {
+            GalleryPack.setQuadDir(root);
+            String[] cases = {"# cimscene native empty mesh v1\n", "",
+                    "# cimscene native empty mesh v1\ncorrupt\n"};
+            for (int i = 0; i < cases.length; i++) {
+                GalleryPack.resetModelScales();
+                Files.writeString(root.resolve("empty.tsv"), cases[i]);
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                List<String> warnings = new ArrayList<>();
+                var rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input(
+                        "fixture:door[half=upper,visible=false]#qempty")), entries, warnings);
+                if (i == 0) {
+                    expect(failures, rows.size() == 1 && warnings.isEmpty(),
+                            "native empty: observed no-draw retains its captured context");
+                    byte[] bytes = entries.get("assets/c-imagine/models/gallery/g0.json");
+                    expect(failures, bytes != null, "native empty: an actual model is emitted");
+                    if (bytes != null) {
+                        JsonObject model = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8))
+                                .getAsJsonObject();
+                        expect(failures, model.getAsJsonArray("elements").isEmpty()
+                                        && model.getAsJsonObject("textures").isEmpty(),
+                                "native empty: no fallback geometry or placeholder texture");
+                    }
+                } else {
+                    expect(failures, rows.isEmpty() && !warnings.isEmpty(),
+                            "native empty: unmarked/truncated capture remains a failure " + i);
+                }
+            }
+            Files.delete(root.resolve("empty.tsv"));
+            List<String> warnings = new ArrayList<>();
+            var missing = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:door#qempty")),
+                    new TreeMap<>(), warnings);
+            expect(failures, missing.isEmpty() && !warnings.isEmpty(),
+                    "native empty: missing capture never becomes an observed no-draw");
+        } finally {
+            GalleryPack.setQuadDir(null);
+            GalleryPack.resetModelScales();
             deleteRecursively(root);
         }
     }

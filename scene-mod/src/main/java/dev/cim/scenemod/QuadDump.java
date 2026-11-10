@@ -296,15 +296,17 @@ final class QuadDump {
                         throw new IllegalStateException("native tank BE unavailable");
                     }
                     long priorBerFailures = berFailed;
+                    long priorBerForeign = berForeign;
                     String mesh = liquids.contains(e.getKey())
                             ? liquidMeshFor(page, e.getKey(), e.getValue(), sprites)
                             : meshFor(page, e.getKey(), e.getValue(), sprites);
-                    if (fluidPage && berFailed != priorBerFailures) {
-                        throw new IllegalStateException("native tank renderer failed");
+                    if (berFailed != priorBerFailures || berForeign != priorBerForeign) {
+                        throw new IllegalStateException("native block entity renderer failed or lost geometry");
                     }
                     if (mesh == null) {
                         continue;
                     }
+                    if (mesh.isEmpty()) mesh = "# cimscene native empty mesh v1\n";
                     String hash = sha(mesh);
                     Path file = out.resolve(hash + ".tsv");
                     if (!Files.exists(file)) {
@@ -392,21 +394,25 @@ final class QuadDump {
      */
     private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
         Minecraft mc = Minecraft.getInstance();
-        BakedModel model = mc.getBlockRenderer().getBlockModel(state);
-        ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
-        RandomSource random = RandomSource.create();
-        long seed = state.getSeed(pos);
-        random.setSeed(seed);
         Capture capture = new Capture(sprites, state.getOffset(page, pos));
-        PoseStack pose = new PoseStack();
-        for (RenderType type : model.getRenderTypes(state, random, data)) {
-            mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
-                    random, seed, OverlayTexture.NO_OVERLAY, data, type);
+        // Native SectionCompiler only submits static geometry for MODEL states.
+        // ENTITYBLOCK_ANIMATED still reaches its BER, without a phantom static panel.
+        if (state.getRenderShape() == net.minecraft.world.level.block.RenderShape.MODEL) {
+            BakedModel model = mc.getBlockRenderer().getBlockModel(state);
+            ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
+            RandomSource random = RandomSource.create();
+            long seed = state.getSeed(pos);
+            random.setSeed(seed);
+            PoseStack pose = new PoseStack();
+            for (RenderType type : model.getRenderTypes(state, random, data)) {
+                mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
+                        random, seed, OverlayTexture.NO_OVERLAY, data, type);
+            }
         }
         if (state.hasBlockEntity()) {
             appendBlockEntity(page, pos, state, sprites, capture.out);
         }
-        return capture.out.length() == 0 ? null : capture.out.toString();
+        return capture.out.toString();
     }
 
     /**
@@ -555,7 +561,9 @@ final class QuadDump {
         }
         // Chunk shaders consume the renderer's already-shaded RGB directly.
         // Replaying q.isShade here would add the item shader's unrelated light.
-        writeQuad(sb, q.getSprite(), sprites, false, q.getTintIndex(), pos, uv, rgb, false, packedLight);
+        if (!writeQuad(sb, q.getSprite(), sprites, false, q.getTintIndex(), pos, uv, rgb, false, packedLight)) {
+            throw new IllegalStateException("native block quad texture unavailable");
+        }
     }
 
     /** Match the native BLOCK byte layout and VertexConsumer's final byte quantization. */
@@ -990,8 +998,10 @@ final class QuadDump {
                     appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
                             texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight);
                 } else {
-                    writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
-                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight);
+                    if (!writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
+                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight)) {
+                        foreign++;
+                    }
                 }
             }
 
