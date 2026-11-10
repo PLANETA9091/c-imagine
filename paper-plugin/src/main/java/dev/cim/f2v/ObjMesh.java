@@ -723,6 +723,7 @@ final class ObjMesh {
                 return out;
             }
             int w = src.getWidth();
+            int h = src.getHeight();
             double[][] flat = new double[pts.length][];
             for (int i = 0; i < pts.length; i++) {
                 flat[i] = new double[]{dot(pts[i], ex), dot(pts[i], ey)};
