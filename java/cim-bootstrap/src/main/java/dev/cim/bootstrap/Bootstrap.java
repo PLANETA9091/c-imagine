@@ -39,6 +39,8 @@ public final class Bootstrap {
     private static volatile String pendingManifest;
 
     public static String init(String optionsJson, String manifestJson) {
+        // Pre-kernel: the JVM's own streams, before the server replaces them.
+        GuardedStream.remember();
         long started = System.nanoTime();
         String jarPath = JsonKit.str(optionsJson, "jar");
         String modsDir = JsonKit.str(optionsJson, "mods");
@@ -238,6 +240,8 @@ public final class Bootstrap {
      * @return JSON status string (logged by the native module)
      */
     public static String loadMods(String manifestJson) {
+        // Mods load while the server is still starting: a print must never kill this thread.
+        GuardedStream.install();
         long started = System.nanoTime();
         try {
             // The manifest arrived with init (pre-boot): relocation rules and
