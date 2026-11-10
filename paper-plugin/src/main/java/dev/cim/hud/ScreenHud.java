@@ -193,9 +193,40 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     private final Path modsDir;
 
+    /**
+     * F2V's scan of every mod screen's buttons and stateful widgets: a full jar scan of every
+     * mod, which takes tens of seconds, so it runs once in the background from boot. The
+     * server thread never waits for it (a scan on it once froze the server into its watchdog).
+     */
+    private final java.util.concurrent.CompletableFuture<Object[]> liveScan;
+
     public ScreenHud(Logger log, Path modsDir) {
         this.log = log;
         this.modsDir = modsDir;
+        this.liveScan = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+            // The layer loads its mods on its own thread: wait for cimlive, but not forever.
+            for (int i = 0; i < 600 && !LiveBridge.available(); i++) {
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            if (!LiveBridge.available()) {
+                return new Object[]{List.of(), List.of()};
+            }
+            try {
+                List<LiveButtons.Button> b = LiveButtons.scan(modsDir);
+                List<LiveButtons.Stateful> w = LiveButtons.stateful(modsDir);
+                log.info("[cim-screen] live scan: " + b.size() + " proven payload buttons, " + w.size()
+                        + " stateful widgets");
+                return new Object[]{b, w};
+            } catch (Exception e) {
+                log.warning("[cim-screen] live scan failed: " + e);
+                return new Object[]{List.of(), List.of()};
+            }
+        });
         List<ScreenPack.Scene> found = List.of();
         Map<String, GuiCaptures.Capture> known = Map.of();
         ItemGlyphs icons = null;
@@ -832,11 +863,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return java.util.Map.of();
         }
         if (statefulWidgets == null) {
-            try {
-                statefulWidgets = LiveButtons.stateful(modsDir);
-            } catch (IOException e) {
-                statefulWidgets = List.of();
+            Object[] done = liveScan.getNow(null);
+            if (done == null) {
+                return java.util.Map.of();   // still scanning: the widgets keep their drawn look
             }
+            @SuppressWarnings("unchecked")
+            List<LiveButtons.Stateful> w = (List<LiveButtons.Stateful>) done[1];
+            statefulWidgets = w;
         }
         String menu = s.liveMenuClass.replace('.', '/');
         List<LiveButtons.Stateful> mine = new ArrayList<>();
@@ -876,13 +909,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** F2V's proof of every mod screen's payload buttons, scanned once on first use. */
     private List<LiveButtons.Button> buttons() {
         if (buttons == null) {
-            try {
-                buttons = LiveButtons.scan(modsDir);
-                log.info("[cim-screen] live buttons: " + buttons.size() + " proven payload buttons");
-            } catch (IOException e) {
-                log.warning("[cim-screen] live button scan failed: " + e);
-                buttons = List.of();
+            Object[] done = liveScan.getNow(null);
+            if (done == null) {
+                return List.of();   // still scanning: no button reaches a mod yet
             }
+            @SuppressWarnings("unchecked")
+            List<LiveButtons.Button> b = (List<LiveButtons.Button>) done[0];
+            buttons = b;
         }
         return buttons;
     }

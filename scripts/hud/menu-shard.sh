@@ -194,6 +194,11 @@ mkdir -p visual-client/game
 printf "${OPTS}preferredGraphicsBackend:opengl\n" > visual-client/game/options.txt
 python3 scripts/visual/make_servers_dat.py visual-client/game 127.0.0.1:$GAME_PORT
 wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
+if [ -n "${OURS_CRUSSTY:-}" ]; then
+  # The button and widget scan runs in the background from boot; the pages need it.
+  for i in $(seq 1 240); do grep -q "live scan:" srv-ours/boot.log && break; sleep 1; done
+  stamp "ours $(grep -o 'live scan:.*' srv-ours/boot.log | head -1)"
+fi
 $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
 ARGS=$(sed 's/^java //' visual-client/launch.txt)
 export SDL_VIDEODRIVER=x11

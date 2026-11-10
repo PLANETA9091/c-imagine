@@ -865,7 +865,11 @@ public final class FmlHost {
                 Object value = Enum.valueOf(type, t);
                 load.invoke(instance, value, dir);
             }
-            System.out.println(LOG + " mod configs loaded (STARTUP, COMMON) from " + dir);
+            // SERVER configs come with a world on a real server; the layer serves Paper's world,
+            // which has none of the mods' files, so they load as a fresh world's would: the
+            // defaults (measured: every Mekanism machine read one on its first click).
+            tracker.getMethod("loadDefaultServerConfigs").invoke(instance);
+            System.out.println(LOG + " mod configs loaded (STARTUP, COMMON from " + dir + "; SERVER defaults)");
         } catch (Throwable t) {
             System.out.println(LOG + " mod configs NOT loaded: " + t);
         }
