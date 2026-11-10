@@ -72,10 +72,23 @@ vanilla substitute or a generated demonstration does not establish parity.
   Preserve the original particle appearance, options and behavior; verify
   data-carrying particles as well as simple spawns. A successful substitute spawn
   is not a pass for the source particle.
+  LEVER SHIPPED (2026-11-11, 14-dz): the mapping generator resolves the 38
+  measured families through a registry-verified category table (32/38
+  category, 6 default — the default's target equals the send), so the mapped
+  preview and the actual send agree; the replay still validates live and
+  ledgers drift. The 14-dw live-viewer seed fix ships the cells; the flip
+  waits for the measured mapped-identity evidence per the sound bar
+  (position_hits == expected with order_exact).
 - [ ] **Texture fidelity:** `GalleryPack.placeholderSprite` generates a visible
   magenta/black texture for an item-atlas sprite that cannot be hosted. Keep this
   diagnostic visible, name the source sprite and affected cells, and repair
   runtime/generated texture hosting. A placeholder is not supported mod content.
+  LEDGER SHIPPED (2026-11-11, 14-dy): every fallback records (source sprite,
+  build context, use count) into placeholders.tsv + build-report.txt (the
+  header-only file is the substituted-nothing receipt); the diagnostic stays
+  visible. The hosting-repair half is the named 14-dg lane — the #310 receipt
+  measured the GPU-atlas readback never firing in the live client (the
+  where-do-text-quads-go diagnostic run is its precondition).
 - [ ] **GUI, keys and HUD behavior:** M6.2 already records that real-player
   hosting is missing, key/slot/HUD values do not yet reach mod code, seven other
   Create menus and non-Create menus remain open, and mod HUD layers need live
@@ -94,6 +107,17 @@ vanilla substitute or a generated demonstration does not establish parity.
   patterns, banners, decorated pots, enchantments, jukebox songs and dimension
   types. Positive registrations already produce named coverage failures; add
   real scenes and runtime assertions instead of excluding these registrations.
+  SCENES SHIPPED (2026-11-11, 14-dx): `cimscene gallery variant <kind>` walks
+  12 of the 13 classes with real vanilla-mechanics scenes (a hung painting,
+  the frozen variant mobs, the component-carrying armor stands, the pattern
+  banner, the sherd pot, the playing jukebox) and settle-pass runtime
+  assertions (effect-expired / trim-missing / glint-missing /
+  pattern-missing / sherd-missing / stopped are named skip rows); the gate
+  walks them DIAGNOSTIC-first and NO_WALK is down to {dimension_type} (no
+  per-entry surface in one world frame — the per-dimension camera rig is
+  the named lane). The ours leg has no variant replay channel yet (the F2V
+  projection per kind is the named lane); the flips wait for the measured
+  evidence.
 - [ ] **Gameplay outside the visual ledger:** world generation/features/carvers,
   loot, predicates, attributes, menus and recipes are outside its world-frame
   coverage contract. Add separate runtime coverage for generation and dimensions,
