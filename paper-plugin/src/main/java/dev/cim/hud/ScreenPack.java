@@ -625,7 +625,21 @@ public final class ScreenPack {
         for (int y = 0; y < src.getHeight(); y++) {
             for (int x = 0; x < src.getWidth(); x++) {
                 int c = src.getRGB(x, y);
-                out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+                int alpha = c >>> 24;
+                if (alpha == 0) {
+                    // Colour with zero alpha is solid in a real framebuffer.
+                    out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+                } else if (alpha < 255) {
+                    // Nothing of the screen beneath it: a shadow over the world. The capture holds
+                    // it premultiplied (drawn over transparent black); the client blends a glyph
+                    // as colour*alpha over the world, so the colour goes back to straight.
+                    int r = Math.min(255, Math.round(((c >> 16) & 0xFF) * 255f / alpha));
+                    int g = Math.min(255, Math.round(((c >> 8) & 0xFF) * 255f / alpha));
+                    int b = Math.min(255, Math.round((c & 0xFF) * 255f / alpha));
+                    out.setRGB(x, y, (alpha << 24) | (r << 16) | (g << 8) | b);
+                } else {
+                    out.setRGB(x, y, c);
+                }
             }
         }
         return out;

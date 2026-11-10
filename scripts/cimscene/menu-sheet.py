@@ -57,17 +57,35 @@ def menu_box(frame_size, slots, scale):
     return (cx - w * scale // 2, cy - h * scale // 2, cx + w * scale // 2, cy + h * scale // 2)
 
 
-def art_mask(path, size):
-    """The pixels the mod really draws, from its captured screen, or None."""
+# A translucent art pixel (a shadow) has nothing of the screen beneath it: its colour is
+# the mod's shadow over the world behind the menu, which is not the menu. Those pixels are
+# judged within this many levels per channel; every opaque pixel of the menu is judged exactly.
+TRANSLUCENT_TOLERANCE = 12
+
+
+def art_masks(path, size):
+    """(opaque mask, translucent mask) of the pixels the mod really draws, or (None, None)."""
     if not path or not os.path.isfile(path):
-        return None
+        return None, None
     art = Image.open(path).convert("RGBA")
     if art.size != size:
-        return None
+        return None, None
     r, g, b, a = art.split()
     # Colour with zero alpha is solid in a real framebuffer, as ScreenPack treats it.
-    solid = ImageChops.lighter(ImageChops.lighter(r, g), ImageChops.lighter(b, a))
-    return solid.point(lambda v: 255 if v else 0)
+    coloured = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+    full = a.point(lambda v: 255 if v == 255 else 0)
+    none = a.point(lambda v: 255 if v == 0 else 0)
+    part = a.point(lambda v: 255 if 0 < v < 255 else 0)
+    opaque = ImageChops.lighter(full, ImageChops.multiply(none, coloured))
+    return opaque, part
+
+
+def art_mask(path, size):
+    """The pixels the mod really draws, from its captured screen, or None."""
+    opaque, part = art_masks(path, size)
+    if opaque is None:
+        return None
+    return ImageChops.lighter(opaque, part)
 
 
 def compare(truth_path, ours_path, slots, scale, art=None):
@@ -80,9 +98,12 @@ def compare(truth_path, ours_path, slots, scale, art=None):
         return None
     mask = art_mask(art, truth.size)
     if mask is not None and mask.getbbox():
+        opaque, part = art_masks(art, truth.size)
         r, g, b = ImageChops.difference(truth, ours).split()
-        diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
-        diff = ImageChops.multiply(diff, mask)
+        level = ImageChops.lighter(ImageChops.lighter(r, g), b)
+        exact = ImageChops.multiply(level.point(lambda v: 255 if v else 0), opaque)
+        loose = ImageChops.multiply(level.point(lambda v: 255 if v > TRANSLUCENT_TOLERANCE else 0), part)
+        diff = ImageChops.lighter(exact, loose)
         box = mask.getbbox()
         total = sum(1 for v in mask.crop(box).getdata() if v)
         return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box)

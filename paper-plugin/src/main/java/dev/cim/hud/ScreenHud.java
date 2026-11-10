@@ -485,6 +485,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         } else if (opener.startsWith("block:")) {
             state = bridge.openBlock(player, player.getLocation().getBlock().getRelative(2, 0, 0),
                     opener.substring("block:".length()), true);
+        } else if (opener.startsWith("place+item:") || opener.startsWith("use+item:")
+                || opener.startsWith("settle+use+item:")) {
+            state = bridge.openUse(player, player.getLocation().getBlock().getRelative(2, 0, 0), opener);
         } else {
             return false;
         }

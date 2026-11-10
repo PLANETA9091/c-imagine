@@ -132,6 +132,16 @@ final class LiveBridge {
         }
     }
 
+    /** A walk-proven opener done in the facade beside the player (part placement, an item on a block). */
+    State openUse(Player player, org.bukkit.block.Block block, String opener) {
+        StringBuilder in = new StringBuilder("open-use\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(opener).append('\t')
+                .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
+        appendInventory(in, player, false);
+        heldSlots.put(player.getUniqueId(), 0);
+        return parse(call(in.toString()));
+    }
+
     /** The held item's own use(), with the player's inventory mirrored first. */
     State openHeld(Player player) {
         StringBuilder in = new StringBuilder("open-item\t").append(player.getUniqueId()).append('\t')

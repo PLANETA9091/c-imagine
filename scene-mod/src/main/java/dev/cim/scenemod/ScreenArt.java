@@ -248,6 +248,19 @@ public final class ScreenArt {
             return;
         }
         if (mc.screen != crawl.parent) {
+            if (crawl.wait == 0) {
+                // What the press led to: the evidence for a sub-menu that is never captured.
+                String type = "-";
+                if (mc.screen instanceof AbstractContainerScreen<?> other) {
+                    try {
+                        type = String.valueOf(BuiltInRegistries.MENU.getKey(other.getMenu().getType()));
+                    } catch (UnsupportedOperationException none) {
+                        type = "untyped";
+                    }
+                }
+                LOGGER.info("[cimscene] crawl {} press {} -> screen {} menu {}", crawl.name, crawl.next - 1,
+                        mc.screen == null ? "none" : mc.screen.getClass().getName(), type);
+            }
             if (newMenuUp(mc) && crawl.wait++ < CRAWL_WAIT_TICKS / CRAWL_STEP_TICKS) {
                 return;   // onRender is capturing it
             }

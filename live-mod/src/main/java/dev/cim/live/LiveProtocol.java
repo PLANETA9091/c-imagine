@@ -122,6 +122,67 @@ public final class LiveProtocol {
                     }
                     yield out.toString();
                 }
+                case "open-use" -> {
+                    // open-use TAB uuid TAB name TAB opener TAB x TAB y TAB z: the walk's proven opener
+                    // done in the facade, as the walk did it on the real server:
+                    //   place+item:I        I used on a block beneath, then what it placed clicked;
+                    //   use+item:I@B        B put down, then I used on it (settle+use the same).
+                    SessionServerPlayer player = LiveMenus.session(id, head[2]);
+                    player.closeContainer();
+                    readInventory(player, lines);
+                    String opener = head[3];
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
+                            Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
+                    FacadeLevel level = LiveMenus.level();
+                    level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 2.5);
+                    BLOCKS.put(id, pos);
+                    if (opener.startsWith("place+item:")) {
+                        net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(
+                                net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                                        net.minecraft.resources.ResourceLocation.parse(opener.substring("place+item:".length()))));
+                        net.minecraft.core.BlockPos below = pos.below();
+                        level.setBlock(below, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
+                        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+                        stack.useOn(new net.minecraft.world.item.context.UseOnContext(player,
+                                net.minecraft.world.InteractionHand.MAIN_HAND, new net.minecraft.world.phys.BlockHitResult(
+                                net.minecraft.world.phys.Vec3.atCenterOf(below).relative(net.minecraft.core.Direction.UP, 0.5),
+                                net.minecraft.core.Direction.UP, below, false)));
+                        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
+                                net.minecraft.world.item.ItemStack.EMPTY);
+                        yield state(player, player.opened() != null ? player.opened() : LiveMenus.clickBlock(player, pos));
+                    }
+                    String plain = opener.replace("settle+", "");
+                    if (plain.startsWith("use+item:")) {
+                        String[] pair = plain.substring("use+item:".length()).split("@", 2);
+                        level.setBlock(pos, net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                                net.minecraft.resources.ResourceLocation.parse(pair[1])).defaultBlockState(), 3);
+                        net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(
+                                net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                                        net.minecraft.resources.ResourceLocation.parse(pair[0])));
+                        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+                        net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
+                                net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(net.minecraft.core.Direction.UP, 0.5),
+                                net.minecraft.core.Direction.UP, pos, false);
+                        net.minecraft.world.level.block.state.BlockState st = level.getBlockState(pos);
+                        net.minecraft.world.ItemInteractionResult r = st.useItemOn(stack, level, player,
+                                net.minecraft.world.InteractionHand.MAIN_HAND, hit);
+                        if (r == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                            if (!st.useWithoutItem(level, player, hit).consumesAction() && player.opened() == null) {
+                                stack.useOn(new net.minecraft.world.item.context.UseOnContext(player,
+                                        net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+                            }
+                        } else if (!r.consumesAction()) {
+                            stack.useOn(new net.minecraft.world.item.context.UseOnContext(player,
+                                    net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+                        }
+                        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
+                                net.minecraft.world.item.ItemStack.EMPTY);
+                        yield state(player, player.opened());
+                    }
+                    BLOCKS.remove(id);
+                    yield "error\tunsupported opener " + opener;
+                }
                 case "click" -> {
                     SessionServerPlayer player = LiveMenus.session(id, "cimlive");
                     LiveMenus.click(player, Integer.parseInt(head[2]), Integer.parseInt(head[3]),
