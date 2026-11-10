@@ -683,14 +683,13 @@ impl ClassFile {
                 // to protected, and matching it by name narrowed the public METHOD fogColor(int)
                 // too (measured: IllegalAccessError in the layer only).
                 let key = format!("{name}{desc}");
-<<<<<<< HEAD
-                if let Some(a) = at.for_member(original_name, &key) {
-=======
+                // the menus branch's wildcard-member fallback (measured:
+                // IllegalAccessError in the layer only) — additive, the
+                // exact-key lookup still wins when it matches
                 if let Some(a) = at
                     .for_member(original_name, &key)
                     .or_else(|| at.for_member(original_name, "*()"))
                 {
->>>>>>> origin/feat/gui-integration
                     member.access = crate::at::apply(member.access, a);
                 }
             }
