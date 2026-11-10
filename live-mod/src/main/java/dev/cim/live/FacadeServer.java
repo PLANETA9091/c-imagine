@@ -27,7 +27,8 @@ public final class FacadeServer extends MinecraftServer {
 
     private FacadeServerLevel level;
     private RegistryAccess.Frozen access;
-    private final GameRules rules = new GameRules();
+    // Lazy: the instance is allocated, so no initialiser runs.
+    private GameRules rules;
 
     private FacadeServer() {
         super(null, null, null, null, null, null, null, null);
@@ -90,6 +91,9 @@ public final class FacadeServer extends MinecraftServer {
 
     @Override
     public GameRules getGameRules() {
+        if (rules == null) {
+            rules = new GameRules();
+        }
         return rules;
     }
 

@@ -151,18 +151,25 @@ public final class FacadeServerLevel extends ServerLevel {
      * and never run here (Paper's world does the world's ticking); a menu needs only that the
      * schedule call works.
      */
-    private final net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.block.Block> blockTicks =
-            new net.minecraft.world.ticks.LevelTicks<>(pos -> false, () -> net.minecraft.util.profiling.InactiveProfiler.INSTANCE);
-    private final net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.material.Fluid> fluidTicks =
-            new net.minecraft.world.ticks.LevelTicks<>(pos -> false, () -> net.minecraft.util.profiling.InactiveProfiler.INSTANCE);
+    // Lazy, never initialisers: the instance is allocated, so no constructor or initialiser runs.
+    private net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.block.Block> blockTicks;
+    private net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.material.Fluid> fluidTicks;
 
     @Override
     public net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.block.Block> getBlockTicks() {
+        if (blockTicks == null) {
+            blockTicks = new net.minecraft.world.ticks.LevelTicks<>(pos -> false,
+                    () -> net.minecraft.util.profiling.InactiveProfiler.INSTANCE);
+        }
         return blockTicks;
     }
 
     @Override
     public net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.material.Fluid> getFluidTicks() {
+        if (fluidTicks == null) {
+            fluidTicks = new net.minecraft.world.ticks.LevelTicks<>(pos -> false,
+                    () -> net.minecraft.util.profiling.InactiveProfiler.INSTANCE);
+        }
         return fluidTicks;
     }
 
