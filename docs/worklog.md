@@ -8694,3 +8694,16 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   saved native world, starts, executes three diagnostic driver calls and
   stops cleanly. This is real-mod startup evidence, not complete gameplay or
   visual parity. All logs/worlds remain ignored artifacts.
+
+### Green campaign — register variant scenes under the gallery command
+- Real gallery 42875845234 truth shards failed with an incorrect-command
+  response for `cimscene gallery variant painting create 1`, then timed out
+  waiting for the marker. The inv builder closed gallery one parenthesis
+  early; variant was registered under cimscene instead of gallery.
+- Move that closing parenthesis after variant. No scene, registry, marker
+  wait, or gate changes. Full scene-mod build/capture suites PASS.
+- Actual native dispatcher probe with locked Create + cimscene reproduces
+  the old missing child. The rebuilt jar exposes gallery/variant and executes
+  the exact failing command, producing its expected exhaustion receipt, then
+  stops cleanly. First local positive attempt timed out during startup; the
+  independent retry completed. This diagnostic is not a boot-budget result.

@@ -406,7 +406,7 @@ public final class CimSceneMod {
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
                                                 .executes(ctx -> galleryInv(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
-                                                        IntegerArgumentType.getInteger(ctx, "page")))))))
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
                         .then(Commands.literal("variant")
                                 .then(Commands.argument("kind", StringArgumentType.word())
                                         .then(Commands.argument("namespace", StringArgumentType.word())
@@ -414,7 +414,7 @@ public final class CimSceneMod {
                                                         .executes(ctx -> galleryVariant(ctx.getSource(),
                                                                 StringArgumentType.getString(ctx, "kind"),
                                                                 StringArgumentType.getString(ctx, "namespace"),
-                                                                IntegerArgumentType.getInteger(ctx, "page")))))))
+                                                                IntegerArgumentType.getInteger(ctx, "page"))))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
