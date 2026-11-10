@@ -532,6 +532,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             // M6.3 end to end (live.yml): a mod item's menu run by the mod's own code in the
             // layer, for a real connected player, and the Paper inventory it leaves.
             String liveItem = System.getenv("CIM_LIVETEST");
+            // The button scan runs in the background from boot; the test presses one, so it waits.
+            for (int i = 0; i < 360 && liveItem != null && !dev.cim.hud.HudBootstrap.liveScanDone(); i++) {
+                Thread.sleep(500);
+            }
             if (liveItem != null && !liveItem.isBlank()) {
                 Player target = bot;
                 for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveSelfTest(target, liveItem.trim()))) {

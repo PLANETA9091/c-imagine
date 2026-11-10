@@ -937,6 +937,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return byWidget;
     }
 
+    /** Whether the background button and widget scan has finished. */
+    public boolean liveScanDone() {
+        return liveScan.isDone();
+    }
+
     private static boolean live(String expr) {
         return expr != null && !expr.isEmpty() && !expr.equals("true") && !expr.equals("false") && !expr.equals("null");
     }

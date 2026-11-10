@@ -52,6 +52,11 @@ public final class HudBootstrap {
         return screens == null ? java.util.List.of("no screens") : screens.liveSelfTest(player, itemId);
     }
 
+    /** Whether the live button scan has finished (integration waits for it off the server thread). */
+    public static boolean liveScanDone() {
+        return screens == null || screens.liveScanDone();
+    }
+
     /** Integration: block menus on Paper end to end, see {@link ScreenHud#liveBlockTest}. */
     public static java.util.List<String> liveBlockTest(org.bukkit.entity.Player player, String blockId) {
         return screens == null ? java.util.List.of("no screens") : screens.liveBlockTest(player, blockId);

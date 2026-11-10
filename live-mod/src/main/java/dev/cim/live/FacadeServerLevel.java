@@ -146,6 +146,31 @@ public final class FacadeServerLevel extends ServerLevel {
         return chunks;
     }
 
+    /*
+     * Scheduled block and fluid ticks: a mod schedules one when a block changes. They are held
+     * and never run here (Paper's world does the world's ticking); a menu needs only that the
+     * schedule call works.
+     */
+    private final net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.block.Block> blockTicks =
+            new net.minecraft.world.ticks.LevelTicks<>(pos -> false, () -> net.minecraft.util.profiling.InactiveProfiler.INSTANCE);
+    private final net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.material.Fluid> fluidTicks =
+            new net.minecraft.world.ticks.LevelTicks<>(pos -> false, () -> net.minecraft.util.profiling.InactiveProfiler.INSTANCE);
+
+    @Override
+    public net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.block.Block> getBlockTicks() {
+        return blockTicks;
+    }
+
+    @Override
+    public net.minecraft.world.ticks.LevelTicks<net.minecraft.world.level.material.Fluid> getFluidTicks() {
+        return fluidTicks;
+    }
+
+    @Override
+    public java.util.Collection<net.neoforged.neoforge.entity.PartEntity<?>> getPartEntities() {
+        return java.util.List.of();
+    }
+
     // NeoForge's capability caches listen for block changes on a real level; nothing caches here.
 
     @Override

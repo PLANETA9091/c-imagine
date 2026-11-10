@@ -45,6 +45,11 @@ public final class FacadeChunkCache extends ServerChunkCache {
     }
 
     @Override
+    public net.minecraft.world.level.chunk.LightChunk getChunkForLighting(int x, int z) {
+        return getChunkNow(x, z);
+    }
+
+    @Override
     public boolean hasChunk(int x, int z) {
         return true;
     }
