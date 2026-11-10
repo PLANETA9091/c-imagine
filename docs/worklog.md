@@ -8675,3 +8675,22 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   passes the repair; the full scene-mod build and capture suites PASS. This
   does not restore transient client animation phases or replace the required
   complete dual-stack gallery evidence. No scene, parser format, or gate changed.
+
+### Green campaign — resolve committed GUI integration conflicts
+- Main merge c1a13144 retained literal conflict markers in the Rust method
+  AT dispatch and two FmlHost regions, breaking both compilers. Resolve the
+  actual overlapping implementations rather than deleting only marker lines.
+- Keep descriptor-specific method rules plus the incoming *() wildcard,
+  field-only * dispatch, and incoming mixins for mod classes. Preserve the
+  working ZIP resource tree, native CommonModLoader.load/finish, and strict
+  common-config load. Remove the conflicting duplicate filesystem/setup
+  helpers. Actual FML ConfigTracker.registerConfig bytecode confirms STARTUP
+  configs open immediately on registration; no second swallowed config load
+  or resurrected per-container setup loop is needed.
+- Validation after the merged source: cim-reloc/imagine tests and clippy
+  -D warnings PASS, native release/bootstrap builds PASS, Java contracts PASS,
+  full scene-mod build/capture suites PASS. A fresh probe with REAL locked
+  Create 6.0.10 and current native library completes FML phases, resumes its
+  saved native world, starts, executes three diagnostic driver calls and
+  stops cleanly. This is real-mod startup evidence, not complete gameplay or
+  visual parity. All logs/worlds remain ignored artifacts.

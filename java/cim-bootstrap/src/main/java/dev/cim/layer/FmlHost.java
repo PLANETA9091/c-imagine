@@ -705,16 +705,9 @@ public final class FmlHost {
                     case "moduleDataProvider" -> mdp;
                     case "name" -> mod.id();
                     case "getPrimaryPath" -> jarPath;
-<<<<<<< HEAD
                     case "getRootPath" -> resourceRoot;
                     case "getPath" -> resourceRoot.resolve(joinPaths(args));
-=======
-                    // As on FML, the root is the jar's own filesystem: a mod walks folders in it
-                    // (measured: Dynamic Trees reads its tree packs from trees/, and every seed
-                    // was missing from the layer while getPath could only extract single files).
-                    case "getRootPath" -> jarRoot(jarPath, jarPath);
-                    case "getPath" -> jarPathOf(jarPath, joinPaths(args), extracted);
->>>>>>> origin/feat/gui-integration
+
                     case "getManifestSigners", "getTrustedManifestEntries" -> null;
                     case "verifyAndGetSigners" -> null;
                     case "hasSecurityData" -> false;
@@ -752,31 +745,6 @@ public final class FmlHost {
     }
 
     private static final Map<String, Path> EXTRACT_ROOT = new HashMap<>();
-
-    private static final Map<Path, java.nio.file.FileSystem> JAR_FS = new HashMap<>();
-
-    /** The root of a jar's zip filesystem, or the fallback when the jar cannot be opened as one. */
-    private static synchronized Path jarRoot(Path jar, Path fallback) {
-        java.nio.file.FileSystem fs = JAR_FS.computeIfAbsent(jar, j -> {
-            try {
-                return java.nio.file.FileSystems.newFileSystem(j, (ClassLoader) null);
-            } catch (Exception e) {
-                System.out.println("[c-imagine] jar filesystem unavailable for " + j + ": " + e);
-                return null;
-            }
-        });
-        return fs == null ? fallback : fs.getPath("/");
-    }
-
-    /** A path inside the jar: files and folders alike, read and walked in place. */
-    private static Path jarPathOf(Path jar, String entryPath, Map<String, Path> extracted) {
-        Path root = jarRoot(jar, null);
-        if (root == null) {
-            return extractEntry(jar, entryPath, extracted);
-        }
-        String rel = entryPath.startsWith("/") ? entryPath.substring(1) : entryPath;
-        return rel.isEmpty() ? root : root.resolve(rel);
-    }
 
     private static Path extractEntry(Path jar, String entryPath, Map<String, Path> cache) {
         return cache.computeIfAbsent(entryPath, k -> {
@@ -882,61 +850,8 @@ public final class FmlHost {
         return delta;
     }
 
-<<<<<<< HEAD
 
-=======
-    /**
-     * Mod configs, as FML loads them before setup: STARTUP and COMMON from the config folder
-     * (written with their defaults when absent). Without them a mod's first config read
-     * throws "Cannot get config value before config is loaded" (measured: Mekanism's
-     * dosimeter and geiger counter, in the layer only). SERVER configs load with a world.
-     */
-    private static void loadModConfigs() {
-        try {
-            Class<?> tracker = Class.forName("cim.shadow.neoforge.net.neoforged.fml.config.ConfigTracker");
-            Object instance = tracker.getField("INSTANCE").get(null);
-            @SuppressWarnings({"unchecked", "rawtypes"})
-            Class<? extends Enum> type = (Class<? extends Enum>) Class.forName(
-                    "cim.shadow.neoforge.net.neoforged.fml.config.ModConfig$Type").asSubclass(Enum.class);
-            String game = System.getProperty("cim.gamedir", ".");
-            Path dir = Path.of(game).resolve("config");
-            java.nio.file.Files.createDirectories(dir);
-            Method load = tracker.getMethod("loadConfigs", type, Path.class);
-            for (String t : new String[] {"STARTUP", "COMMON"}) {
-                @SuppressWarnings("unchecked")
-                Object value = Enum.valueOf(type, t);
-                load.invoke(instance, value, dir);
-            }
-            System.out.println(LOG + " mod configs loaded (STARTUP, COMMON) from " + dir);
-        } catch (Throwable t) {
-            System.out.println(LOG + " mod configs NOT loaded: " + t);
-        }
-    }
 
-    private static void fireSetupEvents(List<Object> containers) throws Exception {
-        loadModConfigs();
-        Class<?> ctxCls = Class.forName(MOD_LOADING_CONTEXT);
-        Object ctx = ctxCls.getMethod("get").invoke(null);
-        Method setActive = ctxCls.getMethod("setActiveContainer", Class.forName(MOD_CONTAINER));
-        Method acceptEvent = Class.forName(MOD_CONTAINER)
-                .getMethod("acceptEvent", Class.forName(EVENT));
-        Class<?> queueCls = Class.forName(DEFERRED_QUEUE);
-        for (Object container : containers) {
-            setActive.invoke(ctx, container);
-            for (String evt : new String[] {COMMON_SETUP, SERVER_SETUP}) {
-                Class<?> evtCls = Class.forName(evt);
-                Object queue = queueCls.getConstructor(String.class)
-                        .newInstance("cim-" + evtCls.getSimpleName());
-                Object event = evtCls
-                        .getConstructor(Class.forName(MOD_CONTAINER), queueCls)
-                        .newInstance(container, queue);
-                acceptEvent.invoke(container, event);
-                queueCls.getMethod("runTasks").invoke(queue);
-            }
-            setActive.invoke(ctx, (Object) null);
-        }
-    }
->>>>>>> origin/feat/gui-integration
 
     // ---- census -------------------------------------------------------------------
 
