@@ -675,10 +675,7 @@ impl ClassFile {
                     .and_then(|b| std::str::from_utf8(b).ok()),
             ) {
                 let key = format!("{name}{desc}");
-                if let Some(a) = at
-                    .for_member(original_name, &key)
-                    .or_else(|| at.for_member(original_name, name))
-                {
+                if let Some(a) = at.for_member(original_name, &key) {
                     member.access = crate::at::apply(member.access, a);
                 }
             }

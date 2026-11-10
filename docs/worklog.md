@@ -8560,3 +8560,16 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   client, server, unrelated, and interface-only annotations. The optional
   CIM_PATCHED_SERVER_JAR test uses actual 21.1.265 delta bytes: LanServerPinger
   allowed, Screen rejected. No scene, threshold, or lifecycle probe changed.
+
+### Green campaign — distinguish field and method access transformers
+- Real normal-world generation failed with IllegalAccessError calling
+  Aquifer.NoiseBasedAquifer.shouldScheduleFluidUpdate(). The emitted class
+  confirmed the originally public method had become protected. NeoForge's
+  actual AT file targets the same-named FIELD; our method lookup incorrectly
+  fell back from name+descriptor to a bare field name.
+- Remove that fallback. Method rules require their declared descriptors;
+  field rules retain their name-only matching. The hand-built regression
+  fixture checks both directions with a field and method sharing a name.
+  It fails on the previous code (0x0404 vs required 0x0401) and passes with
+  the repair. Full cim-reloc/imagine tests, clippy -D warnings, and release
+  native build PASS. Profiling remains required for the relocated runtime.

@@ -400,3 +400,58 @@ fn physical_side_uses_class_annotations_not_client_package_names() {
         );
     }
 }
+
+#[test]
+fn field_access_transform_does_not_change_same_named_method() {
+    let slots = vec![
+        utf8("java/lang/Object"),
+        class(1),
+        utf8("net/minecraft/Fixture"),
+        class(3),
+        utf8("shouldScheduleFluidUpdate"),
+        utf8("Z"),
+        utf8("()Z"),
+    ];
+    let mut bytes = build_class(&slots, 4);
+    bytes.truncate(body_start(&bytes));
+    for n in [
+        0x0421u16, 4, 2, 0, // public abstract class, this, super, no interfaces
+        1, 2, 5, 6, 0, // one private boolean field, no attributes
+        1, 0x0401, 5, 7, 0, // one public abstract method, no attributes
+        0, // no class attributes
+    ] {
+        bytes.extend_from_slice(&n.to_be_bytes());
+    }
+    for (directive, expected_field, expected_method) in [
+        (
+            "protected net.minecraft.Fixture shouldScheduleFluidUpdate",
+            4,
+            0x0401,
+        ),
+        (
+            "protected net.minecraft.Fixture shouldScheduleFluidUpdate()Z",
+            2,
+            0x0404,
+        ),
+    ] {
+        let at = cim_reloc::at::AccessTransformTable::parse(directive);
+        let out = cim_reloc::relocate_class_at(
+            &RelocationTable::layer_default(),
+            &at,
+            "net/minecraft/Fixture",
+            &bytes,
+        )
+        .unwrap();
+        let body = body_of(&out);
+        assert_eq!(
+            u16::from_be_bytes([body[10], body[11]]),
+            expected_field,
+            "{directive}"
+        );
+        assert_eq!(
+            u16::from_be_bytes([body[20], body[21]]),
+            expected_method,
+            "{directive}"
+        );
+    }
+}
