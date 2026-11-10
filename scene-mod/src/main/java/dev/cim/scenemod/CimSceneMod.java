@@ -9,10 +9,13 @@ import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.ByteTag;
@@ -32,15 +35,43 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.animal.Cat;
+import net.minecraft.world.entity.animal.FrogVariant;
+import net.minecraft.world.entity.animal.Pig;
+import net.minecraft.world.entity.animal.Wolf;
+import net.minecraft.world.entity.animal.frog.Frog;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.decoration.Painting;
+import net.minecraft.world.entity.decoration.PaintingVariant;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerData;
+import net.minecraft.world.entity.npc.VillagerProfession;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.JukeboxSong;
+import net.minecraft.world.item.armortrim.ArmorTrim;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BannerBlockEntity;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.entity.DecoratedPotBlockEntity;
+import net.minecraft.world.level.block.entity.DecoratedPotPatterns;
+import net.minecraft.world.level.block.entity.JukeboxBlockEntity;
+import net.minecraft.world.level.block.entity.PotDecorations;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
@@ -343,6 +374,14 @@ public final class CimSceneMod {
                                                 .executes(ctx -> galleryInv(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page")))))))
+                        .then(Commands.literal("variant")
+                                .then(Commands.argument("kind", StringArgumentType.word())
+                                        .then(Commands.argument("namespace", StringArgumentType.word())
+                                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> galleryVariant(ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "kind"),
+                                                                StringArgumentType.getString(ctx, "namespace"),
+                                                                IntegerArgumentType.getInteger(ctx, "page")))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
@@ -371,7 +410,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome|inv]|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome|inv|variant]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -696,6 +735,887 @@ public final class CimSceneMod {
         setGalleryFrozen(level.getServer(), true, "settle " + blockStem);
     }
 
+    // --- variant gallery (the no-walk classes' real scenes, 14-dx) --------
+
+    /** Entity-grid variant kinds: the sparse pitch-2 6x3 wall (18 cells,
+     *  rows y=-60/-58/-56). Every subject on this grid is a live ENTITY
+     *  (the painting, the frozen mobs, the trim/enchant armor stands) — the
+     *  measured entity-grid law (no neighbour overlap by construction)
+     *  applies to them exactly as it applies to the entity walk. */
+    static final int VARIANT_CELLS_ENTITY = ENTITY_CELLS; // 18
+    /** Block-grid variant kinds: the block wall itself (11x7 = 77 cells,
+     *  pitch 1) — banner patterns, pot sherds and jukebox songs are real
+     *  BLOCKS placed like the block wall's states. */
+    static final int VARIANT_CELLS_BLOCK = GALLERY_CELLS; // 77
+
+    /** The variant kinds that render on the entity grid (everything else
+     *  is block-grid). Keep in lockstep with the ledger rows above. */
+    private static boolean variantEntityGrid(String kind) {
+        return switch (kind) {
+            case "painting", "wolf", "cat", "frog", "villager", "effect",
+                 "trimmaterial", "trimpattern", "enchant" -> true;
+            case "banner", "pot", "jukebox" -> false;
+            default -> false;
+        };
+    }
+
+    /**
+     * The no-walk classes' real scenes (roadmap audit "No-walk visual
+     * classes": "add real scenes and runtime assertions instead of excluding
+     * these registrations"). ONE command family, TWELVE kinds, every kind a
+     * REAL vanilla-mechanics rendering of the registry entry — zero per-mod
+     * code, the sweep is the registry walk, identical on both parity stacks
+     * (the same ordinary-mod code over the same registries):
+     *
+     * <ul>
+     *   <li>{@code painting} — a real {@link Painting} hung on a smooth
+     *       support wall behind the wall plane, facing the camera; variants
+     *       wider/taller than 2 blocks are named {@code oversized} skips
+     *       (the pitch-2 grid cannot isolate a 3x3+ painting from its
+     *       neighbours without a per-subject page geometry).</li>
+     *   <li>{@code wolf} / {@code cat} / {@code frog} — the real mob spawned
+     *       frozen (the entity walk's NoAI+NoGravity+Invulnerable contract)
+     *       with the variant set through the entity's own public API.</li>
+     *   <li>{@code villager} — a frozen villager with
+     *       {@code setVillagerData(new VillagerData(type, NONE, 1))}.</li>
+     *   <li>{@code effect} — a frozen pig carrying the real
+     *       {@link MobEffectInstance} (visible, so the client draws the
+     *       ambient effect particles) — the settle pass asserts the effect
+     *       is STILL ACTIVE, not just that the entity lives.</li>
+     *   <li>{@code trimmaterial} / {@code trimpattern} — an armor stand
+     *       wearing an iron chestplate whose {@code minecraft:trim}
+     *       component pairs every material with a fixed pattern (first
+     *       sorted id, deterministic) / every pattern with a fixed
+     *       material.</li>
+     *   <li>{@code enchant} — an armor stand HOLDING an iron sword with the
+     *       real {@code minecraft:enchantments} component (the glint is the
+     *       client-side proof; dyn=1, the glint shimmers).</li>
+     *   <li>{@code banner} — a real white standing banner whose
+     *       {@code minecraft:banner_patterns} BE state carries the pattern
+     *       (built through {@code BannerBlockEntity#fromItem}, the vanilla
+     *       item->BE path).</li>
+     *   <li>{@code pot} — a real decorated pot whose sherds resolve the
+     *       pattern through {@code DecoratedPotPatterns#getPatternFromItem}
+     *       (the vanilla item->pattern link, scanned once and cached; a
+     *       pattern with no sherd is a named {@code no-sherd} skip).</li>
+     *   <li>{@code jukebox} — a real jukebox holding the disc whose
+     *       {@code minecraft:jukebox_playable} component resolves to the
+     *       song, PLAYING (the runtime assertion is
+     *       {@code getSongPlayer().isPlaying()} at settle); the song stops
+     *       when the next page's clear discards the BE.</li>
+     * </ul>
+     *
+     * <p>Manifest per page {@code c-imagine/scenes/gallery-variant-<kind>-<ns>-p<p>.tsv}
+     * rows {@code cell|x|y|z|subject|dyn|note} — the SAME 7-column shape the
+     * entity manifests use, so the gate's absence-note join works unchanged.
+     * Every failure is a named skip row ({@code no-instance}, {@code
+     * failed:<t>}, {@code oversized}, {@code no-sherd}, {@code no-disc},
+     * {@code dissolved}, ...); the settle pass (40 ticks, then the 12-as
+     * final rewrite 40 ticks later) re-reads what the world HOLDS — the
+     * 14-di law (the manifest carries the settled state) applies. The world
+     * is NOT frozen by this walk (the subjects are entity-flavored; the next
+     * block page re-arms the freeze at its own settle, per the 14-di
+     * unfreeze contract every gallery command entry follows).
+     *
+     * <p>THE OURS LEG (named lane, intentionally not replayed yet): the
+     * classes ride registries the vanilla 26.3 client does not carry — the
+     * F2V projection per kind is the named next lane (the same
+     * diagnostic-first shape the sound/gui/biome walks shipped in). The
+     * coverage gate runs these classes DIAGNOSTIC-first; the missing ours
+     * shots are the named backlog, reported loudly, never red.
+     */
+    private static int galleryVariant(CommandSourceStack src, String kind, String namespace, int page) {
+        if (!variantKindKnown(kind)) {
+            LOGGER.info("[cimscene] gallery-variant unknown kind={} (known: painting, wolf, cat, frog, "
+                    + "villager, effect, trimmaterial, trimpattern, banner, pot, enchant, jukebox)", kind);
+            src.sendFailure(Component.literal("[cimscene] unknown variant kind: " + kind));
+            return 0;
+        }
+        ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "variant page entry");
+        // shared supersession channel: a NEW page command (any series) must
+        // supersede this series' pending settle passes the same way the
+        // entity walk's passes supersede each other
+        final int gen = ++entityPageGen;
+        writeGalleryIndex(level, namespace);
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
+        String stem = "gallery-variant-" + kind + "-" + namespace + "-p" + page;
+        boolean entityGrid = variantEntityGrid(kind);
+        int cellsPerPage = entityGrid ? VARIANT_CELLS_ENTITY : VARIANT_CELLS_BLOCK;
+
+        List<ResourceLocation> entries = variantEntries(level, kind, namespace);
+        if (entries == null) {
+            // the dynamic registry itself is unreadable: terminate the walk
+            // honestly (the ledger's -1 row already reds the coverage) — a
+            // hang here would burn the CI wait for nothing
+            writeDoneMarkerFile(stem, true);
+            LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells=0 failed=0 "
+                    + "skipped=0 exhausted=1 registry-unreadable=1", kind, namespace, page);
+            return 0;
+        }
+
+        LOGGER.info("[cimscene] gallery-variant begin kind={} ns={} page={} entries={} cellsPerPage={}",
+                kind, namespace, page, entries.size(), cellsPerPage);
+
+        int from = page * cellsPerPage;
+        if (from >= entries.size()) {
+            writeDoneMarkerFile(stem, true);
+            LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells=0 failed=0 "
+                    + "skipped=0 exhausted=1", kind, namespace, page);
+            return 0;
+        }
+        List<ResourceLocation> slice = entries.subList(from, Math.min(from + cellsPerPage, entries.size()));
+
+        // the wall region: blocks swept (both grids live inside the shared
+        // clearWall box) and stale gallery entities killed — the same hygiene
+        // the entity walk runs, because a prior page's subjects photobomb the
+        // crops exactly the same way
+        clearWall(level);
+        killStaleGalleryEntities(level);
+
+        final List<Entity> spawned = new ArrayList<>();
+        final List<Integer> spawnedIdx = new ArrayList<>();
+        final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
+        int failed = 0;
+        int kindBlocks = 0; // block-grid kinds: the placed block cells
+
+        switch (kind) {
+            case "painting" -> {
+                fillPaintingSupport(level);
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    try {
+                        Holder<PaintingVariant> holder = dynamicHolder(level, Registries.PAINTING_VARIANT, id);
+                        PaintingVariant variant = holder.value();
+                        if (variant.width() > 2 || variant.height() > 2) {
+                            skipNotes.put(i, "oversized");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=painting ns={} page={} index={} "
+                                    + "reason=oversized {}x{} subject={}", namespace, page, from + i,
+                                    variant.width(), variant.height(), id);
+                            continue;
+                        }
+                        // the painting FACES the camera (north = -z, the camera
+                        // sits at z<9 looking +z) and hangs on the support wall
+                        // at z+1 (direction.getOpposite() — the vanilla
+                        // HangingEntity.survives() contract)
+                        Painting p = new Painting(level, cell, Direction.NORTH, holder);
+                        if (!p.survives()) {
+                            skipNotes.put(i, "no-support");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=painting ns={} page={} index={} "
+                                    + "reason=no-support subject={}", namespace, page, from + i, id);
+                            continue;
+                        }
+                        p.setInvulnerable(true);
+                        p.addTag(GALLERY_TAG);
+                        level.addFreshEntity(p);
+                        spawned.add(p);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind=painting ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "wolf", "cat", "frog", "villager", "effect" -> {
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+                    double cy = GALLERY_Y0 + row * ENTITY_PITCH;
+                    double cz = GALLERY_Z + 0.5;
+                    try {
+                        Entity e = switch (kind) {
+                            case "wolf" -> {
+                                Wolf w = new Wolf(net.minecraft.world.entity.EntityType.WOLF, level);
+                                w.setVariant(dynamicHolder(level, Registries.WOLF_VARIANT, id));
+                                yield w;
+                            }
+                            case "cat" -> {
+                                Cat c = new Cat(net.minecraft.world.entity.EntityType.CAT, level);
+                                c.setVariant(staticHolder(BuiltInRegistries.CAT_VARIANT, id));
+                                yield c;
+                            }
+                            case "frog" -> {
+                                Frog f = new Frog(net.minecraft.world.entity.EntityType.FROG, level);
+                                f.setVariant(staticHolder(BuiltInRegistries.FROG_VARIANT, id));
+                                yield f;
+                            }
+                            case "villager" -> {
+                                VillagerType type = BuiltInRegistries.VILLAGER_TYPE.get(id);
+                                if (type == null) {
+                                    skipNotes.put(i, "no-instance");
+                                    LOGGER.info("[cimscene] gallery-variant skip kind=villager ns={} page={} "
+                                            + "index={} reason=no-instance subject={}", namespace, page, from + i, id);
+                                    yield null;
+                                }
+                                Villager v = new Villager(net.minecraft.world.entity.EntityType.VILLAGER, level, type);
+                                v.setVillagerData(new VillagerData(type, VillagerProfession.NONE, 1));
+                                yield v;
+                            }
+                            case "effect" -> {
+                                Pig pig = new Pig(net.minecraft.world.entity.EntityType.PIG, level);
+                                pig.addEffect(new MobEffectInstance(
+                                        staticHolder(BuiltInRegistries.MOB_EFFECT, id), EFFECT_DURATION, 0, false, true));
+                                yield pig;
+                            }
+                            default -> null;
+                        };
+                        if (e == null) {
+                            continue;
+                        }
+                        if (!freezeVariantSubject(e)) {
+                            failed++;
+                            skipNotes.put(i, "failed:configure");
+                            LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                    + "reason=failed:configure subject={}", kind, namespace, page, from + i, id);
+                            continue;
+                        }
+                        e.moveTo(cx, cy, cz, 180.0f, 0.0f);
+                        e.setYHeadRot(180.0f);
+                        e.setYBodyRot(180.0f);
+                        e.addTag(GALLERY_TAG);
+                        level.addFreshEntity(e);
+                        spawned.add(e);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", kind, namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "trimmaterial", "trimpattern" -> {
+                Holder<net.minecraft.world.item.armortrim.TrimPattern> fixedPattern = null;
+                Holder<net.minecraft.world.item.armortrim.TrimMaterial> fixedMaterial = null;
+                try {
+                    if ("trimmaterial".equals(kind)) {
+                        fixedPattern = dynamicHolder(level, Registries.TRIM_PATTERN, firstIdOrThrow(level, Registries.TRIM_PATTERN));
+                    } else {
+                        fixedMaterial = dynamicHolder(level, Registries.TRIM_MATERIAL, firstIdOrThrow(level, Registries.TRIM_MATERIAL));
+                    }
+                } catch (Throwable t) {
+                    LOGGER.error("[cimscene] gallery-variant {} fixed-half resolve failed: {}", kind, t.toString());
+                }
+                final Holder<net.minecraft.world.item.armortrim.TrimPattern> fp = fixedPattern;
+                final Holder<net.minecraft.world.item.armortrim.TrimMaterial> fm = fixedMaterial;
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+                    double cy = GALLERY_Y0 + row * ENTITY_PITCH;
+                    double cz = GALLERY_Z + 0.5;
+                    try {
+                        ArmorStand stand = new ArmorStand(net.minecraft.world.entity.EntityType.ARMOR_STAND, level);
+                        ItemStack chest = new ItemStack(Items.IRON_CHESTPLATE);
+                        if ("trimmaterial".equals(kind)) {
+                            chest.set(DataComponents.TRIM, new ArmorTrim(
+                                    dynamicHolder(level, Registries.TRIM_MATERIAL, id), fp));
+                        } else {
+                            chest.set(DataComponents.TRIM, new ArmorTrim(fm,
+                                    dynamicHolder(level, Registries.TRIM_PATTERN, id)));
+                        }
+                        if (!freezeVariantSubject(stand)) {
+                            failed++;
+                            skipNotes.put(i, "failed:configure");
+                            continue;
+                        }
+                        stand.moveTo(cx, cy, cz, 180.0f, 0.0f);
+                        stand.setYHeadRot(180.0f);
+                        stand.setYBodyRot(180.0f);
+                        stand.addTag(GALLERY_TAG);
+                        level.addFreshEntity(stand);
+                        // wear AFTER the join: the equipment broadcast rides the
+                        // spawn + equipment packets in order
+                        stand.setItemSlot(EquipmentSlot.CHEST, chest);
+                        spawned.add(stand);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", kind, namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "enchant" -> {
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+                    double cy = GALLERY_Y0 + row * ENTITY_PITCH;
+                    double cz = GALLERY_Z + 0.5;
+                    try {
+                        ArmorStand stand = new ArmorStand(net.minecraft.world.entity.EntityType.ARMOR_STAND, level);
+                        ItemStack sword = new ItemStack(Items.IRON_SWORD);
+                        // ItemEnchantments.Mutable.set returns void — the
+                        // chain goes through a local
+                        ItemEnchantments.Mutable ench = new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
+                        ench.set(dynamicHolder(level, Registries.ENCHANTMENT, id), 1);
+                        sword.set(DataComponents.ENCHANTMENTS, ench.toImmutable());
+                        if (!freezeVariantSubject(stand)) {
+                            failed++;
+                            skipNotes.put(i, "failed:configure");
+                            continue;
+                        }
+                        stand.moveTo(cx, cy, cz, 180.0f, 0.0f);
+                        stand.setYHeadRot(180.0f);
+                        stand.setYBodyRot(180.0f);
+                        stand.addTag(GALLERY_TAG);
+                        level.addFreshEntity(stand);
+                        stand.setItemSlot(EquipmentSlot.MAINHAND, sword);
+                        spawned.add(stand);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind=enchant ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "banner", "pot", "jukebox" -> {
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+                    BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+                    try {
+                        boolean placed = switch (kind) {
+                            case "banner" -> {
+                                level.setBlock(pos, Blocks.WHITE_BANNER.defaultBlockState(), Block.UPDATE_CLIENTS);
+                                if (level.getBlockEntity(pos) instanceof BannerBlockEntity be) {
+                                    ItemStack item = new ItemStack(Items.WHITE_BANNER);
+                                    item.set(DataComponents.BANNER_PATTERNS, new BannerPatternLayers(java.util.List.of(
+                                            new BannerPatternLayers.Layer(
+                                                    dynamicHolder(level, Registries.BANNER_PATTERN, id), DyeColor.BLACK))));
+                                    be.fromItem(item, DyeColor.WHITE);
+                                    be.setChanged();
+                                    yield true;
+                                }
+                                yield false;
+                            }
+                            case "pot" -> {
+                                Item sherd = potSherdForPattern(id);
+                                if (sherd == null) {
+                                    skipNotes.put(i, "no-sherd");
+                                    LOGGER.info("[cimscene] gallery-variant skip kind=pot ns={} page={} index={} "
+                                            + "reason=no-sherd subject={}", namespace, page, from + i, id);
+                                    yield true; // the row is already named; no block
+                                }
+                                level.setBlock(pos, Blocks.DECORATED_POT.defaultBlockState(), Block.UPDATE_CLIENTS);
+                                if (level.getBlockEntity(pos) instanceof DecoratedPotBlockEntity be) {
+                                    be.setFromItem(DecoratedPotBlockEntity.createDecoratedPotItem(
+                                            new PotDecorations(sherd, sherd, sherd, sherd)));
+                                    be.setChanged();
+                                    yield true;
+                                }
+                                yield false;
+                            }
+                            case "jukebox" -> {
+                                ItemStack disc = discForSong(level, id);
+                                if (disc == null) {
+                                    skipNotes.put(i, "no-disc");
+                                    LOGGER.info("[cimscene] gallery-variant skip kind=jukebox ns={} page={} index={} "
+                                            + "reason=no-disc subject={}", namespace, page, from + i, id);
+                                    yield true; // the row is already named; no block
+                                }
+                                level.setBlock(pos, Blocks.JUKEBOX.defaultBlockState(), Block.UPDATE_CLIENTS);
+                                if (level.getBlockEntity(pos) instanceof JukeboxBlockEntity be) {
+                                    be.setTheItem(disc);
+                                    be.getSongPlayer().play(level, dynamicHolder(level, Registries.JUKEBOX_SONG, id));
+                                    be.setChanged();
+                                    yield true;
+                                }
+                                yield false;
+                            }
+                            default -> false;
+                        };
+                        if (placed && !skipNotes.containsKey(i)) {
+                            kindBlocks++;
+                        }
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.putIfAbsent(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", kind, namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            default -> {
+                // variantKindKnown guards this; unreachable
+            }
+        }
+
+        final ServerLevel fLevel = level;
+        final String fNs = namespace;
+        final int fPage = page;
+        final List<ResourceLocation> fSlice = slice;
+        final int fFrom = from;
+        final int fFailed = failed;
+        final String fKind = kind;
+        final int fKindBlocks = kindBlocks;
+        runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleVariantPage(
+                fLevel, fKind, fNs, fPage, fSlice, spawned, spawnedIdx, skipNotes, fFrom, gen,
+                fFailed, fKindBlocks, false));
+        return spawned.size() + kindBlocks;
+    }
+
+    /** The known variant kinds (the dispatcher's kind argument is free-form
+     *  text — an unknown kind must fail LOUDLY, not walk nothing). */
+    private static boolean variantKindKnown(String kind) {
+        return switch (kind) {
+            case "painting", "wolf", "cat", "frog", "villager", "effect",
+                 "trimmaterial", "trimpattern", "banner", "pot", "enchant",
+                 "jukebox" -> true;
+            default -> false;
+        };
+    }
+
+    /** 10 minutes: the effect/jukebox assertions must outlive the settle
+     *  window and the shot, never the walk (pages are killed per page). */
+    private static final int EFFECT_DURATION = 20 * 60 * 10;
+
+    /** Sorted ids of the namespace from the kind's registry; null = the
+     *  dynamic registry itself is unreadable (the honest walk termination). */
+    private static List<ResourceLocation> variantEntries(ServerLevel level, String kind, String namespace) {
+        return switch (kind) {
+            // dynamic (datapack) registries — read through the level's access
+            case "painting" -> dynamicIds(level, Registries.PAINTING_VARIANT, namespace);
+            case "wolf" -> dynamicIds(level, Registries.WOLF_VARIANT, namespace);
+            case "trimmaterial" -> dynamicIds(level, Registries.TRIM_MATERIAL, namespace);
+            case "trimpattern" -> dynamicIds(level, Registries.TRIM_PATTERN, namespace);
+            case "banner" -> dynamicIds(level, Registries.BANNER_PATTERN, namespace);
+            case "enchant" -> dynamicIds(level, Registries.ENCHANTMENT, namespace);
+            case "jukebox" -> dynamicIds(level, Registries.JUKEBOX_SONG, namespace);
+            // static BuiltIn registries
+            case "cat" -> sortedIdsOf(BuiltInRegistries.CAT_VARIANT, namespace);
+            case "frog" -> sortedIdsOf(BuiltInRegistries.FROG_VARIANT, namespace);
+            case "villager" -> sortedIdsOf(BuiltInRegistries.VILLAGER_TYPE, namespace);
+            case "effect" -> sortedIdsOf(BuiltInRegistries.MOB_EFFECT, namespace);
+            case "pot" -> sortedIdsOf(BuiltInRegistries.DECORATED_POT_PATTERN, namespace);
+            default -> List.of();
+        };
+    }
+
+    /** Sorted ids of a static (BuiltIn) registry for one namespace. */
+    private static List<ResourceLocation> sortedIdsOf(Registry<?> reg, String namespace) {
+        List<ResourceLocation> ids = new ArrayList<>(reg.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> out = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
+    /** Sorted ids of a namespace from a DATAPACK (dynamic) registry; null
+     *  when the registry itself cannot be read — the walk terminates
+     *  honestly (the ledger's -1 row already reds the coverage). */
+    @SuppressWarnings("unchecked")
+    private static List<ResourceLocation> dynamicIds(ServerLevel level,
+                                                     ResourceKey<? extends Registry<?>> key,
+                                                     String namespace) {
+        try {
+            Registry<?> reg = level.registryAccess().registryOrThrow((ResourceKey) key);
+            return sortedIdsOf(reg, namespace);
+        } catch (Throwable t) {
+            LOGGER.error("[cimscene] gallery-variant dynamic registry unreadable {}: {}",
+                    key.location(), t.toString());
+            return null;
+        }
+    }
+
+    /** Holder from a static (BuiltIn) registry by id. */
+    private static <T> Holder<T> staticHolder(Registry<T> reg, ResourceLocation id) {
+        return reg.getHolderOrThrow(ResourceKey.create(reg.key(), id));
+    }
+
+    /** Holder from a dynamic (datapack) registry through the level's access. */
+    @SuppressWarnings("unchecked")
+    private static <T> Holder<T> dynamicHolder(ServerLevel level,
+                                               ResourceKey<? extends Registry<T>> key,
+                                               ResourceLocation id) {
+        return level.registryAccess().registryOrThrow(key)
+                .getHolderOrThrow(ResourceKey.create(key, id));
+    }
+
+    /** First sorted id of a dynamic registry (the fixed half of the
+     *  trim pairing — deterministic on both stacks, same registries). */
+    private static ResourceLocation firstIdOrThrow(ServerLevel level,
+                                                   ResourceKey<? extends Registry<?>> key) {
+        List<ResourceLocation> ids = dynamicIds(level, key, "");
+        // dynamicIds never filters the minecraft ns away; the full sorted
+        // list's first entry is the pairing constant
+        if (ids == null || ids.isEmpty()) {
+            throw new IllegalStateException("empty dynamic registry " + key.location());
+        }
+        return ids.get(0);
+    }
+
+    /**
+     * Freeze contract for the variant subjects (the entity walk's measured
+     * rules): Mobs get NoAI + persistence (a still picture), everything gets
+     * NoGravity + Invulnerable. Returns false when the subject is not a
+     * creature this walk knows how to freeze (never expected — the kinds
+     * spawn Wolf/Cat/Frog/Villager/Pig/ArmorStand by construction).
+     */
+    private static boolean freezeVariantSubject(Entity e) {
+        e.setNoGravity(true);
+        e.setInvulnerable(true);
+        if (e instanceof Mob m) {
+            m_setNoAi(m);
+        } else if (!(e instanceof ArmorStand)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The painting support wall: smooth stone filling the plane BEHIND the
+     * wall grid (z = GALLERY_Z + 1) so every hung painting passes the vanilla
+     * {@code HangingEntity#survives()} check (the attached block is
+     * {@code direction.getOpposite()} = south = z+1 for the north-facing
+     * paintings). Cleared by every page's clearWall first — the fill is the
+     * painting kind's own addition.
+     */
+    private static void fillPaintingSupport(ServerLevel level) {
+        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
+            for (int y = GALLERY_Y0 - 1; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
+                level.setBlock(new BlockPos(x, y, GALLERY_Z + 1),
+                        Blocks.SMOOTH_STONE.defaultBlockState(), Block.UPDATE_CLIENTS);
+            }
+        }
+    }
+
+    /** Shared stale-subject sweep (the entity walk's box and tag contract). */
+    private static void killStaleGalleryEntities(ServerLevel level) {
+        AABB sweep = new AABB(GALLERY_X0 - 1, GALLERY_Y0, GALLERY_Z - 1,
+                GALLERY_X0 + GALLERY_COLS + 1, GALLERY_Y0 + GALLERY_ROWS + 3, GALLERY_Z + 2);
+        List<Entity> stale = level.getEntitiesOfClass(Entity.class, sweep,
+                e -> e.getTags().contains(GALLERY_TAG));
+        for (Entity e : stale) {
+            e.discard();
+        }
+        if (!stale.isEmpty()) {
+            LOGGER.info("[cimscene] gallery stale-entity sweep removed={}", stale.size());
+        }
+    }
+
+    /** Sherd item for a decorated-pot pattern id (the vanilla item->pattern
+     *  link scanned once per boot and cached; BLANK never resolves — the
+     *  blank pattern has no sherd by vanilla's own construction). */
+    private static Item potSherdForPattern(ResourceLocation patternId) {
+        Map<ResourceLocation, Item> sherds = potSherds();
+        return sherds.get(patternId);
+    }
+
+    private static volatile Map<ResourceLocation, Item> POT_SHERDS;
+    private static final Object POT_SHERD_LOCK = new Object();
+
+    private static Map<ResourceLocation, Item> potSherds() {
+        Map<ResourceLocation, Item> m = POT_SHERDS;
+        if (m != null) {
+            return m;
+        }
+        synchronized (POT_SHERD_LOCK) {
+            if (POT_SHERDS == null) {
+                Map<ResourceLocation, Item> built = new java.util.HashMap<>();
+                for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+                    Item item = BuiltInRegistries.ITEM.get(itemId);
+                    if (item == null) {
+                        continue;
+                    }
+                    ResourceKey<net.minecraft.world.level.block.entity.DecoratedPotPattern> key =
+                            DecoratedPotPatterns.getPatternFromItem(item);
+                    if (key == null || DecoratedPotPatterns.BLANK.equals(key)) {
+                        continue;
+                    }
+                    built.putIfAbsent(key.location(), item);
+                }
+                POT_SHERDS = java.util.Collections.unmodifiableMap(built);
+                LOGGER.info("[cimscene] gallery-variant sherd index built: {} pattern->sherd mappings", built.size());
+            }
+            return POT_SHERDS;
+        }
+    }
+
+    /**
+     * The disc whose {@code minecraft:jukebox_playable} component resolves
+     * to the song id (the vanilla item->song link scanned once per boot and
+     * cached; a song with no disc is a named {@code no-disc} skip — real
+     * content the wall cannot host by vanilla's own mapping).
+     */
+    private static ItemStack discForSong(ServerLevel level, ResourceLocation songId) {
+        Map<ResourceLocation, ResourceLocation> discs = jukeboxDiscs(level);
+        ResourceLocation itemId = discs.get(songId);
+        if (itemId == null) {
+            return null;
+        }
+        Item item = BuiltInRegistries.ITEM.get(itemId);
+        return item == null ? null : new ItemStack(item);
+    }
+
+    private static volatile Map<ResourceLocation, ResourceLocation> JUKEBOX_DISCS;
+    private static final Object JUKEBOX_DISC_LOCK = new Object();
+
+    private static Map<ResourceLocation, ResourceLocation> jukeboxDiscs(ServerLevel level) {
+        Map<ResourceLocation, ResourceLocation> m = JUKEBOX_DISCS;
+        if (m != null) {
+            return m;
+        }
+        synchronized (JUKEBOX_DISC_LOCK) {
+            if (JUKEBOX_DISCS == null) {
+                Map<ResourceLocation, ResourceLocation> built = new java.util.HashMap<>();
+                for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+                    Item item = BuiltInRegistries.ITEM.get(itemId);
+                    if (item == null) {
+                        continue;
+                    }
+                    try {
+                        // the disc's DEFAULT components carry the playable
+                        // song — a fresh stack resolves it
+                        var song = JukeboxSong.fromStack(level.registryAccess(), new ItemStack(item));
+                        if (song.isEmpty()) {
+                            continue;
+                        }
+                        song.get().unwrapKey().ifPresent(k ->
+                                built.putIfAbsent(k.location(), itemId));
+                    } catch (Throwable ignored) {
+                        // an item whose components cannot parse is not a disc
+                    }
+                }
+                JUKEBOX_DISCS = java.util.Collections.unmodifiableMap(built);
+                LOGGER.info("[cimscene] gallery-variant disc index built: {} song->disc mappings", built.size());
+            }
+            return JUKEBOX_DISCS;
+        }
+    }
+
+    /**
+     * The variant settle pass (the 14-di law: the manifest carries what the
+     * world HOLDS, not what was placed). Pass 1 writes the manifest + the
+     * done marker; the 12-as final rewrite runs {@link #ENTITY_FINAL_TICKS}
+     * later, rewrites the manifest, writes no marker. Per kind the
+     * assertions are the RUNTIME proofs the audit item asks for:
+     * <ul>
+     *   <li>entity-grid kinds: alive + within 1.0 of the cell (the entity
+     *       walk's dissolved/moved contract), then the kind's own state —
+     *       the effect is STILL ACTIVE, the worn trim STILL PRESENT, the
+     *       glint STILL ENCHANTED;</li>
+     *   <li>block-grid kinds: the block still the kind's block (a popped
+     *       banner/pot/jukebox is a named dissolved), then the BE state —
+     *       the banner patterns non-empty, the pot decorations non-empty,
+     *       the jukebox song STILL PLAYING.</li>
+     * </ul>
+     */
+    private static void settleVariantPage(ServerLevel level, String kind, String namespace, int page,
+                                          List<ResourceLocation> slice,
+                                          List<Entity> spawned, List<Integer> spawnedIdx,
+                                          java.util.Map<Integer, String> skipNotes, int from, int gen,
+                                          int failed, int kindBlocks, boolean finalPass) {
+        if (gen != entityPageGen) {
+            LOGGER.info("[cimscene] gallery-variant settle superseded kind={} ns={} page={} finalPass={}",
+                    kind, namespace, page, finalPass);
+            return;
+        }
+        boolean entityGrid = variantEntityGrid(kind);
+        int cols = entityGrid ? ENTITY_COLS : GALLERY_COLS;
+        int pitch = entityGrid ? ENTITY_PITCH : 1;
+        String[] rowStr = new String[slice.size()];
+        int cells = 0, dissolved = 0, absent = 0;
+        for (int j = 0; j < spawned.size(); j++) {
+            Entity e = spawned.get(j);
+            int i = spawnedIdx.get(j);
+            ResourceLocation id = slice.get(i);
+            int col = i % cols, row = i / cols;
+            if (skipNotes.containsKey(i)) {
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + skipNotes.get(i);
+                continue;
+            }
+            double cx = GALLERY_X0 + col * pitch + (entityGrid ? 0.5 : 0.0);
+            double cy = GALLERY_Y0 + row * pitch;
+            double cz = GALLERY_Z + (entityGrid ? 0.5 : 0.0);
+            boolean alive = e.isAlive() && !e.isRemoved();
+            double drift = alive ? e.position().distanceTo(new Vec3(cx, cy, cz)) : -1.0;
+            if (!alive || drift > 1.0) {
+                dissolved++;
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\tdissolved";
+                LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} reason={} "
+                        + "subject={} drift={}", kind, namespace, page, from + i,
+                        alive ? "moved" : "dissolved", id, drift);
+                continue;
+            }
+            String note = variantRuntimeNote(level, kind, id, e);
+            if (note != null) {
+                absent++;
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + note;
+                LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} reason={} "
+                        + "subject={}", kind, namespace, page, from + i, note, id);
+                continue;
+            }
+            cells++;
+            rowStr[i] = "cell\t" + (GALLERY_X0 + col * pitch) + '\t' + (GALLERY_Y0 + row * pitch)
+                    + '\t' + GALLERY_Z + '\t' + id + '\t' + variantDyn(kind) + "\tok";
+        }
+        if (!entityGrid) {
+            // block-grid kinds: every cell re-read from the world (the block
+            // walk's settle law) — the placed state can pop, and the BE can
+            // lose its pattern/sherd/song only if the block itself went away
+            for (int i = 0; i < slice.size(); i++) {
+                ResourceLocation id = slice.get(i);
+                int col = i % cols, row = i / cols;
+                BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+                if (skipNotes.containsKey(i)) {
+                    rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + skipNotes.get(i);
+                    continue;
+                }
+                if (level.getBlockState(pos).isAir()) {
+                    dissolved++;
+                    rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\tdissolved";
+                    LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} "
+                            + "reason=dissolved subject={}", kind, namespace, page, from + i, id);
+                    continue;
+                }
+                String note = variantBlockNote(level, kind, pos, id);
+                if (note != null) {
+                    absent++;
+                    rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + note;
+                    LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} reason={} "
+                            + "subject={}", kind, namespace, page, from + i, note, id);
+                    continue;
+                }
+                cells++;
+                rowStr[i] = "cell\t" + pos.getX() + '\t' + pos.getY() + '\t' + pos.getZ()
+                        + '\t' + id + '\t' + variantDyn(kind) + "\tok";
+            }
+        }
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tsubject\tdyn\tnote\n");
+        for (int i = 0; i < slice.size(); i++) {
+            if (rowStr[i] == null && skipNotes.containsKey(i)) {
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + slice.get(i) + "\t" + variantDyn(kind) + "\t"
+                        + skipNotes.get(i);
+            }
+            if (rowStr[i] != null) {
+                tsv.append(rowStr[i]).append('\n');
+            }
+        }
+        String manifest = "gallery-variant-" + kind + "-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-variant manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        if (finalPass) {
+            LOGGER.info("[cimscene] gallery-variant settle-final kind={} ns={} page={} cells={} absent={} "
+                            + "dissolved={} (manifest rewritten inside the shot window; no done marker)",
+                    kind, namespace, page, cells, absent, dissolved);
+            writeMarkerFile("gallery-variant-" + kind + "-" + namespace + "-p" + page + ".settled");
+            return;
+        }
+        LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells={} absent={} dissolved={} "
+                        + "failed={} skipped={} first={} last={}",
+                kind, namespace, page, cells, absent, dissolved, failed,
+                slice.get(0), slice.get(slice.size() - 1));
+        writeDoneMarkerFile("gallery-variant-" + kind + "-" + namespace + "-p" + page, false);
+        runAfterTicks(level.getServer(), ENTITY_FINAL_TICKS, () -> settleVariantPage(
+                level, kind, namespace, page, slice, spawned, spawnedIdx, skipNotes, from, gen,
+                failed, kindBlocks, true));
+    }
+
+    /** The dyn flag per kind (the join's diagnostic demotion channel): the
+     *  ambient effect particles and the glint shimmer are time-varying by
+     *  vanilla's own rendering, the jukebox note particles likewise; every
+     *  other kind renders a still. */
+    private static int variantDyn(String kind) {
+        return switch (kind) {
+            case "effect", "enchant", "jukebox" -> 1;
+            default -> 0;
+        };
+    }
+
+    /**
+     * The kind's runtime state assertion on a live entity subject; null =
+     * the state HOLDS. A non-null return is a named absence note (the gate's
+     * honesty channel — content that proves itself absent is not green).
+     */
+    private static String variantRuntimeNote(ServerLevel level, String kind, ResourceLocation id, Entity e) {
+        try {
+            return switch (kind) {
+                case "effect" -> {
+                    if (!(e instanceof net.minecraft.world.entity.LivingEntity le)) {
+                        yield "effect-expired";
+                    }
+                    Holder<net.minecraft.world.effect.MobEffect> holder =
+                            staticHolder(BuiltInRegistries.MOB_EFFECT, id);
+                    yield le.getEffect(holder) != null ? null : "effect-expired";
+                }
+                case "trimmaterial", "trimpattern" -> {
+                    if (!(e instanceof ArmorStand stand)) {
+                        yield "trim-missing";
+                    }
+                    ItemStack chest = stand.getItemBySlot(EquipmentSlot.CHEST);
+                    yield chest.get(DataComponents.TRIM) != null ? null : "trim-missing";
+                }
+                case "enchant" -> {
+                    if (!(e instanceof ArmorStand stand)) {
+                        yield "glint-missing";
+                    }
+                    ItemStack held = stand.getItemBySlot(EquipmentSlot.MAINHAND);
+                    ItemEnchantments ench = held.get(DataComponents.ENCHANTMENTS);
+                    yield (ench != null && ench.size() > 0) ? null : "glint-missing";
+                }
+                default -> null;
+            };
+        } catch (Throwable t) {
+            return "assert-failed:" + t.getClass().getName();
+        }
+    }
+
+    /** The kind's runtime state assertion on a block-grid subject; null =
+     *  the state HOLDS. */
+    private static String variantBlockNote(ServerLevel level, String kind, BlockPos pos, ResourceLocation id) {
+        try {
+            return switch (kind) {
+                case "banner" -> {
+                    if (!(level.getBlockEntity(pos) instanceof BannerBlockEntity be)) {
+                        yield "pattern-missing";
+                    }
+                    yield be.getPatterns().layers().isEmpty() ? "pattern-missing" : null;
+                }
+                case "pot" -> {
+                    if (!(level.getBlockEntity(pos) instanceof DecoratedPotBlockEntity be)) {
+                        yield "sherd-missing";
+                    }
+                    PotDecorations dec = be.getDecorations();
+                    yield (dec.back().isEmpty() && dec.left().isEmpty()
+                            && dec.right().isEmpty() && dec.front().isEmpty())
+                            ? "sherd-missing" : null;
+                }
+                case "jukebox" -> {
+                    if (!(level.getBlockEntity(pos) instanceof JukeboxBlockEntity be)) {
+                        yield "play-failed";
+                    }
+                    yield be.getSongPlayer().isPlaying() ? null : "stopped";
+                }
+                default -> null;
+            };
+        } catch (Throwable t) {
+            return "assert-failed:" + t.getClass().getName();
+        }
+    }
+
     // --- coverage ledger (owner directive 2026-10-31: the verdict must SEE
     // --- everything — content that never reaches a page is COVERAGE red,
     // --- not a silent green) ----------------------------------------------
@@ -757,13 +1677,18 @@ public final class CimSceneMod {
         // paintings, entity texture variants, mob effects (particle
         // overlays), armor trims, banner patterns, decorated-pot patterns,
         // enchantments (item glint), jukebox songs, dimension types
-        // (sky/fog). These classes have NO gallery walk yet — the gate
-        // reports them COVERAGE-INCOMPLETE reason=no-walk-yet: the ledger
-        // SEES the hole, the red is the named backlog. (The biome row
-        // graduated 2026-11-04: the fillbiome tint walk exists,
-        // DIAGNOSTIC-first.) Worldgen plumbing (features, loot, predicates,
-        // attributes...) shapes the world, not a gallery cell, and stays
-        // outside the world-frame ledger (documented line, challengeable).
+        // (sky/fog). 14-dx: the no-walk backlog (the roadmap's "No-walk
+        // visual classes" audit item) SHIPPED ITS REAL SCENES — the
+        // `gallery variant <kind>` walk below places/spawns one entry per
+        // cell and the gate walks the classes DIAGNOSTIC-first (the
+        // 2026-11-04 sound/gui/biome pattern). dimension_type has no
+        // per-entry surface inside ONE world frame (its picture is the
+        // whole dimension's sky/fog) and stays the documented no-walk line.
+        // (The biome row graduated 2026-11-04: the fillbiome tint walk
+        // exists, DIAGNOSTIC-first.) Worldgen plumbing (features, loot,
+        // predicates, attributes...) shapes the world, not a gallery cell,
+        // and stays outside the world-frame ledger (documented line,
+        // challengeable).
         RegistryAccess access = level.registryAccess();
         long biomes = dynCount(access, Registries.BIOME, namespace);
         long paintingVariants = dynCount(access, Registries.PAINTING_VARIANT, namespace);
@@ -804,21 +1729,25 @@ public final class CimSceneMod {
                 // biome LEFT the no-walk set (the fillbiome walk exists): one
                 // biome per page
                 .append("biome\t").append(biomes).append("\t1\n")
-                // the no-walk classes (12-aq): counted, not walked yet — a
+                // the no-walk classes (12-aq) GRADUATED (14-dx): every class
+                // but dimension_type now has a real `gallery variant` walk —
+                // entity-grid kinds at 18 cells (pitch 2: the subjects and
+                // the 2x2 paintings never overlap their neighbours, the
+                // measured entity-grid law), block-grid kinds at 77. A
                 // negative total means the dynamic registry itself could not
                 // be READ at index time (the gate reds that honestly)
-                .append("painting_variant\t").append(paintingVariants).append("\t0\n")
-                .append("wolf_variant\t").append(wolfVariants).append("\t0\n")
-                .append("cat_variant\t").append(catVariants).append("\t0\n")
-                .append("frog_variant\t").append(frogVariants).append("\t0\n")
-                .append("villager_type\t").append(villagerTypes).append("\t0\n")
-                .append("mob_effect\t").append(mobEffects).append("\t0\n")
-                .append("trim_material\t").append(trimMaterials).append("\t0\n")
-                .append("trim_pattern\t").append(trimPatterns).append("\t0\n")
-                .append("banner_pattern\t").append(bannerPatterns).append("\t0\n")
-                .append("decorated_pot_pattern\t").append(potPatterns).append("\t0\n")
-                .append("enchantment\t").append(enchantments).append("\t0\n")
-                .append("jukebox_song\t").append(jukeboxSongs).append("\t0\n")
+                .append("painting_variant\t").append(paintingVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("wolf_variant\t").append(wolfVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("cat_variant\t").append(catVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("frog_variant\t").append(frogVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("villager_type\t").append(villagerTypes).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("mob_effect\t").append(mobEffects).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("trim_material\t").append(trimMaterials).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("trim_pattern\t").append(trimPatterns).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("enchantment\t").append(enchantments).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("banner_pattern\t").append(bannerPatterns).append("\t").append(GALLERY_CELLS).append('\n')
+                .append("decorated_pot_pattern\t").append(potPatterns).append("\t").append(GALLERY_CELLS).append('\n')
+                .append("jukebox_song\t").append(jukeboxSongs).append("\t").append(GALLERY_CELLS).append('\n')
                 .append("dimension_type\t").append(dimensionTypes).append("\t0\n");
         // BLOCK ENTITY RECONCILIATION: a BlockEntityType whose every valid
         // state is fluid-carried or RenderShape.INVISIBLE would never reach

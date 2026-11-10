@@ -737,6 +737,15 @@ jobs:
               print(f'inv {ns}: {len(ordered)} items')
           print(f'inv manifests derived: {n}')
           PY
+          # 14-dx NAMED EXCLUSION: the seed does NOT walk the variant series
+          # (`gallery variant <kind>` — paintings, variants, villagers,
+          # effects, trims, banners, pots, enchantments, jukebox songs). The
+          # seed exists to seed OURS-side replays, and the ours leg has no
+          # variant replay channel yet — the truth shards' variant walk is
+          # the only surface these classes need today (the gate runs them
+          # DIAGNOSTIC-first, the missing ours shots are the named F2V
+          # projection lane). Walking them here would grow the measured
+          # ~26-30m seed cache-miss for artifacts nothing reads.
           ls srv-wall/c-imagine/scenes/ | wc -l
 
       # THE QUAD DUMP: a static pack model cannot know what a dynamic model
@@ -1719,6 +1728,39 @@ jobs:
               java -cp vtools Key ESC || true
             done
             [ "$EX" = "1" ] || { echo "$NS inv walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # VARIANT walk (per ladder ns, to exhaustion — the 14-dx DIAGNOSTIC
+          # classes; the 12-aq no-walk backlog's real scenes): every registry
+          # entry of the kind rendered by REAL vanilla mechanics on the shared
+          # wall — a hung painting (support wall + the vanilla survives()
+          # contract), the frozen variant mob, the trimmed / enchanted armor
+          # stand, the pattern banner, the sherd pot, the playing jukebox.
+          # The settle pass (+40 ticks, then the 12-as rewrite) carries the
+          # RUNTIME assertions (effect still active, trim still worn, glint
+          # still there, BE patterns/sherds/song state held, the song still
+          # playing) — a cell that fails them is a named skip row, exactly
+          # the honesty channel the gate's ABSENCE_NOTES read. The shots are
+          # DIAGNOSTIC: the ours leg has NO variant replay channel yet (the
+          # F2V projection per kind is the named lane), so the gate reports
+          # the missing ours shots loudly without a red verdict.
+          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern banner pot enchant jukebox; do
+            for NS in $LADDER_NS; do
+              EX=0
+              for p in $(seq $SI $K $MAXP); do
+                base_of "gallery-variant-$KIND-$NS-p$p"
+                rcon "kill @e[type=!player]" "cimscene gallery variant $KIND $NS $p"
+                RC=0; wait_done "gallery-variant-$KIND-$NS-p$p" "$V0D" "$V0E" || RC=$?
+                [ "$RC" = "2" ] && { echo "$NS $KIND variant page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+                if [ "$RC" = "1" ]; then EX=1; break; fi
+                grep "gallery-variant done kind=$KIND ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+                sleep 2   # the settled subjects hold; the final rewrite lands inside this window
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "truth-shots/gal-v$KIND-$NS$p.png" \
+                  || echo "$NS $KIND variant page $p shot failed (diagnostic tolerated)"
+                echo "shot $NS $KIND variant page $p"
+              done
+              [ "$EX" = "1" ] || { echo "$NS $KIND variant walk hit the MAXP cap without exhausted"; exit 1; }
+            done
           done
           ls truth-shots/ | wc -l
 
