@@ -72,13 +72,16 @@ vanilla substitute or a generated demonstration does not establish parity.
   Preserve the original particle appearance, options and behavior; verify
   data-carrying particles as well as simple spawns. A successful substitute spawn
   is not a pass for the source particle.
-  LEVER SHIPPED (2026-11-11, 14-dz): the mapping generator resolves the 38
-  measured families through a registry-verified category table (32/38
-  category, 6 default — the default's target equals the send), so the mapped
-  preview and the actual send agree; the replay still validates live and
-  ledgers drift. The 14-dw live-viewer seed fix ships the cells; the flip
-  waits for the measured mapped-identity evidence per the sound bar
-  (position_hits == expected with order_exact).
+  LEVER SHIPPED (2026-11-11, 14-dz + the parallel 108009d4 verified-simple
+  table, reconciled): the mapping generator resolves the 38 measured
+  families through verified-SIMPLE targets only (98 VANILLA_SIMPLE ids
+  validated against the 26.3 client jar's particles/*.json AND the
+  paper-api Particle enum's data-carrying constructor classes; generation
+  hard-fails on a bad target; measured 38/38 mapped preview over the #302
+  artifacts), so the mapped preview and the actual send agree; the replay
+  still validates live and ledgers drift. The 14-dw live-viewer seed fix
+  ships the cells; the flip waits for the measured mapped-identity
+  evidence per the sound bar (position_hits == expected with order_exact).
 - [ ] **Texture fidelity:** `GalleryPack.placeholderSprite` generates a visible
   magenta/black texture for an item-atlas sprite that cannot be hosted. Keep this
   diagnostic visible, name the source sprite and affected cells, and repair
