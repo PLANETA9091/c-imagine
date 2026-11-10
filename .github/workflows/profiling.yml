@@ -32,15 +32,35 @@ jobs:
           python3 scripts/perf/test-criterion-gate.py
           python3 scripts/perf/test-boot-budget.py
           python3 scripts/perf/test-tick-budget.py
-      - name: measure parent baseline on cache miss
-        if: steps.baseline.outputs.cache-matched-key == ''
+      - name: measure baseline source on this runner
         run: |
-          parent=$(git rev-parse HEAD^)
-          git worktree add --detach baseline-source "$parent"
-          rm -rf target/criterion
+          set -euo pipefail
+          if [ -n '${{ steps.baseline.outputs.cache-matched-key }}' ]; then
+            cp -a baseline baseline-cached
+            baseline_source=$(python3 - <<'PYBASE'
+          import json, re
+          from pathlib import Path
+          source = json.loads(Path('baseline/provenance.json').read_text())['source_sha']
+          if not isinstance(source, str) or not re.fullmatch(r'[0-9a-f]{40}', source):
+              raise SystemExit('cached baseline has no valid source commit')
+          print(source)
+          PYBASE
+            )
+          else
+            baseline_source=$(git rev-parse HEAD^)
+          fi
+          # Retain the last passing source anchor, including on a cache hit.
+          # Cached timings from another VM/toolchain are not comparable.
+          if ! git cat-file -e "${baseline_source}^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$baseline_source"
+          fi
+          git worktree add --detach baseline-source "$baseline_source"
+          rm -rf target/criterion target/criterion-baseline-a target/criterion-baseline-b
           CARGO_TARGET_DIR="$PWD/target" cargo bench --workspace --manifest-path baseline-source/Cargo.toml
-          python3 scripts/perf/criterion-gate.py snapshot --current target/criterion --baseline baseline --source-sha "$parent"
-          rm -rf target/criterion
+          mv target/criterion target/criterion-baseline-a
+          CARGO_TARGET_DIR="$PWD/target" cargo bench --workspace --manifest-path baseline-source/Cargo.toml
+          mv target/criterion target/criterion-baseline-b
+          python3 scripts/perf/criterion-gate.py snapshot --current target/criterion-baseline-a --current target/criterion-baseline-b --baseline baseline --source-sha "$baseline_source"
       - name: run benches (two legs — the min median is the measurement, one slow leg is interference noise)
         run: |
           rm -rf target/criterion target/criterion-a target/criterion-b
@@ -69,6 +89,9 @@ jobs:
             target/criterion-b
             baseline
             baseline-before
+            baseline-cached
+            target/criterion-baseline-a
+            target/criterion-baseline-b
             criterion-deltas.json
           if-no-files-found: error
 
