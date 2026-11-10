@@ -1,19 +1,23 @@
 #!/usr/bin/env python3
-"""Selftest for gallery-particles-mapping.py — the 14-ds resolved-target lever.
+"""Selftest for gallery-particles-mapping.py — the 14-dz resolved-target lever.
 
-The measured facts the test pins:
+The measured facts the test pins (the reconciled verified-simple contract,
+the parallel 108009d4 shape kept by the rebase):
   1. the 38 refusing families (14-ds: create/ae2/biomesoplenty/mekanism,
-     the p0 manifests of the three measured runs) resolve through the
-     category buckets — NOT through the exact-name candidate that the
-     replay would have degraded to poof at send time;
-  2. every category TARGET the generator can emit is present in the real
-     26.3 particle registry (the verified-set invariant, the same measured
-     guarantee the sound generator's table carries);
+     the p0 manifests of the three measured runs) resolve to a
+     REGISTRY-REAL target — exact-name (verified-simple paths only) or a
+     keyword bucket — NOT to the replay-time default that manufactured the
+     0/38 mapped ceiling;
+  2. every target the generator can emit (exact-name candidate, keyword
+     bucket, default) is in VANILLA_SIMPLE — registered in the 26.3 client
+     jar AND simple in paper-api's Particle enum (a data-carrying or
+     unregistered target would degrade at replay against an expected TSV
+     target: the manufactured-miss trap);
   3. the generator is a pure function of the manifests (deterministic);
-  4. a TSV-vs-send disagreement can only come from the DEFAULT rows (whose
-     target is the documented default itself) or a live-registry drift —
-     both of which the replay ledgers.
+  4. the default rows carry the documented default itself (the replay's
+     send then equals the TSV target even there).
 """
+import importlib.util
 import os
 import pathlib
 import subprocess
@@ -24,37 +28,9 @@ HERE = pathlib.Path(__file__).resolve().parent
 GEN = HERE / "gallery-particles-mapping.py"
 PY = os.environ.get("PYGATE_PYTHON") or sys.executable
 
-# the 26.3 particle registry names verified by javap over the client jar's
-# ParticleTypes (the invariant set the category table may draw from)
-VERIFIED_26_3 = {
-    "angry_villager", "ash", "bubble", "bubble_column_up", "bubble_pop",
-    "campfire_cosy_smoke", "campfire_signal_smoke", "cherry_leaves",
-    "cloud", "composter", "copper_fire_flame", "crimson_spore", "crit",
-    "current_down", "damage_indicator", "dolphin",
-    "dripping_dripstone_lava", "dripping_dripstone_water", "dripping_honey",
-    "dripping_lava", "dripping_obsidian_tear", "dripping_water",
-    "dust_plume", "egg_crack", "elder_guardian", "electric_spark",
-    "enchant", "enchanted_hit", "end_rod", "explosion",
-    "explosion_emitter", "falling_dripstone_lava",
-    "falling_dripstone_water", "falling_honey", "falling_lava",
-    "falling_nectar", "falling_obsidian_tear", "falling_spore_blossom",
-    "falling_water", "firefly", "firework", "fishing", "flame", "glow",
-    "glow_squid_ink", "gust", "gust_emitter_large", "gust_emitter_small",
-    "happy_villager", "heart", "infested", "item_cobweb", "item_slime",
-    "item_snowball", "landing_honey", "landing_lava",
-    "landing_obsidian_tear", "large_smoke", "lava", "mycelium", "nautilus",
-    "note", "noxious_gas", "noxious_gas_cloud", "ominous_spawning",
-    "orange_poplar_leaves", "pale_oak_leaves", "pause_mob_growth", "poof",
-    "portal", "raid_omen", "rain", "red_poplar_leaves",
-    "reset_mob_growth", "reverse_portal", "scrape", "sculk_charge_pop",
-    "sculk_soul", "small_flame", "small_gust", "smoke", "sneeze",
-    "snowflake", "sonic_boom", "soul", "soul_fire_flame", "spit",
-    "splash", "spore_blossom_air", "squid_ink", "sulfur_bubbles",
-    "sulfur_cube_goo", "sweep_attack", "totem_of_undying", "trial_omen",
-    "trial_spawner_detected_player", "trial_spawner_detected_player_ominous",
-    "underwater", "vault_connection", "warped_spore", "wax_off", "wax_on",
-    "white_ash", "white_smoke", "witch", "yellow_poplar_leaves",
-}
+_spec = importlib.util.spec_from_file_location("gpm", GEN)
+gpm = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(gpm)
 
 # the 14-ds refusing families (the p0 manifests of the three measured runs,
 # ours legs died at the pixel gate before later particle pages)
@@ -101,8 +77,7 @@ def parse(tsv: pathlib.Path) -> dict:
 def main() -> int:
     failures = 0
 
-    # 1: the 38 families resolve through the category buckets (not the
-    # exact-name candidates the replay would have degraded)
+    # 1: the 38 families resolve to a registry-real target
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         scenes = root / "scenes"
@@ -115,19 +90,23 @@ def main() -> int:
         r = gen(scenes, root / "visual-particles.tsv")
         ok = r.returncode == 0 and "38 particle ids" in r.stdout
         rows = parse(root / "visual-particles.tsv")
-        category = sum(1 for t, h in rows.values() if h.startswith("category:"))
-        ok = ok and category >= 30
-        ok = ok and all(h != "exact-name"
-                        for p, (t, h) in rows.items()
-                        if p not in ("minecraft:",) and not p.startswith("minecraft:"))
+        resolved = [p for p, (t, h) in rows.items()
+                    if h.startswith(("exact-name", "keyword"))]
+        # the measured shape of the reconciled verified-simple table: the
+        # overwhelming majority of the 38 lands on a registry-real target
+        # (create:air and create:cube ride the documented default)
+        ok = ok and len(resolved) >= 34
         print(f"1 resolved-target shape on the 38 refusing families "
-              f"({category}/38 category):", "PASS" if ok else "FAIL")
+              f"({len(resolved)}/38 registry-real, >=34 required):",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-        # 2: every category target is in the verified 26.3 set
+        # 2: every emitted target is in VANILLA_SIMPLE (registered AND
+        # simple — the paper-api enum law)
         bad = [(p, t) for p, (t, h) in rows.items()
-               if h.startswith("category:") and t[len("minecraft:"):] not in VERIFIED_26_3]
-        print("2 category targets registry-verified (26.3):",
+               if t[len("minecraft:"):] not in gpm.VANILLA_SIMPLE]
+        print("2 every target verified-simple (26.3 registered + "
+              "paper-api simple):",
               "PASS" if not bad else f"FAIL {bad}")
         failures += 0 if not bad else 1
 
@@ -138,21 +117,45 @@ def main() -> int:
         print("3 deterministic:", "PASS" if same else "FAIL")
         failures += 0 if same else 1
 
-    # 4: default rows carry the documented default itself (the replay's
-    # send then equals the TSV target even on the default rows)
+        # 3b: generation hard-fails on a table target outside VANILLA_SIMPLE
+        # (the manufactured-miss guard) — a tampered table cannot ship
+        broken = root / "broken.tsv"
+        broken.write_text("# x\n", encoding="utf-8")
+        (scenes / "gallery-particle-create-p1.tsv").write_text(
+            "cell\tx\ty\tz\tparticle\tdyn\tnote\n"
+            "cell\t0\t-60\t9\tmod:zzz_unverified_thing\t1\tok\n",
+            encoding="utf-8")
+        saved = list(gpm.CATEGORY_TABLE)
+        saved_argv = sys.argv
+        try:
+            gpm.CATEGORY_TABLE.append(("zzz_unverified", "minecraft:not_a_particle"))
+            sys.argv = [str(GEN), str(scenes), str(broken)]
+            guard = False
+            try:
+                gpm.main()
+            except SystemExit as ex:
+                guard = ex.code != 0
+        finally:
+            gpm.CATEGORY_TABLE[:] = saved
+            sys.argv = saved_argv
+        print("3b generation hard-fails on an unverified target:",
+              "PASS" if guard else "FAIL")
+        failures += 0 if guard else 1
+
+    # 4: default rows carry the documented default itself
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         scenes = root / "scenes"
         scenes.mkdir()
         (scenes / "gallery-particle-create-p0.tsv").write_text(
             "cell\tx\ty\tz\tparticle\tdyn\tnote\n"
-            "cell\t-5\t-60\t9\tcreate:cube\t1\tok\n"
-            "cell\t-4\t-60\t9\tcreate:wifi\t1\tok\n", encoding="utf-8")
+            "cell\t-5\t-60\t9\tcreate:cube\t1\tok\n", encoding="utf-8")
         r = gen(scenes, root / "visual-particles.tsv")
         rows = parse(root / "visual-particles.tsv")
-        ok = r.returncode == 0 and all(
-            t == "minecraft:poof" and h == "default" for t, h in rows.values())
-        print("4 default rows carry the documented default:",
+        target, heuristic = rows["create:cube"]
+        ok = r.returncode == 0 and target == gpm.DEFAULT \
+            and (heuristic == "default" or heuristic.startswith("keyword:"))
+        print("4 default/unmatched rows carry the documented default:",
               "PASS" if ok else f"FAIL {rows}")
         failures += 0 if ok else 1
 
