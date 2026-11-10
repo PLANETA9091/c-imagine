@@ -621,10 +621,26 @@ jobs:
             sleep 5
           fi
           # PARTICLE walk (per ladder ns, to exhaustion)
+          # 14-dx THE RANGE PIN (measured #302: the seed job ran 8m1s and the
+          # dump client was alive inside its 1500s timeout, yet every particle
+          # spawn measured cells=0 — the client stood at the WORLD SPAWN,
+          # beyond the 32-block broadcast gate; 14-dw's relaunch covers the
+          # client-DEAD mode, the distance mode needs the receiver pinned to
+          # the wall vantage (x -5..5, y -60..-53, z 9 reaches <=12.2 blocks
+          # from (0.5,-60,0.5)) and the walk must verify the receiver per
+          # page — the manifest row KIND depends on the receiver population,
+          # and the ours leg (no scene-mod; the seed manifest IS its spawn
+          # spec) cannot be allowed to silently all-skip again)
+          rcon "gamemode spectator cimviewer" "tp cimviewer 0.5 -60 0.5 0 0" > par-pin.log
+          grep -q "Teleported" par-pin.log \
+            || { echo "particle walk refused: the dump client cannot be pinned to the wall vantage (the spawns would broadcast to zero receivers, measured #302)"; tail -20 srv-wall/boot.log; exit 1; }
           for NS in $LADDER_NS; do
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-particle-$NS-p$p"
+              rcon "list" > par-list.log 2>/dev/null || true
+              grep -q "cimviewer" par-list.log \
+                || { echo "$NS particle page $p refused: the receiver vanished mid-walk (the manifests would silently all-skip again)"; exit 1; }
               rcon "cimscene gallery particle $NS $p"
               RC=0; wait_done "gallery-particle-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
@@ -1571,6 +1587,8 @@ jobs:
               sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-pa-$NS$p.png"
+              sleep 2   # 14-dx the particle self-consistency pair (the 14-aj mob / 14-bw fluid pattern): every particle row is dyn=1 and never had a second frame (the diag-particle rows' self_ae measured [null,null] since the class was joined), so a time-varying truth cell — a static spawn aging or dying between the two windows — could never demote to ANIMATED with measured evidence; the second shot names it on the truth's own t0/t1 delta, and a cell static on both legs stays gated exactly as before
+              bash scripts/visual/shot.sh "truth-shots/gal-pa-$NS$p-self.png"
               echo "shot $NS particle page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS particle walk hit the MAXP cap without exhausted"; exit 1; }
@@ -2539,6 +2557,8 @@ jobs:
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-pa-$NS$p.png"
               test -s "ours-shots/ours-gal-pa-$NS$p.png" || { echo "$NS particle page $p shot missing"; exit 1; }
+              sleep 2   # 14-dx the particle self pair (truth-leg mirror — the same 2s window after the main shot, the 14-bw fluid pair's contract)
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-pa-$NS$p-self.png"
               echo "shot $NS particle page $p"
             done
             [ "$EX" = "1" ] || { echo "ours $NS particle replay hit the MAXP cap"; exit 1; }
@@ -2866,8 +2886,16 @@ jobs:
               T="truth-shots/gal-pa-$NS$p.png"
               O="ours-shots/ours-gal-pa-$NS$p.png"
               if [ -f "$T" ] && [ -f "$O" ]; then
+                # 14-dx the particle self-consistency pair: feed the second
+                # frames when present so a cell that moves against ITSELF on
+                # either leg demotes to ANIMATED (the 14-bw fluid join's
+                # contract verbatim) — absent frames keep the page exactly
+                # as before, the demotion only ever rides measured pairs
+                ST=""; SO=""
+                [ -f "truth-shots/gal-pa-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-pa-$NS$p-self.png"
+                [ -f "ours-shots/ours-gal-pa-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-pa-$NS$p-self.png"
                 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
-                  --manifest "$M" --out "gallery-report/diag-particle-$NS-p$p.json" || true
+                  --manifest "$M" $ST $SO --out "gallery-report/diag-particle-$NS-p$p.json" || true
               else
                 echo "$NS particle page $p shots missing (tolerated: diagnostic)"
               fi
