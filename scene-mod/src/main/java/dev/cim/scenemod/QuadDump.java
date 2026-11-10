@@ -399,7 +399,7 @@ final class QuadDump {
         // ENTITYBLOCK_ANIMATED still reaches its BER, without a phantom static panel.
         if (state.getRenderShape() == net.minecraft.world.level.block.RenderShape.MODEL) {
             BakedModel model = mc.getBlockRenderer().getBlockModel(state);
-            ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
+            ModelData data = captureModelData(model, page, pos, state);
             RandomSource random = RandomSource.create();
             long seed = state.getSeed(pos);
             random.setSeed(seed);
@@ -413,6 +413,11 @@ final class QuadDump {
             appendBlockEntity(page, pos, state, sprites, capture.out);
         }
         return capture.out.toString();
+    }
+
+    static ModelData captureModelData(BakedModel model, BlockAndTintGetter page,
+                                      BlockPos pos, BlockState state) {
+        return model.getModelData(page, pos, state, page.getModelData(pos));
     }
 
     /**
@@ -1154,6 +1159,18 @@ final class QuadDump {
                 }
             }
             return be;
+        }
+
+        @Override
+        public ModelData getModelData(BlockPos pos) {
+            // ModelDataManager snapshots the actual BE's data for SectionCompiler.
+            // Use the restored scene BE here rather than the joined client's
+            // unrelated last-page snapshot. Null data is a native contract error.
+            BlockEntity be = getBlockEntity(pos);
+            if (be == null || be.isRemoved()) return ModelData.EMPTY;
+            ModelData data = be.getModelData();
+            if (data == null) throw new NullPointerException("Null scene ModelData at " + pos);
+            return data;
         }
 
         @Override

@@ -77,3 +77,11 @@ tasks.register('captureLightDataTest', JavaExec) {
 }
 
 check.dependsOn captureLightDataTest
+
+tasks.register('captureModelDataTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureModelDataTest'
+}
+
+check.dependsOn captureModelDataTest

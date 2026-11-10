@@ -8661,3 +8661,17 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   fails the native comparison (8/15 instead of 15/15); the repaired path
   passes the full scene-mod build and all capture suites. Visual benefit
   remains pending the complete dual-stack gallery; no gate or scene changed.
+
+### Green campaign — retain block-entity model data during static capture
+- Upstream SectionCompiler gets the view's ModelData before calling the
+  model's getModelData; ModelDataManager obtains that input from the actual
+  block entity. Capture instead always supplied ModelData.EMPTY, discarding
+  restored client model properties before render-type and quad selection.
+- Page now serves its restored scene block entity's model data (empty for
+  absent/removed tiles, null rejected like native). Pass it through the same
+  view-to-model handoff and retain the model-derived result.
+- A focused handoff fixture supplies a model property through the view and
+  requires the model's derived result. It fails the previous EMPTY path and
+  passes the repair; the full scene-mod build and capture suites PASS. This
+  does not restore transient client animation phases or replace the required
+  complete dual-stack gallery evidence. No scene, parser format, or gate changed.
