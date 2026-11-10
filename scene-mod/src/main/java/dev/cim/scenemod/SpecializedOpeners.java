@@ -205,6 +205,39 @@ public final class SpecializedOpeners {
         }
     }
 
+    /**
+     * Forces the vanilla entity-tracker visibility decision for one (entity, player)
+     * pair and reports whether the player sees the entity afterwards. The tracker's
+     * spawn packet normally rides its own flush, which the menu open payload does not
+     * wait for; {@code TrackedEntity.updatePlayer} (public in 1.21.1, javap-verified
+     * against the srg server jar) makes the same decision synchronously and sends the
+     * spawn packet immediately when the entity is visible.
+     */
+    private static boolean forceTracked(ServerLevel level, Entity target, ServerPlayer player) {
+        try {
+            Object cache = level.getChunkSource();
+            Object chunkMap = cache.getClass().getField("chunkMap").get(cache);
+            Field entityMapField = chunkMap.getClass().getDeclaredField("entityMap");
+            entityMapField.setAccessible(true);
+            Object tracked = ((java.util.Map<?, ?>) entityMapField.get(chunkMap)).get(target.getId());
+            if (tracked == null) {
+                return false;
+            }
+            tracked.getClass().getMethod("updatePlayer", ServerPlayer.class).invoke(tracked, player);
+            Field seenByField = tracked.getClass().getDeclaredField("seenBy");
+            seenByField.setAccessible(true);
+            for (Object connection : (Set<?>) seenByField.get(tracked)) {
+                if (((net.minecraft.server.network.ServerPlayerConnection) connection).getPlayer() == player) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] robit opener tracking probe threw: {}", t.toString());
+            return false;
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static boolean act(ServerLevel level, ServerPlayer player, BlockPos rig, String menuId, Entity entity) {
         ClassLoader cl = Block.class.getClassLoader();
@@ -216,12 +249,32 @@ public final class SpecializedOpeners {
                     if (target == null) {
                         List<Entity> near = level.getEntities((Entity) null,
                                 new net.minecraft.world.phys.AABB(rig).inflate(3),
-                                e -> BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals("mekanism:robit"));
+                                e -> e.isAlive() && BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals("mekanism:robit"));
                         if (!near.isEmpty()) {
                             target = near.get(0);
                         }
                     }
                     if (target == null) {
+                        return false;
+                    }
+                    // THE CLIENT-KILL GUARD (measured, gallery seed c769369d): the open
+                    // payload's extra data carries the robit's entity id and the CLIENT
+                    // resolves it in MekanismContainerType.getEntityFromBuf — an entity it
+                    // has not tracked yet (the specialized fallback spawns and opens in the
+                    // same tick, and the spawn packet normally rides the LATER tracker
+                    // flush) throws IllegalStateException and NeoForge DISCONNECTS the
+                    // client, killing the whole dump step. The open must reference an
+                    // entity that is alive AND tracked by this player: force the native
+                    // visibility decision now (updatePlayer sends the spawn immediately
+                    // when visible), then refuse the open if the player still does not
+                    // see it — a named honest row instead of a dead rig.
+                    if (!target.isAlive()) {
+                        LOGGER.info("[cimscene] robit opener: the nearby robit is not alive, refusing the open payload");
+                        return false;
+                    }
+                    if (!forceTracked(level, target, player)) {
+                        LOGGER.info("[cimscene] robit opener: entity {} is not tracked by the viewer yet — the open payload would disconnect the client, the page records honestly",
+                                target.getId());
                         return false;
                     }
                     String btnName = switch (menuId) {
