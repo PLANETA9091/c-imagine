@@ -526,7 +526,7 @@ public final class ScreenPack {
             if (menu == null || image == null) {
                 continue;
             }
-            List<Piece> pieces = captureTiles(opaque(image), scale, left, top, art2, heights);
+            List<Piece> pieces = captureTiles(opaque(image, frameOf(tsv, "")), scale, left, top, art2, heights);
             if (pieces.isEmpty()) {
                 continue;
             }
@@ -552,7 +552,8 @@ public final class ScreenPack {
                         Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
                         if (stateImage != null) {
-                            states.put(i, captureTiles(opaque(stateImage), scale, left, top, art2, heights));
+                            states.put(i, captureTiles(opaque(stateImage, frameOf(tsv, ".w" + q[1])), scale, left, top,
+                                    art2, heights));
                             java.util.Set<Integer> over = coveredSlots(image, stateImage, slots, scale, left, top);
                             if (!over.isEmpty()) {
                                 covered.put(i, over);
@@ -621,6 +622,17 @@ public final class ScreenPack {
      * colour is what a player sees: any pixel holding colour counts as solid.
      */
     private static BufferedImage opaque(BufferedImage src) {
+        return opaque(src, null);
+    }
+
+    /**
+     * {@code frame}: the real screenshot taken with the capture. A translucent capture pixel is
+     * either a shadow over the world (the frame shows the world through it) or a pixel the
+     * screen covered with a blend that left alpha below 255 (AE2's "Out of Power" overlay: the
+     * frame shows exactly the captured colour). Only the first stays translucent.
+     */
+    private static BufferedImage opaque(BufferedImage src, BufferedImage frame) {
+        boolean judge = frame != null && frame.getWidth() == src.getWidth() && frame.getHeight() == src.getHeight();
         BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < src.getHeight(); y++) {
             for (int x = 0; x < src.getWidth(); x++) {
@@ -629,6 +641,9 @@ public final class ScreenPack {
                 if (alpha == 0) {
                     // Colour with zero alpha is solid in a real framebuffer.
                     out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+                } else if (alpha < 255 && (!judge || sameColour(c, frame.getRGB(x, y)))) {
+                    // The real frame shows the captured colour itself: the screen covered this pixel.
+                    out.setRGB(x, y, 0xFF000000 | c);
                 } else if (alpha < 255) {
                     // Nothing of the screen beneath it: a shadow over the world. The capture holds
                     // it premultiplied (drawn over transparent black); the client blends a glyph
@@ -643,6 +658,21 @@ public final class ScreenPack {
             }
         }
         return out;
+    }
+
+    private static boolean sameColour(int a, int b) {
+        return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 1
+                && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 1
+                && Math.abs((a & 0xFF) - (b & 0xFF)) <= 1;
+    }
+
+    private static BufferedImage frameOf(Path tsv, String suffix) {
+        Path f = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", suffix + ".frame"));
+        try {
+            return Files.isRegularFile(f) ? ImageIO.read(f.toFile()) : null;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Cuts the opaque area into glyphs that land one GUI pixel per {@code scale} source pixels. */
