@@ -2082,14 +2082,10 @@ jobs:
           # the rolled image's GLX cannot serve the client's own GLFW request.
           # Match the native reference default explicitly on both stacks.
           printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
-          # 14-cr DIAGNOSTIC: mipmapLevels:0 — the ours-side wall/webbing/cutout
-          # classes (run 42416372623: walls ~1000 reds, webbing/bramble noise)
-          # render LIGHTER and BLURRIER than the byte-identical pack did on the
-          # 67cd0e2c green baseline while the pack itself is unchanged; the
-          # per-sprite mipmap chain (inter-sprite bleed on the packed atlas) is
-          # the remaining render-side suspect. Zero mips kills atlas bleed.
+          # Keep the final options write at the same native mipmap setting.
+          # This write also pins the tutorial; it must preserve both clients' 4.
           # tutorialStep:none (menus lane, 12a0ec6c): no first-join tutorial overlay in the frames.
-          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)

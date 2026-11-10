@@ -8707,3 +8707,12 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   the exact failing command, producing its expected exhaustion receipt, then
   stops cleanly. First local positive attempt timed out during startup; the
   independent retry completed. This diagnostic is not a boot-budget result.
+
+### Green campaign — preserve native mipmaps in the final client options
+- The GUI merge added a later full options write with mipmapLevels:0 after
+  the matched native/default setting 4. That restored the previously measured
+  sampling mismatch. Keep the tutorial pin and backend choice, but retain 4
+  in the final write. The earlier controlled mipmap run remains the visual
+  evidence for matching the native setting; latest gallery still required.
+- All 131 embedded shell blocks across 10 workflows PASS. No pixel threshold,
+  source reference setting, scene coverage, or renderer budget was relaxed.
