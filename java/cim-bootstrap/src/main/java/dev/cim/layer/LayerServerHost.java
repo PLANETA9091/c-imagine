@@ -173,7 +173,7 @@ public final class LayerServerHost {
             Object pm = server.getClass().getMethod("getPluginManager").invoke(server);
             Class<?> pluginIf = pcl.loadClass("org.bukkit.plugin.Plugin");
             Method register = pm.getClass().getMethod("registerEvent",
-                    Class.class, pcl.loadClass(LISTENER_IF), priority.getClass(),
+                    Class.class, listenerIf, priority,
                     executorIf, pluginIf);
             register.setAccessible(true);
 

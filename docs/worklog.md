@@ -8501,3 +8501,19 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   evidence layer the fidelity flip (real ogg hosting in the pack's sounds.json)
   will be measured against.
 - VERIFIED: the offline plugin build compiles clean; F2vPack --selftest ALL OK.
+
+### Green campaign — resolve the declared Paper event priority type
+- Integration 42861627494 failed before registering the layer tick executor:
+  `NoSuchMethodException` named `registerEvent(Class, Listener, Class, EventExecutor, Plugin)`.
+  The priority variable already holds the `EventPriority` Class; calling its
+  `getClass()` requested `java.lang.Class` instead of the API enum parameter.
+- Resolve the registration using the declared listener and priority classes.
+  Expected observable behavior: the real Paper event registration succeeds,
+  the armed marker appears, and subsequent integration assertions exercise
+  native server initialization and genuine NeoForge event delivery. Those
+  assertions and performance limits remain unchanged.
+- Validation: bootstrap build and LayerServerHost contracts PASS. A separate
+  local harness against the actual cached Paper API invokes the production
+  `install` with interface proxies and confirms BOTH tick/disable registrations
+  with EventPriority.NORMAL; it prints armed. This proves API registration,
+  not server startup or gameplay parity; integration/profiling remain required.
