@@ -85,3 +85,24 @@ fn relocates_real_minecraft_classes() {
         );
     }
 }
+
+#[test]
+fn real_server_patch_keeps_lan_pinger_but_rejects_screen() {
+    let Some(jar) = std::env::var_os("CIM_PATCHED_SERVER_JAR").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let jar = jar.to_string_lossy();
+    for (entry, expected) in [
+        ("net/minecraft/client/server/LanServerPinger.class", false),
+        ("net/minecraft/client/gui/screens/Screen.class", true),
+    ] {
+        let bytes = read_entry(&jar, entry).expect("use NeoForge patched server delta");
+        assert_eq!(
+            cim_reloc::classfile::ClassFile::parse(&bytes)
+                .unwrap()
+                .is_client_only(),
+            expected,
+            "{entry}"
+        );
+    }
+}

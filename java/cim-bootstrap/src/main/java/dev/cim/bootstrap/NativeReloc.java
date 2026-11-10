@@ -132,5 +132,12 @@ public final class NativeReloc {
 
     private static native String mapInternal0(String internalName);
 
+    static boolean isClientOnly(byte[] bytes) {
+        ensureLoaded();
+        return isClientOnly0(bytes);
+    }
+
+    private static native boolean isClientOnly0(byte[] bytes);
+
     private static native byte[] relocate0(String internalName, byte[] classBytes);
 }

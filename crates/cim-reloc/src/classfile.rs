@@ -243,9 +243,15 @@ impl ClassFile {
     /// runs before any pool rewrite, and the check must be identical for
     /// layer classes and refs-only mod classes.
     fn member_is_client_only(&self, m: &Member) -> bool {
-        // m.attrs: (attribute_count u2) { attribute_name_index u2,
-        //            attribute_length u4, info[length] }
-        let b = &m.attrs;
+        self.attrs_are_client_only(&m.attrs)
+    }
+
+    /// Class-level physical-side restriction, independent of its package.
+    pub fn is_client_only(&self) -> bool {
+        self.attrs_are_client_only(&self.body.class_attrs)
+    }
+
+    fn attrs_are_client_only(&self, b: &[u8]) -> bool {
         if b.len() < 2 {
             return false;
         }
@@ -308,14 +314,18 @@ impl ClassFile {
                 return false;
             };
             off += 2;
+            let mut client_only = false;
+            let mut interface_only = false;
             for _ in 0..pairs {
                 // element_name_index u2, then element_value
                 if off + 2 > payload.len() {
                     return false;
                 }
-                let Some(_elem_name) = read_u16_at(payload, off) else {
+                let Some(elem_name) = read_u16_at(payload, off) else {
                     return false;
                 };
+                interface_only |=
+                    is_only_in && self.utf8(elem_name) == Some(b"_interface".as_slice());
                 off += 2;
                 if off >= payload.len() {
                     return false;
@@ -338,7 +348,7 @@ impl ClassFile {
                                 .unwrap_or(false)
                             && self.utf8(cn).map(|c| c == b"CLIENT").unwrap_or(false)
                         {
-                            return true;
+                            client_only = true;
                         }
                     }
                     // primitive/String: one u2
@@ -405,6 +415,9 @@ impl ClassFile {
                     }
                     _ => return false,
                 }
+            }
+            if client_only && !interface_only {
+                return true;
             }
         }
         false

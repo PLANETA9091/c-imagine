@@ -345,3 +345,58 @@ fn body_start(bytes: &[u8]) -> usize {
 fn body_of(bytes: &[u8]) -> Vec<u8> {
     bytes[body_start(bytes)..].to_vec()
 }
+
+#[test]
+fn physical_side_uses_class_annotations_not_client_package_names() {
+    fn fixture(side: Option<&str>, interface_only: bool, annotation: &str) -> Vec<u8> {
+        let slots = vec![
+            utf8("java/lang/Object"),
+            class(1),
+            utf8("net/minecraft/client/server/Fixture"),
+            class(3),
+            utf8("RuntimeVisibleAnnotations"),
+            utf8(annotation),
+            utf8("value"),
+            utf8("Lnet/neoforged/api/distmarker/Dist;"),
+            utf8(side.unwrap_or("CLIENT")),
+            utf8("_interface"),
+            utf8("Lfixture/ClientInterface;"),
+        ];
+        let mut bytes = build_class(&slots, 4);
+        if side.is_some() {
+            let mut payload = Vec::new();
+            for n in [1u16, 6, if interface_only { 2 } else { 1 }, 7] {
+                payload.extend_from_slice(&n.to_be_bytes());
+            }
+            payload.push(b'e');
+            payload.extend_from_slice(&8u16.to_be_bytes());
+            payload.extend_from_slice(&9u16.to_be_bytes());
+            if interface_only {
+                payload.extend_from_slice(&10u16.to_be_bytes());
+                payload.push(b'c');
+                payload.extend_from_slice(&11u16.to_be_bytes());
+            }
+            bytes.truncate(bytes.len() - 2);
+            bytes.extend_from_slice(&1u16.to_be_bytes());
+            bytes.extend_from_slice(&5u16.to_be_bytes());
+            bytes.extend_from_slice(&(payload.len() as u32).to_be_bytes());
+            bytes.extend_from_slice(&payload);
+        }
+        bytes
+    }
+    let only_in = "Lnet/neoforged/api/distmarker/OnlyIn;";
+    for (side, interface_only, annotation, expected) in [
+        (None, false, only_in, false),
+        (Some("CLIENT"), false, only_in, true),
+        (Some("DEDICATED_SERVER"), false, only_in, false),
+        (Some("CLIENT"), true, only_in, false),
+        (Some("CLIENT"), false, "Lfixture/Unrelated;", false),
+    ] {
+        let bytes = fixture(side, interface_only, annotation);
+        assert_eq!(
+            ClassFile::parse(&bytes).unwrap().is_client_only(),
+            expected,
+            "side={side:?} interface={interface_only} annotation={annotation}"
+        );
+    }
+}
