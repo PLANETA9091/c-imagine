@@ -48,6 +48,65 @@ not evidence that a full NeoForge dedicated-server runtime already runs in Paper
 runtime evidence. Existing boot, protocol and gallery passes retain their narrow
 meaning; the campaign remains incomplete while any required matrix gate is red.
 
+## Open audit — mod content fidelity and CI blind spots (2026-11-10)
+
+Read-only source audit against `d7ed34fa` (runtime, gallery workflow and coverage
+scripts). This separates confirmed substitutions from behavior without adequate
+proof. A missing test is not evidence that a whole content class is unsupported.
+The acceptance criteria below require original mod semantics and assets; a
+vanilla substitute or a generated demonstration does not establish parity.
+
+- [ ] **Sound fidelity:** `CimPlugin` uses `minecraft:block.wood.place` when the
+  sound mapping or target is unavailable and counts `unmapped-fallback`. This is
+  different audio, not reproduction of the original event. Preserve and play
+  the mod's real sound assets and event parameters; report every substitution
+  against its source ID and require zero unexplained fallbacks for parity.
+- [ ] **Particle fidelity:** the corresponding fallback is `minecraft:poof`.
+  Preserve the original particle appearance, options and behavior; verify
+  data-carrying particles as well as simple spawns. A successful substitute spawn
+  is not a pass for the source particle.
+- [ ] **Texture fidelity:** `GalleryPack.placeholderSprite` generates a visible
+  magenta/black texture for an item-atlas sprite that cannot be hosted. Keep this
+  diagnostic visible, name the source sprite and affected cells, and repair
+  runtime/generated texture hosting. A placeholder is not supported mod content.
+- [ ] **GUI, keys and HUD behavior:** M6.2 already records that real-player
+  hosting is missing, key/slot/HUD values do not yet reach mod code, seven other
+  Create menus and non-Create menus remain open, and mod HUD layers need live
+  data. Prove actual menu transactions, permissions, key-triggered actions and
+  live HUD values against native NeoForge; showing a dialog or inventory is
+  insufficient.
+- [ ] **Diagnostic classes must not imply complete green:**
+  `coverage-gate.py` lists sound, GUI, held items, biome tint, inventory and
+  particles in `DIAGNOSTIC_CLASSES`. The gallery tolerates missing diagnostic
+  screenshots/logs and some diagnostic join failures; mod-namespace dyn/large
+  entity comparisons are also diagnostic. Measure and calibrate each channel,
+  then make missing evidence and real mismatches blocking. Keep all unmeasured
+  classes explicitly incomplete until that happens.
+- [ ] **No-walk visual classes:** `coverage-gate.py:NO_WALK` still includes
+  paintings, wolf/cat/frog variants, villager types, effects, trim materials and
+  patterns, banners, decorated pots, enchantments, jukebox songs and dimension
+  types. Positive registrations already produce named coverage failures; add
+  real scenes and runtime assertions instead of excluding these registrations.
+- [ ] **Gameplay outside the visual ledger:** world generation/features/carvers,
+  loot, predicates, attributes, menus and recipes are outside its world-frame
+  coverage contract. Add separate runtime coverage for generation and dimensions,
+  crafting/processing, drops, combat/effects, capability-backed item/fluid/energy
+  transfer and persistence. Verify outcomes on both stacks; census parity and
+  a biome-tint screenshot do not prove those behaviors.
+- [ ] **Results must retain their actual scope:** mod-matrix construction,
+  registration and census checks do not prove working mod machinery or gameplay.
+  Gallery verdicts such as DYNAMIC, AIR, ANIMATED and SPILL are not GREEN; report
+  them separately with their reasons. `flip-report.py` already distinguishes
+  `NO-DATA` and diagnostic frames: zero effective samples or frame content alone
+  must never become a 100% compatibility claim.
+
+**Evidence entry points:** `paper-plugin/.../CimPlugin.java` (sound/particle replay
+and defaults), `paper-plugin/.../GalleryPack.java` (sprite hosting),
+`scripts/cimscene/coverage-gate.py`, `gallery-diff.py`, `flip-report.py`,
+`.github/workflows/gallery.yml`, `.github/workflows/mod-matrix.yml`, and M6.2 below.
+Track registered, exercised, faithfully reproduced, substituted, absent and
+unverified content separately, with real-mod artifacts for every closure.
+
 ## M0 — Foundation (this repository)
 
 - [x] Repo `c-imagine`, EN language, conventional commits, noreply author.
