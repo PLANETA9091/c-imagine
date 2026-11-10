@@ -122,6 +122,8 @@ jobs:
       - name: build
         working-directory: paper-plugin
         run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+      - name: plugin startup artifact contract
+        run: python3 scripts/verify-plugin-jar.py paper-plugin/target/cim-paper-plugin.jar
       - name: f2v pack builder selftest (M5.2)
         working-directory: paper-plugin
         # gson is needed outside the server (F2vPack parses model JSON; on a
@@ -131,6 +133,14 @@ jobs:
         # transitive provided deps).
         run: |
           mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt
+          # Analysis must resolve from the packaged plugin, just as on Paper.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          cp = Path('target/selftest-cp.txt')
+          cp.write_text(os.pathsep.join(p for p in cp.read_text().strip().split(os.pathsep)
+                                       if not Path(p).name.startswith('asm-analysis-')))
+          PY
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
       - name: menu verdict test
         run: |

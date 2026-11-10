@@ -8717,3 +8717,27 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
 - All 131 embedded shell blocks across 10 workflows PASS. No pixel threshold,
   source reference setting, scene coverage, or renderer budget was relaxed.
 2026-11-10T19:25:00.000000+00:00 GREEN CAMPAIGN — THE PROFILING BOOT GATE MEASURES MEDIANS OF 3 (the #dfe859bf red was runner noise, not a regression): the budget job failed with boot ratio=1.284108 (limit1.25) while RSS passed (336.25 < 400). The artifact forensics REFUTE a real regression: the bare leg (plain Paper, untouched by any c-imagine commit — the c769369d parent chain merged the 514-commit menus campaign into the LAYER only) swung 13.840s -> 11.295s (-22%) between #e943e2e (18:29) and #dfe859bf (18:54) on the same runner family, while the modded leg swung 12.169s -> 14.504s (+19%) the other way; the ratio crossed the limit on two single samples. The green history proves the noise band: modded measured FASTER than bare TWICE (0.879 #e943e2e, 0.916 42280303622) — physically impossible for the leg that loads hundreds of extra jars, so both legs ride ~+-2s noise at the ~12-13s scale and one sample per leg cannot gate at 1.25. THE LIMITS DID NOT MOVE (no budget relaxation, no gate removal): the measurement got honest. boot-budget.py now takes N bare dirs and N modded dirs (--bare/--modded, repeatable, equal counts) and compares MEDIANS of the boot times (robust to one noisy boot per leg) plus the WORST-CASE RSS delta (max of each leg's per-boot maxima — conservative, never hides a leak); the verdict line format is UNCHANGED; the 2-arg legacy form still works and reproduces the #dfe859bf verdict byte-identically (1.284108 FAIL, verified against the downloaded artifact before commit). profiling.yml boots each leg 3x into bare-1..3 / modded-1..3, requires the full layer/heavy marker set ([c-imagine] layer boot ok / mod execution ok / layer server: started, [cimtest_heavy] mod constructed / load armed) on EVERY modded boot, feeds all three pairs to the median gate, and runs tick-budget on ALL THREE modded boots (every boot carries the identical selfarm workload, so all three are valid heavy-load samples; a missing completion still fails unchanged). test-boot-budget.py: 5 new contracts (median ignores one noisy boot per leg; a real 3/3-slower regression still fails at 1.4; odd leg counts rejected; the multi-sample CLI form passes at 13/12; unequal counts exit 1) — 10/10 green, tick-budget suite 5/5, the workflow YAML + every budget step bash -n clean, audit_runblocks 131/131 across 10 workflows. Dispatched: profiling 42884097851 on c769369d (the push also rides ci/integration/gallery/mod-matrix on the same sha — the everything-green tick). CANCELLED as superseded/dead weight: dfe859b's gallery+mod-matrix (the gallery one rode the pre-051b96f gallery.yml — its mipmap bug is fixed on HEAD) and 051b96f's queued pair (identical gallery/mod-matrix code to c769369d).
+
+### Green campaign — package ASM analysis before startup
+- Post-GUI profile dfe859bf (42879833113) reports Paper 14.504s vs bare
+  11.295s: ratio1.284108 exceeds the unchanged1.25 gate; RSS336.25MiB passes.
+  Its boot log shows SpigotLibraryLoader resolving/downloading ASM analysis,
+  core/tree and parent POMs during startup. The new plugin libraries entry
+  introduced runtime resolver/network work that the earlier plugin did not do.
+- Package the already used ASM analysis classes at build time and remove the
+  startup libraries declaration. Keep Paper-supplied core/tree provided, keep
+  the exact9.9.1 dependency version, and include its original BSD notice from
+  the published sources. Maven Shade3.6.2 includes only analysis; offline javac
+  packaging carries the same runtime payload. No scanner or HUD feature is skipped.
+- Restore the repository's Java21 bytecode target in both plugin build paths;
+  JDK25 remains the compiler because it must read Paper's v69 API.
+- Validation: clean Maven package PASS; pack selftest and all7HUD/menu
+  selftests PASS with external asm-analysis removed from their classpath;
+  offline plugin build PASS. New artifact contract checks both jars for local
+  Analyzer, retained Paper ASM-core boundary, notice, no startup resolver and
+  Java21 class versions; the unbundled original jar fails as expected.
+  CI applies the contract and purges external analysis from selftest CP.
+- All131embedded shell blocks PASS. Runtime boot/RSS and current full matrix
+  still need the new source's receipts. Parallel main c769369d adds three boot
+  samples per leg; retain those samples and unchanged limits. Packaging is an
+  actual startup-work reduction, not a claim that the earlier RED was noise.

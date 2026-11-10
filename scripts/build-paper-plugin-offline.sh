@@ -2,8 +2,8 @@
 # Offline cim-paper-plugin build: compile the Paper plugin with plain javac
 # against the paper-api 26.3 jar (+ gson + joml from Paper's libraries — the
 # SAME artifacts the server runtime provides, so the plugin never bundles or
-# shades them). The maven path in paper-plugin/ stays the CI reference with
-# the identical artifact shape.
+# shades them). ASM analysis is packaged just as in Maven. The Maven path
+# stays the CI reference for the same runtime payload.
 #
 # Usage: build-paper-plugin-offline.sh [outJar]
 set -euo pipefail
@@ -23,6 +23,8 @@ ANN="$A/annotations.jar"
 BUNGEE="$A/bungee-chat.jar"
 GUAVA="$(find "$A/paper263/libraries" -name 'guava-3*.jar' | head -1)"
 ASM="$(find "$A/paper263/libraries" "$A" -name 'asm*-9*.jar' -o -name 'maven-artifact-*.jar' | tr '\n' ':')"
+ASM_ANALYSIS="$(find "$A/paper263/libraries" "$A" -name 'asm-analysis-9.9.1.jar' -print -quit)"
+[ -n "$ASM_ANALYSIS" ] || { echo "ERROR: asm-analysis-9.9.1.jar missing"; exit 2; }
 [ -f "$PAPER_API" ] || { echo "ERROR: paper-api jar missing: $PAPER_API"; exit 2; }
 for f in "$GSON" "$JOML" "$NETTY" "$NETTY2" "$ADV" "$ADVKEY" "$ANN" "$BUNGEE" "$GUAVA"; do
   [ -n "$f" ] && [ -f "$f" ] || { echo "ERROR: dependency jar missing ($f)"; exit 2; }
@@ -36,10 +38,12 @@ mkdir -p "$BUILD"
 
 CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA:$ASM"
 echo "=== javac cim-paper-plugin (offline) ==="
-# --release 25: paper-api 26.3 builds are class-file v69 (Java 25) — the SAME
-# target the maven CI path compiles (maven.compiler.release=25). A JDK 25
-# javac is required (JAVA_HOME=jdk25).
-javac --release 25 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
+# JDK 25 reads Paper's v69 API, while plugin bytecode follows the Java 21
+# repository contract, exactly as in the Maven build.
+javac --release 21 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
+
+# Keep Maven's artifact shape: analysis classes are local; ASM core/tree stay provided.
+unzip -qo "$ASM_ANALYSIS" 'org/objectweb/asm/tree/analysis/*' -d "$BUILD"
 
 echo "=== jar ==="
 mkdir -p "$(dirname "$OUT_JAR")"
