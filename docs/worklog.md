@@ -8427,3 +8427,60 @@ Restored unique journal entries removed by a concurrent documentation update:
 Controlled Criterion cache-miss run42849941473PASS all9 (-2.514%..+0.389%, fresh baseline45); boot0.980691/RSS249.035156MiBPASS. Cache-hit run42852849472 on2ee97ccc retains cached6ce source anchor and remeasures it on the same runner: all9PASS(-7.858%..+4.325%), boot0.987130/RSS224.695312MiBPASS. Both full profiling runs stillFAIL missing genuine heavy-load completion. Native server lifecycle/ticking remains unimplemented; no synthetic events/ticks/markers were added. Before e095 RSS404.414062MiBFAIL vs limit400; these noisy pairs are not a causal140MiB saving claim for metadata sharing.
 
 Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference/replay mipmapLevels4 (confirmed native Options default4) vs6ce diagnostic replay0 gives Create59->50RED, Mek174->168, AE218->17, BOP2->3. Actual AE2p18 paired floors now match sampling better; measured cases63512->49277,62826->48124,64751->52253,65796->53252 becomeGREEN, while wall contrast still visibly differs. This fixes a real reference/replay setting mismatch without lowering the native reference, changing thresholds or excluding content. Apply only the three workflow settings/comment changes onto current main; preserve concurrent mods.lock/ObjMesh/particle changes. Embedded shell auditPASS. Run full expanded matrix after adoption; no100percent/parity claim. Remaining Create door poses include native client-only animation absent from reconstructed NBT (actual lower/open p388 residual292874); capturing real truth BER vertices at the same frozen screenshot frame is a further required direction, not a fabricated phase adjustment. Detailed evidence and next analysis are local artifacts.
+
+### Open blockers — the layer server lifecycle slice (M2/M3 + M9, the roadmap's 2026-11-10 list)
+- THE SLICE (this push): the first real implementation for the roadmap's "Open
+  blockers — server execution" list. `dev.cim.layer.LayerServerHost` (cim-bootstrap)
+  constructs a REAL vanilla `DedicatedServer` inside the shadow space —
+  `Main.main`'s exact prefix (DedicatedServerSettings.forceSave -> Eula ->
+  Services.create(YggdrasilAuthenticationService(NO_PROXY)) ->
+  LevelStorageSource.createDefault().validateAndCreateAccess ->
+  ServerPacksSource.createPackRepository -> Main.loadOrCreateConfig ->
+  WorldLoader.load -> saveDataTag) and then the `runServer()` skeleton WITHOUT
+  its blocking loop: `initServer()` (natively: key pair, the ephemeral bind,
+  handleServerAboutToStart, loadLevel, handleServerStarting),
+  `ServerLifecycleHooks.handleServerStarted` (ServerStartedEvent), then ONE
+  `tickServer(haveTime)` per Paper tick (natively: EventHooks.fireServerTickPre
+  -> tickChildren -> fireServerTickPost — the 1.21.1 mojmap decompile confirms
+  the tick events fire INSIDE tickServer, so Paper-driven ticks carry them),
+  the task drain under the same haveTime bound, and on the plugin's disable the
+  native `handleServerStopping -> expectServerStopped -> stopServer ->
+  handleServerStopped` sequence. Every event fires through NeoForge's own
+  patched code — zero fabricated Event objects, zero dummy servers.
+- THREAD DISCIPLINE: the DedicatedServer's server thread IS Paper's main
+  thread (the tick executor runs there) — the same contract vanilla `spin`
+  establishes (the server thread is the thread that ticks the server); the
+  runServer loop's PACING half belongs to Paper (nextTickTimeNanos advances by
+  the tick rate, no waitUntilNextTick — the drain runs only under haveTime).
+- SEAMS: the native bridge (kernel_bridge.rs step 4) calls
+  `LayerServerHost.install(plugin)` after the facade smoke; install registers a
+  ServerTickEndEvent executor + a PluginDisableEvent listener through the
+  PLUGIN's classloader (reflective Proxy, no plugin-code changes); the first
+  tick constructs+inits the server ON Paper main. `-Dcim.layerServer=false`
+  disables with an honest marker. Storage is layer-owned
+  (`<cwd>/c-imagine/layer-server`: superflat, offline, server-port=0,
+  max-tick-time=-1 so the native watchdog never judges Paper's pacing); the
+  second boot resumes the stored level through the native
+  `getLevelDataAndDimensions` branch (both of Main's supplier branches are
+  implemented — the integration scenario boots twice).
+- THE M9 CONTRACT: cimtest_heavy is UNCHANGED — its ServerStartedEvent selfarm
+  and ServerTickEvent burn now ride real native events, so the profiling
+  boot's `[cimtest_heavy] load armed/done` markers become REAL evidence;
+  `tick-budget.py` is UNCHANGED (a missing completion still fails); the
+  compare step adds the started/armed greps so a missing lifecycle names
+  itself. integration.yml asserts `layer server: armed/started` + the
+  `[cimtest_heavy] no selfarm marker` receipt (the marker file exists only in
+  the profiling boot, so the receipt itself proves ServerStartedEvent delivery
+  through the native path).
+- VERIFIED LOCALLY: build-bootstrap clean (javac 25, --release 21);
+  `LayerServerHostTest` ALL OK (the disabled gate logs and never arms; a
+  failed start prints `start FAILED` ONCE, never leaks into the tick loop,
+  never claims started/stopped, and the driver stops looping); the world-data
+  supplier's both branches; the workflow YAML + the 114 embedded-shell blocks
+  audit clean. The runtime construction/tick evidence is the next CI run's
+  (integration + profiling): if the layer server fails there, the new markers
+  name the exact stage — no thresholds touched, no gate relaxed.
+- NOT CLAIMED (the blockers stay unchecked): complete world-state mirroring
+  (the bridge remains the content channel), gameplay-behavior parity, the M4
+  translation paths, the sound/particle fidelity items — each needs its own
+  measured slice.

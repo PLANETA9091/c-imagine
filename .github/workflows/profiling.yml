@@ -200,6 +200,12 @@ jobs:
           grep -Fq '[c-imagine] layer boot ok' modded/boot.log
           grep -Fq '[c-imagine] mod execution ok' modded/boot.log
           grep -Fq '[cimtest_heavy] mod constructed' modded/boot.log
+          # M9 open blocker (2026-11-10): the heavy workload rides the REAL
+          # shadow-space DedicatedServer (lifecycle driven by Paper's main
+          # thread) — the arm/done markers must exist before the budget reads
+          # them, and a missing completion still fails tick-budget unchanged.
+          grep -Fq '[c-imagine] layer server: started' modded/boot.log
+          grep -Fq '[cimtest_heavy] load armed' modded/boot.log
           python3 scripts/perf/boot-budget.py bare modded | tee -a "$GITHUB_STEP_SUMMARY"
           python3 scripts/perf/tick-budget.py modded/boot.log | tee -a "$GITHUB_STEP_SUMMARY"
 

@@ -427,6 +427,19 @@ jobs:
           for m in appleskin neoforge cimtest cimtest_net cimtest_cap cimtest_heavy ferritecore jade jei spark; do
             grep -q "\[c-imagine\] mod $m: constructed" srv/boot.log || fail "mod $m not constructed on live boot"
           done
+          # M2/M3 open blocker (2026-11-10): the REAL shadow-space
+          # DedicatedServer, lifecycle driven by Paper's main thread — native
+          # NeoForge server events reach the mods. cimtest_heavy's
+          # ServerStartedEvent handler logs its selfarm receipt (the marker
+          # file exists only in the profiling boot, so the receipt itself IS
+          # the event-delivery proof on this boot); the layer server's own
+          # markers prove the construction/init/tick chain came up.
+          grep -q "\[c-imagine\] layer server: armed" srv/boot.log \
+            || fail "layer server never armed (no tick executor)"
+          grep -q "\[c-imagine\] layer server: started" srv/boot.log \
+            || fail "layer server never started (check start FAILED above)"
+          grep -q "\[cim-layer\].*\[cimtest_heavy\] no selfarm marker" srv/boot.log \
+            || fail "ServerStartedEvent never reached cimtest_heavy through the native path"
           # shadow-space log pipeline: first-party mod markers must reach the
           # boot log through the layer's own slf4j/log4j stack — the same
           # lines the real NeoForge server emits (parity contract)

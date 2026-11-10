@@ -90,9 +90,12 @@ jobs:
           mkdir -p java/cim-bootstrap/build/test-classes
           javac --release 21 -cp java/cim-bootstrap/build/cim-bootstrap.jar \
             -d java/cim-bootstrap/build/test-classes \
-            java/cim-bootstrap/src/test/java/dev/cim/layer/FmlHostTest.java
+            java/cim-bootstrap/src/test/java/dev/cim/layer/FmlHostTest.java \
+            java/cim-bootstrap/src/test/java/dev/cim/layer/LayerServerHostTest.java
           java -cp java/cim-bootstrap/build/cim-bootstrap.jar:java/cim-bootstrap/build/test-classes \
             dev.cim.layer.FmlHostTest
+          java -cp java/cim-bootstrap/build/cim-bootstrap.jar:java/cim-bootstrap/build/test-classes \
+            dev.cim.layer.LayerServerHostTest
       - uses: actions/upload-artifact@v4
         with:
           name: cim-bootstrap-jar
