@@ -61,3 +61,32 @@ terrablender=4.1.0.8
 # (measured run 41896212806: the AE2 truth leg died in FML loading, not a
 # census row); pinned deliberately
 guideme=21.1.22
+# THE 14-dq RUNGS (2026-11-10, two new content mods on the ladder —
+# Modrinth API cross-checked against each jar's META-INF/neoforge.mods.toml
+# modId, same verification as the pins above; versions are the latest
+# matching release for game_versions=["1.21.1"] loaders=["neoforge"] at
+# pin time, version ids supplementaries rWq0ko29 / moonlight yBea1yLM /
+# farmers-delight XTVZDOol):
+#   supplementaries   1.21.1-4.0.2  modId supplementaries (REGISTRY ns
+#                     in LADDER_NS; Modrinth server_side=required — 274
+#                     blockstates + 305 item models in the jar)
+#   moonlight         1.21.1-3.8.3  modId moonlight (MANDATORY COMPANION:
+#                     supplementaries declares moonlight required
+#                     [1.21.1-3.6.4,) in its neoforge.mods.toml — a
+#                     missing companion is a boot CRASH, not a red census
+#                     row; modType=LIBRARY, self-contained — its ns stays
+#                     OUT of LADDER_NS like the other companions)
+#   farmers-delight   1.21.1-1.3.4  modId farmersdelight (REGISTRY ns in
+#                     LADDER_NS; Modrinth slug is farmers-delight, the
+#                     un-dashed farmersdelight 404s; self-contained — only
+#                     neoforge [21.1.219,) + minecraft [1.21.1] required;
+#                     server_side=required; 132 blockstates + 187 item
+#                     models in the jar)
+# COEXISTENCE (checked in supplementaries' neoforge.mods.toml): it declares
+# farmersdelight type="incompatible" versionRange="[0,1.3.0)" — the 1.3.4
+# pin satisfies both mods loading together; its optional deps (create is
+# already in LADDER_SLUGS, amendments is not fetched — optional deps are
+# not boot-critical).
+supplementaries=1.21.1-4.0.2
+moonlight=1.21.1-3.8.3
+farmers-delight=1.21.1-1.3.4

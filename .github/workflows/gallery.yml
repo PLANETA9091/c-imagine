@@ -184,8 +184,19 @@ env:
   # loaded at construct time (me.shedaniel.autoconfig PartitioningSerializer
   # — the measured #102 boot crash: NoClassDefFoundError during mod
   # construction); pinned in mods.lock.
-  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade"
-  LADDER_NS: "create biomesoplenty dynamictrees combat_roll ae2 mekanism sophisticatedbackpacks jade"
+  # THE 14-dq EXTENSION (2026-11-10): two new content rungs, supplementaries
+  # + farmersdelight (modIds verified from each jar's neoforge.mods.toml —
+  # NOTE the slug/ns asymmetry: the Modrinth slug is farmers-delight, the
+  # REGISTRY namespace is farmersdelight). supplementaries requires
+  # moonlight [1.21.1-3.6.4,) (pinned 3.8.3, modType=LIBRARY — its ns stays
+  # OUT of LADDER_NS like every companion); farmers-delight is
+  # self-contained. Coexistence checked: supplementaries declares
+  # farmersdelight incompatible only below 1.3.0 — the 1.3.4 pin satisfies
+  # both. Pins + provenance in mods.lock. Expect the KNOWN HONEST-RED
+  # ABSENCES above on the first run of the new ns (the channels are the
+  # same) — that first measurement IS the point of the rung.
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade supplementaries moonlight farmers-delight"
+  LADDER_NS: "create biomesoplenty dynamictrees combat_roll ae2 mekanism sophisticatedbackpacks jade supplementaries farmersdelight"
   # THE SOUND FLIP (one switch): off = the sound join is a report-only
   # mapped preview; on = the sound join's verdict is the mapped-identity
   # result (--gate-mapped in sound-diff.py). Flip after mapped-identity
