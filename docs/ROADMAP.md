@@ -4,6 +4,50 @@ Each milestone has acceptance criteria enforced by CI. The loop is strict:
 **analyze → implement → test (CI matrix) → analyze → fix**; nothing advances while
 the matrix is red.
 
+## Open blockers — server execution and F2V completeness (2026-11-10)
+
+The milestone completions below describe their stated acceptance slices. They do
+not establish 100% server-side NeoForge compatibility or complete translation of
+arbitrary mod traffic. The architecture's embedded logical server is a target,
+not evidence that a full NeoForge dedicated-server runtime already runs in Paper.
+
+- [ ] **M2/M3: complete real server lifecycle and ticking.** The current
+  `LayerMain.boot` bootstraps relocated registries; `FmlHost` constructs real mod
+  containers and runs registration/setup phases. These are not a complete running
+  NeoForge server. Deliver the real server/world context and lifecycle required by
+  mods, with server ticks driven by Paper's main thread over authoritative Paper
+  state. Verify start, tick and stop ordering against native NeoForge; do not
+  fabricate events, substitute a dummy server, or run an unrelated tick loop.
+- [ ] **M3/M7: prove runtime mechanics beyond the facade smoke tests.** Close and
+  measure gaps in world/entity/block-entity access, scheduled work, interactions,
+  persistence and restart behavior. Use real mods from the Tier 0 ladder in
+  `MODPACK.md`, starting with Create. Matching registration counts or successful
+  mod construction does not establish matching gameplay behavior.
+- [ ] **M9: complete the genuine lifecycle-driven profiling workload.** The heavy
+  probe must receive the actual server-start and server-tick callbacks, self-arm,
+  execute its configured workload and emit its real completion result. Keep a
+  missing completion a failure; do not synthesize log markers or relax budgets.
+- [ ] **M4: establish complete live translation coverage.** Rust `cim-f2v`
+  currently supplies mapping tables and translation plans. The existing Paper
+  facade projects supported content before packet creation; `NetWatch` observes
+  outbound packets and checks selected payloads. Neither the plans nor a clean
+  watcher census proves a general packet translator. Audit and implement the
+  missing paths for spawn/metadata/removal, block/section/chunk updates,
+  items/containers, custom payloads and incoming player actions. Record which
+  paths are translated at the facade and which require actual packet handling.
+  Prove ordering, state synchronization and absence of modded-id leaks with real
+  mod traffic and a vanilla client, including interactions and reconnects.
+- [ ] **M5/M6/M7: prove visuals and server mechanics together.** Resource packs,
+  custom model data and display entities already provide visual representations;
+  the gallery does not prove the corresponding machine/entity logic runs inside
+  Paper. The separately launched native NeoForge stack is the reference, not the
+  embedded implementation. Require paired real-mod behavior traces, both stacks'
+  screenshots, census coverage and profiling before claiming end-to-end parity.
+
+**Acceptance:** each blocker needs an implementation and reproducible dual-stack
+runtime evidence. Existing boot, protocol and gallery passes retain their narrow
+meaning; the campaign remains incomplete while any required matrix gate is red.
+
 ## M0 — Foundation (this repository)
 
 - [x] Repo `c-imagine`, EN language, conventional commits, noreply author.
