@@ -14,6 +14,7 @@ name: mod-matrix
 on:
   workflow_dispatch: {}
   push:
+    branches-ignore: ['ci/menu-compare-2']
     paths:
       - 'scene-mod/**'
       - 'scripts/**'

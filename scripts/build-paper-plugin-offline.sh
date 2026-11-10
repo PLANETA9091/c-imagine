@@ -22,6 +22,7 @@ ADVKEY="$(find "$A/paper263/libraries" -name 'adventure-key-*.jar' | head -1)"
 ANN="$A/annotations.jar"
 BUNGEE="$A/bungee-chat.jar"
 GUAVA="$(find "$A/paper263/libraries" -name 'guava-3*.jar' | head -1)"
+ASM="$(find "$A/paper263/libraries" "$A" -name 'asm*-9*.jar' -o -name 'maven-artifact-*.jar' | tr '\n' ':')"
 [ -f "$PAPER_API" ] || { echo "ERROR: paper-api jar missing: $PAPER_API"; exit 2; }
 for f in "$GSON" "$JOML" "$NETTY" "$NETTY2" "$ADV" "$ADVKEY" "$ANN" "$BUNGEE" "$GUAVA"; do
   [ -n "$f" ] && [ -f "$f" ] || { echo "ERROR: dependency jar missing ($f)"; exit 2; }
@@ -33,7 +34,7 @@ BUILD="$ROOT/paper-plugin/build/offline/classes"
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
-CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA"
+CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA:$ASM"
 echo "=== javac cim-paper-plugin (offline) ==="
 # --release 25: paper-api 26.3 builds are class-file v69 (Java 25) — the SAME
 # target the maven CI path compiles (maven.compiler.release=25). A JDK 25

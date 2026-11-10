@@ -5,6 +5,8 @@ api-version: '1.21'
 description: Paper-side lifecycle bridge for the c-imagine CRUSSTY module (mini NeoForge 1.21.1 inside Paper 26.3)
 author: PLANETA9091
 website: https://github.com/PLANETA9091/c-imagine
+libraries:
+  - org.ow2.asm:asm-analysis:9.9.1
 commands:
   cim:
     description: c-imagine module status
@@ -12,3 +14,10 @@ commands:
   keyboard:
     description: Toggle the virtual keyboard for mod keybindings
     usage: /keyboard
+  modscreen:
+    description: Open a scanned mod screen
+    usage: /modscreen <ClassName>
+    permission: cim.modscreen
+permissions:
+  cim.modscreen:
+    default: op

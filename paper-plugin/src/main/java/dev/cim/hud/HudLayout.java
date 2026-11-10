@@ -19,10 +19,17 @@ public final class HudLayout {
         TOP_LEFT, TOP_CENTER, TOP_RIGHT,
         MIDDLE_LEFT, CENTER, MIDDLE_RIGHT,
         BOTTOM_LEFT, BOTTOM_CENTER, BOTTOM_RIGHT,
-        /** Dense rows for pixel-cell images, top right. */
-        MAP,
-        /** Not a screen position: moves a chest title vertically, see {@link #titleId}. */
-        MENU_TITLE;
+        /** Any pixel: the glyph's colour carries its position, see {@link #freeColor}. */
+        FREE,
+        /** The same, tinted the grey of a vanilla screen label. */
+        FREE_DARK,
+        /**
+         * The same, for white text. 1.21.1 draws GUI text through the lightmap, and its
+         * full-bright texel at noon is 252, not 255: a measured count digit is 0xFC.
+         */
+        FREE_TEXT,
+        /** The drop shadow of that text: a quarter of 0xFC through the same lightmap, 0x3E. */
+        FREE_SHADOW;
 
         public boolean right() {
             return this == TOP_RIGHT || this == MIDDLE_RIGHT || this == BOTTOM_RIGHT;
@@ -39,28 +46,13 @@ public final class HudLayout {
 
     public static final int TEXT_ROWS = 16;
     public static final int TEXT_ROW_HEIGHT = 10;
-    public static final int MAP_ROWS = 34;
-    public static final int MAP_CELL = 3;
-    static final int TITLE_ROW_ZERO = 56;
+    static final int FREE_ZERO = 2048;
 
     private HudLayout() {
     }
 
     public static int rows(Anchor a) {
-        return a == Anchor.MENU_TITLE ? 0 : a == Anchor.MAP ? MAP_ROWS : TEXT_ROWS;
-    }
-
-    /**
-     * Id that moves chest title text by {@code dy} pixels. A font cannot do this
-     * alone: the client rejects a bitmap whose ascent exceeds its height, so
-     * text can never be raised above the chest's top edge by ascent.
-     */
-    public static int titleId(int dy) {
-        int row = dy + TITLE_ROW_ZERO;
-        if (row < 0 || row >= (1 << ROW_BITS)) {
-            throw new IllegalArgumentException("title offset out of range: " + dy);
-        }
-        return (Anchor.MENU_TITLE.ordinal() << ROW_BITS) | row;
+        return a == Anchor.FREE || a == Anchor.FREE_DARK || a == Anchor.FREE_TEXT || a == Anchor.FREE_SHADOW ? 0 : TEXT_ROWS;
     }
 
     public static int id(Anchor a, int row) {
@@ -68,6 +60,37 @@ public final class HudLayout {
             throw new IllegalArgumentException(a + " has no row " + row);
         }
         return (a.ordinal() << ROW_BITS) | row;
+    }
+
+    public static int freeDarkId() {
+        return Anchor.FREE_DARK.ordinal() << ROW_BITS;
+    }
+
+    public static int freeTextId() {
+        return Anchor.FREE_TEXT.ordinal() << ROW_BITS;
+    }
+
+    public static int freeShadowId() {
+        return Anchor.FREE_SHADOW.ordinal() << ROW_BITS;
+    }
+
+    /** The one id every freely placed glyph shares. */
+    public static int freeId() {
+        return Anchor.FREE.ordinal() << ROW_BITS;
+    }
+
+    /**
+     * Colour that tells the shader where to put a glyph, in GUI pixels from the
+     * screen centre. Fixed rows would need a font per y; this needs one font,
+     * so a cursor or a widget can sit on any pixel. The glyph itself draws white.
+     */
+    public static int freeColor(int x, int y) {
+        int px = x + FREE_ZERO;
+        int py = y + FREE_ZERO;
+        if (px < 0 || px > 4095 || py < 0 || py > 4095) {
+            throw new IllegalArgumentException("off the coordinate range: " + x + "," + y);
+        }
+        return (px << 12) | py;
     }
 
     /** The font ascent that makes the shader read {@code id}. */
@@ -115,6 +138,8 @@ public final class HudLayout {
                 layout(location = 2) out vec4 vertexColor;
                 layout(location = 3) out vec2 texCoord0;
 
+                vec4 cimColor;
+
                 // c-imagine HUD decoder. Technique: BetterHud (MIT), see HudLayout.java.
                 vec3 cimHudPlace(vec3 pos) {
                     vec2 ui = ceil(2.0 / vec2(ProjMat[0][0], -ProjMat[1][1]));
@@ -128,37 +153,39 @@ public final class HudLayout {
                     int id = bit - (1 << MAX_BIT);
                     int anchor = id >> ROW_BITS;
                     int row = id & ((1 << ROW_BITS) - 1);
-                    if (anchor == TITLE_ANCHOR) {
-                        pos.y += float(row - TITLE_ZERO) - float(bit << HEIGHT_BIT);
+                    pos.y -= float(bit << HEIGHT_BIT) + BASELINE;
+                    if (anchor == FREE_ANCHOR || anchor == FREE_DARK_ANCHOR || anchor == FREE_TEXT_ANCHOR || anchor == FREE_SHADOW_ANCHOR) {
+                        ivec3 c = ivec3(round(Color.rgb * 255.0));
+                        // Drawn shadows carry a quarter of this colour, so runs turn them off.
+                        pos.x += float((c.r << 4) | (c.g >> 4)) - FREE_ORIGIN;
+                        pos.y += 0.5 * ui.y + float(((c.g & 15) << 8) | c.b) - FREE_ORIGIN + FREE_Y;
+                        float shade = anchor == FREE_DARK_ANCHOR ? 0.25 : anchor == FREE_TEXT_ANCHOR ? 252.0 / 255.0
+                                : anchor == FREE_SHADOW_ANCHOR ? 62.0 / 255.0 : 1.0;
+                        cimColor = vec4(shade, shade, shade, Color.a);
                         return pos;
                     }
-                    pos.y -= float(bit << HEIGHT_BIT) + BASELINE;
                     // The carrier centres its text, and the encoder nets every run to zero advance.
                     pos.x -= 0.5 * ui.x;
-                    if (anchor == MAP_ANCHOR) {
-                        pos.x += ui.x - MAP_RIGHT;
-                        pos.y += MAP_TOP + float(row * MAP_CELL);
-                    } else {
-                        int col = anchor % 3;
-                        int band = anchor / 3;
-                        pos.x += float(col) * 0.5 * ui.x + (col == 0 ? MARGIN : col == 2 ? -MARGIN : 0.0);
-                        float lines = float(row * TEXT_ROW_HEIGHT);
-                        pos.y += band == 0 ? MARGIN + lines
-                               : band == 1 ? 0.5 * ui.y + lines - TEXT_BLOCK / 2.0
-                               : ui.y - BOTTOM_CLEAR - TEXT_BLOCK + lines;
-                    }
+                    int col = anchor % 3;
+                    int band = anchor / 3;
+                    pos.x += float(col) * 0.5 * ui.x + (col == 0 ? MARGIN : col == 2 ? -MARGIN : 0.0);
+                    float lines = float(row * TEXT_ROW_HEIGHT);
+                    pos.y += band == 0 ? MARGIN + lines
+                           : band == 1 ? 0.5 * ui.y + lines - TEXT_BLOCK / 2.0
+                           : ui.y - BOTTOM_CLEAR - TEXT_BLOCK + lines;
                     return pos;
                 }
 
                 void main() {
+                    cimColor = Color;
                     gl_Position = ProjMat * ModelViewMat * vec4(cimHudPlace(Position), 1.0);
 
                 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
                     sphericalVertexDistance = fog_spherical_distance(Position);
                     cylindricalVertexDistance = fog_cylindrical_distance(Position);
-                    vertexColor = Color * sample_lightmap(Sampler2, UV2);
+                    vertexColor = cimColor * sample_lightmap(Sampler2, UV2);
                 #else
-                    vertexColor = Color;
+                    vertexColor = cimColor;
                 #endif
                     texCoord0 = UV0;
                 }
@@ -166,12 +193,12 @@ public final class HudLayout {
                 .replace("HEIGHT_BIT", String.valueOf(HEIGHT_BIT))
                 .replace("MAX_BIT", String.valueOf(MAX_BIT))
                 .replace("ROW_BITS", String.valueOf(ROW_BITS))
-                .replace("TITLE_ANCHOR", String.valueOf(Anchor.MENU_TITLE.ordinal()))
-                .replace("TITLE_ZERO", String.valueOf(TITLE_ROW_ZERO))
-                .replace("MAP_ANCHOR", String.valueOf(Anchor.MAP.ordinal()))
-                .replace("MAP_CELL", String.valueOf(MAP_CELL))
-                .replace("MAP_RIGHT", (MAP_ROWS * MAP_CELL + 6) + ".0")
-                .replace("MAP_TOP", "4.0")
+                .replace("FREE_DARK_ANCHOR", String.valueOf(Anchor.FREE_DARK.ordinal()))
+                .replace("FREE_TEXT_ANCHOR", String.valueOf(Anchor.FREE_TEXT.ordinal()))
+                .replace("FREE_SHADOW_ANCHOR", String.valueOf(Anchor.FREE_SHADOW.ordinal()))
+                .replace("FREE_ANCHOR", String.valueOf(Anchor.FREE.ordinal()))
+                .replace("FREE_ORIGIN", FREE_ZERO + ".0")
+                .replace("FREE_Y", "2.0")
                 .replace("TEXT_ROW_HEIGHT", String.valueOf(TEXT_ROW_HEIGHT))
                 .replace("TEXT_BLOCK", (TEXT_ROWS * TEXT_ROW_HEIGHT) + ".0")
                 .replace("BOTTOM_CLEAR", "44.0")

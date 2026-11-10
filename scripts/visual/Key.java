@@ -18,12 +18,23 @@ import java.awt.event.KeyEvent;
  * where the walk used to pay a cold JVM start per key. Only adjacent
  * presses are merged in the walk — every sequence that has a sleep, an RCON
  * call or a shot between two keys keeps its separate invocations.
+ *
+ * <p>MOUSEOFF (the menus lane, 477489e6): {@code Key MOUSEOFF} parks the
+ * mouse at (1,1) instead of pressing a key — an open screen shows a free
+ * cursor, and a cursor left hovering a widget leaks its hover state into
+ * the truth shot.
  */
 public class Key {
     public static void main(String[] args) throws Exception {
         if (args.length < 1) {
-            System.err.println("usage: Key <F1|F5|ESC|SPACE|ENTER|E|1..9> [...more keys]");
+            System.err.println("usage: Key <F1|F5|ESC|SPACE|ENTER|E|1..9> [...more keys] | MOUSEOFF");
             System.exit(2);
+        }
+        // Parks the mouse off every menu: an open screen shows a free cursor.
+        if (args[0].equalsIgnoreCase("MOUSEOFF")) {
+            new Robot().mouseMove(1, 1);
+            Thread.sleep(150);
+            return;
         }
         Robot r = new Robot();
         r.setAutoDelay(60);

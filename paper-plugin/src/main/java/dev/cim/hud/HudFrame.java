@@ -28,46 +28,48 @@ public final class HudFrame {
         return this;
     }
 
-    /** One map row: {@code rgb[i]} is a cell colour, negative leaves the cell empty. */
-    public HudFrame cells(int row, int[] rgb) {
-        Key font = font(HudLayout.Anchor.MAP, row);
-        TextComponent.Builder line = Component.text().font(font).shadowColor(ShadowColor.none());
-        int cell = HudLayout.MAP_CELL;
-        int advance = cell + 1;
-        StringBuilder run = new StringBuilder();
-        int i = 0;
-        int pen = 0;
-        while (i < rgb.length) {
-            int color = rgb[i];
-            int start = i;
-            run.setLength(0);
-            int target = start * cell;
-            run.append(move(target - pen));
-            pen = target;
-            while (i < rgb.length && rgb[i] == color) {
-                if (color >= 0) {
-                    run.append(HudPack.CELL).append(move(cell - advance));
-                    pen += cell;
-                }
-                i++;
-            }
-            if (color >= 0) {
-                line.append(Component.text(run.toString()).color(TextColor.color(color)));
-            } else {
-                line.append(Component.text(run.toString()));
-            }
-        }
-        line.append(Component.text(move(-pen)));
-        parts.add(line.build());
+    /**
+     * Glyphs from the free font at a pixel, measured from the screen centre.
+     * {@code advance} is what they move the pen, so the run can return it.
+     */
+    public HudFrame free(int x, int y, String glyphs, int advance) {
+        parts.add(Component.text(glyphs + move(-advance))
+                .font(font(HudLayout.freeId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y)))
+                .shadowColor(ShadowColor.none()));
         return this;
     }
 
-    /** A 9-pixel marker centred on a map cell. */
-    public HudFrame marker(int row, int col, char glyph) {
-        int x = col * HudLayout.MAP_CELL + 1 - 4;
-        Key font = font(HudLayout.Anchor.MAP, row);
-        parts.add(Component.text(move(x) + glyph + move(-x - 10)).font(font)
-                .color(TextColor.color(0xFFFFFF)).shadowColor(ShadowColor.none()));
+    /** ASCII at a pixel. It draws white: the colour channel is holding the position. */
+    public HudFrame freeText(int x, int y, String raw) {
+        String s = HudText.sanitize(raw);
+        return free(x, y, s, HudText.width(s));
+    }
+
+    /** ASCII the way vanilla draws white text with its drop shadow: the shadow a pixel down and right. */
+    public HudFrame freeShadowed(int x, int y, String raw) {
+        String s = HudText.sanitize(raw);
+        int w = HudText.width(s);
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeShadowId()))
+                .color(TextColor.color(HudLayout.freeColor(x + 1, y + 1))).shadowColor(ShadowColor.none()));
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeTextId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
+        return this;
+    }
+
+    /** ASCII at a pixel in label grey, for text on a light panel. */
+    public HudFrame freeLabel(int x, int y, String raw) {
+        String s = HudText.sanitize(raw);
+        int w = HudText.width(s);
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.freeDarkId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
+        return this;
+    }
+
+    /** A prepared run in label grey, with its own pen moves. */
+    public HudFrame freeRun(int x, int y, String text, int advance) {
+        parts.add(Component.text(text + move(-advance)).font(font(HudLayout.freeDarkId()))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
         return this;
     }
 
@@ -86,7 +88,11 @@ public final class HudFrame {
     }
 
     private static Key font(HudLayout.Anchor anchor, int row) {
-        return Key.key(HudPack.NS, HudLayout.fontName(HudLayout.id(anchor, row)));
+        return font(HudLayout.id(anchor, row));
+    }
+
+    private static Key font(int id) {
+        return Key.key(HudPack.NS, HudLayout.fontName(id));
     }
 
     /** Glyphs that move the pen by {@code distance} pixels. */

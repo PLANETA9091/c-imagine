@@ -1253,6 +1253,7 @@ public final class F2vPack {
         if (!rows.isEmpty()) {
             // the F2V 2.0 modded post-effect chain rides every non-empty pack
         dev.cim.hud.HudPack.contribute(entries);
+        dev.cim.hud.ScreenPack.contribute(entries, modsDir, rows.stream().map(VisualItem::moddedId).toList());
             entries.put("assets/c-imagine/post_effect/cimsepia.json",
                     MODDED_CHAIN_JSON.getBytes(StandardCharsets.UTF_8));
         }

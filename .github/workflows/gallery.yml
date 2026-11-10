@@ -392,7 +392,8 @@ jobs:
           # (world blur + darkening) for every SUBSEQUENT page — measured 42416372623: 10 gal-p
           # pages (create64/96/128/240/256/272/320, ae232/256, boP96) carried the menu and cost
           # ~123 gate reds. The gallery is a multiplayer world; pausing buys nothing.
-          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          # tutorialStep:none (menus lane, 12a0ec6c): no first-join tutorial overlay in the frames.
+          printf 'tutorialStep:none\nonboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
           # GPU instances bypass the VertexConsumer used by QuadDump.
           # Use Flywheel's ordinary BER fallback in the capture client;
           # reference screenshot clients keep their normal renderer.
@@ -406,7 +407,7 @@ jobs:
           # walk touches $TRIGGER (QuadDump.onTick checks the file per tick).
           # The walk step boots it fresh per attempt — a client that died
           # mid-walk must never serve the next attempt.
-          sed "s#^java #java -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
+          sed "s#^java #java -Dcim.screenart=$PWD/srv-wall/c-imagine/screens -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
 
       - name: server-side walk — block pages under a live client, restart on disconnect (14-bj)
         if: steps.seed-verify.outputs.hit != 'true'
@@ -570,6 +571,13 @@ jobs:
               [ "$EX" = "1" ] || { echo "$NS $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
             done
           done
+          # MENU scan (per ladder ns): the probe needs no client, so the ours leg,
+          # which runs beside the truth leg, has every menu's class and slots.
+          for NS in $LADDER_NS; do
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery gui-scan $NS" || true
+            grep "gallery-gui-scan ns=$NS " srv-wall/boot.log | tail -1 || true
+          done
           # ITEM walk (per ladder ns, to exhaustion)
           for NS in $LADDER_NS; do
             EX=0
@@ -642,7 +650,7 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
           done
-          # gui stays OUT of the seed walk on purpose: openMenu needs a
+          # the gui SHOTS stay out of the seed walk: openMenu needs a
           # joined viewer, the seed walks headless — its manifests come
           # from the truth shards' walks. INV is different: the inv
           # manifest is a pure SLOT RE-LABELLING of the item manifest
@@ -715,6 +723,22 @@ jobs:
               || { echo "relaunched dump client failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
             sleep 5
           fi
+          # SCREEN CAPTURE: the live client opens every menu the scan found, and
+          # ScreenArt saves what the mod really draws. This feeds the pack, so it
+          # runs here. A page that fails leaves that menu without art, and a
+          # second scan puts back any manifest a lost viewer overwrote.
+          for NS in $LADDER_NS; do
+            N=$(find "$SCENES" -maxdepth 1 -name "gallery-gui-$NS-p*.tsv" | wc -l)
+            for p in $(seq 0 $((N-1))); do
+              [ "$N" -gt 0 ] || break
+              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+                "cimscene gallery gui $NS $p" >/dev/null 2>&1 || true
+              sleep 5
+            done
+            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              "cimscene gallery gui-scan $NS" >/dev/null 2>&1 || true
+          done
+          echo "screens captured: $(find srv-wall/c-imagine/screens -name '*.png' 2>/dev/null | wc -l)"
           touch "$TRIGGER"
           for i in $(seq 1 600); do
             grep -q "quad dump done" truth-client/client-dump.out 2>/dev/null && break
@@ -867,6 +891,10 @@ jobs:
           # tree; the verify steps (seed + ours shards) compare it against
           # SEED_INPUTS — measured #47: a prefix-restored older pack silently
           # served a stale builder and the missingno wall came back
+          # the ours leg draws from the same scenes, and the gate masks to this art
+          cp srv-wall/c-imagine/f2v/screens.tsv srv-wall/c-imagine/f2v/icons.tsv seed-pack/f2v/ 2>/dev/null || true
+          mkdir -p seed-pack/screens
+          cp -r srv-wall/c-imagine/screens/. seed-pack/screens/ 2>/dev/null || true
           echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
@@ -884,6 +912,7 @@ jobs:
           name: seed-pack
           path: |
             seed-pack/scenes
+            seed-pack/screens
             seed-pack/f2v
             seed-pack/plugin
           if-no-files-found: error
@@ -1093,7 +1122,7 @@ jobs:
           sha256sum truth-client/game/mods/*.jar > truth-client-mods.sha256
           cat truth-client-mods.sha256
           # options value maps linearly: 70 + 40*v on both client versions.
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py truth-client/game
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
@@ -1125,7 +1154,7 @@ jobs:
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
             "gamerule doMobSpawning false" "gamerule randomTickSpeed 0" | tee truth-pins.log
-          LAUNCH=$(cat truth-client/launch.txt)
+          LAUNCH=$(sed 's/^java /java -Dcim.nomouse=true /' truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
@@ -1598,7 +1627,12 @@ jobs:
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-gui done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
               sleep 2   # the client screen renders
+              # MOUSEOFF (menus lane, 477489e6): the real client's mouse is parked
+              # off the menu so no hover state leaks into the truth shot; shot.sh
+              # (main lane, b49718b1) captures through the warm ShotD daemon.
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Key MOUSEOFF || true
+              sleep 0.5
               bash scripts/visual/shot.sh "truth-shots/gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
               # ESC closes the open screen before the next page (the next
@@ -1948,7 +1982,8 @@ jobs:
           # 67cd0e2c green baseline while the pack itself is unchanged; the
           # per-sprite mipmap chain (inter-sprite bleed on the packed atlas) is
           # the remaining render-side suspect. Zero mips kills atlas bleed.
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
+          # tutorialStep:none (menus lane, 12a0ec6c): no first-join tutorial overlay in the frames.
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)
@@ -2558,10 +2593,10 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "ours $NS sound replay hit the MAXP cap"; exit 1; }
           done
-          # GUI replay (per ladder ns, DIAGNOSTIC): the plugin closes the
-          # viewer's inventory and counts every menu nochannel (Paper
-          # cannot instantiate a mod MenuType); the shot shows the honestly
-          # closed screen.
+          # GUI replay (per ladder ns, DIAGNOSTIC): the plugin draws the scanned
+          # screen for the menu the truth leg recorded. It lives on the HUD,
+          # so F1 must be off, and Esc would open the pause menu instead.
+          java -cp vtools Key F1 || true
           for NS in $LADDER_NS; do
             EX=0
             for p in $(seq $SI $K $MAXP); do
@@ -2576,10 +2611,11 @@ jobs:
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
-              java -cp vtools Key ESC || true
             done
             [ "$EX" = "1" ] || { echo "ours $NS gui replay hit the MAXP cap"; exit 1; }
           done
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "cim guiclose" >/dev/null 2>&1 || true
+          java -cp vtools Key F1 || true
           # BIOME-TINT replay (per ladder ns, DIAGNOSTIC): the plugin places
           # the SAME sample rig (real vanilla blocks) and counts every
           # modded biome nochannel; the shot shows the honestly untinted rig.
@@ -2960,6 +2996,11 @@ jobs:
               done
             done
           done
+          echo "=== MENU gate: every menu pixel-identical or RED ==="
+          python3 scripts/cimscene/menu-sheet.py --meta truth-meta --truth truth-shots \
+            --ours ours-shots --art seed-pack/screens --stride "$SI/$K" --out gallery-report/menus \
+            --report gallery-report --ns "$LADDER_NS" || GATE=1
+          cat gallery-report/menus/menus.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           echo "=== per-page verdicts (this shard) ==="
           python3 - <<'PY'
           import glob, json

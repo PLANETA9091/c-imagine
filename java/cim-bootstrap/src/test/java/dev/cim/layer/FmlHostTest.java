@@ -33,6 +33,16 @@ public final class FmlHostTest {
         expect(extra.annotations() == annotations, "scan data remains shared and complete");
         expect(FmlHost.forModId(file, "library").entrypoints().isEmpty(),
                 "a mod without an entrypoint never borrows another mod's class");
+        // The scan's real shape for @Mod(dist = {...}): a list of enum holders (AE2's AppEngServer).
+        String holder = "EnumHolder[desc=Lcim/shadow/neoforge/net/neoforged/api/distmarker/Dist;, value=%s]";
+        expect(FmlHost.servesDedicatedServer("[" + holder.formatted("DEDICATED_SERVER") + "]"),
+                "an array naming DEDICATED_SERVER runs on the server");
+        expect(!FmlHost.servesDedicatedServer("[" + holder.formatted("CLIENT") + "]"),
+                "an array naming only CLIENT does not");
+        expect(FmlHost.servesDedicatedServer("[" + holder.formatted("CLIENT") + ", " + holder.formatted("DEDICATED_SERVER") + "]"),
+                "both sides listed runs on the server");
+        expect(FmlHost.servesDedicatedServer("DEDICATED_SERVER") && !FmlHost.servesDedicatedServer("CLIENT"),
+                "the single-name form keeps its meaning");
         System.out.println("FmlHost ownership fixtures: ALL OK");
     }
 

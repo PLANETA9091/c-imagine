@@ -630,16 +630,114 @@ any channel row is red, or any class did not reach the verdict.
 ## M6.2 — Player surfaces: HUD, menus, mod keys (owner goal 2026-11-06)
 
 **Goal:** a player on the vanilla 26.3 client gets every mod HUD, menu and
-keybinding, 1:1 and smooth, with `/keyboard` as the way in for mod keys. Contract
-and measured coverage: `runtime-analysis/hud-keys-menus-26-3.md`.
+keybinding, 1:1 and smooth. Contract and measured coverage:
+`runtime-analysis/hud-keys-menus-26-3.md`.
 
-- [x] Key census from mod jars, `/keyboard` dialog, `VirtualKeyEvent`.
-- [x] HUD channel (font + `text.vsh` + hidden boss bar) .
-- [ ] Live mod behaviour behind all three: blocked on the layer hosting real
-      players. No key, slot or HUD value reaches mod code yet.
-- [ ] The other 7 Create menus and every non-Create mod's menus.
-- [ ] Mod HUD layers (goggles, train HUD): client code, needs live data first.
-- [ ] Dual-stack proof: truth screenshots beside ours in the gui gallery.
+- [x] Key census from mod jars, and `/keyboard` as a floating HUD keyboard.
+- [x] HUD channel (font + `text.vsh` + hidden boss bar).
+- [x] F2V's scanners copied in; scanned and captured screens on the HUD, no chests.
+- [x] Pointer mouse with the view held still (`CameraLock`), proven with real input.
+- [x] Slots, item icons, titles, buttons, right-click opening.
+- [x] Menu gate in CI (`menus.yml`, ~10 min): real NeoForge frame beside ours,
+      pixel for pixel, plus a row per interaction (slot move, every button).
+      Measured 2026-11-07 (run 42383139543, ~9 min): 101 of 127 menus GREEN, and
+      every menu that opens is pixel identical except two (Create's crafting
+      blueprint never really opens on the truth; Mekanism's QIO exporter, 67 px of
+      fractional-scale text). Stack counts, vanilla item icons, the lightmap's
+      0xFC text and 0x3E shadow, toasts and per-page inventory are all measured.
+      A RED row ships a full-resolution truth | ours | diff crop.
+- [ ] The 24 menus that do not open: multiblocks (dynamic tank, induction
+      matrix, boilers, SPS, evaporation), robits (the robit item on a charge pad),
+      AE2 crafting and network-status sub-menus, Create stock keeper and factory
+      panel, Mekanism seismic reader and digital miner config, backpack settings.
+      Each needs the walk to build the world state a player would.
+- [ ] Interaction rows: 45 of 606 GREEN. The REDs are the mod's own logic that ours
+      does not run yet (a trash slot deleting, an ME terminal absorbing a stack, a
+      slot refusing an item). This is M6.3, not a picture problem.
+- [ ] Real map-mod colour code on the server, through a scanner and an adapter.
+- [ ] Mod HUD layers (goggles, train HUD), from live data (M6.3).
+
+## M6.3 — Live menus: the mod's own code runs every click (owner directive 2026-11-07)
+
+**Goal:** a click on a vanilla client does exactly what it does on NeoForge, through
+the mod's own code. Nothing is recorded except pictures, and pictures are chosen by
+the real state the mod's code produced. Example gate: Create's filter whitelist
+button flips Create's own flag, and the filter then behaves as a whitelist.
+
+**Design: a session player per open menu.**
+1. **Facade level.** A 1.21.1 `Level` in the layer whose block, block-entity and
+   entity reads and writes go through the M3 bridge to Paper's world.
+2. **Session player.** A real 1.21.1 `ServerPlayer` on that level for each Paper
+   player with a mod menu open: same UUID, inventory mirrored both ways.
+3. **The real menu.** The mod's own `MenuProvider` (block entity or item) builds its
+   real `AbstractContainerMenu` in that session, as NeoForge would.
+4. **Real inputs.** A slot click is `menu.clicked(slot, button, type, player)`. A
+   button click is the packet F2V's `ClientSurfaceScanner` proved that button sends,
+   decoded with its proven arguments and handed to the mod's real handler. Keys take
+   the same route (`ClientKeybindDiscovery`).
+5. **Real outputs.** Slots and `ContainerData` are read from the real menu each tick
+   and drawn on the HUD. Item changes return as data components on the Paper item;
+   block-entity changes return through the sidecar.
+6. **State-keyed pictures.** Captured art is keyed by the menu's real state (its
+   data values and flags), so the HUD shows whatever state the logic produced.
+
+**Steps, each gated in `menus.yml` or integration:**
+- [x] 1. Facade level and session player boot in the layer (`live-mod/`, the
+      `cimlive` mod; `live.yml`). Measured 2026-11-07, identical on real NeoForge
+      and in the layer: Create's real `FilterMenu` (54 slots, 18 its own) built from
+      the held filter through the item's own `use()`. The facade level holds only the
+      static registries plus dimension and damage types (up in 31-40 ms); the session
+      player is an allocated `ServerPlayer` (mods check `instanceof`) with a
+      connection that keeps what the mod sends.
+- [~] 2. Slot clicks through `menu.clicked`, census-driven over the whole mod lock
+      (`live.yml`, `CIM_LIVE_SELFTEST=all`). Measured 2026-11-07, line-for-line
+      identical on real NeoForge and in the layer: all 1983 mod items used as a right
+      click (27 menus), all 502 block-entity blocks placed and clicked with an empty
+      hand (157 menus), 84 menu kinds in all; each menu gets a stack moved onto its
+      first slot (ghost slots copy, filtered slots refuse, the mod decides) and a
+      close (what it sent, the inventory after). 9 throws left, the same on both:
+      Mekanism frequency data needs a MinecraftServer (6), Mekanism personal storage
+      (2), Create's potato cannon reads Create's own global registry access (1).
+      The facade grew only what mods asked for: a sparse block store with real block
+      entities, empty chunks on request over a one-biome registry, server configs,
+      no-op statistics, empty entity queries.
+      Layer defects the census found and fixed: mixin annotation strings were not
+      relocated (AE2's critical injector), mixins never ran on mod classes
+      (GlitchCore, Biomes O' Plenty), `@Mod(dist = {...})` arrays were misread (AE2
+      never loaded), mod jars had no folders (Dynamic Trees' seeds), mod configs
+      were never loaded (Mekanism), and an AT field entry narrowed a same-named
+      method (NeoForge's `BiomeSpecialEffects$Builder.fogColor`).
+      Wired to Paper (`LiveBridge`, `ScreenHud`): cimlive publishes one
+      `Function<String,String>` (`cim.live`); a held-item right click runs the item's
+      own `use()`, slot clicks are the real `menu.clicked`, the close is the menu's own
+      `removed()`, and stacks cross as the mod's codec JSON (its data components ride
+      in the Paper stack's persistent data; drops land at the player). Measured
+      2026-11-07 on Paper 26.3 + layer + Create for a connected player (`live.yml`
+      paper job): Create's FilterMenu (54 slots) opened by Create's code, the move
+      left a ghost diamond x1 with x5 on the cursor, the close returned the 5 diamonds
+      to the Paper inventory. Open: block menus on Paper (the bridge binds the facade's
+      sparse blocks to Paper blocks), the gallery's slot-move rows on the layer stack.
+- [x] 3. Widget to packet. `LiveButtons` exports F2V's proof of every mod screen's
+      payload buttons (payload class, constructor, each argument as a constant, an
+      enum, the player or a member of the open menu); `LivePayloads` builds that
+      payload in the session and hands it to the handler the mod registered with
+      NeoForge's NetworkRegistry. Measured 2026-11-08, identical on real NeoForge and
+      in the layer: all 26 presses of the 11 proven buttons handled by their mods
+      (filter blacklist/respect-nbt flags, attribute-filter modes, schematicannon
+      play/pause/stop, toolbox dispose-all). On Paper, for a connected player
+      (`live.yml` paper job): the HUD's widget click presses the scanned button; the
+      filter's blacklist button left Create's own `filter_items_blacklist: true`, with
+      the moved diamond in `filter_items`, on the filter the Paper player holds.
+      Open: the press rows' pictures drawn from that state, and buttons the scan
+      cannot prove yet (screen-field arguments).
+- [ ] 4. Block-entity menus: the mod's block entity lives in the layer, bound to its
+      Paper block (toolbox, AE2 drive, Mekanism machines).
+- [ ] 5. Every scanned action of every mod; press rows judged against real state
+      for all of them, and recorded-state replay removed.
+
+Until step 3 lands, a press row shows the screen recorded from the real client after
+that press: it proves the click lands on the right control and is drawn exactly,
+not that the mod reacted.
 
 ## M6 — Resource pack synthesis (shapes, not cubes)
 

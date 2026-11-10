@@ -129,10 +129,14 @@ jobs:
         run: |
           mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
+      - name: menu verdict test
+        run: |
+          python3 -m pip install -q pillow
+          python3 scripts/cimscene/test-menu-sheet.py
       - name: hud, keyboard and menu selftests
         working-directory: paper-plugin
         run: |
-          for t in KeyCensus KeyboardState HudPack; do
+          for t in KeyCensus KeyboardState KeyboardLayout CameraLock HudPack ScreenPack ScreenHud; do
             java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" "dev.cim.hud.$t" --selftest
           done
       - uses: actions/upload-artifact@v4
