@@ -207,8 +207,10 @@ public final class FacadeLevel extends Level {
 
     /** Drops every block a session placed. */
     void clearBlocks() {
-        blockEntities.values().forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
+        // A copy: on the server front, a removed block entity reaches back into this store.
+        java.util.List<net.minecraft.world.level.block.entity.BlockEntity> all = new java.util.ArrayList<>(blockEntities.values());
         blockEntities.clear();
+        all.forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
         states.clear();
         chunks.clear();
     }
