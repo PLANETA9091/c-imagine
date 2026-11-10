@@ -158,64 +158,87 @@ jobs:
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           "$JAVA_HOME_21_X64/bin/java" -jar nf-installer.jar --installServer layer1211
 
-      - name: boot A — bare Paper
+      - name: boot A — bare Paper (x3, the median is the datum)
         run: |
-          cp -r tmpl bare && cd bare
-          set +e
-          ( while true; do ps -o rss= -C java >> rss.log 2>/dev/null || true; sleep 2; done ) &
-          sampler=$!
-          timeout 360 crussty run > boot.log 2>&1
-          kill $sampler 2>/dev/null || true
-          cd ..
+          # The single-sample ratio measured unstable (0.879 green on
+          # #e943e2e -> 1.284 red on #dfe859bf): bare Paper swung 13.840s ->
+          # 11.295s (a 22% swing the c-imagine merge cannot touch), so the
+          # modded/bare ratio crossed the 1.25 limit on runner noise alone.
+          # The limits did NOT move; the measurement got honest: 3 boots per
+          # leg, the gate compares MEDIANS (scripts/perf/boot-budget.py).
+          for i in 1 2 3; do
+            cp -r tmpl bare-$i && cd bare-$i
+            set +e
+            ( while true; do ps -o rss= -C java >> rss.log 2>/dev/null || true; sleep 2; done ) &
+            sampler=$!
+            timeout 360 crussty run > boot.log 2>&1
+            kill $sampler 2>/dev/null || true
+            cd ..
+          done
 
-      - name: boot B — Paper + c-imagine
+      - name: boot B — Paper + c-imagine (x3, the median is the datum)
         run: |
-          cp -r tmpl modded
-          unzip -o dist/module-imagine.zip -d modded/modules/
-          cp java/cim-bootstrap/build/cim-bootstrap.jar modded/modules/imagine/cim-bootstrap.jar
-          mkdir -p modded/crus modded/plugins
-          printf '%s\n' '{"layerDir":"../layer1211/libraries"}' > modded/crus/c-imagine.json
-          cp paper-plugin/target/cim-paper-plugin.jar modded/plugins/
-          cp scripts/log4j2-layer.xml modded/
-          # THE TICK-LOAD PROBE (cimtest-heavy, Tier-1): the selfarm marker
-          # arms a deterministic 10ms/tick burn for 600 ticks on world
-          # start — the boot log carries the [cimtest_heavy] load-done
-          # markers the compare parses (the module's own tick charge under
-          # a KNOWN load; the bare boot has no mod and no marker)
-          mkdir -p modded/mods
-          cp test-mods/build/libs/cimtest-1.0.0.jar modded/mods/
-          printf '10 600\n' > modded/mods/cimtest-heavy.selfarm
-          cd modded
-          set +e
-          ( while true; do ps -o rss= -C java >> rss.log 2>/dev/null || true; sleep 2; done ) &
-          sampler=$!
-          timeout 360 crussty run > boot.log 2>&1
-          kill $sampler 2>/dev/null || true
-          cd ..
+          for i in 1 2 3; do
+            cp -r tmpl modded-$i
+            unzip -o dist/module-imagine.zip -d modded-$i/modules/
+            cp java/cim-bootstrap/build/cim-bootstrap.jar modded-$i/modules/imagine/cim-bootstrap.jar
+            mkdir -p modded-$i/crus modded-$i/plugins
+            printf '%s\n' '{"layerDir":"../layer1211/libraries"}' > modded-$i/crus/c-imagine.json
+            cp paper-plugin/target/cim-paper-plugin.jar modded-$i/plugins/
+            cp scripts/log4j2-layer.xml modded-$i/
+            # THE TICK-LOAD PROBE (cimtest-heavy, Tier-1): the selfarm marker
+            # arms a deterministic 10ms/tick burn for 600 ticks on world
+            # start — the boot log carries the [cimtest_heavy] load-done
+            # markers the compare parses (the module's own tick charge under
+            # a KNOWN load; the bare boot has no mod and no marker). Every
+            # modded boot carries the identical workload, so all three
+            # samples are comparable and tick-budget parses all three.
+            mkdir -p modded-$i/mods
+            cp test-mods/build/libs/cimtest-1.0.0.jar modded-$i/mods/
+            printf '10 600\n' > modded-$i/mods/cimtest-heavy.selfarm
+            cd modded-$i
+            set +e
+            ( while true; do ps -o rss= -C java >> rss.log 2>/dev/null || true; sleep 2; done ) &
+            sampler=$!
+            timeout 360 crussty run > boot.log 2>&1
+            kill $sampler 2>/dev/null || true
+            cd ..
+          done
 
       - name: compare budgets
         run: |
           set -o pipefail
-          # Paper reaching Done is insufficient if the hosted layer failed.
-          grep -Fq '[c-imagine] layer boot ok' modded/boot.log
-          grep -Fq '[c-imagine] mod execution ok' modded/boot.log
-          grep -Fq '[cimtest_heavy] mod constructed' modded/boot.log
-          # M9 open blocker (2026-11-10): the heavy workload rides the REAL
-          # shadow-space DedicatedServer (lifecycle driven by Paper's main
-          # thread) — the arm/done markers must exist before the budget reads
-          # them, and a missing completion still fails tick-budget unchanged.
-          grep -Fq '[c-imagine] layer server: started' modded/boot.log
-          grep -Fq '[cimtest_heavy] load armed' modded/boot.log
-          python3 scripts/perf/boot-budget.py bare modded | tee -a "$GITHUB_STEP_SUMMARY"
-          python3 scripts/perf/tick-budget.py modded/boot.log | tee -a "$GITHUB_STEP_SUMMARY"
+          # Paper reaching Done is insufficient if the hosted layer failed —
+          # EVERY modded boot must carry the full marker set, not just one.
+          for i in 1 2 3; do
+            grep -Fq '[c-imagine] layer boot ok' modded-$i/boot.log
+            grep -Fq '[c-imagine] mod execution ok' modded-$i/boot.log
+            grep -Fq '[cimtest_heavy] mod constructed' modded-$i/boot.log
+            # M9 open blocker (2026-11-10): the heavy workload rides the REAL
+            # shadow-space DedicatedServer (lifecycle driven by Paper's main
+            # thread) — the arm/done markers must exist before the budget reads
+            # them, and a missing completion still fails tick-budget unchanged.
+            grep -Fq '[c-imagine] layer server: started' modded-$i/boot.log
+            grep -Fq '[cimtest_heavy] load armed' modded-$i/boot.log
+          done
+          BARE_ARGS=""
+          MODDED_ARGS=""
+          for i in 1 2 3; do
+            BARE_ARGS="$BARE_ARGS --bare bare-$i"
+            MODDED_ARGS="$MODDED_ARGS --modded modded-$i"
+          done
+          python3 scripts/perf/boot-budget.py $BARE_ARGS $MODDED_ARGS | tee -a "$GITHUB_STEP_SUMMARY"
+          for i in 1 2 3; do
+            python3 scripts/perf/tick-budget.py modded-$i/boot.log | tee -a "$GITHUB_STEP_SUMMARY"
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: profiling-logs
           path: |
-            bare/boot.log
-            bare/rss.log
-            modded/boot.log
-            modded/rss.log
-          if-no-files-found: ignore
+            bare-*/boot.log
+            bare-*/rss.log
+            modded-*/boot.log
+            modded-*/rss.log
+          if-no-files-found: error

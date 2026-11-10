@@ -10,12 +10,22 @@ spec.loader.exec_module(gate)
 
 
 class Gate(unittest.TestCase):
+    boot_dir_n = 0
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         (self.root / "boot.log").write_text('Done (2.50s)!')
         (self.root / "rss.log").write_text('100\n200\n')
+
+    def boot_dir(self, name, seconds, rss):
+        root = self.root / f"{name}{self.boot_dir_n}"
+        self.boot_dir_n += 1
+        root.mkdir()
+        (root / "boot.log").write_text(f'Done ({seconds}s)!')
+        (root / "rss.log").write_text(str(rss))
+        return root
 
     def test_real_measurements(self):
         self.assertEqual(gate.measure(self.root), (2.5, 200))
@@ -44,6 +54,53 @@ class Gate(unittest.TestCase):
         ratio, rss = gate.compare(self.root, other)
         self.assertGreater(ratio, 1.25)
         self.assertGreater(rss, 400)
+
+    def test_median_ignores_one_noisy_boot_per_leg(self):
+        # The #dfe859bf shape: one red-hot modded sample and one ice-cold bare
+        # sample — the medians of 3 must not let either extreme set the ratio.
+        bare = [self.boot_dir(f"b{i}", s, 100) for i, s in enumerate((11.0, 12.0, 13.0))]
+        modded = [self.boot_dir(f"m{i}", s, 100) for i, s in enumerate((12.0, 13.0, 25.0))]
+        ratio, rss = gate.compare(*[d for pair in zip(bare, modded) for d in pair])
+        self.assertAlmostEqual(ratio, 13.0 / 12.0)
+        self.assertEqual(rss, 0.0)
+
+    def test_median_gate_still_fails_on_a_real_regression(self):
+        # A real slowdown sits IN the medians, not at one extreme: 3/3 modded
+        # boots 40% slower must fail exactly like the single-sample gate.
+        bare = [self.boot_dir("rb", 12.0, 100) for _ in range(3)]
+        modded = [self.boot_dir("rm", 16.8, 100) for _ in range(3)]
+        ratio, _ = gate.compare(*[d for pair in zip(bare, modded) for d in pair])
+        self.assertGreater(ratio, 1.25)
+
+    def test_odd_legs_rejected(self):
+        other = self.boot_dir('solo', 3.0, 100)
+        with self.assertRaises(ValueError):
+            gate.compare(self.root, self.root, other)
+
+    def test_cli_multi_sample_flag_form(self):
+        bare = [self.boot_dir(f"cb{i}", s, 100) for i, s in enumerate((12.0, 12.0, 12.0))]
+        modded = [self.boot_dir(f"cm{i}", s, 100) for i, s in enumerate((13.0, 13.0, 13.0))]
+        argv = []
+        for d in bare:
+            argv += ['--bare', str(d)]
+        for d in modded:
+            argv += ['--modded', str(d)]
+        import sys
+        old = sys.argv
+        sys.argv = ['boot-budget.py', *argv]
+        try:
+            self.assertEqual(gate.main(), 0)  # 13/12 = 1.0833 <= 1.25
+        finally:
+            sys.argv = old
+
+    def test_cli_rejects_unequal_sample_counts(self):
+        import sys
+        old = sys.argv
+        sys.argv = ['boot-budget.py', '--bare', str(self.root), '--modded', str(self.root), '--modded', str(self.root)]
+        try:
+            self.assertEqual(gate.main(), 1)
+        finally:
+            sys.argv = old
 
 
 if __name__ == '__main__':
