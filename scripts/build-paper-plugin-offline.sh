@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-A=/tmp/my-project/artifacts
+A="${A:-/home/z/my-project/artifacts}"
 OUT_JAR="${1:-$ROOT/paper-plugin/build/offline/cim-paper-plugin.jar}"
 
 PAPER_API="$A/paper-api-26.3-stable.jar"

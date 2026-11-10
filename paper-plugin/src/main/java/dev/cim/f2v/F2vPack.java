@@ -83,7 +83,8 @@ public final class F2vPack {
     /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
     public record Result(List<VisualItem> items, List<VisualBlock> blocks,
                          String sha1, int entryCount, List<String> warnings,
-                         List<GalleryPack.Resolved> gallery) {
+                         List<GalleryPack.Resolved> gallery,
+                         List<String[]> placeholders) {
     }
 
     /**
@@ -1291,6 +1292,9 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
+                // 14-dy: the placeholder ledger attributes item-model
+                // fallbacks to the modded item id
+                GalleryPack.placeholderContext(row.moddedId());
                 String quadModel = GalleryPack.synthesizeItemQuads(jars, row.moddedId(), itemCompositeNo,
                         entries, warnings);
                 if (quadModel != null) {
@@ -1370,6 +1374,9 @@ public final class F2vPack {
         // 26.3 equipment surface, manifest-driven, zero vanilla overrides
         List<Path> equipJars = jars.isEmpty() ? listJars(modsDir) : jars;
         for (EquipmentAsset asset : equipmentRows) {
+            // 14-dy: the placeholder ledger attributes equipment fallbacks
+            // to the asset id
+            GalleryPack.placeholderContext(asset.assetId());
             emitEquipment(equipJars, asset, entries, warnings);
         }
 
@@ -1578,19 +1585,31 @@ public final class F2vPack {
         Files.write(outDir.resolve("pack.zip"), zip);
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
+        // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
+        // (sprite, context, uses) — the texture-fidelity audit's named
+        // backlog, written next to the manifest and summarized in the
+        // report; the pack zip itself carries NO ledger entry (assets only)
+        java.util.List<String[]> placeholders = GalleryPack.drainPlaceholderUses();
+        GalleryPack.writePlaceholderLedger(placeholders, outDir.resolve("placeholders.tsv"));
         StringBuilder report = new StringBuilder("f2v pack build report\n")
                 .append("items requested: ").append(rows.size()).append('\n')
                 .append("zip entries:     ").append(entries.size()).append('\n')
                 .append("zip bytes:       ").append(zip.length).append('\n')
                 .append("tile hash collisions resolved: ").append(ObjMesh.tileHashCollisions()).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
-                .append("warnings:        ").append(warnings.size()).append('\n');
+                .append("warnings:        ").append(warnings.size()).append('\n')
+                .append("placeholders:    ").append(placeholders.size())
+                .append(" (see placeholders.tsv — a placeholder is NOT supported content)\n");
+        for (String[] ph : placeholders) {
+            report.append("  placeholder: ").append(ph[0]).append(" for ").append(ph[1])
+                    .append(" x").append(ph[2]).append('\n');
+        }
         for (String w : warnings) {
             report.append("  warn: ").append(w).append('\n');
         }
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
-        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery);
+        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery, placeholders);
     }
 
     /** Any element-face uv array in a model json, 4 numbers. */
@@ -2286,7 +2305,8 @@ public final class F2vPack {
             System.out.println("f2v pack: built (" + r.items().size() + " item(s), "
                     + r.gallery().size() + " gallery state(s), "
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
-                    + r.warnings().size() + " warning(s))");
+                    + r.warnings().size() + " warning(s), "
+                    + r.placeholders().size() + " placeholder sprite(s) — see placeholders.tsv)");
             return;
         }
         System.err.println("usage: F2vPack --build <modsDir> <outDir> [--manifest <tsv>]"
@@ -3442,6 +3462,7 @@ public final class F2vPack {
         capturedAlphaSelftest(failures);
         capturedEmptyMeshSelftest(failures);
         capturedSpriteSelftest(failures);
+        placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
         if (failures.isEmpty()) {
@@ -3669,6 +3690,53 @@ public final class F2vPack {
             }
         }
         return false;
+    }
+
+    /**
+     * 14-dy: the placeholder ledger — the fallback NAMES its source sprite
+     * and build context, the drain merges + sorts + clears, the writer
+     * emits the TSV with the exact header contract.
+     */
+    private static void placeholderLedgerSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-ph-selftest");
+        try {
+            // a captured quad whose sprite has NO png in the jars and a
+            // non-block path (the items-atlas family): the placeholder branch
+            String ghostFace = "fakemod:items/ghost\t0\t-1"
+                    + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
+                    + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n";
+            Files.writeString(quads.resolve("ghost.tsv"), ghostFace);
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(quads);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            List<GalleryPack.Resolved> rows = GalleryPack.build(List.of(),
+                    List.of(new GalleryPack.Input("fixture:ghosted#qghost")), entries, warnings,
+                    Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1,
+                    "placeholder: the ghost-sprite capture resolves to the placeholder composite");
+            expect(failures, warnings.stream().anyMatch(w ->
+                            w.equals("gallery: quad sprite missing: fakemod:items/ghost")),
+                    "placeholder: the warning stays (the diagnostic is visible)");
+            var drained = GalleryPack.drainPlaceholderUses();
+            expect(failures, drained.size() == 1
+                            && "fakemod:items/ghost".equals(drained.getFirst()[0])
+                            && "fixture:ghosted#qghost".equals(drained.getFirst()[1])
+                            && "1".equals(drained.getFirst()[2]),
+                    "placeholder: the ledger names the sprite + the state context");
+            Path tsv = quads.resolve("placeholders.tsv");
+            GalleryPack.writePlaceholderLedger(drained, tsv);
+            List<String> lines = Files.readAllLines(tsv);
+            expect(failures, lines.size() == 2
+                            && lines.getFirst().equals("sprite\tcontext\tuses")
+                            && lines.get(1).equals("fakemod:items/ghost\tfixture:ghosted#qghost\t1"),
+                    "placeholder: the ledger TSV carries the header + the named row");
+            expect(failures, GalleryPack.drainPlaceholderUses().isEmpty(),
+                    "placeholder: the drain clears the accumulator");
+        } finally {
+            GalleryPack.resetModelScales();
+            deleteRecursively(quads);
+        }
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
