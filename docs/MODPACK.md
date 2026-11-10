@@ -10,8 +10,8 @@ pinned by version.
 | Mod | Exercises | Status |
 |---|---|---|
 | `cimtest` | registration (block/item/BE/entity), lifecycle events, login hooks, custom mods.toml metadata, dependency declarations | M0 ✔ (source) / M2 (layer execution) |
-| `cimtest-net` | custom payload/channel both directions (1.21.1 `PayloadRegistrar`/`StreamCodec`): wire-codec round trips, S2C hello on player login, C2S echo from the client | source ✔; codec legs asserted in the layer boot + M2 harness; registration + full wire round trip asserted on real stacks (parity-real-neoforge / parity-diff) |
-| `cimtest-cap` | custom DataComponent (`cimtest_cap:charge`) + item capability (`RegisterCapabilitiesEvent`, 21.1 API — AttachCapabilitiesEvent is removed in 1.21) | source ✔; component legs asserted in the layer boot + M2 harness; capability legs asserted on real stacks (parity-real-neoforge / parity-diff) |
+| `cimtest-net` | custom payload/channel both directions (1.21.1 `PayloadRegistrar`/`StreamCodec`): wire-codec round trips, S2C hello on player login, C2S echo from the client | source ✔; codec and registration legs asserted on both stacks; full modded-client wire round trip asserted in parity-diff |
+| `cimtest-cap` | custom DataComponent (`cimtest_cap:charge`) + item capability (`RegisterCapabilitiesEvent`, 21.1 API — AttachCapabilitiesEvent is removed in 1.21) | source ✔; component and capability legs asserted in the layer boot, M2 harness and real-server parity boot |
 | `cimtest-heavy` | the deterministic allocation + tick-load generator the profiling budget gate measures against (/cimheavy load msPerTick ticks; markers `[cimtest_heavy] load armed/running/done`) | DONE — the multi-mod jar, 4th [[mods]] entry; the layer constructs it (per-mod FML containers) |
 
 Layout note: `cimtest-net` and `cimtest-cap` use the runtime mod IDs
@@ -30,21 +30,20 @@ Planned additions (each tiny, each one subsystem):
 
 ### Tier-1 marker contracts (expect/actual, the CI grep law)
 
-Lifecycle fact the contracts encode (neoforge-21.1.265 sources): common setup
-runs BEFORE the registration-events stage (`RegisterCapabilitiesEvent`) and
-before the network-registry lock (`RegisterPayloadHandlersEvent`); the
-c-imagine layer's FmlHost runs construction → registration → common setup
-only. Therefore the common-setup legs fire in the LAYER boot, while the
-registration / capability / wire-round-trip legs fire on REAL stacks only —
-their absence in a layer boot.log is the honest measurement of that layer gap
-(not a mod defect).
+Lifecycle order follows neoforge-21.1.265: common/sided setup precedes
+registration events (including capabilities), then IMC/load-complete and the
+network registry lock. FmlHost invokes the native CommonModLoader load/finish
+phases. Payload registration and capability round trips are required in both
+the layer and real-server boots. Modded-client wire round trips remain a
+separate real-stack contract; registration does not prove vanilla-client
+payload translation.
 
 | Marker | Where it must appear | What proves it | Expect/actual pair |
 |---|---|---|---|
 | `[cimtest-net] mod constructed (payload handlers armed)` | layer boot + M2 harness + every real boot | the mod constructs through real FML in both stacks | — |
 | `[cimtest-net] s2c codec round-trip ok (token=4242 decoded=4242)` | layer boot + M2 harness + real server | the S2C payload's StreamCodec encode/decode round trips — the deterministic net-pipeline leg the layer reaches | `decoded=4242` == `token=4242` |
 | `[cimtest-net] c2s codec round-trip ok (token=4242 decoded=4242)` | same | same, for the C2S payload | `decoded=4242` == `token=4242` |
-| `[cimtest-net] payloads registered (c2s=cimtest_net:echo s2c=cimtest_net:hello)` | real server (parity-real-neoforge, parity-diff) — NOT in the layer yet | `RegisterPayloadHandlersEvent` fired: both directions registered through the 21.1 network registry | — |
+| `[cimtest-net] payloads registered (c2s=cimtest_net:echo s2c=cimtest_net:hello)` | layer boot + M2 harness + real server | `RegisterPayloadHandlersEvent` fired: both directions registered through the 21.1 network registry | — |
 | `[cimtest-net] s2c hello sent player=cimviewer token=4242` | real server with a join (parity-diff) | the S2C send leg fired on player login | EXPECT: `token=4242` |
 | `[cimtest-net] s2c hello received token=4242 (client echo follows)` | truth client (`client.out`, parity-diff) | the payload crossed the net pipeline inbound to the modded client | the EXPECT token re-read client-side |
 | `[cimtest-net] c2s echo received player=cimviewer token=4242 (round-trip ok)` | real server with a join (parity-diff) | the C2S leg closed the loop through the net pipeline | ACTUAL: `token=4242` == expect → round trip |
@@ -52,8 +51,8 @@ their absence in a layer boot.log is the honest measurement of that layer gap
 | `[cimtest-cap] data component registered (cimtest_cap:charge)` | layer boot + M2 harness + real server | the DataComponentType resolved from the registry (registry phase ran in the layer) | — |
 | `[cimtest-cap] data component round-trip ok (item=cimtest:test_block set=7 got=7)` | layer boot + M2 harness + real server | server-side component write/read round trip | `got=7` == `set=7` |
 | `[cimtest-cap] component codec round-trip ok (charge=7)` | layer boot + M2 harness + real server | the persistent codec (the serialization the §4.4 bridge marshalling rides) round trips through NBT | `charge=7` decoded == encoded |
-| `[cimtest-cap] capabilities registered (item=cimtest:test_block cap=energy)` | real server — NOT in the layer yet | `RegisterCapabilitiesEvent.registerItem` (21.1 API) | — |
-| `[cimtest-cap] capability round-trip ok (cap=energy item=cimtest:test_block set=42 got=42)` | real server — NOT in the layer yet | the capability resolved off the stack and carried a write→read round trip (`FMLLoadCompleteEvent` leg; a `FAILED` variant logs honestly if unresolved) | `got=42` == `set=42` |
+| `[cimtest-cap] capabilities registered (item=cimtest:test_block cap=energy)` | layer boot + M2 harness + real server | `RegisterCapabilitiesEvent.registerItem` (21.1 API) | — |
+| `[cimtest-cap] capability round-trip ok (cap=energy item=cimtest:test_block set=42 got=42)` | layer boot + M2 harness + real server | the capability resolved off the stack and carried a write→read round trip (`FMLLoadCompleteEvent` leg; a `FAILED` variant logs honestly if unresolved) | `got=42` == `set=42` |
 
 CI wiring: the boot job + M2 harness assert the layer-reachable legs; the
 `parity-real-neoforge` job asserts the real-server legs; the

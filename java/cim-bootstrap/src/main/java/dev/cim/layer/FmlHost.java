@@ -40,8 +40,9 @@ import java.util.Set;
  *       {@code GameData.unfreezeData()} → {@code postRegisterEvents()} →
  *       {@code freezeData()} — the real RegisterEvent flow, per registry in
  *       the real order, posted to mod buses in mod order;</li>
- *   <li>{@code FMLCommonSetupEvent} + {@code FMLDedicatedServerSetupEvent} per
- *       container, then {@code NeoForge.EVENT_BUS.start()}.</li>
+ *   <li>native {@code CommonModLoader.load/finish}: common/sided setup,
+ *       registration hooks, IMC/load-complete, network registry lock;
+ *       then {@code NeoForge.EVENT_BUS.start()}.</li>
  * </ol>
  *
  * <p>Everything reaches the relocated stack reflectively with the
@@ -105,10 +106,6 @@ public final class FmlHost {
             "cim.shadow.neoforge.net.neoforged.fml.ModLoadingContext";
     private static final String DEFERRED_QUEUE =
             "cim.shadow.neoforge.net.neoforged.fml.DeferredWorkQueue";
-    private static final String COMMON_SETUP =
-            "cim.shadow.neoforge.net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent";
-    private static final String SERVER_SETUP =
-            "cim.shadow.neoforge.net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent";
     private static final String BUILT_IN_REGISTRIES =
             "cim.shadow.mc1211.net.minecraft.core.registries.BuiltInRegistries";
 
@@ -421,15 +418,18 @@ public final class FmlHost {
                     .invoke(configTracker.getField("INSTANCE").get(null),
                             configType.getField("COMMON").get(null), configDir);
 
-            // 7) lifecycle: common setup + dedicated server setup, per container
-            fireSetupEvents(containers);
-            // CommonModLoader.load initializes capabilities and registry data
-            // maps after setup; world reloads require these registrations.
-            Method registrationInit = Class.forName(
-                    "cim.shadow.neoforge.net.neoforged.neoforge.internal.RegistrationEvents")
-                    .getDeclaredMethod("init");
-            registrationInit.setAccessible(true);
-            registrationInit.invoke(null);
+            // Native load orders all common setup before sided setup, drains
+            // phase work, then initializes capabilities/data maps. Finish
+            // delivers IMC/load-complete and locks payload registration.
+            Class<?> commonLoader = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.neoforge.internal.CommonModLoader");
+            java.util.concurrent.Executor inline = Runnable::run;
+            for (String phase : new String[] {"load", "finish"}) {
+                Method dispatch = commonLoader.getDeclaredMethod(phase,
+                        java.util.concurrent.Executor.class, java.util.concurrent.Executor.class);
+                dispatch.setAccessible(true);
+                dispatch.invoke(null, inline, inline);
+            }
 
             // 8) start the game bus (mirrors ServerModLoader: after registration)
             Object gameBus = getStatic(Class.forName(NEOFORGE), "EVENT_BUS");
@@ -831,28 +831,7 @@ public final class FmlHost {
         return delta;
     }
 
-    private static void fireSetupEvents(List<Object> containers) throws Exception {
-        Class<?> ctxCls = Class.forName(MOD_LOADING_CONTEXT);
-        Object ctx = ctxCls.getMethod("get").invoke(null);
-        Method setActive = ctxCls.getMethod("setActiveContainer", Class.forName(MOD_CONTAINER));
-        Method acceptEvent = Class.forName(MOD_CONTAINER)
-                .getMethod("acceptEvent", Class.forName(EVENT));
-        Class<?> queueCls = Class.forName(DEFERRED_QUEUE);
-        for (Object container : containers) {
-            setActive.invoke(ctx, container);
-            for (String evt : new String[] {COMMON_SETUP, SERVER_SETUP}) {
-                Class<?> evtCls = Class.forName(evt);
-                Object queue = queueCls.getConstructor(String.class)
-                        .newInstance("cim-" + evtCls.getSimpleName());
-                Object event = evtCls
-                        .getConstructor(Class.forName(MOD_CONTAINER), queueCls)
-                        .newInstance(container, queue);
-                acceptEvent.invoke(container, event);
-                queueCls.getMethod("runTasks").invoke(queue);
-            }
-            setActive.invoke(ctx, (Object) null);
-        }
-    }
+
 
     // ---- census -------------------------------------------------------------------
 
