@@ -235,6 +235,7 @@ public final class LiveMenus {
         level().clearBlocks();
         LOG.info("[cimlive] selftest blocks: blocks={} menus={} threw={}", blocks.size(), blockMenus, blockThrew);
         pressButtons(opened, openedBlocks);
+        widgetStates(openedBlocks);
         LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
         LOG.info("[cimlive] selftest kinds {}", kinds);
         LOG.info("[cimlive] selftest ok");
@@ -372,6 +373,76 @@ public final class LiveMenus {
         }
         level().clearBlocks();
         LOG.info("[cimlive] selftest buttons: proven={} pressed={} handled={}", buttons.size(), pressed, handled);
+    }
+
+    /**
+     * Every stateful widget of every block menu that opened, evaluated on the fresh block's real
+     * objects through the protocol's widgets command, exactly as the HUD asks.
+     */
+    private static void widgetStates(java.util.List<ResourceLocation> blocks) {
+        String file = System.getenv("CIM_LIVE_STATEFUL");
+        if (file == null || file.isBlank()) {
+            return;
+        }
+        java.util.List<String[]> widgets = new java.util.ArrayList<>();
+        try {
+            for (String line : java.nio.file.Files.readAllLines(java.nio.file.Path.of(file), StandardCharsets.UTF_8)) {
+                String[] p = line.split("\t", -1);
+                if (p.length >= 5) {
+                    widgets.add(p);
+                }
+            }
+        } catch (java.io.IOException e) {
+            LOG.info("[cimlive] selftest widgets: cannot read {}: {}", file, e.toString());
+            return;
+        }
+        int evaluated = 0;
+        int grounded = 0;
+        for (int i = 0; i < blocks.size(); i++) {
+            ResourceLocation id = blocks.get(i);
+            UUID uuid = UUID.nameUUIDFromBytes(("cimlive-widgets-" + id).getBytes(StandardCharsets.UTF_8));
+            String open = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + id + "\t" + (i * 4) + "\t96\t16");
+            String cls = null;
+            for (String line : open.split("\n")) {
+                if (line.startsWith("menu\t")) {
+                    cls = line.split("\t")[2].replace('.', '/');
+                }
+            }
+            java.util.List<String[]> mine = new java.util.ArrayList<>();
+            for (String[] w : widgets) {
+                if (w[0].equals(cls)) {
+                    mine.add(w);
+                }
+            }
+            if (!mine.isEmpty()) {
+                StringBuilder cmd = new StringBuilder("widgets\t").append(uuid);
+                for (String[] w : mine) {
+                    cmd.append('\n').append(w[1]).append('\t').append(w[3]).append('\t').append(w[4]);
+                }
+                StringBuilder states = new StringBuilder();
+                for (String line : LiveProtocol.call(cmd.toString()).split("\n")) {
+                    String[] p = line.split("\t");
+                    if (p.length == 4) {
+                        evaluated++;
+                        if (!p[2].equals("null") && !p[3].equals("null")) {
+                            grounded++;
+                        }
+                        String label = "";
+                        for (String[] w : mine) {
+                            if (w[1].equals(p[1])) {
+                                label = w[2];
+                            }
+                        }
+                        states.append(" #").append(p[1]).append(" '").append(label).append("' active=").append(p[2])
+                                .append(" visible=").append(p[3]).append(';');
+                    }
+                }
+                LOG.info("[cimlive] selftest widgets block {}:{}", id, states);
+            }
+            LiveProtocol.call("close\t" + uuid);
+        }
+        level().clearBlocks();
+        LOG.info("[cimlive] selftest widgets: evaluated={} grounded={}", evaluated, grounded);
     }
 
     /** The buttons whose screen belongs to the menu class the opener produces (or a superclass of it). */

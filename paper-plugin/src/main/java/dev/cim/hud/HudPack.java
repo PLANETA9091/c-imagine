@@ -23,6 +23,9 @@ public final class HudPack {
     public static final char BACKDROP = '\uE021';
     public static final char SLOT = '\uE022';
     public static final char SLOT_HOVER = '\uE023';
+    /** A 4x4 dark tile: a disabled widget is drawn under it, as vanilla greys an inactive button. */
+    public static final char DIM = '\uE02B';
+    public static final int DIM_SIZE = 4;
     /** Plate under a scanned icon button. */
     public static final char BUTTON = '\uE024';
     public static final char KEY = '\uE025';
@@ -52,6 +55,7 @@ public final class HudPack {
         entries.put("assets/" + NS + "/textures/font/backdrop.png", png(backdrop()));
         entries.put("assets/" + NS + "/textures/font/slot.png", png(slot()));
         entries.put("assets/" + NS + "/textures/font/slot_hover.png", png(hover()));
+        entries.put("assets/" + NS + "/textures/font/dim.png", png(dim()));
         entries.put("assets/" + NS + "/textures/font/button.png", png(button()));
         for (int i = 0; i < 6; i++) {
             entries.put("assets/" + NS + "/textures/font/key" + i + ".png", png(keycap(i)));
@@ -88,6 +92,11 @@ public final class HudPack {
         b.add(String.valueOf(BACKDROP));
         backdrop.add("chars", b);
         providers.add(backdrop);
+        JsonObject dim = bitmap(NS + ":font/dim.png", DIM_SIZE, ascent);
+        JsonArray dimChars = new JsonArray();
+        dimChars.add(String.valueOf(DIM));
+        dim.add("chars", dimChars);
+        providers.add(dim);
         for (boolean hover : new boolean[]{false, true}) {
             JsonObject slot = bitmap(NS + ":font/" + (hover ? "slot_hover" : "slot") + ".png", hover ? 16 : 18, ascent);
             JsonArray chars = new JsonArray();
@@ -226,6 +235,16 @@ public final class HudPack {
     }
 
     /** Vanilla's slot highlight: half-transparent white over whatever the mod's slot is. */
+    private static BufferedImage dim() {
+        BufferedImage img = new BufferedImage(DIM_SIZE, DIM_SIZE, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < DIM_SIZE; y++) {
+            for (int x = 0; x < DIM_SIZE; x++) {
+                img.setRGB(x, y, 0x90000000);
+            }
+        }
+        return img;
+    }
+
     private static BufferedImage hover() {
         BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 16; y++) {

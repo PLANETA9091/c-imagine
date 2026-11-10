@@ -135,6 +135,23 @@ final class LiveBridge {
         return parse(call(cmd.toString()));
     }
 
+    /** Each stateful widget's live state on the open menu: ordinal to {active, visible}. */
+    java.util.Map<Integer, boolean[]> widgets(Player player, List<LiveButtons.Stateful> widgets) {
+        StringBuilder cmd = new StringBuilder("widgets\t").append(player.getUniqueId());
+        for (LiveButtons.Stateful w : widgets) {
+            cmd.append('\n').append(w.ordinal()).append('\t').append(w.active()).append('\t').append(w.visible());
+        }
+        java.util.Map<Integer, boolean[]> out = new java.util.HashMap<>();
+        for (String line : call(cmd.toString()).split("\n")) {
+            String[] p = line.split("\t");
+            if (p.length == 4 && p[0].equals("widget")) {
+                // An expression the layer could not ground (null) leaves the widget as drawn.
+                out.put(Integer.parseInt(p[1]), new boolean[]{!"false".equals(p[2]), !"false".equals(p[3])});
+            }
+        }
+        return out;
+    }
+
     State close(Player player) {
         return parse(call("close\t" + player.getUniqueId()));
     }
