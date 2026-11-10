@@ -292,6 +292,11 @@ public final class FacadeServerLevel extends ServerLevel {
     public void destroyBlockProgress(int id, BlockPos pos, int progress) {
     }
 
+    /** A block event (a chest lid opening) animates the world, which Paper draws. */
+    @Override
+    public void blockEvent(BlockPos pos, net.minecraft.world.level.block.Block block, int type, int data) {
+    }
+
     @Override
     public MapItemSavedData getMapData(MapId id) {
         return null;
