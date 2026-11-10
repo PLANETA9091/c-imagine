@@ -625,8 +625,15 @@ button flips Create's own flag, and the filter then behaves as a whitelist.
       (`live.yml` paper job): the HUD's widget click presses the scanned button; the
       filter's blacklist button left Create's own `filter_items_blacklist: true`, with
       the moved diamond in `filter_items`, on the filter the Paper player holds.
-      Open: the press rows' pictures drawn from that state, and buttons the scan
-      cannot prove yet (screen-field arguments).
+      Measured 2026-11-08 on Paper: block menus run the block's own use (Create's
+      toolbox), and the block entity's data is kept in the Paper chunk between
+      openings (5 diamonds put in, still there after a reopen).
+      Measured 2026-11-10, identical on both stacks: the scanner's live widget
+      predicates (53 in the lock) evaluated on the real menu and block entity
+      objects, 321 evaluations, 258 grounded; on Paper an inactive or hidden widget
+      refuses clicks and an inactive one is drawn darkened.
+      Open: buttons whose arguments come from the screen's own client state (the
+      scan cannot prove them yet), and pressed-state art the capture never saw.
 - [ ] 4. Block-entity menus: the mod's block entity lives in the layer, bound to its
       Paper block (toolbox, AE2 drive, Mekanism machines).
 - [ ] 5. Every scanned action of every mod; press rows judged against real state
