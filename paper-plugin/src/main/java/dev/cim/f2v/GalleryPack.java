@@ -1983,11 +1983,27 @@ public final class GalleryPack {
             }
             float[][] colors = null;
             if (c.length >= 35) {
-                colors = new float[4][c.length >= 39 ? 4 : 3];
+                // 14-dp THE SOLID-LAYER ALPHA TRAP: the vanilla liquid renderer
+                // emits vertex alpha 0 on the SOLID/CUTOUT chunk layers (the
+                // opaque shaders ignore the vertex alpha — the truth renders the
+                // texture opaque). The tile bake premultiplies the captured
+                // alpha, so a literal 4-channel row bakes an INVISIBLE
+                // composite: the #310/14-dl fluid giants (chocolate 1039K,
+                // honey 761K) measured as EMPTY CASES at PLACED rig cmds — the
+                // 14-dl run proved the phase dead (self_ae 0) while the
+                // truth-vs-ours ae stayed structural, and the artifact
+                // forensics (the ours full-page shots + the sheet-pixel
+                // sampling at the composite's UVs + the mesh rows' alpha
+                // columns) named the zero-alpha premultiply exactly. The
+                // vertex alpha is honored on the TRANSLUCENT layer only (the
+                // brine-class fluids whose captured alphas carry the real
+                // opacity); on solid/cutout the texture's own alpha rules.
+                boolean translucentLayer = faceMaterial.equals("translucent");
+                colors = new float[4][translucentLayer && c.length >= 39 ? 4 : 3];
                 for (int i = 0; i < 12; i++) {
                     colors[i / 3][i % 3] = Float.parseFloat(c[23 + i]);
                 }
-                if (c.length >= 39) {
+                if (translucentLayer && c.length >= 39) {
                     for (int i = 0; i < 4; i++) {
                         colors[i][3] = Float.parseFloat(c[35 + i]);
                     }
