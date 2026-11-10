@@ -3496,6 +3496,32 @@ public final class F2vPack {
                 expect(failures, (pixel & 0xFFFFFF) == 0xABCDEF,
                         "alpha capture: RGB stays unpremultiplied " + i);
             }
+            String rgba = face + rgb + "\t0.3".repeat(4);
+            String[] blockRows = {rgba, rgba + "\t15\t15", rgba + "\tsolid",
+                    rgba + "\tcutout\t15\t15", rgba + "\ttranslucent"};
+            int[] blockAlpha = {38, 38, 128, 128, 38};
+            for (int i = 0; i < blockRows.length; i++) {
+                ObjMesh.resetBaker();
+                GalleryPack.resetModelScales();
+                Files.writeString(root.resolve("alpha.tsv"), blockRows[i] + "\n");
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                var resolved = GalleryPack.build(List.of(jar),
+                        List.of(new GalleryPack.Input("fixture:block#qalpha")), entries, new ArrayList<>());
+                expect(failures, resolved.size() == 1, "block alpha: capture resolves " + i);
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject model = JsonParser.parseString(new String(entries.get(
+                        "assets/c-imagine/models/gallery/g0.json"), StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject f = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").entrySet().iterator().next().getValue().getAsJsonObject();
+                String texture = model.getAsJsonObject("textures")
+                        .get(f.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get("assets/" + texture.replace(":", "/textures/") + ".png"));
+                JsonArray uv = f.getAsJsonArray("uv");
+                int x = (int) ((uv.get(0).getAsDouble() + uv.get(2).getAsDouble()) / 32 * sheet.getWidth());
+                int y = (int) ((uv.get(1).getAsDouble() + uv.get(3).getAsDouble()) / 32 * sheet.getHeight());
+                expect(failures, sheet.getRGB(x, y) >>> 24 == blockAlpha[i],
+                        "block alpha: only explicit opaque chunk materials ignore vertex opacity " + i);
+            }
         } finally {
             GalleryPack.setQuadDir(null);
             GalleryPack.resetJarCache();

@@ -1998,12 +1998,16 @@ public final class GalleryPack {
                 // vertex alpha is honored on the TRANSLUCENT layer only (the
                 // brine-class fluids whose captured alphas carry the real
                 // opacity); on solid/cutout the texture's own alpha rules.
-                boolean translucentLayer = faceMaterial.equals("translucent");
-                colors = new float[4][translucentLayer && c.length >= 39 ? 4 : 3];
+                // Legacy block/BER rows default to cutout for replay but
+                // do not identify the source shader. Only an explicit
+                // captured chunk material proves that alpha was ignored.
+                boolean preserveAlpha = !(c.length == 40 || c.length == 42)
+                        || faceMaterial.equals("translucent");
+                colors = new float[4][preserveAlpha && c.length >= 39 ? 4 : 3];
                 for (int i = 0; i < 12; i++) {
                     colors[i / 3][i % 3] = Float.parseFloat(c[23 + i]);
                 }
-                if (translucentLayer && c.length >= 39) {
+                if (preserveAlpha && c.length >= 39) {
                     for (int i = 0; i < 4; i++) {
                         colors[i][3] = Float.parseFloat(c[35 + i]);
                     }
