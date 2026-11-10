@@ -413,6 +413,9 @@ final class QuadDump {
             }
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
+                if (isNixieRenderer(be)) {
+                    LOGGER.info("[cimscene] 14-dn text-quads diag {}: no renderer registered", state.getBlock());
+                }
                 return;
             }
             // Match BlockEntityRenderDispatcher's eligibility checks. Some
@@ -421,6 +424,11 @@ final class QuadDump {
             if (!be.getType().isValid(state)
                     || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
                 berNotRendered++;
+                if (isNixieRenderer(be)) {
+                    LOGGER.info("[cimscene] 14-dn text-quads diag {}: not rendered (typeValid={} shouldRender={})",
+                            state.getBlock(), be.getType().isValid(state),
+                            renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()));
+                }
                 return;
             }
             ItemCapture capture = new ItemCapture(sprites, 0);
@@ -431,10 +439,26 @@ final class QuadDump {
             if (capture.out.length() > 0) {
                 berDrawn++;
             }
+            if (isNixieRenderer(be)) {
+                LOGGER.info("[cimscene] 14-dn text-quads diag {}: renderer={} buffers={} outLen={} foreign={}",
+                        state.getBlock(), renderer.getClass().getName(), capture.bufferStates(),
+                        capture.out.length(), capture.foreign);
+            }
         } catch (Throwable t) {
             berFailed++;
             LOGGER.info("[cimscene] quad dump block entity skip {}: {}", state.getBlock(), t.toString());
         }
+    }
+
+    /** 14-dn: the where-do-text-quads-go diagnostic targets the nixie text-gap
+     *  class — every nixie-family BER's capture stream lands in the boot log
+     *  (the renderer class, the RenderType buffer stream, the emitted length
+     *  and the foreign count), so the next run answers whether the capture rig
+     *  ever sees the glyph quads and in which RenderType. */
+    private static boolean isNixieRenderer(BlockEntity be) {
+        String type = String.valueOf(be.getType());
+        String cls = be.getClass().getName().toLowerCase();
+        return cls.contains("nixie") || type.toLowerCase().contains("nixie");
     }
 
     /** Records each quad the renderer emits; everything per-vertex arrives in putBulkData. */
@@ -849,17 +873,33 @@ final class QuadDump {
             }
         }
 
+        /** 14-dn: the RenderType stream a BER asked for (one string per
+         *  RecordingBuffer, in request order) — the text-quads diagnostic's
+         *  payload for the where-do-text-quads-go question. */
+        java.util.List<String> bufferStates() {
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (RecordingBuffer buffer : buffers.values()) {
+                out.add(buffer.state);
+            }
+            return out;
+        }
+
         private final class RecordingBuffer implements VertexConsumer {
             final List<TextureAtlasSprite> boundSprites;
             final boolean captureAtlasPixels;
             final String texture;
             final boolean rawShade;
+            /** The RenderType's toString (14-dn: the text-quads diagnostic names
+             *  every buffer the BER asked for, so the where-do-text-quads-go
+             *  question is answered per page in the boot log). */
+            final String state;
             final float[][] pos = new float[4][3];
             final float[][] uv = new float[4][2];
             final float[][] rgb = new float[4][4];
             int n = -1;
 
             RecordingBuffer(String state, boolean shaderDiffuse) {
+                this.state = state;
                 rawShade = shaderDiffuse;
                 String direct = CaptureTexture.fromRenderState(state);
                 List<TextureAtlasSprite> atlasSprites = sprites;
