@@ -392,7 +392,7 @@ jobs:
           # (world blur + darkening) for every SUBSEQUENT page — measured 42416372623: 10 gal-p
           # pages (create64/96/128/240/256/272/320, ae232/256, boP96) carried the menu and cost
           # ~123 gate reds. The gallery is a multiplayer world; pausing buys nothing.
-          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\n' > truth-client/game/options.txt
           # GPU instances bypass the VertexConsumer used by QuadDump.
           # Use Flywheel's ordinary BER fallback in the capture client;
           # reference screenshot clients keep their normal renderer.
@@ -1093,7 +1093,7 @@ jobs:
           sha256sum truth-client/game/mods/*.jar > truth-client-mods.sha256
           cat truth-client-mods.sha256
           # options value maps linearly: 70 + 40*v on both client versions.
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\n' > truth-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py truth-client/game
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
@@ -1942,13 +1942,8 @@ jobs:
           # after the fix: the casing drops 78x79 -> ~56x57 (78*514/712).
           # $GLBACKEND comes from the 14-bo probe ladder above: opengl unless
           # the rolled image's GLX cannot serve the client's own GLFW request.
-          # 14-cr DIAGNOSTIC: mipmapLevels:0 — the ours-side wall/webbing/cutout
-          # classes (run 42416372623: walls ~1000 reds, webbing/bramble noise)
-          # render LIGHTER and BLURRIER than the byte-identical pack did on the
-          # 67cd0e2c green baseline while the pack itself is unchanged; the
-          # per-sprite mipmap chain (inter-sprite bleed on the packed atlas) is
-          # the remaining render-side suspect. Zero mips kills atlas bleed.
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
+          # Match the native reference default explicitly on both stacks.
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)
