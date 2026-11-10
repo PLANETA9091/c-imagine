@@ -2508,8 +2508,13 @@ public final class CimSceneMod {
         }
     }
 
-    /** Receipt flag: the first client-side unfreeze logs once per join. */
+    /** Receipt flags: the first client-side unfreeze logs once per join. */
     private static boolean CLIENT_UNFREEZE_SEEN = false;
+    private static boolean MCMETA_PIN_LOGGED = false;
+    private static boolean MCMETA_PIN_BROKEN = false;
+    /** Reflection caches (resolved on the first pin attempt, reused after). */
+    private static java.lang.reflect.Field TM_BY_PATH;
+    private static java.lang.reflect.Field ATLAS_ANIMATED;
 
     /**
      * 14-dk THE CLIENT KEEPS TICKING — the freeze stays server-authoritative.
@@ -2543,6 +2548,7 @@ public final class CimSceneMod {
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.level == null) {
             CLIENT_UNFREEZE_SEEN = false;
+            MCMETA_PIN_LOGGED = false;
             return;
         }
         if (mc.level.tickRateManager().isFrozen()) {
@@ -2551,6 +2557,118 @@ public final class CimSceneMod {
                 CLIENT_UNFREEZE_SEEN = true;
                 LOGGER.info("[cimscene] 14-dk client keeps ticking (the freeze stays server-authoritative)");
             }
+        }
+        pinMcmetaFrameZero(mc);
+    }
+
+    /**
+     * 14-dl THE MCMETA FRAME-0 PIN — the client half of the animation
+     * instrument. The 14-di server freeze stopped the BE tickers and the
+     * 14-dk client-unfreeze kept the client's meshing/particles/lerps alive,
+     * but the client's mcmeta sprite clocks still free-run: the sprite
+     * tickers advance per client tick (TextureManager.tick ->
+     * TextureAtlas.tick -> cycleAnimationFrames -> SpriteContents$Ticker
+     * .tickAndUpload, verified on the 1.21.1 decompile), so every
+     * mcmeta-animated surface (the fluid stills, the fluix_wall family, the
+     * blaze flames, water/lava) shipped a DIFFERENT frame every run — the
+     * named 14-di mcmeta residual, measured live as the 8 OURS-STATIC
+     * fluix_wall pages (14-dk.1 receipts: truth_delta &gt; 0.35 while ours
+     * stands) and the fluid-series giants whose self-pairs stay below the
+     * gate while the truth-vs-ours ae measures 249K-1168K.
+     *
+     * <p>The pin walks the texture manager's atlas registry EVERY client
+     * tick (post the textureManager.tick that cycleAnimationFrames runs in)
+     * and, for every atlas whose animatedTextures list is still populated:
+     * for each animated sprite, zeroes the inner ticker's frame/subFrame
+     * counters and re-uploads the sprite's FIRST frame ({@code
+     * TextureAtlasSprite#uploadFirstFrame}, the same call the stitch path
+     * uses), then empties the atlas's animatedTextures list so
+     * cycleAnimationFrames iterates nothing. The empty-list check makes the
+     * steady state O(atlas count) per tick and the pin re-fires
+     * automatically after a resource reload (which replaces the atlas
+     * objects with fresh lists). The atlas content thereafter is frame 0,
+     * bit-deterministic, matching what the pack composites carry BY
+     * CONSTRUCTION (the 14-cf hosting ships the static frame-0 crop under
+     * the sprite's own path, and the dump client's captures ride the same
+     * pinned clocks) — the phase residual dies at the source instead of
+     * being excused post-hoc. The ANIMATED self-pair excuse mostly
+     * evaporates with it: a cell whose only motion was the mcmeta phase
+     * measures a zero t0/t1 delta AND a near-zero truth-vs-ours ae.
+     *
+     * <p>Resource reloads replace the atlas objects (fresh lists) — the
+     * per-tick empty-list check re-pins the new generation automatically.
+     * Reflection targets (all verified on the 1.21.1 client-named jar):
+     * TextureManager.byPath (private final Map), TextureAtlas.animatedTextures
+     * (private List), the anonymous TextureAtlasSprite$Ticker wrapper's
+     * captured fields (val$ticker: SpriteTicker, this$0: TextureAtlasSprite),
+     * SpriteContents$Ticker.frame/subFrame (package-private ints). Any
+     * reflection miss disables the pin once with a warn — the walk never
+     * crashes on it. The ours (Paper/26.3) leg runs no scenemod and needs no
+     * pin: its composites are static by construction.
+     */
+    private static void pinMcmetaFrameZero(net.minecraft.client.Minecraft mc) {
+        if (MCMETA_PIN_BROKEN) {
+            return;
+        }
+        try {
+            if (TM_BY_PATH == null) {
+                TM_BY_PATH = net.minecraft.client.renderer.texture.TextureManager.class
+                        .getDeclaredField("byPath");
+                TM_BY_PATH.setAccessible(true);
+                ATLAS_ANIMATED = net.minecraft.client.renderer.texture.TextureAtlas.class
+                        .getDeclaredField("animatedTextures");
+                ATLAS_ANIMATED.setAccessible(true);
+            }
+            Object byPath = TM_BY_PATH.get(mc.getTextureManager());
+            int atlases = 0;
+            int sprites = 0;
+            for (Object tex : ((java.util.Map<?, ?>) byPath).values()) {
+                if (!(tex instanceof net.minecraft.client.renderer.texture.TextureAtlas atlas)) {
+                    continue;
+                }
+                java.util.List<?> tickers = (java.util.List<?>) ATLAS_ANIMATED.get(atlas);
+                if (tickers.isEmpty()) {
+                    continue;
+                }
+                for (Object wrapper : tickers) {
+                    // the anonymous TextureAtlasSprite.Ticker captures the
+                    // inner SpriteContents$Ticker (val$ticker) and the sprite
+                    // (this$0) as synthetic fields
+                    Object inner = null;
+                    net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = null;
+                    for (java.lang.reflect.Field f : wrapper.getClass().getDeclaredFields()) {
+                        f.setAccessible(true);
+                        Object v = f.get(wrapper);
+                        if (v instanceof net.minecraft.client.renderer.texture.SpriteTicker) {
+                            inner = v;
+                        } else if (v instanceof net.minecraft.client.renderer.texture.TextureAtlasSprite s) {
+                            sprite = s;
+                        }
+                    }
+                    if (inner != null && sprite != null) {
+                        java.lang.reflect.Field frame = inner.getClass().getDeclaredField("frame");
+                        frame.setAccessible(true);
+                        java.lang.reflect.Field subFrame = inner.getClass().getDeclaredField("subFrame");
+                        subFrame.setAccessible(true);
+                        frame.setInt(inner, 0);
+                        subFrame.setInt(inner, 0);
+                        sprite.uploadFirstFrame();
+                        sprites++;
+                    }
+                }
+                // the atlas stops ticking its sprites: the pinned frame-0
+                // content stays on the GPU until the atlas object is replaced
+                // (resource reload — the empty-list check re-pins it then)
+                ATLAS_ANIMATED.set(atlas, java.util.List.of());
+                atlases++;
+            }
+            if (atlases > 0 && !MCMETA_PIN_LOGGED) {
+                MCMETA_PIN_LOGGED = true;
+                LOGGER.info("[cimscene] 14-dl mcmeta frame-0 pin: {} atlases / {} animated sprites pinned (the sprite ticker stops at frame 0)", atlases, sprites);
+            }
+        } catch (Exception ex) {
+            MCMETA_PIN_BROKEN = true;
+            LOGGER.warn("[cimscene] 14-dl mcmeta frame-0 pin disabled (reflection miss: {})", ex.toString());
         }
     }
 
