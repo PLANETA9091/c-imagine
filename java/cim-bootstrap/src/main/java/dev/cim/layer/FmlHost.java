@@ -157,11 +157,16 @@ public final class FmlHost {
 
             // 3) real ModFile / ModFileInfo / ModInfo per jar (real toml parsing)
             List<Object> modFiles = new ArrayList<>();
+            Map<String, Object> scanByJar = new HashMap<>();
             List<Object> modInfos = new ArrayList<>();
             List<ModSpec> containerSpecs = new ArrayList<>();
             Map<ModSpec, Object> infoBySpec = new HashMap<>();
             for (ModSpec mod : mods) {
                 Object file = buildModFile(mod);
+                Object fileScan = buildScanData(mod);
+                file.getClass().getMethod("setScanResult", Class.forName(SCAN_DATA), Throwable.class)
+                        .invoke(file, fileScan, null);
+                scanByJar.put(mod.jar(), fileScan);
                 modFiles.add(file);
                 Object fileInfo = call(file, "getModFileInfo");
                 if (fileInfo == null) {
@@ -205,7 +210,8 @@ public final class FmlHost {
             // parallel loops stay aligned.
             List<ModSpec> containerMods = new ArrayList<>();
             for (ModSpec mod : containerSpecs) {
-                Object scanData = buildScanData(mod);
+                Object scanData = java.util.Objects.requireNonNull(scanByJar.get(mod.jar()),
+                        "missing scan data for " + mod.jar());
                 Object info = infoBySpec.get(mod);
                 if (info == null) {
                     throw new IllegalStateException("no ModInfo for " + mod.id());
@@ -400,6 +406,20 @@ public final class FmlHost {
             gameData.getMethod("unfreezeData").invoke(null);
             Map<String, Integer> registered = postRegisterEvents(gameData);
             gameData.getMethod("freezeData").invoke(null);
+
+            // CommonModLoader.begin loads COMMON configs after registration
+            // and before common/sided setup. SERVER configs belong to the
+            // native ServerLifecycleHooks once the actual server exists.
+            Class<?> configTracker = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.config.ConfigTracker");
+            Class<?> configType = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.config.ModConfig$Type");
+            Class<?> paths = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.loading.FMLPaths");
+            Object configDir = paths.getMethod("get").invoke(paths.getField("CONFIGDIR").get(null));
+            configTracker.getMethod("loadConfigs", configType, Path.class)
+                    .invoke(configTracker.getField("INSTANCE").get(null),
+                            configType.getField("COMMON").get(null), configDir);
 
             // 7) lifecycle: common setup + dedicated server setup, per container
             fireSetupEvents(containers);

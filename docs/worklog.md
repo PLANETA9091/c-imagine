@@ -8573,3 +8573,24 @@ Isolated7e578bb8 A/B gallery42854053504 is completeRED: pinning native/reference
   It fails on the previous code (0x0404 vs required 0x0401) and passes with
   the repair. Full cim-reloc/imagine tests, clippy -D warnings, and release
   native build PASS. Profiling remains required for the relocated runtime.
+
+### Green campaign — publish scan data and load native common configs
+- After native level loading, GameTestHooks accessed ModList.getAllScanData:
+  ModFile.getScanResult returned null because only containers received the
+  scan. Publish the already assembled file-wide scan through ModFile's real
+  setScanResult API and share that same object with its mod containers.
+- The next real ServerStartingEvent exposed an unloaded COMMON config in
+  NeoForge's TagConventionLogWarning. Match CommonModLoader.begin: load COMMON
+  configs with ConfigTracker and FMLPaths.CONFIGDIR after registration and
+  before common/sided setup. Native ServerLifecycleHooks still loads SERVER
+  configs; no config event or default value is fabricated.
+- Validation: bootstrap build, FmlHost ownership and LayerServerHost contracts
+  PASS; current test-mod jar builds. Against the actual installed 21.1.265
+  runtime, the local diagnostic probe now starts, delivers the native
+  ServerStartedEvent to the unchanged cimtest_heavy (no-selfarm receipt),
+  executes three driver calls and stops cleanly. A second independent process
+  resumes the saved level and also starts/stops cleanly. Emitted Aquifer
+  bytecode retains the public method while its same-named field is protected.
+- These local driver calls are startup diagnostics, not Paper-tick, heavy-load,
+  real-mod parity, or performance proof. Full integration and profiling must
+  supply those receipts with the existing gates unchanged.
