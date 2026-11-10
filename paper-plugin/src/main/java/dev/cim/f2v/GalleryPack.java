@@ -1253,7 +1253,12 @@ public final class GalleryPack {
             if (raw == null) {
                 return null;
             }
-            byte[] baked = multiplyPng(raw, tint);
+            // 14-dr: the sibling ships with NO mcmeta, so an animated source
+            // must bake from its first frame (the crop), never from the whole
+            // strip — a strip sibling would squash into one smeared sprite.
+            byte[] meta = readPngFromJars(jars, rawPng + ".mcmeta");
+            byte[] source = stillFrameCrop(sprite, raw, meta, new ArrayList<>());
+            byte[] baked = multiplyPng(source, tint);
             entries.put(bakedPng, baked);
             if (bakeLog != null) {
                 bakeLog.add(sprite + " <- (" + tint[0] + ", " + tint[1] + ", "
@@ -2009,11 +2014,25 @@ public final class GalleryPack {
                 // vertex alpha is honored on the TRANSLUCENT layer only (the
                 // brine-class fluids whose captured alphas carry the real
                 // opacity); on solid/cutout the texture's own alpha rules.
-                // Legacy block/BER rows default to cutout for replay but
-                // do not identify the source shader. Only an explicit
-                // captured chunk material proves that alpha was ignored.
-                boolean preserveAlpha = !(c.length == 40 || c.length == 42)
-                        || faceMaterial.equals("translucent");
+                // 14-dr THE LEGACY-ROW ZERO-ALPHA TRAP: the 14-dp guard kept
+                // honoring the alpha columns on the 39/41-col rows (no
+                // explicit captured material — "only an explicit captured
+                // chunk material proves that alpha was ignored"). Run
+                // 42839844310 measured the SAME invisible-empty signature on
+                // a 41-col BLOCK capture: biomesoplenty:huge_lily_pad, item
+                // page cell ae 211987, the ours cell EMPTY — the pack's
+                // objcut sheet1 tiles at the composite's UV rects carry
+                // RGB 45,77,36 (the pad's own green) with ALPHA 0.0 x4 (the
+                // sheet-pixel sampling), i.e. the legacy rows ride the same
+                // chunk-pipeline alpha-0 emission the liquid rows do. The
+                // vertex alpha is honored ONLY on the rows that name their
+                // shader AND name translucent; every legacy row (39/41 col,
+                // the chunk/BER capture shape) lets the texture's own alpha
+                // rule. Real captured translucency always rides the explicit
+                // material rows (the native-liquid dump shape); the
+                // captured-alpha selftest keeps covering both.
+                boolean preserveAlpha = (c.length == 40 || c.length == 42)
+                        && faceMaterial.equals("translucent");
                 colors = new float[4][preserveAlpha && c.length >= 39 ? 4 : 3];
                 for (int i = 0; i < 12; i++) {
                     colors[i / 3][i % 3] = Float.parseFloat(c[23 + i]);
@@ -2453,15 +2472,13 @@ public final class GalleryPack {
             byte[] pixels = java.nio.file.Files.readAllBytes(png);
             String key = "items/captured_" + hash;
             String hosted = "assets/" + WRAPPER_NS + "/textures/block/" + key + ".png";
-            entries.put(hosted, pixels);
             Path metaFile = png.resolveSibling(hash + ".png.mcmeta");
-            if (java.nio.file.Files.isRegularFile(metaFile)) {
-                byte[] meta = sanitizeAnimationMetadata(sprite, pixels,
-                        java.nio.file.Files.readAllBytes(metaFile), warnings);
-                if (meta != null) {
-                    entries.put(hosted + ".mcmeta", meta);
-                }
-            }
+            byte[] meta = java.nio.file.Files.isRegularFile(metaFile)
+                    ? java.nio.file.Files.readAllBytes(metaFile) : null;
+            // 14-dr: the captured strip ships as its first animation frame,
+            // never animated (the truth side pins frame 0; the ours side's
+            // clocks free-run — the singularity/measured-anomaly class).
+            entries.put(hosted, stillFrameCrop(sprite, pixels, meta, warnings));
             return WRAPPER_NS + ":block/" + key;
         }
         if (sprite.startsWith("minecraft:block/")) {
@@ -2481,14 +2498,10 @@ public final class GalleryPack {
             return blockPath ? sprite : placeholderSprite(entries);
         }
         if (blockPath) {
-            entries.putIfAbsent(png, bytes);
             byte[] meta = readPngFromJars(jars, png + ".mcmeta");
-            if (meta != null) {
-                meta = sanitizeAnimationMetadata(sprite, bytes, meta, warnings);
-                if (meta != null) {
-                    entries.putIfAbsent(png + ".mcmeta", meta);
-                }
-            }
+            // 14-dr: putIfAbsent keeps a frame-0 crop a priori writer made
+            // (the same source sprite may already be hosted by copyTextureRef)
+            entries.putIfAbsent(png, stillFrameCrop(sprite, bytes, meta, warnings));
             return sprite;
         }
         String key = "items/" + (sprite.startsWith("@") ? "raw_" + sprite.substring(1) : sprite)
@@ -2498,89 +2511,116 @@ public final class GalleryPack {
     }
 
     /**
-     * Ship a re-hosted PNG with its animation metadata: without the .mcmeta an
-     * animated strip stops being frames and squashes into one smeared sprite
-     * (measured: 18 re-hosted strips, none animated — ae2 crystals, mekanism
-     * alloys and liquids).
+     * Ship a re-hosted PNG: an animated source (its jar mcmeta exists) ships
+     * as its FIRST ANIMATION FRAME cropped to the frame box, with no mcmeta
+     * at all — the 14-dr static-frame rule ({@link #stillFrameCrop}).
      */
     private static void putHosted(List<Path> jars, String key, String sourcePng, byte[] bytes,
                                   TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
         String hosted = "assets/" + WRAPPER_NS + "/textures/block/" + key + ".png";
-        entries.put(hosted, bytes);
         byte[] meta = readPngFromJars(jars, sourcePng + ".mcmeta");
-        if (meta != null) {
-            meta = sanitizeAnimationMetadata(sourcePng, bytes, meta, warnings);
-            if (meta != null) {
-                entries.put(hosted + ".mcmeta", meta);
-            }
-        }
+        entries.put(hosted, stillFrameCrop(sourcePng, bytes, meta, warnings));
     }
 
     /**
-     * The 26.3 client treats an animation that resolves to at most ONE valid
-     * frame as STATIC while keeping the FRAME-sized contents: the atlas then
-     * allocates one frame slot and uploadFirstFrame writes the WHOLE strip
-     * into it — IllegalArgumentException, the reload dies and the client
-     * DROPS THE SERVER PACK (measured run 42099936223: three re-hosted
-     * mekanism mcmeta with "frames": [] turned every gallery cell into the
-     * paper fallback). Sanitize: an explicit frames list that carries fewer
-     * than two valid entries on a multi-frame strip loses the list and
-     * animates sequentially instead; an unparseable PNG or mcmeta ships
-     * without metadata (a static sprite always fits its own atlas slot).
+     * 14-dr THE STATIC-FRAME RULE. Every animated texture the pack hosts
+     * ships as its FIRST ANIMATION FRAME cropped to the frame box, with no
+     * .mcmeta at all.
+     *
+     * <p>WHY (measured run 42839844310): the truth leg pins every animated
+     * sprite to its first frame (the 14-dl client tick pin re-uploads the
+     * sprite's first frame and empties the atlas's animation list), while the
+     * ours client's sprite clocks free-run through the walk's unfreeze
+     * windows — a shipped strip animates on ours to an ARBITRARY (and with
+     * interpolate=true, blended) frame at shot time. The crops: ae2:singularity
+     * item ae 72554 (ours light-blue sparkle vs the truth's pinned frame-0
+     * purple swirl), ae2:mysterious_cube item 77183 + block 157034 and
+     * not_so_mysterious_cube 76535 (the pattern-pulse frames), bop:anomaly
+     * item 103779 + the block lane's anomaly[type=stable] (the glitch-noise
+     * frames), ae2:crystal_resonance_generator 62935 and the fluix_wall x7
+     * (62-68K, the fluix_block glow pulse). The frame-vs-frame-0 diffs of the
+     * shipped strips match the measured aes (singularity 21-41K per frame,
+     * mysterious_cube_side 21-63K, anomaly ~25K x6 faces, crg up to 143K).
+     *
+     * <p>WHY CROP AND NOT JUST DROP THE MCMETA: without the mcmeta an
+     * animated strip stops being frames and squashes into one smeared sprite
+     * (measured: 18 re-hosted strips, none animated — ae2 crystals, mekanism
+     * alloys and liquids). The frame box = width x (mcmeta height ?: width,
+     * the vanilla default); the first frame = the frames[0] entry's index
+     * (the atlas content the 14-dl pin re-uploads is the animation's first
+     * LISTED frame) or block 0 for the implicit sequential list. A static
+     * png (no mcmeta, or the mcmeta without an animation object) ships
+     * byte-identical; an unreadable PNG ships verbatim without the mcmeta
+     * (the old sanitizer's fallback — the squash risk stays the lesser evil
+     * against the pack-drop crash).
      */
-    static byte[] sanitizeAnimationMetadata(String sprite, byte[] png, byte[] meta,
-                                            List<String> warnings) {
+    static byte[] stillFrameCrop(String sprite, byte[] png, byte[] meta,
+                                 List<String> warnings) {
+        if (meta == null) {
+            return png;
+        }
         int[] dims = pngDims(png);
         if (dims == null) {
             warnings.add("gallery: animation metadata dropped (unreadable PNG): " + sprite);
-            return null;
+            return png;
         }
         JsonObject root;
         try {
             root = JsonParser.parseString(new String(meta, StandardCharsets.UTF_8)).getAsJsonObject();
         } catch (RuntimeException bad) {
             warnings.add("gallery: animation metadata dropped (unparseable mcmeta): " + sprite);
-            return null;
+            return png;
         }
         if (!root.has("animation") || !root.get("animation").isJsonObject()) {
-            return meta;
+            return png;
         }
         JsonObject anim = root.getAsJsonObject("animation");
         int frameW = anim.has("width") ? anim.get("width").getAsInt() : dims[0];
         int frameH = anim.has("height") ? anim.get("height").getAsInt() : dims[0];
         if (frameW <= 0 || frameH <= 0 || dims[0] % frameW != 0 || dims[1] % frameH != 0) {
-            warnings.add("gallery: animation metadata dropped (strip " + dims[0] + "x" + dims[1]
+            warnings.add("gallery: animation frame box dropped (strip " + dims[0] + "x" + dims[1]
                     + " does not tile " + frameW + "x" + frameH + "): " + sprite);
-            return null;
+            return png;
         }
-        int total = (dims[0] / frameW) * (dims[1] / frameH);
-        if (total <= 1 || !anim.has("frames") || !anim.get("frames").isJsonArray()) {
-            return meta;
-        }
-        int defaultTime = anim.has("frametime") ? anim.get("frametime").getAsInt() : 1;
-        int valid = 0;
-        for (JsonElement e : anim.getAsJsonArray("frames")) {
-            int index;
-            int time;
-            if (e.isJsonObject()) {
-                JsonObject f = e.getAsJsonObject();
-                index = f.has("index") ? f.get("index").getAsInt() : -1;
-                time = f.has("time") ? f.get("time").getAsInt() : defaultTime;
-            } else {
-                index = e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber() ? e.getAsInt() : -1;
-                time = defaultTime;
+        int cols = dims[0] / frameW;
+        int total = cols * (dims[1] / frameH);
+        int first = 0;
+        if (anim.has("frames") && anim.get("frames").isJsonArray()
+                && !anim.getAsJsonArray("frames").isEmpty()) {
+            JsonElement head = anim.getAsJsonArray("frames").get(0);
+            if (head.isJsonObject() && head.getAsJsonObject().has("index")) {
+                first = head.getAsJsonObject().get("index").getAsInt();
+            } else if (head.isJsonPrimitive() && head.getAsJsonPrimitive().isNumber()) {
+                first = head.getAsJsonPrimitive().getAsInt();
             }
-            if (index >= 0 && index < total && time > 0) {
-                valid++;
+            if (first < 0 || first >= total) {
+                first = 0;
             }
         }
-        if (valid >= 2) {
-            return meta;
+        if (total <= 1 && first == 0) {
+            return png; // single frame: static already
         }
-        warnings.add("gallery: animation frames list (" + valid + " valid of " + total
-                + ") would render the strip static — animating sequentially: " + sprite);
-        anim.remove("frames");
-        return root.toString().getBytes(StandardCharsets.UTF_8);
+        int bx = (first % cols) * frameW;
+        int by = (first / cols) * frameH;
+        try {
+            java.awt.image.BufferedImage src = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(png));
+            java.awt.image.BufferedImage frame = src.getSubimage(bx, by, frameW, frameH);
+            java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(
+                    frameW, frameH, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g = out.createGraphics();
+            g.drawImage(frame, 0, 0, null);
+            g.dispose();
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(out, "png", buf);
+            warnings.add("gallery: animated texture shipped static at its first frame ("
+                    + first + " of " + total + ", " + frameW + "x" + frameH + "): " + sprite);
+            return buf.toByteArray();
+        } catch (Exception bad) {
+            warnings.add("gallery: animation frame crop failed (shipping the raw strip): "
+                    + sprite + ": " + bad);
+            return png;
+        }
     }
 
     /** IHDR width/height of a PNG byte array, or null when it is not a PNG. */
@@ -2601,11 +2641,27 @@ public final class GalleryPack {
     private static String placeholderSprite(TreeMap<String, byte[]> entries) throws IOException {
         String png = spritePathPng(PLACEHOLDER_SPRITE);
         if (!entries.containsKey(png)) {
+            // 14-dr: the placeholder MUST be the vanilla missing sprite
+            // bit-exact — a quad whose texture could not be captured renders
+            // the REAL missing sprite on the truth leg, so the stand-in must
+            // carry the same pattern at the same phase. Decompiled
+            // MissingTextureAtlasSprite.generateMissingImage (the 26.3 client
+            // jar, byte-identical rule on 1.21.1): `y < height/2 ^ x < width/2`
+            // -> pink (0xF800F8 on 1.21.1, the color the ae2:facade truth
+            // crop measured at 181,0,181 = 248,0,248 x 0.73 entity dim),
+            // else opaque black — i.e. TOP-LEFT BLACK, TR/BL pink, BR black.
+            // The old stand-in had the phase inverted ((x/8+y/8)&1==0 ->
+            // pink = TL pink): every missing-sprite quad rendered the
+            // opposite color pair, measured on the ae2:facade item (ours
+            // black face vs the truth's magenta, ae 189091) and the
+            // ae2:fe_p2p_tunnel's missing side face (the 476/273 px
+            // checkerboard phase swap, ae 127122).
             java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(
                     16, 16, java.awt.image.BufferedImage.TYPE_INT_RGB);
             for (int y = 0; y < 16; y++) {
                 for (int x = 0; x < 16; x++) {
-                    image.setRGB(x, y, ((x / 8 + y / 8) & 1) == 0 ? 0xF800F8 : 0x000000);
+                    boolean pink = (y < 8) ^ (x < 8);
+                    image.setRGB(x, y, pink ? 0xF800F8 : 0x000000);
                 }
             }
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();

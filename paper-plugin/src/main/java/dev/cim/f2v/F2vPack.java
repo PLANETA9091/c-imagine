@@ -2027,7 +2027,21 @@ public final class F2vPack {
             warnings.add("texture outside item|block dirs not atlased: " + ref);
             return;
         }
-        entries.put(texFile, zf.getInputStream(te).readAllBytes());
+        byte[] bytes = zf.getInputStream(te).readAllBytes();
+        // 14-dr THE STATIC-FRAME RULE: an animated source ships as its first
+        // animation frame (cropped to the frame box, NO mcmeta). The item
+        // sprite route previously shipped the raw strip with NO mcmeta at
+        // all — the strip squashed into one smeared sprite on the client
+        // (the measured 18-strip bug); the re-host routes shipped it WITH
+        // the mcmeta and animated against the truth's pinned frame (run
+        // 42839844310: mysterious_cube/singularity/anomaly crops).
+        // GalleryPack.stillFrameCrop owns the rationale.
+        byte[] meta = null;
+        ZipEntry me = zf.getEntry(texFile + ".mcmeta");
+        if (me != null) {
+            meta = zf.getInputStream(me).readAllBytes();
+        }
+        entries.put(texFile, GalleryPack.stillFrameCrop(ref, bytes, meta, warnings));
     }
 
     // ---- emitters ---------------------------------------------------------------
@@ -3345,17 +3359,32 @@ public final class F2vPack {
         expect(failures, hostEntries.containsKey(
                 "assets/c-imagine/textures/block/items/unhosted.png"),
                 "gallery: the placeholder sprite ships in the pack");
+        // 14-dr: the placeholder phase = the decompiled vanilla missing
+        // sprite (TL black, TR/BL pink, BR black) — the old stand-in had it
+        // inverted and every missing-sprite quad rendered the opposite color
+        // (the ae2:facade + fe_p2p_tunnel measured crops).
+        var ph = decodePng(hostEntries.get("assets/c-imagine/textures/block/items/unhosted.png"));
+        expect(failures, ph.getWidth() == 16 && ph.getHeight() == 16
+                        && (ph.getRGB(0, 0) & 0xFFFFFF) == 0x000000
+                        && (ph.getRGB(15, 0) & 0xFFFFFF) == 0xF800F8
+                        && (ph.getRGB(0, 15) & 0xFFFFFF) == 0xF800F8
+                        && (ph.getRGB(15, 15) & 0xFFFFFF) == 0x000000,
+                "gallery: the placeholder matches the vanilla missing-sprite phase");
         expect(failures, hostWarnings.size() == 1 && hostWarnings.get(0).contains(trim),
                 "gallery: the unhostable sprite stays loud in the build report");
         expect(failures, GalleryPack.hostSprite(List.of(), "mod:block/gone", hostEntries,
                 hostWarnings).equals("mod:block/gone"),
                 "gallery: a missing block-path sprite keeps its blocks-atlas ref");
-        // a re-hosted sprite keeps animation metadata the client can honour;
-        // a frames list resolving to at most ONE valid frame on a multi-frame
-        // strip flips the sprite static with frame-sized contents and crashes
-        // the atlas upload — the client then DROPS the whole pack (measured
-        // run 42099936223: three re-hosted "frames": [] mcmeta turned every
-        // gallery cell into the paper fallback)
+        // 14-dr: an animated source ships as its FIRST ANIMATION FRAME,
+        // cropped to the frame box, with NO mcmeta at all — the truth side
+        // pins every animated sprite to its first frame (14-dl) while the
+        // ours client's sprite clocks free-run through the walk's unfreeze
+        // windows (run 42839844310 measured the singularity/mysterious-cube/
+        // anomaly REDs on shipped strips). Dropping the mcmeta alone would
+        // squash the strip into one smeared sprite (the measured 18-strip
+        // bug), so the crop is mandatory: glow (a 16x16 with a mcmeta) stays
+        // 16x16; the 16x32 dead strip (frames []) and the 16x48 live strip
+        // (frames [0,2]) both crop to their first frame block at 16x16.
         byte[] square16 = f2vSelftestPng(16, 16);
         byte[] strip32 = f2vSelftestPng(16, 32);
         byte[] strip48 = f2vSelftestPng(16, 48);
@@ -3383,18 +3412,20 @@ public final class F2vPack {
         GalleryPack.resetJarCache();
         String animated = GalleryPack.hostSprite(List.of(animJar), "mod:item/glow", hostEntries, hostWarnings);
         expect(failures, animated.equals("c-imagine:block/items/mod_item_glow")
-                && hostEntries.containsKey("assets/c-imagine/textures/block/items/mod_item_glow.png.mcmeta"),
-                "gallery: a re-hosted sprite keeps its animation metadata");
+                && !hostEntries.containsKey("assets/c-imagine/textures/block/items/mod_item_glow.png.mcmeta"),
+                "gallery: a re-hosted static frame ships without mcmeta");
         GalleryPack.hostSprite(List.of(animJar), "mod:item/dead_strip", hostEntries, hostWarnings);
-        byte[] deadRaw = hostEntries.get("assets/c-imagine/textures/block/items/mod_item_dead_strip.png.mcmeta");
-        String deadMeta = deadRaw == null ? null : new String(deadRaw, StandardCharsets.UTF_8);
-        expect(failures, deadMeta != null && !deadMeta.contains("\"frames\""),
-                "gallery: a frames list with no valid entries animates sequentially");
+        var deadImage = decodePng(hostEntries.get(
+                "assets/c-imagine/textures/block/items/mod_item_dead_strip.png"));
+        expect(failures, deadImage.getWidth() == 16 && deadImage.getHeight() == 16,
+                "gallery: an invalid-frames strip crops to its 16x16 first frame");
         GalleryPack.hostSprite(List.of(animJar), "mod:item/live_strip", hostEntries, hostWarnings);
-        byte[] liveRaw = hostEntries.get("assets/c-imagine/textures/block/items/mod_item_live_strip.png.mcmeta");
-        String liveMeta = liveRaw == null ? null : new String(liveRaw, StandardCharsets.UTF_8);
-        expect(failures, liveMeta != null && liveMeta.contains("[0,2]"),
-                "gallery: a valid frames list ships verbatim");
+        var liveImage = decodePng(hostEntries.get(
+                "assets/c-imagine/textures/block/items/mod_item_live_strip.png"));
+        expect(failures, liveImage.getWidth() == 16 && liveImage.getHeight() == 16
+                && !hostEntries.containsKey(
+                        "assets/c-imagine/textures/block/items/mod_item_live_strip.png.mcmeta"),
+                "gallery: a live strip crops to its first listed frame (0) and drops the mcmeta");
         GalleryPack.resetJarCache();
         Files.delete(animJar);
         JsonObject onLimit = new JsonObject();
@@ -3468,8 +3499,14 @@ public final class F2vPack {
                     + "\t0\t0\t0\t0\t0\t16\t0\t0\t16\t0"
                     + "\t16\t16\t0\t16\t16\t0\t16\t0\t0\t16";
             String rgb = "\t1\t1\t1".repeat(4);
+            // 14-dr: the legacy (39/41-col) rows let the TEXTURE's own alpha
+            // rule — the captured vertex alpha rides only the explicit
+            // translucent material rows (the huge_lily_pad measured the
+            // legacy zero-alpha trap: the ours cell EMPTY at ae 211987).
+            // rows = {RGB-only, RGBA opaque, RGBA 0.3} -> the tile alpha is
+            // the texture's 128 in every case.
             String[] rows = {face, face + rgb, face + rgb + "\t0.3".repeat(4)};
-            int[] expected = {128, 128, 38};
+            int[] expected = {128, 128, 128};
             for (int i = 0; i < rows.length; i++) {
                 ObjMesh.resetBaker();
                 GalleryPack.resetJarCache();
@@ -3498,9 +3535,14 @@ public final class F2vPack {
                         "alpha capture: RGB stays unpremultiplied " + i);
             }
             String rgba = face + rgb + "\t0.3".repeat(4);
+            String zero = face + rgb + "\t0.0".repeat(4);
             String[] blockRows = {rgba, rgba + "\t15\t15", rgba + "\tsolid",
-                    rgba + "\tcutout\t15\t15", rgba + "\ttranslucent"};
-            int[] blockAlpha = {38, 38, 128, 128, 38};
+                    rgba + "\tcutout\t15\t15", rgba + "\ttranslucent", zero};
+            // 14-dr: only the explicit translucent material honors the vertex
+            // alpha (0.3 x the texture's 128 = 38); every legacy row and the
+            // explicit solid/cutout rows keep the texture's 128 — including
+            // the zero-alpha legacy row (the huge_lily_pad trap signature).
+            int[] blockAlpha = {128, 128, 128, 128, 38, 128};
             for (int i = 0; i < blockRows.length; i++) {
                 ObjMesh.resetBaker();
                 GalleryPack.resetModelScales();
@@ -3588,13 +3630,19 @@ public final class F2vPack {
             List<String> warnings = new ArrayList<>();
             String ref = GalleryPack.hostSprite(List.of(), "~" + hash, entries, warnings);
             String hosted = "assets/c-imagine/textures/block/items/captured_" + hash + ".png";
+            // 14-dr: the captured strip ships CROPPED to its first listed
+            // frame (frames [1,0] -> index 1 = the strip's SECOND 2x2 block)
+            // with NO mcmeta at all — the truth side pins animated sprites to
+            // their first listed frame (14-dl), the ours side's sprite clocks
+            // free-run; a shipped strip measured RED on the singularity/
+            // mysterious-cube/anomaly crops.
+            var cropped = decodePng(entries.get(hosted));
             expect(failures, ref.equals("c-imagine:block/items/captured_" + hash)
-                            && java.util.Arrays.equals(png, entries.get(hosted)),
-                    "captured sprite: generated pixels re-host without any source jar");
-            String meta = new String(entries.get(hosted + ".mcmeta"), StandardCharsets.UTF_8);
-            expect(failures, meta.contains("[1,0]") && meta.contains("\"frametime\":3"),
-                    "captured sprite: animation order and timing survive");
-            expect(failures, warnings.isEmpty(), "captured sprite: no missing-texture fallback");
+                            && cropped.getWidth() == 2 && cropped.getHeight() == 2
+                            && !entries.containsKey(hosted + ".mcmeta"),
+                    "captured sprite: strip re-hosts as its first listed frame, mcmeta dropped");
+            expect(failures, warnings.size() == 1 && warnings.get(0).contains("shipped static"),
+                    "captured sprite: the crop stays loud in the build report");
             for (String missing : List.of("~fedcba9876543210", "~../../outside")) {
                 boolean refused = false;
                 try {
