@@ -62,6 +62,14 @@ public final class SessionServerPlayer extends ServerPlayer {
         }
         self.containerMenu = self.inventoryMenu;
         self.connection = SessionConnection.create(self);
+        // ServerPlayer.server is final: the field is set as the allocated instance has none.
+        try {
+            Field server = ServerPlayer.class.getDeclaredField("server");
+            server.setAccessible(true);
+            server.set(self, level.getServer());
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot bind the session player's server", e);
+        }
         return self;
     }
 

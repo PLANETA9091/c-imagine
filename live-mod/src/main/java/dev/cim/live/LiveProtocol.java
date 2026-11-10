@@ -72,7 +72,7 @@ public final class LiveProtocol {
                     net.minecraft.world.level.block.state.BlockState wanted =
                             net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                                     net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState();
-                    FacadeLevel level = LiveMenus.level();
+                    FacadeServerLevel level = LiveMenus.level();
                     boolean fresh = false;
                     for (int i = 1; i < lines.length; i++) {
                         fresh |= lines[i].equals("fresh");
@@ -133,7 +133,7 @@ public final class LiveProtocol {
                     String opener = head[3];
                     net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
                             Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
-                    FacadeLevel level = LiveMenus.level();
+                    FacadeServerLevel level = LiveMenus.level();
                     level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 2.5);
                     BLOCKS.put(id, pos);
@@ -223,9 +223,17 @@ public final class LiveProtocol {
      * machine works, a condenser destroys what was put into its trash slot, at the rate the
      * real server runs them. Nothing else in the facade ticks.
      */
+    private static int ticks;
+
+    /** Paper's ticks since the layer's live menus started: the facade server's tick count. */
+    static int ticks() {
+        return ticks;
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static String tick() {
-        FacadeLevel level = LiveMenus.level();
+        ticks++;
+        FacadeServerLevel level = LiveMenus.level();
         int ticked = 0;
         for (net.minecraft.core.BlockPos pos : new java.util.HashSet<>(BLOCKS.values())) {
             net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);

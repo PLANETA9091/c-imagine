@@ -126,7 +126,7 @@ public final class FacadeLevel extends Level {
             if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock maker) {
                 net.minecraft.world.level.block.entity.BlockEntity made = maker.newBlockEntity(pos.immutable(), state);
                 if (made != null) {
-                    made.setLevel(this);
+                    made.setLevel(face());
                     blockEntities.put(key, made);
                     // A world calls this when the chunk's block entities load; there is no tick here.
                     made.onLoad();
@@ -148,7 +148,7 @@ public final class FacadeLevel extends Level {
 
     @Override
     public void setBlockEntity(net.minecraft.world.level.block.entity.BlockEntity blockEntity) {
-        blockEntity.setLevel(this);
+        blockEntity.setLevel(face());
         blockEntities.put(blockEntity.getBlockPos().asLong(), blockEntity);
     }
 
@@ -175,7 +175,7 @@ public final class FacadeLevel extends Level {
     public net.minecraft.world.level.chunk.ChunkAccess getChunk(int x, int z,
             net.minecraft.world.level.chunk.status.ChunkStatus status, boolean create) {
         return chunks.computeIfAbsent(net.minecraft.world.level.ChunkPos.asLong(x, z),
-                k -> new net.minecraft.world.level.chunk.LevelChunk(this, new net.minecraft.world.level.ChunkPos(x, z)));
+                k -> new net.minecraft.world.level.chunk.LevelChunk(face(), new net.minecraft.world.level.ChunkPos(x, z)));
     }
 
     /** Every spot a session looks at is loaded: the block is there or it is air. */
@@ -187,6 +187,22 @@ public final class FacadeLevel extends Level {
     @Override
     public net.neoforged.neoforge.common.world.AuxiliaryLightManager getAuxLightManager(net.minecraft.world.level.ChunkPos pos) {
         return null;
+    }
+
+    /** The ServerLevel front that mods see; block entities and chunks belong to it. */
+    private Level front;
+
+    void front(Level level) {
+        front = level;
+    }
+
+    private Level face() {
+        return front != null ? front : this;
+    }
+
+    /** No entities: Paper's world has them. */
+    LevelEntityGetter<Entity> entities() {
+        return NO_ENTITIES;
     }
 
     /** Drops every block a session placed. */

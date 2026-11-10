@@ -29,16 +29,16 @@ public final class LiveMenus {
 
     private static final Logger LOG = LoggerFactory.getLogger("cimlive");
 
-    private static FacadeLevel level;
+    private static FacadeServerLevel level;
     private static final Map<UUID, SessionServerPlayer> SESSIONS = new HashMap<>();
 
     private LiveMenus() {
     }
 
-    public static synchronized FacadeLevel level() {
+    public static synchronized FacadeServerLevel level() {
         if (level == null) {
             long t0 = System.nanoTime();
-            level = new FacadeLevel(LiveRegistries.build());
+            level = FacadeServerLevel.create(new FacadeLevel(LiveRegistries.build()));
             LOG.info("[cimlive] facade level up in {} ms", (System.nanoTime() - t0) / 1_000_000);
         }
         return level;
@@ -237,7 +237,7 @@ public final class LiveMenus {
                 SESSIONS.remove(uuid);
             }
         }
-        level().clearBlocks();
+        level().store().clearBlocks();
         LOG.info("[cimlive] selftest blocks: blocks={} menus={} threw={}", blocks.size(), blockMenus, blockThrew);
         pressButtons(opened, openedBlocks);
         widgetStates(openedBlocks);
@@ -376,7 +376,7 @@ public final class LiveMenus {
                         simple(b[4]), result, after);
             }
         }
-        level().clearBlocks();
+        level().store().clearBlocks();
         LOG.info("[cimlive] selftest buttons: proven={} pressed={} handled={}", buttons.size(), pressed, handled);
     }
 
@@ -446,7 +446,7 @@ public final class LiveMenus {
             }
             LiveProtocol.call("close\t" + uuid);
         }
-        level().clearBlocks();
+        level().store().clearBlocks();
         LOG.info("[cimlive] selftest widgets: evaluated={} grounded={}", evaluated, grounded);
     }
 
