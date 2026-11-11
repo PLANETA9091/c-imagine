@@ -309,6 +309,7 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-bearing-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "bearing")))
                         .then(Commands.literal("selftest-glue-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "glue")))
                         .then(Commands.literal("selftest-seat-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "seat")))
+                        .then(Commands.literal("selftest-gantry-live").executes(ctx -> gantryLifetimeSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -2158,6 +2159,7 @@ public final class CimSceneMod {
 
     /** The shared wall sweep (identical coordinates on every gallery leg). */
     private static void clearWall(ServerLevel level) {
+        closeGalleryGantries();
         for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
             for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
                 for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
@@ -3325,6 +3327,206 @@ public final class CimSceneMod {
                 guiEntity = entity.isRemoved() ? null : entity;
             }
         }
+    }
+
+    /** A real motor/shaft/controller assembly; every delayed action runs on normal server ticks. */
+    private static final class GantryRig {
+        final ServerLevel level;
+        final BlockPos cell;
+        final java.util.Map<BlockPos, BlockState> previous = new java.util.LinkedHashMap<>();
+        Entity entity;
+        boolean closed;
+
+        GantryRig(ServerLevel level, BlockPos cell) {
+            this.level = level;
+            this.cell = cell;
+        }
+
+        private void put(BlockPos pos, BlockState state) {
+            previous.putIfAbsent(pos, level.getBlockState(pos));
+            level.setBlock(pos, state, 3);
+        }
+
+        private Entity find() {
+            List<Entity> found = level.getEntitiesOfClass(Entity.class, new AABB(cell).inflate(1),
+                    e -> {
+                        if (!e.isAlive() || !e.isAddedToLevel()
+                                || !BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals("create:gantry_contraption")) return false;
+                        try {
+                            Object contraption = e.getClass().getMethod("getContraption").invoke(e);
+                            return contraption != null && cell.equals(contraption.getClass().getField("anchor").get(contraption));
+                        } catch (ReflectiveOperationException failure) {
+                            throw new IllegalStateException("Cannot identify the native gantry anchor", failure);
+                        }
+                    });
+            if (found.size() > 1) throw new IllegalStateException("Ambiguous native gantry assembly");
+            return found.isEmpty() ? null : found.get(0);
+        }
+
+        void start(java.util.function.Consumer<Entity> ready, java.util.function.Consumer<Throwable> failed) {
+            try {
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) level.getChunkAt(cell.offset(dx, 0, dz));
+                }
+                BlockPos motorPos = cell.below().west();
+                put(motorPos, BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:creative_motor"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
+                BlockEntity motor = level.getBlockEntity(motorPos);
+                // This is the real motor's public scroll setting, not a rewritten kinetic speed field.
+                Object speed = motor.getClass().getField("generatedSpeed").get(motor);
+                speed.getClass().getMethod("setValue", int.class).invoke(speed, -1);
+                put(cell.below(), BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_shaft"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
+                BlockState carriage = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_carriage"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.UP);
+                var alongFirst = (net.minecraft.world.level.block.state.properties.BooleanProperty)
+                        carriage.getBlock().getClass().getField("AXIS_ALONG_FIRST_COORDINATE").get(null);
+                carriage = carriage.setValue(alongFirst, false);
+                Object shaftAxis = carriage.getBlock().getClass().getMethod("getValidGantryShaftAxis", BlockState.class)
+                        .invoke(null, carriage);
+                if (shaftAxis != Direction.Axis.X) throw new IllegalStateException("Native carriage does not match its shaft axis");
+                put(cell, carriage);
+                put(cell.above(), Blocks.OAK_PLANKS.defaultBlockState());
+                runAfterTicks(level.getServer(), 5, () -> {
+                    if (closed) return;
+                    try {
+                        entity = find();
+                        if (entity != null) {
+                            ready.accept(entity);
+                            return;
+                        }
+                        BlockEntity shaft = level.getBlockEntity(cell.below());
+                        float movement = (float) shaft.getClass().getMethod("getPinionMovementSpeed").invoke(shaft);
+                        if (movement == 0) throw new IllegalStateException("Native motor did not drive its gantry shaft");
+                        BlockEntity controller = level.getBlockEntity(cell);
+                        controller.getClass().getMethod("queueAssembly").invoke(controller);
+                        runAfterTicks(level.getServer(), 5, () -> {
+                            if (closed) return;
+                            try {
+                                entity = find();
+                                if (entity == null) throw new IllegalStateException("Native gantry did not assemble: "
+                                        + controller.getClass().getMethod("getLastAssemblyException").invoke(controller)
+                                        + ", carriage=" + level.getBlockState(cell) + ", movement=" + movement);
+                                ready.accept(entity);
+                            } catch (Throwable failure) {
+                                failed.accept(failure);
+                            }
+                        });
+                    } catch (Throwable failure) {
+                        failed.accept(failure);
+                    }
+                });
+            } catch (Throwable failure) {
+                failed.accept(failure);
+            }
+        }
+
+        void close() {
+            if (closed) return;
+            closed = true;
+            try {
+                if (entity == null) entity = find();
+                if (entity != null) entity.getClass().getMethod("disassemble").invoke(entity);
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("Native gantry cleanup failed", failure);
+            } finally {
+                if (entity != null) entity.discard();
+                previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
+            }
+        }
+    }
+
+    private static final List<GantryRig> GALLERY_GANTRIES = new ArrayList<>();
+
+    private static void closeGalleryGantries() {
+        try {
+            for (GantryRig rig : GALLERY_GANTRIES) rig.close();
+        } finally {
+            GALLERY_GANTRIES.clear();
+        }
+    }
+
+    private static void checkGantryContraption(Entity entity) throws ReflectiveOperationException {
+        Object contraption = entity.getClass().getMethod("getContraption").invoke(entity);
+        Object value = contraption.getClass().getMethod("getBlocks").invoke(contraption);
+        if (!(value instanceof java.util.Map<?, ?> blocks) || blocks.size() != 2
+                || !(blocks.get(BlockPos.ZERO) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo base)
+                || !BuiltInRegistries.BLOCK.getKey(base.state().getBlock()).toString().equals("create:gantry_carriage")
+                || !(blocks.get(BlockPos.ZERO.above()) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo top)
+                || !top.state().is(Blocks.OAK_PLANKS)) {
+            throw new IllegalStateException("Native gantry lost its assembled carriage or plank");
+        }
+    }
+
+    private static int gantryLifetimeSelftest(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos cell = new BlockPos(72, 100, 72);
+        var chunk = new net.minecraft.world.level.ChunkPos(cell);
+        boolean wasForced = level.getForcedChunks().contains(chunk.toLong());
+        level.setChunkForced(chunk.x, chunk.z, true);
+        GantryRig rig = new GantryRig(level, cell);
+        Runnable cleanup = () -> {
+            try {
+                rig.close();
+            } finally {
+                if (!wasForced) level.setChunkForced(chunk.x, chunk.z, false);
+            }
+        };
+        runAfterTicks(level.getServer(), 5, () -> rig.start(entity -> {
+            int started = level.getServer().getTickCount();
+            Vec3 start = entity.position();
+            runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS + ENTITY_FINAL_TICKS, () -> {
+                boolean passed = false;
+                int ticks = entity.tickCount;
+                double distance = entity.position().distanceTo(start);
+                try {
+                    if (!entity.isAlive() || !entity.isAddedToLevel() || ticks < ENTITY_SETTLE_TICKS
+                            || distance <= 0 || distance >= 1) {
+                        throw new IllegalStateException("Native powered gantry lifecycle mismatch: alive=" + entity.isAlive()
+                                + ", entityTicks=" + ticks + ", distance=" + distance);
+                    }
+                    checkGantryContraption(entity);
+                    var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+                    try {
+                        ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) entity).writeSpawnData(buffer);
+                        Entity received = entity.getType().create(level);
+                        received.setPos(entity.getX(), entity.getY(), entity.getZ());
+                        ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+                        checkGantryContraption(received);
+                        if (buffer.isReadable()) throw new IllegalStateException("Unconsumed native gantry spawn data");
+                        buffer.clear();
+                        boolean refused = false;
+                        try {
+                            Entity bare = entity.getType().create(level);
+                            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+                            Entity bareReceiver = entity.getType().create(level);
+                            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bareReceiver).readSpawnData(buffer);
+                        } catch (RuntimeException expected) {
+                            refused = true;
+                        }
+                        if (!refused) throw new IllegalStateException("Bare gantry negative control unexpectedly decoded");
+                    } finally {
+                        buffer.release();
+                    }
+                    passed = true;
+                } catch (Throwable failure) {
+                    LOGGER.error("[cimscene] selftest gantry live FAILED", failure);
+                } finally {
+                    try {
+                        cleanup.run();
+                    } catch (Throwable failure) {
+                        passed = false;
+                        LOGGER.error("[cimscene] selftest gantry live FAILED during cleanup", failure);
+                    }
+                }
+                if (passed) LOGGER.info("[cimscene] selftest gantry live PASS serverTicks={} entityTicks={} distance={} bare-rejected=true",
+                        level.getServer().getTickCount() - started, ticks, distance);
+            });
+        }, failure -> {
+            LOGGER.error("[cimscene] selftest gantry live FAILED during setup", failure);
+            cleanup.run();
+        }));
+        return 1;
     }
 
     /** Assemble real world blocks through Create's controller, which owns entity and contraption initialization. */
@@ -4932,6 +5134,7 @@ public final class CimSceneMod {
         // previous page's pending settle: its subjects are about to be
         // discarded, and a late pass must not relabel them dissolved.
         final int gen = ++entityPageGen;
+        closeGalleryGantries();
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -5004,6 +5207,7 @@ public final class CimSceneMod {
         // named notes RED (content absent from the picture is not green).
         final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
         int noInstance = 0, wrongSeries = 0, failed = 0;
+        final int[] asyncFailures = {0};
         // 14-ea: the pin deadline — spawn tick through the settle and the
         // shot window (every spawned subject's delta movement is re-zeroed
         // on every tick until then; see MOTION_PINNED)
@@ -5087,6 +5291,33 @@ public final class CimSceneMod {
                 continue;
             }
             try {
+                if (id.toString().equals("create:gantry_contraption")) {
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    GantryRig rig = new GantryRig(level, cell);
+                    GALLERY_GANTRIES.add(rig);
+                    final int index = i;
+                    rig.start(ready -> {
+                        if (gen != entityPageGen) {
+                            rig.close();
+                            return;
+                        }
+                        ready.setNoGravity(true);
+                        ready.setInvulnerable(true);
+                        ready.addTag(GALLERY_TAG);
+                        // Keep the real controller/shaft attachment and native motion.
+                        spawned.add(ready);
+                        spawnedIdx.add(index);
+                    }, failure -> {
+                        if (gen == entityPageGen) {
+                            asyncFailures[0]++;
+                            skipNotes.put(index, "failed:" + failure.getClass().getName());
+                            LOGGER.error("[cimscene] gallery native gantry assembly failed", failure);
+                        }
+                        rig.close();
+                    });
+                    continue;
+                }
                 if (id.toString().equals("create:potato_projectile")) configurePotatoProjectile(e);
                 boolean robit = id.toString().equals("mekanism:robit");
                 boolean parcel = id.toString().equals("create:package");
@@ -5193,7 +5424,7 @@ public final class CimSceneMod {
         final String fSeries = series;
         runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
                 fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
-                fNoInstance, fWrongSeries, fFailed, fSkipNotes,
+                fNoInstance, fWrongSeries, fFailed + asyncFailures[0], fSkipNotes,
                 fFrom, fSeries, gen, false));
         return spawned.size();
     }
