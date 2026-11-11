@@ -3356,7 +3356,8 @@ public final class CimSceneMod {
             target = cell.below().north();
             stationPos = cell.east(2);
             player = new GuiProbe(level);
-            player.moveTo(cell.getX() + .5, cell.getY() + 2, cell.getZ() - 3, 0, 0);
+            // Station targeting faces the assembly arrow toward the clicker.
+            player.moveTo(cell.getX() + .5, cell.getY() + 2, cell.getZ() - 3, 180, 0);
             for (Entity found : level.getEntitiesOfClass(Entity.class, new AABB(cell).inflate(3))) {
                 previousGlue.add(found.getUUID());
             }
