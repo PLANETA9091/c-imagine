@@ -3492,6 +3492,7 @@ public final class F2vPack {
         capturedAlphaSelftest(failures);
         capturedEmptyMeshSelftest(failures);
         capturedSpriteSelftest(failures);
+        compositeBoundsSelftest(failures);
         placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
@@ -3665,6 +3666,43 @@ public final class F2vPack {
             GalleryPack.resetModelScales();
             deleteRecursively(root);
         }
+    }
+
+    private static void compositeBoundsSelftest(List<String> failures) {
+        JsonArray elements = JsonParser.parseString("""
+                [{"from":[-18.95,7.65807,6.28294],"to":[1.1,11.85807,6.30294],
+                  "rotation":{"origin":[-7.45,9.75807,6.30294],"x":0,"y":-45,"z":-90},
+                  "faces":{"south":{"uv":[0,8.5,11.5,10.5],"texture":"#rail"}}},
+                 {"from":[0,0,0],"to":[16,16,16],"faces":{"north":{"texture":"#base"}}}]
+                """).getAsJsonArray();
+        JsonArray original = elements.deepCopy();
+        double scale = GalleryPack.normalizeCompositeBounds(elements);
+        expect(failures, scale == 2, "composite bounds: real track encoding fits with binary scale");
+        for (int i = 0; i < elements.size(); i++) {
+            JsonObject before = original.get(i).getAsJsonObject(), after = elements.get(i).getAsJsonObject();
+            List<String> fields = new ArrayList<>(List.of("from", "to"));
+            if (before.has("rotation")) fields.add("origin");
+            for (String field : fields) {
+                JsonArray a = (field.equals("origin") ? before.getAsJsonObject("rotation") : before).getAsJsonArray(field);
+                JsonArray b = (field.equals("origin") ? after.getAsJsonObject("rotation") : after).getAsJsonArray(field);
+                for (int axis = 0; axis < 3; axis++) {
+                    double value = b.get(axis).getAsDouble();
+                    expect(failures, Math.abs(8 + (value - 8) * scale - a.get(axis).getAsDouble()) < 1e-10,
+                            "composite bounds: inverse transform preserves coordinate/origin");
+                    if (!field.equals("origin")) expect(failures, value >= -16 && value <= 32,
+                            "composite bounds: legal native from/to");
+                }
+            }
+        }
+        expect(failures, elements.get(0).getAsJsonObject().getAsJsonObject("faces").equals(
+                        original.get(0).getAsJsonObject().getAsJsonObject("faces")),
+                "composite bounds: explicit UV and material retained");
+        expect(failures, elements.get(1).getAsJsonObject().getAsJsonObject("faces").getAsJsonObject("north")
+                        .getAsJsonArray("uv").equals(JsonParser.parseString("[0.0,0.0,16.0,16.0]")),
+                "composite bounds: implicit UV frozen before scaling");
+        JsonArray stable = elements.deepCopy();
+        expect(failures, GalleryPack.normalizeCompositeBounds(elements) == 1 && stable.equals(elements),
+                "composite bounds: legal geometry stays byte-stable");
     }
 
     private static void capturedSpriteSelftest(List<String> failures) throws IOException {

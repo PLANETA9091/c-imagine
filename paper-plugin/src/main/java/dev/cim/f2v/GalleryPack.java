@@ -1192,6 +1192,7 @@ public final class GalleryPack {
         // 14-bs: the door sprites sample their own exact tiles (the atlas
         // layouts/mip chains differ between the legs)
         bakeFaceTiles(mergedElements, textures, jars, entries, warnings);
+        displayScale *= normalizeCompositeBounds(mergedElements);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         wrapper.addProperty("render_type", "minecraft:cutout");
@@ -1211,6 +1212,52 @@ public final class GalleryPack {
         String json = wrapper.toString();
         entries.put(file, json.getBytes(StandardCharsets.UTF_8));
         return WRAPPER_REF_PREFIX + idx;
+    }
+
+    /** Encode legal coordinates; the existing item transform restores the geometry. */
+    static double normalizeCompositeBounds(JsonArray elements) {
+        double scale = 1;
+        for (JsonElement value : elements) {
+            for (String field : List.of("from", "to")) {
+                for (JsonElement number : value.getAsJsonObject().getAsJsonArray(field)) {
+                    double coordinate = number.getAsDouble();
+                    if (!Double.isFinite(coordinate)) throw new IllegalArgumentException("non-finite model coordinate");
+                    while (8 + (coordinate - 8) / scale < ELEMENT_MIN || 8 + (coordinate - 8) / scale > ELEMENT_MAX) {
+                        scale *= 2;
+                        if (scale > Float.MAX_VALUE) throw new IllegalArgumentException("model scale exceeds native float range");
+                    }
+                }
+            }
+        }
+        if (scale == 1) return scale;
+        for (JsonElement value : elements) {
+            JsonObject element = value.getAsJsonObject();
+            JsonArray from = element.getAsJsonArray("from"), to = element.getAsJsonArray("to");
+            // Implicit UVs depend on the original coordinates, so materialize
+            // them before changing the encoding.
+            for (var entry : element.getAsJsonObject("faces").entrySet()) {
+                JsonObject face = entry.getValue().getAsJsonObject();
+                if (!face.has("uv")) {
+                    double[] rect = defaultFaceUv(entry.getKey(), from.get(0).getAsDouble(), from.get(1).getAsDouble(),
+                            from.get(2).getAsDouble(), to.get(0).getAsDouble(), to.get(1).getAsDouble(), to.get(2).getAsDouble());
+                    if (rect != null) {
+                        JsonArray uv = new JsonArray();
+                        for (double coordinate : rect) uv.add(coordinate);
+                        face.add("uv", uv);
+                    }
+                }
+            }
+            List<JsonArray> positions = new ArrayList<>(List.of(from, to));
+            if (element.has("rotation") && element.getAsJsonObject("rotation").has("origin")) {
+                positions.add(element.getAsJsonObject("rotation").getAsJsonArray("origin"));
+            }
+            for (JsonArray position : positions) {
+                for (int axis = 0; axis < 3; axis++) {
+                    position.set(axis, new com.google.gson.JsonPrimitive(8 + (position.get(axis).getAsDouble() - 8) / scale));
+                }
+            }
+        }
+        return scale;
     }
 
     // ---- tint-bake (visual-tints.tsv) --------------------------------------------
