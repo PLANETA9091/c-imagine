@@ -5910,8 +5910,24 @@ public final class CimSceneMod {
         DELAYED_TASKS.add(new DelayedTask(server.getTickCount() + ticks, task));
     }
 
+    /** Boot-scope witness for the 14-ak death detection: has ANY client
+     *  joined this server this boot? A server that never saw one (the P0
+     *  selftests, the seed manifest pass) cannot "lose" a client, so its
+     *  playerCount==0 settle passes are not deaths. */
+    private static boolean CLIENT_SEEN_THIS_BOOT = false;
+
     private void onServerTickPost(ServerTickEvent.Post event) {
         int now = event.getServer().getTickCount();
+        // THE 14-ak DEATH DETECTION'S WITNESS (43044319612): the settle pass
+        // bans every placed subject when playerCount==0 — true BOTH when the
+        // shooting client died mid-page AND when a server never had one (the
+        // P0 selftests, the seed pass). The boot-scope witness below makes
+        // the two tellable: only a server that HAS seen a client can "lose"
+        // one, so the death ban fires only after a client actually joined.
+        if (!CLIENT_SEEN_THIS_BOOT && event.getServer().getPlayerCount() > 0) {
+            CLIENT_SEEN_THIS_BOOT = true;
+            LOGGER.info("[cimscene] first client joined this boot — the 14-ak death detection is armed");
+        }
         if (!DELAYED_TASKS.isEmpty()) {
             List<DelayedTask> due = new ArrayList<>();
             DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
@@ -6324,7 +6340,7 @@ public final class CimSceneMod {
         // manifest-generation pass) trips this too — by design its only
         // effect is the same honest skip-row accounting, and the ours-leg
         // replay skips non-cell rows identically, so the join loses nothing.
-        if (level.getServer().getPlayerCount() == 0) {
+        if (level.getServer().getPlayerCount() == 0 && CLIENT_SEEN_THIS_BOOT) {
             List<String> banned = new ArrayList<>();
             for (int j = 0; j < spawnedIdx.size(); j++) {
                 int idx = spawnedIdx.get(j);
