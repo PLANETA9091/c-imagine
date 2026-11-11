@@ -111,6 +111,7 @@ public final class ScreenArt {
     private static final int CRAWL_STEP_TICKS = 6;
     private static final int CRAWL_WAIT_TICKS = 70;
     private static final int CRAWL_MAX_WIDGETS = 18;
+    private static final int CRAWL_CLOSED_TICKS = 30;
 
     /** Pressing through one open screen. */
     private static final class Crawl {
@@ -121,6 +122,8 @@ public final class ScreenArt {
         final List<int[]> targets = new ArrayList<>();
         int next;
         int wait;
+        /** Steps this press has shown no screen, waiting for a sub-menu the server opens. */
+        int closed;
         /** The press waiting for its result to be captured, or -1. */
         int pressed = -1;
         int settleAt;
@@ -167,14 +170,38 @@ public final class ScreenArt {
                 }
                 continue;
             }
+            boolean container = child instanceof net.minecraft.client.gui.components.events.ContainerEventHandler inner
+                    && !inner.children().isEmpty();
             net.minecraft.client.gui.navigation.ScreenRectangle r = child.getRectangle();
+            if (r.width() <= 0 || r.height() <= 0) {
+                // A mod's own control that keeps its bounds outside the vanilla rectangle
+                // (Sophisticated Core's tabs: getX/getY/getWidth/getHeight): a container's
+                // own centre is one of its children, pressed on its own.
+                r = container ? r : boundsOf(child);
+            }
             if (r.width() > 0 && r.height() > 0 && r.width() < sw / 2 && r.height() < sh / 2) {
                 targets.add(new int[]{r.left() + r.width() / 2, r.top() + r.height() / 2,
                         r.left(), r.top(), r.width(), r.height()});
             }
-            if (depth < 3 && child instanceof net.minecraft.client.gui.components.events.ContainerEventHandler inner) {
-                collectInto(targets, inner.children(), sw, sh, depth + 1);
+            if (depth < 3 && container) {
+                collectInto(targets,
+                        ((net.minecraft.client.gui.components.events.ContainerEventHandler) child).children(),
+                        sw, sh, depth + 1);
             }
+        }
+    }
+
+    /** The bounds a control answers through public getX/getY/getWidth/getHeight, or empty. */
+    private static net.minecraft.client.gui.navigation.ScreenRectangle boundsOf(GuiEventListener child) {
+        try {
+            Class<?> c = child.getClass();
+            int x = (int) c.getMethod("getX").invoke(child);
+            int y = (int) c.getMethod("getY").invoke(child);
+            int w = (int) c.getMethod("getWidth").invoke(child);
+            int h = (int) c.getMethod("getHeight").invoke(child);
+            return new net.minecraft.client.gui.navigation.ScreenRectangle(x, y, w, h);
+        } catch (ReflectiveOperationException | ClassCastException | IllegalArgumentException e) {
+            return net.minecraft.client.gui.navigation.ScreenRectangle.empty();
         }
     }
 
@@ -276,6 +303,11 @@ public final class ScreenArt {
             return;
         }
         if (mc.screen != crawl.parent) {
+            // A server that opens a sub-menu closes this one first: the client shows no screen
+            // for a moment (measured: Mekanism's digital miner config, the robit's tabs).
+            if (mc.screen == null && crawl.closed++ < CRAWL_CLOSED_TICKS / CRAWL_STEP_TICKS) {
+                return;
+            }
             if (crawl.wait == 0) {
                 // What the press led to: the evidence for a sub-menu that is never captured.
                 String type = "-";
@@ -334,6 +366,7 @@ public final class ScreenArt {
         int index = crawl.next++;
         int[] at = crawl.targets.get(index);
         crawl.wait = 0;
+        crawl.closed = 0;
         try {
             crawl.parent.mouseClicked(at[0], at[1], 0);
             crawl.parent.mouseReleased(at[0], at[1], 0);
