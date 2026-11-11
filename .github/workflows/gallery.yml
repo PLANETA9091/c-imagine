@@ -390,9 +390,25 @@ jobs:
           for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6 xvfb; do
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
           done
+          apt_retry() {
+            # THE RUNNER DNS INCIDENT (43046583185 + rerun: all 8 ours shards died at
+            # apt with "Temporary failure resolving security.ubuntu.com" — exit 100,
+            # the GL stack never installed, the client never launched). The failure
+            # is on the runner's resolver, not the repo; ride it out: up to 4 tries
+            # with a 30s gap, Acquire::Retries for the packet-level retries.
+            local need="$*"
+            for i in 1 2 3 4; do
+              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
+                return 0
+              fi
+              echo "[apt_retry] attempt $i failed — retrying in 30s"
+              sleep 30
+            done
+            echo "[apt_retry] all attempts failed"
+            return 1
+          }
           if [ -n "${NEED:-}" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq $NEED
+            apt_retry $NEED
           fi
           Xvfb :98 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 1
@@ -1127,9 +1143,25 @@ jobs:
           for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6; do
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
           done
+          apt_retry() {
+            # THE RUNNER DNS INCIDENT (43046583185 + rerun: all 8 ours shards died at
+            # apt with "Temporary failure resolving security.ubuntu.com" — exit 100,
+            # the GL stack never installed, the client never launched). The failure
+            # is on the runner's resolver, not the repo; ride it out: up to 4 tries
+            # with a 30s gap, Acquire::Retries for the packet-level retries.
+            local need="$*"
+            for i in 1 2 3 4; do
+              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
+                return 0
+              fi
+              echo "[apt_retry] attempt $i failed — retrying in 30s"
+              sleep 30
+            done
+            echo "[apt_retry] all attempts failed"
+            return 1
+          }
           if [ -n "${NEED:-}" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq $NEED
+            apt_retry $NEED
           fi
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 1
@@ -1979,8 +2011,24 @@ jobs:
           # version, not whatever the image ships) and probe the GLX
           # visual list right after Xvfb starts — a fast named failure
           # instead of a 12-minute blind client stall.
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 mesa-utils
+          apt_retry() {
+            # THE RUNNER DNS INCIDENT (43046583185 + rerun: all 8 ours shards died at
+            # apt with "Temporary failure resolving security.ubuntu.com" — exit 100,
+            # the GL stack never installed, the client never launched). The failure
+            # is on the runner's resolver, not the repo; ride it out: up to 4 tries
+            # with a 30s gap, Acquire::Retries for the packet-level retries.
+            local need="$*"
+            for i in 1 2 3 4; do
+              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
+                return 0
+              fi
+              echo "[apt_retry] attempt $i failed — retrying in 30s"
+              sleep 30
+            done
+            echo "[apt_retry] all attempts failed"
+            return 1
+          }
+          apt_retry libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 mesa-utils
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 1
           export DISPLAY=:99
