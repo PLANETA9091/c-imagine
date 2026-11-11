@@ -17,7 +17,16 @@ on:
       - 'java/**'
       - 'crates/**'
       - '.github/workflows/menus.yml'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ns:
+        description: 'Only these namespaces (space separated) — a quick check of one fix'
+        required: false
+        default: ''
+      pages:
+        description: 'Only these menu ids (space separated, ns:path), within the namespaces'
+        required: false
+        default: 
 
 concurrency:
   group: menus-${{ github.ref }}
@@ -91,6 +100,7 @@ jobs:
         id: plan
         env:
           J21: ${{ steps.jdk21.outputs.path }}
+          ONLY_NS: ${{ github.event.inputs.ns }}
         run: bash scripts/hud/menu-plan.sh
       - uses: actions/upload-artifact@v4
         with:
