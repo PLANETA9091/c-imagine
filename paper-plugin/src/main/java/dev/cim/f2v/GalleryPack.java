@@ -2540,6 +2540,13 @@ public final class GalleryPack {
     /** Re-host readable sprites onto the blocks atlas, retaining real native pixel artifacts. */
     static String hostSprite(List<Path> jars, String sprite, TreeMap<String, byte[]> entries,
                              List<String> warnings) throws IOException {
+        if (!sprite.startsWith("~")) {
+            // The observed atlas includes runtime replacements and generated
+            // vanilla-namespace sprites. Its pixels are authoritative for
+            // this mesh; jar PNGs and the newer client's assets can differ.
+            String nativeCapture = nativeSpriteAlias(sprite);
+            if (nativeCapture != null) return hostSprite(jars, nativeCapture, entries, warnings);
+        }
         if (sprite.startsWith("~")) {
             // A real-client decoded sprite, including generated atlas sources.
             // Missing artifacts must fail the build rather than fabricate a texture.
@@ -2572,10 +2579,6 @@ public final class GalleryPack {
         byte[] bytes = readPngFromJars(jars, png);
         boolean blockPath = !sprite.startsWith("@") && spritePathOf(sprite).startsWith("block/");
         if (bytes == null) {
-            String nativeCapture = nativeSpriteAlias(sprite);
-            if (nativeCapture != null) {
-                return hostSprite(jars, nativeCapture, entries, warnings);
-            }
             warnings.add("gallery: quad sprite missing: " + sprite);
             // 14-dy: the diagnostic stays visible AND names its source (the
             // placeholder ledger — sprite + build context + uses)

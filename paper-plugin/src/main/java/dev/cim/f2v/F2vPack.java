@@ -3696,7 +3696,9 @@ public final class F2vPack {
                     "captured sprite: the crop stays loud in the build report");
             // Atlas generators can produce a real sprite with no PNG in any jar.
             Files.writeString(root.resolve("sprite-aliases.tsv"),
-                    "# native sprite\tdecoded capture\nfixture:generated\t~" + hash + "\n");
+                    "# native sprite\tdecoded capture\nfixture:generated\t~" + hash
+                            + "\nminecraft:block/chain\t~" + hash
+                            + "\nfixture:block/stale\t~" + hash + "\n");
             GalleryPack.setQuadDir(root);
             TreeMap<String, byte[]> generated = new TreeMap<>();
             List<String> generatedWarnings = new ArrayList<>();
@@ -3704,6 +3706,19 @@ public final class F2vPack {
             expect(failures, generatedRef.equals(ref) && java.util.Arrays.equals(entries.get(hosted), generated.get(hosted))
                             && generatedWarnings.stream().noneMatch(w -> w.contains("sprite missing")),
                     "native sprite alias: generated atlas pixels and frame metadata survive absent jar PNG");
+            String nativeVanilla = GalleryPack.hostSprite(List.of(), "minecraft:block/chain", generated, generatedWarnings);
+            expect(failures, nativeVanilla.equals(ref) && java.util.Arrays.equals(entries.get(hosted), generated.get(hosted))
+                            && generated.keySet().stream().noneMatch(path -> path.startsWith("assets/minecraft/")),
+                    "native vanilla alias: source pixels retained without overriding the target client's assets");
+            expect(failures, GalleryPack.hostSprite(List.of(), "minecraft:block/uncaptured", generated, generatedWarnings)
+                            .equals("minecraft:block/uncaptured"),
+                    "native vanilla alias: legacy captures retain their existing asset lookup");
+            Path staleJar = root.resolve("stale.jar");
+            writeJar(staleJar, new TreeMap<>(Map.of("assets/fixture/textures/block/stale.png", f2vSelftestPng(16, 16))));
+            var observed = new TreeMap<String, byte[]>();
+            String observedRef = GalleryPack.hostSprite(List.of(staleJar), "fixture:block/stale", observed, new ArrayList<>());
+            expect(failures, observedRef.equals(ref) && java.util.Arrays.equals(entries.get(hosted), observed.get(hosted)),
+                    "native sprite alias: observed runtime pixels win over a stale physical jar texture");
             Files.delete(textures.resolve(hash + ".png"));
             boolean missingPixelsRefused = false;
             try {
