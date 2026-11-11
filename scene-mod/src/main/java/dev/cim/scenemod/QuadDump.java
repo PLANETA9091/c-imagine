@@ -349,6 +349,11 @@ final class QuadDump {
 
     private static String liquidMeshFor(Page page, BlockPos pos, BlockState state,
                                         List<TextureAtlasSprite> sprites) {
+        return liquidMeshFor(page, pos, state, sprites, true);
+    }
+
+    private static String liquidMeshFor(Page page, BlockPos pos, BlockState state,
+                                        List<TextureAtlasSprite> sprites, boolean requireGeometry) {
         FluidState fluid = state.getFluidState();
         // A flowing registry entry may genuinely settle to air in the sealed
         // rig. The settled manifest replays that exact vanilla air state.
@@ -359,7 +364,7 @@ final class QuadDump {
                 "texture[Optional[minecraft:textures/atlas/blocks.png]]", false);
         mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
         capture.flush();
-        if (capture.foreign != 0 || capture.out.length() == 0) {
+        if (capture.foreign != 0 || (requireGeometry && capture.out.length() == 0)) {
             throw new IllegalStateException("native liquid renderer produced missing/unbound geometry");
         }
         // Preserve the real registered chunk material, not a guessed alpha mode.
@@ -400,6 +405,12 @@ final class QuadDump {
     private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
         Minecraft mc = Minecraft.getInstance();
         Capture capture = new Capture(sprites, state.getOffset(page, pos));
+        // SectionCompiler renders fluid independently of RenderShape, including
+        // waterlogged MODEL blocks and liquid blocks with no static model.
+        // Fully occluded fluid can legitimately emit no faces on a block page.
+        if (!state.getFluidState().isEmpty()) {
+            capture.out.append(liquidMeshFor(page, pos, state, sprites, false));
+        }
         // Native SectionCompiler only submits static geometry for MODEL states.
         // ENTITYBLOCK_ANIMATED still reaches its BER, without a phantom static panel.
         if (state.getRenderShape() == net.minecraft.world.level.block.RenderShape.MODEL) {
