@@ -3434,7 +3434,34 @@ public final class CimSceneMod {
                     throw new IllegalStateException("Native station did not bind to its track graph");
                 }
                 if (!(boolean) station.getClass().getMethod("enterAssemblyMode", ServerPlayer.class).invoke(station, player)) {
-                    throw new IllegalStateException("Native station refused assembly mode");
+                    // THE REFUSAL IS DIAGNOSED, NOT GUESSED (the 14-dg read:
+                    // an opaque boolean sent the page red with no named
+                    // condition). enterAssemblyMode refuses on exactly two
+                    // native conditions: the station block is already in
+                    // assembling state, or tryEnterAssemblyMode rejected
+                    // (hasValidTrack false / the track axes span more than
+                    // one axis). Name the one that fired.
+                    Object assembling = station.getClass().getMethod("isAssembling").invoke(station);
+                    Object edgePoint = station.getClass().getField("edgePoint").get(station);
+                    boolean validTrack = false;
+                    String axes = "unavailable";
+                    BlockPos targetPos = null;
+                    BlockState trackState = null;
+                    try {
+                        validTrack = (boolean) edgePoint.getClass().getMethod("hasValidTrack").invoke(edgePoint);
+                        targetPos = (BlockPos) edgePoint.getClass().getMethod("getGlobalPosition").invoke(edgePoint);
+                        trackState = (BlockState) edgePoint.getClass().getMethod("getTrackBlockState").invoke(edgePoint);
+                        Object track = edgePoint.getClass().getMethod("getTrack").invoke(edgePoint);
+                        axes = String.valueOf(track.getClass()
+                                .getMethod("getTrackAxes", net.minecraft.world.level.Level.class, BlockPos.class, BlockState.class)
+                                .invoke(track, level, targetPos, trackState));
+                    } catch (Throwable diag) {
+                        axes = "diag-failed:" + diag;
+                    }
+                    throw new IllegalStateException("Native station refused assembly mode; isAssembling=" + assembling
+                            + ", hasValidTrack=" + validTrack
+                            + ", trackPos=" + targetPos + ", trackState=" + trackState
+                            + ", trackAxes=" + axes);
                 }
                 direction = (Direction) station.getClass().getMethod("getAssemblyDirection").invoke(station);
                 if (!target.relative(direction).equals(cell.below())) {
@@ -5664,7 +5691,14 @@ public final class CimSceneMod {
                     GALLERY_TRAINS.add(rig);
                     Runnable complete = setup.begin();
                     final int index = i;
-                    rig.start(ready -> {
+                    // THE LIFETIME RIG'S PROVEN SEQUENCING (carriage-page 43027709622
+                    // red vs the passing lifetime context on the same server): the
+                    // lifetime rig starts via runAfterTicks(5) after its chunk forcing,
+                    // the page rig started synchronously inside the walk's setBlock
+                    // loop tick. Give the page rig the same settling gap before its
+                    // track/station clicks; the gate (complete) still closes from the
+                    // rig's own ready/failure callbacks.
+                    runAfterTicks(level.getServer(), 5, () -> rig.start(ready -> {
                         try {
                             if (gen != entityPageGen) { rig.close(); return; }
                             ready.addTag(GALLERY_TAG);
@@ -5685,7 +5719,7 @@ public final class CimSceneMod {
                         } catch (ReflectiveOperationException bad) {
                             throw new IllegalStateException(bad);
                         } finally { complete.run(); }
-                    });
+                    }));
                     continue;
                 }
                 if (id.toString().equals("create:gantry_contraption")) {
@@ -5695,7 +5729,8 @@ public final class CimSceneMod {
                     GALLERY_GANTRIES.add(rig);
                     Runnable complete = setup.begin();
                     final int index = i;
-                    rig.start(ready -> {
+                    // Same proven sequencing as the TrainRig page start above.
+                    runAfterTicks(level.getServer(), 5, () -> rig.start(ready -> {
                         try {
                             if (gen != entityPageGen) { rig.close(); return; }
                             ready.setNoGravity(true);
@@ -5714,7 +5749,7 @@ public final class CimSceneMod {
                             }
                             rig.close();
                         } finally { complete.run(); }
-                    });
+                    }));
                     continue;
                 }
                 if (id.toString().equals("create:potato_projectile")) configurePotatoProjectile(e);
