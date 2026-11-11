@@ -162,12 +162,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
 
         /** The slot under the pointer, or -1. */
+        /** Where the slots sit in the current press state, against where the menu opened. */
+        int[] slotShift() {
+            return stateIndex >= 0 && scene.captured() != null ? scene.captured().shift(stateIndex) : new int[]{0, 0};
+        }
+
         int hover() {
             if (capture == null) {
                 return -1;
             }
-            int x = pointer.x() - originX;
-            int y = pointer.y() - originY;
+            int[] shift = slotShift();
+            int x = pointer.x() - originX - shift[0];
+            int y = pointer.y() - originY - shift[1];
             for (int i = 0; i < capture.slots().size(); i++) {
                 GuiCaptures.Slot s = capture.slots().get(i);
                 if (x >= s.x() - 1 && x < s.x() + 17 && y >= s.y() - 1 && y < s.y() + 17) {
@@ -651,10 +657,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
             // The gallery's real mouse is parked off the menu, so nothing is hovered there.
             int hover = s.pointerShown ? s.hover() : -1;
+            int[] shift = s.slotShift();
             for (int i = 0; i < s.capture.slots().size(); i++) {
                 GuiCaptures.Slot slot = s.capture.slots().get(i);
-                int x = s.originX + slot.x();
-                int y = s.originY + slot.y();
+                int x = s.originX + slot.x() + shift[0];
+                int y = s.originY + slot.y() + shift[1];
                 if (slot.x() > -1000) {
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);

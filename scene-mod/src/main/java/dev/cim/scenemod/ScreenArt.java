@@ -370,8 +370,12 @@ public final class ScreenArt {
                     stateSaved = false;
                     if (crawl.pressed < CRAWL_MOVE) {
                         int[] at = crawl.targets.get(crawl.pressed);
+                        // Where the menu sits in this state, against where it opened: a press
+                        // may move it (Farmer's Delight's recipe book pushes the pot right).
+                        int dx = crawl.parent instanceof AbstractContainerScreen<?> s ? s.getGuiLeft() - crawl.left : 0;
+                        int dy = crawl.parent instanceof AbstractContainerScreen<?> s ? s.getGuiTop() - crawl.top : 0;
                         record(crawl, "press\t" + crawl.pressed + "\t" + (at[2] - crawl.left) + "\t"
-                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5]);
+                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5] + "\t" + dx + "\t" + dy);
                     }
                     crawl.pressed = -1;
                 } else {

@@ -66,12 +66,20 @@ public final class ScreenPack {
      * and shows the part of it the window leaves free.
      */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
-                           Map<Integer, List<Piece>> states, int[] move, Map<Integer, List<Piece>> covers) {
+                           Map<Integer, List<Piece>> states, int[] move, Map<Integer, List<Piece>> covers,
+                           Map<Integer, int[]> shifts) {
         public Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                         Map<Integer, List<Piece>> states, int[] move) {
-            this(originX, originY, slots, states, move, new HashMap<>());
+            this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>());
+        }
+
+        /** How far the menu's slots moved in a press state (a recipe book opening), or 0,0. */
+        public int[] shift(int state) {
+            return shifts.getOrDefault(state, ZERO_SHIFT);
         }
     }
+
+    private static final int[] ZERO_SHIFT = {0, 0};
 
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
     public record Scene(String className, String menu, int width, int height, boolean titleCentered,
@@ -105,7 +113,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v12");
+        StringBuilder out = new StringBuilder("v13");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -140,6 +148,10 @@ public final class ScreenPack {
                                 .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
                                 .append(q.h()).append('\n');
                     }
+                }
+                for (var sh : s.captured().shifts().entrySet()) {
+                    out.append("shift\t").append(sh.getKey()).append('\t').append(sh.getValue()[0]).append('\t')
+                            .append(sh.getValue()[1]).append('\n');
                 }
                 for (var cv : s.captured().covers().entrySet()) {
                     for (Piece q : cv.getValue()) {
@@ -187,7 +199,10 @@ public final class ScreenPack {
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers())));
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts())));
+            } else if (p[0].equals("shift")) {
+                out.get(out.size() - 1).captured().shifts().put(Integer.parseInt(p[1]),
+                        new int[]{Integer.parseInt(p[2]), Integer.parseInt(p[3])});
             } else if (p[0].equals("cover")) {
                 out.get(out.size() - 1).captured().covers().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
@@ -544,6 +559,7 @@ public final class ScreenPack {
             List<Widget> widgets = new ArrayList<>();
             Map<Integer, List<Piece>> states = new HashMap<>();
             Map<Integer, List<Piece>> covers = new HashMap<>();
+            Map<Integer, int[]> shifts = new HashMap<>();
             int[] move = null;
             Path presses = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".presses"));
             if (Files.isRegularFile(presses)) {
@@ -557,6 +573,9 @@ public final class ScreenPack {
                         int i = widgets.size();
                         widgets.add(new Widget(Integer.parseInt(q[2]), Integer.parseInt(q[3]), Integer.parseInt(q[4]),
                                 Integer.parseInt(q[5]), "press " + q[1]));
+                        if (q.length > 7 && (Integer.parseInt(q[6]) != 0 || Integer.parseInt(q[7]) != 0)) {
+                            shifts.put(i, new int[]{Integer.parseInt(q[6]), Integer.parseInt(q[7])});
+                        }
                         Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
                         if (stateImage != null) {
@@ -581,7 +600,7 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts)));
         }
     }
 
