@@ -3401,6 +3401,10 @@ public final class CimSceneMod {
                 speed.getClass().getMethod("setValue", int.class).invoke(speed, -1);
                 put(cell.below(), BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_shaft"))
                         .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
+                // A SINGLE segment cannot host native gantry movement. Its real neighbor
+                // updates derive START/END; do not forge the shaft's PART property.
+                put(cell.below().east(), BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_shaft"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
                 BlockState carriage = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_carriage"))
                         .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.UP);
                 var alongFirst = (net.minecraft.world.level.block.state.properties.BooleanProperty)
@@ -3422,6 +3426,9 @@ public final class CimSceneMod {
                         BlockEntity shaft = level.getBlockEntity(cell.below());
                         float movement = (float) shaft.getClass().getMethod("getPinionMovementSpeed").invoke(shaft);
                         if (movement == 0) throw new IllegalStateException("Native motor did not drive its gantry shaft");
+                        if (!(boolean) shaft.getClass().getMethod("canAssembleOn").invoke(shaft)) {
+                            throw new IllegalStateException("Native shaft track cannot host its gantry: " + shaft.getBlockState());
+                        }
                         BlockEntity controller = level.getBlockEntity(cell);
                         controller.getClass().getMethod("queueAssembly").invoke(controller);
                         runAfterTicks(level.getServer(), 5, () -> {
