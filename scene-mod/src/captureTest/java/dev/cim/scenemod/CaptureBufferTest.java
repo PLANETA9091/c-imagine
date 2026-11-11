@@ -97,6 +97,26 @@ public final class CaptureBufferTest {
             throw new AssertionError("native stream/baked light lost, leaked or merged incorrectly: "
                     + Arrays.toString(rows));
         }
+        // Static chunk capture must carry its own layer as well: otherwise
+        // translucent blocks silently become the pack reader's cutout default.
+        String mesh = String.join("\n", rows) + "\n";
+        Object solidLayer = new Object(), cutoutLayer = new Object(), translucentLayer = new Object();
+        for (String material : List.of("solid", "cutout", "translucent")) {
+            var layer = switch (material) {
+                case "solid" -> solidLayer;
+                case "cutout" -> cutoutLayer;
+                default -> translucentLayer;
+            };
+            String[] chunk = QuadDump.withBlockMaterial(mesh, layer, solidLayer, cutoutLayer, translucentLayer).split("\n");
+            if (chunk.length != 4 || !chunk[0].endsWith("\t" + material + "\t3\t12")
+                    || !chunk[1].endsWith("\t" + material)
+                    || !chunk[3].endsWith("\t" + material + "\t7\t12")) {
+                throw new AssertionError("native static chunk material/light lost: " + material);
+            }
+        }
+        if (!QuadDump.withBlockMaterial(mesh, new Object(), solidLayer, cutoutLayer, translucentLayer).equals(mesh)) {
+            throw new AssertionError("mipped cutout pipeline was silently reclassified");
+        }
         String[] fluid = QuadDump.withLiquidMaterial(String.join("\n", rows) + "\n", "translucent")
                 .split("\n");
         if (!fluid[0].endsWith("\ttranslucent\t3\t12")

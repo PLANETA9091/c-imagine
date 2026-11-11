@@ -1943,9 +1943,9 @@ public final class GalleryPack {
             int quadSky = -1;
             // 14-cy.1 row shapes (the tail is optional on every producer):
             //   39 = block capture (no material, no light)     — legacy pin
-            //   40 = native liquid (material at 39, no light)
+            //   40 = named chunk material (at 39, no light)
             //   41 = block capture + light tail (block@39, sky@40)
-            //   42 = native liquid + light tail (material@39, block@40, sky@41)
+            //   42 = named chunk material + light (material@39, block@40, sky@41)
             try {
                 if (c.length == 41 || c.length == 42) {
                     int skyCol = c.length - 1;
@@ -1969,7 +1969,7 @@ public final class GalleryPack {
             if (lightGroup == LIGHT_FULLBRIGHT && !fullbright) {
                 continue;
             }
-            // 14-cy.1: the material column exists only on the native liquid
+            // 14-cy.1: the material column exists only on the named chunk
             // shapes (40/42); the block-capture shapes (39/41) keep the
             // block?cutout:translucent default — their column 39 is the
             // light tail's block nibble when the tail is present.
@@ -2062,7 +2062,7 @@ public final class GalleryPack {
                 // shader AND name translucent; every legacy row (39/41 col,
                 // the chunk/BER capture shape) lets the texture's own alpha
                 // rule. Real captured translucency always rides the explicit
-                // material rows (the native-liquid dump shape); the
+                // material rows (liquid or static chunk capture); the
                 // captured-alpha selftest keeps covering both.
                 boolean preserveAlpha = (c.length == 40 || c.length == 42)
                         && faceMaterial.equals("translucent");

@@ -392,6 +392,16 @@ final class QuadDump {
         return out.toString();
     }
 
+    /** Keep the native chunk alpha mode for the layers the replay can name. */
+    static <T> String withBlockMaterial(String mesh, T layer, T solid, T cutout, T translucent) {
+        if (layer == solid) return withLiquidMaterial(mesh, "solid");
+        if (layer == translucent) return withLiquidMaterial(mesh, "translucent");
+        if (layer == cutout) return withLiquidMaterial(mesh, "cutout");
+        // Mipped cutout and custom layers retain the existing legacy encoding:
+        // the replay format cannot express their complete pipeline state yet.
+        return mesh;
+    }
+
     static void setupCaptureLighting(boolean constantAmbientLight) {
         if (constantAmbientLight) Lighting.setupNetherLevel();
         else Lighting.setupLevel();
@@ -421,8 +431,11 @@ final class QuadDump {
             random.setSeed(seed);
             PoseStack pose = new PoseStack();
             for (RenderType type : model.getRenderTypes(state, random, data)) {
-                mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
+                Capture layer = new Capture(sprites, state.getOffset(page, pos));
+                mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, layer, true,
                         random, seed, OverlayTexture.NO_OVERLAY, data, type);
+                capture.out.append(withBlockMaterial(layer.out.toString(), type,
+                        RenderType.solid(), RenderType.cutout(), RenderType.translucent()));
             }
         }
         if (state.hasBlockEntity()) {
