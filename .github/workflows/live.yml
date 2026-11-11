@@ -319,6 +319,8 @@ jobs:
             || fail "the backpack's own sneaking click did not place it as a block with its data"
           grep -q "\[cim-live\] paper placed block open -> sophisticatedbackpacks:backpack own=27" live-paper.txt \
             || fail "the placed backpack block did not open with its 27 slots of storage"
+          grep -q "\[cim-live\] paper placed block broken -> removed=true drops \[.*sophisticatedbackpacks:backpack" live-paper.txt \
+            || fail "breaking the placed backpack did not drop the backpack by its own loot"
           echo "live menus on Paper: Create's FilterMenu, its blacklist button and the toolbox block ran Create's own code"
       - uses: actions/upload-artifact@v4
         if: always()

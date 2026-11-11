@@ -909,6 +909,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         out.add("placed block open -> " + (state.error() != null ? state.error()
                 : state.open() ? state.menuType() + " own=" + own : "no menu"));
         bridge.keepBlockEntity(player, bridge.close(player));
+        // Broken by hand, by the block's own code: it drops the backpack, with its data.
+        player.getInventory().setItemInMainHand(null);
+        LiveBridge.Broken broken = bridge.breakBlock(player, at, result.placedId());
+        out.add("placed block broken -> " + (broken.state().error() != null ? broken.state().error()
+                : "removed=" + broken.removed() + " drops " + broken.spilled().stream()
+                .map(st -> bridge.toLayer(st)).map(j -> j.length() > 120 ? j.substring(0, 120) : j).toList()));
         return out;
     }
 
@@ -1186,6 +1192,37 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             player.getInventory().addItem(stack).values()
                     .forEach(left -> player.getWorld().dropItem(player.getLocation(), left));
         }
+    }
+
+    /**
+     * A mod block broken in Paper's world: the block's own code decides what it drops (a
+     * Sophisticated Backpack drops itself with its contents), not the note block that stands
+     * for it.
+     */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onBreak(org.bukkit.event.block.BlockBreakEvent event) {
+        Block block = event.getBlock();
+        if (block.getType() != Material.NOTE_BLOCK) {
+            return;
+        }
+        String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
+        LiveBridge bridge = modded == null ? null : live();
+        if (bridge == null) {
+            return;
+        }
+        LiveBridge.Broken broken = bridge.breakBlock(event.getPlayer(), block, modded);
+        if (broken.state().error() != null) {
+            log.warning("[cim-screen] live break failed: " + broken.state().error());
+            return;
+        }
+        event.setDropItems(false);
+        org.bukkit.Location at = block.getLocation().add(0.5, 0.5, 0.5);
+        for (ItemStack stack : broken.spilled()) {
+            block.getWorld().dropItemNaturally(at, stack);
+        }
+        bridge.applyInventory(event.getPlayer(), broken.state());
+        log.info("[cim-screen] " + event.getPlayer().getName() + " broke " + modded + ": " + broken.spilled().size()
+                + " stack(s) dropped");
     }
 
     @EventHandler

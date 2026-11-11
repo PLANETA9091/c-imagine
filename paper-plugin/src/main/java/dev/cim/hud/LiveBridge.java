@@ -188,6 +188,45 @@ final class LiveBridge {
         return new UseOn(state, placed, x, y, z, be);
     }
 
+    /** What breaking a mod block did: the stacks it spilled, the player's inventory after. */
+    record Broken(boolean removed, List<ItemStack> spilled, State state) {
+    }
+
+    /**
+     * The player breaks a mod block of Paper's world by the block's own code, with the data
+     * Paper kept for it; the kept data goes with the block.
+     */
+    Broken breakBlock(Player player, org.bukkit.block.Block block, String blockId) {
+        StringBuilder in = new StringBuilder("break\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(blockId).append('\t')
+                .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
+        appendInventory(in, player, true);
+        heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
+        org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
+        String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
+        if (kept != null) {
+            in.append("\nbe\t").append(kept);
+        }
+        String answer = call(in.toString());
+        boolean removed = false;
+        List<ItemStack> spilled = new ArrayList<>();
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("broken\t")) {
+                removed = Boolean.parseBoolean(line.substring(7));
+            } else if (line.startsWith("spill\t")) {
+                ItemStack stack = toPaper(line.substring(6));
+                if (stack != null) {
+                    spilled.add(stack);
+                }
+            }
+        }
+        State state = parse(answer);
+        if (removed) {
+            chunk.remove(blockKey(block, blockId));
+        }
+        return new Broken(removed, spilled, state);
+    }
+
     /** A mod block Paper now holds: its block entity's data, kept for its first opening. */
     void keepPlaced(org.bukkit.block.Block block, String blockId, String blockEntity) {
         if (blockEntity != null) {

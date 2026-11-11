@@ -274,9 +274,23 @@ public final class FacadeServerLevel extends ServerLevel {
         return store.entities();
     }
 
+    /** Items the mods' code spilled into the world (a broken block's drops), for Paper to drop. */
+    private static final java.util.List<net.minecraft.world.item.ItemStack> SPILLED = new java.util.ArrayList<>();
+
+    static java.util.List<net.minecraft.world.item.ItemStack> takeSpilled() {
+        java.util.List<net.minecraft.world.item.ItemStack> out = new java.util.ArrayList<>(SPILLED);
+        SPILLED.clear();
+        return out;
+    }
+
     @Override
     public boolean addFreshEntity(Entity entity) {
-        return false;   // the world's entities are Paper's
+        // The world's entities are Paper's: an item entity's stack goes to Paper to drop.
+        if (entity instanceof net.minecraft.world.entity.item.ItemEntity item && !item.getItem().isEmpty()) {
+            SPILLED.add(item.getItem().copy());
+            return true;
+        }
+        return false;
     }
 
     // --- effects the vanilla client gets from Paper

@@ -106,6 +106,58 @@ public final class LiveProtocol {
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
                     yield state(player, LiveMenus.clickBlock(player, pos));
                 }
+                case "break" -> {
+                    // break TAB uuid TAB name TAB blockId TAB x TAB y TAB z, then inv lines (the held
+                    // stack, the tool, in slot 0) and an optional "be TAB snbt" line: the player
+                    // breaks a mod block of Paper's world, by the block's own code as a server's
+                    // game mode does. What it spilled comes back as "spill TAB stack" lines.
+                    SessionServerPlayer player = LiveMenus.session(id, head[2]);
+                    player.closeContainer();
+                    readInventory(player, lines);
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
+                            Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
+                    FacadeServerLevel level = LiveMenus.level();
+                    level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    level.setBlock(pos, net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                            net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState(), 3);
+                    for (int i = 1; i < lines.length; i++) {
+                        if (lines[i].startsWith("be\t")) {
+                            net.minecraft.world.level.block.entity.BlockEntity loaded =
+                                    net.minecraft.world.level.block.entity.BlockEntity.loadStatic(pos,
+                                            level.getBlockState(pos),
+                                            net.minecraft.nbt.TagParser.parseTag(lines[i].substring(3)),
+                                            level.registryAccess());
+                            if (loaded != null) {
+                                level.removeBlockEntity(pos);
+                                level.setBlockEntity(loaded);
+                                loaded.onLoad();
+                            }
+                        }
+                    }
+                    player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 1.5);
+                    FacadeServerLevel.takeSpilled();
+                    net.minecraft.world.level.block.state.BlockState st = level.getBlockState(pos);
+                    net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+                    net.minecraft.world.item.ItemStack tool = player.getMainHandItem();
+                    net.minecraft.world.item.ItemStack used = tool.copy();
+                    boolean canHarvest = st.canHarvestBlock(level, pos, player);
+                    st = st.getBlock().playerWillDestroy(level, pos, st, player);
+                    boolean removed = st.onDestroyedByPlayer(level, pos, player, canHarvest, level.getFluidState(pos));
+                    if (removed) {
+                        st.getBlock().destroy(level, pos, st);
+                        tool.mineBlock(level, st, pos, player);
+                        if (canHarvest) {
+                            st.getBlock().playerDestroy(level, player, pos, st, be, used);
+                        }
+                    }
+                    StringBuilder out = new StringBuilder(state(player, null));
+                    out.append("broken\t").append(removed).append('\n');
+                    for (net.minecraft.world.item.ItemStack spilled : FacadeServerLevel.takeSpilled()) {
+                        out.append("spill\t").append(encode(spilled)).append('\n');
+                    }
+                    level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    yield out.toString();
+                }
                 case "use-on" -> {
                     // use-on TAB uuid TAB name TAB x TAB y TAB z TAB face TAB clickedBlock TAB sneaking, then
                     // inv lines (the held stack in slot 0): a right click with a mod item on a block

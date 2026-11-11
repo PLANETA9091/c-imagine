@@ -132,6 +132,19 @@ public final class FacadeServer extends MinecraftServer {
         return players;
     }
 
+    /**
+     * Loot tables and the other data-pack registries: the layer's real server loaded them
+     * (a broken block's drops are its loot table).
+     */
+    @Override
+    public net.minecraft.server.ReloadableServerRegistries.Holder reloadableRegistries() {
+        MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (real != null && real != this) {
+            return real.reloadableRegistries();
+        }
+        return super.reloadableRegistries();
+    }
+
     @Override
     public int getTickCount() {
         return LiveProtocol.ticks();
