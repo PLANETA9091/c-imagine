@@ -110,7 +110,7 @@ public final class ScreenArt {
 
     private static final int CRAWL_STEP_TICKS = 6;
     private static final int CRAWL_WAIT_TICKS = 70;
-    private static final int CRAWL_MAX_WIDGETS = 18;
+    private static final int CRAWL_MAX_WIDGETS = 40;
     private static final int CRAWL_CLOSED_TICKS = 30;
     private static final int CRAWL_STATE_TIMEOUT_TICKS = 60;
 
@@ -149,6 +149,13 @@ public final class ScreenArt {
             }
             name = id;
             collect(screen.children(), screen.width, screen.height, 0);
+            if (start == 0) {
+                StringBuilder at = new StringBuilder();
+                for (int[] t : targets) {
+                    at.append(' ').append(t[2] - left).append(',').append(t[3] - top).append(' ').append(t[4]).append('x').append(t[5]);
+                }
+                LOGGER.info("[cimscene] crawl {} targets {}:{}", name, targets.size(), at);
+            }
         }
     }
 

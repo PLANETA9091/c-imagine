@@ -107,7 +107,8 @@ jobs:
   slice:
     name: menus ${{ matrix.ns }} ${{ matrix.si }}/${{ matrix.k }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The crawl presses up to 40 controls per menu, each settled and captured on both stacks.
+    timeout-minutes: 45
     needs: [plan]
     strategy:
       fail-fast: false
