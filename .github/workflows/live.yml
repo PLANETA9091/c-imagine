@@ -178,6 +178,8 @@ jobs:
           grep -q "\[cimlive\] selftest ok" out-live/harness.log || { grep -n 'cimlive\|Exception' out-live/harness.log | tail -60; exit 1; }
           grep -q "\[cimlive\] selftest place opened menu.*sophisticatedbackpacks:backpack.* own=27" out-live/harness.log \
             || { echo "ASSERTION FAILED: the placed backpack did not open with its storage"; grep 'selftest place' out-live/harness.log; exit 1; }
+          grep -q "\[cimlive\] selftest place reopened, first own slot minecraft:diamond" out-live/harness.log \
+            || { echo "ASSERTION FAILED: the placed backpack lost its storage between a close and a reopen"; grep 'selftest place' out-live/harness.log; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:

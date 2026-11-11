@@ -932,7 +932,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         LiveBridge.Broken broken = bridge.breakBlock(player, at, result.placedId());
         out.add("placed block broken -> " + (broken.state().error() != null ? broken.state().error()
                 : "removed=" + broken.removed() + " drops " + broken.spilled().stream()
-                .map(st -> itemId(st) + " x" + st.getAmount()).toList()));
+                .map(st -> bridge.toLayer(st).replaceAll(".*\"id\":\"([^\"]+)\".*", "$1") + " x" + st.getAmount()).toList()));
         if (!broken.spilled().isEmpty()) {
             // The dropped backpack, opened from the hand: its storage still holds the diamonds.
             player.getInventory().setItemInMainHand(broken.spilled().get(0));

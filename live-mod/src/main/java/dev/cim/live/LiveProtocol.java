@@ -89,16 +89,7 @@ public final class LiveProtocol {
                             // As a chunk loads it: the data first, then the level and onLoad, which
                             // a mod builds its runtime state in from that data (measured: a placed
                             // Sophisticated Backpack, loaded after onLoad, kept an empty wrapper).
-                            net.minecraft.world.level.block.entity.BlockEntity loaded =
-                                    net.minecraft.world.level.block.entity.BlockEntity.loadStatic(pos,
-                                            level.getBlockState(pos),
-                                            net.minecraft.nbt.TagParser.parseTag(lines[i].substring(3)),
-                                            level.registryAccess());
-                            if (loaded != null) {
-                                level.removeBlockEntity(pos);
-                                level.setBlockEntity(loaded);
-                                loaded.onLoad();
-                            }
+                            loadKept(level, pos, lines[i].substring(3));
                         }
                     }
                     BLOCKS.put(id, pos);
@@ -122,16 +113,7 @@ public final class LiveProtocol {
                             net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState(), 3);
                     for (int i = 1; i < lines.length; i++) {
                         if (lines[i].startsWith("be\t")) {
-                            net.minecraft.world.level.block.entity.BlockEntity loaded =
-                                    net.minecraft.world.level.block.entity.BlockEntity.loadStatic(pos,
-                                            level.getBlockState(pos),
-                                            net.minecraft.nbt.TagParser.parseTag(lines[i].substring(3)),
-                                            level.registryAccess());
-                            if (loaded != null) {
-                                level.removeBlockEntity(pos);
-                                level.setBlockEntity(loaded);
-                                loaded.onLoad();
-                            }
+                            loadKept(level, pos, lines[i].substring(3));
                         }
                     }
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 1.5);
@@ -389,6 +371,31 @@ public final class LiveProtocol {
             if (p.length == 3 && p[0].equals("inv")) {
                 player.getInventory().setItem(Integer.parseInt(p[1]), decode(p[2]));
             }
+        }
+    }
+
+    /**
+     * A block entity's kept data loaded as a chunk loads it: the data first, then the level
+     * and onLoad, which a mod builds its runtime state in from that data (a placed
+     * Sophisticated Backpack, loaded after onLoad, kept an empty wrapper). Data saved without
+     * its metadata names no type: the block's own block entity type is it.
+     */
+    private static void loadKept(FacadeServerLevel level, net.minecraft.core.BlockPos pos, String snbt)
+            throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        net.minecraft.nbt.CompoundTag tag = net.minecraft.nbt.TagParser.parseTag(snbt);
+        net.minecraft.world.level.block.entity.BlockEntity existing = level.getBlockEntity(pos);
+        if (!tag.contains("id") && existing != null) {
+            tag.putString("id", String.valueOf(net.minecraft.world.level.block.entity.BlockEntityType.getKey(existing.getType())));
+        }
+        net.minecraft.world.level.block.entity.BlockEntity loaded =
+                net.minecraft.world.level.block.entity.BlockEntity.loadStatic(pos, level.getBlockState(pos), tag,
+                        level.registryAccess());
+        if (loaded != null) {
+            level.removeBlockEntity(pos);
+            level.setBlockEntity(loaded);
+            loaded.onLoad();
+        } else if (existing != null) {
+            existing.loadWithComponents(tag, level.registryAccess());
         }
     }
 

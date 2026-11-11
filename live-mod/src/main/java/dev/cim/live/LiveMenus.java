@@ -151,11 +151,29 @@ public final class LiveMenus {
         if (placed == null) {
             return;
         }
+        String diamonds = LiveProtocol.encode(new ItemStack(Items.DIAMOND, 5));
         String open = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
-                + "\t" + at[2] + "\nfresh" + (be == null ? "" : "\nbe\t" + be));
+                + "\t" + at[2] + "\ninv\t9\t" + diamonds + "\nfresh" + (be == null ? "" : "\nbe\t" + be));
         long own = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu")).count();
         LOG.info("[cimlive] selftest place opened {} own={}", open.split("\n")[0], own);
+        // 5 diamonds into its storage, closed, opened again from the data the close gave back.
+        String from = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("player")
+                && l.split("\t")[4].equals("9")).map(l -> l.split("\t")[2]).findFirst().orElse(null);
+        String to = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu"))
+                .map(l -> l.split("\t")[2]).findFirst().orElse(null);
+        if (from != null && to != null) {
+            LiveProtocol.call("click\t" + uuid + "\t" + from + "\t0\tPICKUP");
+            LiveProtocol.call("click\t" + uuid + "\t" + to + "\t0\tPICKUP");
+        }
         String closed = LiveProtocol.call("close\t" + uuid);
+        String keptData = closed.lines().filter(l -> l.startsWith("be\t")).map(l -> l.substring(3)).findFirst().orElse(null);
+        String again = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
+                + "\t" + at[2] + "\nfresh" + (keptData == null ? "" : "\nbe\t" + keptData));
+        String first = again.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu"))
+                .map(l -> l.split("\t")[5]).findFirst().orElse("none");
+        LOG.info("[cimlive] selftest place reopened, first own slot {}", first.equals("-") ? "empty"
+                : first.contains("minecraft:diamond") ? "minecraft:diamond" : first);
+        closed = LiveProtocol.call("close\t" + uuid);
         String kept = closed.lines().filter(l -> l.startsWith("be\t")).map(l -> l.substring(3)).findFirst().orElse(be);
         // Broken by hand, by the block's own code: what it drops is the item, with its data.
         String broken = LiveProtocol.call("break\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
