@@ -252,7 +252,15 @@ public final class ScreenArt {
                 net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
         mc.gameMode.handleInventoryMouseClick(id, shown.get(to).index, 0,
                 net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
-        record(c, "move\t" + from + "\t" + to);
+        // A slot that only copies what it is shown (Create's filter slots) leaves the stack on
+        // the cursor; a player puts it back where it came from rather than carry it on.
+        if (!screen.getMenu().getCarried().isEmpty()) {
+            mc.gameMode.handleInventoryMouseClick(id, shown.get(from).index, 0,
+                    net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
+            record(c, "move\t" + from + "\t" + to + "\t" + from);
+        } else {
+            record(c, "move\t" + from + "\t" + to);
+        }
         return true;
     }
 

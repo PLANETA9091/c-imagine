@@ -105,7 +105,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v11");
+        StringBuilder out = new StringBuilder("v12");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -128,8 +128,11 @@ public final class ScreenPack {
                 out.append("captured\t").append(s.captured().originX()).append('\t')
                         .append(s.captured().originY()).append('\n');
                 if (s.captured().move() != null) {
-                    out.append("move\t").append(s.captured().move()[0]).append('\t')
-                            .append(s.captured().move()[1]).append('\n');
+                    out.append("move");
+                    for (int click : s.captured().move()) {
+                        out.append('\t').append(click);
+                    }
+                    out.append('\n');
                 }
                 for (var st : s.captured().states().entrySet()) {
                     for (Piece q : st.getValue()) {
@@ -184,7 +187,7 @@ public final class ScreenPack {
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2])}, c.covers())));
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers())));
             } else if (p[0].equals("cover")) {
                 out.get(out.size() - 1).captured().covers().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
@@ -548,7 +551,8 @@ public final class ScreenPack {
                 for (String line : Files.readAllLines(presses, StandardCharsets.UTF_8)) {
                     String[] q = line.split("\t");
                     if (q[0].equals("move") && move == null) {
-                        move = new int[]{Integer.parseInt(q[1]), Integer.parseInt(q[2])};
+                        // Every click of the move, in order (a third puts a copied stack back).
+                        move = java.util.Arrays.stream(q).skip(1).mapToInt(Integer::parseInt).toArray();
                     } else if (q[0].equals("press")) {
                         int i = widgets.size();
                         widgets.add(new Widget(Integer.parseInt(q[2]), Integer.parseInt(q[3]), Integer.parseInt(q[4]),
