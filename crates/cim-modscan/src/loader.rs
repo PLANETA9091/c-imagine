@@ -76,39 +76,42 @@ pub fn scan_dir_full(dir: &Path) -> (Vec<ScannedMod>, ScanStats) {
     let extract_dir = std::env::temp_dir().join("c-imagine-jarjar");
     let _ = std::fs::remove_dir_all(&extract_dir);
     let mut extracted: Vec<ScannedMod> = Vec::new();
-    for m in &scanned {
-        for (n, nested) in m.nested.iter().enumerate() {
-            if !nested.nested.is_empty() {
-                eprintln!(
-                    "WARN: deeply nested jar skipped: {} in {}",
-                    nested.file_name, m.file_name
-                );
-                continue;
-            }
-            match extract_nested(&extract_dir, m, n, nested) {
-                Ok(Some(path)) => {
-                    if nested.mod_ids().is_empty() {
-                        // jarjar library: classpath material, not a mod.
-                        eprintln!(
-                            "INFO: jarjar library (no mod ids): {} -> {}",
-                            nested.file_name,
-                            path.display()
-                        );
-                        stats.libraries.push(path.to_string_lossy().into_owned());
-                        continue;
-                    }
-                    match scan_file(&path) {
+    // Every level, as NeoForge's JarJar does: a library's own nested jars too (MixinSquared's
+    // forge jar is a library whose classes live in a jar inside it).
+    let mut outers: Vec<ScannedMod> = scanned.clone();
+    let mut level = 0;
+    while !outers.is_empty() && level < MAX_JARJAR_LEVELS {
+        level += 1;
+        let mut next: Vec<ScannedMod> = Vec::new();
+        for m in &outers {
+            for (n, nested) in m.nested.iter().enumerate() {
+                match extract_nested(&extract_dir, m, n, nested) {
+                    Ok(Some(path)) => match scan_file(&path) {
                         Ok(sm) => {
-                            stats.nested_extracted += 1;
-                            extracted.push(sm);
+                            if sm.mod_ids().is_empty() {
+                                // jarjar library: classpath material, not a mod.
+                                eprintln!(
+                                    "INFO: jarjar library (no mod ids): {} -> {}",
+                                    nested.file_name,
+                                    path.display()
+                                );
+                                stats.libraries.push(path.to_string_lossy().into_owned());
+                            } else {
+                                stats.nested_extracted += 1;
+                                extracted.push(sm.clone());
+                            }
+                            if !sm.nested.is_empty() {
+                                next.push(sm);
+                            }
                         }
                         Err(e) => eprintln!("WARN: nested scan failed ({}): {e}", path.display()),
-                    }
+                    },
+                    Ok(None) => {}
+                    Err(e) => eprintln!("WARN: nested extract failed ({}): {e}", nested.file_name),
                 }
-                Ok(None) => {}
-                Err(e) => eprintln!("WARN: nested extract failed ({}): {e}", nested.file_name),
             }
         }
+        outers = next;
     }
     scanned.extend(extracted);
 
@@ -158,6 +161,9 @@ pub struct ScanStats {
     /// to the FML mod list.
     pub libraries: Vec<String>,
 }
+
+/// How deep jar-in-jar extraction goes (the scanner's own nesting limit bounds it too).
+const MAX_JARJAR_LEVELS: usize = 3;
 
 /// Extract one nested jar to `<extract_dir>/<outer-stem>_<n>_<basename>`.
 fn extract_nested(

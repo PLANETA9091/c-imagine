@@ -114,6 +114,30 @@ fn declares_library<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> bool {
     })
 }
 
+/// The `path` of every entry in `META-INF/jarjar/metadata.json`, when the jar has one.
+fn jarjar_metadata_paths<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Vec<String> {
+    let Ok(mut entry) = archive.by_name("META-INF/jarjar/metadata.json") else {
+        return Vec::new();
+    };
+    let mut text = String::new();
+    if entry.read_to_string(&mut text).is_err() {
+        return Vec::new();
+    }
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    json.get("jars")
+        .and_then(|jars| jars.as_array())
+        .map(|jars| {
+            jars.iter()
+                .filter_map(|jar| jar.get("path").and_then(|p| p.as_str()))
+                .filter(|p| p.ends_with(".jar"))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Scan a jar file on disk.
 pub fn scan_file(path: &Path) -> Result<ScannedMod, ScannerError> {
     let file = std::fs::File::open(path)?;
@@ -276,6 +300,27 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
         }
     }
 
+    // 3) Jars the jar-in-jar metadata names outside META-INF/jarjar/ (MixinSquared's forge
+    // jar keeps its core under META-INF/jars/): NeoForge's JarJar reads the paths from
+    // META-INF/jarjar/metadata.json, wherever they point.
+    for path in jarjar_metadata_paths(&mut archive) {
+        if out.nested.iter().any(|n| n.file_name == path) {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        match archive.by_name(&path) {
+            Ok(mut entry) => {
+                entry.read_to_end(&mut bytes)?;
+            }
+            Err(_) => continue,
+        }
+        let nested = scan_jar_depth(Cursor::new(bytes), depth + 1)?;
+        out.nested.push(ScannedMod {
+            file_name: path,
+            ..nested
+        });
+    }
+
     Ok(out)
 }
 
@@ -297,6 +342,19 @@ mod tests {
             zip.finish().unwrap();
         }
         buf.into_inner()
+    }
+
+    #[test]
+    fn finds_nested_jars_the_metadata_names_anywhere() {
+        let inner = build_jar(&[("com/x/Core.class", b"not a class".as_slice())]);
+        let meta = br#"{"jars":[{"identifier":{"group":"g","artifact":"core"},"path":"META-INF/jars/core-1.jar"}]}"#;
+        let jar = build_jar(&[
+            ("META-INF/jarjar/metadata.json", meta.as_slice()),
+            ("META-INF/jars/core-1.jar", &inner),
+        ]);
+        let scanned = scan_jar(Cursor::new(jar)).unwrap();
+        assert_eq!(scanned.nested.len(), 1);
+        assert_eq!(scanned.nested[0].file_name, "META-INF/jars/core-1.jar");
     }
 
     #[test]
