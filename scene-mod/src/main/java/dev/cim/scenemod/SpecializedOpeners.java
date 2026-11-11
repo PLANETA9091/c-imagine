@@ -78,20 +78,9 @@ public final class SpecializedOpeners {
             switch (menuId) {
                 case "mekanism:crafting_robit", "mekanism:inventory_robit",
                      "mekanism:repair_robit", "mekanism:smelting_robit" -> {
-                    setBlock(level, rig.below(), "minecraft:stone");
-                    EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse("mekanism:robit"));
-                    Entity robit = type.create(level);
-                    if (robit != null) {
-                        robit.setNoGravity(true);
-                        try {
-                            Method setOwner = robit.getClass().getMethod("setOwnerUUID", java.util.UUID.class);
-                            setOwner.invoke(robit, player.getUUID());
-                        } catch (Throwable ignored) {}
-                        robit.moveTo(rig.getX() + 0.5, rig.getY(), rig.getZ() + 0.5, 0f, 0f);
-                        level.addFreshEntity(robit);
-                        if (onEntitySpawned != null) {
-                            onEntitySpawned.accept(robit);
-                        }
+                    Entity robit = CimSceneMod.placeRobit(level, player, rig.below());
+                    if (robit != null && onEntitySpawned != null) {
+                        onEntitySpawned.accept(robit);
                     }
                 }
                 case "mekanism:digital_miner_config" ->

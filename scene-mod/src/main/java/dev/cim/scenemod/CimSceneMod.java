@@ -3319,6 +3319,31 @@ public final class CimSceneMod {
         }
     }
 
+    /** Place through Mekanism's item: it assigns the real chargepad home and owner. */
+    static Entity placeRobit(ServerLevel level, ServerPlayer player, BlockPos pad) {
+        level.setBlock(pad.below(), Blocks.STONE.defaultBlockState(), 3);
+        // A previous menu may have left this pad active; create a fresh placement context.
+        level.setBlock(pad, Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(pad, BuiltInRegistries.BLOCK.get(
+                ResourceLocation.parse("mekanism:chargepad")).defaultBlockState(), 3);
+        ItemStack previous = player.getItemInHand(InteractionHand.MAIN_HAND);
+        List<Entity> previousJoined = GUI_JOINED;
+        List<Entity> joined = new ArrayList<>();
+        GUI_JOINED = joined;
+        try {
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("mekanism:robit")));
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(pad).relative(Direction.UP, 0.5), Direction.UP, pad, false)));
+            return joined.stream().filter(e -> e.isAlive() && BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())
+                    .equals(ResourceLocation.parse("mekanism:robit"))).findFirst().orElse(null);
+        } finally {
+            GUI_JOINED = previousJoined;
+            if (previousJoined != null) previousJoined.addAll(joined);
+            player.setItemInHand(InteractionHand.MAIN_HAND, previous);
+        }
+    }
+
     /** Entities that joined the level while a use ran; null when no use is running. */
     private static List<net.minecraft.world.entity.Entity> GUI_JOINED;
     /** Everything a use spawned, so the rig can be cleared of it. */
@@ -4576,6 +4601,15 @@ public final class CimSceneMod {
                 continue;
             }
             try {
+                boolean itemPlaced = id.toString().equals("mekanism:robit");
+                if (itemPlaced) {
+                    ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
+                    if (owner == null) owner = new GuiProbe(level);
+                    BlockPos pad = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH - 1, GALLERY_Z);
+                    e = placeRobit(level, owner, pad);
+                    if (e == null) throw new IllegalStateException("Robit item did not spawn on its chargepad");
+                }
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
                 e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
@@ -4593,7 +4627,7 @@ public final class CimSceneMod {
                     // between the settle pass and the shot.
                     m_setNoAi(e);
                 }
-                level.addFreshEntity(e);
+                if (!itemPlaced) level.addFreshEntity(e);
                 // 14-ea THE MOTION PIN: a projectile's own tick re-applies
                 // its hardcoded gravity (FallingBlockEntity / ThrowableProjectile
                 // both add it INSIDE tick(), ungated by NoGravity) — one
