@@ -3398,9 +3398,24 @@ public final class CimSceneMod {
                 }
                 var track = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:track"));
                 player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(track.asItem()));
+                // TWO PASSES (the fb29eb57 diagnosis named it: the walk's own
+                // support block sits ON the track line at the gallery cell's z,
+                // and TrackBlock.getStateForPlacement's native slope heuristic
+                // turns the target rail ASCENDING (ZO -> AS) when its +z
+                // neighbour is sturdy-top over open air — the track axes then
+                // span two axes and enterAssemblyMode refuses (tryEnterAssembly
+                // Mode's single-axis law). The lifetime cell has a clean line,
+                // so its rails stay flat — the ONLY contextual difference.
+                // Pass 1 clears the whole line (stone under, AIR on it), pass 2
+                // lays the tracks against an already-rail-or-air neighbourhood,
+                // exactly the state the passing lifetime context presents.
                 for (int z = -12; z <= 12; z++) {
                     BlockPos rail = cell.below().offset(0, 0, z);
                     put(rail.below(), Blocks.STONE.defaultBlockState());
+                    put(rail, Blocks.AIR.defaultBlockState());
+                }
+                for (int z = -12; z <= 12; z++) {
+                    BlockPos rail = cell.below().offset(0, 0, z);
                     BlockState state = track.getStateForPlacement(new net.minecraft.world.item.context.BlockPlaceContext(context(rail.below())));
                     if (state == null) throw new IllegalStateException("Native track placement unavailable at " + rail);
                     put(rail, state);
