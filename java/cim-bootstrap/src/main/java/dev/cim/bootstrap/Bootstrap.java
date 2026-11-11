@@ -45,6 +45,7 @@ public final class Bootstrap {
         String jarPath = JsonKit.str(optionsJson, "jar");
         String modsDir = JsonKit.str(optionsJson, "mods");
         String kernel = JsonKit.str(optionsJson, "kernel");
+        underKernel = kernel != null && !kernel.isEmpty();
         String moduleLib = JsonKit.str(optionsJson, "moduleLib");
         String layerDir = JsonKit.str(optionsJson, "layerDir");
         pendingManifest = manifestJson;
@@ -241,6 +242,7 @@ public final class Bootstrap {
      */
     public static String loadMods(String manifestJson) {
         // Mods load while the server is still starting: a print must never kill this thread.
+        awaitServerLogger();
         GuardedStream.install();
         long started = System.nanoTime();
         try {
@@ -280,6 +282,59 @@ public final class Bootstrap {
             t.printStackTrace();
             return "{\"state\":\"error\",\"error\":\"" + JsonKit.escape(msg) + "\"}";
         }
+    }
+
+    /**
+     * Paper replaces System.out with a stream that logs through Bukkit.getLogger(), and until
+     * the server object exists every print on it throws; Paper installs it after the bootstrap
+     * started, on top of anything the bootstrap installed. So the mods load once that object
+     * exists (measured: 5 of 17 gallery slices lost every mod to that window). Without Paper
+     * there is no Bukkit class, and nothing to wait for.
+     */
+    /** Set at init: a server kernel (Paper) runs this JVM, so its logger is worth waiting for. */
+    private static volatile boolean underKernel;
+
+    private static void awaitServerLogger() {
+        long until = System.currentTimeMillis() + 180_000L;
+        while (System.currentTimeMillis() < until) {
+            Boolean ready = bukkitServerSet();
+            // No Bukkit visible: done, unless a kernel runs and has not loaded it yet.
+            if (Boolean.TRUE.equals(ready) || (ready == null && !underKernel)) {
+                return;
+            }
+            try {
+                Thread.sleep(100L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+    }
+
+    /** True when Bukkit's server is set, false while it is not, null when there is no Bukkit. */
+    private static Boolean bukkitServerSet() {
+        java.util.Set<ClassLoader> loaders = new java.util.LinkedHashSet<>();
+        loaders.add(ClassLoader.getSystemClassLoader());
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if (t.getContextClassLoader() != null) {
+                loaders.add(t.getContextClassLoader());
+            }
+        }
+        boolean found = false;
+        for (ClassLoader cl : loaders) {
+            try {
+                Class<?> bukkit = Class.forName("org.bukkit.Bukkit", false, cl);
+                found = true;
+                java.lang.reflect.Field server = bukkit.getDeclaredField("server");
+                server.setAccessible(true);
+                if (server.get(null) != null) {
+                    return true;
+                }
+            } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+                // not this loader
+            }
+        }
+        return found ? Boolean.FALSE : null;
     }
 
     /**
