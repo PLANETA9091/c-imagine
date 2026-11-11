@@ -1030,16 +1030,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return null;
         }
         GuiCaptures.Slot c = s.capture.slots().get(index);
-        // 0) The menu's own index, the number the real client's packets carry, when the
-        // capture names it and the live slot has the same owner (measured: a position pairing
-        // put Sophisticated Backpacks' slot 26 contents nowhere, where the real client shows it).
+        // 0) The menu's own index: the number the server's content packet carries, which the
+        // real client puts in ITS slot of that index whatever either side thinks the slot is
+        // (measured: a block-placed Sophisticated Backpack has no storage on the server, 36
+        // slots, while its client screen has 27 more; the server's slot 26, the player's
+        // last inventory slot, shows in the client's backpack slot 26).
         if (c.menuIndex() >= 0) {
             for (LiveBridge.Slot l : s.liveSlots) {
                 if (l.menuIndex() == c.menuIndex()) {
-                    if (l.player() == c.player()) {
-                        return l;
-                    }
-                    break;
+                    return l;
                 }
             }
         }
@@ -1104,8 +1103,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         s.liveWidgets = widgetStates(player, s);
         for (int k = 0; k < s.held.length; k++) {
             LiveBridge.Slot slot = liveSlotFor(s, k);
-            // A display slot is in the art, drawn by the mod's screen with its own decorations.
-            s.held[k] = slot == null || slot.player() || !slot.pickable() ? null : live.toPaper(slot.stack());
+            // The client's own player slots draw the player's inventory; every other slot shows
+            // what the server sent for its index. A display slot is in the art, drawn by the
+            // mod's screen with its own decorations.
+            boolean clientPlayerSlot = s.capture.slots().get(k).player();
+            s.held[k] = slot == null || clientPlayerSlot || !slot.pickable() ? null : live.toPaper(slot.stack());
         }
         s.cursor = live.toPaper(state.carried());
         live.applyInventory(player, state);
