@@ -380,6 +380,14 @@ public final class FmlHost {
                 Thread tcclThread = Thread.currentThread();
                 ClassLoader oldTccl = tcclThread.getContextClassLoader();
                 tcclThread.setContextClassLoader(shadowLoader());
+                // FML constructs each mod as its active container: a constructor that asks
+                // ModLoadingContext for its own container or event bus finds it (moonlight
+                // does; without it: "Where is minecraft???!").
+                Object loadingContext = Class.forName(MOD_LOADING_CONTEXT).getMethod("get").invoke(null);
+                java.lang.reflect.Method setActive = Class.forName(MOD_LOADING_CONTEXT)
+                        .getDeclaredMethod("setActiveContainer", Class.forName(MOD_CONTAINER));
+                setActive.setAccessible(true);
+                setActive.invoke(loadingContext, container);
                 try {
                     construct.invoke(container);
                     System.out.println(LOG + " mod " + mod.id()
@@ -390,10 +398,14 @@ public final class FmlHost {
                 } finally {
                     tcclThread.setContextClassLoader(oldTccl);
                 }
-                Object event = constructModEventCls
-                        .getConstructor(Class.forName(MOD_CONTAINER), Class.forName(DEFERRED_QUEUE))
-                        .newInstance(container, queue);
-                acceptEvent.invoke(container, event);
+                try {
+                    Object event = constructModEventCls
+                            .getConstructor(Class.forName(MOD_CONTAINER), Class.forName(DEFERRED_QUEUE))
+                            .newInstance(container, queue);
+                    acceptEvent.invoke(container, event);
+                } finally {
+                    setActive.invoke(loadingContext, (Object) null);
+                }
             }
             Class.forName(DEFERRED_QUEUE).getMethod("runTasks").invoke(queue);
 
