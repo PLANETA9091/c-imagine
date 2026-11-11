@@ -248,10 +248,10 @@ jobs:
       # camera-lock environment pins ride here so the screenshots the parity
       # job takes against THIS wall are comparable across legs.
       # -------------------------------------------------------------------
-      - name: Create item-placed entities and native spawn codecs
+      - name: Create native entity initialization and spawn codecs
         run: |
           set -euo pipefail
-          for subject in package blueprint; do
+          for subject in package blueprint potato; do
             echo "cimscene selftest-$subject" > srv-create/console.in
             for i in $(seq 1 30); do
               grep -q "selftest $subject native-spawn PASS" srv-create/boot.log && break

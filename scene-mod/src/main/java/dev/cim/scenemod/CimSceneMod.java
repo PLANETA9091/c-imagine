@@ -303,6 +303,7 @@ public final class CimSceneMod {
                         }))
                         .then(Commands.literal("selftest-package").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), false)))
                         .then(Commands.literal("selftest-blueprint").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), true)))
+                        .then(Commands.literal("selftest-potato").executes(ctx -> potatoSpawnSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3321,6 +3322,52 @@ public final class CimSceneMod {
         }
     }
 
+    /** Match PotatoCannonItem: setItem resolves the data-driven projectile type before spawning. */
+    private static void configurePotatoProjectile(Entity entity) throws ReflectiveOperationException {
+        entity.getClass().getMethod("setItem", ItemStack.class).invoke(entity, new ItemStack(Items.POTATO));
+    }
+
+    /** Native render-mode lookup and additional-spawn round trip; no client or synthetic ticks. */
+    private static int potatoSpawnSelftest(CommandSourceStack src) {
+        var type = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse("create:potato_projectile"));
+        ServerLevel level = src.getLevel();
+        var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+        try {
+            Entity projectile = type.create(level);
+            var renderMode = projectile.getClass().getMethod("getRenderMode");
+            boolean refused = false;
+            try {
+                renderMode.invoke(projectile);
+            } catch (java.lang.reflect.InvocationTargetException expected) {
+                if (!(expected.getCause() instanceof NullPointerException)) throw expected;
+                refused = true;
+            }
+            if (!refused) throw new IllegalStateException("Bare projectile negative control unexpectedly rendered");
+            configurePotatoProjectile(projectile);
+            Object projectileType = projectile.getClass().getMethod("getProjectileType").invoke(projectile);
+            if (projectileType == null || renderMode.invoke(projectile) == null) {
+                throw new IllegalStateException("Configured projectile has no native type or render mode");
+            }
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) projectile).writeSpawnData(buffer);
+            int bytes = buffer.readableBytes();
+            Entity received = type.create(level);
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+            ItemStack receivedItem = (ItemStack) received.getClass().getMethod("getItem").invoke(received);
+            Object receivedType = received.getClass().getMethod("getProjectileType").invoke(received);
+            if (!receivedItem.is(Items.POTATO) || receivedItem.getCount() != 1 || receivedType != projectileType
+                    || renderMode.invoke(received) == null || buffer.isReadable()) {
+                throw new IllegalStateException("Native projectile spawn round trip lost ammo, type or render mode");
+            }
+            LOGGER.info("[cimscene] selftest potato native-spawn PASS bytes={} bare-rejected=true", bytes);
+            return 1;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest potato native-spawn FAILED", failure);
+            return 0;
+        } finally {
+            buffer.release();
+        }
+    }
+
     /** Real Create item placement and its native additional-spawn codec, exercised by CI. */
     private static int itemEntitySpawnSelftest(CommandSourceStack src, boolean blueprint) {
         String subject = blueprint ? "blueprint" : "package";
@@ -4687,6 +4734,7 @@ public final class CimSceneMod {
                 continue;
             }
             try {
+                if (id.toString().equals("create:potato_projectile")) configurePotatoProjectile(e);
                 boolean robit = id.toString().equals("mekanism:robit");
                 boolean parcel = id.toString().equals("create:package");
                 boolean blueprint = id.toString().equals("create:crafting_blueprint");
