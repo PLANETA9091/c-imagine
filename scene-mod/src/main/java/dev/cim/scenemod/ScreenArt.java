@@ -472,12 +472,13 @@ public final class ScreenArt {
         Files.createDirectories(dir);
         String name = id.getNamespace() + "_" + id.getPath().replace('/', '_');
         save(target, w, h, dir.resolve(name + ".png"));
+        // Before the icons: they are drawn into this same target, over the art.
+        saveAnimation(mc, screen, w, h, target, dir.resolve(name + ".anim.png"));
         try {
             captureIcons(mc, target, lifted, dir.resolve("icons"));
         } catch (Throwable t) {
             LOGGER.warn("[cimscene] icon capture failed: {}", t.toString());
         }
-        saveAnimation(mc, screen, w, h, target, dir.resolve(name + ".anim.png"));
         mc.getMainRenderTarget().bindWrite(true);
         target.destroyBuffers();
         double scale = mc.getWindow().getGuiScale();

@@ -39,6 +39,9 @@ anim.save(os.path.join(d, "moving.anim.png"))
 far = Image.new("RGBA", (1280, 720), (0, 0, 0, 0))
 far.paste((255, 255, 255, 255), (600, 300, 610, 305))
 far.save(os.path.join(d, "elsewhere.anim.png"))
+everywhere = os.path.join(d, "everywhere.png")
+mask.save(everywhere)
+Image.new("RGBA", (1280, 720), (255, 255, 255, 255)).save(os.path.join(d, "everywhere.anim.png"))
 bad = 0
 for label, got, want in [
     ("identical frames", m.judge("x", True, "", m.compare(a, b, slots, 3))[0], "GREEN"),
@@ -47,6 +50,7 @@ for label, got, want in [
     ("art mask sees a changed pixel", m.judge("x", True, "", m.compare(a, c, slots, 3, art))[0], "RED"),
     ("art mask ignores the world around it", m.judge("x", True, "", m.compare(a, e, slots, 3, art))[0], "GREEN"),
     ("an animated pixel is judged apart", m.judge("x", True, "", m.compare(a, c, slots, 3, moving))[0], "GREEN"),
+    ("a screen moving everywhere excuses nothing", m.judge("x", True, "", m.compare(a, c, slots, 3, everywhere))[0], "RED"),
     ("animation elsewhere excuses nothing", m.judge("x", True, "", m.compare(a, c, slots, 3, elsewhere))[0], "RED"),
     ("menu that did not open", m.judge("x", False, "no-opener", m.compare(a, b, slots, 3))[0], "RED"),
     ("missing frame", m.judge("x", True, "", m.compare(a, "/nonexistent", slots, 3))[0], "RED"),

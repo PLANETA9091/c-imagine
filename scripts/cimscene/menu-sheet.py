@@ -126,8 +126,12 @@ def compare(truth_path, ours_path, slots, scale, art=None):
         animated = 0
         anim = animation_mask(art, truth.size)
         if anim is not None:
-            animated = sum(1 for v in ImageChops.multiply(anim, mask).getdata() if v)
-            diff = ImageChops.subtract(diff, anim)
+            moving = sum(1 for v in ImageChops.multiply(anim, mask).getdata() if v)
+            # A screen that moves almost everywhere is a capture gone wrong, not an
+            # animation: it excuses nothing (measured: icons drawn over the base art).
+            if moving * 5 <= sum(1 for v in mask.getdata() if v):
+                animated = moving
+                diff = ImageChops.subtract(diff, anim)
         box = mask.getbbox()
         total = sum(1 for v in mask.crop(box).getdata() if v)
         return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box), animated

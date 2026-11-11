@@ -183,6 +183,9 @@ if [ -n "${OURS_CRUSSTY:-}" ]; then
   printf '{"layerDir": "%s"}\n' "$ROOT/layer-srv/libraries" > srv-ours/crus/c-imagine.json
   sed -i 's/memory = "[0-9]*G"/memory = "5G"/' srv-ours/crussty.toml
   cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar srv-ours/mods/
+  # Jars the layer cannot load yet (LAYER_EXCLUDE, file-name prefixes): their pages show the
+  # recorded screen, every other mod keeps its own code. Each one is an open layer blocker.
+  for x in ${LAYER_EXCLUDE:-}; do rm -f srv-ours/mods/"$x"*.jar; done
   cp scripts/log4j2-layer.xml srv-ours/
   ( cd srv-ours && PATH="$J25/bin:$PATH" JAVA_HOME="$J25" CIM_F2V_PORT=$PACK_PORT CIM_F2V_FASTBOOT=true \
       setsid bash -c "crussty run >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )

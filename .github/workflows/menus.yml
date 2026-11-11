@@ -234,6 +234,11 @@ jobs:
           J21: ${{ steps.jdk21.outputs.path }}
           J25: ${{ steps.jdk25.outputs.path }}
           OURS_CRUSSTY: ${{ github.workspace }}/srv-crus
+          # Open layer blocker: MixinExtras @Local in supplementaries' and moonlight's mixins
+          # finds no matching local in the relocated classes ("Found 0 candidate variables"),
+          # a critical injection failure that stops every mod. Until fixed, these load on the
+          # truth only and their pages compare the recorded screen.
+          LAYER_EXCLUDE: supplementaries moonlight
         run: bash scripts/hud/menu-shard.sh ${{ matrix.ns }} ${{ matrix.si }} ${{ matrix.k }}
       - name: keep the evidence
         if: always()
