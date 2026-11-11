@@ -438,10 +438,22 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Harness: presses widget {@code i} the way a click on it does. */
     public String press(Player player, int i) {
         Session s = open.get(player.getUniqueId());
-        if (s == null || i >= s.scene.widgets().size()) {
+        if (s == null) {
             return "no widget " + i;
         }
-        ScreenPack.Widget w = s.scene.widgets().get(i);
+        // The real client's press number, not a list position: a press that left the screen
+        // recorded no widget, so the list is shorter (measured: AE2's terminals and pattern
+        // terminal showed the next press's state).
+        ScreenPack.Widget w = null;
+        for (ScreenPack.Widget each : s.scene.widgets()) {
+            if (("press " + i).equals(each.label())) {
+                w = each;
+                break;
+            }
+        }
+        if (w == null) {
+            return "no widget " + i;
+        }
         s.pointer.moveTo(s.originX + w.x() + w.w() / 2, s.originY + w.y() + w.h() / 2);
         click(player, "left");
         return "pressed " + w.label();
