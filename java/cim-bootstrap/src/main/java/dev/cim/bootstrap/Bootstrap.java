@@ -255,6 +255,9 @@ public final class Bootstrap {
                 pendingManifest = null;
             }
             if (manifestJson == null || manifestJson.isEmpty()) {
+                // The layer server waits for the mod load; with none coming it need not.
+                Class.forName("dev.cim.layer.FmlHost", true, ShadowClassLoader.get())
+                        .getMethod("markLoadEnded").invoke(null);
                 return "{\"state\":\"skipped\",\"reason\":\"no manifest\"}";
             }
             Map<String, Object> manifest = MiniJson.parseObject(manifestJson);

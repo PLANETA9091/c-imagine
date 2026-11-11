@@ -137,7 +137,28 @@ public final class FmlHost {
      *
      * @return JSON status: {"state":"ok",...} or {"state":"error","error":...}
      */
+    /** Set once the mod load has ended, either way: the layer server starts only after it. */
+    private static volatile boolean loadEnded;
+
+    /** No mod load will run (no manifest): the server need not wait for one. */
+    public static void markLoadEnded() {
+        loadEnded = true;
+    }
+
+    /** Whether the mod load has ended (successfully or not). */
+    public static boolean loadEnded() {
+        return loadEnded;
+    }
+
     public static String run(Map<String, Object> manifest) {
+        try {
+            return runLoad(manifest);
+        } finally {
+            loadEnded = true;
+        }
+    }
+
+    private static String runLoad(Map<String, Object> manifest) {
         long started = System.nanoTime();
         try {
             List<ModSpec> mods = parseManifest(manifest);
