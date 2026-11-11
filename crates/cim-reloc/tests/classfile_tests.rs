@@ -455,3 +455,79 @@ fn field_access_transform_does_not_change_same_named_method() {
         );
     }
 }
+
+#[test]
+fn local_variable_tables_inside_code_relocate() {
+    // Mixin matches an injector's locals against the target's LocalVariableTable, so its
+    // descriptors must name the relocated types like the rest of the class.
+    let table = RelocationTable::layer_default();
+    let slots = [
+        utf8("net/minecraft/server/Main"),            // 1
+        class(1),                                     // 2
+        utf8("java/lang/Object"),                     // 3
+        class(3),                                     // 4
+        utf8("m"),                                    // 5
+        utf8("()V"),                                  // 6
+        utf8("Code"),                                 // 7
+        utf8("LocalVariableTable"),                   // 8
+        utf8("stack"),                                // 9
+        utf8("Lnet/minecraft/world/item/ItemStack;"), // 10
+    ];
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&[0xCA, 0xFE, 0xBA, 0xBE]);
+    bytes.extend_from_slice(&0u16.to_be_bytes());
+    bytes.extend_from_slice(&61u16.to_be_bytes());
+    bytes.extend_from_slice(&((slots.len() + 1) as u16).to_be_bytes());
+    for (tag, data) in slots.iter().flatten() {
+        bytes.push(*tag);
+        bytes.extend_from_slice(data);
+    }
+    bytes.extend_from_slice(&0x0021u16.to_be_bytes());
+    bytes.extend_from_slice(&2u16.to_be_bytes()); // this
+    bytes.extend_from_slice(&4u16.to_be_bytes()); // super
+    bytes.extend_from_slice(&0u16.to_be_bytes()); // interfaces
+    bytes.extend_from_slice(&0u16.to_be_bytes()); // fields
+    bytes.extend_from_slice(&1u16.to_be_bytes()); // methods
+    bytes.extend_from_slice(&0x0009u16.to_be_bytes());
+    bytes.extend_from_slice(&5u16.to_be_bytes());
+    bytes.extend_from_slice(&6u16.to_be_bytes());
+    bytes.extend_from_slice(&1u16.to_be_bytes()); // one attribute: Code
+    let mut lvt = Vec::new();
+    lvt.extend_from_slice(&1u16.to_be_bytes()); // one entry
+    for v in [0u16, 1, 9, 10, 0] {
+        lvt.extend_from_slice(&v.to_be_bytes());
+    }
+    let mut code = Vec::new();
+    code.extend_from_slice(&0u16.to_be_bytes()); // max_stack
+    code.extend_from_slice(&1u16.to_be_bytes()); // max_locals
+    code.extend_from_slice(&1u32.to_be_bytes()); // code_length
+    code.push(0xB1); // return
+    code.extend_from_slice(&0u16.to_be_bytes()); // exception table
+    code.extend_from_slice(&1u16.to_be_bytes()); // one attribute: the LVT
+    code.extend_from_slice(&8u16.to_be_bytes());
+    code.extend_from_slice(&(lvt.len() as u32).to_be_bytes());
+    code.extend_from_slice(&lvt);
+    bytes.extend_from_slice(&7u16.to_be_bytes());
+    bytes.extend_from_slice(&(code.len() as u32).to_be_bytes());
+    bytes.extend_from_slice(&code);
+    bytes.extend_from_slice(&0u16.to_be_bytes()); // class attributes
+
+    let (out, stats) = ClassFile::parse(&bytes)
+        .expect("fixture parses")
+        .rewrite(&table)
+        .expect("rewrite ok");
+    assert_eq!(stats.descriptors_rewritten, 1, "the LVT descriptor");
+    let relocated = table.map_descriptor("Lnet/minecraft/world/item/ItemStack;");
+    assert_ne!(relocated, "Lnet/minecraft/world/item/ItemStack;");
+    let text = String::from_utf8_lossy(&out);
+    assert!(
+        text.contains(&relocated),
+        "relocated LVT descriptor interned"
+    );
+    // The LVT entry's descriptor index now points at the relocated utf8: the last two
+    // u2 of the entry before the index field.
+    let reparsed = ClassFile::parse(&out).expect("output parses");
+    let tail = out.len() - 2 - 2; // class attrs u2, then the entry's index u2
+    let desc_idx = u16::from_be_bytes([out[tail - 2], out[tail - 1]]);
+    assert_eq!(reparsed.utf8_at(desc_idx), Some(relocated.as_bytes()));
+}
