@@ -184,6 +184,9 @@ public final class CimSceneMod {
      */
     private void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) return;
+        if (!ACTIVE_GANTRY_RIGS.isEmpty()) {
+            for (GantryRig rig : List.copyOf(ACTIVE_GANTRY_RIGS)) rig.observe(event.getEntity());
+        }
         if (GUI_JOINED != null && !(event.getEntity() instanceof net.minecraft.world.entity.player.Player)) {
             GUI_JOINED.add(event.getEntity());
         }
@@ -3334,6 +3337,7 @@ public final class CimSceneMod {
         final ServerLevel level;
         final BlockPos cell;
         final java.util.Map<BlockPos, BlockState> previous = new java.util.LinkedHashMap<>();
+        final List<Entity> joined = new ArrayList<>();
         Entity entity;
         boolean closed;
 
@@ -3347,24 +3351,44 @@ public final class CimSceneMod {
             level.setBlock(pos, state, 3);
         }
 
+        void observe(Entity candidate) {
+            if (closed || candidate.level() != level
+                    || !BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).toString().equals("create:gantry_contraption")) return;
+            try {
+                Object contraption = candidate.getClass().getMethod("getContraption").invoke(candidate);
+                Object anchor = contraption == null ? null : contraption.getClass().getField("anchor").get(contraption);
+                LOGGER.info("[cimscene] native gantry join anchor={} position={}", anchor, candidate.position());
+                if (cell.equals(anchor)) joined.add(candidate);
+            } catch (ReflectiveOperationException failure) {
+                LOGGER.error("[cimscene] native gantry join identification failed", failure);
+            }
+        }
+
         private Entity find() {
-            List<Entity> found = level.getEntitiesOfClass(Entity.class, new AABB(cell).inflate(1),
-                    e -> {
-                        if (!e.isAlive() || !e.isAddedToLevel()
-                                || !BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals("create:gantry_contraption")) return false;
-                        try {
-                            Object contraption = e.getClass().getMethod("getContraption").invoke(e);
-                            return contraption != null && cell.equals(contraption.getClass().getField("anchor").get(contraption));
-                        } catch (ReflectiveOperationException failure) {
-                            throw new IllegalStateException("Cannot identify the native gantry anchor", failure);
-                        }
-                    });
+            List<Entity> found = joined.stream().filter(e -> e.isAlive() && e.isAddedToLevel()).toList();
             if (found.size() > 1) throw new IllegalStateException("Ambiguous native gantry assembly");
             return found.isEmpty() ? null : found.get(0);
         }
 
+        private String diagnose() throws ReflectiveOperationException {
+            ClassLoader loader = CimSceneMod.class.getClassLoader();
+            Class<?> type = Class.forName("com.simibubi.create.content.contraptions.gantry.GantryContraption", true, loader);
+            Object probe = type.getConstructor(Direction.class).newInstance(Direction.UP);
+            boolean assembled = (boolean) type.getMethod("assemble", net.minecraft.world.level.Level.class, BlockPos.class)
+                    .invoke(probe, level, cell);
+            Object blocks = type.getMethod("getBlocks").invoke(probe);
+            Class<?> translating = Class.forName("com.simibubi.create.content.contraptions.TranslatingContraption", true, loader);
+            Class<?> collider = Class.forName("com.simibubi.create.content.contraptions.ContraptionCollider", true, loader);
+            boolean collides = assembled && (boolean) collider.getMethod("isCollidingWithWorld",
+                    net.minecraft.world.level.Level.class, translating, BlockPos.class, Direction.class)
+                    .invoke(null, level, probe, cell.east(), Direction.EAST);
+            return "assembled=" + assembled + ", blocks=" + blocks + ", collides=" + collides
+                    + ", joined=" + joined.stream().map(e -> e.getId() + ":" + e.getRemovalReason()).toList();
+        }
+
         void start(java.util.function.Consumer<Entity> ready, java.util.function.Consumer<Throwable> failed) {
             try {
+                ACTIVE_GANTRY_RIGS.add(this);
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dz = -1; dz <= 1; dz++) level.getChunkAt(cell.offset(dx, 0, dz));
                 }
@@ -3406,7 +3430,7 @@ public final class CimSceneMod {
                                 entity = find();
                                 if (entity == null) throw new IllegalStateException("Native gantry did not assemble: "
                                         + controller.getClass().getMethod("getLastAssemblyException").invoke(controller)
-                                        + ", carriage=" + level.getBlockState(cell) + ", movement=" + movement);
+                                        + ", carriage=" + level.getBlockState(cell) + ", movement=" + movement + ", " + diagnose());
                                 ready.accept(entity);
                             } catch (Throwable failure) {
                                 failed.accept(failure);
@@ -3424,6 +3448,7 @@ public final class CimSceneMod {
         void close() {
             if (closed) return;
             closed = true;
+            ACTIVE_GANTRY_RIGS.remove(this);
             try {
                 if (entity == null) entity = find();
                 if (entity != null) entity.getClass().getMethod("disassemble").invoke(entity);
@@ -3436,6 +3461,7 @@ public final class CimSceneMod {
         }
     }
 
+    private static final List<GantryRig> ACTIVE_GANTRY_RIGS = new ArrayList<>();
     private static final List<GantryRig> GALLERY_GANTRIES = new ArrayList<>();
 
     private static void closeGalleryGantries() {
