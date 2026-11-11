@@ -366,14 +366,6 @@ public final class ShadowClassLoader extends ClassLoader {
 
     @Override
     protected Class<?> findClass(String name) throws ClassNotFoundException {
-        // A lookup by the original name of a relocated class (a mod's Class.forName string,
-        // never rewritten: moonlight reaches FML's LoadedConfig that way) is that class.
-        // Defining the relocated bytes under the original name fails with "wrong name".
-        String internal = name.replace('.', '/');
-        String mapped = NativeReloc.mapInternal(internal);
-        if (mapped != null && !mapped.equals(internal)) {
-            return loadClass(mapped.replace('/', '.'));
-        }
         byte[] relocated = classBytesFor(name);
         definePackageWithMetadata(name);
         Class<?> c;

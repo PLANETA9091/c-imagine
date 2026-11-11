@@ -556,6 +556,27 @@ impl ClassFile {
                         );
                     }
                 }
+                TAG_STRING => {
+                    // A class named by its dotted binary name in a string literal (a mod's
+                    // Class.forName: moonlight reaches FML's LoadedConfig so): the literal
+                    // names the relocated class, as a shading relocation rewrites it.
+                    let str_idx = e.u2_at(0).ok_or(ParseError::Truncated("string idx"))?;
+                    let Some(text) = self.utf8(str_idx).and_then(|b| std::str::from_utf8(b).ok())
+                    else {
+                        continue;
+                    };
+                    if let Some(mapped) = map_class_literal(table, text) {
+                        let idx = intern.intern(mapped.as_bytes(), &mut next_index);
+                        rewritten.insert(
+                            slot as u16,
+                            RawEntry {
+                                tag: TAG_STRING,
+                                data: idx.to_be_bytes().to_vec(),
+                            },
+                        );
+                        stats.descriptors_rewritten += 1;
+                    }
+                }
                 TAG_METHOD_TYPE => {
                     let desc_idx = e.u2_at(0).ok_or(ParseError::Truncated("mt desc idx"))?;
                     if let Some(idx) = self.rewrite_descriptor(table, desc_idx)? {
@@ -1140,6 +1161,26 @@ fn rewrite_attr_block(
     }
     out.extend_from_slice(&new_block);
     Ok(())
+}
+
+/// The relocated dotted name of a string literal that is a class's dotted binary name
+/// (`net.neoforged.fml.config.LoadedConfig`), or None for any other text: no slashes or
+/// spaces, at least two dots, a simple name starting upper-case, and a table that maps it.
+pub(crate) fn map_class_literal(table: &RelocationTable, text: &str) -> Option<String> {
+    if text.matches('.').count() < 2
+        || !text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '$')
+    {
+        return None;
+    }
+    let simple = text.rsplit('.').next()?;
+    if !simple.chars().next()?.is_ascii_uppercase() {
+        return None;
+    }
+    let internal = text.replace('.', "/");
+    let mapped = table.map_internal(&internal)?;
+    (mapped != internal).then(|| mapped.replace('/', "."))
 }
 
 /// Re-emit a Code attribute: header, code and exception table as they are, its own

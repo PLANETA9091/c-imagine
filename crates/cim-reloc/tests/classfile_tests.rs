@@ -531,3 +531,37 @@ fn local_variable_tables_inside_code_relocate() {
     let desc_idx = u16::from_be_bytes([out[tail - 2], out[tail - 1]]);
     assert_eq!(reparsed.utf8_at(desc_idx), Some(relocated.as_bytes()));
 }
+
+#[test]
+fn class_name_string_literals_relocate_and_other_text_does_not() {
+    let table = RelocationTable::layer_default();
+    let slots = vec![
+        utf8("dev/mod/Holder"),                     // 1
+        class(1),                                   // 2
+        utf8("java/lang/Object"),                   // 3
+        class(3),                                   // 4
+        utf8("net.minecraft.world.item.ItemStack"), // 5
+        string(5),                                  // 6: a Class.forName literal
+        utf8("net.minecraft.world.item"),           // 7
+        string(7),                                  // 8: a package, not a class
+        utf8("net/minecraft/world/item/ItemStack"), // 9
+        string(9),                                  // 10: slashed text stays
+    ];
+    let bytes = build_class(&slots, 2);
+    let (out, _) = ClassFile::parse(&bytes)
+        .expect("fixture parses")
+        .rewrite(&table)
+        .expect("rewrite ok");
+    let mapped = table
+        .map_internal("net/minecraft/world/item/ItemStack")
+        .expect("relocated")
+        .replace('/', ".");
+    let text = String::from_utf8_lossy(&out);
+    assert!(text.contains(&mapped), "dotted class literal relocated");
+    let reparsed = ClassFile::parse(&out).expect("output parses");
+    assert_eq!(
+        reparsed.utf8_at(7),
+        Some("net.minecraft.world.item".as_bytes()),
+        "package text untouched"
+    );
+}
