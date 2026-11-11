@@ -398,6 +398,12 @@ jobs:
             # with a 30s gap, Acquire::Retries for the packet-level retries.
             local need="$*"
             for i in 1 2 3 4; do
+              # Keep apt's signed security suite on the official archive if
+              # only the security host fails DNS; retries alone cannot fix it.
+              if ! timeout 10 getent ahosts security.ubuntu.com >/dev/null 2>&1 \
+                 && timeout 10 getent ahosts archive.ubuntu.com >/dev/null 2>&1; then
+                sudo python3 scripts/visual/ubuntu-mirror-fallback.py /etc/apt
+              fi
               if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
                 return 0
               fi
@@ -1151,6 +1157,12 @@ jobs:
             # with a 30s gap, Acquire::Retries for the packet-level retries.
             local need="$*"
             for i in 1 2 3 4; do
+              # Keep apt's signed security suite on the official archive if
+              # only the security host fails DNS; retries alone cannot fix it.
+              if ! timeout 10 getent ahosts security.ubuntu.com >/dev/null 2>&1 \
+                 && timeout 10 getent ahosts archive.ubuntu.com >/dev/null 2>&1; then
+                sudo python3 scripts/visual/ubuntu-mirror-fallback.py /etc/apt
+              fi
               if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
                 return 0
               fi
@@ -2019,6 +2031,12 @@ jobs:
             # with a 30s gap, Acquire::Retries for the packet-level retries.
             local need="$*"
             for i in 1 2 3 4; do
+              # Keep apt's signed security suite on the official archive if
+              # only the security host fails DNS; retries alone cannot fix it.
+              if ! timeout 10 getent ahosts security.ubuntu.com >/dev/null 2>&1 \
+                 && timeout 10 getent ahosts archive.ubuntu.com >/dev/null 2>&1; then
+                sudo python3 scripts/visual/ubuntu-mirror-fallback.py /etc/apt
+              fi
               if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
                 return 0
               fi

@@ -42,7 +42,9 @@ jobs:
           python3 scripts/cimscene/test-wait-scene-marker.py
           python3 scripts/cimscene/test-parity-channels.py
       - name: client download recovery
-        run: python3 scripts/visual/test-fetch-client.py
+        run: |
+          python3 scripts/visual/test-fetch-client.py
+          python3 scripts/visual/test-ubuntu-mirror-fallback.py
       - name: performance evidence gates
         run: |
           python3 scripts/perf/test-criterion-gate.py
