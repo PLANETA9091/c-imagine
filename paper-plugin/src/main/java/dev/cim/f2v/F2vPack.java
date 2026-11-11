@@ -3732,6 +3732,28 @@ public final class F2vPack {
                 }
                 expect(failures, refused, "captured sprite: absent/invalid artifact fails: " + missing);
             }
+            // A single native constant pixel previously disabled mips for
+            // every other block sprite (real 26.3 client dump, gallery099).
+            String pixelHash = "0000000000000001";
+            Path pixelFile = textures.resolve(pixelHash + ".png");
+            for (int color : new int[]{0xffffffff, 0x8133aa77, 0x00ffffff}) {
+                var image = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                image.setRGB(0, 0, color);
+                var bytes = new java.io.ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(image, "png", bytes);
+                Files.write(pixelFile, bytes.toByteArray());
+                var pixelEntries = new TreeMap<String, byte[]>();
+                String pixelRef = GalleryPack.hostSprite(List.of(), "~" + pixelHash, pixelEntries, new ArrayList<>());
+                var tile = decodePng(pixelEntries.get("assets/c-imagine/textures/block/items/captured_" + pixelHash + ".png"));
+                expect(failures, tile.getWidth() == 16 && tile.getHeight() == 16,
+                        "captured pixel: atlas retains mip level 4");
+                boolean identical = true;
+                for (int y = 0; y < tile.getHeight(); y++) {
+                    for (int x = 0; x < tile.getWidth(); x++) identical &= tile.getRGB(x, y) == color;
+                }
+                expect(failures, identical && pixelRef.endsWith(pixelHash),
+                        "captured pixel: constant native RGBA and sprite identity preserved");
+            }
         } finally {
             GalleryPack.setQuadDir(null);
             deleteRecursively(root);

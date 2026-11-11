@@ -2557,7 +2557,12 @@ public final class GalleryPack {
             // 14-dr: the captured strip ships as its first animation frame,
             // never animated (the truth side pins frame 0; the ours side's
             // clocks free-run — the singularity/measured-anomaly class).
-            entries.put(hosted, stillFrameCrop(sprite, pixels, meta, warnings));
+            byte[] frame = stillFrameCrop(sprite, pixels, meta, warnings);
+            byte[] safe = mipSafeCapturedPixel(frame);
+            if (safe != frame && !entries.containsKey(hosted)) {
+                warnings.add("gallery: constant 1x1 capture expanded to 16x16 to retain atlas mip level 4: " + sprite);
+            }
+            entries.put(hosted, safe);
             return WRAPPER_NS + ":block/" + key;
         }
         if (sprite.startsWith("minecraft:block/")) {
@@ -2594,6 +2599,24 @@ public final class GalleryPack {
                 .replace(':', '_').replace('/', '_');
         putHosted(jars, key, png, bytes, entries, warnings);
         return WRAPPER_NS + ":block/" + key;
+    }
+
+    /** A constant pixel samples identically at any UV, but must not disable atlas-wide mips. */
+    private static byte[] mipSafeCapturedPixel(byte[] png) throws IOException {
+        // Peek at PNG's IHDR instead of decoding every large native capture.
+        if (png.length < 24) return png;
+        var dimensions = java.nio.ByteBuffer.wrap(png, 16, 8);
+        if (dimensions.getInt() != 1 || dimensions.getInt() != 1) return png;
+        var pixel = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+        if (pixel == null) throw new IOException("gallery: invalid captured pixel PNG");
+        var tile = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        int color = pixel.getRGB(0, 0);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) tile.setRGB(x, y, color);
+        }
+        var bytes = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(tile, "png", bytes);
+        return bytes.toByteArray();
     }
 
     /**
