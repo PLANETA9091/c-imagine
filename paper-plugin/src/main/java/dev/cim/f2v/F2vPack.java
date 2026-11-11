@@ -60,8 +60,8 @@ import com.google.gson.JsonParser;
  *   <li>hosts must be simple vanilla items ({@code minecraft:model} defs) —
  *       the fallback branch is a plain model ref back to the host's own
  *       model, which is only correct for flat item defs;</li>
- *   <li>modded textures outside {@code textures/item|block/} are skipped
- *       with a warning (they would need a merged atlas override).</li>
+ *   <li>referenced textures outside {@code textures/item|block/} use explicit
+ *       single sources appended to the block and item atlas stacks.</li>
  * </ul>
  *
  * <p>The zip is built deterministically (sorted entries, fixed timestamps,
@@ -1902,7 +1902,11 @@ public final class F2vPack {
         }
         JsonObject add = JsonParser.parseString(sourcesJson).getAsJsonObject();
         for (JsonElement s : add.getAsJsonArray("sources")) {
-            sources.add(s);
+            boolean present = false;
+            for (JsonElement previous : sources) {
+                if (previous.equals(s)) { present = true; break; }
+            }
+            if (!present) sources.add(s);
         }
         merged.add("sources", sources);
         entries.put(atlasPath, merged.toString().getBytes(StandardCharsets.UTF_8));
@@ -2015,8 +2019,8 @@ public final class F2vPack {
     /** Copy ONE concrete modded sprite (the PNG behind a texture ref) into
      *  the pack — the per-ref body shared by the top-level texture walk and
      *  the neoforge:composite children walk. Local ({@code #key}) and
-     *  vanilla refs carry nothing to copy; sprites outside the auto-atlased
-     *  {@code item|block} directories stay skipped (v1 constraint). */
+     *  vanilla refs carry nothing to copy; referenced sprites outside the
+     *  {@code item|block} directories get explicit atlas sources. */
     private static void copyTextureRef(ZipFile zf, String ref, String modelPath,
                                        TreeMap<String, byte[]> entries,
                                        List<String> warnings) throws IOException {
@@ -2030,21 +2034,15 @@ public final class F2vPack {
         String texNs = ref.substring(0, c);
         String texPath = ref.substring(c + 1);
         String texFile = "assets/" + texNs + "/textures/" + texPath + ".png";
+        boolean automatic = texPath.startsWith("item/") || texPath.startsWith("block/");
         if (entries.containsKey(texFile)) {
+            if (!automatic) atlasReferencedTexture(ref, entries);
             return;
         }
         ZipEntry te = zf.getEntry(texFile);
         if (te == null) {
             warnings.add("texture missing in jar: " + ref
                     + " (referenced by " + modelPath + ")");
-            return;
-        }
-        if (!texPath.startsWith("item/") && !texPath.startsWith("block/")) {
-            // outside the auto-atlased directories — a merged atlas
-            // override would be needed (v1 constraint). Skip the copy:
-            // without an atlas entry the client cannot resolve the
-            // texture either way, and dead bytes would mask the warning.
-            warnings.add("texture outside item|block dirs not atlased: " + ref);
             return;
         }
         byte[] bytes = zf.getInputStream(te).readAllBytes();
@@ -2062,6 +2060,21 @@ public final class F2vPack {
             meta = zf.getInputStream(me).readAllBytes();
         }
         entries.put(texFile, GalleryPack.stillFrameCrop(ref, bytes, meta, warnings));
+        if (!automatic) atlasReferencedTexture(ref, entries);
+    }
+
+    /** Vanilla 26.3 uses single sources for model sprites outside directory scans. */
+    private static void atlasReferencedTexture(String ref, TreeMap<String, byte[]> entries) {
+        JsonObject source = new JsonObject();
+        source.addProperty("type", "minecraft:single");
+        source.addProperty("resource", ref);
+        JsonArray sources = new JsonArray();
+        sources.add(source);
+        JsonObject definition = new JsonObject();
+        definition.add("sources", sources);
+        for (String atlas : List.of("blocks", "items")) {
+            appendAtlasSources("assets/minecraft/atlases/" + atlas + ".json", definition.toString(), entries);
+        }
     }
 
     // ---- emitters ---------------------------------------------------------------
@@ -3263,16 +3276,32 @@ public final class F2vPack {
                     "assets/fakemod/models/item/cool_sword.json"), "entry model copied");
             expect(failures, entries.containsKey(
                     "assets/fakemod/models/item/parent_model.json"), "parent model copied");
-            // textures: item/ auto-atlased copied; deep/ skipped with warning
+            // Referenced custom directories need explicit sources on both atlases.
             expect(failures, entries.containsKey(
                     "assets/fakemod/textures/item/cool_sword_tex.png"), "item texture copied");
             expect(failures, entries.containsKey(
                     "assets/fakemod/textures/item/parent_tex.png"), "parent texture copied");
-            expect(failures, !entries.containsKey(
-                    "assets/fakemod/textures/deep/custom_tex.png"), "deep texture NOT atlased");
+            expect(failures, entries.containsKey(
+                    "assets/fakemod/textures/deep/custom_tex.png"), "referenced deep texture retained");
             boolean warned = r1.warnings().stream()
                     .anyMatch(w -> w.contains("outside item|block dirs"));
-            expect(failures, warned, "deep texture produced a warning");
+            expect(failures, !warned, "referenced deep texture is supported");
+            JsonObject single = new JsonObject();
+            single.addProperty("type", "minecraft:single");
+            single.addProperty("resource", "fakemod:deep/custom_tex");
+            for (String referencedAtlas : List.of("blocks", "items")) {
+                String atlasPath = "assets/minecraft/atlases/" + referencedAtlas + ".json";
+                byte[] before = entries.get(atlasPath);
+                atlasReferencedTexture("fakemod:deep/custom_tex", entries);
+                expect(failures, java.util.Arrays.equals(before, entries.get(atlasPath)),
+                        "repeated texture reference keeps atlas stable: " + referencedAtlas);
+                int count = 0;
+                for (JsonElement source : JsonParser.parseString(str(entries, atlasPath))
+                        .getAsJsonObject().getAsJsonArray("sources")) {
+                    if (source.equals(single)) count++;
+                }
+                expect(failures, count == 1, "deep texture stitched once: " + referencedAtlas);
+            }
             // no vanilla-namespace assets leaked into the pack
             boolean vanillaLeak = entries.keySet().stream()
                     .anyMatch(k -> k.startsWith("assets/minecraft/models/"));
