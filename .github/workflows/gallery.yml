@@ -514,7 +514,7 @@ jobs:
             # the join's initial-spawn pass may have placed animals near the
             # wall (the wall chunks only became entity-ticking at the join);
             # the truth block walk kills @e before its first page — same here
-            rcon "kill @e[type=!player]" >/dev/null
+            rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" >/dev/null
             # BLOCK pages (to exhaustion — the coverage law), one loop per
             # ladder namespace (LADDER_NS is the single source of the ns list)
             for NS in $LADDER_NS; do
@@ -550,7 +550,7 @@ jobs:
           # ENTITY pages: difficulty easy (the SAME pin as the truth entity
           # walk — hostile mobs must survive), then the fixed minecraft
           # scope + every LADDER_NS namespace to exhaustion, series by series
-          rcon "difficulty easy" "kill @e[type=!player]"
+          rcon "difficulty easy" "cimscene cleanup-assemblies" "kill @e[type=!player]"
           for p in $(seq 0 $((EPAGES-1))); do
             base_of "gallery-entity-minecraft-p$p"
             rcon "cimscene gallery entity mobs minecraft $p"
@@ -574,7 +574,7 @@ jobs:
               EX=0
               for p in $(seq 0 $MAXP); do
                 base_of "gallery-$TAG-$NS-p$p"
-                rcon "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
+                rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 RC=0; wait_done "gallery-$TAG-$NS-p$p" "$V0D" "$V0E" || RC=$?
                 [ "$RC" = "2" ] && { echo "$NS $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
                 if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -595,7 +595,7 @@ jobs:
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-item-$NS-p$p"
-              rcon "kill @e[type=!player]" "cimscene gallery item $NS $p"
+              rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery item $NS $p"
               RC=0; wait_done "gallery-item-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1273,7 +1273,7 @@ jobs:
           }
           read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
           [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
-          rcon "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
           java -cp vtools Key F1
           sleep 1
@@ -1403,7 +1403,7 @@ jobs:
           # difficulty easy: HOSTILE mobs must survive — peaceful discards
           # every Monster each tick (both legs pin the SAME difficulty, so
           # the comparison stays fair; frozen mobs ignore everything else)
-          rcon "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          rcon "difficulty easy" "cimscene cleanup-assemblies" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
           # THE MARKER IS THE FILE (13-c) — same wait_done contract as the
           # block walk; the entity settle pass writes its marker file in the
@@ -1549,7 +1549,7 @@ jobs:
               EX=0
               for p in $(seq $SI $K $MAXP); do
                 base_of "gallery-$TAG-$NS-p$p"
-                rcon "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
+                rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 RC=0; wait_done "gallery-$TAG-$NS-p$p" "$V0D" "$V0E" || RC=$?
                 [ "$RC" = "2" ] && { echo "$NS $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
                 if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1560,7 +1560,7 @@ jobs:
                 # entity-crash-ban.tsv holds the killer types as skip rows)
                 # and re-shoots.
                 ensure_alive_rerun "gallery-$TAG-$NS-p$p" "$NS $SERIES page $p" "$p" \
-                  "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
+                  "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 sleep 2   # 14-an: the settle pass rides a real tick delay inside wait_done
                 rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
@@ -1572,7 +1572,7 @@ jobs:
           # the last entity page is still standing here. Kill it NOW and let
           # its death-poof particles expire: killed at the first item page,
           # they land inside the shot at random positions on either leg
-          rcon "kill @e[type=!player]" >/dev/null 2>&1
+          rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" >/dev/null 2>&1
           sleep 3
           # ITEM walk (per ladder ns): every registered item, one
           # item_display per cell carrying the REAL modded item, to
@@ -1581,13 +1581,13 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-item-$NS-p$p"
-              rcon "kill @e[type=!player]" "cimscene gallery item $NS $p"
+              rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery item $NS $p"
               RC=0; wait_done "gallery-item-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-item done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
               ensure_alive_rerun "gallery-item-$NS-p$p" "$NS item page $p" "$p" \
-                "kill @e[type=!player]" "cimscene gallery item $NS $p"
+                "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery item $NS $p"
               sleep 1   # static item displays settle like the block pages
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-i-$NS$p.png"
@@ -1756,7 +1756,7 @@ jobs:
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-inv done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
               M="srv-wall/c-imagine/scenes/gallery-inv-$NS-p$p.tsv"
-              rcon "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Key F1 || true   # HUD visible: hideGui hides the inventory screen too
               # THE FILL: one `item replace` per manifest slot (36 RCON
               # calls — through the persistent driver each is a ~ms round
@@ -1794,7 +1794,7 @@ jobs:
               EX=0
               for p in $(seq $SI $K $MAXP); do
                 base_of "gallery-variant-$KIND-$NS-p$p"
-                rcon "kill @e[type=!player]" "cimscene gallery variant $KIND $NS $p"
+                rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery variant $KIND $NS $p"
                 RC=0; wait_done "gallery-variant-$KIND-$NS-p$p" "$V0D" "$V0E" || RC=$?
                 [ "$RC" = "2" ] && { echo "$NS $KIND variant page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
                 if [ "$RC" = "1" ]; then EX=1; break; fi

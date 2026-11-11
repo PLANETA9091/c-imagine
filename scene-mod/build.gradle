@@ -93,3 +93,11 @@ tasks.register('sceneStateNamesTest', JavaExec) {
 }
 
 check.dependsOn sceneStateNamesTest
+
+tasks.register('sceneSetupBarrierTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.SceneSetupBarrierTest'
+}
+
+check.dependsOn sceneSetupBarrierTest

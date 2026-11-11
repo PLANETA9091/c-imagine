@@ -314,6 +314,12 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-seat-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "seat")))
                         .then(Commands.literal("selftest-gantry-live").executes(ctx -> gantryLifetimeSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest-carriage-live").executes(ctx -> carriageLifetimeSelftest(ctx.getSource())))
+                        .then(Commands.literal("selftest-carriage-page-live").executes(ctx -> carriagePageSelftest(ctx.getSource())))
+                        .then(Commands.literal("cleanup-assemblies").executes(ctx -> {
+                            ++entityPageGen;
+                            closeGalleryAssemblies();
+                            return 1;
+                        }))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -474,18 +480,14 @@ public final class CimSceneMod {
     static final int GALLERY_Y0 = -60;   // bottom row sits on the floor
     static final int GALLERY_Z = 9;
 
-    /** ENTITY grid: SPARSE 6x3 with a 2-block pitch BOTH axes (measured
-     *  16d62f0: at the 1-block block-wall pitch the subjects WIDER than one
-     *  block (ravager 1.95, horse 1.4, llama 1.2...) overlap their
-     *  neighbours' bounding boxes and the collision push SCRAMBLES the wall
-     *  differently on the two legs AFTER the settle pass — every cell red
-     *  with the alignment search saturated). Pitch 2 means zero overlap by
-     *  construction for the gateable class (bb <= 2.0 x 2.0), so no subject
-     *  can ever push another. 6 cols x 3 rows = 18 cells per entity page;
-     *  rows y = -60/-58/-56 keep every 2-tall subject fully in frame. */
+    /** Sparse pitch-2 coordinates for small entity variants. The base entity
+     * census uses isolated pages: native assembly rigs can own neighboring
+     * blocks even when their bare entity type reports a small bounding box. */
     static final int ENTITY_COLS = 6;
     static final int ENTITY_ROWS = 3;
-    static final int ENTITY_CELLS = ENTITY_COLS * ENTITY_ROWS; // 18
+    // Native assembly rigs own neighboring blocks and can exceed a bare type's
+    // bounding box. Give every registry entry an isolated page on both stacks.
+    static final int ENTITY_CELLS = 1;
     static final int ENTITY_PITCH = 2;
 
     /** FLUID grid: the SAME sparse pitch-2 geometry as the entities — a
@@ -788,7 +790,7 @@ public final class CimSceneMod {
      *  (the painting, the frozen mobs, the trim/enchant armor stands) — the
      *  measured entity-grid law (no neighbour overlap by construction)
      *  applies to them exactly as it applies to the entity walk. */
-    static final int VARIANT_CELLS_ENTITY = ENTITY_CELLS; // 18
+    static final int VARIANT_CELLS_ENTITY = ENTITY_COLS * ENTITY_ROWS; // 18
     /** Block-grid variant kinds: the block wall itself (11x7 = 77 cells,
      *  pitch 1) — banner patterns, pot sherds and jukebox songs are real
      *  BLOCKS placed like the block wall's states. */
@@ -2163,7 +2165,7 @@ public final class CimSceneMod {
 
     /** The shared wall sweep (identical coordinates on every gallery leg). */
     private static void clearWall(ServerLevel level) {
-        closeGalleryGantries();
+        closeGalleryAssemblies();
         for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
             for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
                 for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
@@ -3602,6 +3604,52 @@ public final class CimSceneMod {
         return 1;
     }
 
+    /** Exercise the actual asynchronous gallery page and exhausted-page cleanup. */
+    private static int carriagePageSelftest(CommandSourceStack src) {
+        Path manifest = Path.of("c-imagine", "scenes", "gallery-entitydyn-create-p0.tsv");
+        try {
+            Files.deleteIfExists(manifest);
+            galleryEntity(src, "dyn", "create", 0);
+            if (GALLERY_TRAINS.size() != 1) throw new IllegalStateException("Carriage page did not start native train setup");
+            TrainRig rig = GALLERY_TRAINS.getFirst();
+            runAfterTicks(src.getServer(), 200, () -> {
+                boolean passed = false;
+                try {
+                    var lines = Files.readAllLines(manifest);
+                    if (lines.size() != 2 || !lines.get(1).endsWith("\tcreate:carriage_contraption\t1\tok")
+                            || rig.entity == null || !rig.entity.isAlive() || rig.entity.tickCount < 80) {
+                        throw new IllegalStateException("Native carriage gallery did not settle: " + lines);
+                    }
+                    rig.check(rig.entity);
+                    int exhausted = (int) BuiltInRegistries.ENTITY_TYPE.keySet().stream()
+                            .filter(id -> id.getNamespace().equals("create")).count();
+                    galleryEntity(src, "dyn", "create", exhausted);
+                    if (!rig.closed || !rig.entity.isRemoved() || !GALLERY_TRAINS.isEmpty()) {
+                        throw new IllegalStateException("Exhausted page did not release its native train");
+                    }
+                    for (var entry : rig.previous.entrySet()) {
+                        if (!src.getLevel().getBlockState(entry.getKey()).equals(entry.getValue())) {
+                            throw new IllegalStateException("Native carriage page leaked support state at " + entry.getKey());
+                        }
+                    }
+                    passed = true;
+                } catch (Throwable failure) {
+                    LOGGER.error("[cimscene] selftest carriage-page live FAILED", failure);
+                } finally {
+                    try { ++entityPageGen; closeGalleryAssemblies(); }
+                    catch (Throwable failure) { passed = false; LOGGER.error("[cimscene] selftest carriage-page live FAILED during cleanup", failure); }
+                }
+                if (passed) LOGGER.info("[cimscene] selftest carriage-page live PASS serverTicks=200 native-page=true exhausted-cleanup=true");
+            });
+            return 1;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest carriage-page live FAILED during setup", failure);
+            ++entityPageGen;
+            closeGalleryAssemblies();
+            return 0;
+        }
+    }
+
     /** A real motor/shaft/controller assembly; every delayed action runs on normal server ticks. */
     private static final class GantryRig {
         final ServerLevel level;
@@ -3740,13 +3788,27 @@ public final class CimSceneMod {
 
     private static final List<GantryRig> ACTIVE_GANTRY_RIGS = new ArrayList<>();
     private static final List<GantryRig> GALLERY_GANTRIES = new ArrayList<>();
+    private static final List<TrainRig> GALLERY_TRAINS = new ArrayList<>();
 
-    private static void closeGalleryGantries() {
-        try {
-            for (GantryRig rig : GALLERY_GANTRIES) rig.close();
-        } finally {
-            GALLERY_GANTRIES.clear();
+    private static void closeGalleryAssemblies() {
+        RuntimeException failure = null;
+        for (GantryRig rig : GALLERY_GANTRIES) {
+            try { rig.close(); }
+            catch (Exception bad) {
+                if (failure == null) failure = new IllegalStateException("Gallery assembly cleanup failed", bad);
+                else failure.addSuppressed(bad);
+            }
         }
+        for (TrainRig rig : GALLERY_TRAINS) {
+            try { rig.close(); }
+            catch (Exception bad) {
+                if (failure == null) failure = new IllegalStateException("Gallery assembly cleanup failed", bad);
+                else failure.addSuppressed(bad);
+            }
+        }
+        GALLERY_GANTRIES.clear();
+        GALLERY_TRAINS.clear();
+        if (failure != null) throw failure;
     }
 
     private static void checkGantryContraption(Entity entity) throws ReflectiveOperationException {
@@ -5437,7 +5499,7 @@ public final class CimSceneMod {
         // previous page's pending settle: its subjects are about to be
         // discarded, and a late pass must not relabel them dissolved.
         final int gen = ++entityPageGen;
-        closeGalleryGantries();
+        closeGalleryAssemblies();
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -5511,6 +5573,7 @@ public final class CimSceneMod {
         final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
         int noInstance = 0, wrongSeries = 0, failed = 0;
         final int[] asyncFailures = {0};
+        final SceneSetupBarrier setup = new SceneSetupBarrier();
         // 14-ea: the pin deadline — spawn tick through the settle and the
         // shot window (every spawned subject's delta movement is re-zeroed
         // on every tick until then; see MOTION_PINNED)
@@ -5594,30 +5657,63 @@ public final class CimSceneMod {
                 continue;
             }
             try {
+                if (id.toString().equals("create:carriage_contraption")) {
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    TrainRig rig = new TrainRig(level, cell);
+                    GALLERY_TRAINS.add(rig);
+                    Runnable complete = setup.begin();
+                    final int index = i;
+                    rig.start(ready -> {
+                        try {
+                            if (gen != entityPageGen) { rig.close(); return; }
+                            ready.addTag(GALLERY_TAG);
+                            // The actual registered train owns position, motion and lifetime.
+                            spawned.add(ready);
+                            spawnedIdx.add(index);
+                        } catch (ReflectiveOperationException bad) {
+                            throw new IllegalStateException(bad);
+                        } finally { complete.run(); }
+                    }, failure -> {
+                        try {
+                            if (gen == entityPageGen) {
+                                asyncFailures[0]++;
+                                skipNotes.put(index, "failed:" + failure.getClass().getName());
+                                LOGGER.error("[cimscene] gallery native train assembly failed", failure);
+                            }
+                            rig.close();
+                        } catch (ReflectiveOperationException bad) {
+                            throw new IllegalStateException(bad);
+                        } finally { complete.run(); }
+                    });
+                    continue;
+                }
                 if (id.toString().equals("create:gantry_contraption")) {
                     BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
                             GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
                     GantryRig rig = new GantryRig(level, cell);
                     GALLERY_GANTRIES.add(rig);
+                    Runnable complete = setup.begin();
                     final int index = i;
                     rig.start(ready -> {
-                        if (gen != entityPageGen) {
-                            rig.close();
-                            return;
-                        }
-                        ready.setNoGravity(true);
-                        ready.setInvulnerable(true);
-                        ready.addTag(GALLERY_TAG);
-                        // Keep the real controller/shaft attachment and native motion.
-                        spawned.add(ready);
-                        spawnedIdx.add(index);
+                        try {
+                            if (gen != entityPageGen) { rig.close(); return; }
+                            ready.setNoGravity(true);
+                            ready.setInvulnerable(true);
+                            ready.addTag(GALLERY_TAG);
+                            // Keep the real controller/shaft attachment and native motion.
+                            spawned.add(ready);
+                            spawnedIdx.add(index);
+                        } finally { complete.run(); }
                     }, failure -> {
-                        if (gen == entityPageGen) {
-                            asyncFailures[0]++;
-                            skipNotes.put(index, "failed:" + failure.getClass().getName());
-                            LOGGER.error("[cimscene] gallery native gantry assembly failed", failure);
-                        }
-                        rig.close();
+                        try {
+                            if (gen == entityPageGen) {
+                                asyncFailures[0]++;
+                                skipNotes.put(index, "failed:" + failure.getClass().getName());
+                                LOGGER.error("[cimscene] gallery native gantry assembly failed", failure);
+                            }
+                            rig.close();
+                        } finally { complete.run(); }
                     });
                     continue;
                 }
@@ -5725,10 +5821,10 @@ public final class CimSceneMod {
         final java.util.Map<Integer, String> fSkipNotes = skipNotes;
         final int fFrom = from;
         final String fSeries = series;
-        runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
+        setup.finish(() -> runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
                 fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
                 fNoInstance, fWrongSeries, fFailed + asyncFailures[0], fSkipNotes,
-                fFrom, fSeries, gen, false));
+                fFrom, fSeries, gen, false)));
         return spawned.size();
     }
 
@@ -6222,7 +6318,8 @@ public final class CimSceneMod {
                 m.setYHeadRot(180.0f);
                 m.setYBodyRot(180.0f);
             }
-            if (!isMob) {
+            if (!isMob && !id.toString().equals("create:gantry_contraption")
+                    && !id.toString().equals("create:carriage_contraption")) {
                 // 14-ea: the settle-frame pin — the manifest carries THIS
                 // frame's position and the shot reads it right after; the
                 // velocity zero is re-asserted here so the per-tick gravity
