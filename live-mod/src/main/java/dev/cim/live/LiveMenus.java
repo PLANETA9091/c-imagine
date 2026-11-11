@@ -147,14 +147,14 @@ public final class LiveMenus {
             }
         }
         LOG.info("[cimlive] selftest place {} -> {}", itemId, placed == null ? "nothing placed: " + answer.split("\n")[0]
-                : "placed " + placed + " with " + (be == null ? "no" : be.length() + " chars of") + " block entity data");
+                : "placed " + placed + " with " + (be == null ? "no" : "its") + " block entity data");
         if (placed == null) {
             return;
         }
         String open = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
                 + "\t" + at[2] + "\nfresh" + (be == null ? "" : "\nbe\t" + be));
         long own = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu")).count();
-        LOG.info("[cimlive] selftest place opened {} own={} be={}", open.split("\n")[0], own, be);
+        LOG.info("[cimlive] selftest place opened {} own={}", open.split("\n")[0], own);
         String closed = LiveProtocol.call("close\t" + uuid);
         String kept = closed.lines().filter(l -> l.startsWith("be\t")).map(l -> l.substring(3)).findFirst().orElse(be);
         // Broken by hand, by the block's own code: what it drops is the item, with its data.

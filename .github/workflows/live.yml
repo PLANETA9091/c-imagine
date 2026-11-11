@@ -250,8 +250,8 @@ jobs:
           curl -sL --max-time 300 -o nf-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           JAVA_HOME="$JAVA_HOME_21_X64" java -jar nf-installer.jar --installServer srv/layer1211
-      - name: fetch Create
-        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: fetch Create and Sophisticated Backpacks
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create sophisticated-backpacks sophisticated-core
       - name: install module, plugin and mods
         run: |
           mkdir -p srv/crus
@@ -315,7 +315,7 @@ jobs:
             || fail "the toolbox block's own use did not open its menu on Paper"
           grep -q "\[cim-live\] paper block reopen: first own slot minecraft:diamond x5" live-paper.txt \
             || fail "the toolbox did not keep the diamonds between two openings (block entity data through Paper)"
-          grep -q "\[cim-live\] paper place sophisticatedbackpacks:backpack -> placed sophisticatedbackpacks:backpack with [0-9]* chars of block entity data" live-paper.txt \
+          grep -q "\[cim-live\] paper place sophisticatedbackpacks:backpack -> placed sophisticatedbackpacks:backpack with its block entity data" live-paper.txt \
             || fail "the backpack's own sneaking click did not place it as a block with its data"
           grep -q "\[cim-live\] paper placed block open -> sophisticatedbackpacks:backpack own=27" live-paper.txt \
             || fail "the placed backpack block did not open with its 27 slots of storage"

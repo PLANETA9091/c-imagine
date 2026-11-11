@@ -895,8 +895,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         LiveBridge.UseOn result = bridge.useOn(player, ground, org.bukkit.block.BlockFace.UP, null, true);
         out.add("place " + itemId + " -> " + (result.state().error() != null ? result.state().error()
                 : result.placedId() == null ? "nothing placed" : "placed " + result.placedId() + " with "
-                + (result.placedBlockEntity() == null ? "no" : result.placedBlockEntity().length() + " chars of")
-                + " block entity data"));
+                + (result.placedBlockEntity() == null ? "no" : "its") + " block entity data"));
         if (result.placedId() == null) {
             return out;
         }
