@@ -306,7 +306,8 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-potato").executes(ctx -> potatoSpawnSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest-bearing").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), false)))
                         .then(Commands.literal("selftest-cart").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), true)))
-                        .then(Commands.literal("selftest-bearing-live").executes(ctx -> bearingLifetimeSelftest(ctx.getSource())))
+                        .then(Commands.literal("selftest-bearing-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), false)))
+                        .then(Commands.literal("selftest-glue-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), true)))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3368,8 +3369,52 @@ public final class CimSceneMod {
         return entity;
     }
 
-    /** Real ticking regression: a stopped bearing retains its structure only with the native setting. */
-    private static int bearingLifetimeSelftest(CommandSourceStack src) {
+    /** Use the same native span and volume constructor as SuperGlueSelectionPacket. */
+    private static Entity createGalleryGlue(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        level.setBlock(cell.north(), Blocks.STONE.defaultBlockState(), 3);
+        level.setBlock(cell, Blocks.OAK_PLANKS.defaultBlockState(), 3);
+        Class<?> glue = Class.forName("com.simibubi.create.content.contraptions.glue.SuperGlueEntity",
+                true, CimSceneMod.class.getClassLoader());
+        AABB span = (AABB) glue.getMethod("span", BlockPos.class, BlockPos.class).invoke(null, cell.north(), cell);
+        Entity entity = (Entity) glue.getConstructor(net.minecraft.world.level.Level.class, AABB.class).newInstance(level, span);
+        if (!level.addFreshEntity(entity) || !entity.isAddedToLevel()) {
+            throw new IllegalStateException("Native glue volume insertion refused");
+        }
+        return entity;
+    }
+
+    /** Verify the actual connection and native additional-spawn bounds, rather than guessed NBT. */
+    private static void checkGalleryGlue(Entity entity, BlockPos cell) throws ReflectiveOperationException {
+        Class<?> glue = entity.getClass();
+        AABB span = (AABB) glue.getMethod("span", BlockPos.class, BlockPos.class).invoke(null, cell.north(), cell);
+        if (!entity.getBoundingBox().equals(span)
+                || !(boolean) glue.getMethod("contains", BlockPos.class).invoke(entity, cell)
+                || !(boolean) glue.getMethod("contains", BlockPos.class).invoke(entity, cell.north())) {
+            throw new IllegalStateException("Native glue lost its selected volume");
+        }
+        var isGlued = glue.getMethod("isGlued", net.minecraft.world.level.LevelAccessor.class,
+                BlockPos.class, Direction.class, java.util.Set.class);
+        if (!(boolean) isGlued.invoke(null, entity.level(), cell.north(), Direction.SOUTH, null)
+                || (boolean) isGlued.invoke(null, entity.level(), cell, Direction.EAST, null)) {
+            throw new IllegalStateException("Native glue connection lookup differs from its selected blocks");
+        }
+        var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), entity.registryAccess());
+        try {
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) entity).writeSpawnData(buffer);
+            Entity received = entity.getType().create(entity.level());
+            received.setPos(entity.getX(), entity.getY(), entity.getZ());
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+            if (!received.getBoundingBox().equals(span) || buffer.isReadable()) {
+                throw new IllegalStateException("Native glue spawn round trip lost its selected bounds");
+            }
+        } finally {
+            buffer.release();
+        }
+    }
+
+    /** Real ticking regressions: configured subjects survive; their unconfigured controls self-remove. */
+    private static int entityLifetimeSelftest(CommandSourceStack src, boolean glue) {
+        String subjectName = glue ? "glue" : "bearing";
         ServerLevel level = src.getLevel();
         BlockPos retainedCell = new BlockPos(72, 100, 72);
         BlockPos defaultCell = retainedCell.east(4);
@@ -3383,12 +3428,14 @@ public final class CimSceneMod {
         Entity[] subjects = new Entity[2];
         Runnable cleanup = () -> {
             try {
-                for (BlockPos cell : List.of(retainedCell, defaultCell)) {
-                    BlockEntity be = level.getBlockEntity(cell.north());
-                    if (be != null) be.getClass().getMethod("disassemble").invoke(be);
+                if (!glue) {
+                    for (BlockPos cell : List.of(retainedCell, defaultCell)) {
+                        BlockEntity be = level.getBlockEntity(cell.north());
+                        if (be != null) be.getClass().getMethod("disassemble").invoke(be);
+                    }
                 }
             } catch (ReflectiveOperationException failure) {
-                throw new IllegalStateException("Native bearing live-test cleanup failed", failure);
+                throw new IllegalStateException("Native " + subjectName + " live-test cleanup failed", failure);
             } finally {
                 for (Entity subject : subjects) if (subject != null) subject.discard();
                 previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
@@ -3399,8 +3446,22 @@ public final class CimSceneMod {
         // Let the native ticket make this chunk entity-ticking before assembly.
         runAfterTicks(level.getServer(), 5, () -> {
             try {
-                subjects[0] = assembleGalleryBearing(level, retainedCell, true);
-                subjects[1] = assembleGalleryBearing(level, defaultCell, false);
+                if (glue) {
+                    subjects[0] = createGalleryGlue(level, retainedCell);
+                    AABB nativeBounds = subjects[0].getBoundingBox();
+                    alignGalleryEntity(subjects[0], retainedCell, true);
+                    if (!subjects[0].getBoundingBox().equals(nativeBounds)) {
+                        throw new IllegalStateException("Gallery alignment moved native glue bounds");
+                    }
+                    subjects[1] = subjects[0].getType().create(level);
+                    subjects[1].setPos(defaultCell.getX() + 0.5, defaultCell.getY(), defaultCell.getZ() + 0.5);
+                    if (subjects[1].getBoundingBox().getXsize() != 0 || !level.addFreshEntity(subjects[1])) {
+                        throw new IllegalStateException("Bare glue negative control did not start with zero-width bounds");
+                    }
+                } else {
+                    subjects[0] = assembleGalleryBearing(level, retainedCell, true);
+                    subjects[1] = assembleGalleryBearing(level, defaultCell, false);
+                }
                 int started = level.getServer().getTickCount();
                 runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS + ENTITY_FINAL_TICKS, () -> {
                     boolean passed = false;
@@ -3408,31 +3469,37 @@ public final class CimSceneMod {
                     int ticks = subjects[0].tickCount;
                     try {
                         if (!subjects[0].isAlive() || !subjects[0].isAddedToLevel()
-                                || ticks < ENTITY_SETTLE_TICKS || !subjects[1].isRemoved()) {
-                            throw new IllegalStateException("Native stopped-bearing lifecycle mismatch: retained="
+                                || (!glue && ticks < ENTITY_SETTLE_TICKS) || !subjects[1].isRemoved()) {
+                            throw new IllegalStateException("Native " + subjectName + " lifecycle mismatch: retained="
                                     + subjects[0].isAlive() + ", entityTicks=" + ticks
                                     + ", defaultRemoved=" + subjects[1].isRemoved());
                         }
-                        checkGalleryContraption(subjects[0], false);
-                        BlockEntity be = level.getBlockEntity(retainedCell.north());
-                        if (be.getClass().getMethod("getMovedContraption").invoke(be) != subjects[0]) {
-                            throw new IllegalStateException("Native retained bearing lost its controller attachment");
+                        if (glue) {
+                            // SuperGlueEntity.tick does not call baseTick, so its native
+                            // tickCount stays zero. Bare-control removal proves real ticking.
+                            checkGalleryGlue(subjects[0], retainedCell);
+                        } else {
+                            checkGalleryContraption(subjects[0], false);
+                            BlockEntity be = level.getBlockEntity(retainedCell.north());
+                            if (be.getClass().getMethod("getMovedContraption").invoke(be) != subjects[0]) {
+                                throw new IllegalStateException("Native retained bearing lost its controller attachment");
+                            }
                         }
                         passed = true;
                     } catch (Throwable failure) {
-                        LOGGER.error("[cimscene] selftest bearing live FAILED", failure);
+                        LOGGER.error("[cimscene] selftest " + subjectName + " live FAILED", failure);
                     } finally {
                         try {
                             cleanup.run();
                         } catch (Throwable failure) {
                             passed = false;
-                            LOGGER.error("[cimscene] selftest bearing live FAILED during cleanup", failure);
+                            LOGGER.error("[cimscene] selftest " + subjectName + " live FAILED during cleanup", failure);
                         }
                     }
-                    if (passed) LOGGER.info("[cimscene] selftest bearing live PASS serverTicks={} entityTicks={} default-removed=true", elapsed, ticks);
+                    if (passed) LOGGER.info("[cimscene] selftest {} live PASS serverTicks={} entityTicks={} default-removed=true", subjectName, elapsed, ticks);
                 });
             } catch (Throwable failure) {
-                LOGGER.error("[cimscene] selftest bearing live FAILED during setup", failure);
+                LOGGER.error("[cimscene] selftest " + subjectName + " live FAILED during setup", failure);
                 cleanup.run();
             }
         });
@@ -3680,7 +3747,8 @@ public final class CimSceneMod {
     /** Native hanging items and assembled bearings retain their actual attachment. */
     private static void alignGalleryEntity(Entity entity, BlockPos cell, boolean nativePlaced) {
         if (nativePlaced && (entity instanceof net.minecraft.world.entity.decoration.HangingEntity || entity.isPassenger()
-                || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption"))) return;
+                || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")
+                || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:super_glue"))) return;
         entity.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180.0f, 0.0f);
         // Frozen mobs must send the same head/body direction as their entity yaw.
         entity.setYHeadRot(180.0f);
@@ -4979,11 +5047,13 @@ public final class CimSceneMod {
                 boolean blueprint = id.toString().equals("create:crafting_blueprint");
                 boolean bearing = id.toString().equals("create:stationary_contraption");
                 boolean cart = id.toString().equals("create:contraption");
+                boolean glue = id.toString().equals("create:super_glue");
                 boolean itemPlaced = robit || parcel || blueprint;
-                if (bearing || cart) {
+                if (bearing || cart || glue) {
                     BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
                             GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
-                    e = cart ? assembleGalleryCart(level, cell) : assembleGalleryBearing(level, cell);
+                    e = glue ? createGalleryGlue(level, cell)
+                            : cart ? assembleGalleryCart(level, cell) : assembleGalleryBearing(level, cell);
                     if (cart) {
                         Entity vehicle = e.getVehicle();
                         vehicle.addTag(GALLERY_TAG);
@@ -5013,7 +5083,7 @@ public final class CimSceneMod {
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
                 alignGalleryEntity(e, new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
-                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced || bearing || cart);
+                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced || bearing || cart || glue);
                 e.addTag(GALLERY_TAG);
                 if (isMob) {
                     // NoAI: no movement, no look-at, no AI despawn logic — a
@@ -5021,7 +5091,7 @@ public final class CimSceneMod {
                     // between the settle pass and the shot.
                     m_setNoAi(e);
                 }
-                if (!itemPlaced && !bearing && !cart) level.addFreshEntity(e);
+                if (!itemPlaced && !bearing && !cart && !glue) level.addFreshEntity(e);
                 // 14-ea THE MOTION PIN: a projectile's own tick re-applies
                 // its hardcoded gravity (FallingBlockEntity / ThrowableProjectile
                 // both add it INSIDE tick(), ungated by NoGravity) — one

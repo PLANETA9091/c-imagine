@@ -261,16 +261,18 @@ jobs:
             grep -q "selftest $subject native-spawn PASS" srv-create/boot.log || { tail -60 srv-create/boot.log; exit 1; }
           done
 
-      - name: Create stopped-bearing lifecycle (real server ticks)
+      - name: Create native entity lifecycles (real server ticks)
         run: |
           set -euo pipefail
-          echo "cimscene selftest-bearing-live" > srv-create/console.in
-          for i in $(seq 1 30); do
-            grep -q "selftest bearing live PASS" srv-create/boot.log && break
-            grep -q "selftest bearing live FAILED" srv-create/boot.log && break
-            sleep 1
+          for subject in bearing glue; do
+            echo "cimscene selftest-$subject-live" > srv-create/console.in
+            for i in $(seq 1 30); do
+              grep -q "selftest $subject live PASS" srv-create/boot.log && break
+              grep -q "selftest $subject live FAILED" srv-create/boot.log && break
+              sleep 1
+            done
+            grep "selftest $subject live PASS" srv-create/boot.log || { tail -80 srv-create/boot.log; exit 1; }
           done
-          grep -q "selftest bearing live PASS" srv-create/boot.log || { tail -80 srv-create/boot.log; exit 1; }
 
       - name: gallery sweep (truth leg — every Create blockstate)
         run: |
