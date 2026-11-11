@@ -638,9 +638,17 @@ public final class ScreenPack {
             for (int x = 0; x < src.getWidth(); x++) {
                 int c = src.getRGB(x, y);
                 int alpha = c >>> 24;
-                if (alpha == 0) {
+                if (alpha == 0 && (c & 0xFFFFFF) != 0 && judge && near(c, frame.getRGB(x, y))) {
+                    // Colour with zero alpha is solid in a real framebuffer, and the real frame
+                    // says which colour: drawn over the screen's background, a little darker than
+                    // the capture over nothing (measured: Mekanism's window border, 3-4 levels).
+                    out.setRGB(x, y, 0xFF000000 | (frame.getRGB(x, y) & 0xFFFFFF));
+                } else if (alpha == 0) {
                     // Colour with zero alpha is solid in a real framebuffer.
                     out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+                } else if (alpha < 255 && judge && !sameColour(c, frame.getRGB(x, y)) && near(c, frame.getRGB(x, y))) {
+                    // The same, for a covered pixel whose blend left alpha below 255.
+                    out.setRGB(x, y, 0xFF000000 | (frame.getRGB(x, y) & 0xFFFFFF));
                 } else if (alpha < 255 && (!judge || sameColour(c, frame.getRGB(x, y)))) {
                     // The real frame shows the captured colour itself: the screen covered this pixel.
                     out.setRGB(x, y, 0xFF000000 | c);
@@ -658,6 +666,13 @@ public final class ScreenPack {
             }
         }
         return out;
+    }
+
+    /** Within a few levels per channel: the same pixel drawn over a slightly different backdrop. */
+    private static boolean near(int a, int b) {
+        return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 8
+                && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 8
+                && Math.abs((a & 0xFF) - (b & 0xFF)) <= 8;
     }
 
     private static boolean sameColour(int a, int b) {

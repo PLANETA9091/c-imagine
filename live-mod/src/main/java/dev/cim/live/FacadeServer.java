@@ -102,6 +102,24 @@ public final class FacadeServer extends MinecraftServer {
         return LiveProtocol.ticks();
     }
 
+    /** Paper enforces its own spawn protection before a click reaches the layer. */
+    @Override
+    public boolean isUnderSpawnProtection(ServerLevel level, net.minecraft.core.BlockPos pos,
+                                          net.minecraft.world.entity.player.Player player) {
+        return false;
+    }
+
+    @Override
+    public int getSpawnProtectionRadius() {
+        return 0;
+    }
+
+    /** Permissions are Paper's; in the facade a session player may do what its click asks. */
+    @Override
+    public int getProfilePermissions(GameProfile profile) {
+        return 0;
+    }
+
     @Override
     public boolean isSameThread() {
         return true;

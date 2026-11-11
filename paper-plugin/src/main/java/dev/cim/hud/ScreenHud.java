@@ -704,8 +704,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (index < 0) {
             return;
         }
-        if (s.live && live != null && index < s.liveSlots.size()) {
-            LiveBridge.State state = live.click(player, s.liveSlots.get(index).menuIndex(),
+        LiveBridge.Slot target = s.live && live != null ? liveSlotFor(s, index) : null;
+        if (target != null) {
+            LiveBridge.State state = live.click(player, target.menuIndex(),
                     button.equals("right") ? 1 : 0, "PICKUP");
             if (state.error() != null) {
                 log.warning("[cim-screen] live click failed: " + state.error());
@@ -989,6 +990,27 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     /** The layer menu's state on the screen: its own slots, the cursor, the player's inventory. */
+    /**
+     * The live menu's slot behind a captured slot, by where both are drawn: the capture lists
+     * the slots active on the client, the server may count more (Mekanism's hidden crafting
+     * window), so a list position is not a slot (measured: the QIO dashboard's move landed in
+     * the hidden window's first slot).
+     */
+    private static LiveBridge.Slot liveSlotFor(Session s, int index) {
+        if (index < 0 || index >= s.capture.slots().size()) {
+            return null;
+        }
+        GuiCaptures.Slot c = s.capture.slots().get(index);
+        for (LiveBridge.Slot l : s.liveSlots) {
+            if (l.x() == c.x() && l.y() == c.y() && l.player() == c.player()) {
+                return l;
+            }
+        }
+        // An answer without positions (older layer): the list position, as before.
+        boolean positioned = !s.liveSlots.isEmpty() && s.liveSlots.get(0).x() != Integer.MIN_VALUE;
+        return !positioned && index < s.liveSlots.size() ? s.liveSlots.get(index) : null;
+    }
+
     private void applyLive(Player player, Session s, LiveBridge.State state) {
         s.liveSlots = state.slots();
         if (state.menuClass() != null) {
@@ -996,7 +1018,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         s.liveWidgets = widgetStates(player, s);
         for (int k = 0; k < s.held.length; k++) {
-            LiveBridge.Slot slot = k < state.slots().size() ? state.slots().get(k) : null;
+            LiveBridge.Slot slot = liveSlotFor(s, k);
             s.held[k] = slot == null || slot.player() ? null : live.toPaper(slot.stack());
         }
         s.cursor = live.toPaper(state.carried());
