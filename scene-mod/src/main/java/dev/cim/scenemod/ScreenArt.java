@@ -439,18 +439,42 @@ public final class ScreenArt {
         }
     }
 
-    /** Empties the player's inventory for the pass, so slots draw bare. */
+    /** The menu slots emptied for the current pass, with what they held. */
+    private static final java.util.Map<Slot, ItemStack> LIFTED_MENU = new java.util.LinkedHashMap<>();
+
+    /**
+     * Empties the player's inventory and the open menu's own slots for the pass, so every slot
+     * draws bare: the art is the screen alone, and the HUD draws whatever the slots hold, live,
+     * with the icons captured here (measured: an item baked into the art showed twice once the
+     * live menu drew it again). The returned list holds every lifted stack, for the icons.
+     */
     private static List<ItemStack> lift(Minecraft mc) {
         List<ItemStack> items = new ArrayList<>(mc.player.getInventory().items);
         for (int i = 0; i < mc.player.getInventory().items.size(); i++) {
             mc.player.getInventory().items.set(i, ItemStack.EMPTY);
         }
-        return items;
+        LIFTED_MENU.clear();
+        if (mc.screen instanceof AbstractContainerScreen<?> screen) {
+            for (Slot slot : screen.getMenu().slots) {
+                if (slot.container != mc.player.getInventory() && slot.hasItem()) {
+                    LIFTED_MENU.put(slot, slot.getItem());
+                    slot.set(ItemStack.EMPTY);
+                }
+            }
+        }
+        List<ItemStack> all = new ArrayList<>(items);
+        all.addAll(LIFTED_MENU.values());
+        return all;
     }
 
     private static void restore(Minecraft mc, List<ItemStack> items) {
-        for (int i = 0; i < items.size(); i++) {
+        int n = mc.player.getInventory().items.size();
+        for (int i = 0; i < n && i < items.size(); i++) {
             mc.player.getInventory().items.set(i, items.get(i));
         }
+        for (java.util.Map.Entry<Slot, ItemStack> e : LIFTED_MENU.entrySet()) {
+            e.getKey().set(e.getValue());
+        }
+        LIFTED_MENU.clear();
     }
 }
