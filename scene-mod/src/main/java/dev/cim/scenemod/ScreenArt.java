@@ -517,7 +517,9 @@ public final class ScreenArt {
         LIFTED_MENU.clear();
         if (mc.screen instanceof AbstractContainerScreen<?> screen) {
             for (Slot slot : screen.getMenu().slots) {
-                if (slot.container != mc.player.getInventory() && slot.hasItem()) {
+                // A slot nobody takes from is the mod's display: its screen draws the item with
+                // its own decorations (Create's attribute summary and its count), so it stays.
+                if (slot.container != mc.player.getInventory() && slot.hasItem() && slot.mayPickup(mc.player)) {
                     LIFTED_MENU.put(slot, slot.getItem());
                     slot.set(ItemStack.EMPTY);
                 }

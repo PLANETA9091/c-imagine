@@ -1083,7 +1083,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         s.liveWidgets = widgetStates(player, s);
         for (int k = 0; k < s.held.length; k++) {
             LiveBridge.Slot slot = liveSlotFor(s, k);
-            s.held[k] = slot == null || slot.player() ? null : live.toPaper(slot.stack());
+            // A display slot is in the art, drawn by the mod's screen with its own decorations.
+            s.held[k] = slot == null || slot.player() || !slot.pickable() ? null : live.toPaper(slot.stack());
         }
         s.cursor = live.toPaper(state.carried());
         live.applyInventory(player, state);

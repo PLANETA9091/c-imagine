@@ -292,7 +292,9 @@ public final class LiveProtocol {
                 out.append("slot\t").append(n++).append('\t').append(i).append('\t')
                         .append(slot.container == player.getInventory() ? "player" : "menu").append('\t')
                         .append(slot.getContainerSlot()).append('\t').append(encode(slot.getItem()))
-                        .append('\t').append(slot.x).append('\t').append(slot.y).append('\n');
+                        .append('\t').append(slot.x).append('\t').append(slot.y)
+                        // A slot nobody takes from is the mod's display (Create's attribute summary).
+                        .append('\t').append(slot.mayPickup(player) ? 1 : 0).append('\n');
             }
             out.append("carried\t").append(encode(menu.getCarried())).append('\n');
         }

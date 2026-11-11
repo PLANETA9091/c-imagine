@@ -30,7 +30,8 @@ final class LiveBridge {
 
     /** One slot as the layer's menu has it, in the order the screen draws them. */
     /** {@code x, y}: where the menu puts the slot; pairs it with the captured screen's slot. */
-    record Slot(int menuIndex, boolean player, int containerSlot, String stack, int x, int y) {
+    /** {@code pickable}: false for a slot the mod only displays in, which its screen draws itself. */
+    record Slot(int menuIndex, boolean player, int containerSlot, String stack, int x, int y, boolean pickable) {
     }
 
     /** What the layer's menu holds after a command. */
@@ -249,9 +250,11 @@ final class LiveBridge {
                 case "slot" -> {
                     // stack JSON never holds a tab, so the position follows it.
                     String[] q = line.split("\t");
-                    int x = q.length > 7 ? Integer.parseInt(q[q.length - 2]) : Integer.MIN_VALUE;
-                    int y = q.length > 7 ? Integer.parseInt(q[q.length - 1]) : Integer.MIN_VALUE;
-                    slots.add(new Slot(Integer.parseInt(q[2]), q[3].equals("player"), Integer.parseInt(q[4]), q[5], x, y));
+                    int x = q.length > 7 ? Integer.parseInt(q[6]) : Integer.MIN_VALUE;
+                    int y = q.length > 7 ? Integer.parseInt(q[7]) : Integer.MIN_VALUE;
+                    boolean pickable = q.length <= 8 || !q[8].equals("0");
+                    slots.add(new Slot(Integer.parseInt(q[2]), q[3].equals("player"), Integer.parseInt(q[4]), q[5], x, y,
+                            pickable));
                 }
                 case "carried" -> carried = p[1];
                 case "inv" -> {
