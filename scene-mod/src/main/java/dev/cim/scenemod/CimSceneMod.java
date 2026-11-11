@@ -306,6 +306,7 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-potato").executes(ctx -> potatoSpawnSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest-bearing").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), false)))
                         .then(Commands.literal("selftest-cart").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), true)))
+                        .then(Commands.literal("selftest-bearing-live").executes(ctx -> bearingLifetimeSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3326,6 +3327,11 @@ public final class CimSceneMod {
 
     /** Assemble real world blocks through Create's controller, which owns entity and contraption initialization. */
     private static Entity assembleGalleryBearing(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        return assembleGalleryBearing(level, cell, true);
+    }
+
+    private static Entity assembleGalleryBearing(ServerLevel level, BlockPos cell, boolean retainWhenStopped)
+            throws ReflectiveOperationException {
         // Create checks adjacent blocks during assembly and rejects unloaded chunks,
         // including at a chunk corner where the controller and body alone load only two.
         for (int dx = -1; dx <= 1; dx++) {
@@ -3338,6 +3344,18 @@ public final class CimSceneMod {
         level.setBlock(controller, bearing, 3);
         level.setBlock(cell, Blocks.OAK_PLANKS.defaultBlockState(), 3);
         BlockEntity be = level.getBlockEntity(controller);
+        if (retainWhenStopped) {
+            ClassLoader loader = be.getClass().getClassLoader();
+            Class<?> scroll = Class.forName("com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour", true, loader);
+            Class<?> behaviourType = Class.forName("com.simibubi.create.foundation.blockEntity.behaviour.BehaviourType", true, loader);
+            Object mode = be.getClass().getMethod("getBehaviour", behaviourType).invoke(be, scroll.getField("TYPE").get(null));
+            Class<?> modes = Class.forName("com.simibubi.create.content.contraptions.IControlContraption$RotationMode", true, loader);
+            Object neverPlace = modes.getField("ROTATE_NEVER_PLACE").get(null);
+            mode.getClass().getMethod("setValue", int.class).invoke(mode, ((Enum<?>) neverPlace).ordinal());
+            if (mode.getClass().getMethod("get").invoke(mode) != neverPlace) {
+                throw new IllegalStateException("Native bearing did not accept Never Place mode");
+            }
+        }
         be.getClass().getMethod("assemble").invoke(be);
         Entity entity = (Entity) be.getClass().getMethod("getMovedContraption").invoke(be);
         // NeoForge sets this after successful entity-manager insertion. The UUID
@@ -3348,6 +3366,77 @@ public final class CimSceneMod {
                     + entity + ", assembly=" + be.getClass().getMethod("getLastAssemblyException").invoke(be));
         }
         return entity;
+    }
+
+    /** Real ticking regression: a stopped bearing retains its structure only with the native setting. */
+    private static int bearingLifetimeSelftest(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos retainedCell = new BlockPos(72, 100, 72);
+        BlockPos defaultCell = retainedCell.east(4);
+        var chunk = new net.minecraft.world.level.ChunkPos(retainedCell);
+        boolean wasForced = level.getForcedChunks().contains(chunk.toLong());
+        var previous = new java.util.LinkedHashMap<BlockPos, BlockState>();
+        for (BlockPos cell : List.of(retainedCell, defaultCell)) {
+            previous.put(cell.north(), level.getBlockState(cell.north()));
+            previous.put(cell, level.getBlockState(cell));
+        }
+        Entity[] subjects = new Entity[2];
+        Runnable cleanup = () -> {
+            try {
+                for (BlockPos cell : List.of(retainedCell, defaultCell)) {
+                    BlockEntity be = level.getBlockEntity(cell.north());
+                    if (be != null) be.getClass().getMethod("disassemble").invoke(be);
+                }
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("Native bearing live-test cleanup failed", failure);
+            } finally {
+                for (Entity subject : subjects) if (subject != null) subject.discard();
+                previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
+                if (!wasForced) level.setChunkForced(chunk.x, chunk.z, false);
+            }
+        };
+        level.setChunkForced(chunk.x, chunk.z, true);
+        // Let the native ticket make this chunk entity-ticking before assembly.
+        runAfterTicks(level.getServer(), 5, () -> {
+            try {
+                subjects[0] = assembleGalleryBearing(level, retainedCell, true);
+                subjects[1] = assembleGalleryBearing(level, defaultCell, false);
+                int started = level.getServer().getTickCount();
+                runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS + ENTITY_FINAL_TICKS, () -> {
+                    boolean passed = false;
+                    int elapsed = level.getServer().getTickCount() - started;
+                    int ticks = subjects[0].tickCount;
+                    try {
+                        if (!subjects[0].isAlive() || !subjects[0].isAddedToLevel()
+                                || ticks < ENTITY_SETTLE_TICKS || !subjects[1].isRemoved()) {
+                            throw new IllegalStateException("Native stopped-bearing lifecycle mismatch: retained="
+                                    + subjects[0].isAlive() + ", entityTicks=" + ticks
+                                    + ", defaultRemoved=" + subjects[1].isRemoved());
+                        }
+                        checkGalleryContraption(subjects[0], false);
+                        BlockEntity be = level.getBlockEntity(retainedCell.north());
+                        if (be.getClass().getMethod("getMovedContraption").invoke(be) != subjects[0]) {
+                            throw new IllegalStateException("Native retained bearing lost its controller attachment");
+                        }
+                        passed = true;
+                    } catch (Throwable failure) {
+                        LOGGER.error("[cimscene] selftest bearing live FAILED", failure);
+                    } finally {
+                        try {
+                            cleanup.run();
+                        } catch (Throwable failure) {
+                            passed = false;
+                            LOGGER.error("[cimscene] selftest bearing live FAILED during cleanup", failure);
+                        }
+                    }
+                    if (passed) LOGGER.info("[cimscene] selftest bearing live PASS serverTicks={} entityTicks={} default-removed=true", elapsed, ticks);
+                });
+            } catch (Throwable failure) {
+                LOGGER.error("[cimscene] selftest bearing live FAILED during setup", failure);
+                cleanup.run();
+            }
+        });
+        return 1;
     }
 
     /** Use the real powered assembler and minecart; the native controller assembles and mounts its payload. */
