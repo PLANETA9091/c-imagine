@@ -1805,7 +1805,7 @@ public final class CimSceneMod {
         }
         LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells={} absent={} dissolved={} "
                         + "failed={} skipped={} first={} last={}",
-                kind, namespace, page, cells, absent, dissolved, failed,
+                kind, namespace, page, cells, absent, dissolved, failed, skipNotes.size(),
                 slice.get(0), slice.get(slice.size() - 1));
         writeDoneMarkerFile("gallery-variant-" + kind + "-" + namespace + "-p" + page, false);
         runAfterTicks(level.getServer(), ENTITY_FINAL_TICKS, () -> settleVariantPage(
