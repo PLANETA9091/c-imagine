@@ -163,13 +163,17 @@ public final class FmlHost {
                 Object fileScan = buildScanData(mod);
                 file.getClass().getMethod("setScanResult", Class.forName(SCAN_DATA), Throwable.class)
                         .invoke(file, fileScan, null);
-                scanByJar.put(mod.jar(), fileScan);
-                modFiles.add(file);
                 Object fileInfo = call(file, "getModFileInfo");
                 if (fileInfo == null) {
-                    throw new IllegalStateException("ModFileInfo null for " + mod.id()
-                            + " (mods.toml not found through the SecureJar proxy)");
+                    // FML makes no container for a jar with no mod description it reads (a
+                    // library); its classes stay on the loader. One such jar must not cost
+                    // every other mod its load.
+                    System.out.println(LOG + " no mod description for " + mod.id() + " (" + mod.jar()
+                            + "): loaded as a library");
+                    continue;
                 }
+                scanByJar.put(mod.jar(), fileScan);
+                modFiles.add(file);
                 List<?> infos = (List<?>) call(fileInfo, "getMods");
                 for (Object info : infos) {
                     modInfos.add(info);
