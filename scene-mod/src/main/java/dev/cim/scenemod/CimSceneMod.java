@@ -313,6 +313,7 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-glue-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "glue")))
                         .then(Commands.literal("selftest-seat-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "seat")))
                         .then(Commands.literal("selftest-gantry-live").executes(ctx -> gantryLifetimeSelftest(ctx.getSource())))
+                        .then(Commands.literal("selftest-carriage-live").executes(ctx -> carriageLifetimeSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3330,6 +3331,274 @@ public final class CimSceneMod {
                 guiEntity = entity.isRemoved() ? null : entity;
             }
         }
+    }
+
+    /** Native station/item assembly owns the train, carriage, graph and entity. */
+    private static final class TrainRig {
+        final ServerLevel level;
+        final BlockPos cell;
+        final BlockPos target;
+        final BlockPos stationPos;
+        final ServerPlayer player;
+        final Map<BlockPos, BlockState> previous = new java.util.LinkedHashMap<>();
+        final java.util.List<Object> trains = new ArrayList<>();
+        final java.util.Set<java.util.UUID> previousGlue = new java.util.HashSet<>();
+        Object station;
+        Direction direction;
+        Entity entity;
+        Entity glue;
+        net.minecraft.world.level.block.Block bogey;
+        boolean closed;
+
+        TrainRig(ServerLevel level, BlockPos cell) {
+            this.level = level;
+            this.cell = cell;
+            target = cell.below().north();
+            stationPos = cell.east(2);
+            player = new GuiProbe(level);
+            player.moveTo(cell.getX() + .5, cell.getY() + 2, cell.getZ() - 3, 0, 0);
+            for (Entity found : level.getEntitiesOfClass(Entity.class, new AABB(cell).inflate(3))) {
+                previousGlue.add(found.getUUID());
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<java.util.UUID, Object> trainRegistry() throws ReflectiveOperationException {
+            Object manager = Class.forName("com.simibubi.create.Create").getField("RAILWAYS").get(null);
+            return (Map<java.util.UUID, Object>) manager.getClass().getField("trains").get(manager);
+        }
+
+        void put(BlockPos pos, BlockState state) {
+            if (!previous.containsKey(pos) && level.getBlockEntity(pos) != null) {
+                throw new IllegalStateException("Train rig cannot replace a foreign block entity at " + pos);
+            }
+            previous.putIfAbsent(pos.immutable(), level.getBlockState(pos));
+            level.setBlock(pos, state, 3);
+        }
+
+        net.minecraft.world.item.context.UseOnContext context(BlockPos support) {
+            return new net.minecraft.world.item.context.UseOnContext(player, net.minecraft.world.InteractionHand.MAIN_HAND,
+                    new net.minecraft.world.phys.BlockHitResult(Vec3.atCenterOf(support).add(0, .5, 0),
+                            Direction.UP, support, false));
+        }
+
+        void click(BlockPos support) {
+            if (!player.getMainHandItem().getItem().useOn(context(support)).consumesAction()) {
+                throw new IllegalStateException("Native train item refused " + support + ": " + player.getMainHandItem());
+            }
+        }
+
+        void start(java.util.function.Consumer<Entity> ready, java.util.function.Consumer<Throwable> failed) {
+            try {
+                for (int x = -1; x <= 1; x++) for (int z = -1; z <= 1; z++) {
+                    level.getChunkAt(cell.offset(x * 16, 0, z * 16));
+                }
+                var track = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:track"));
+                player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, new ItemStack(track.asItem()));
+                for (int z = -12; z <= 12; z++) {
+                    BlockPos rail = cell.below().offset(0, 0, z);
+                    put(rail.below(), Blocks.STONE.defaultBlockState());
+                    BlockState state = track.getStateForPlacement(new net.minecraft.world.item.context.BlockPlaceContext(context(rail.below())));
+                    if (state == null) throw new IllegalStateException("Native track placement unavailable at " + rail);
+                    put(rail, state);
+                }
+                put(stationPos.below(), Blocks.STONE.defaultBlockState());
+                put(stationPos, Blocks.AIR.defaultBlockState());
+                for (int y = 0; y <= 2; y++) put(cell.above(y), Blocks.AIR.defaultBlockState());
+                runAfterTicks(level.getServer(), 20, () -> {
+                    if (closed) return;
+                    try {
+                        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
+                                new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create:track_station"))));
+                        click(target);
+                        click(stationPos.below());
+                        station = level.getBlockEntity(stationPos);
+                        if (station == null) throw new IllegalStateException("Native station item produced no station");
+                        runAfterTicks(level.getServer(), 20, () -> assemble(ready, failed));
+                    } catch (Throwable failure) {
+                        failed.accept(failure);
+                    }
+                });
+            } catch (Throwable failure) {
+                failed.accept(failure);
+            }
+        }
+
+        void assemble(java.util.function.Consumer<Entity> ready, java.util.function.Consumer<Throwable> failed) {
+            if (closed) return;
+            try {
+                if (station.getClass().getMethod("getStation").invoke(station) == null) {
+                    throw new IllegalStateException("Native station did not bind to its track graph");
+                }
+                if (!(boolean) station.getClass().getMethod("enterAssemblyMode", ServerPlayer.class).invoke(station, player)) {
+                    throw new IllegalStateException("Native station refused assembly mode");
+                }
+                direction = (Direction) station.getClass().getMethod("getAssemblyDirection").invoke(station);
+                if (!target.relative(direction).equals(cell.below())) {
+                    throw new IllegalStateException("Native station selected unexpected assembly direction " + direction);
+                }
+                player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
+                        new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("create:railway_casing"))));
+                BlockPos rail = cell.below();
+                BlockState trackState = level.getBlockState(rail);
+                Class<?> trackType = Class.forName("com.simibubi.create.content.trains.track.ITrackBlock");
+                if (!(boolean) station.getClass().getMethod("trackClicked", net.minecraft.world.entity.player.Player.class,
+                        net.minecraft.world.InteractionHand.class, trackType, BlockState.class, BlockPos.class)
+                        .invoke(station, player, net.minecraft.world.InteractionHand.MAIN_HAND, trackState.getBlock(), trackState, rail)) {
+                    throw new IllegalStateException("Native station refused bogey placement");
+                }
+                bogey = level.getBlockState(cell).getBlock();
+                if (!Class.forName("com.simibubi.create.content.trains.bogey.AbstractBogeyBlock").isInstance(bogey)) {
+                    throw new IllegalStateException("Native station did not place an actual bogey: " + level.getBlockState(cell));
+                }
+                put(cell.above(), Blocks.OAK_PLANKS.defaultBlockState());
+                put(cell.above(2), BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:controls"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING, direction));
+                Class<?> glueType = Class.forName("com.simibubi.create.content.contraptions.glue.SuperGlueEntity");
+                AABB volume = (AABB) glueType.getMethod("span", BlockPos.class, BlockPos.class).invoke(null, cell, cell.above(2));
+                glue = (Entity) glueType.getConstructor(net.minecraft.world.level.Level.class, AABB.class).newInstance(level, volume);
+                if (!level.addFreshEntity(glue)) throw new IllegalStateException("Native train glue insertion rejected");
+                var registry = trainRegistry();
+                var before = new java.util.HashSet<>(registry.keySet());
+                try {
+                    station.getClass().getMethod("assemble", java.util.UUID.class).invoke(station, player.getUUID());
+                } finally {
+                    registry.forEach((id, train) -> { if (!before.contains(id)) trains.add(train); });
+                }
+                if (trains.size() != 1) {
+                    // Read the native reported error, without altering controller fields.
+                    var error = station.getClass().getDeclaredField("lastException");
+                    error.setAccessible(true);
+                    throw new IllegalStateException("Native station registered " + trains.size() + " trains; error=" + error.get(station));
+                }
+                runAfterTicks(level.getServer(), 10, () -> {
+                    if (closed) return;
+                    try {
+                        var carriages = (java.util.List<?>) trains.getFirst().getClass().getField("carriages").get(trains.getFirst());
+                        if (carriages.size() != 1) throw new IllegalStateException("Native train carriage count=" + carriages.size());
+                        Object carriage = carriages.getFirst();
+                        entity = (Entity) carriage.getClass().getMethod("anyAvailableEntity").invoke(carriage);
+                        if (entity == null || !entity.isAlive() || !entity.isAddedToLevel()) {
+                            throw new IllegalStateException("Native train did not retain its carriage entity");
+                        }
+                        ready.accept(entity);
+                    } catch (Throwable failure) {
+                        failed.accept(failure);
+                    }
+                });
+            } catch (Throwable failure) {
+                failed.accept(failure);
+            }
+        }
+
+        void check(Entity subject) throws ReflectiveOperationException {
+            Object contraption = subject.getClass().getMethod("getContraption").invoke(subject);
+            var blocks = (Map<?, ?>) contraption.getClass().getMethod("getBlocks").invoke(contraption);
+            if (blocks.size() != 3 || !(blocks.get(BlockPos.ZERO) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo origin)
+                    || !origin.state().is(bogey)
+                    || !(blocks.get(BlockPos.ZERO.above()) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo plank)
+                    || !plank.state().is(Blocks.OAK_PLANKS)
+                    || !(blocks.get(BlockPos.ZERO.above(2)) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo controls)
+                    || !controls.state().is(BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:controls")))) {
+                throw new IllegalStateException("Native carriage lost bogey/plank/controls: " + blocks);
+            }
+        }
+
+        void close() throws ReflectiveOperationException {
+            if (closed) return;
+            closed = true;
+            try {
+                for (Object train : trains) {
+                    if (!(boolean) train.getClass().getMethod("disassemble", Direction.class, BlockPos.class)
+                            .invoke(train, direction, target.above())) {
+                        throw new IllegalStateException("Native train cleanup refused disassembly");
+                    }
+                    Object id = train.getClass().getField("id").get(train);
+                    if (trainRegistry().containsKey(id)) throw new IllegalStateException("Native train cleanup left registry ownership");
+                }
+                if (station != null) station.getClass().getMethod("exitAssemblyMode").invoke(station);
+            } finally {
+                if (glue != null) glue.discard();
+                // Disassembly can recreate the train's real glue volume.
+                for (Entity found : level.getEntitiesOfClass(Entity.class, new AABB(cell).inflate(3),
+                        e -> !previousGlue.contains(e.getUUID())
+                                && BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString().equals("create:super_glue")
+                                && e.getBoundingBox().minX >= cell.getX() && e.getBoundingBox().maxX <= cell.getX() + 1
+                                && e.getBoundingBox().minY >= cell.getY() && e.getBoundingBox().maxY <= cell.getY() + 3
+                                && e.getBoundingBox().minZ >= cell.getZ() && e.getBoundingBox().maxZ <= cell.getZ() + 1)) found.discard();
+                var restore = new ArrayList<>(previous.entrySet());
+                java.util.Collections.reverse(restore);
+                for (var entry : restore) level.setBlock(entry.getKey(), entry.getValue(), 3);
+            }
+        }
+    }
+
+    private static int carriageLifetimeSelftest(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos cell = new BlockPos(104, 100, 104);
+        TrainRig rig = new TrainRig(level, cell);
+        var tickets = new ArrayList<net.minecraft.world.level.ChunkPos>();
+        for (int z = 92; z <= 116; z += 8) {
+            var chunk = new net.minecraft.world.level.ChunkPos(new BlockPos(cell.getX(), cell.getY(), z));
+            if (!level.getForcedChunks().contains(chunk.toLong())) {
+                level.setChunkForced(chunk.x, chunk.z, true);
+                tickets.add(chunk);
+            }
+        }
+        Runnable cleanup = () -> {
+            try { rig.close(); }
+            catch (ReflectiveOperationException failure) { throw new IllegalStateException(failure); }
+            finally { for (var chunk : tickets) level.setChunkForced(chunk.x, chunk.z, false); }
+        };
+        runAfterTicks(level.getServer(), 5, () -> rig.start(entity -> {
+            int started = level.getServer().getTickCount();
+            runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS + ENTITY_FINAL_TICKS, () -> {
+                boolean passed = false;
+                try {
+                    if (!entity.isAlive() || !entity.isAddedToLevel() || entity.tickCount < ENTITY_SETTLE_TICKS) {
+                        throw new IllegalStateException("Native carriage lifecycle mismatch: alive=" + entity.isAlive() + ", ticks=" + entity.tickCount);
+                    }
+                    Object train = rig.trains.getFirst();
+                    Object id = train.getClass().getField("id").get(train);
+                    if (rig.trainRegistry().get(id) != train || !id.equals(entity.getClass().getField("trainId").get(entity))) {
+                        throw new IllegalStateException("Native carriage lost real train registry ownership");
+                    }
+                    rig.check(entity);
+                    var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+                    try {
+                        ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) entity).writeSpawnData(buffer);
+                        Entity received = entity.getType().create(level);
+                        received.setPos(entity.getX(), entity.getY(), entity.getZ());
+                        ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+                        rig.check(received);
+                        if (buffer.isReadable() || !id.equals(received.getClass().getField("trainId").get(received))) {
+                            throw new IllegalStateException("Native carriage spawn lost train identity or payload bytes");
+                        }
+                        buffer.clear();
+                        boolean rejected = false;
+                        try {
+                            Entity bare = entity.getType().create(level);
+                            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+                            Entity target = entity.getType().create(level);
+                            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) target).readSpawnData(buffer);
+                        } catch (RuntimeException expected) { rejected = true; }
+                        if (!rejected) throw new IllegalStateException("Bare carriage negative control unexpectedly decoded");
+                    } finally { buffer.release(); }
+                    passed = true;
+                } catch (Throwable failure) {
+                    LOGGER.error("[cimscene] selftest carriage live FAILED", failure);
+                } finally {
+                    try { cleanup.run(); }
+                    catch (Throwable failure) { passed = false; LOGGER.error("[cimscene] selftest carriage live FAILED during cleanup", failure); }
+                }
+                if (passed) LOGGER.info("[cimscene] selftest carriage live PASS serverTicks={} entityTicks={} bare-rejected=true",
+                        level.getServer().getTickCount() - started, entity.tickCount);
+            });
+        }, failure -> {
+            LOGGER.error("[cimscene] selftest carriage live FAILED during setup", failure);
+            cleanup.run();
+        }));
+        return 1;
     }
 
     /** A real motor/shaft/controller assembly; every delayed action runs on normal server ticks. */

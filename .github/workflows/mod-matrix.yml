@@ -264,7 +264,7 @@ jobs:
       - name: Create native entity lifecycles (real server ticks)
         run: |
           set -euo pipefail
-          for subject in bearing glue seat gantry; do
+          for subject in bearing glue seat gantry carriage; do
             echo "cimscene selftest-$subject-live" > srv-create/console.in
             for i in $(seq 1 30); do
               grep -q "selftest $subject live PASS" srv-create/boot.log && break
