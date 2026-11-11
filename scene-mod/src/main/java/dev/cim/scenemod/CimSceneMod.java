@@ -301,6 +301,7 @@ public final class CimSceneMod {
                                     false);
                             return 1;
                         }))
+                        .then(Commands.literal("selftest-package").executes(ctx -> packageSpawnSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3319,6 +3320,53 @@ public final class CimSceneMod {
         }
     }
 
+    /** Real Create item placement and its native additional-spawn codec, exercised by CI. */
+    private static int packageSpawnSelftest(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos support = new BlockPos(64, 100, 64);
+        level.getChunkAt(support);
+        BlockState previous = level.getBlockState(support);
+        Entity placed = null;
+        try {
+            GuiProbe player = new GuiProbe(level);
+            ItemStack held = new ItemStack(Items.STICK);
+            player.setItemInHand(InteractionHand.MAIN_HAND, held);
+            player.setShiftKeyDown(true);
+            level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+            placed = placeEntityItem(level, player, support,
+                    "create:cardboard_package_12x12", "create:package");
+            if (placed == null || player.getItemInHand(InteractionHand.MAIN_HAND) != held
+                    || !player.isShiftKeyDown()) {
+                throw new IllegalStateException("Package item placement or player state restoration failed");
+            }
+            var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+            try {
+                ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) placed).writeSpawnData(buffer);
+                if (buffer.readableBytes() <= 12) throw new IllegalStateException("Package spawn payload has no item data");
+                int bytes = buffer.readableBytes();
+                Entity bare = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse("create:package")).create(level);
+                boolean refused = false;
+                buffer.clear();
+                try {
+                    ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+                } catch (RuntimeException expected) {
+                    refused = true;
+                }
+                if (!refused) throw new IllegalStateException("Bare package negative control unexpectedly encoded");
+                LOGGER.info("[cimscene] selftest package native-spawn PASS bytes={} bare-rejected=true", bytes);
+            } finally {
+                buffer.release();
+            }
+            return 1;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest package native-spawn FAILED", failure);
+            return 0;
+        } finally {
+            if (placed != null) placed.discard();
+            level.setBlock(support, previous, 3);
+        }
+    }
+
     /** Place through Mekanism's item: it assigns the real chargepad home and owner. */
     static Entity placeRobit(ServerLevel level, ServerPlayer player, BlockPos pad) {
         level.setBlock(pad.below(), Blocks.STONE.defaultBlockState(), 3);
@@ -3326,21 +3374,30 @@ public final class CimSceneMod {
         level.setBlock(pad, Blocks.AIR.defaultBlockState(), 3);
         level.setBlock(pad, BuiltInRegistries.BLOCK.get(
                 ResourceLocation.parse("mekanism:chargepad")).defaultBlockState(), 3);
+        return placeEntityItem(level, player, pad, "mekanism:robit", "mekanism:robit");
+    }
+
+    /** The item's native placement supplies entity state required by its spawn payload. */
+    private static Entity placeEntityItem(ServerLevel level, ServerPlayer player, BlockPos against,
+                                          String itemId, String entityId) {
         ItemStack previous = player.getItemInHand(InteractionHand.MAIN_HAND);
+        boolean shifted = player.isShiftKeyDown();
         List<Entity> previousJoined = GUI_JOINED;
         List<Entity> joined = new ArrayList<>();
         GUI_JOINED = joined;
         try {
-            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse("mekanism:robit")));
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
+            player.setShiftKeyDown(false);
             player.setItemInHand(InteractionHand.MAIN_HAND, stack);
             stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(pad).relative(Direction.UP, 0.5), Direction.UP, pad, false)));
+                    new BlockHitResult(Vec3.atCenterOf(against).relative(Direction.UP, 0.5), Direction.UP, against, false)));
             return joined.stream().filter(e -> e.isAlive() && BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())
-                    .equals(ResourceLocation.parse("mekanism:robit"))).findFirst().orElse(null);
+                    .equals(ResourceLocation.parse(entityId))).findFirst().orElse(null);
         } finally {
             GUI_JOINED = previousJoined;
             if (previousJoined != null) previousJoined.addAll(joined);
             player.setItemInHand(InteractionHand.MAIN_HAND, previous);
+            player.setShiftKeyDown(shifted);
         }
     }
 
@@ -4601,14 +4658,21 @@ public final class CimSceneMod {
                 continue;
             }
             try {
-                boolean itemPlaced = id.toString().equals("mekanism:robit");
+                boolean robit = id.toString().equals("mekanism:robit");
+                boolean parcel = id.toString().equals("create:package");
+                boolean itemPlaced = robit || parcel;
                 if (itemPlaced) {
                     ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
                     if (owner == null) owner = new GuiProbe(level);
-                    BlockPos pad = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                    BlockPos support = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
                             GALLERY_Y0 + row * ENTITY_PITCH - 1, GALLERY_Z);
-                    e = placeRobit(level, owner, pad);
-                    if (e == null) throw new IllegalStateException("Robit item did not spawn on its chargepad");
+                    if (robit) {
+                        e = placeRobit(level, owner, support);
+                    } else {
+                        level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+                        e = placeEntityItem(level, owner, support, "create:cardboard_package_12x12", "create:package");
+                    }
+                    if (e == null) throw new IllegalStateException("Item placement did not spawn " + id);
                 }
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
