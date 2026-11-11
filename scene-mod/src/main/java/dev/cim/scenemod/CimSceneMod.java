@@ -5631,7 +5631,19 @@ public final class CimSceneMod {
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
-            if (crashBan.containsKey(id.toString())) {
+            // THE NATIVE RIG SUBJECTS STAND OUTSIDE THE BAN (43042291771: the
+            // slope fix landed, and the walk fell through to the NEXT gate —
+            // the 14-ak ban file's bare-spawn quarantine). The ban exists for
+            // bare type.create() spawns whose payloads crash the client; the
+            // carriage/gantry subjects are never bare-spawned — their route
+            // is the native TrainRig/GantryRig assembly (a real train/shaft
+            // with the actual payload, the lifetime fixtures prove native
+            // spawn encode/decode round-trips). The ban keeps naming them
+            // for every OTHER route; the rigs' own failure callbacks still
+            // write honest skip rows when the assembly itself fails.
+            boolean nativeRigSubject = id.toString().equals("create:carriage_contraption")
+                    || id.toString().equals("create:gantry_contraption");
+            if (crashBan.containsKey(id.toString()) && !nativeRigSubject) {
                 bannedPre++;
                 skipNotes.put(i, "client-crash-banned");
                 LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
