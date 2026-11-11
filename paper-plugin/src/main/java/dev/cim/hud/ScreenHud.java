@@ -647,16 +647,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }
-                    // A press state that draws over this slot (a window) hides its item, as the real screen does.
-                    boolean hidden = s.stateIndex >= 0 && s.scene.captured() != null
-                            && s.scene.captured().covered().getOrDefault(s.stateIndex, java.util.Set.of()).contains(i);
-                    if (!hidden) {
-                        drawItem(frame, x, y, slotItem(player, s, i));
-                    }
+                    drawItem(frame, x, y, slotItem(player, s, i));
                     if (i == hover) {
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }
                 }
+            }
+        }
+        // What a press state (a window) draws over the slots goes over their items, as it does
+        // on the real screen.
+        if (s.stateIndex >= 0 && s.scene.captured() != null) {
+            for (ScreenPack.Piece piece : s.scene.captured().covers().getOrDefault(s.stateIndex, List.of())) {
+                frame.free(s.originX + piece.x(), s.originY + piece.y(), String.valueOf(piece.glyph()), piece.w() + 1);
             }
         }
         if (s.pointerShown) {
