@@ -298,6 +298,13 @@ public final class ScreenArt {
 
     private static void onTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
+        // The system pointer parks in the corner, off every menu: where it happened to be, it
+        // hovered a button in the frame that the art (drawn with no pointer) does not show
+        // hovered, and the real screen drew a carried stack there (measured: AE2's storage bus
+        // buttons, Create's filter). The crawl clicks through the screen, never the pointer.
+        if (mc.screen instanceof AbstractContainerScreen<?> && (mc.mouseHandler.xpos() != 0 || mc.mouseHandler.ypos() != 0)) {
+            org.lwjgl.glfw.GLFW.glfwSetCursorPos(mc.getWindow().getWindow(), 0, 0);
+        }
         if (crawl == null) {
             Path go = Path.of(System.getProperty("cim.screenart"), "crawl-go");
             // Not before this screen's own capture: the art and the base frame are the menu as
