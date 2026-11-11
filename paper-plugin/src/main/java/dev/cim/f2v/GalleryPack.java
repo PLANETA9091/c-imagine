@@ -1921,6 +1921,7 @@ public final class GalleryPack {
         }
         List<ObjMesh.Face> faces = new ArrayList<>();
         List<int[]> flags = new ArrayList<>();
+        List<String> faceMaterials = new ArrayList<>();
         String material = null;
         Map<String, String> textures = new LinkedHashMap<>();
         Map<String, String> keyOf = new LinkedHashMap<>();
@@ -1977,10 +1978,11 @@ public final class GalleryPack {
             if (!(faceMaterial.equals("solid") || faceMaterial.equals("cutout") || faceMaterial.equals("translucent"))) {
                 throw new IOException("gallery: unsupported captured material " + faceMaterial);
             }
-            if (material != null && !material.equals(faceMaterial)) {
-                throw new IOException("gallery: mixed captured materials need separate model layers");
+            if (!block && material != null && !material.equals(faceMaterial)) {
+                throw new IOException("gallery: mixed item materials need separate model layers");
             }
-            material = faceMaterial;
+            if (material == null) material = faceMaterial;
+            faceMaterials.add(faceMaterial);
             String key = keyOf.get(c[0]);
             if (key == null) {
                 key = "q" + keyOf.size();
@@ -2156,6 +2158,7 @@ public final class GalleryPack {
         // the vanilla block shade constants, flat per row) rides the matching
         // composite child as a `minecraft:constant` node tint.
         List<double[]> elementTints = new ArrayList<>();
+        List<String> elementMaterials = new ArrayList<>();
         for (int i = 0; i < faces.size(); i++) {
             // A non-planar source quad emits multiple triangles. All pieces
             // inherit this face's metadata; output indices are not face IDs.
@@ -2195,6 +2198,7 @@ public final class GalleryPack {
                 }
                 elements.add(el);
                 elementTints.add(rowTint);
+                elementMaterials.add(faceMaterials.get(i));
             }
         }
         // a re-hosted sprite exists only in the pack, not in any jar
@@ -2256,7 +2260,7 @@ public final class GalleryPack {
         recordScale(ref, k);
         entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         if (block) {
-            registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints);
+            registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints, elementMaterials);
         }
         return ref;
     }
@@ -2398,19 +2402,22 @@ public final class GalleryPack {
 
     private static void registerUnlitBlockLayers(JsonObject wrapper, String ref, double scale,
                                                  TreeMap<String, byte[]> entries,
-                                                 List<double[]> elementTints) {
-        JsonArray ordinary = new JsonArray();
+                                                 List<double[]> elementTints,
+                                                 List<String> elementMaterials) {
+        Map<String, JsonArray> ordinary = new LinkedHashMap<>();
         JsonArray children = new JsonArray();
         int elementIdx = -1;
         for (var value : wrapper.getAsJsonArray("elements")) {
             elementIdx++;
             JsonObject element = value.getAsJsonObject();
+            String material = elementMaterials.get(elementIdx);
             if (!element.has("shade") || element.get("shade").getAsBoolean()) {
-                ordinary.add(element);
+                ordinary.computeIfAbsent(material, unused -> new JsonArray()).add(element);
                 continue;
             }
             UnlitBlockModel.Plane unlit = UnlitBlockModel.plane(element, scale);
             JsonObject child = wrapper.deepCopy();
+            child.addProperty("render_type", "minecraft:" + material);
             JsonArray one = new JsonArray();
             one.add(unlit.element());
             child.add("elements", one);
@@ -2429,13 +2436,14 @@ public final class GalleryPack {
             }
             children.add(node);
         }
-        if (children.isEmpty()) {
+        if (children.isEmpty() && ordinary.size() <= 1) {
             return;
         }
-        if (!ordinary.isEmpty()) {
-            String childRef = ref + "_shaded";
+        for (var layer : ordinary.entrySet()) {
+            String childRef = ref + "_shaded" + (ordinary.size() == 1 ? "" : "_" + layer.getKey());
             JsonObject child = wrapper.deepCopy();
-            child.add("elements", ordinary);
+            child.addProperty("render_type", "minecraft:" + layer.getKey());
+            child.add("elements", layer.getValue());
             entries.put(modelPath(childRef), child.toString().getBytes(StandardCharsets.UTF_8));
             recordScale(childRef, scale);
             children.add(F2vPack.itemModelNode(childRef));

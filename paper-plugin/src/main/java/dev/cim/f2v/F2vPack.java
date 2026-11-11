@@ -3848,6 +3848,43 @@ public final class F2vPack {
                 }
                 expect(failures, models >= 2, "native liquid: unlit child checked " + material);
             }
+            // Waterlogged meshes combine fluid with solid/cutout geometry.
+            // Inspect emitted dispatch children, including fully shaded meshes.
+            for (int mode = 0; mode < 3; mode++) {
+                GalleryPack.resetModelScales();
+                StringBuilder mixed = new StringBuilder();
+                List<String> materials = List.of("translucent", "cutout", "solid");
+                for (int i = 0; i < materials.size(); i++) {
+                    boolean shaded = mode == 1 || (mode == 2 && i != 0);
+                    String source = shaded ? face.replace("\t0\t-1", "\t1\t-1") : face;
+                    mixed.append(source.strip()).append("\t1\t1\t1".repeat(4))
+                            .append("\t0.3".repeat(4)).append('\t').append(materials.get(i))
+                            .append("\t8\t15\n");
+                }
+                Files.writeString(quads.resolve("fixture.tsv"), mixed);
+                entries.clear();
+                rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:waterlogged#qfixture")),
+                        entries, warnings, Map.of(), new ArrayList<>());
+                expect(failures, rows.size() == 1, "mixed block materials: capture resolves mode=" + mode);
+                if (rows.isEmpty()) continue;
+                JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+                expect(failures, node != null && node.get("type").getAsString().equals("minecraft:composite"),
+                        "mixed block materials: dispatch uses material children mode=" + mode);
+                if (node == null) continue;
+                java.util.Set<String> seen = new java.util.HashSet<>();
+                int elements = 0;
+                for (var value : node.getAsJsonArray("models")) {
+                    String ref = value.getAsJsonObject().get("model").getAsString();
+                    JsonObject child = JsonParser.parseString(new String(entries.get(
+                            "assets/" + ref.replace(":", "/models/") + ".json"), StandardCharsets.UTF_8))
+                            .getAsJsonObject();
+                    seen.add(child.get("render_type").getAsString());
+                    elements += child.getAsJsonArray("elements").size();
+                }
+                expect(failures, seen.equals(java.util.Set.of("minecraft:solid", "minecraft:cutout",
+                                "minecraft:translucent")) && elements == 3,
+                        "mixed block materials: every face retained once on its material mode=" + mode);
+            }
             // 14-cz captured-shade tint: the composite children carry the
             // captured per-quad RGB as `minecraft:constant` node tints (the
             // measured machine-wall class — ours rendered the raw texture
