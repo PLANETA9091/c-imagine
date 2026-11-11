@@ -1789,7 +1789,7 @@ jobs:
           # DIAGNOSTIC: the ours leg has NO variant replay channel yet (the
           # F2V projection per kind is the named lane), so the gate reports
           # the missing ours shots loudly without a red verdict.
-          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern banner pot enchant jukebox; do
+          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern banner pot enchant jukebox blockentity; do
             for NS in $LADDER_NS; do
               EX=0
               for p in $(seq $SI $K $MAXP); do

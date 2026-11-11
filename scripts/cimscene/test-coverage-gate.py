@@ -83,7 +83,7 @@ def build_fixture(root, ns="create"):
         f"item\t{cells}\t{cells}\n"
         "particle\t10\t77\n"
         "fluid\t18\t18\n"
-        "blockentity\t3\t0\n"
+        "blockentity\t3\t77\n"
         "sound\t0\t77\n"
         "gui\t0\t1\n"
         "biome\t0\t1\n"
@@ -113,7 +113,17 @@ def build_fixture(root, ns="create"):
         for cls in ("item", "particle", "fluid"):
             (scenes / f"gallery-{cls}-{ns}-p{p}.tsv").write_text(
                 "cell\tx\ty\tz\tthing\tdyn\tnote\n", encoding="utf-8")
-    (scenes / f"gallery-{ns}-be-uncovered.tsv").write_text("", encoding="utf-8")
+    (scenes / f"gallery-{ns}-be-uncovered.tsv").write_text(
+        "create:canvas_sign\ncreate:spooky_be\n", encoding="utf-8")
+    # the 14-ec walked receipts: the variant-blockentity page 0 instantiates
+    # every name the reconciliation names (plus a wall-reachable type), the
+    # truth shot exists, the ours shot is absent (the named lane) and the
+    # terminal marker rides the boot log
+    (scenes / f"gallery-variant-blockentity-{ns}-p0.tsv").write_text(
+        "cell\tx\ty\tz\tsubject\tdyn\tnote\n"
+        "cell\t-5\t-60\t9\tcreate:canvas_sign\t1\tok\n"
+        "cell\t-4\t-60\t9\tcreate:spooky_be\t1\tok\n"
+        "cell\t-3\t-60\t9\tcreate:other_be\t1\tok\n", encoding="utf-8")
 
     def shots(base, prefix):
         # THE SHOT NAME LAW (multi-ns): the block class carries the ns
@@ -135,7 +145,7 @@ def build_fixture(root, ns="create"):
         for cls, word in (("item", "i"), ("particle", "pa"), ("fluid", "fl"),
                           ("held", "h"), ("sound", "s"), ("gui", "gui"),
                           ("inv", "inv"),
-                          ("biome", "b")):
+                          ("biome", "b"), ("vblockentity", "vblockentity")):
             name = f"{prefix}gal-{word}-{ns}0.png" if ns != "minecraft" \
                 else f"{prefix}gal-{word}0.png"
             (base / name).write_bytes(b"x")
@@ -153,6 +163,8 @@ def build_fixture(root, ns="create"):
     for tag in ("item", "particle", "fluid"):
         terminal.append(f"gallery-{tag} done ns={ns} page=1 cells=0 failed=0 "
                         "exhausted=1")
+    terminal.append(f"gallery-variant done kind=blockentity ns={ns} page=1 "
+                    "cells=0 failed=0 skipped=0 exhausted=1")
     (root / "boot.log").write_text("\n".join(terminal) + "\n", encoding="utf-8")
 
 
@@ -409,6 +421,49 @@ def main():
         ok = r.returncode == 0 and "DIAG-INCOMPLETE\tvariant-jukebox" in r.stdout \
             and "terminal-marker-missing" in r.stdout
         print("V3 variant terminal marker DIAG GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V4 (14-ec): the walked blockentity law — every reconciliation name
+    # instantiated by the variant-blockentity manifest cell rows -> OK, the
+    # verdict GREEN (the fixture ships exactly this shape)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "OK\tblockentity\ttotal=3" in r.stdout
+        print("V4 blockentity walked law GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V5 (14-ec): one reconciliation name nothing instantiated stays RED,
+    # named (uncovered-remaining) — the instantiation receipts gate
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        # drop the spooky_be cell row from the lane's manifest
+        p = root / "scenes" / "gallery-variant-blockentity-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tsubject\tdyn\tnote\n"
+                     "cell\t-5\t-60\t9\tcreate:canvas_sign\t1\tok\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "uncovered-remaining" in r.stdout \
+            and "create:spooky_be" in r.stdout
+        print("V5 blockentity uncovered-remaining RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V6 (14-ec): the lane's walk never ran (manifests absent) -> RED — a
+    # walk that never ran cannot claim coverage
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-variant-blockentity-create-p0.tsv").unlink()
+        r = run_gate(root)
+        ok = r.returncode == 1 and "missing_manifests=1" in r.stdout \
+            and "blockentity" in r.stdout
+        print("V6 blockentity walk-not-run RED:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 

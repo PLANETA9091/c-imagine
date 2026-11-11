@@ -787,7 +787,7 @@ public final class CimSceneMod {
         return switch (kind) {
             case "painting", "wolf", "cat", "frog", "villager", "effect",
                  "trimmaterial", "trimpattern", "enchant" -> true;
-            case "banner", "pot", "jukebox" -> false;
+            case "banner", "pot", "jukebox", "blockentity" -> false;
             default -> false;
         };
     }
@@ -1182,6 +1182,83 @@ public final class CimSceneMod {
                     }
                 }
             }
+            case "blockentity" -> {
+                // 14-ec THE BLOCKENTITY LANE (the coverage audit's named lane
+                // for the special-BE class): the reconciliation predicate
+                // names every BE type whose every valid state is
+                // fluid-carried or RenderShape.INVISIBLE — the types the
+                // BLOCK WALL structurally cannot carry (the sign/canvas
+                // families render wholly through their BlockEntityRenderer,
+                // the skull/head families attach only through their items,
+                // the multiblock/moving internals never exist as bare wall
+                // states). The variant lane instantiates EACH type at its
+                // own cell through the subject's REAL placement surface:
+                // the BlockItem used against the z+1 support plane (the same
+                // measured item route the gui lanes ride — the placement
+                // that produces the real BER content), falling back to the
+                // direct setBlock of a valid state when no item exists. The
+                // settle pass asserts the BE TYPE the world HOLDS at the
+                // cell (the coverage contract: the type instantiated, not a
+                // lookalike block); a type the lane cannot instantiate is a
+                // named skip row the gate keeps red.
+                fillPaintingSupport(level);
+                net.neoforged.neoforge.common.util.FakePlayer placer =
+                        new net.neoforged.neoforge.common.util.FakePlayer(level, VARIANT_BE_PLACER);
+                placer.moveTo(GALLERY_X0 + 5.0, GALLERY_Y0 + 3.0, GALLERY_Z - 2.0, 180.0f, 0.0f);
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+                    BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+                    try {
+                        BePlacement plan = bePlacementPlan(id);
+                        if (plan == null) {
+                            skipNotes.put(i, "no-valid-state");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=blockentity ns={} page={} "
+                                            + "index={} reason=no-valid-state subject={}",
+                                    namespace, page, from + i, id);
+                            continue;
+                        }
+                        boolean placed = false;
+                        String route = "setblock";
+                        if (plan.item() != null) {
+                            route = "item";
+                            ItemStack stack = new ItemStack(plan.item());
+                            placer.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                            BlockPos support = pos.south();
+                            BlockHitResult hit = new BlockHitResult(
+                                    Vec3.atCenterOf(support).relative(Direction.NORTH, 0.5),
+                                    Direction.NORTH, support, false);
+                            try {
+                                placed = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
+                                        placer, InteractionHand.MAIN_HAND, hit)).consumesAction();
+                            } finally {
+                                placer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                            }
+                        }
+                        if (!placed) {
+                            route = "setblock";
+                            level.setBlock(pos, plan.state(), Block.UPDATE_CLIENTS);
+                            placed = !level.getBlockState(pos).isAir();
+                        }
+                        if (placed) {
+                            kindBlocks++;
+                            LOGGER.info("[cimscene] gallery-variant blockentity ns={} page={} index={} "
+                                            + "subject={} route={}", namespace, page, from + i, id, route);
+                        } else {
+                            skipNotes.put(i, "failed:place");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=blockentity ns={} page={} "
+                                            + "index={} reason=failed:place subject={}",
+                                    namespace, page, from + i, id);
+                        }
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.putIfAbsent(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind=blockentity ns={} page={} "
+                                        + "index={} reason=failed subject={} err={}",
+                                namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
             default -> {
                 // variantKindKnown guards this; unreachable
             }
@@ -1207,7 +1284,7 @@ public final class CimSceneMod {
         return switch (kind) {
             case "painting", "wolf", "cat", "frog", "villager", "effect",
                  "trimmaterial", "trimpattern", "banner", "pot", "enchant",
-                 "jukebox" -> true;
+                 "jukebox", "blockentity" -> true;
             default -> false;
         };
     }
@@ -1234,6 +1311,7 @@ public final class CimSceneMod {
             case "villager" -> sortedIdsOf(BuiltInRegistries.VILLAGER_TYPE, namespace);
             case "effect" -> sortedIdsOf(BuiltInRegistries.MOB_EFFECT, namespace);
             case "pot" -> sortedIdsOf(BuiltInRegistries.DECORATED_POT_PATTERN, namespace);
+            case "blockentity" -> sortedIdsOf(BuiltInRegistries.BLOCK_ENTITY_TYPE, namespace);
             default -> List.of();
         };
     }
@@ -1343,6 +1421,159 @@ public final class CimSceneMod {
             LOGGER.info("[cimscene] gallery stale-entity sweep removed={}", stale.size());
         }
     }
+
+    // --- 14-ea/14-eb/14-ec: the dissolve-class and special-BE instruments --
+
+    /**
+     * 14-ea THE MOTION PIN — the frozen-subject law applied to the entity
+     * walk's projectile rows (the measured #42899212217 verdict: supplementaries
+     * bomb / brick_projectile / cannonball / falling_ash / falling_sack /
+     * falling_urn / pearl_marker / slimeball_projectile and dynamictrees
+     * falling_tree / lingering_effector all settled as {@code dissolved}).
+     * The spawn path already writes NoGravity+Invulnerable, but a projectile's
+     * OWN tick re-applies its hardcoded gravity (FallingBlockEntity.tick and
+     * ThrowableProjectile.tick both {@code setDeltaMovement(+g)} INSIDE the
+     * tick body, ungated by NoGravity) and self-animating subjects fly, fall
+     * and explode before the settle pass re-reads them 40 ticks later — every
+     * such subject settled as {@code dissolved} (gone or drift &gt; 1.0).
+     * The pin re-zeros each spawn's delta movement EVERY server tick from the
+     * spawn through the settle and the shot window ({@link
+     * #MOTION_PIN_GRACE_TICKS}), so the cell position the manifest carries is
+     * the position the shot draws. The subjects' own tick timers still run
+     * (no fabricated state, no per-mod code): a fuse that expires inside the
+     * window still dies, and the manifest honestly names it — the pin buys
+     * the physics window, not immortality.
+     */
+    private static final java.util.Map<Entity, Integer> MOTION_PINNED =
+            new java.util.IdentityHashMap<>();
+    /** The settle (40 ticks) plus the shot window the pin must outlive. */
+    static final int MOTION_PIN_GRACE_TICKS = 160;
+
+    private static void drainMotionPin(int now) {
+        if (MOTION_PINNED.isEmpty()) {
+            return;
+        }
+        MOTION_PINNED.entrySet().removeIf(en -> {
+            Entity e = en.getKey();
+            if (now >= en.getValue() || e.isRemoved()) {
+                return true;
+            }
+            try {
+                e.setDeltaMovement(Vec3.ZERO);
+            } catch (Throwable ignored) {
+                // a pin failure must never kill the tick loop — the settle
+                // pass re-reads the real state and names the drifted subject
+            }
+            return false;
+        });
+    }
+
+    /**
+     * 14-eb THE SPAWN-SUPPORT TABLE: the subjects that only live on their
+     * own support block, placed at the cell's ground BEFORE the spawn (the
+     * same shape the painting kind's support wall uses — the support rides
+     * the cell's picture on both legs because both stacks run this same
+     * code). mekanism:robit removes itself when it has no charge pad to call
+     * home (the measured #42899212217 entity-mobs verdict named
+     * {@code mekanism:robit(dissolved)} while every other frozen mob held
+     * its cell; the gui lane's bare-spawn comment already recorded the same
+     * removal) — the pad-first placement is the named fix. A subject without
+     * a table entry places nothing (zero behavior change); a table entry
+     * whose block is absent from the registry is a named {@code no-support}
+     * skip row (honest, never a crash).
+     */
+    private static ResourceLocation spawnSupportFor(ResourceLocation id) {
+        if ("mekanism:robit".equals(id.toString())) {
+            return ResourceLocation.parse("mekanism:chargepad");
+        }
+        return null;
+    }
+
+    /** The 14-ec blockentity lane's placer identity (the same shape the
+     *  GuiProbe profile uses — a fixed UUID so the placement is
+     *  deterministic run to run). */
+    private static final com.mojang.authlib.GameProfile VARIANT_BE_PLACER =
+            new com.mojang.authlib.GameProfile(
+                    java.util.UUID.nameUUIDFromBytes("cimscene-vbe".getBytes(StandardCharsets.UTF_8)),
+                    "cimscene-vbe");
+
+    /** The 14-ec per-type placement plan: a valid placeable state plus the
+     *  item that places it (null when the block ships no BlockItem). */
+    private record BePlacement(BlockState state, Item item) {}
+
+    private static volatile Map<String, BePlacement> BE_PLACEMENTS;
+    private static final Object BE_PLACEMENT_LOCK = new Object();
+
+    /** The 14-ec plan for one BE type id; null when the type has no valid
+     *  non-fluid block state at all (nothing in the world can instantiate
+     *  it — the honest {@code no-valid-state} skip). */
+    private static BePlacement bePlacementPlan(ResourceLocation beTypeId) {
+        Map<String, BePlacement> m = BE_PLACEMENTS;
+        if (m == null) {
+            synchronized (BE_PLACEMENT_LOCK) {
+                if (BE_PLACEMENTS == null) {
+                    BE_PLACEMENTS = buildBePlacements();
+                }
+                m = BE_PLACEMENTS;
+            }
+        }
+        return m.get(beTypeId.toString());
+    }
+
+    /**
+     * The 14-ec plan builder (once per server, the reconciliation's own
+     * O(states x BE-types) cost): for each BE type, the first valid
+     * fluid-empty state with a VISIBLE render shape (the wall-reachable
+     * case — the item route produces the real placement), else the first
+     * fluid-empty valid state (the INVISIBLE families the block wall skips
+     * — the exact class the lane exists for), plus the block's BlockItem
+     * when one exists. Types with no valid non-fluid state map to no plan.
+     */
+    private static Map<String, BePlacement> buildBePlacements() {
+        Map<Block, Item> blockItems = new java.util.HashMap<>();
+        for (ResourceLocation iid : BuiltInRegistries.ITEM.keySet()) {
+            Item it = BuiltInRegistries.ITEM.get(iid);
+            if (it instanceof net.minecraft.world.item.BlockItem bi) {
+                blockItems.putIfAbsent(bi.getBlock(), it);
+            }
+        }
+        Map<String, BePlacement> out = new java.util.HashMap<>();
+        for (ResourceLocation beId : BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet()) {
+            BlockEntityType<?> type = BuiltInRegistries.BLOCK_ENTITY_TYPE.get(beId);
+            if (type == null) {
+                continue;
+            }
+            BlockState chosen = null;
+            BlockState fallback = null;
+            for (ResourceLocation bid : BuiltInRegistries.BLOCK.keySet()) {
+                for (BlockState st : BuiltInRegistries.BLOCK.get(bid)
+                        .getStateDefinition().getPossibleStates()) {
+                    if (!type.isValid(st) || !st.getFluidState().isEmpty()) {
+                        continue;
+                    }
+                    if (st.getRenderShape() != RenderShape.INVISIBLE) {
+                        chosen = st;
+                        break;
+                    }
+                    if (fallback == null) {
+                        fallback = st;
+                    }
+                }
+                if (chosen != null) {
+                    break;
+                }
+            }
+            if (chosen == null) {
+                chosen = fallback;
+            }
+            if (chosen == null) {
+                continue;
+            }
+            out.put(beId.toString(), new BePlacement(chosen, blockItems.get(chosen.getBlock())));
+        }
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
 
     /** Sherd item for a decorated-pot pattern id (the vanilla item->pattern
      *  link scanned once per boot and cached; BLANK never resolves — the
@@ -1573,7 +1804,7 @@ public final class CimSceneMod {
      *  other kind renders a still. */
     private static int variantDyn(String kind) {
         return switch (kind) {
-            case "effect", "enchant", "jukebox" -> 1;
+            case "effect", "enchant", "jukebox", "blockentity" -> 1;
             default -> 0;
         };
     }
@@ -1641,6 +1872,15 @@ public final class CimSceneMod {
                         yield "play-failed";
                     }
                     yield be.getSongPlayer().isPlaying() ? null : "stopped";
+                }
+                case "blockentity" -> {
+                    // the coverage contract: the BE TYPE the world HOLDS at
+                    // the cell is the subject id (a lookalike block without
+                    // the type's BE is not coverage)
+                    BlockEntity be = level.getBlockEntity(pos);
+                    ResourceLocation actual = be == null ? null
+                            : BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+                    yield id.equals(actual) ? null : "be-missing";
                 }
                 default -> null;
             };
@@ -1743,10 +1983,14 @@ public final class CimSceneMod {
                 .append("item\t").append(items).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("particle\t").append(particles).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("fluid\t").append(fluids).append('\t').append(FLUID_CELLS).append('\n')
-                // no pages of its own: the BE class's picture is drawn by the
-                // block wall (real EntityBlock placement); the gate checks the
-                // reconciliation file below instead of page counts
-                .append("blockentity\t").append(blockEntities).append('\t').append(0).append('\n')
+                // no pages of its own UNTIL 14-ec: the BE class's picture is
+                // drawn by the block wall (real EntityBlock placement) — the
+                // variant-blockentity lane now WALKS the class at 77 cells
+                // per page (the item/setBlock instantiation through the
+                // subject's own placement surface); the reconciliation file
+                // below stays the static wall-skip receipt and the gate
+                // crosses the walked names off it
+                .append("blockentity\t").append(blockEntities).append('\t').append(VARIANT_CELLS_BLOCK).append('\n')
                 // the 2026-11-04 classes: sound (the packet-stream channel,
                 // one page = 77 events played in order), gui (one MenuType
                 // per page), biome (one biome per page — the tint channel).
@@ -4249,6 +4493,11 @@ public final class CimSceneMod {
         // named notes RED (content absent from the picture is not green).
         final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
         int noInstance = 0, wrongSeries = 0, failed = 0;
+        // 14-ea: the pin deadline — spawn tick through the settle and the
+        // shot window (every spawned subject's delta movement is re-zeroed
+        // on every tick until then; see MOTION_PINNED)
+        final int pinDeadline = level.getServer().getTickCount()
+                + ENTITY_SETTLE_TICKS + MOTION_PIN_GRACE_TICKS;
         // 14-ak CLIENT-CRASH BAN READ (at the start of every entity command):
         // a type on the ban list never spawns — a named skip row
         // (note=client-crash-banned) mirrors the no-instance machinery
@@ -4286,6 +4535,23 @@ public final class CimSceneMod {
                 LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
                         + "reason=no-instance entity={}", namespace, page, from + i, id);
                 continue;
+            }
+            // 14-eb THE SPAWN-SUPPORT TABLE: a subject that only lives on its
+            // own support block (the robit's charge pad) gets it placed at
+            // the cell's ground BEFORE the spawn — the support rides the
+            // cell's picture on both legs (both stacks run this same code).
+            ResourceLocation supportId = spawnSupportFor(id);
+            if (supportId != null) {
+                Block supBlock = BuiltInRegistries.BLOCK.get(supportId);
+                if (supBlock == null || supBlock.defaultBlockState().isAir()) {
+                    skipNotes.put(i, "no-support");
+                    LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                            + "reason=no-support entity={}", namespace, page, from + i, id);
+                    continue;
+                }
+                level.setBlock(new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                                GALLERY_Y0 + row * ENTITY_PITCH - 1, GALLERY_Z),
+                        supBlock.defaultBlockState(), Block.UPDATE_CLIENTS);
             }
             boolean isMob = e instanceof Mob;
             String kind = !isMob ? "dyn"
@@ -4328,6 +4594,15 @@ public final class CimSceneMod {
                     m_setNoAi(e);
                 }
                 level.addFreshEntity(e);
+                // 14-ea THE MOTION PIN: a projectile's own tick re-applies
+                // its hardcoded gravity (FallingBlockEntity / ThrowableProjectile
+                // both add it INSIDE tick(), ungated by NoGravity) — one
+                // zeroed velocity at spawn survives exactly one tick. The
+                // per-tick drain (onServerTickPost) re-zeros every pinned
+                // subject until the deadline, so the cell position the
+                // settle pass manifests is the position the shot draws.
+                e.setDeltaMovement(Vec3.ZERO);
+                MOTION_PINNED.put(e, pinDeadline);
             } catch (Throwable t) {
                 failed++;
                 skipNotes.put(i, "failed:" + t.getClass().getName());
@@ -4394,20 +4669,24 @@ public final class CimSceneMod {
     }
 
     private void onServerTickPost(ServerTickEvent.Post event) {
-        if (DELAYED_TASKS.isEmpty()) {
-            return;
-        }
         int now = event.getServer().getTickCount();
-        List<DelayedTask> due = new ArrayList<>();
-        DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
-        for (DelayedTask t : due) {
-            try {
-                t.task().run();
-            } catch (Throwable ex) {
-                // A mod's Error (a NoSuchMethodError from its own bytecode) must not hide the page.
-                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString(), ex);
+        if (!DELAYED_TASKS.isEmpty()) {
+            List<DelayedTask> due = new ArrayList<>();
+            DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
+            for (DelayedTask t : due) {
+                try {
+                    t.task().run();
+                } catch (Throwable ex) {
+                    // A mod's Error (a NoSuchMethodError from its own bytecode) must not hide the page.
+                    LOGGER.error("[cimscene] delayed task failed: {}", ex.toString(), ex);
+                }
             }
         }
+        // 14-ea: the motion pin rides the same tick drain — it must re-zero
+        // EVERY tick between the spawn and the pin deadline, independent of
+        // the delayed-task schedule (the projectiles' hardcoded per-tick
+        // gravity re-applies every tick; the pin answers every tick)
+        drainMotionPin(now);
     }
 
     /** Receipt flags: the first client-side unfreeze logs once per join. */
@@ -4858,6 +5137,18 @@ public final class CimSceneMod {
                 m.setYRot(180.0f);
                 m.setYHeadRot(180.0f);
                 m.setYBodyRot(180.0f);
+            }
+            if (!isMob) {
+                // 14-ea: the settle-frame pin — the manifest carries THIS
+                // frame's position and the shot reads it right after; the
+                // velocity zero is re-asserted here so the per-tick gravity
+                // the subject's own tick applied between the last drain and
+                // this pass cannot move it inside the shot window
+                try {
+                    e.setDeltaMovement(Vec3.ZERO);
+                } catch (Throwable ignored) {
+                    // the drift check already measured the real position
+                }
             }
             if (!isMob) dyn++;
             cells++;
