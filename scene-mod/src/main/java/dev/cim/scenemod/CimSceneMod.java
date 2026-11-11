@@ -3325,6 +3325,11 @@ public final class CimSceneMod {
 
     /** Assemble real world blocks through Create's controller, which owns entity and contraption initialization. */
     private static Entity assembleGalleryBearing(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        // Create checks adjacent blocks during assembly and rejects unloaded chunks,
+        // including at a chunk corner where the controller and body alone load only two.
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) level.getChunkAt(cell.offset(dx, 0, dz));
+        }
         BlockPos controller = cell.north();
         BlockState bearing = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:mechanical_bearing"))
                 .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING,
@@ -3336,7 +3341,8 @@ public final class CimSceneMod {
         Entity entity = (Entity) be.getClass().getMethod("getMovedContraption").invoke(be);
         if (entity == null || !entity.isAlive() || level.getEntity(entity.getUUID()) != entity
                 || !BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")) {
-            throw new IllegalStateException("Native bearing assembly did not add its stationary contraption");
+            throw new IllegalStateException("Native bearing assembly did not add its stationary contraption: entity="
+                    + entity + ", assembly=" + be.getClass().getMethod("getLastAssemblyException").invoke(be));
         }
         return entity;
     }
