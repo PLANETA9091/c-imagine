@@ -116,7 +116,12 @@ def compare(truth_path, ours_path, slots, scale, art=None):
         r, g, b = ImageChops.difference(truth, ours).split()
         level = ImageChops.lighter(ImageChops.lighter(r, g), b)
         exact = ImageChops.multiply(level.point(lambda v: 255 if v else 0), opaque)
-        loose = ImageChops.multiply(level.point(lambda v: 255 if v > TRANSLUCENT_TOLERANCE else 0), part)
+        # A translucent pixel is the mod's colour over whatever is behind the menu: the world
+        # behind may move it by as much as it lets through (measured: the digital miner's
+        # window edges over the miner's own structure on the real server, over sky on ours).
+        through = ImageChops.invert(Image.open(art).convert("RGBA").split()[3])
+        menu_part = ImageChops.subtract(level, through)
+        loose = ImageChops.multiply(menu_part.point(lambda v: 255 if v > TRANSLUCENT_TOLERANCE else 0), part)
         diff = ImageChops.lighter(exact, loose)
         animated = 0
         anim = animation_mask(art, truth.size)

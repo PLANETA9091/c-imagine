@@ -227,13 +227,19 @@ public final class ScreenArt {
         List<Slot> shown = screen.getMenu().slots.stream().filter(Slot::isActive).toList();
         int from = -1;
         int to = -1;
-        for (int i = 0; i < shown.size(); i++) {
+        for (int i = 0; i < shown.size() && from < 0; i++) {
             Slot slot = shown.get(i);
-            boolean mine = slot.container == mc.player.getInventory();
-            if (from < 0 && mine && slot.hasItem()) {
+            if (slot.container == mc.player.getInventory() && slot.hasItem()) {
                 from = i;
             }
-            if (to < 0 && !mine && !slot.hasItem()) {
+        }
+        // The slot a player would put it in: empty and accepting it. A slot that refuses it
+        // (an upgrade or energy slot) leaves the stack on the cursor, drawn wherever the
+        // pointer happens to be (measured: the digital miner's states).
+        ItemStack moving = from < 0 ? ItemStack.EMPTY : shown.get(from).getItem();
+        for (int i = 0; i < shown.size() && to < 0 && from >= 0; i++) {
+            Slot slot = shown.get(i);
+            if (slot.container != mc.player.getInventory() && !slot.hasItem() && slot.mayPlace(moving)) {
                 to = i;
             }
         }
