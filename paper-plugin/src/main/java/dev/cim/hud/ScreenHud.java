@@ -903,17 +903,44 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bridge.applyInventory(player, result.state());
         bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
         out.add("place held after: " + paperName(player.getInventory().getItemInMainHand()));
+        player.getInventory().setItem(9, new ItemStack(org.bukkit.Material.DIAMOND, 5));
         LiveBridge.State state = bridge.openBlock(player, at, result.placedId());
         long own = state.slots().stream().filter(sl -> !sl.player()).count();
         out.add("placed block open -> " + (state.error() != null ? state.error()
                 : state.open() ? state.menuType() + " own=" + own : "no menu"));
-        bridge.keepBlockEntity(player, bridge.close(player));
-        // Broken by hand, by the block's own code: it drops the backpack, with its data.
+        // The diamonds go into the backpack's storage: they must survive the break.
+        int from = -1;
+        int to = -1;
+        for (LiveBridge.Slot slot : state.slots()) {
+            if (slot.player() && slot.containerSlot() == 9 && from < 0) {
+                from = slot.menuIndex();
+            }
+            if (!slot.player() && to < 0) {
+                to = slot.menuIndex();
+            }
+        }
+        if (from >= 0 && to >= 0) {
+            bridge.click(player, from, 0, "PICKUP");
+            state = bridge.click(player, to, 0, "PICKUP");
+            out.add("placed block move: first own slot " + firstOwn(bridge, state));
+        }
+        state = bridge.close(player);
+        bridge.applyInventory(player, state);
+        bridge.keepBlockEntity(player, state);
+        // Broken by hand, by the block's own code: it drops the backpack, with its contents.
         player.getInventory().setItemInMainHand(null);
         LiveBridge.Broken broken = bridge.breakBlock(player, at, result.placedId());
         out.add("placed block broken -> " + (broken.state().error() != null ? broken.state().error()
                 : "removed=" + broken.removed() + " drops " + broken.spilled().stream()
-                .map(st -> bridge.toLayer(st)).map(j -> j.length() > 120 ? j.substring(0, 120) : j).toList()));
+                .map(st -> itemId(st) + " x" + st.getAmount()).toList()));
+        if (!broken.spilled().isEmpty()) {
+            // The dropped backpack, opened from the hand: its storage still holds the diamonds.
+            player.getInventory().setItemInMainHand(broken.spilled().get(0));
+            LiveBridge.State held = bridge.openHeld(player);
+            out.add("dropped item open -> " + (held.error() != null ? held.error()
+                    : held.open() ? held.menuType() + " first own slot " + firstOwn(bridge, held) : "no menu"));
+            bridge.applyInventory(player, bridge.close(player));
+        }
         return out;
     }
 
