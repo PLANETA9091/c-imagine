@@ -3468,7 +3468,7 @@ public final class CimSceneMod {
                         trackState = (BlockState) edgePoint.getClass().getMethod("getTrackBlockState").invoke(edgePoint);
                         Object track = edgePoint.getClass().getMethod("getTrack").invoke(edgePoint);
                         axes = String.valueOf(track.getClass()
-                                .getMethod("getTrackAxes", net.minecraft.world.level.Level.class, BlockPos.class, BlockState.class)
+                                .getMethod("getTrackAxes", net.minecraft.world.level.BlockGetter.class, BlockPos.class, BlockState.class)
                                 .invoke(track, level, targetPos, trackState));
                     } catch (Throwable diag) {
                         axes = "diag-failed:" + diag;
