@@ -248,16 +248,18 @@ jobs:
       # camera-lock environment pins ride here so the screenshots the parity
       # job takes against THIS wall are comparable across legs.
       # -------------------------------------------------------------------
-      - name: Create package native item placement and spawn codec
+      - name: Create item-placed entities and native spawn codecs
         run: |
           set -euo pipefail
-          echo "cimscene selftest-package" > srv-create/console.in
-          for i in $(seq 1 30); do
-            grep -q "selftest package native-spawn PASS" srv-create/boot.log && break
-            grep -q "selftest package native-spawn FAILED" srv-create/boot.log && break
-            sleep 1
+          for subject in package blueprint; do
+            echo "cimscene selftest-$subject" > srv-create/console.in
+            for i in $(seq 1 30); do
+              grep -q "selftest $subject native-spawn PASS" srv-create/boot.log && break
+              grep -q "selftest $subject native-spawn FAILED" srv-create/boot.log && break
+              sleep 1
+            done
+            grep -q "selftest $subject native-spawn PASS" srv-create/boot.log || { tail -60 srv-create/boot.log; exit 1; }
           done
-          grep -q "selftest package native-spawn PASS" srv-create/boot.log || { tail -60 srv-create/boot.log; exit 1; }
 
       - name: gallery sweep (truth leg — every Create blockstate)
         run: |

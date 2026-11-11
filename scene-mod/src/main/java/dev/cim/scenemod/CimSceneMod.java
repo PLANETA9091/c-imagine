@@ -301,7 +301,8 @@ public final class CimSceneMod {
                                     false);
                             return 1;
                         }))
-                        .then(Commands.literal("selftest-package").executes(ctx -> packageSpawnSelftest(ctx.getSource())))
+                        .then(Commands.literal("selftest-package").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), false)))
+                        .then(Commands.literal("selftest-blueprint").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), true)))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3321,7 +3322,10 @@ public final class CimSceneMod {
     }
 
     /** Real Create item placement and its native additional-spawn codec, exercised by CI. */
-    private static int packageSpawnSelftest(CommandSourceStack src) {
+    private static int itemEntitySpawnSelftest(CommandSourceStack src, boolean blueprint) {
+        String subject = blueprint ? "blueprint" : "package";
+        String entityId = blueprint ? "create:crafting_blueprint" : "create:package";
+        String itemId = blueprint ? "create:crafting_blueprint" : "create:cardboard_package_12x12";
         ServerLevel level = src.getLevel();
         BlockPos support = new BlockPos(64, 100, 64);
         level.getChunkAt(support);
@@ -3334,17 +3338,28 @@ public final class CimSceneMod {
             player.setShiftKeyDown(true);
             level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
             placed = placeEntityItem(level, player, support,
-                    "create:cardboard_package_12x12", "create:package");
+                    blueprint ? Direction.SOUTH : Direction.UP, itemId, entityId);
             if (placed == null || player.getItemInHand(InteractionHand.MAIN_HAND) != held
                     || !player.isShiftKeyDown()) {
-                throw new IllegalStateException("Package item placement or player state restoration failed");
+                throw new IllegalStateException(subject + " item placement or player state restoration failed");
+            }
+            Vec3 nativePosition = placed.position();
+            float nativeYaw = placed.getYRot();
+            alignGalleryEntity(placed, support.relative(blueprint ? Direction.SOUTH : Direction.UP), true);
+            if (blueprint && (!placed.position().equals(nativePosition) || placed.getYRot() != nativeYaw)) {
+                throw new IllegalStateException("Gallery alignment changed the native hanging attachment");
+            }
+            if (placed instanceof net.minecraft.world.entity.decoration.HangingEntity hanging && !hanging.survives()) {
+                throw new IllegalStateException("Item-placed hanging entity does not survive on its support");
             }
             var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
             try {
                 ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) placed).writeSpawnData(buffer);
-                if (buffer.readableBytes() <= 12) throw new IllegalStateException("Package spawn payload has no item data");
+                if (buffer.readableBytes() <= (blueprint ? 0 : 12)) {
+                    throw new IllegalStateException(subject + " spawn payload has no item data");
+                }
                 int bytes = buffer.readableBytes();
-                Entity bare = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse("create:package")).create(level);
+                Entity bare = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse(entityId)).create(level);
                 boolean refused = false;
                 buffer.clear();
                 try {
@@ -3352,14 +3367,14 @@ public final class CimSceneMod {
                 } catch (RuntimeException expected) {
                     refused = true;
                 }
-                if (!refused) throw new IllegalStateException("Bare package negative control unexpectedly encoded");
-                LOGGER.info("[cimscene] selftest package native-spawn PASS bytes={} bare-rejected=true", bytes);
+                if (!refused) throw new IllegalStateException("Bare " + subject + " negative control unexpectedly encoded");
+                LOGGER.info("[cimscene] selftest {} native-spawn PASS bytes={} bare-rejected=true", subject, bytes);
             } finally {
                 buffer.release();
             }
             return 1;
         } catch (Throwable failure) {
-            LOGGER.error("[cimscene] selftest package native-spawn FAILED", failure);
+            LOGGER.error("[cimscene] selftest " + subject + " native-spawn FAILED", failure);
             return 0;
         } finally {
             if (placed != null) placed.discard();
@@ -3377,9 +3392,23 @@ public final class CimSceneMod {
         return placeEntityItem(level, player, pad, "mekanism:robit", "mekanism:robit");
     }
 
+    /** Item-placed hanging entities retain the attachment established by their own item. */
+    private static void alignGalleryEntity(Entity entity, BlockPos cell, boolean itemPlaced) {
+        if (itemPlaced && entity instanceof net.minecraft.world.entity.decoration.HangingEntity) return;
+        entity.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180.0f, 0.0f);
+        // Frozen mobs must send the same head/body direction as their entity yaw.
+        entity.setYHeadRot(180.0f);
+        entity.setYBodyRot(180.0f);
+    }
+
     /** The item's native placement supplies entity state required by its spawn payload. */
     private static Entity placeEntityItem(ServerLevel level, ServerPlayer player, BlockPos against,
                                           String itemId, String entityId) {
+        return placeEntityItem(level, player, against, Direction.UP, itemId, entityId);
+    }
+
+    private static Entity placeEntityItem(ServerLevel level, ServerPlayer player, BlockPos against,
+                                          Direction face, String itemId, String entityId) {
         ItemStack previous = player.getItemInHand(InteractionHand.MAIN_HAND);
         boolean shifted = player.isShiftKeyDown();
         List<Entity> previousJoined = GUI_JOINED;
@@ -3390,7 +3419,7 @@ public final class CimSceneMod {
             player.setShiftKeyDown(false);
             player.setItemInHand(InteractionHand.MAIN_HAND, stack);
             stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(against).relative(Direction.UP, 0.5), Direction.UP, against, false)));
+                    new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
             return joined.stream().filter(e -> e.isAlive() && BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())
                     .equals(ResourceLocation.parse(entityId))).findFirst().orElse(null);
         } finally {
@@ -4660,14 +4689,20 @@ public final class CimSceneMod {
             try {
                 boolean robit = id.toString().equals("mekanism:robit");
                 boolean parcel = id.toString().equals("create:package");
-                boolean itemPlaced = robit || parcel;
+                boolean blueprint = id.toString().equals("create:crafting_blueprint");
+                boolean itemPlaced = robit || parcel || blueprint;
                 if (itemPlaced) {
                     ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
                     if (owner == null) owner = new GuiProbe(level);
-                    BlockPos support = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
-                            GALLERY_Y0 + row * ENTITY_PITCH - 1, GALLERY_Z);
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    BlockPos support = blueprint ? cell.north() : cell.below();
                     if (robit) {
                         e = placeRobit(level, owner, support);
+                    } else if (blueprint) {
+                        level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+                        e = placeEntityItem(level, owner, support, Direction.SOUTH,
+                                "create:crafting_blueprint", "create:crafting_blueprint");
                     } else {
                         level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
                         e = placeEntityItem(level, owner, support, "create:cardboard_package_12x12", "create:package");
@@ -4676,14 +4711,8 @@ public final class CimSceneMod {
                 }
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
-                e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
-                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z + 0.5,
-                        180.0f, 0.0f);
-                // moveTo only sets yRot; the client takes body and head from
-                // yHeadRot, so a frozen mob would stand with its back to the
-                // camera while the ours leg's setRotation turns it around
-                e.setYHeadRot(180.0f);
-                e.setYBodyRot(180.0f);
+                alignGalleryEntity(e, new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced);
                 e.addTag(GALLERY_TAG);
                 if (isMob) {
                     // NoAI: no movement, no look-at, no AI despawn logic — a
