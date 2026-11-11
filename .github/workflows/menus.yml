@@ -23,10 +23,6 @@ on:
         description: 'Only these namespaces (space separated) — a quick check of one fix'
         required: false
         default: ''
-      pages:
-        description: 'Only these menu ids (space separated, ns:path), within the namespaces'
-        required: false
-        default: 
 
 concurrency:
   group: menus-${{ github.ref }}
