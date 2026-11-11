@@ -144,6 +144,58 @@ final class LiveBridge {
         return parse(call(in.toString()));
     }
 
+    /** What a right click with a mod item on a block did: a menu, and/or a block it placed. */
+    record UseOn(State state, String placedId, int x, int y, int z, String placedBlockEntity) {
+    }
+
+    /**
+     * A right click with the held item on a block of Paper's world, by the item's own code:
+     * {@code clickedId} is the mod block clicked, or null for a world block.
+     */
+    UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId) {
+        return useOn(player, clicked, face, clickedId, player.isSneaking());
+    }
+
+    UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId,
+                boolean sneaking) {
+        StringBuilder in = new StringBuilder("use-on\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(clicked.getX()).append('\t').append(clicked.getY())
+                .append('\t').append(clicked.getZ()).append('\t').append(face.name().toLowerCase(java.util.Locale.ROOT))
+                .append('\t').append(clickedId == null ? "-" : clickedId).append('\t').append(sneaking ? "1" : "0");
+        appendInventory(in, player, true);
+        heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
+        String answer = call(in.toString());
+        String placed = null;
+        String be = null;
+        int x = 0;
+        int y = 0;
+        int z = 0;
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t");
+                placed = p[1];
+                x = Integer.parseInt(p[2]);
+                y = Integer.parseInt(p[3]);
+                z = Integer.parseInt(p[4]);
+            } else if (line.startsWith("placedbe\t")) {
+                be = line.substring("placedbe\t".length());
+            }
+        }
+        State state = parse(answer);
+        if (state.open() && placed == null) {
+            openBlocks.remove(player.getUniqueId());
+        }
+        return new UseOn(state, placed, x, y, z, be);
+    }
+
+    /** A mod block Paper now holds: its block entity's data, kept for its first opening. */
+    void keepPlaced(org.bukkit.block.Block block, String blockId, String blockEntity) {
+        if (blockEntity != null) {
+            block.getChunk().getPersistentDataContainer().set(blockKey(block, blockId), PersistentDataType.STRING,
+                    blockEntity);
+        }
+    }
+
     /** The held item's own use(), with the player's inventory mirrored first. */
     State openHeld(Player player) {
         StringBuilder in = new StringBuilder("open-item\t").append(player.getUniqueId()).append('\t')

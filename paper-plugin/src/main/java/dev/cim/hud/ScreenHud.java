@@ -197,6 +197,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
     private final Map<String, String> blockCarriers = new HashMap<>();
+    /** Mod block id to the note block that stands for it in Paper's world. */
+    private final Map<String, F2vPack.VisualBlock> blockCarrierRows = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
 
     private final Path modsDir;
@@ -275,6 +277,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (Files.isRegularFile(blocks)) {
             for (F2vPack.VisualBlock row : F2vPack.readBlockManifest(blocks)) {
                 blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
+                blockCarrierRows.put(row.moddedBlockId(), row);
             }
         }
     }
@@ -873,6 +876,42 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return out;
     }
 
+    /**
+     * Integration: a mod item set down in Paper's world by its own code (a sneaking click on
+     * the block below), then opened as the block it became, with the data it was placed with.
+     */
+    public List<String> livePlaceTest(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: live menus unavailable");
+            return out;
+        }
+        org.bukkit.block.Block ground = player.getLocation().getBlock().getRelative(3, -1, 0);
+        ground.setType(Material.STONE, false);
+        ground.getRelative(org.bukkit.block.BlockFace.UP).setType(Material.AIR, false);
+        player.getInventory().clear();
+        player.getInventory().setItemInMainHand(bridge.stackOf(itemId, 1));
+        LiveBridge.UseOn result = bridge.useOn(player, ground, org.bukkit.block.BlockFace.UP, null, true);
+        out.add("place " + itemId + " -> " + (result.state().error() != null ? result.state().error()
+                : result.placedId() == null ? "nothing placed" : "placed " + result.placedId() + " with "
+                + (result.placedBlockEntity() == null ? "no" : result.placedBlockEntity().length() + " chars of")
+                + " block entity data"));
+        if (result.placedId() == null) {
+            return out;
+        }
+        org.bukkit.block.Block at = ground.getWorld().getBlockAt(result.x(), result.y(), result.z());
+        bridge.applyInventory(player, result.state());
+        bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
+        out.add("place held after: " + paperName(player.getInventory().getItemInMainHand()));
+        LiveBridge.State state = bridge.openBlock(player, at, result.placedId());
+        long own = state.slots().stream().filter(sl -> !sl.player()).count();
+        out.add("placed block open -> " + (state.error() != null ? state.error()
+                : state.open() ? state.menuType() + " own=" + own : "no menu"));
+        bridge.keepBlockEntity(player, bridge.close(player));
+        return out;
+    }
+
     private String firstOwn(LiveBridge bridge, LiveBridge.State state) {
         return state.slots().stream().filter(sl -> !sl.player()).findFirst()
                 .map(sl -> paperName(bridge.toPaper(sl.stack()))).orElse("none");
@@ -1191,6 +1230,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
         }
         ItemStack item = event.getItem();
+        // A mod item on a block: its own useOn decides, as on a real server (a block it
+        // places, a backpack set down by a sneaking click, a menu it opens).
+        if (block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
+                && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
+            LiveBridge bridge = live();
+            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(),
+                    block.getType() == Material.NOTE_BLOCK ? blockCarriers.get(carrierKey(block.getBlockData().getAsString())) : null)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
         if (opener == null && item != null && !item.getType().isAir()) {
             opener = "item:" + itemId(item);
             // The mod's own use() decides, when the layer is there: what opens is its menu.
@@ -1210,6 +1260,41 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             event.setCancelled(true);
             open(player, scene);
         }
+    }
+
+    /**
+     * The held mod item used on a block by its own code. A block it placed is put down in
+     * Paper's world as its note-block carrier, with its block entity's data kept for the
+     * first opening; a menu it opened is shown. True when the click did something.
+     */
+    private boolean placeOrUse(Player player, LiveBridge bridge, Block clicked, org.bukkit.block.BlockFace face,
+                               String clickedId) {
+        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId);
+        if (result.state().error() != null) {
+            log.warning("[cim-screen] live use-on failed: " + result.state().error());
+            return false;
+        }
+        boolean did = false;
+        if (result.placedId() != null) {
+            F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
+            Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
+            if (row != null && (at.getType().isAir() || at.isReplaceable())) {
+                at.setBlockData(org.bukkit.Bukkit.createBlockData("minecraft:note_block[instrument=" + row.instrument()
+                        + ",note=" + row.note() + "]"), false);
+                bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
+                log.info("[cim-screen] " + player.getName() + " placed " + result.placedId() + " at "
+                        + at.getX() + "," + at.getY() + "," + at.getZ());
+                did = true;
+            } else {
+                log.info("[cim-screen] " + result.placedId() + " placed in the layer has no carrier here");
+            }
+        }
+        if (result.state().open()) {
+            did |= openLive(player, result.state(), "item:" + itemId(player.getInventory().getItemInMainHand()));
+        } else if (did) {
+            bridge.applyInventory(player, result.state());
+        }
+        return did;
     }
 
     private ScreenPack.Scene sceneForOpener(String opener) {

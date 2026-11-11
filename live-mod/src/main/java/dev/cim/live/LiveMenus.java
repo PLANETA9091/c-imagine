@@ -123,6 +123,41 @@ public final class LiveMenus {
      * the inventory onto the menu's first slot of its own), then a close. One log line per
      * item that did anything, in id order, so the real server and the layer can be diffed.
      */
+    /**
+     * The protocol Paper drives a placement with: the item set down by a sneaking click on a
+     * block below, then the block it became opened with the data it was placed with.
+     */
+    private static void placeTest(String itemId) {
+        if (itemId == null || itemId.isBlank()) {
+            return;
+        }
+        UUID uuid = UUID.nameUUIDFromBytes(("cimlive-place-" + itemId).getBytes(StandardCharsets.UTF_8));
+        String held = LiveProtocol.encode(new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId.trim()))));
+        String answer = LiveProtocol.call("use-on\t" + uuid + "\tcimlive\t0\t64\t0\tup\t-\t1\ninv\t0\t" + held);
+        String placed = null;
+        String be = null;
+        String[] at = null;
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t");
+                placed = p[1];
+                at = new String[]{p[2], p[3], p[4]};
+            } else if (line.startsWith("placedbe\t")) {
+                be = line.substring("placedbe\t".length());
+            }
+        }
+        LOG.info("[cimlive] selftest place {} -> {}", itemId, placed == null ? "nothing placed: " + answer.split("\n")[0]
+                : "placed " + placed + " with " + (be == null ? "no" : be.length() + " chars of") + " block entity data");
+        if (placed == null) {
+            return;
+        }
+        String open = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
+                + "\t" + at[2] + "\nfresh" + (be == null ? "" : "\nbe\t" + be));
+        long own = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu")).count();
+        LOG.info("[cimlive] selftest place opened {} own={} be={}", open.split("\n")[0], own, be);
+        LiveProtocol.call("close\t" + uuid);
+    }
+
     static void selfTest(String spec) {
         java.util.Set<String> wanted = new java.util.TreeSet<>();
         for (String ns : spec.split("[,\\s]+")) {
@@ -243,6 +278,7 @@ public final class LiveMenus {
         widgetStates(openedBlocks);
         LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
         LOG.info("[cimlive] selftest kinds {}", kinds);
+        placeTest(System.getenv("CIM_LIVE_PLACE"));
         LOG.info("[cimlive] selftest ok");
     }
 

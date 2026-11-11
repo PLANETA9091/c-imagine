@@ -86,10 +86,18 @@ public final class LiveProtocol {
                     }
                     for (int i = 1; i < lines.length; i++) {
                         if (lines[i].startsWith("be\t")) {
-                            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
-                            if (be != null) {
-                                be.loadWithComponents(net.minecraft.nbt.TagParser.parseTag(lines[i].substring(3)),
-                                        level.registryAccess());
+                            // As a chunk loads it: the data first, then the level and onLoad, which
+                            // a mod builds its runtime state in from that data (measured: a placed
+                            // Sophisticated Backpack, loaded after onLoad, kept an empty wrapper).
+                            net.minecraft.world.level.block.entity.BlockEntity loaded =
+                                    net.minecraft.world.level.block.entity.BlockEntity.loadStatic(pos,
+                                            level.getBlockState(pos),
+                                            net.minecraft.nbt.TagParser.parseTag(lines[i].substring(3)),
+                                            level.registryAccess());
+                            if (loaded != null) {
+                                level.removeBlockEntity(pos);
+                                level.setBlockEntity(loaded);
+                                loaded.onLoad();
                             }
                         }
                     }
@@ -97,6 +105,67 @@ public final class LiveProtocol {
                     // Where a player stands to click it: the menu's own reach check holds.
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5);
                     yield state(player, LiveMenus.clickBlock(player, pos));
+                }
+                case "use-on" -> {
+                    // use-on TAB uuid TAB name TAB x TAB y TAB z TAB face TAB clickedBlock TAB sneaking, then
+                    // inv lines (the held stack in slot 0): a right click with a mod item on a block
+                    // in Paper's world, done by the item's own code as a client's click is. The
+                    // clicked block stands in the facade as itself when it is a mod block, as stone
+                    // otherwise. A block the item placed is reported (id, position, its block
+                    // entity's data) for Paper to put down; a menu it opened is the answer's menu.
+                    SessionServerPlayer player = LiveMenus.session(id, head[2]);
+                    player.closeContainer();
+                    readInventory(player, lines);
+                    net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
+                            Integer.parseInt(head[3]), Integer.parseInt(head[4]), Integer.parseInt(head[5]));
+                    net.minecraft.core.Direction face = net.minecraft.core.Direction.byName(head[6]);
+                    if (face == null) {
+                        face = net.minecraft.core.Direction.UP;
+                    }
+                    FacadeServerLevel level = LiveMenus.level();
+                    net.minecraft.world.level.block.state.BlockState stand = head[7].equals("-")
+                            ? net.minecraft.world.level.block.Blocks.STONE.defaultBlockState()
+                            : net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                                    net.minecraft.resources.ResourceLocation.parse(head[7])).defaultBlockState();
+                    net.minecraft.core.BlockPos into = pos.relative(face);
+                    level.setBlock(pos, stand, 3);
+                    level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    // Out of the way of what it places, facing the clicked face.
+                    net.minecraft.core.BlockPos stand_at = into.relative(face, 2);
+                    player.setPos(stand_at.getX() + 0.5, stand_at.getY(), stand_at.getZ() + 0.5);
+                    player.setShiftKeyDown(head.length > 8 && head[8].equals("1"));
+                    BLOCKS.put(id, pos);
+                    net.minecraft.world.item.ItemStack stack = player.getItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND);
+                    net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
+                            net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5), face, pos, false);
+                    net.minecraft.world.InteractionResult r = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
+                            player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+                    if (!r.consumesAction() && player.opened() == null) {
+                        stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                    }
+                    player.setShiftKeyDown(false);
+                    StringBuilder out = new StringBuilder(state(player, player.opened()));
+                    for (net.minecraft.core.BlockPos p : new net.minecraft.core.BlockPos[]{into, pos}) {
+                        net.minecraft.world.level.block.state.BlockState now = level.getBlockState(p);
+                        boolean changed = p.equals(into) ? !now.isAir() : now != stand;
+                        if (!changed || now.isAir()) {
+                            continue;
+                        }
+                        out.append("placed\t").append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(now.getBlock()))
+                                .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ()).append('\n');
+                        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+                        if (be != null) {
+                            out.append("placedbe\t").append(be.saveWithFullMetadata(level.registryAccess())).append('\n');
+                        }
+                        break;
+                    }
+                    if (player.opened() == null) {
+                        // Paper's world keeps what was placed; the facade forgets it.
+                        level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                        BLOCKS.remove(id);
+                    }
+                    yield out.toString();
                 }
                 case "state" -> {
                     // What the open menu holds now, after ticks moved it.

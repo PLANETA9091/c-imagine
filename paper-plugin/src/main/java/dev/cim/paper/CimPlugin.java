@@ -568,6 +568,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().info("[cim-live] paper " + line);
                 }
             }
+            String livePlace = System.getenv("CIM_LIVETEST_PLACE");
+            if (livePlace != null && !livePlace.isBlank()) {
+                Player target = bot;
+                for (String line : callSync(() -> dev.cim.hud.HudBootstrap.livePlaceTest(target, livePlace.trim()))) {
+                    log().info("[cim-live] paper " + line);
+                }
+            }
             String liveBlock = System.getenv("CIM_LIVETEST_BLOCK");
             if (liveBlock != null && !liveBlock.isBlank()) {
                 Player target = bot;

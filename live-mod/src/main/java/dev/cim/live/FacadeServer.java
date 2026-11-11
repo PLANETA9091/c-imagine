@@ -97,6 +97,41 @@ public final class FacadeServer extends MinecraftServer {
         return rules;
     }
 
+    // Lazy: the instance is allocated, so no initialiser runs.
+    private net.minecraft.server.players.PlayerList players;
+
+    /**
+     * The facade's player list: empty, the world's players are Paper's. Mods broadcast to it
+     * (Sophisticated Backpacks on a placement) and reach no one, as the real effects reach
+     * Paper's players through Paper.
+     */
+    @Override
+    public net.minecraft.server.players.PlayerList getPlayerList() {
+        if (players == null) {
+            net.minecraft.server.players.PlayerList list =
+                    SessionServerPlayer.allocate(FacadePlayerList.class);
+            try {
+                for (String name : new String[]{"players", "playersView"}) {
+                    Field f = net.minecraft.server.players.PlayerList.class.getDeclaredField(name);
+                    f.setAccessible(true);
+                    f.set(list, new java.util.ArrayList<>());
+                }
+                for (String name : new String[]{"playersByUUID", "stats", "advancements"}) {
+                    Field f = net.minecraft.server.players.PlayerList.class.getDeclaredField(name);
+                    f.setAccessible(true);
+                    f.set(list, new java.util.HashMap<>());
+                }
+                Field server = net.minecraft.server.players.PlayerList.class.getDeclaredField("server");
+                server.setAccessible(true);
+                server.set(list, this);
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("cannot build the facade's player list", e);
+            }
+            players = list;
+        }
+        return players;
+    }
+
     @Override
     public int getTickCount() {
         return LiveProtocol.ticks();

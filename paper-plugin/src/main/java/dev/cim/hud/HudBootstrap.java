@@ -57,6 +57,11 @@ public final class HudBootstrap {
         return screens == null || screens.liveScanDone();
     }
 
+    /** Integration: a mod item placed by its own code, then opened as a block, see {@link ScreenHud#livePlaceTest}. */
+    public static java.util.List<String> livePlaceTest(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.livePlaceTest(player, itemId);
+    }
+
     /** Integration: block menus on Paper end to end, see {@link ScreenHud#liveBlockTest}. */
     public static java.util.List<String> liveBlockTest(org.bukkit.entity.Player player, String blockId) {
         return screens == null ? java.util.List.of("no screens") : screens.liveBlockTest(player, blockId);

@@ -70,6 +70,15 @@ public final class FacadeServerLevel extends ServerLevel {
         }
         self.store = store;
         self.server = FacadeServer.create(self, (net.minecraft.core.RegistryAccess.Frozen) store.registryAccess());
+        // ServerLevel's own code reads its server field directly (mayInteract's spawn
+        // protection, measured on a backpack's placement): it is the facade server too.
+        try {
+            Field own = ServerLevel.class.getDeclaredField("server");
+            own.setAccessible(true);
+            own.set(self, self.server);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot bind ServerLevel.server", e);
+        }
         store.front(self);
         return self;
     }
@@ -79,6 +88,12 @@ public final class FacadeServerLevel extends ServerLevel {
     }
 
     // --- the server side mods ask for
+
+    /** Paper decides who may build where before a click reaches the layer. */
+    @Override
+    public boolean mayInteract(Player player, BlockPos pos) {
+        return true;
+    }
 
     @Override
     public MinecraftServer getServer() {
