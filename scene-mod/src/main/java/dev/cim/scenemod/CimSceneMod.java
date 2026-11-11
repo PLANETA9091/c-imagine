@@ -3505,7 +3505,7 @@ public final class CimSceneMod {
                     int ticks = subjects[0].tickCount;
                     try {
                         if (!subjects[0].isAlive() || !subjects[0].isAddedToLevel()
-                                || (!glue && !seat && ticks < ENTITY_SETTLE_TICKS) || !subjects[1].isRemoved()) {
+                                || ticks < ENTITY_SETTLE_TICKS || !subjects[1].isRemoved()) {
                             throw new IllegalStateException("Native " + subjectName + " lifecycle mismatch: retained="
                                     + subjects[0].isAlive() + ", entityTicks=" + ticks
                                     + ", defaultRemoved=" + subjects[1].isRemoved());
@@ -3521,8 +3521,8 @@ public final class CimSceneMod {
                                 throw new IllegalStateException("Native seat lost its ticking rider or seat block");
                             }
                         } else if (glue) {
-                            // SuperGlueEntity.tick does not call baseTick, so its native
-                            // tickCount stays zero. Bare-control removal proves real ticking.
+                            // ServerLevel owns tickCount, including for native entities
+                            // whose tick override does not call Entity.baseTick.
                             checkGalleryGlue(subjects[0], retainedCell);
                         } else {
                             checkGalleryContraption(subjects[0], false);
