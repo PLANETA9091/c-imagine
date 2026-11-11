@@ -199,5 +199,85 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(round(0.63212345, 4), 0.6321)
 
 
+class InteriorRouteTest(unittest.TestCase):
+    """The 14-dd interior-mask retry: the crop BORDER carries the cell
+    environment (neighbor bleed / sky-through-gap), which is NOT the state's
+    texture and must not veto a clean interior multiply."""
+
+    def env_pair(self, tint, border_ours, border_truth, shape=(40, 40)):
+        """A clean interior multiply with a mismatched border ENVIRONMENT:
+        the border pixels differ across the legs by construction (the sky
+        shows through in ours, the neighbor machine fills truth)."""
+        truth, ours = make_pair(shape, tint, sky=[180, 205, 255], seed=3)
+        o = ours.copy(); t = truth.copy()
+        o[0:8, :, :] = border_ours      # environment band on the ours leg
+        t[0:8, :, :] = border_truth     # different environment on truth
+        return t, o
+
+    def test_clean_interior_survives_environment_border(self):
+        tint = np.array([0.55, 0.55, 0.55])
+        t, o = self.env_pair(tint, border_ours=[140, 150, 170],
+                             border_truth=[30, 30, 32])
+        solved = tc.solve_interior_ex(t, o)
+        self.assertIsNotNone(solved)
+        (ratio, n, mad, _qs), dy, dx = solved
+        np.testing.assert_allclose(ratio, tint, atol=0.05)
+        self.assertLess(mad, tc.STATE_MAD_MAX)
+        self.assertEqual((dy, dx), (0, 0))
+
+    def test_crop_shift_remeasured(self):
+        tint = np.array([0.8, 0.85, 0.9])
+        truth, ours = make_pair((32, 32), tint, sky=[180, 205, 255])
+        shifted = np.roll(ours, 2, axis=1)   # ours sits 2px to the right —
+        # within the STATE_SHIFT_MAX guard the interior route realigns it
+        _err, dy, dx = tc.crop_shift(truth, shifted)
+        self.assertEqual((dy, dx), (0, -2))  # roll ours by dx back
+        solved = tc.solve_interior_ex(truth, shifted)
+        self.assertIsNotNone(solved)
+        (ratio, _n, _mad, _qs), _dy, _dx = solved
+        np.testing.assert_allclose(ratio, tint, atol=0.06)
+
+    def test_misaligned_crop_refused(self):
+        tint = np.array([0.8, 0.85, 0.9])
+        truth, ours = make_pair((32, 32), tint, sky=[180, 205, 255])
+        shifted = np.roll(ours, 6, axis=1)   # beyond STATE_SHIFT_MAX
+        self.assertIsNone(tc.solve_interior_ex(truth, shifted))
+
+    def test_phase_interior_refused(self):
+        # the door slide/fold class: the interior CONTENT differs across the
+        # legs (the panel slid) — a tight median is impossible, MAD stays wide
+        truth, ours = make_pair((40, 40), np.array([0.9, 0.9, 0.9]),
+                                sky=[180, 205, 255], seed=5)
+        truth_interior = truth.copy()
+        truth_interior[12:28, 12:28] = rng = np.random.default_rng(9).integers(
+            30, 220, size=(16, 16, 3)).astype(float)
+        ours_interior = ours.copy()
+        ours_interior[12:28, 12:28] = np.random.default_rng(10).integers(
+            30, 220, size=(16, 16, 3)).astype(float)
+        solved = tc.solve_interior_ex(truth_interior, ours_interior)
+        self.assertIsNotNone(solved)
+        _ratio, _n, mad, _qs, = solved[0]
+        self.assertGreater(mad, tc.STATE_MAD_MAX)
+
+    def test_interior_row_guard_chain(self):
+        # state_interior_row: same family/clip guards as the full-crop route
+        class Stub:
+            def read_bytes(self, _p):
+                return None
+        solves = [{"state": "s", "ratio": np.array([0.6, 0.6, 0.6]),
+                   "n": 120, "page": "p", "cell": "c0,r0", "cls": "interior-mask",
+                   "shift": (0, 0), "mad": 0.01, "qs": (0, 0, 0, 0)}]
+        row, reason = tc.state_interior_row("s", solves, None, Stub())
+        self.assertIsNotNone(row)
+        self.assertEqual(row[1], (0.6, 0.6, 0.6))
+        self.assertIn("interior-mask", row[2])
+        low = [{"state": "s", "ratio": np.array([0.2, 0.2, 0.2]),
+                "n": 120, "page": "p", "cell": "c0,r0", "cls": "interior-mask",
+                "shift": (0, 0), "mad": 0.01, "qs": (0, 0, 0, 0)}]
+        row, reason = tc.state_interior_row("s", low, None, Stub())
+        self.assertIsNone(row)
+        self.assertIn("bake family", reason)
+
+
 if __name__ == "__main__":
     unittest.main()

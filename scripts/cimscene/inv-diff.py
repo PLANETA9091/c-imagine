@@ -39,16 +39,24 @@ PANEL_W, PANEL_H = 176, 166          # the vanilla inventory panel, gui units
 SLOT_PITCH = 18                      # gui units between slot origins
 SLOT_SIZE = 16                       # gui units of the slot sprite
 HOTBAR_Y = 142                       # gui-y of the hotbar row
-MAIN_ROWS_Y = (84, 103, 122)         # gui-y of the 3 main rows, bottom-up
+# MEASURED (#302's gal-inv-ae20.png pair, the slot-bg grid detection): the
+# main rows sit 18 gui apart (84/102/120 — the old (84,103,122) pitch-19
+# guess shifted rows 2 and 3 by 3/6 px and every main-slot crop off-target),
+# the hotbar at 142; the panel origin measures (370..372, 111..113) against
+# the centered-math guess (376, 111) — --x0/--y0 recalibrate.
+MAIN_ROWS_Y = (84, 102, 120)         # gui-y of the 3 main rows, top-down
 
 
-def slot_boxes(gui_scale):
-    """Per-slot pixel crop boxes, slot order = the manifest order
-    (hotbar.0..8, inventory.9..35). scale-3 math, unmeasured (see the
-    module docstring)."""
-    x0 = (W - PANEL_W * gui_scale) // 2
-    y0 = (H - PANEL_H * gui_scale) // 2
-    rows = list(MAIN_ROWS_Y) + [HOTBAR_Y]   # manifest order: inventory.9..35 then hotbar
+def slot_boxes(gui_scale, x0=None, y0=None):
+    """Per-slot pixel crop boxes, MAIN rows first then the hotbar; the box
+    order names the slots (inventory.0..26 then hotbar.0..8) — the manifest's
+    relabeled vanilla semantics (measured #302: the old container-numbering
+    inventory.9..35 filled the truth's slots 9 lower than ours)."""
+    if x0 is None:
+        x0 = (W - PANEL_W * gui_scale) // 2
+    if y0 is None:
+        y0 = (H - PANEL_H * gui_scale) // 2
+    rows = list(MAIN_ROWS_Y) + [HOTBAR_Y]
     boxes = []
     for ry in rows:
         for c in range(9):
@@ -76,6 +84,12 @@ def main():
                     help="FIRST-RUN-UNMEASURED: the 26.3 auto gui scale at "
                          "1280x720 computes 3; recalibrate if the first run "
                          "measures otherwise")
+    ap.add_argument("--x0", type=int, default=None,
+                    help="panel left edge px (measured #302: 370-372; "
+                         "default = the centered math)")
+    ap.add_argument("--y0", type=int, default=None,
+                    help="panel top edge px (measured #302: 111-113; "
+                         "default = the centered math)")
     ap.add_argument("--slot-gate", type=int, default=60000,
                     help="FIRST-RUN-UNMEASURED per-slot AE datum (the wall "
                          "gate's calibrated 60k as the starting hypothesis)")
@@ -91,14 +105,16 @@ def main():
     frame_delta = float(np.abs(truth - ours).mean())
     slots = []
     red_slots = 0
-    for i, box in enumerate(slot_boxes(args.gui_scale)):
+    for i, box in enumerate(slot_boxes(args.gui_scale, args.x0, args.y0)):
         t = truth[box[1]:box[3], box[0]:box[2]]
         o = ours[box[1]:box[3], box[0]:box[2]]
         ae = int(np.abs(t - o).sum())
-        # manifest order: inventory.9..35 (rows 84/103/122) then hotbar.0..8
+        # box order: the main rows (inventory.0..26 — the manifest's relabeled
+        # vanilla semantics, the truth's rcon fills exactly these names) then
+        # hotbar.0..8
         idx = i
         if idx < 27:
-            slot = "inventory.%d" % (idx + 9)
+            slot = "inventory.%d" % idx
         else:
             slot = "hotbar.%d" % (idx - 27)
         verdict = "GREEN" if ae <= args.slot_gate else "RED"

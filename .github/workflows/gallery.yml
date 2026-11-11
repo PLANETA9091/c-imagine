@@ -116,9 +116,10 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: gallery-${{ github.ref }}
-  # several agents push to main: cancelling starved the gate, killing runs in their last
-  # stage. A started run finishes; the group keeps only the newest pending one behind it.
+  group: gallery-${{ github.ref }}-${{ github.sha }}
+  # Validate distinct source revisions concurrently. A branch-wide queue
+  # replaced pending proofs on each push. Started runs still finish, and
+  # duplicate runs of the same revision remain grouped.
   cancel-in-progress: false
 
 env:
@@ -139,6 +140,17 @@ env:
                # seed + verdict = 18. Raising K: extend BOTH matrices and
                # this number together (the stride law requires K == the
                # matrix size).
+               # 14-bt K=10 ANALYSIS (parked, keep 8): on a cache-HIT seed
+               # (~1 min) 10+10 shards fit the 20-runner pool exactly and
+               # each shard's walk fraction drops ~20% — but zero headroom
+               # remains for the concurrent integration/profiling workflows
+               # that share the pool, so those runs' wall clocks grow. On a
+               # cache MISS (every push that touches the hashed input tree)
+               # the seed is SERIAL and unsharded (~40-90 min): K does not
+               # touch the critical path at all, so the win is only the
+               # ours-leg walk fraction while starving the pool. K=16 needs
+               # a paid 34+ runner pool (two waves on the free 20 = strictly
+               # worse) — parked behind paid runners.
   # THE LADDER NAMESPACES (multi-ns refactor 2026-11-04): every walk loop,
   # done-marker grep, manifest name and coverage-gate call below iterates
   # THIS list — the namespace is a parameter, `create` is no longer
@@ -172,8 +184,24 @@ env:
   # loaded at construct time (me.shedaniel.autoconfig PartitioningSerializer
   # — the measured #102 boot crash: NoClassDefFoundError during mod
   # construction); pinned in mods.lock.
-  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade"
-  LADDER_NS: "create biomesoplenty dynamictrees combat_roll ae2 mekanism sophisticatedbackpacks jade"
+  # THE 14-dq EXTENSION (2026-11-10): two new content rungs, supplementaries
+  # + farmersdelight (modIds verified from each jar's neoforge.mods.toml —
+  # NOTE the slug/ns asymmetry: the Modrinth slug is farmers-delight, the
+  # REGISTRY namespace is farmersdelight). supplementaries requires
+  # moonlight [1.21.1-3.6.4,) (pinned 3.8.3, modType=LIBRARY — its ns stays
+  # OUT of LADDER_NS like every companion); farmers-delight is
+  # self-contained. Coexistence checked: supplementaries declares
+  # farmersdelight incompatible only below 1.3.0 — the 1.3.4 pin satisfies
+  # both. Pins + provenance in mods.lock. Expect the KNOWN HONEST-RED
+  # ABSENCES above on the first run of the new ns (the channels are the
+  # same) — that first measurement IS the point of the rung.
+  LADDER_SLUGS: "create biomes-o-plenty glitchcore terrablender dynamictrees combat-roll playeranimator cloth-config guideme ae2 mekanism sophisticated-backpacks sophisticated-core jade supplementaries moonlight farmers-delight"
+  LADDER_NS: "create biomesoplenty dynamictrees combat_roll ae2 mekanism sophisticatedbackpacks jade supplementaries farmersdelight"
+  # THE SOUND FLIP (one switch): off = the sound join is a report-only
+  # mapped preview; on = the sound join's verdict is the mapped-identity
+  # result (--gate-mapped in sound-diff.py). Flip after mapped-identity
+  # measured stable on two consecutive full runs.
+  SOUND_FLIP: "on"
 
 jobs:
   # ---------------------------------------------------------------- seed --
@@ -370,7 +398,14 @@ jobs:
           sleep 1
           mkdir -p truth-client/game/mods truth-client/assets/indexes truth-client/assets/objects
           cp srv-wall/mods/*.jar truth-client/game/mods/
-          printf 'tutorialStep:none\nonboardAccessibility:false\nrenderClouds:false\n' > truth-client/game/options.txt
+          # pauseOnLostFocus:false (14-cq): the truth walk shoots through the in-game ShotD, but a
+          # single focus wobble on the headless display puts the client in the ESC pause overlay
+          # (world blur + darkening) for every SUBSEQUENT page — measured 42416372623: 10 gal-p
+          # pages (create64/96/128/240/256/272/320, ae232/256, boP96) carried the menu and cost
+          # ~123 gate reds. The gallery is a multiplayer world; pausing buys nothing.
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\n' > truth-client/game/options.txt
+          # tutorialStep:none (menus lane, 12a0ec6c): no first-join tutorial overlay in the frames.
+          printf 'tutorialStep:none\nonboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
           # GPU instances bypass the VertexConsumer used by QuadDump.
           # Use Flywheel's ordinary BER fallback in the capture client;
           # reference screenshot clients keep their normal renderer.
@@ -390,6 +425,30 @@ jobs:
         if: steps.seed-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
+          # 14-bt THE PERSISTENT RCON DRIVER: the walk used to pay a fresh
+          # python process + TCP connect + auth per page (~500+ invocations
+          # in the seed walk ≈ 3-4 min of pure overhead). ONE --batch
+          # process carries every walk command of this step; the marker
+          # waits stay in bash between the sends (base_of BEFORE the send —
+          # the #39 mtime law — then wait_done). A dead driver fails the
+          # step the same way a failed per-call rcon did.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() { # one command per argument; prints "> cmd" + response per command
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue   # the driver skips empty lines; sending one would deadlock the reader
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
           # THE MANIFEST-GENERATION WALK (12-ax, kept verbatim except the
           # marker channel): identical walk commands, identical exhaustion
           # asserts — no shot settles, no shots. THE MARKER IS THE FILE the
@@ -451,19 +510,18 @@ jobs:
             grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
               || { echo "attempt $ATTEMPT: dump client failed to join"; tail -20 truth-client/client-dump.out; continue; }
             sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "gamerule randomTickSpeed 0" "gamerule doMobSpawning false" "tick rate 1000" >/dev/null
+            rcon "gamerule randomTickSpeed 0" "gamerule doMobSpawning false" "tick rate 1000" >/dev/null
             # the join's initial-spawn pass may have placed animals near the
             # wall (the wall chunks only became entity-ticking at the join);
             # the truth block walk kills @e before its first page — same here
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "kill @e[type=!player]" >/dev/null
+            rcon "kill @e[type=!player]" >/dev/null
             # BLOCK pages (to exhaustion — the coverage law), one loop per
             # ladder namespace (LADDER_NS is the single source of the ns list)
             for NS in $LADDER_NS; do
               EXHAUSTED=0
               for p in $(seq 0 $MAXP); do
                 base_of "gallery-$NS-p$p"
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "cimscene gallery page $NS $p"
+                rcon "cimscene gallery page $NS $p"
                 RC=0; wait_done "gallery-$NS-p$p" "$V0D" "$V0E" || RC=$?
                 [ "$RC" = "2" ] && { echo "$NS page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
                 if [ "$RC" = "1" ]; then
@@ -478,7 +536,7 @@ jobs:
             # back to the truth's pace: the remaining series have no BE settle
             # dependence and the truth runs them at 20 t/s; the packet backlog
             # from the 1000 t/s block walk also drains here
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "tick rate 20" >/dev/null
+            rcon "tick rate 20" >/dev/null
             if grep -qiE "disconnected|connection lost" truth-client/client-dump.out; then
               echo "attempt $ATTEMPT: the client disconnected mid-walk — the block parity voided, redoing on a fresh client"
               tail -20 truth-client/client-dump.out || true
@@ -492,12 +550,10 @@ jobs:
           # ENTITY pages: difficulty easy (the SAME pin as the truth entity
           # walk — hostile mobs must survive), then the fixed minecraft
           # scope + every LADDER_NS namespace to exhaustion, series by series
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "difficulty easy" "kill @e[type=!player]"
+          rcon "difficulty easy" "kill @e[type=!player]"
           for p in $(seq 0 $((EPAGES-1))); do
             base_of "gallery-entity-minecraft-p$p"
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "cimscene gallery entity mobs minecraft $p"
+            rcon "cimscene gallery entity mobs minecraft $p"
             RC=0; wait_done "gallery-entity-minecraft-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
@@ -506,8 +562,7 @@ jobs:
             for SERIES in dyn large; do
               TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
               base_of "gallery-$TAG-minecraft-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery entity $SERIES minecraft $p"
+              rcon "cimscene gallery entity $SERIES minecraft $p"
               RC=0; wait_done "gallery-$TAG-minecraft-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
@@ -519,8 +574,7 @@ jobs:
               EX=0
               for p in $(seq 0 $MAXP); do
                 base_of "gallery-$TAG-$NS-p$p"
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
+                rcon "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 RC=0; wait_done "gallery-$TAG-$NS-p$p" "$V0D" "$V0E" || RC=$?
                 [ "$RC" = "2" ] && { echo "$NS $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
                 if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -541,8 +595,7 @@ jobs:
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-item-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cimscene gallery item $NS $p"
+              rcon "kill @e[type=!player]" "cimscene gallery item $NS $p"
               RC=0; wait_done "gallery-item-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -550,13 +603,54 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS item walk hit the MAXP cap without exhausted"; exit 1; }
           done
+          # 14-dw the particle walk needs a LIVE viewer: sendParticles
+          # broadcasts only to players in range — the 14-ds forensics measured
+          # the dump client dead before the particle series on three
+          # consecutive runs (the seed manifests all skip-only
+          # 'no-simple-options:empty-broadcast', the ours replay sent 0
+          # packets, the mapped-identity stuck 0/38 byte-identical, the sound
+          # control 148/148 on the same runs) — the sound flip's bar can never
+          # be measured from empty manifests. The quad dump's own relaunch
+          # idiom, pulled BEFORE the series (the launch file exists since the
+          # walk step's start; block parity is banked, the walk may relaunch
+          # freely per the dump step's own comment).
+          if ! grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null \
+             || grep -qiE "disconnected|connection lost" truth-client/client-dump.out 2>/dev/null; then
+            echo "the dump client did not survive to the particle walk — relaunching so sendParticles has a viewer"
+            pkill -f cim.quaddump 2>/dev/null || true
+            rm -f truth-client/client-dump.out
+            LAUNCH=$(cat launch-dump.txt)
+            setsid bash -c "cd truth-client && timeout 900 bash -c \"$LAUNCH\" > client-dump.out 2>&1" < /dev/null > /dev/null 2>&1 &
+            for i in $(seq 1 600); do
+              grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out 2>/dev/null && break
+              sleep 1
+            done
+            grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
+              || { echo "relaunched particle-walk viewer failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
+            sleep 5
+          fi
           # PARTICLE walk (per ladder ns, to exhaustion)
+          # 14-dx THE RANGE PIN (measured #302: the seed job ran 8m1s and the
+          # dump client was alive inside its 1500s timeout, yet every particle
+          # spawn measured cells=0 — the client stood at the WORLD SPAWN,
+          # beyond the 32-block broadcast gate; 14-dw's relaunch covers the
+          # client-DEAD mode, the distance mode needs the receiver pinned to
+          # the wall vantage (x -5..5, y -60..-53, z 9 reaches <=12.2 blocks
+          # from (0.5,-60,0.5)) and the walk must verify the receiver per
+          # page — the manifest row KIND depends on the receiver population,
+          # and the ours leg (no scene-mod; the seed manifest IS its spawn
+          # spec) cannot be allowed to silently all-skip again)
+          rcon "gamemode spectator cimviewer" "tp cimviewer 0.5 -60 0.5 0 0" > par-pin.log
+          grep -q "Teleported" par-pin.log \
+            || { echo "particle walk refused: the dump client cannot be pinned to the wall vantage (the spawns would broadcast to zero receivers, measured #302)"; tail -20 srv-wall/boot.log; exit 1; }
           for NS in $LADDER_NS; do
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-particle-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery particle $NS $p"
+              rcon "list" > par-list.log 2>/dev/null || true
+              grep -q "cimviewer" par-list.log \
+                || { echo "$NS particle page $p refused: the receiver vanished mid-walk (the manifests would silently all-skip again)"; exit 1; }
+              rcon "cimscene gallery particle $NS $p"
               RC=0; wait_done "gallery-particle-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -569,8 +663,7 @@ jobs:
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-fluid-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery fluid $NS $p"
+              rcon "cimscene gallery fluid $NS $p"
               RC=0; wait_done "gallery-fluid-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -588,8 +681,7 @@ jobs:
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-sound-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery sound $NS $p"
+              rcon "cimscene gallery sound $NS $p"
               RC=0; wait_done "gallery-sound-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS sound page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -604,8 +696,7 @@ jobs:
             EX=0
             for p in $(seq 0 $MAXP); do
               base_of "gallery-biome-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery biome $NS $p"
+              rcon "cimscene gallery biome $NS $p"
               RC=0; wait_done "gallery-biome-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS biome page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -655,6 +746,15 @@ jobs:
               print(f'inv {ns}: {len(ordered)} items')
           print(f'inv manifests derived: {n}')
           PY
+          # 14-dx NAMED EXCLUSION: the seed does NOT walk the variant series
+          # (`gallery variant <kind>` — paintings, variants, villagers,
+          # effects, trims, banners, pots, enchantments, jukebox songs). The
+          # seed exists to seed OURS-side replays, and the ours leg has no
+          # variant replay channel yet — the truth shards' variant walk is
+          # the only surface these classes need today (the gate runs them
+          # DIAGNOSTIC-first, the missing ours shots are the named F2V
+          # projection lane). Walking them here would grow the measured
+          # ~26-30m seed cache-miss for artifacts nothing reads.
           ls srv-wall/c-imagine/scenes/ | wc -l
 
       # THE QUAD DUMP: a static pack model cannot know what a dynamic model
@@ -732,6 +832,13 @@ jobs:
           cp -r srv-wall/c-imagine/scenes/. seed-pack/scenes/
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv \
              scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv seed-pack/f2v/
+          # the calibration tables ride the pack input dir: absent file =
+          # byte-identical behavior (readTintManifest/readEmissiveManifest),
+          # present = the measured multiplies / light_emission bake
+          for T in visual-tints.tsv visual-emissive.tsv visual-fluid-colors.tsv \
+                   visual-rings.tsv; do
+            [ -f "scripts/f2v/$T" ] && cp "scripts/f2v/$T" seed-pack/f2v/
+          done
           # per-ns pack manifests, then ONE concatenated file per channel —
           # GalleryPack auto-assigns the CMD space (blocks 100000+i, items
           # 300000+i) over the concatenated rows in order, and the plugin
@@ -775,6 +882,16 @@ jobs:
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets visual-client/client.jar 2>&1 | tee pack-build.log
+          # 14-dy the placeholder ledger: the texture-fidelity audit's named
+          # backlog (source sprite + build context + uses per fallback) —
+          # the file exists even when EMPTY (the header-only receipt that
+          # the build substituted nothing), like the replay .subs.tsv files.
+          # THE BUILD WRITES IT (F2vPack drains the ledger at the end of
+          # --build; the dump side rides quads/placeholders.tsv) — the assert
+          # sits AFTER the build (measured: asserted before the build it
+          # failed every run since 14-dy landed, hidden behind the robit
+          # disconnect that died the seed earlier).
+          test -f seed-pack/f2v/placeholders.tsv
           # Keep the exact captured vertices/colors for parity diagnosis and
           # cache-hit runs, outside the f2v directory served to ours shards.
           mv seed-pack/f2v/quads seed-pack/quads
@@ -782,6 +899,64 @@ jobs:
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
+          # 14-bi LOADER-UNBAKED demotion (the DT surface_root class): a
+          # blockstate whose model chain rides a custom loader the pack
+          # cannot bake (dynamictrees:surface_root — the roots' geometry is
+          # built by the mod's own code) resolves to NO composite row — the
+          # ours display renders sky while the truth renders the mod's own
+          # geometry: a structural channel gap, the EntityBlock/BER class.
+          # The manifests carry those rows as dyn=1 (reported, never gated —
+          # the gate is the real-client leg M5.6). Mechanical: the resolved
+          # manifest IS the signal; zero per-mod code; every future mod's
+          # loader states get the same honest classification.
+          python3 - <<'PY'
+          import glob, pathlib, re, sys
+          resolved = set()
+          total_rows = 0
+          for line in pathlib.Path('seed-pack/f2v/visual-gallery.resolved.tsv').read_text().splitlines():
+              if line.startswith('#') or not line.strip():
+                  continue
+              resolved.add(line.split('\t')[0])
+          # 14-bx THE RUNTIME-GEOMETRY FAMILIES: dynamictrees builds its
+          # leaves, branches, roots and trunk shells from the mod's own code
+          # at runtime — the captured mesh is the mod's static fallback blob
+          # (#214/#226 measured the q composite riding the captured bake at
+          # ae 323K-369K against the truth's own sparse bushy render), so the
+          # pack channel structurally cannot reproduce the DT's runtime leaf
+          # mesh. The honest class = M5.6 (reported, never gated — the gate
+          # is the real-client leg). Mechanical: the namespace + the family
+          # pattern, no per-state code.
+          dt_runtime = re.compile(
+              r'^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)')
+          flipped = 0
+          for mf in pathlib.Path('seed-pack/scenes').glob('gallery-*-p*.tsv'):
+              if '.ctx.' in mf.name:
+                  continue
+              lines = mf.read_text().splitlines()
+              out = []
+              for line in lines:
+                  p = line.split('\t')
+                  if (p[0] == 'cell' and len(p) >= 6 and p[5].strip() == '0'
+                          and not p[4].startswith('minecraft:')
+                          and (p[4] not in resolved or dt_runtime.match(p[4]))):
+                      p[5] = '1'
+                      flipped += 1
+                      out.append('\t'.join(p))
+                  else:
+                      out.append(line)
+              if flipped:
+                  mf.write_text('\n'.join(out) + '\n')
+              total_rows += sum(1 for line in out if line.startswith('cell\t'))
+          # THE SAFEGUARD: the demotion is for the SMALL structural class (the
+          # custom-loader states). A mass flip means the pack build is broken
+          # (the 14-ay bare-parent class, a jar missing...) — fail loudly, do
+          # NOT silently demote the gate away.
+          PCT = 100.0 * flipped / max(1, total_rows)
+          print(f"loader-unbaked dyn flip: {flipped}/{total_rows} rows ({PCT:.1f}%)")
+          if PCT > 25.0:
+              print(f"LOADER-UNBAKED FLOOD: {PCT:.1f}% of the modded manifest rows have no pack composite — the pack build is broken; fix the resolver instead of demoting the gate")
+              sys.exit(1)
+          PY
           cp paper-plugin/target/cim-paper-plugin.jar seed-pack/plugin/
           cp paper-plugin/target/selftest-cp.txt seed-pack/plugin/
           cp srv-wall/boot.log seed-pack/boot-walk.log
@@ -842,6 +1017,8 @@ jobs:
             srv-wall/c-imagine/scenes/quads
             seed-pack/scenes/*.ctx.tsv
             srv-wall/c-imagine/scenes/*.ctx.tsv
+            seed-pack/scenes/*.light
+            srv-wall/c-imagine/scenes/*.light
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-items.resolved.tsv
             seed-pack/f2v/pack.sha1
@@ -1018,7 +1195,8 @@ jobs:
           sha256sum truth-client/game/mods/*.jar > truth-client-mods.sha256
           cat truth-client-mods.sha256
           # options value maps linearly: 70 + 40*v on both client versions.
-          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\nrenderClouds:false\n' > truth-client/game/options.txt
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\n' > truth-client/game/options.txt
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\n' > truth-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py truth-client/game
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
@@ -1072,8 +1250,30 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          # 14-bt THE PERSISTENT RCON DRIVER (mirror of the seed walk): ONE
+          # --batch process carries every walk command of this step — the
+          # per-page python/TCP/auth startup cost (~0.3-0.5 s x hundreds of
+          # pages = minutes per shard) is gone. The marker waits stay in
+          # bash between the sends (base_of BEFORE the send — the #39 mtime
+          # law — then wait_done); the settle protocol below is untouched.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() { # one command per argument; prints "> cmd" + response per command
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue   # the driver skips empty lines; sending one would deadlock the reader
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
+          rcon "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
           java -cp vtools Key F1
           sleep 1
@@ -1109,8 +1309,7 @@ jobs:
           for NS in $LADDER_NS; do
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery page $NS $p"
+              rcon "cimscene gallery page $NS $p"
               RC=0; wait_done "gallery-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then
@@ -1136,8 +1335,7 @@ jobs:
               # is re-pinned before every attempt (14-i law).
               PREV=""
               for i in $(seq 1 8); do
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "truth-shots/.settle-$NS-p$p.png"
                 CUR=$(md5sum "truth-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
                 if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
@@ -1165,8 +1363,7 @@ jobs:
           # not gated) — shard 0 owns page 0 (0 = 0 mod K)
           if [ "$SI" = "0" ]; then
             for NS in $LADDER_NS; do
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery page $NS 0"
+              rcon "cimscene gallery page $NS 0"
               sleep 2
               bash scripts/visual/shot.sh "truth-shots/gal-p-${NS}0-again.png"
               echo "shot $NS page 0 again"
@@ -1182,11 +1379,31 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
+          # 14-bt THE PERSISTENT RCON DRIVER (mirror of the wall walk): ONE
+          # --batch process carries every walk command of this step; the
+          # marker waits / settle windows / shot sequences stay in bash
+          # between the sends, byte-for-byte the same protocol.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() { # one command per argument; prints "> cmd" + response per command
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue   # the driver skips empty lines; sending one would deadlock the reader
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
           # difficulty easy: HOSTILE mobs must survive — peaceful discards
           # every Monster each tick (both legs pin the SAME difficulty, so
           # the comparison stays fair; frozen mobs ignore everything else)
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          rcon "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
           # THE MARKER IS THE FILE (13-c) — same wait_done contract as the
           # block walk; the entity settle pass writes its marker file in the
@@ -1233,7 +1450,7 @@ jobs:
           # types — so no ban is expected, but the rejoin + re-run applies).
           client_alive() {
             local L
-            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            L=$(rcon "list" 2>/dev/null) || return 1
             case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
           DEATHS=0
@@ -1249,7 +1466,7 @@ jobs:
             setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
             local L=""
             for i in $(seq 1 90); do
-              L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+              L=$(rcon "list" 2>/dev/null || true)
               case "$L" in *cimviewer*) break;; esac
               sleep 1
             done
@@ -1277,7 +1494,7 @@ jobs:
               fi
               truth_rejoin || exit 1
               base_of "$STEM"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "$@" >/dev/null 2>&1 || true
+              rcon "$@" >/dev/null 2>&1 || true
               RC=0; wait_done "$STEM" "$V0D" "$V0E" || RC=$?
               if [ "$RC" = "2" ]; then
                 echo "page $LABEL re-run no done marker"; tail -10 srv-wall/boot.log; exit 1
@@ -1288,16 +1505,14 @@ jobs:
           # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq $SI $K $((EPAGES-1))); do
             base_of "gallery-entity-minecraft-p$p"
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "cimscene gallery entity mobs minecraft $p"
+            rcon "cimscene gallery entity mobs minecraft $p"
             RC=0; wait_done "gallery-entity-minecraft-p$p" "$V0D" "$V0E" || RC=$?
             [ "$RC" = "2" ] && { echo "mob page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
             grep "gallery-entity done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
             ensure_alive_rerun "gallery-entity-minecraft-p$p" "minecraft mobs page $p" "$p" \
               "cimscene gallery entity mobs minecraft $p"
             sleep 2   # + the 2s settle before done = ~4s spawn->shot: section rebuild (wall -> air) + entity render under llvmpipe
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             bash scripts/visual/shot.sh "truth-shots/gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair: a second shot ~2s later
             bash scripts/visual/shot.sh "truth-shots/gal-e$p-self.png"
@@ -1310,16 +1525,14 @@ jobs:
             for SERIES in dyn large; do
               TAG=$([ "$SERIES" = dyn ] && echo entitydyn || echo entitylarge)
               base_of "gallery-$TAG-minecraft-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery entity $SERIES minecraft $p"
+              rcon "cimscene gallery entity $SERIES minecraft $p"
               RC=0; wait_done "gallery-$TAG-minecraft-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               grep "gallery-$TAG done ns=minecraft page=$p " srv-wall/boot.log | tail -1 || true
               ensure_alive_rerun "gallery-$TAG-minecraft-p$p" "minecraft $SERIES page $p" "$p" \
                 "cimscene gallery entity $SERIES minecraft $p"
               sleep 2   # + the 2s settle before done (14-an: the settle rides wait_done)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the mob-page 14-aj pattern): the vanilla dyn/large rows now gate and boats/arrows/camels MOVE — the second shot names the time-varying cells (ANIMATED) instead of red-gating an animation phase
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p-self.png"
@@ -1336,8 +1549,7 @@ jobs:
               EX=0
               for p in $(seq $SI $K $MAXP); do
                 base_of "gallery-$TAG-$NS-p$p"
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
+                rcon "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 RC=0; wait_done "gallery-$TAG-$NS-p$p" "$V0D" "$V0E" || RC=$?
                 [ "$RC" = "2" ] && { echo "$NS $SERIES page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
                 if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1350,8 +1562,7 @@ jobs:
                 ensure_alive_rerun "gallery-$TAG-$NS-p$p" "$NS $SERIES page $p" "$p" \
                   "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 sleep 2   # 14-an: the settle pass rides a real tick delay inside wait_done
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
                 echo "shot $NS $SERIES page $p"
               done
@@ -1361,8 +1572,7 @@ jobs:
           # the last entity page is still standing here. Kill it NOW and let
           # its death-poof particles expire: killed at the first item page,
           # they land inside the shot at random positions on either leg
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "kill @e[type=!player]" >/dev/null 2>&1
+          rcon "kill @e[type=!player]" >/dev/null 2>&1
           sleep 3
           # ITEM walk (per ladder ns): every registered item, one
           # item_display per cell carrying the REAL modded item, to
@@ -1371,8 +1581,7 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-item-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cimscene gallery item $NS $p"
+              rcon "kill @e[type=!player]" "cimscene gallery item $NS $p"
               RC=0; wait_done "gallery-item-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS item page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1380,8 +1589,7 @@ jobs:
               ensure_alive_rerun "gallery-item-$NS-p$p" "$NS item page $p" "$p" \
                 "kill @e[type=!player]" "cimscene gallery item $NS $p"
               sleep 1   # static item displays settle like the block pages
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-i-$NS$p.png"
               # HELD leg (DIAGNOSTIC, 2026-11-04): stage the page's FIRST
               # item into the viewer's hotbar slot 0 over RCON (the SAME
@@ -1391,14 +1599,14 @@ jobs:
               # first-person proof surface.
               FIRST_ITEM=$(awk -F'\t' '$1=="cell"{print $5; exit}' "srv-wall/c-imagine/scenes/gallery-item-$NS-p$p.tsv")
               if [ -n "$FIRST_ITEM" ]; then
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "item replace entity cimviewer hotbar.0 with $FIRST_ITEM" >/dev/null 2>&1 || true
-                java -cp vtools Key F1 || true
-                java -cp vtools Key 1 || true
+                rcon "item replace entity cimviewer hotbar.0 with $FIRST_ITEM" >/dev/null 2>&1 || true
+                java -cp vtools Key F1 1 || true   # one JVM for the pair (14-bt)
                 sleep 1
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                java -cp vtools Shot "truth-shots/gal-h-$NS$p.png" \
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                # the warm ShotD daemon captures the held shot too (the cold
+                # Shot JVM start per page was pure overhead; the box is the
+                # same 1280x720@0,0)
+                bash scripts/visual/shot.sh "truth-shots/gal-h-$NS$p.png" \
                   || echo "$NS held page $p shot failed (diagnostic tolerated)"
                 java -cp vtools Key F1 || true   # hide the HUD again for the wall pages
               fi
@@ -1419,8 +1627,7 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-particle-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery particle $NS $p"
+              rcon "cimscene gallery particle $NS $p"
               RC=0; wait_done "gallery-particle-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS particle page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1428,9 +1635,10 @@ jobs:
               ensure_alive_rerun "gallery-particle-$NS-p$p" "$NS particle page $p" "$p" \
                 "cimscene gallery particle $NS $p"
               sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-pa-$NS$p.png"
+              sleep 2   # 14-dx the particle self-consistency pair (the 14-aj mob / 14-bw fluid pattern): every particle row is dyn=1 and never had a second frame (the diag-particle rows' self_ae measured [null,null] since the class was joined), so a time-varying truth cell — a static spawn aging or dying between the two windows — could never demote to ANIMATED with measured evidence; the second shot names it on the truth's own t0/t1 delta, and a cell static on both legs stays gated exactly as before
+              bash scripts/visual/shot.sh "truth-shots/gal-pa-$NS$p-self.png"
               echo "shot $NS particle page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS particle walk hit the MAXP cap without exhausted"; exit 1; }
@@ -1445,8 +1653,7 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-fluid-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery fluid $NS $p"
+              rcon "cimscene gallery fluid $NS $p"
               RC=0; wait_done "gallery-fluid-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS fluid page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1454,9 +1661,10 @@ jobs:
               ensure_alive_rerun "gallery-fluid-$NS-p$p" "$NS fluid page $p" "$p" \
                 "cimscene gallery fluid $NS $p"
               sleep 1   # THE FIXED SHOT WINDOW (mirror on the ours leg)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-fl-$NS$p.png"
+              sleep 2   # 14-bw the fluid self-consistency pair (the 14-aj mob / 14-br block pattern): every fluid row is dyn=1 and never had a second frame, so the flowing/chemical fluids (30 measured REDs, ae 370K-1.2M) red-gated forever although the content is animated by construction — the second shot names the time-varying cells (ANIMATED) with measured evidence instead
+              bash scripts/visual/shot.sh "truth-shots/gal-fl-$NS$p-self.png"
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "$NS fluid walk hit the MAXP cap without exhausted"; exit 1; }
@@ -1471,8 +1679,7 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-sound-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery sound $NS $p"
+              rcon "cimscene gallery sound $NS $p"
               RC=0; wait_done "gallery-sound-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS sound page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
@@ -1490,18 +1697,19 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-gui-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery gui $NS $p"
+              rcon "cimscene gallery gui $NS $p"
               RC=0; wait_done "gallery-gui-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS gui page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-gui done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
               sleep 2   # the client screen renders
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              # MOUSEOFF (menus lane, 477489e6): the real client's mouse is parked
+              # off the menu so no hover state leaks into the truth shot; shot.sh
+              # (main lane, b49718b1) captures through the warm ShotD daemon.
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Key MOUSEOFF || true
               sleep 0.5
-              java -cp vtools Shot "truth-shots/gal-gui-$NS$p.png" \
+              bash scripts/visual/shot.sh "truth-shots/gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
               # ESC closes the open screen before the next page (the next
               # command also closeContainer()s server-side — belt, braces)
@@ -1518,16 +1726,14 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-biome-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery biome $NS $p"
+              rcon "cimscene gallery biome $NS $p"
               RC=0; wait_done "gallery-biome-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS biome page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-biome done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
               sleep 1   # biome sync + tint render (fixed window)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "truth-shots/gal-b-$NS$p.png" \
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "truth-shots/gal-b-$NS$p.png" \
                 || echo "$NS biome page $p shot failed (diagnostic tolerated)"
             done
             [ "$EX" = "1" ] || { echo "$NS biome walk hit the MAXP cap without exhausted"; exit 1; }
@@ -1544,32 +1750,63 @@ jobs:
             EX=0
             for p in $(seq $SI $K $MAXP); do
               base_of "gallery-inv-$NS-p$p"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cimscene gallery inv $NS $p"
+              rcon "cimscene gallery inv $NS $p"
               RC=0; wait_done "gallery-inv-$NS-p$p" "$V0D" "$V0E" || RC=$?
               [ "$RC" = "2" ] && { echo "$NS inv page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
               if [ "$RC" = "1" ]; then EX=1; break; fi
               grep "gallery-inv done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
               M="srv-wall/c-imagine/scenes/gallery-inv-$NS-p$p.tsv"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               java -cp vtools Key F1 || true   # HUD visible: hideGui hides the inventory screen too
               # THE FILL: one `item replace` per manifest slot (36 RCON
-              # calls — ~free next to the shot window)
+              # calls — through the persistent driver each is a ~ms round
+              # trip instead of a fresh python process; the order and the
+              # slot names are unchanged)
               while IFS=$'\t' read -r slot item; do
                 [ "$slot" = "slot" ] && continue
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "item replace entity cimviewer $slot with $item" >/dev/null 2>&1 || true
+                rcon "item replace entity cimviewer $slot with $item" >/dev/null 2>&1 || true
               done < "$M"
               java -cp vtools Key E || true
               sleep 2   # the inventory screen renders (fixed window, BOTH legs)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "truth-shots/gal-inv-$NS$p.png" \
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "truth-shots/gal-inv-$NS$p.png" \
                 || echo "$NS inv page $p shot failed (diagnostic tolerated)"
               java -cp vtools Key ESC || true
             done
             [ "$EX" = "1" ] || { echo "$NS inv walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # VARIANT walk (per ladder ns, to exhaustion — the 14-dx DIAGNOSTIC
+          # classes; the 12-aq no-walk backlog's real scenes): every registry
+          # entry of the kind rendered by REAL vanilla mechanics on the shared
+          # wall — a hung painting (support wall + the vanilla survives()
+          # contract), the frozen variant mob, the trimmed / enchanted armor
+          # stand, the pattern banner, the sherd pot, the playing jukebox.
+          # The settle pass (+40 ticks, then the 12-as rewrite) carries the
+          # RUNTIME assertions (effect still active, trim still worn, glint
+          # still there, BE patterns/sherds/song state held, the song still
+          # playing) — a cell that fails them is a named skip row, exactly
+          # the honesty channel the gate's ABSENCE_NOTES read. The shots are
+          # DIAGNOSTIC: the ours leg has NO variant replay channel yet (the
+          # F2V projection per kind is the named lane), so the gate reports
+          # the missing ours shots loudly without a red verdict.
+          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern banner pot enchant jukebox blockentity; do
+            for NS in $LADDER_NS; do
+              EX=0
+              for p in $(seq $SI $K $MAXP); do
+                base_of "gallery-variant-$KIND-$NS-p$p"
+                rcon "kill @e[type=!player]" "cimscene gallery variant $KIND $NS $p"
+                RC=0; wait_done "gallery-variant-$KIND-$NS-p$p" "$V0D" "$V0E" || RC=$?
+                [ "$RC" = "2" ] && { echo "$NS $KIND variant page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+                if [ "$RC" = "1" ]; then EX=1; break; fi
+                grep "gallery-variant done kind=$KIND ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+                sleep 2   # the settled subjects hold; the final rewrite lands inside this window
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "truth-shots/gal-v$KIND-$NS$p.png" \
+                  || echo "$NS $KIND variant page $p shot failed (diagnostic tolerated)"
+                echo "shot $NS $KIND variant page $p"
+              done
+              [ "$EX" = "1" ] || { echo "$NS $KIND variant walk hit the MAXP cap without exhausted"; exit 1; }
+            done
           done
           ls truth-shots/ | wc -l
 
@@ -1701,7 +1938,6 @@ jobs:
           cp -r seed-pack/f2v/. srv-wall/c-imagine/f2v/
           cp -r seed-pack/scenes/. srv-wall/c-imagine/scenes/
           ls srv-wall/c-imagine/scenes/ | wc -l
-          SHA1=$(cat srv-wall/c-imagine/f2v/pack.sha1)
           echo "eula=true" > srv-wall/eula.txt
           cat > srv-wall/server.properties <<PROPS
           online-mode=false
@@ -1716,8 +1952,6 @@ jobs:
           enable-rcon=true
           rcon.port=25575
           rcon.password=cimgate
-          resource-pack=http\://127.0.0.1\:25580/cim-f2v-pack.zip
-          resource-pack-sha1=$SHA1
           PROPS
           mkdir -p srv-wall
           URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest \
@@ -1729,26 +1963,114 @@ jobs:
           rm -rf world world_nether world_the_end
           # -Dcim.f2v.fastBoot=true: serve the seeded pack; the boot-time
           # rebuild is skipped (the same pure function ran in the seed; the
-          # sha1 pin + the client's pack hash check stay). Measured cost of
+          # play-phase offer pins the same SHA1 for the client's hash check).
+          # Measured cost of
           # the rebuild: 4.8 min of every ours boot (#35).
           setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
-          NEED=""
-          for pkg in libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6; do
-            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
-          done
-          if [ -n "${NEED:-}" ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq $NEED
-          fi
+          # MEASURED (run 42250969085, all 8 ours shards): the client died
+          # with "Couldn't find matching GLX visual / opengl_missing" while
+          # the truth shards (1.21.1 client) joined on the same runners —
+          # the 26.3 client's GLX requirements are stricter, and the
+          # dpkg -s skip trusted the RUNNER IMAGE's pre-installed mesa,
+          # which rolled under us and no longer exposes the visual the
+          # 26.3 GlDevice requests. Install UNCONDITIONALLY (the apt
+          # version, not whatever the image ships) and probe the GLX
+          # visual list right after Xvfb starts — a fast named failure
+          # instead of a 12-minute blind client stall.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 mesa-utils
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
           sleep 1
+          export DISPLAY=:99
+          GLXV=$(glxinfo -B 2>/dev/null | grep -c "GLX Visuals" || true)
+          OPENGLV=$(glxinfo -B 2>/dev/null | grep -E "OpenGL version" || true)
+          echo "GLX probe: visuals_block=$GLXV | $OPENGLV"
+          [ -n "$OPENGLV" ] || { echo "GLX probe FAILED — no OpenGL renderer on :99 (the 26.3 client would crash opengl_missing)"; glxinfo -display :99 2>&1 | head -20; exit 1; }
           # the visual client runtime (piston-meta, with assets) — cached
           [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           wc -c visual-client/classpath.txt visual-client/launch.txt
-          sed -i 's/^java /java -Xmx1G /' visual-client/launch.txt
+          # 14-cp: the pack grew to ~166k gallery models (the per-cell
+          # native liquid replay added ~40k over the 21c545f era) and the
+          # stock 2G heap OOM'd in ModelManager.loadBlockModels on every
+          # ours shard (runs 42413757062, 42412879537). 5G leaves headroom
+          # for the model+atlas load peak next to the 3G Paper server.
+          sed -i 's/^java /java -Xmx5G /' visual-client/launch.txt
+          # THE VULKAN FALLBACK (measured 2026-11-06: the rolled runner
+          # image's GLX offers GL 4.5 COMPAT while the 26.3 GlDevice
+          # demands more — "Couldn't find matching GLX visual" killed every
+          # ours join; the 1.21.1 truth client (GL 3.2) is permissive and
+          # joined). The 26.3 client carries a VULKAN backend: launch-arg
+          # --graphicsBackend vulkan bypasses GLX entirely; locally
+          # verified: the client initializes Vulkan and runs. Probe-gated:
+          # only when the GLX OpenGL version is below 4.6 (lavapipe from
+          # mesa-vulkan-drivers serves Vulkan 1.3 with no GLX involved).
+          GLMAJ=$(echo "$OPENGLV" | grep -oE "[0-9]+\.[0-9]+" | head -1 | cut -d. -f1)
+          GLMIN=$(echo "$OPENGLV" | grep -oE "[0-9]+\.[0-9]+" | head -1 | cut -d. -f2)
+          if [ "${GLMAJ:-0}" -lt 4 ] || { [ "${GLMAJ:-0}" -eq 4 ] && [ "${GLMIN:-0}" -lt 6 ]; }; then
+            echo "GL $GLMAJ.$GLMIN < 4.6 — switching the 26.3 client to the VULKAN backend (lavapipe)"
+            sed -i 's/--graphicsBackend opengl/--graphicsBackend vulkan/' visual-client/launch.txt
+            grep -oE "\-\-graphicsBackend [a-z]*" visual-client/launch.txt
+          fi
           mkdir -p visual-client/game
+          # 14-bo THE REAL CLIENT PROBE: run #192 measured glxinfo printing
+          # "OpenGL version string: 4.5" while the 26.3 client died exactly
+          # the same way as 42250969085 — "Couldn't find matching GLX visual
+          # / opengl_missing" (the client windows through SDL, so no external
+          # probe replicates its request). The honest probe IS the client:
+          # launch it headless-short and read its own verdict from the log.
+          # opengl_missing -> try the ladder below; the window actually
+          # coming up ("Sound engine started") -> the backend stands.
+          probe_client() {
+            OUT=$(mktemp)
+            timeout 75 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+              $(cat visual-client/launch.txt) > "$OUT" 2>&1 || true
+            if grep -q "opengl_missing" "$OUT"; then
+              echo "PROBE: opengl_missing on $1"
+              tail -4 "$OUT" | sed 's/^/PROBE: /'
+              rm -f "$OUT"; return 3
+            fi
+            if grep -qE "Sound engine started|Backend: OpenGL|Created: .*atlas" "$OUT"; then
+              echo "PROBE: window up on $1"
+              rm -f "$OUT"; return 0
+            fi
+            # inconclusive = the client is slow, not broken: opengl_missing
+            # is instant (the GLX refusal fires at window creation). Keep the
+            # current backend — the real run allows 12 minutes, not 75s.
+            echo "PROBE: inconclusive on $1 (no backend verdict in 75s) — keeping the current backend"
+            tail -4 "$OUT" | sed 's/^/PROBE: /'
+            rm -f "$OUT"; return 0
+          }
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          GLBACKEND=opengl
+          if ! probe_client "opengl/24bit"; then
+            # fallback 1: a 32-bit screen exposes RGBA visuals a 24-bit one lacks
+            pkill -f "Xvfb :99" 2>/dev/null || true
+            sleep 1
+            Xvfb :99 -screen 0 1280x720x32 +extension GLX +render -noreset &
+            sleep 2
+            if probe_client "opengl/32bit"; then
+              echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
+            else
+              # fallback 2: the rolled image's GLX cannot serve the client at
+              # all — but the #192 crash report showed the Vulkan device
+              # enumerating fine (llvmpipe Vulkan 1.4.318). Flip the pin,
+              # VERIFY the flip with the same probe, and let the gate MEASURE
+              # instead of crashing 8/8. The flip is LOUD: this run's parity
+              # read rides a different renderer, and the worklog names it.
+              printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > visual-client/game/options.txt
+              if probe_client "vulkan/32bit"; then
+                GLBACKEND=vulkan
+                echo "GLPROBE: FLIPPED to vulkan and verified — this run's ours parity rides lavapipe"
+              else
+                echo "GLPROBE: neither backend can start the 26.3 client on this image"
+                exit 1
+              fi
+            fi
+          else
+            echo "GLPROBE: the opengl pin stands (the client's window came up)"
+          fi
           # THE 26.3 FOV PIN (14-av, re-measured locally 2026-11-05, probe-14av.sh):
           # the old -0.65 pin was calibrated (2026-11-01) against a CI truth
           # frame that was ITSELF rendered off-contract (the whole #95-era
@@ -1761,7 +2083,14 @@ jobs:
           # The 26.3 slider maps IDENTICALLY to 1.21.1 (fov = 70 + 40*v) and
           # both legs now pin the same fov:0.0 = 70. Expected ISOLATE_SCALE
           # after the fix: the casing drops 78x79 -> ~56x57 (78*514/712).
-          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          # $GLBACKEND comes from the 14-bo probe ladder above: opengl unless
+          # the rolled image's GLX cannot serve the client's own GLFW request.
+          # Match the native reference default explicitly on both stacks.
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
+          # Keep the final options write at the same native mipmap setting.
+          # This write also pins the tutorial; it must preserve both clients' 4.
+          # tutorialStep:none (menus lane, 12a0ec6c): no first-join tutorial overlay in the frames.
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:4\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
 
       - name: server pins + forceload + client joins (pack accepted)
@@ -1815,16 +2144,27 @@ jobs:
           done
           case "$L" in *cimviewer*) echo "cim client joined: $L";;
             *) tail -30 visual-client/client.out; exit 1;; esac
-          # the SECOND reload line is the server pack applying (measured)
-          for i in $(seq 1 30); do
-            N=$(grep -c "Reloading ResourceManager" visual-client/client.out || true)
-            [ "${N:-0}" -ge 2 ] && break
+          # Offer in play: Paper's status event does not cover the login
+          # configuration phase's server.properties pack. This sends the
+          # same served ZIP and pinned SHA1 using the real player API.
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "cim pack cimviewer"
+          # A reload/advancement log is not proof that the required server
+          # pack applied. The stock client rejects packs over 250 MiB and can
+          # remain connected with fallback items; require its protocol result.
+          PACK_LOADED=0
+          for i in $(seq 1 600); do
+            if grep -Fq 'f2v pack: status cimviewer=SUCCESSFULLY_LOADED' srv-wall/boot.log; then
+              PACK_LOADED=1
+              break
+            fi
+            if grep -qE 'f2v pack: status cimviewer=(DECLINED|FAILED_DOWNLOAD|FAILED_RELOAD|INVALID_URL|DISCARDED)' srv-wall/boot.log; then
+              echo "vanilla client rejected the resource pack"
+              tail -30 visual-client/client.out
+              exit 1
+            fi
             sleep 1
           done
-          for i in $(seq 1 30); do
-            grep -qE "Loaded [0-9]+ advancements" visual-client/client.out 2>/dev/null && break
-            sleep 1
-          done
+          [ "$PACK_LOADED" = 1 ] || { echo "no successful client pack application"; tail -30 visual-client/client.out; exit 1; }
           sleep 8
 
       - name: wall replay — STRIDE (blocks + probes + isolated displays)
@@ -1834,8 +2174,29 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          # 14-bt THE PERSISTENT RCON DRIVER (mirror of the truth leg): ONE
+          # --batch process carries every replay command of this step; the
+          # placed-marker asserts consume the SAME per-command responses the
+          # per-call invocations printed. A dead driver fails the step the
+          # same way a failed per-call rcon did.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() { # one command per argument; prints "> cmd" + response per command
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue   # the driver skips empty lines; sending one would deadlock the reader
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
+          rcon "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
           java -cp vtools Key F1
           sleep 1
@@ -1848,11 +2209,9 @@ jobs:
           # determinism probe (diagnostic, not gated) — shard 0 owns page 0
           if [ "$SI" = "0" ]; then
             for NS in $LADDER_NS; do
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" "cim gallerypage $NS 0"
+              rcon "kill @e[type=!player]" "cim galleryclear" "cim gallerypage $NS 0"
               sleep 2
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-p-${NS}0-again.png"
               echo "shot $NS page 0 again"
             done
@@ -1863,13 +2222,11 @@ jobs:
             CMD_CASING=$(grep -m1 "create:andesite_casing" srv-wall/c-imagine/f2v/visual-gallery.resolved.tsv | cut -f2)
             test -n "$CMD_CASING" || { echo "no casing CMD in the resolved manifest"; exit 1; }
             echo "isolated displays: pane cmd=$CMD_PANE casing cmd=$CMD_CASING"
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "kill @e[type=!player]" "cim galleryclear" \
+            rcon "kill @e[type=!player]" "cim galleryclear" \
               "summon minecraft:item_display -1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_PANE}f]}}}}" \
               "summon minecraft:item_display 1.5 -59.5 9.5 {billboard:\"fixed\",item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD_CASING}f]}}}}"
             sleep 2
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             bash scripts/visual/shot.sh "ours-shots/ours-isolated-pane-casing.png"
             echo "shot isolated pane+casing"
             # 14-at SCALE DATUM (diagnostic, never gated): the isolate layout
@@ -1942,17 +2299,16 @@ jobs:
             TR='transformation:{translation:[0f,-0.0184f,0f],left_rotation:[0f,0f,0f,1f],right_rotation:[0f,0f,0f,1f],scale:[1.0126f,1.0126f,1.0126f]}'
             for ENTRY in "nb:$CMD_NB:-2.5" "sb:$CMD_SB:-2.5" "st:$CMD_ST:-2.5" "layered:$CMD_LAYERED:-2.5"; do
               NAME="${ENTRY%%:*}"; REST="${ENTRY#*:}"; CMD="${REST%%:*}"; X="${REST#*:}"
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+              OUT=$(rcon \
                 "kill @e[type=!player]" \
                 "summon minecraft:item_display $X -59.5 9.5 {billboard:\"fixed\",brightness:{sky:15b,block:15b},item:{id:\"minecraft:paper\",count:1,components:{\"minecraft:custom_model_data\":{floats:[${CMD}f]}}}}" \
                 "data get entity @e[type=minecraft:item_display,limit=1] Pos" \
                 "data get entity @e[type=minecraft:item_display,limit=1] transformation" \
                 "data get entity cimviewer Pos" \
-                "data get entity cimviewer Rotation" \
-                | tee "ours-rcon-iso-$NAME.log"
+                "data get entity cimviewer Rotation")
+              echo "$OUT" | tee "ours-rcon-iso-$NAME.log"
               sleep 1
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-iso-$NAME.png"
               echo "shot isolated $NAME (x=$X cmd=$CMD)"
             done
@@ -2022,16 +2378,14 @@ jobs:
               CZ=$(printf '%s' "$ENTRY" | cut -d: -f5)
               YAW=$(printf '%s' "$ENTRY" | cut -d: -f6)
               PITCH=$(printf '%s' "$ENTRY" | cut -d: -f7)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage create $P" \
-                "data get entity cimviewer Pos" \
-                | tee "ours-rcon-iso9001-$NAME.log"
+                "data get entity cimviewer Pos")
+              echo "$OUT" | tee "ours-rcon-iso9001-$NAME.log"
               grep -q "placed=1" "ours-rcon-iso9001-$NAME.log" \
                 || { echo "plugin-path isolate $NAME: placed!=1"; exit 1; }
               sleep 1
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer $CX $CY $CZ $YAW $PITCH" >/dev/null 2>&1
+              rcon "tp cimviewer $CX $CY $CZ $YAW $PITCH" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-iso9001-$NAME.png"
               echo "shot plugin-path isolate $NAME (page $P cam $CX,$CY,$CZ yaw $YAW pitch $PITCH)"
             done
@@ -2065,15 +2419,13 @@ jobs:
               P=$(printf '%s' "$ENTRY" | cut -d: -f1)
               NAME=$(printf '%s' "$ENTRY" | cut -d: -f2)
               WANT=$(printf '%s' "$ENTRY" | cut -d: -f3)
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage create $P")
               echo "$OUT" | tee "ours-rcon-iso14z-$NAME.log"
               echo "$OUT" | grep -q "placed=$WANT" \
                 || { echo "14z isolate $NAME: placed!=$WANT"; exit 1; }
               sleep 1
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-iso14z-$NAME.png"
               echo "shot 14z isolate $NAME (page $P placed=$WANT)"
             done
@@ -2086,7 +2438,7 @@ jobs:
           # and the shard fails loudly instead of shooting garbage.
           ours_alive() {
             local L
-            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            L=$(rcon "list" 2>/dev/null) || return 1
             case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
           EXHAUSTED=0
@@ -2094,8 +2446,7 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS page $p — ours block replay exhausted"; EXHAUSTED=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage $NS $p")
               echo "$OUT" | tee "ours-rcon-$NS-p$p.log"
               echo "$OUT" | grep -q "gallerypage $NS p$p -> placed=" \
@@ -2114,8 +2465,7 @@ jobs:
               # still proceed).
               PREV=""
               for i in $(seq 1 8); do
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "ours-shots/.settle-$NS-p$p.png"
                 CUR=$(md5sum "ours-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
                 if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
@@ -2146,30 +2496,47 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
+          # 14-bt THE PERSISTENT RCON DRIVER (mirror of the truth leg): ONE
+          # --batch process carries every replay command of this step; the
+          # placed-marker asserts consume the SAME per-command responses.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() { # one command per argument; prints "> cmd" + response per command
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue   # the driver skips empty lines; sending one would deadlock the reader
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
           # 14-ak OURS-LIVENESS ASSERT (assert-only mirror of the truth leg's
           # containment): the ours client must NEVER die mid-walk — a death
           # means the harness itself broke and the shard fails loudly.
           ours_alive() {
             local L
-            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            L=$(rcon "list" 2>/dev/null) || return 1
             case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
           # SAME difficulty pin as the truth leg (hostile mobs must survive)
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          rcon "difficulty easy" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
           # MOB series (the gate): the RCON response IS the completion marker
           for p in $(seq $SI $K $((EPAGES-1))); do
-            OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "kill @e[type=!player]" "cim galleryclear" \
+            OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
               "cim gallerypage-entity minecraft $p")
             echo "$OUT" | tee "ours-rcon-e$p.log"
             echo "$OUT" | grep -q "gallerypage-entity minecraft p$p -> placed=" \
               || { echo "mob page $p no placed marker in the RCON response"; exit 1; }
             ours_alive || { echo "ours client died on mob page $p — the ours leg must never die"; exit 1; }
             sleep 5   # section rebuild + entity render under llvmpipe
-            python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-              "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror)
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p-self.png"
@@ -2178,16 +2545,14 @@ jobs:
           # DYN + LARGE series (diagnostic)
           for p in $(seq $SI $K $((EDPAGES-1))); do
             for SERIES in dyn large; do
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage-entity minecraft $p $SERIES")
               echo "$OUT" | tee "ours-rcon-e$SERIES$p.log"
               echo "$OUT" | grep -q "gallerypage-entity minecraft p$p $SERIES -> placed=" \
                 || { echo "$SERIES page $p no placed marker in the RCON response"; exit 1; }
               ours_alive || { echo "ours client died on $SERIES page $p — the ours leg must never die"; exit 1; }
               sleep 5
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the truth-leg mirror): the ANIMATED class needs BOTH legs' second shots
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p-self.png"
@@ -2205,8 +2570,7 @@ jobs:
               for p in $(seq $SI $K $MAXP); do
                 M="srv-wall/c-imagine/scenes/gallery-$TAG-$NS-p$p.tsv"
                 [ -f "$M" ] || { echo "no manifest for $NS $SERIES page $p — exhausted"; EX=1; break; }
-                OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "kill @e[type=!player]" "cim galleryclear" \
+                OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                   "cim gallerypage-entity $NS $p $SERIES")
                 echo "$OUT" | tee "ours-rcon-e$SERIES-$NS$p.log"
                 # THE MARKER CONTRACT (measured #34: create mobs died here):
@@ -2219,8 +2583,7 @@ jobs:
                   || { echo "$NS $SERIES page $p no placed marker"; exit 1; }
                 ours_alive || { echo "ours client died on $NS $SERIES page $p — the ours leg must never die"; exit 1; }
                 sleep 4
-                python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                  "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 test -s "ours-shots/ours-gal-e$SERIES-$NS$p.png" || { echo "$NS $SERIES page $p shot missing"; exit 1; }
                 echo "shot $NS $SERIES page $p"
@@ -2231,8 +2594,7 @@ jobs:
           # the last entity page is still standing here. Kill it NOW and let
           # its death-poof particles expire: killed at the first item page,
           # they land inside the shot at random positions on either leg
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-            "kill @e[type=!player]" >/dev/null 2>&1
+          rcon "kill @e[type=!player]" >/dev/null 2>&1
           sleep 3
           # ITEM replay (per ladder ns): the pack's item channel carries
           # every item; missing pack rows count as nochannel and the join
@@ -2242,30 +2604,25 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-item-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS item page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage-item $NS $p")
               echo "$OUT" | tee "ours-rcon-i-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-item $NS p$p -> placed=" \
                 || { echo "$NS item page $p no placed marker"; exit 1; }
               ours_alive || { echo "ours client died on $NS item page $p — the ours leg must never die"; exit 1; }
               sleep 1   # static item displays settle like the block pages
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-i-$NS$p.png"
               # HELD replay (truth-leg mirror, DIAGNOSTIC): the plugin
               # stages the SAME manifest row's item as the pack CMD carrier
               # into hotbar slot 0; restore the HUD, press "1", shoot
               # first-person (held=<item> cmd=<n|nochannel> names the row)
-              HOUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cim gallerypage-held $NS $p")
+              HOUT=$(rcon "cim gallerypage-held $NS $p")
               echo "$HOUT" | tee "ours-rcon-held-$NS$p.log" || true
-              java -cp vtools Key F1 || true
-              java -cp vtools Key 1 || true
+              java -cp vtools Key F1 1 || true   # one JVM for the pair (14-bt)
               sleep 1
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-h-$NS$p.png" \
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-h-$NS$p.png" \
                 || echo "$NS held page $p shot failed (diagnostic tolerated)"
               java -cp vtools Key F1 || true   # hide the HUD again
               test -s "ours-shots/ours-gal-i-$NS$p.png" || { echo "$NS item page $p shot missing"; exit 1; }
@@ -2282,18 +2639,18 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-particle-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS particle page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage-particle $NS $p")
               echo "$OUT" | tee "ours-rcon-pa-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-particle $NS p$p -> placed=" \
                 || { echo "$NS particle page $p no placed marker"; exit 1; }
               ours_alive || { echo "ours client died on $NS particle page $p — the ours leg must never die"; exit 1; }
               sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-pa-$NS$p.png"
               test -s "ours-shots/ours-gal-pa-$NS$p.png" || { echo "$NS particle page $p shot missing"; exit 1; }
+              sleep 2   # 14-dx the particle self pair (truth-leg mirror — the same 2s window after the main shot, the 14-bw fluid pair's contract)
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-pa-$NS$p-self.png"
               echo "shot $NS particle page $p"
             done
             [ "$EX" = "1" ] || { echo "ours $NS particle replay hit the MAXP cap"; exit 1; }
@@ -2308,18 +2665,18 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-fluid-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS fluid page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "kill @e[type=!player]" "cim galleryclear" \
+              OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
                 "cim gallerypage-fluid $NS $p")
               echo "$OUT" | tee "ours-rcon-fl-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-fluid $NS p$p -> placed=" \
                 || { echo "$NS fluid page $p no placed marker"; exit 1; }
               ours_alive || { echo "ours client died on $NS fluid page $p — the ours leg must never die"; exit 1; }
               sleep 1   # THE FIXED SHOT WINDOW (mirror of the truth leg)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-fl-$NS$p.png"
               test -s "ours-shots/ours-gal-fl-$NS$p.png" || { echo "$NS fluid page $p shot missing"; exit 1; }
+              sleep 2   # 14-bw the fluid self-consistency pair (the truth-leg mirror)
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-fl-$NS$p-self.png"
               echo "shot $NS fluid page $p"
             done
             [ "$EX" = "1" ] || { echo "ours $NS fluid replay hit the MAXP cap"; exit 1; }
@@ -2336,8 +2693,7 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS sound page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cim gallerypage-sound $NS $p")
+              OUT=$(rcon "cim gallerypage-sound $NS $p")
               echo "$OUT" | tee "ours-rcon-s-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-sound $NS p$p -> placed=" \
                 || { echo "$NS sound page $p no placed marker"; exit 1; }
@@ -2355,16 +2711,14 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS gui page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cim gallerypage-gui $NS $p")
+              OUT=$(rcon "cim gallerypage-gui $NS $p")
               echo "$OUT" | tee "ours-rcon-gui-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-gui $NS p$p -> placed=" \
                 || { echo "$NS gui page $p no placed marker"; exit 1; }
               ours_alive || { echo "ours client died on $NS gui page $p — the ours leg must never die"; exit 1; }
               sleep 2   # the screen-settle window (mirror of the truth leg)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-gui-$NS$p.png" \
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
             done
             [ "$EX" = "1" ] || { echo "ours $NS gui replay hit the MAXP cap"; exit 1; }
@@ -2379,16 +2733,14 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-biome-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS biome page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cim gallerypage-biome $NS $p")
+              OUT=$(rcon "cim gallerypage-biome $NS $p")
               echo "$OUT" | tee "ours-rcon-b-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-biome $NS p$p -> placed=" \
                 || { echo "$NS biome page $p no placed marker"; exit 1; }
               ours_alive || { echo "ours client died on $NS biome page $p — the ours leg must never die"; exit 1; }
               sleep 1   # the biome-sync window (mirror of the truth leg)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-b-$NS$p.png" \
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-b-$NS$p.png" \
                 || echo "$NS biome page $p shot failed (diagnostic tolerated)"
             done
             [ "$EX" = "1" ] || { echo "ours $NS biome replay hit the MAXP cap"; exit 1; }
@@ -2403,18 +2755,15 @@ jobs:
             for p in $(seq $SI $K $MAXP); do
               M="srv-wall/c-imagine/scenes/gallery-inv-$NS-p$p.tsv"
               [ -f "$M" ] || { echo "no manifest for $NS inv page $p — exhausted"; EX=1; break; }
-              OUT=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "cim gallerypage-inv $NS $p")
+              OUT=$(rcon "cim gallerypage-inv $NS $p")
               echo "$OUT" | tee "ours-rcon-inv-$NS$p.log"
               echo "$OUT" | grep -q "gallerypage-inv $NS p$p -> placed=" \
                 || { echo "$NS inv page $p no placed marker"; exit 1; }
               ours_alive || { echo "ours client died on $NS inv page $p — the ours leg must never die"; exit 1; }
-              java -cp vtools Key F1 || true   # HUD visible (mirror of the truth leg)
-              java -cp vtools Key E || true
+              java -cp vtools Key F1 E || true   # one JVM for the pair (14-bt; adjacent presses only)
               sleep 2   # the inventory screen renders (fixed window, BOTH legs)
-              python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
-                "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Shot "ours-shots/ours-gal-inv-$NS$p.png" \
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-inv-$NS$p.png" \
                 || echo "$NS inv page $p shot failed (diagnostic tolerated)"
               java -cp vtools Key ESC || true
             done
@@ -2509,9 +2858,21 @@ jobs:
                   --ours "ours-shots/ours-gal-p-${NS}0-again.png" --manifest "$M" \
                   --out "gallery-report/determinism-ours-$NS-p0.json" || true
               fi
+              # 14-br THE BLOCK SELF-CONSISTENCY PAIR: the anim probes already
+              # shoot t0/t1 2s apart on BOTH legs for every dyn=1 page — feed
+              # the second frames to the join so a cell that MOVES AGAINST
+              # ITSELF (either leg) demotes to ANIMATED with evidence, the
+              # 14-bf law's honest escape hatch. Static cells (settled doors,
+              # unpowered machines) keep their self_ae ~0 and stay gated.
+              SELF_T=""; SELF_O=""
+              [ -f "truth-shots/gal-p-$NS$p-t1.png" ] && SELF_T="--truth-self truth-shots/gal-p-$NS$p-t1.png"
+              [ -f "ours-shots/ours-gal-p-$NS$p-t1.png" ] && SELF_O="--ours-self ours-shots/ours-gal-p-$NS$p-t1.png"
               python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-$NS-p$p.json" \
-                --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn || GATE=1
+                --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn \
+                --demote-family '^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)' \
+                --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
+                $SELF_T $SELF_O || GATE=1
             done
           done
           echo "=== ENTITY pages: the same gate, no channel excuses ==="
@@ -2542,7 +2903,7 @@ jobs:
             SELF_T=""; SELF_O=""
             [ -f "truth-shots/gal-e$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$p-self.png"
             [ -f "ours-shots/ours-gal-e$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$p-self.png"
-            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" $SELF_T $SELF_O \
+            python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
               --manifest "$M" --out "gallery-report/join-e$p.json" \
               --diff-dir "gallery-report/diff-e$p" \
               --pitch 2 --gate 240000 || GATE=1
@@ -2563,7 +2924,7 @@ jobs:
               SELF_T=""; SELF_O=""
               [ -f "truth-shots/gal-e$SERIES$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$SERIES$p-self.png"
               [ -f "ours-shots/ours-gal-e$SERIES$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$SERIES$p-self.png"
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" $SELF_T $SELF_O \
+              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
                 --manifest "$M" --out "gallery-report/join-e-$SERIES-minecraft-p$p.json" \
                 --diff-dir "gallery-report/diff-e-$SERIES-minecraft-p$p" \
                 --pitch 2 --gate 240000 || GATE=1
@@ -2580,7 +2941,7 @@ jobs:
                 O="ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 if [ -f "$T" ] && [ -f "$O" ]; then
                   if [ "$SERIES" = mobs ]; then
-                    python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                    python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                       --manifest "$M" --out "gallery-report/join-e-$NS-$p.json" \
                       --diff-dir "gallery-report/diff-e-$NS-$p" \
                       --pitch 2 --gate 240000 || GATE=1
@@ -2606,7 +2967,7 @@ jobs:
               O="ours-shots/ours-gal-i-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth item shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours item shot p$p"; GATE=1; continue; }
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-item-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-item-$NS-p$p" || GATE=1
             done
@@ -2618,14 +2979,22 @@ jobs:
               T="truth-shots/gal-pa-$NS$p.png"
               O="ours-shots/ours-gal-pa-$NS$p.png"
               if [ -f "$T" ] && [ -f "$O" ]; then
+                # 14-dx the particle self-consistency pair: feed the second
+                # frames when present so a cell that moves against ITSELF on
+                # either leg demotes to ANIMATED (the 14-bw fluid join's
+                # contract verbatim) — absent frames keep the page exactly
+                # as before, the demotion only ever rides measured pairs
+                ST=""; SO=""
+                [ -f "truth-shots/gal-pa-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-pa-$NS$p-self.png"
+                [ -f "ours-shots/ours-gal-pa-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-pa-$NS$p-self.png"
                 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
-                  --manifest "$M" --out "gallery-report/diag-particle-$NS-p$p.json" || true
+                  --manifest "$M" $ST $SO --out "gallery-report/diag-particle-$NS-p$p.json" || true
               else
                 echo "$NS particle page $p shots missing (tolerated: diagnostic)"
               fi
             done
           done
-          echo "=== FLUID pages: diagnostic join, no missing-shot excuses (dyn class, fixed 1s shot window, pitch-2 cases) ==="
+          echo "=== FLUID pages: gated join, no missing-shot excuses (dyn class, fixed 1s shot window, pitch-2 cases) ==="
           for NS in $LADDER_NS; do
             for M in $(find truth-meta -name "gallery-fluid-$NS-p*.tsv" | sort -V); do
               B=$(basename "$M" .tsv); p=${B##*-p}
@@ -2633,10 +3002,17 @@ jobs:
               O="ours-shots/ours-gal-fl-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth fluid shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours fluid shot p$p"; GATE=1; continue; }
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              # 14-bw the fluid self-consistency pair: feed the second frames
+              # when present so a cell that moves against ITSELF on either leg
+              # demotes to ANIMATED (the 14-bf law's honest escape hatch) —
+              # absent frames keep the page gated exactly as before
+              ST=""; SO=""
+              [ -f "truth-shots/gal-fl-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-fl-$NS$p-self.png"
+              [ -f "ours-shots/ours-gal-fl-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-fl-$NS$p-self.png"
+              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-fluid-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-fluid-$NS-p$p" \
-                --pitch 2 --gate 240000 || GATE=1
+                $ST $SO --pitch 2 --gate 240000 || GATE=1
             done
           done
           echo "=== SOUND pages: census-style stream join (DIAGNOSTIC — the flip law lives in coverage-gate.py) ==="
@@ -2646,13 +3022,23 @@ jobs:
               TL="truth-meta/srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.log"
               OL="srv-wall/c-imagine/scenes/gallery-sound-$NS-p$p.log"
               if [ -f "$TL" ] && [ -f "$OL" ]; then
-                # --map: the REPORT-ONLY flip preview (the truth names the
-                # modded ids, ours names the post-rewrite vanilla ids —
-                # raw equality stays the verdict until the channel is
-                # measured stable and the flip lands)
+                # --map + --gate-mapped: THE FLIPPED VERDICT — GREEN iff the
+                # ours stream answers every truth event's mapped vanilla
+                # target at the same position (raw modded-id equality is
+                # impossible by construction: truth records modded ids,
+                # ours records the post-rewrite vanilla ids). The sound
+                # flip law: flip after mapped-identity measured stable on
+                # two consecutive runs; SOUND_FLIP=on is the single switch. FLIPPED 2026-11-07:
+                # the last two full runs measured mapped-identity PERFECT in all six
+                # namespaces (#214, #226 — position_hits == expected, order_exact on
+                # every diag; the #226 preview: ae2 1/1, bop 11/11, combat_roll 2/2,
+                # create 77/77, dynamictrees 11/11, mekanism 46/46) — the report-only
+                # preview had zero disagreements to show, the gate rides it now.
+                GATE_FLAG=""
+                [ "$SOUND_FLIP" = "on" ] && GATE_FLAG="--gate-mapped"
                 python3 scripts/cimscene/sound-diff.py --truth "$TL" --ours "$OL" \
                   --ns "$NS" --page "$p" \
-                  --map "srv-wall/c-imagine/f2v/visual-sounds.tsv" \
+                  --map "srv-wall/c-imagine/f2v/visual-sounds.tsv" $GATE_FLAG \
                   --out "gallery-report/diag-sound-$NS-p$p.json" || true
               else
                 echo "$NS sound page $p capture logs missing (tolerated: diagnostic)"

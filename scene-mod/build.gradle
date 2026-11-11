@@ -26,3 +26,62 @@ neoForge {
 repositories {
     mavenCentral()
 }
+
+sourceSets {
+    captureTest {
+        compileClasspath += sourceSets.main.output
+        compileClasspath += sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.runtimeClasspath
+    }
+}
+
+tasks.register('captureTextureTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureTextureTest'
+}
+
+check.dependsOn captureTextureTest
+
+tasks.register('captureBufferTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureBufferTest'
+    systemProperty 'java.awt.headless', 'true'
+}
+
+check.dependsOn captureBufferTest
+
+tasks.register('captureColorTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureColorTest'
+    systemProperty 'java.awt.headless', 'true'
+}
+
+check.dependsOn captureColorTest
+
+tasks.register('captureBlockEntityDataTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureBlockEntityDataTest'
+}
+
+check.dependsOn captureBlockEntityDataTest
+
+tasks.register('captureLightDataTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureLightDataTest'
+}
+
+check.dependsOn captureLightDataTest
+
+tasks.register('captureModelDataTest', JavaExec) {
+    dependsOn captureTestClasses
+    classpath = sourceSets.captureTest.runtimeClasspath
+    mainClass = 'dev.cim.scenemod.CaptureModelDataTest'
+}
+
+check.dependsOn captureModelDataTest

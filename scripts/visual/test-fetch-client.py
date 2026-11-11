@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Client asset download recovery; deterministic, no network or JDK."""
 import contextlib
+import hashlib
 import http.client
 import importlib.util
 import io
@@ -47,6 +48,43 @@ class FetchClientTest(unittest.TestCase):
                 fetch.http_get(error.url)
             self.assertEqual(get.call_count, 1)
             sleep.assert_not_called()
+
+    def test_unsolicited_304_retries_fresh_unconditional_body(self):
+        url = "https://example.test/asset?known=1"
+        error = urllib.error.HTTPError(url, 304, "not modified", {}, None)
+        with patch.object(fetch.urllib.request, "urlopen", side_effect=[error, self.response()]) as get, \
+                patch.object(fetch.time, "sleep"), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(fetch.http_get(url), b"complete")
+            retry = get.call_args_list[1].args[0]
+            parsed = fetch.urllib.parse.urlsplit(retry.full_url)
+            query = fetch.urllib.parse.parse_qs(parsed.query)
+            self.assertEqual(parsed.path, "/asset")
+            self.assertEqual(query["known"], ["1"])
+            self.assertIn("cim_retry", query)
+            self.assertEqual(retry.get_header("Cache-control"), "no-cache")
+            self.assertIsNone(retry.get_header("If-none-match"))
+
+    def test_repeated_304_never_becomes_success(self):
+        error = urllib.error.HTTPError("https://example.test/asset", 304, "not modified", {}, None)
+        with patch.object(fetch.urllib.request, "urlopen", side_effect=error) as get, \
+                patch.object(fetch.time, "sleep"), contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(urllib.error.HTTPError):
+                fetch.http_get(error.url)
+            self.assertEqual(get.call_count, 4)
+
+    def test_wrong_asset_hash_cannot_replace_existing_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "asset"
+            path.write_bytes(b"existing")
+            with patch.object(fetch.urllib.request, "urlopen", return_value=self.response(b"broken")):
+                with self.assertRaisesRegex(ValueError, "SHA1 mismatch"):
+                    fetch.fetch_to("https://example.test/asset", path,
+                                   expected_sha1=hashlib.sha1(b"wanted").hexdigest())
+            self.assertEqual(path.read_bytes(), b"existing")
+            with patch.object(fetch.urllib.request, "urlopen", return_value=self.response(b"wanted")):
+                self.assertEqual(fetch.fetch_to("https://example.test/asset", path,
+                                               expected_sha1=hashlib.sha1(b"wanted").hexdigest()), 6)
+            self.assertEqual(path.read_bytes(), b"wanted")
 
     def test_exhaustion_preserves_existing_asset(self):
         with tempfile.TemporaryDirectory() as tmp:

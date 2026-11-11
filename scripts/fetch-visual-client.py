@@ -19,12 +19,14 @@ Usage:
 """
 import argparse
 import http.client
+import hashlib
 import json
 import os
 import pathlib
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 MANIFEST = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json"
@@ -32,26 +34,40 @@ RESOURCES = "https://resources.download.minecraft.net"
 
 
 def http_get(url: str) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "c-imagine-visual-harness/1.0"})
+    request_url = url
+    headers = {"User-Agent": "c-imagine-visual-harness/1.0"}
     for attempt in range(4):
+        req = urllib.request.Request(request_url, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=120) as r:
                 return r.read()
         except (urllib.error.URLError, http.client.HTTPException,
                 ConnectionError, TimeoutError) as error:
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
             if isinstance(error, urllib.error.HTTPError) and error.code not in (
-                    408, 429, 500, 502, 503, 504):
+                    304, 408, 429, 500, 502, 503, 504):
                 raise
             if attempt == 3:
                 raise
+            if isinstance(error, urllib.error.HTTPError) and error.code == 304:
+                # No If-* request or cached response body exists here. A
+                # stale intermediary's 304 is not usable asset content.
+                parts = urllib.parse.urlsplit(url)
+                headers.update({"Cache-Control": "no-cache", "Pragma": "no-cache"})
+                query = parts.query + ("&" if parts.query else "") + urllib.parse.urlencode(
+                    {"cim_retry": f"{time.time_ns()}-{attempt}"})
+                request_url = urllib.parse.urlunsplit(parts._replace(query=query))
             delay = 2 ** attempt
             print(f"fetch retry {attempt + 1}/3 in {delay}s: {url}: {error}",
                   file=sys.stderr)
             time.sleep(delay)
 
 
-def fetch_to(url: str, path: pathlib.Path) -> int:
+def fetch_to(url: str, path: pathlib.Path, expected_sha1: str | None = None) -> int:
     data = http_get(url)
+    if expected_sha1 is not None and hashlib.sha1(data).hexdigest() != expected_sha1:
+        raise ValueError(f"download SHA1 mismatch: {url}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     return len(data)
@@ -161,14 +177,22 @@ def main() -> int:
         index = json.loads(http_get(index_url))
         fetch_to(index_url, out / "assets" / "indexes" / f"{asset_id}.json")
         objects = index.get("objects", {})
+        # MEASURED (run 42272216175, every ours shard): the fetch_to call
+        # below was INDENTED INSIDE the `if` AFTER `continue` — dead code,
+        # ZERO objects ever downloaded; "5147 fetched/verified" was just
+        # len(objects). The opengl path masked it (the GLX crash killed the
+        # window BEFORE setIcon read the icons); the vulkan path reached
+        # Window.setIcon and died on the missing icon objects. The dedent
+        # makes the loop actually download the asset objects.
+        n_dl = 0
         for name, obj in objects.items():
             h = obj["hash"]
             target = out / "assets" / "objects" / h[:2] / h
             if target.exists() and target.stat().st_size == obj.get("size"):
                 continue
-            fetch_to(f"{RESOURCES}/{h[:2]}/{h}", target)
+            fetch_to(f"{RESOURCES}/{h[:2]}/{h}", target, expected_sha1=h)
             n_dl += 1
-        print(f"assets: {len(objects)} objects fetched/verified")
+        print(f"assets: {n_dl} objects downloaded, {len(objects)} verified")
 
     # --- launch line -------------------------------------------------------------
     jvm = " ".join(a for a in summary["jvm_args"] if isinstance(a, str))

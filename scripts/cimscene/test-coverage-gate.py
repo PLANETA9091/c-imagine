@@ -19,8 +19,10 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
      (12-aq: the ledger sees the visual class, the red is the backlog)
   L. no-walk class total=-1 (unreadable dynamic registry)     -> RED (named)
   M. no-walk classes all total=0 in the namespace             -> GREEN
-  N. particle manifest skip row no-simple-options             -> RED (named)
-     (measured #30: all 13 create particles rejected the bare spawn)
+  N. particle manifest skip row no-simple-options             -> DIAG, GREEN
+     (14-cs: particle is a diagnostic class — the absence is NAMED in the
+     verdict line, the run stays green; measured #30: all 13 create
+     particles rejected the bare spawn)
   O. fluid manifest skip row no-channel                       -> RED (named)
      (measured #30: 4 of 8 create fluids have no legacy block/bucket)
   P. shard shot lists (13-b): listing covers -> GREEN; a hole -> RED
@@ -33,9 +35,10 @@ Builds synthetic fixture trees and asserts the gate's verdicts:
   T. inv walk (round 2): walked diagnostic class -> DIAG-OK, run GREEN;
      a missing ours inv shot -> DIAG-INCOMPLETE, run GREEN
   U. fluid no-truth-surface skip row (round 2 ladder exhausted) -> RED named
-  V. particle no-simple-options:<detail> suffix note          -> RED named
+  V. particle no-simple-options:<detail> suffix note          -> DIAG, GREEN
      (round 2: the note carries the programmatic-ladder failure reason;
-     the prefix match must keep working)
+     the prefix match must keep NAMING it — 14-cs made the class
+     diagnostic, so the name surfaces, the verdict never reds)
   W. entity client-crash-banned row (merged round 3, 14-am)   -> RED named
      (the ban list saved the client — the banned subject still reds with
      its name, the ban can never silently eat verdict content)
@@ -80,23 +83,23 @@ def build_fixture(root, ns="create"):
         f"item\t{cells}\t{cells}\n"
         "particle\t10\t77\n"
         "fluid\t18\t18\n"
-        "blockentity\t3\t0\n"
+        "blockentity\t3\t77\n"
         "sound\t0\t77\n"
         "gui\t0\t1\n"
         "biome\t0\t1\n"
         "inv\t0\t36\n"
-        "painting_variant\t0\t0\n"
-        "wolf_variant\t0\t0\n"
-        "cat_variant\t0\t0\n"
-        "frog_variant\t0\t0\n"
-        "villager_type\t0\t0\n"
-        "mob_effect\t0\t0\n"
-        "trim_material\t0\t0\n"
-        "trim_pattern\t0\t0\n"
-        "banner_pattern\t0\t0\n"
-        "decorated_pot_pattern\t0\t0\n"
-        "enchantment\t0\t0\n"
-        "jukebox_song\t0\t0\n"
+        "painting_variant\t0\t18\n"
+        "wolf_variant\t0\t18\n"
+        "cat_variant\t0\t18\n"
+        "frog_variant\t0\t18\n"
+        "villager_type\t0\t18\n"
+        "mob_effect\t0\t18\n"
+        "trim_material\t0\t18\n"
+        "trim_pattern\t0\t18\n"
+        "banner_pattern\t0\t77\n"
+        "decorated_pot_pattern\t0\t77\n"
+        "enchantment\t0\t18\n"
+        "jukebox_song\t0\t77\n"
         "dimension_type\t0\t0\n", encoding="utf-8")
     # block pages 0..1 (+ terminal page 2)
     for p in (0, 1):
@@ -110,7 +113,17 @@ def build_fixture(root, ns="create"):
         for cls in ("item", "particle", "fluid"):
             (scenes / f"gallery-{cls}-{ns}-p{p}.tsv").write_text(
                 "cell\tx\ty\tz\tthing\tdyn\tnote\n", encoding="utf-8")
-    (scenes / f"gallery-{ns}-be-uncovered.tsv").write_text("", encoding="utf-8")
+    (scenes / f"gallery-{ns}-be-uncovered.tsv").write_text(
+        "create:canvas_sign\ncreate:spooky_be\n", encoding="utf-8")
+    # the 14-ec walked receipts: the variant-blockentity page 0 instantiates
+    # every name the reconciliation names (plus a wall-reachable type), the
+    # truth shot exists, the ours shot is absent (the named lane) and the
+    # terminal marker rides the boot log
+    (scenes / f"gallery-variant-blockentity-{ns}-p0.tsv").write_text(
+        "cell\tx\ty\tz\tsubject\tdyn\tnote\n"
+        "cell\t-5\t-60\t9\tcreate:canvas_sign\t1\tok\n"
+        "cell\t-4\t-60\t9\tcreate:spooky_be\t1\tok\n"
+        "cell\t-3\t-60\t9\tcreate:other_be\t1\tok\n", encoding="utf-8")
 
     def shots(base, prefix):
         # THE SHOT NAME LAW (multi-ns): the block class carries the ns
@@ -132,7 +145,7 @@ def build_fixture(root, ns="create"):
         for cls, word in (("item", "i"), ("particle", "pa"), ("fluid", "fl"),
                           ("held", "h"), ("sound", "s"), ("gui", "gui"),
                           ("inv", "inv"),
-                          ("biome", "b")):
+                          ("biome", "b"), ("vblockentity", "vblockentity")):
             name = f"{prefix}gal-{word}-{ns}0.png" if ns != "minecraft" \
                 else f"{prefix}gal-{word}0.png"
             (base / name).write_bytes(b"x")
@@ -150,6 +163,8 @@ def build_fixture(root, ns="create"):
     for tag in ("item", "particle", "fluid"):
         terminal.append(f"gallery-{tag} done ns={ns} page=1 cells=0 failed=0 "
                         "exhausted=1")
+    terminal.append(f"gallery-variant done kind=blockentity ns={ns} page=1 "
+                    "cells=0 failed=0 skipped=0 exhausted=1")
     (root / "boot.log").write_text("\n".join(terminal) + "\n", encoding="utf-8")
 
 
@@ -283,17 +298,18 @@ def main():
         failures += 0 if ok else 1
 
     # K: a no-walk visual class with entries -> RED, named (12-aq)
-    # (biome LEFT the no-walk set 2026-11-04 — the walk exists, diagnostic;
-    # mob_effect still has no walk, so K rides it now)
+    # (biome LEFT the no-walk set 2026-11-04; the 12 variant classes LEFT it
+    # 2026-11-11 (14-dx) — dimension_type is the one REMAINING no-walk class,
+    # so K rides it now)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
         idx = root / "scenes" / "gallery-create-index.tsv"
         txt = idx.read_text(encoding="utf-8").replace(
-            "mob_effect\t0\t0\n", "mob_effect\t64\t0\n")
+            "dimension_type\t0\t0\n", "dimension_type\t64\t0\n")
         idx.write_text(txt, encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "mob_effect\ttotal=64" in r.stdout \
+        ok = r.returncode == 1 and "dimension_type\ttotal=64" in r.stdout \
             and "no-walk-yet" in r.stdout
         print("K no-walk class RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
@@ -304,10 +320,10 @@ def main():
         build_fixture(root)
         idx = root / "scenes" / "gallery-create-index.tsv"
         txt = idx.read_text(encoding="utf-8").replace(
-            "painting_variant\t0\t0\n", "painting_variant\t-1\t0\n")
+            "painting_variant\t0\t18\n", "painting_variant\t-1\t18\n")
         idx.write_text(txt, encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "painting_variant" in r.stdout \
+        ok = r.returncode == 1 and "variant-painting" in r.stdout \
             and "unreadable-registry" in r.stdout
         print("L unreadable registry RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
@@ -321,7 +337,9 @@ def main():
         print("M no-walk zeros GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # N: particle absence row -> RED, named (12-as)
+    # N: particle absence row -> NAMED, run GREEN (14-cs: particle joined
+    # DIAGNOSTIC_CLASSES — the absence is reported, the verdict never reds;
+    # the 12-as red law is retired with the flip)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -330,9 +348,139 @@ def main():
                      "skip\t-1\t-1\t-1\tcreate:rot\t1\tno-simple-options\n",
                      encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "create:rot(no-simple-options)" in r.stdout \
-            and "particle" in r.stdout
-        print("N particle absence RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "DIAG-INCOMPLETE\tparticle" in r.stdout \
+            and "create:rot(no-simple-options)" in r.stdout
+        print("N particle absence DIAG named GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V1 (14-dx): a walked variant class with entries — manifests + truth
+    # shots present, ours shots ABSENT (no ours replay channel yet) -> the
+    # class reports DIAG-INCOMPLETE missing_ours_shots and the verdict stays
+    # GREEN (the explicitly-incomplete audit state, never red)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        idx.write_text(idx.read_text(encoding="utf-8").replace(
+            "painting_variant\t0\t18\n", "painting_variant\t37\t18\n"), encoding="utf-8")
+        for p in (0, 1, 2):
+            (root / "scenes" / f"gallery-variant-painting-create-p{p}.tsv").write_text(
+                "cell\tx\ty\tz\tsubject\tdyn\tnote\n", encoding="utf-8")
+            (root / "truth-shots" / f"gal-vpainting-create{p}.png").write_bytes(b"x")
+        boot = root / "boot.log"
+        boot.write_text(boot.read_text(encoding="utf-8")
+            + "gallery-variant done kind=painting ns=create page=3 cells=0 failed=0 skipped=0 exhausted=1\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "DIAG-INCOMPLETE\tvariant-painting" in r.stdout \
+            and "missing_ours_shots=3" in r.stdout
+        print("V1 variant walked, ours missing, DIAG GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V2 (14-dx): a variant absence row (oversized painting) is NAMED in the
+    # DIAG line, the verdict stays GREEN (diagnostic class)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        idx.write_text(idx.read_text(encoding="utf-8").replace(
+            "painting_variant\t0\t18\n", "painting_variant\t1\t18\n"), encoding="utf-8")
+        (root / "scenes" / "gallery-variant-painting-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tsubject\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tminecraft:pigscene\t0\toversized\n", encoding="utf-8")
+        (root / "truth-shots" / "gal-vpainting-create0.png").write_bytes(b"x")
+        boot = root / "boot.log"
+        boot.write_text(boot.read_text(encoding="utf-8")
+            + "gallery-variant done kind=painting ns=create page=1 cells=0 failed=0 skipped=0 exhausted=1\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "DIAG-INCOMPLETE\tvariant-painting" in r.stdout \
+            and "minecraft:pigscene(oversized)" in r.stdout
+        print("V2 variant absence DIAG named GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V3 (14-dx): a variant class whose terminal marker is missing (the walk
+    # hit the MAXP cap) reports DIAG-INCOMPLETE terminal-marker-missing; the
+    # verdict stays GREEN until the flip, and the line NAMES the gap
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        idx.write_text(idx.read_text(encoding="utf-8").replace(
+            "jukebox_song\t0\t77\n", "jukebox_song\t10\t77\n"), encoding="utf-8")
+        (root / "scenes" / "gallery-variant-jukebox-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tsubject\tdyn\tnote\n", encoding="utf-8")
+        (root / "truth-shots" / "gal-vjukebox-create0.png").write_bytes(b"x")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-INCOMPLETE\tvariant-jukebox" in r.stdout \
+            and "terminal-marker-missing" in r.stdout
+        print("V3 variant terminal marker DIAG GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V4 (14-ec): the walked blockentity law — every reconciliation name
+    # instantiated by the variant-blockentity manifest cell rows -> OK, the
+    # verdict GREEN (the fixture ships exactly this shape)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "OK\tblockentity\ttotal=3" in r.stdout
+        print("V4 blockentity walked law GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V5 (14-ec): one reconciliation name nothing instantiated stays RED,
+    # named (uncovered-remaining) — the instantiation receipts gate
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        # drop the spooky_be cell row from the lane's manifest
+        p = root / "scenes" / "gallery-variant-blockentity-create-p0.tsv"
+        p.write_text("cell\tx\ty\tz\tsubject\tdyn\tnote\n"
+                     "cell\t-5\t-60\t9\tcreate:canvas_sign\t1\tok\n",
+                     encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "uncovered-remaining" in r.stdout \
+            and "create:spooky_be" in r.stdout
+        print("V5 blockentity uncovered-remaining RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # V6 (14-ec): the lane's walk never ran (manifests absent) -> RED — a
+    # walk that never ran cannot claim coverage
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-variant-blockentity-create-p0.tsv").unlink()
+        r = run_gate(root)
+        ok = r.returncode == 1 and "missing_manifests=1" in r.stdout \
+            and "blockentity" in r.stdout
+        print("V6 blockentity walk-not-run RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # A literal resource path "null" does not justify removing a registered type.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-particle-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tparticle\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tcreate:null\t1\tnull-path-dead-id\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "create:null(null-path-dead-id)" in r.stdout \
+            and "DIAG-INCOMPLETE\tparticle" in r.stdout
+        print("N2 name-based particle exclusion DIAG GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     # O: fluid no-channel row -> RED, named (12-as)
@@ -495,7 +643,9 @@ def main():
         failures += 0 if ok else 1
 
     # V: the particle note carries the programmatic-ladder failure detail
-    # (no-simple-options:<reason>) — the prefix match must keep reding it
+    # (no-simple-options:<reason>) — the prefix match must keep NAMING it
+    # (14-cs: the class is diagnostic, so the name surfaces in the DIAG
+    # line and the run stays green)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -505,9 +655,10 @@ def main():
                      "no-simple-options:com.mojang.serialization.DynamicOps$1\n",
                      encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "create:contraption_particle(no-simple-options:" in r.stdout \
-            and "particle" in r.stdout
-        print("V particle detailed note RED:",
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "create:contraption_particle(no-simple-options:" in r.stdout \
+            and "DIAG-INCOMPLETE\tparticle" in r.stdout
+        print("V particle detailed note DIAG named GREEN:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 

@@ -1,19 +1,28 @@
 package dev.cim.scenemod;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
 import com.mojang.logging.LogUtils;
+import com.mojang.blaze3d.platform.Lighting;
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.util.FastColor;
+import org.lwjgl.opengl.GL11;
 import net.minecraft.client.renderer.BiomeColors;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.AbstractTexture;
+import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.client.resources.metadata.animation.AnimationMetadataSection;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -42,20 +51,25 @@ import net.neoforged.neoforge.common.NeoForge;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeSet;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
+import net.minecraft.nbt.NbtAccounter;
+import net.minecraft.nbt.NbtIo;
 
 /**
  * Ask the real client what each wall cell draws. A static pack model cannot
@@ -68,7 +82,11 @@ import java.util.stream.Stream;
  * <p>Writes, beside the manifests: {@code gallery-<ns>-p<p>.ctx.tsv} rows
  * {@code x y z q<hash>}; {@code quads/<hash>.tsv}, one quad per line (sprite,
  * shade, tint, x y z u v per vertex, then r g b per vertex; model units,
- * sprite-local 0..16 UVs, colour = ambient occlusion x tint);
+ * sprite-local 0..16 UVs, colour = native diffuse x ambient occlusion x tint x baked color; a sprite prefixed
+ * with @ is an exact PNG resource such as @mekanism:render/jetpack.png;
+ * ~hash names a decoded custom-atlas sprite under quads/textures/hash.png;
+ * optional four vertex-alpha multipliers follow the twelve RGB fields, and
+ * native liquid rows append their registered homogeneous chunk material);
  * {@code quads/rows.tsv}, the distinct {@code state#q<hash>} manifest rows.
  */
 final class QuadDump {
@@ -85,8 +103,16 @@ final class QuadDump {
     private static int berDrawn;
     private static int berNotRendered;
     private static int berFailed;
+    private static int berForeign;
     private static int berNoLevel;
     private static int waited;
+    private static Path capturedTextures;
+    private static final Map<TextureAtlasSprite, String> capturedSpriteNames = new IdentityHashMap<>();
+    private static final Map<String, String> spriteAliases = new java.util.TreeMap<>();
+    // 14-dg: the runtime-registered textures the replay cannot know (the font
+    // glyph atlases — the nixie text quads' texture) read back once to a
+    // captured png and every consumer row references it by the ~hash name.
+    private static final Map<AbstractTexture, String> capturedTextureNames = new IdentityHashMap<>();
 
     private QuadDump() {
     }
@@ -158,7 +184,14 @@ final class QuadDump {
         }
         Path out = scenes.resolve("quads");
         Files.createDirectories(out);
-        TextureAtlas atlas = Minecraft.getInstance().getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);
+        capturedTextures = out.resolve("textures");
+        capturedSpriteNames.clear();
+        spriteAliases.clear();
+        Minecraft mc = Minecraft.getInstance();
+        // Like LevelRenderer immediately before entities/BERs. Tick capture
+        // otherwise inherits the last GUI pass's CPU diffuse-light state.
+        setupCaptureLighting(mc.level != null && mc.level.effects().constantAmbientLight());
+        TextureAtlas atlas = mc.getModelManager().getAtlas(InventoryMenu.BLOCK_ATLAS);
         List<TextureAtlasSprite> sprites = new ArrayList<>(atlas.getTextures().values());
         TreeSet<String> rows = new TreeSet<>();
         int cells = 0;
@@ -170,15 +203,29 @@ final class QuadDump {
         }
         for (Path mf : manifests) {
             List<String> lines = Files.readAllLines(mf, StandardCharsets.UTF_8);
-            if (lines.isEmpty() || !lines.get(0).startsWith("cell\tx\ty\tz\tstate")) {
+            boolean fluidPage = !lines.isEmpty() && lines.get(0).startsWith("cell\tx\ty\tz\tfluid");
+            if (lines.isEmpty() || (!fluidPage && !lines.get(0).startsWith("cell\tx\ty\tz\tstate"))) {
                 continue;
             }
             Page page = new Page();
+            Path lightFile = mf.resolveSibling(mf.getFileName().toString().replaceAll("\\.tsv$", ".light"));
+            if (Files.exists(lightFile)) {
+                page.light = CaptureLightData.parse(Files.readString(lightFile, StandardCharsets.UTF_8));
+            } else {
+                LOGGER.warn("[cimscene] quad dump legacy page without settled light {}", mf.getFileName());
+            }
+            page.requireSnapshot = fluidPage;
             Map<BlockPos, String> names = new HashMap<>();
+            Map<BlockPos, BlockState> targets = new HashMap<>();
+            java.util.Set<BlockPos> liquids = new java.util.HashSet<>();
             for (String line : lines.subList(1, lines.size())) {
                 String[] c = line.split("\t");
-                if (c.length < 5 || !c[0].equals("cell")) {
+                if (c.length < 5 || !c[0].equals("cell") || c[1].equals("x")) {
                     continue;
+                }
+                if (fluidPage) {
+                    if (c.length < 8 || !(c[6].equals("mod-tank") || c[6].equals("block"))) continue;
+                    c[4] = c[7].split("\\|", 2)[0];
                 }
                 BlockPos pos = new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]), Integer.parseInt(c[3]));
                 try {
@@ -188,19 +235,80 @@ final class QuadDump {
                                     c[4].toLowerCase(Locale.ROOT), false)
                             .blockState());
                     names.put(pos, c[4]);
+                    targets.put(pos, page.cells.get(pos));
+                    if (fluidPage && c[6].equals("block")) {
+                        liquids.add(pos);
+                    }
                 } catch (Exception bad) {
                     failed++;
                     LOGGER.info("[cimscene] quad dump skip {}: {}", c[4], bad.toString());
                 }
             }
             StringBuilder ctx = new StringBuilder();
-            for (Map.Entry<BlockPos, BlockState> e : page.cells.entrySet()) {
-                cells++;
+            // 14-bn: the walk's settled BE NBT (the sibling .benbt file — the
+            // manifest's own schema stays 7-column). Loaded into the capture
+            // BE so runtime-only state (the gearshift's shifted flag, the
+            // fluid pipe's flow data) renders as the wall settled it, not as
+            // a fresh BE's defaults.
+            Map<BlockPos, String> beTags = new HashMap<>();
+            Path benbt = mf.resolveSibling(
+                    mf.getFileName().toString().replaceAll("\\.tsv$", ".benbt"));
+            if (Files.exists(benbt)) {
+                // never let a sibling file kill the dump: a malformed .benbt
+                // costs its cells' BE fidelity (fresh-BE fallback), not the run
                 try {
-                    String mesh = meshFor(page, e.getKey(), e.getValue(), sprites);
+                    for (String line : Files.readAllLines(benbt, StandardCharsets.UTF_8)) {
+                        String[] c = line.split("\t");
+                        // the header row ("cell x y z nbt") rides the same shape
+                        // as a data row's prefix — skip it like the manifest
+                        // parser skips its own
+                        if (c.length >= 5 && c[0].equals("cell") && !c[1].equals("x")) {
+                            beTags.put(new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]),
+                                    Integer.parseInt(c[3])), c[4]);
+                        }
+                    }
+                    LOGGER.info("[cimscene] quad dump be nbt rows {}: {}", benbt.getFileName(), beTags.size());
+                } catch (Throwable bad) {
+                    LOGGER.info("[cimscene] quad dump be nbt unusable {}: {}",
+                            benbt.getFileName(), bad.toString());
+                    beTags.clear();
+                }
+            }
+            page.beTags.putAll(beTags);
+            // Rebuild the same sealed six-face cases as CimSceneMod; support
+            // blocks are context, not additional capture targets.
+            for (BlockPos pos : liquids) {
+                for (Direction face : Direction.values()) {
+                    BlockPos shell = pos.relative(face);
+                    if (shell.getY() >= FLOOR_Y + 1) {
+                        page.cells.putIfAbsent(shell, Blocks.GLASS.defaultBlockState());
+                    }
+                }
+            }
+            for (Map.Entry<BlockPos, BlockState> e : targets.entrySet()) {
+                cells++;
+                if (fluidPage && !liquids.contains(e.getKey()) && !page.beTags.containsKey(e.getKey())) {
+                    failed++;
+                    LOGGER.info("[cimscene] quad dump fluid tank missing real BE snapshot {} at {}",
+                            names.get(e.getKey()), e.getKey());
+                    continue;
+                }
+                try {
+                    if (fluidPage && !liquids.contains(e.getKey()) && page.getBlockEntity(e.getKey()) == null) {
+                        throw new IllegalStateException("native tank BE unavailable");
+                    }
+                    long priorBerFailures = berFailed;
+                    long priorBerForeign = berForeign;
+                    String mesh = liquids.contains(e.getKey())
+                            ? liquidMeshFor(page, e.getKey(), e.getValue(), sprites)
+                            : meshFor(page, e.getKey(), e.getValue(), sprites);
+                    if (berFailed != priorBerFailures || berForeign != priorBerForeign) {
+                        throw new IllegalStateException("native block entity renderer failed or lost geometry");
+                    }
                     if (mesh == null) {
                         continue;
                     }
+                    if (mesh.isEmpty()) mesh = "# cimscene native empty mesh v1\n";
                     String hash = sha(mesh);
                     Path file = out.resolve(hash + ".tsv");
                     if (!Files.exists(file)) {
@@ -224,9 +332,69 @@ final class QuadDump {
         }
         Files.write(out.resolve("rows.tsv"), rows, StandardCharsets.UTF_8);
         dumpItems(scenes, out, sprites);
+        StringBuilder aliases = new StringBuilder("# native sprite\tdecoded capture\n");
+        spriteAliases.forEach((name, capture) -> aliases.append(name).append('\t').append(capture).append('\n'));
+        Files.writeString(out.resolve("sprite-aliases.tsv"), aliases, StandardCharsets.UTF_8);
+        LOGGER.info("[cimscene] quad dump captured_atlas_sprites={} captured_textures={}",
+                capturedSpriteNames.size(), capturedTextureNames.size());
         LOGGER.info("[cimscene] quad dump done cells={} dumped={} distinct={} failed={} "
-                        + "block_entities drawn={} failed={} no_level={} not_rendered={}",
-                cells, dumped, rows.size(), failed, berDrawn, berFailed, berNoLevel, berNotRendered);
+                        + "block_entities drawn={} failed={} foreign={} no_level={} not_rendered={}",
+                cells, dumped, rows.size(), failed, berDrawn, berFailed, berForeign, berNoLevel, berNotRendered);
+    }
+
+    /** Native liquid vertices use chunk-local coordinates on each axis. */
+    static Vec3 liquidCaptureOrigin(BlockPos pos) {
+        return new Vec3(-(pos.getX() & 15), -(pos.getY() & 15), -(pos.getZ() & 15));
+    }
+
+    private static String liquidMeshFor(Page page, BlockPos pos, BlockState state,
+                                        List<TextureAtlasSprite> sprites) {
+        return liquidMeshFor(page, pos, state, sprites, true);
+    }
+
+    private static String liquidMeshFor(Page page, BlockPos pos, BlockState state,
+                                        List<TextureAtlasSprite> sprites, boolean requireGeometry) {
+        FluidState fluid = state.getFluidState();
+        // A flowing registry entry may genuinely settle to air in the sealed
+        // rig. The settled manifest replays that exact vanilla air state.
+        if (fluid.isEmpty()) return null;
+        Minecraft mc = Minecraft.getInstance();
+        ItemCapture capture = new ItemCapture(sprites, liquidCaptureOrigin(pos));
+        VertexConsumer consumer = capture.bufferFor("liquid",
+                "texture[Optional[minecraft:textures/atlas/blocks.png]]", false);
+        mc.getBlockRenderer().renderLiquid(pos, page, consumer, state, fluid);
+        capture.flush();
+        if (capture.foreign != 0 || (requireGeometry && capture.out.length() == 0)) {
+            throw new IllegalStateException("native liquid renderer produced missing/unbound geometry");
+        }
+        // Preserve the real registered chunk material, not a guessed alpha mode.
+        RenderType layer = net.minecraft.client.renderer.ItemBlockRenderTypes.getRenderLayer(fluid);
+        String material;
+        if (layer == RenderType.translucent()) material = "translucent";
+        else if (layer == RenderType.solid()) material = "solid";
+        else if (layer == RenderType.cutout()) material = "cutout";
+        else throw new IllegalStateException("unsupported native liquid layer: " + layer);
+        return withLiquidMaterial(capture.out.toString(), material);
+    }
+
+    static String withLiquidMaterial(String mesh, String material) {
+        StringBuilder out = new StringBuilder();
+        for (String line : mesh.lines().toList()) {
+            String[] row = line.split("\t", -1);
+            if (row.length != 39 && row.length != 41) {
+                throw new IllegalArgumentException("unexpected liquid vertex row: " + row.length);
+            }
+            // Material precedes the optional BLOCK/SKY tail in both producer and reader.
+            out.append(String.join("\t", java.util.Arrays.copyOf(row, 39))).append('\t').append(material);
+            if (row.length == 41) out.append('\t').append(row[39]).append('\t').append(row[40]);
+            out.append('\n');
+        }
+        return out.toString();
+    }
+
+    static void setupCaptureLighting(boolean constantAmbientLight) {
+        if (constantAmbientLight) Lighting.setupNetherLevel();
+        else Lighting.setupLevel();
     }
 
     /**
@@ -236,48 +404,66 @@ final class QuadDump {
      */
     private static String meshFor(Page page, BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites) {
         Minecraft mc = Minecraft.getInstance();
-        BakedModel model = mc.getBlockRenderer().getBlockModel(state);
-        ModelData data = model.getModelData(page, pos, state, ModelData.EMPTY);
-        RandomSource random = RandomSource.create();
-        long seed = state.getSeed(pos);
-        random.setSeed(seed);
         Capture capture = new Capture(sprites, state.getOffset(page, pos));
-        PoseStack pose = new PoseStack();
-        for (RenderType type : model.getRenderTypes(state, random, data)) {
-            mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
-                    random, seed, OverlayTexture.NO_OVERLAY, data, type);
+        // SectionCompiler renders fluid independently of RenderShape, including
+        // waterlogged MODEL blocks and liquid blocks with no static model.
+        // Fully occluded fluid can legitimately emit no faces on a block page.
+        if (!state.getFluidState().isEmpty()) {
+            capture.out.append(liquidMeshFor(page, pos, state, sprites, false));
+        }
+        // Native SectionCompiler only submits static geometry for MODEL states.
+        // ENTITYBLOCK_ANIMATED still reaches its BER, without a phantom static panel.
+        if (state.getRenderShape() == net.minecraft.world.level.block.RenderShape.MODEL) {
+            BakedModel model = mc.getBlockRenderer().getBlockModel(state);
+            ModelData data = captureModelData(model, page, pos, state);
+            RandomSource random = RandomSource.create();
+            long seed = state.getSeed(pos);
+            random.setSeed(seed);
+            PoseStack pose = new PoseStack();
+            for (RenderType type : model.getRenderTypes(state, random, data)) {
+                mc.getBlockRenderer().getModelRenderer().tesselateBlock(page, model, state, pos, pose, capture, true,
+                        random, seed, OverlayTexture.NO_OVERLAY, data, type);
+            }
         }
         if (state.hasBlockEntity()) {
-            appendBlockEntity(pos, state, sprites, capture.out);
+            appendBlockEntity(page, pos, state, sprites, capture.out);
         }
-        return capture.out.length() == 0 ? null : capture.out.toString();
+        return capture.out.toString();
+    }
+
+    static ModelData captureModelData(BakedModel model, BlockAndTintGetter page,
+                                      BlockPos pos, BlockState state) {
+        return model.getModelData(page, pos, state, page.getModelData(pos));
     }
 
     /**
      * What the cell's BlockEntityRenderer draws on top of its block model: for
-     * a Create door that is the whole door. A fresh block entity stands in for
-     * the wall's, so state a mod only sets at runtime is not reflected. Mod
-     * code can fail here in any way; that costs this cell its renderer, never
-     * the dump, and the final log line counts it.
+     * a Create door that is the whole door. The capture BE is the wall's OWN
+     * settled state when the manifest's sibling .benbt file carries it (14-bn:
+     * the walk saves each settled tile's real NBT server-side); only a cell
+     * without a row falls back to a fresh block entity, so state a mod only
+     * sets at runtime renders as the wall holds it, not as the type default.
+     * Mod code can fail here in any way; that costs this cell its renderer,
+     * never the dump, and the final log line counts it.
      */
-    private static void appendBlockEntity(BlockPos pos, BlockState state, List<TextureAtlasSprite> sprites,
-                                          StringBuilder out) {
+    private static void appendBlockEntity(Page page, BlockPos pos, BlockState state,
+                                          List<TextureAtlasSprite> sprites, StringBuilder out) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             berNoLevel++;
             return;
         }
         try {
-            if (!(state.getBlock() instanceof EntityBlock block)) {
-                return;
-            }
-            BlockEntity be = block.newBlockEntity(pos, state);
+            // Static model data and the BER observe the same restored BE.
+            BlockEntity be = page.getBlockEntity(pos);
             if (be == null) {
                 return;
             }
-            be.setLevel(mc.level);
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
+                if (isNixieRenderer(be)) {
+                    LOGGER.info("[cimscene] 14-dn text-quads diag {}: no renderer registered", state.getBlock());
+                }
                 return;
             }
             // Match BlockEntityRenderDispatcher's eligibility checks. Some
@@ -286,19 +472,42 @@ final class QuadDump {
             if (!be.getType().isValid(state)
                     || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
                 berNotRendered++;
+                if (isNixieRenderer(be)) {
+                    LOGGER.info("[cimscene] 14-dn text-quads diag {}: not rendered (typeValid={} shouldRender={})",
+                            state.getBlock(), be.getType().isValid(state),
+                            renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()));
+                }
                 return;
             }
             ItemCapture capture = new ItemCapture(sprites, 0);
-            renderer.render(be, 0, new PoseStack(), capture, LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY);
+            renderer.render(be, 0, new PoseStack(), capture,
+                    net.minecraft.client.renderer.LevelRenderer.getLightColor(page, pos), OverlayTexture.NO_OVERLAY);
             capture.flush();
             out.append(capture.out);
+            berForeign += capture.foreign;
             if (capture.out.length() > 0) {
                 berDrawn++;
+            }
+            if (isNixieRenderer(be)) {
+                LOGGER.info("[cimscene] 14-dn text-quads diag {}: renderer={} buffers={} outLen={} foreign={}",
+                        state.getBlock(), renderer.getClass().getName(), capture.bufferStates(),
+                        capture.out.length(), capture.foreign);
             }
         } catch (Throwable t) {
             berFailed++;
             LOGGER.info("[cimscene] quad dump block entity skip {}: {}", state.getBlock(), t.toString());
         }
+    }
+
+    /** 14-dn: the where-do-text-quads-go diagnostic targets the nixie text-gap
+     *  class — every nixie-family BER's capture stream lands in the boot log
+     *  (the renderer class, the RenderType buffer stream, the emitted length
+     *  and the foreign count), so the next run answers whether the capture rig
+     *  ever sees the glyph quads and in which RenderType. */
+    private static boolean isNixieRenderer(BlockEntity be) {
+        String type = String.valueOf(be.getType());
+        String cls = be.getClass().getName().toLowerCase();
+        return cls.contains("nixie") || type.toLowerCase().contains("nixie");
     }
 
     /** Records each quad the renderer emits; everything per-vertex arrives in putBulkData. */
@@ -315,7 +524,14 @@ final class QuadDump {
         @Override
         public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
                                 float a, int[] light, int overlay, boolean readAlpha) {
-            appendQuad(out, q, sprites, offset, brightness, r, g, b);
+            // 14-cy: the quad's packed light (block<<4|sky<<20 — LevelRenderer
+            // getLightColor layout) rides the row so the pack can split the
+            // composite into the scene-lit and the fullbright (mod-forced
+            // light override) quad groups, and the replay can pin each
+            // group's display to the light the truth actually rendered with.
+            int packed = light != null && light.length > 0
+                    ? mergePackedLight(light[0], q.getVertices()[6]) : -1;
+            appendQuad(out, q, sprites, offset, brightness, r, g, b, a, readAlpha, packed);
         }
 
         @Override
@@ -349,12 +565,19 @@ final class QuadDump {
         }
     }
 
+    /** Native applyBakedLighting takes the unsigned maximum of each UV2 channel. */
+    private static int mergePackedLight(int scene, int baked) {
+        return Math.max(scene & 0xffff, baked & 0xffff)
+                | (Math.max((scene >>> 16) & 0xffff, (baked >>> 16) & 0xffff) << 16);
+    }
+
     private static void appendQuad(StringBuilder sb, BakedQuad q, List<TextureAtlasSprite> sprites, Vec3 off,
-                                   float[] brightness, float r, float g, float b) {
+                                   float[] brightness, float r, float g, float b, float a, boolean readColor,
+                                   int packedLight) {
         int[] v = q.getVertices();
         float[][] pos = new float[4][3];
         float[][] uv = new float[4][2];
-        float[][] rgb = new float[4][3];
+        float[][] rgb = new float[4][4];
         for (int i = 0; i < 4; i++) {
             int o = i * STRIDE;
             pos[i][0] = Float.intBitsToFloat(v[o]) + (float) off.x;
@@ -362,16 +585,43 @@ final class QuadDump {
             pos[i][2] = Float.intBitsToFloat(v[o + 2]) + (float) off.z;
             uv[i][0] = Float.intBitsToFloat(v[o + UV]);
             uv[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
-            rgb[i][0] = brightness[i] * r;
-            rgb[i][1] = brightness[i] * g;
-            rgb[i][2] = brightness[i] * b;
+            bakedColor(rgb[i], v[o + 3], brightness[i], r, g, b, a, readColor);
         }
-        writeQuad(sb, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), pos, uv, rgb);
+        // Chunk shaders consume the renderer's already-shaded RGB directly.
+        // Replaying q.isShade here would add the item shader's unrelated light.
+        if (!writeQuad(sb, q.getSprite(), sprites, false, q.getTintIndex(), pos, uv, rgb, false, packedLight)) {
+            throw new IllegalStateException("native block quad texture unavailable");
+        }
+    }
+
+    /** Match the native BLOCK byte layout and VertexConsumer's final byte quantization. */
+    private static void bakedColor(float[] out, int packed, float brightness,
+                                   float r, float g, float b, float a, boolean readColor) {
+        // Native VertexConsumer reads bytes from a native-order IntBuffer.
+        int rgba = java.nio.ByteOrder.nativeOrder() == java.nio.ByteOrder.LITTLE_ENDIAN
+                ? packed : Integer.reverseBytes(packed);
+        out[0] = (int) (readColor ? (rgba & 255) * brightness * r : brightness * r * 255f) / 255f;
+        out[1] = (int) (readColor ? ((rgba >>> 8) & 255) * brightness * g : brightness * g * 255f) / 255f;
+        out[2] = (int) (readColor ? ((rgba >>> 16) & 255) * brightness * b : brightness * b * 255f) / 255f;
+        out[3] = (readColor ? (int) ((a * ((rgba >>> 24) & 255) / 255f) * 255)
+                : (int) (a * 255)) / 255f;
     }
 
     /** Positions in 0..1 block space, UVs in atlas space; a null sprite is looked up by UV. */
     private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
                                      boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb) {
+        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, false, -1);
+    }
+
+    private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
+                                     boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
+                                     boolean capturePixels) {
+        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, capturePixels, -1);
+    }
+
+    private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
+                                     boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
+                                     boolean capturePixels, int packedLight) {
         float cu = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) / 4;
         float cv = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) / 4;
         // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
@@ -392,13 +642,150 @@ final class QuadDump {
             local[i][0] = (uv[i][0] - sprite.getU0()) / (sprite.getU1() - sprite.getU0());
             local[i][1] = (uv[i][1] - sprite.getV0()) / (sprite.getV1() - sprite.getV0());
         }
-        appendRow(sb, sprite.contents().name().toString(), shade, tint, pos, local, rgb);
+        String name = sprite.contents().name().toString();
+        String decoded = capturedSprite(sprite);
+        // A main-atlas sprite may be generated by a mod's runtime resource pack.
+        // Preserve its semantic name; the replay can use these native pixels
+        // when no physical PNG exists in the supplied jars.
+        if (!capturePixels) spriteAliases.put(name, decoded);
+        appendRow(sb, capturePixels ? decoded : name, shade, tint, pos, local, rgb, packedLight);
         return true;
+    }
+
+    /** Persist the decoded pixels, including generated atlas sources, without guessing a jar path. */
+    private static String capturedSprite(TextureAtlasSprite sprite) {
+        String existing = capturedSpriteNames.get(sprite);
+        if (existing != null) {
+            return existing;
+        }
+        try {
+            var contents = sprite.contents();
+            byte[] png = contents.getOriginalImage().asByteArray();
+            JsonObject metadata = new JsonObject();
+            contents.metadata().getSection(AnimationMetadataSection.SERIALIZER).ifPresent(animation -> {
+                JsonObject a = new JsonObject();
+                a.addProperty("width", contents.width());
+                a.addProperty("height", contents.height());
+                a.addProperty("frametime", animation.getDefaultFrameTime());
+                a.addProperty("interpolate", animation.isInterpolatedFrames());
+                JsonArray frames = new JsonArray();
+                animation.forEachFrame((index, time) -> {
+                    JsonObject frame = new JsonObject();
+                    frame.addProperty("index", index);
+                    frame.addProperty("time", time);
+                    frames.add(frame);
+                });
+                if (!frames.isEmpty()) {
+                    a.add("frames", frames);
+                }
+                metadata.add("animation", a);
+            });
+            String meta = metadata.toString();
+            String hash = sha(Base64.getEncoder().encodeToString(png) + meta);
+            Files.createDirectories(capturedTextures);
+            Files.write(capturedTextures.resolve(hash + ".png"), png);
+            if (!metadata.isEmpty()) {
+                Files.writeString(capturedTextures.resolve(hash + ".png.mcmeta"), meta, StandardCharsets.UTF_8);
+            }
+            String name = "~" + hash;
+            capturedSpriteNames.put(sprite, name);
+            return name;
+        } catch (Exception failure) {
+            throw new IllegalStateException("Cannot capture atlas sprite " + sprite.contents().name(), failure);
+        }
+    }
+
+    /**
+     * 14-dg: read a runtime-registered texture back from the GL — the font
+     * glyph atlases exist ONLY on the GPU (FontTexture uploads each glyph via
+     * SheetGlyphInfo and keeps no NativeImage), so no object graph can reach
+     * their pixels. The readback lands as a captured png under the ~hash name
+     * (the capturedSprite convention the pack already hosts). An intensity
+     * (single-channel) atlas carries the glyph COVERAGE in red: it ships as a
+     * white RGBA texture with the coverage in alpha, so the replay's shader
+     * (texture x vertexColor) reproduces the font shader's coverage alpha —
+     * the nixie text renders the per-character color the renderer recorded.
+     * Colored atlases pass through unchanged. Null (the honest drop, counted
+     * foreign) when the readback fails for any reason.
+     */
+    private static String capturedTexture(AbstractTexture texture) {
+        String existing = capturedTextureNames.get(texture);
+        if (existing != null) {
+            return existing;
+        }
+        if (texture == MissingTextureAtlasSprite.getTexture()) {
+            return null;
+        }
+        try {
+            boolean colored = coloredTexture(texture);
+            texture.bind();
+            int width = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_WIDTH);
+            int height = GL11.glGetTexLevelParameteri(GL11.GL_TEXTURE_2D, 0, GL11.GL_TEXTURE_HEIGHT);
+            if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+                throw new IllegalStateException("bad texture size " + width + "x" + height);
+            }
+            java.nio.ByteBuffer pixels = java.nio.ByteBuffer.allocateDirect(
+                    width * height * (colored ? 4 : 1)).order(java.nio.ByteOrder.nativeOrder());
+            GL11.glGetTexImage(GL11.GL_TEXTURE_2D, 0,
+                    colored ? GL11.GL_RGBA : GL11.GL_RED, GL11.GL_UNSIGNED_BYTE, pixels);
+            pixels.rewind();
+            NativeImage image = new NativeImage(width, height, false);
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    if (colored) {
+                        int r = pixels.get() & 255;
+                        int g = pixels.get() & 255;
+                        int b = pixels.get() & 255;
+                        int a = pixels.get() & 255;
+                        image.setPixelRGBA(x, y, FastColor.ABGR32.color(a, b, g, r));
+                    } else {
+                        int coverage = pixels.get() & 255;
+                        image.setPixelRGBA(x, y, FastColor.ABGR32.color(coverage, 255, 255, 255));
+                    }
+                }
+            }
+            byte[] png = image.asByteArray();
+            image.close();
+            String hash = sha(Base64.getEncoder().encodeToString(png));
+            Files.createDirectories(capturedTextures);
+            Files.write(capturedTextures.resolve(hash + ".png"), png);
+            String name = "~" + hash;
+            capturedTextureNames.put(texture, name);
+            LOGGER.info("[cimscene] captured runtime texture {}x{} colored={} -> {}",
+                    width, height, colored, name);
+            return name;
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] texture capture failed {}: {}", texture, t.toString());
+            return null;
+        }
+    }
+
+    /** The FontTexture colored flag decides the readback format (RED vs RGBA). */
+    private static boolean coloredTexture(AbstractTexture texture) {
+        for (Class<?> c = texture.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField("colored");
+                if (f.getType() == boolean.class) {
+                    f.setAccessible(true);
+                    return f.getBoolean(texture);
+                }
+            } catch (NoSuchFieldException ignored) {
+                // walk up
+            } catch (Throwable t) {
+                break;
+            }
+        }
+        return false;
     }
 
     /** One quad row; {@code uv} is 0..1 across the named sprite or texture. */
     private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
                                   float[][] pos, float[][] uv, float[][] rgb) {
+        appendRow(sb, sprite, shade, tint, pos, uv, rgb, -1);
+    }
+
+    private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
+                                  float[][] pos, float[][] uv, float[][] rgb, int packedLight) {
         sb.append(sprite).append('\t').append(shade ? 1 : 0).append('\t').append(tint);
         for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
@@ -406,6 +793,18 @@ final class QuadDump {
         }
         for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.3f\t%.3f\t%.3f", rgb[i][0], rgb[i][1], rgb[i][2]));
+        }
+        if (rgb[0].length >= 4) {
+            for (int i = 0; i < 4; i++) {
+                sb.append(String.format(Locale.ROOT, "\t%.6f", rgb[i][3]));
+            }
+        }
+        if (packedLight >= 0) {
+            // 14-cy: the captured scene light — block and sky nibbles of the
+            // renderer's packed light (the LevelRenderer getLightColor layout:
+            // block = bits 4-7, sky = bits 20-23). Absent (-1) = the legacy
+            // row shape; every consumer treats the tail as optional.
+            sb.append('\t').append((packedLight >> 4) & 15).append('\t').append((packedLight >> 20) & 15);
         }
         sb.append('\n');
     }
@@ -432,7 +831,7 @@ final class QuadDump {
         for (Path mf : manifests) {
             for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
                 String[] c = line.split("\t");
-                if (c.length < 5 || !c[0].equals("cell")) {
+                if (c.length < 5 || !c[0].equals("cell") || c[1].equals("x")) {
                     continue;
                 }
                 items++;
@@ -497,130 +896,218 @@ final class QuadDump {
         }
     }
 
-    /** A buffer source whose every buffer records: baked quads whole, hand-drawn geometry vertex by vertex. */
-    private static final class ItemCapture implements MultiBufferSource, VertexConsumer {
-        /** A RenderType prints its texture shard as {@code Optional[ns:textures/path.png]}. */
-        private static final Pattern TEXTURE =
-                Pattern.compile("Optional\\[([a-z0-9_.-]+):textures/([a-z0-9_./-]+)\\.png\\]");
-
+    /** Independent buffers retain their own material and partially recorded quad. */
+    private static final class ItemCapture implements MultiBufferSource {
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
-        final float[][] pos = new float[4][3];
-        final float[][] uv = new float[4][2];
-        final float[][] rgb = new float[4][3];
-        int n = -1;
+        final Vec3 origin;
         long foreign;
-        /** The bound buffer's texture when it is not the block atlas. */
-        String texture;
-
-        /** Item renderers centre the model on the origin; block entities draw from the corner. */
-        final float origin;
+        private final Map<Object, RecordingBuffer> buffers = new java.util.LinkedHashMap<>();
+        private final VertexConsumer discard = new Discard();
 
         ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
+            this(sprites, new Vec3(origin, origin, origin));
+        }
+
+        ItemCapture(List<TextureAtlasSprite> sprites, Vec3 origin) {
             this.sprites = sprites;
             this.origin = origin;
         }
 
-        /** Foil wraps two buffers and rejects a duplicate; the glint is an overlay, not geometry. */
-        private final VertexConsumer discard = new Discard();
-
         @Override
         public VertexConsumer getBuffer(RenderType type) {
-            String state = type.toString();
+            // Standard chunk materials consume already-lit vertex RGB;
+            // their native shaders do not call minecraft_mix_light.
+            boolean shaderDiffuse = type != RenderType.solid() && type != RenderType.cutout()
+                    && type != RenderType.cutoutMipped() && type != RenderType.translucent();
+            return bufferFor(type, type.toString(), shaderDiffuse);
+        }
+
+        private VertexConsumer bufferFor(Object key, String state, boolean shaderDiffuse) {
             if (state.contains("glint")) {
                 return discard;
             }
-            flush(); // a pending quad belongs to the previous buffer's texture
-            Matcher m = TEXTURE.matcher(state);
-            texture = m.find() && !m.group(2).equals("atlas/blocks") ? m.group(1) + ":" + m.group(2) : null;
-            return this;
+            return buffers.computeIfAbsent(key, ignored -> new RecordingBuffer(state, shaderDiffuse));
         }
 
-        @Override
-        public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
-                                float a, int[] light, int overlay, boolean readAlpha) {
-            int[] v = q.getVertices();
-            float[][] p = new float[4][3];
-            float[][] t = new float[4][2];
-            float[][] c = new float[4][3];
-            Vector3f at = new Vector3f();
-            for (int i = 0; i < 4; i++) {
-                int o = i * STRIDE;
-                pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
-                        Float.intBitsToFloat(v[o + 2]), at);
-                p[i][0] = at.x + origin;
-                p[i][1] = at.y + origin;
-                p[i][2] = at.z + origin;
-                t[i][0] = Float.intBitsToFloat(v[o + UV]);
-                t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
-                c[i][0] = brightness[i] * r;
-                c[i][1] = brightness[i] * g;
-                c[i][2] = brightness[i] * b;
-            }
-            if (texture != null) {
-                appendRow(out, texture, q.isShade(), q.getTintIndex(), p, t, c);
-            } else {
-                writeQuad(out, q.getSprite(), sprites, q.isShade(), q.getTintIndex(), p, t, c);
-            }
-        }
-
-        @Override
-        public VertexConsumer addVertex(float x, float y, float z) {
-            flush();
-            n++;
-            pos[n][0] = x + origin;
-            pos[n][1] = y + origin;
-            pos[n][2] = z + origin;
-            rgb[n][0] = 1;
-            rgb[n][1] = 1;
-            rgb[n][2] = 1;
-            return this;
-        }
-
-        /** Vertices only complete a quad on the next one, so the last needs a push. */
         void flush() {
-            if (n == 3) {
-                if (texture != null) {
-                    appendRow(out, texture, true, -1, pos, uv, rgb);
-                } else if (!writeQuad(out, null, sprites, true, -1, pos, uv, rgb)) {
-                    foreign++;
+            for (RecordingBuffer buffer : buffers.values()) {
+                buffer.flush();
+            }
+        }
+
+        /** 14-dn: the RenderType stream a BER asked for (one string per
+         *  RecordingBuffer, in request order) — the text-quads diagnostic's
+         *  payload for the where-do-text-quads-go question. */
+        java.util.List<String> bufferStates() {
+            java.util.List<String> out = new java.util.ArrayList<>();
+            for (RecordingBuffer buffer : buffers.values()) {
+                out.add(buffer.state);
+            }
+            return out;
+        }
+
+        private final class RecordingBuffer implements VertexConsumer {
+            final List<TextureAtlasSprite> boundSprites;
+            final boolean captureAtlasPixels;
+            final String texture;
+            final boolean rawShade;
+            /** The RenderType's toString (14-dn: the text-quads diagnostic names
+             *  every buffer the BER asked for, so the where-do-text-quads-go
+             *  question is answered per page in the boot log). */
+            final String state;
+            final float[][] pos = new float[4][3];
+            final float[][] uv = new float[4][2];
+            final float[][] rgb = new float[4][4];
+            int n = -1;
+            int packedLight = -1;
+
+            RecordingBuffer(String state, boolean shaderDiffuse) {
+                this.state = state;
+                rawShade = shaderDiffuse;
+                String direct = CaptureTexture.fromRenderState(state);
+                List<TextureAtlasSprite> atlasSprites = sprites;
+                boolean customAtlas = false;
+                String resource = CaptureTexture.resourceFromRenderState(state);
+                if (resource != null && !resource.equals(InventoryMenu.BLOCK_ATLAS.toString())) {
+                    var bound = Minecraft.getInstance().getTextureManager()
+                            .getTexture(ResourceLocation.parse(resource), null);
+                    if (bound instanceof TextureAtlas atlas) {
+                        direct = null;
+                        atlasSprites = new ArrayList<>(atlas.getTextures().values());
+                        customAtlas = true;
+                    }
+                } else if (direct == null) {
+                    // 14-dg: the text render types name their glyph atlas WITHOUT a
+                    // .png suffix (FontSet.stitch registers minecraft:<font>/<n>),
+                    // the TEXTURE regex misses it, and the incremental glyph quads
+                    // dropped at the sprite search (the nixie text-gap class). The
+                    // atlas exists only on the GPU — read it back once to a ~png.
+                    String loc = CaptureTexture.optionalLocation(state);
+                    if (loc != null && !loc.endsWith(".png")) {
+                        var bound = Minecraft.getInstance().getTextureManager()
+                                .getTexture(ResourceLocation.parse(loc), null);
+                        if (bound instanceof TextureAtlas atlas) {
+                            direct = null;
+                            atlasSprites = new ArrayList<>(atlas.getTextures().values());
+                            customAtlas = true;
+                        } else {
+                            direct = capturedTexture(bound);
+                        }
+                    }
                 }
-                n = -1;
+                texture = direct;
+                boundSprites = atlasSprites;
+                captureAtlasPixels = customAtlas;
             }
-        }
 
-        @Override
-        public VertexConsumer setColor(int r, int g, int b, int a) {
-            if (n >= 0) {
-                rgb[n][0] = r / 255f;
-                rgb[n][1] = g / 255f;
-                rgb[n][2] = b / 255f;
+            @Override
+            public void putBulkData(PoseStack.Pose pose, BakedQuad q, float[] brightness, float r, float g, float b,
+                                    float a, int[] light, int overlay, boolean readAlpha) {
+                int[] v = q.getVertices();
+                // Match native applyBakedLighting's unsigned channel maxima.
+                // The quad format carries one pair, as for static block capture.
+                int quadLight = -1;
+                if (light != null && light.length > 0) {
+                    quadLight = mergePackedLight(light[0], v[6]);
+                }
+                float[][] p = new float[4][3];
+                float[][] t = new float[4][2];
+                float[][] c = new float[4][4];
+                Vector3f at = new Vector3f();
+                for (int i = 0; i < 4; i++) {
+                    int o = i * STRIDE;
+                    pose.pose().transformPosition(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
+                            Float.intBitsToFloat(v[o + 2]), at);
+                    p[i][0] = at.x + (float) origin.x;
+                    p[i][1] = at.y + (float) origin.y;
+                    p[i][2] = at.z + (float) origin.z;
+                    t[i][0] = Float.intBitsToFloat(v[o + UV]);
+                    t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
+                    bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
+                }
+                if (texture != null) {
+                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
+                            texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight);
+                } else {
+                    if (!writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
+                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight)) {
+                        foreign++;
+                    }
+                }
             }
-            return this;
-        }
 
-        @Override
-        public VertexConsumer setUv(float u, float v) {
-            if (n >= 0) {
-                uv[n][0] = u;
-                uv[n][1] = v;
+            @Override
+            public VertexConsumer addVertex(float x, float y, float z) {
+                flush();
+                n++;
+                if (n == 0) packedLight = -1;
+                pos[n][0] = x + (float) origin.x;
+                pos[n][1] = y + (float) origin.y;
+                pos[n][2] = z + (float) origin.z;
+                rgb[n][0] = 1;
+                rgb[n][1] = 1;
+                rgb[n][2] = 1;
+                rgb[n][3] = 1;
+                return this;
             }
-            return this;
-        }
 
-        @Override
-        public VertexConsumer setUv1(int u, int v) {
-            return this;
-        }
+            /** Vertices only complete a quad on the next one, so the last needs a push. */
+            void flush() {
+                if (n == 3) {
+                    if (texture != null) {
+                        // 14-dg: the readback textures (the font glyph atlases —
+                        // the ~ names) serve ONLY the text render types, and the
+                        // font shader ignores the lightmap (flat color x coverage).
+                        // The (15,15) tail routes the rows into the pack's
+                        // fullbright companion group — the replay pins them
+                        // Brightness(15,15) and the text renders flat-bright like
+                        // the truth, at the per-character color the renderer set.
+                        appendRow(out, texture, rawShade, -1, pos, uv, rgb,
+                                texture.startsWith("~") ? LightTexture.FULL_BRIGHT : packedLight);
+                    } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb,
+                            captureAtlasPixels, packedLight)) {
+                        foreign++;
+                    }
+                    n = -1;
+                }
+            }
 
-        @Override
-        public VertexConsumer setUv2(int u, int v) {
-            return this;
-        }
+            @Override
+            public VertexConsumer setColor(int r, int g, int b, int a) {
+                if (n >= 0) {
+                    rgb[n][0] = r / 255f;
+                    rgb[n][1] = g / 255f;
+                    rgb[n][2] = b / 255f;
+                    rgb[n][3] = a / 255f;
+                }
+                return this;
+            }
 
-        @Override
-        public VertexConsumer setNormal(float x, float y, float z) {
-            return this;
+            @Override
+            public VertexConsumer setUv(float u, float v) {
+                if (n >= 0) {
+                    uv[n][0] = u;
+                    uv[n][1] = v;
+                }
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv1(int u, int v) {
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setUv2(int u, int v) {
+                if (n == 0) packedLight = (u & 0xffff) | ((v & 0xffff) << 16);
+                return this;
+            }
+
+            @Override
+            public VertexConsumer setNormal(float x, float y, float z) {
+                return this;
+            }
         }
     }
 
@@ -640,6 +1127,10 @@ final class QuadDump {
     /** A page's wall on its floor; the truth world holds nothing else near it. */
     private static final class Page implements BlockAndTintGetter {
         final Map<BlockPos, BlockState> cells = new HashMap<>();
+        final Map<BlockPos, String> beTags = new HashMap<>();
+        boolean requireSnapshot;
+        CaptureLightData light;
+        final Map<BlockPos, BlockEntity> blockEntities = new HashMap<>();
 
         @Override
         public BlockState getBlockState(BlockPos pos) {
@@ -657,12 +1148,62 @@ final class QuadDump {
 
         @Override
         public BlockEntity getBlockEntity(BlockPos pos) {
-            return null;
+            BlockEntity cached = blockEntities.get(pos);
+            if (cached != null) {
+                return cached;
+            }
+            Minecraft mc = Minecraft.getInstance();
+            BlockState state = cells.get(pos);
+            // Keep worldless static capture's original fallback. Joined
+            // capture supplies real BEs to model.getModelData as well as BERs.
+            if (mc.level == null || state == null || !(state.getBlock() instanceof EntityBlock block)) {
+                return null;
+            }
+            BlockEntity be = block.newBlockEntity(pos, state);
+            if (be == null) {
+                return null;
+            }
+            be.setLevel(mc.level);
+            blockEntities.put(pos.immutable(), be);
+            String b64 = beTags.get(pos);
+            if (b64 != null) {
+                try {
+                    CaptureBlockEntityData.restore(NbtIo.readCompressed(
+                            new ByteArrayInputStream(Base64.getDecoder().decode(b64)),
+                            NbtAccounter.unlimitedHeap()),
+                            tag -> be.loadWithComponents(tag, mc.level.registryAccess()),
+                            tag -> be.handleUpdateTag(tag, mc.level.registryAccess()));
+                } catch (Throwable bad) {
+                    if (requireSnapshot) throw new IllegalStateException("native tank snapshot could not load", bad);
+                    LOGGER.info("[cimscene] quad dump be nbt load skip {}: {}",
+                            state.getBlock(), bad.toString());
+                }
+            }
+            return be;
+        }
+
+        @Override
+        public ModelData getModelData(BlockPos pos) {
+            // ModelDataManager snapshots the actual BE's data for SectionCompiler.
+            // Use the restored scene BE here rather than the joined client's
+            // unrelated last-page snapshot. Null data is a native contract error.
+            BlockEntity be = getBlockEntity(pos);
+            if (be == null || be.isRemoved()) return ModelData.EMPTY;
+            ModelData data = be.getModelData();
+            if (data == null) throw new NullPointerException("Null scene ModelData at " + pos);
+            return data;
         }
 
         @Override
         public float getShade(Direction side, boolean shade) {
-            return 1; // the ours client applies its own directional light; only AO + tint are baked
+            return Minecraft.getInstance().level.getShade(side, shade);
+        }
+
+        @Override
+        public float getShade(float normalX, float normalY, float normalZ, boolean shade) {
+            // NeoForge's lighter supports non-axis normals; the real level
+            // applies its dimension's shading rather than nearest-face rounding.
+            return Minecraft.getInstance().level.getShade(normalX, normalY, normalZ, shade);
         }
 
         @Override
@@ -670,14 +1211,21 @@ final class QuadDump {
             return null;
         }
 
+        // The live world holds the last walked page when the dump runs.
+        // Native AO and BER lighting must read this page's settled snapshot.
+        // Older captures without a sidecar retain their explicit legacy path.
         @Override
         public int getBrightness(LightLayer layer, BlockPos pos) {
-            return 15;
+            if (light != null) return light.brightness(layer, pos);
+            Minecraft mc = Minecraft.getInstance();
+            return mc.level != null ? mc.level.getBrightness(layer, pos) : 15;
         }
 
         @Override
         public int getRawBrightness(BlockPos pos, int darkening) {
-            return 15;
+            if (light != null) return light.rawBrightness(pos, darkening);
+            Minecraft mc = Minecraft.getInstance();
+            return mc.level != null ? mc.level.getRawBrightness(pos, darkening) : 15;
         }
 
         @Override

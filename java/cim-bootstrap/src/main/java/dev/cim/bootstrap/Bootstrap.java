@@ -284,6 +284,13 @@ public final class Bootstrap {
         }
     }
 
+    /** Install the server host in the same isolated class space as FmlHost. */
+    public static void installLayerServer(Object plugin) throws ReflectiveOperationException {
+        ClassLoader shadow = ShadowClassLoader.get();
+        Class.forName("dev.cim.layer.LayerServerHost", true, shadow)
+                .getMethod("install", Object.class).invoke(null, plugin);
+    }
+
     /**
      * Paper replaces System.out with a stream that logs through Bukkit.getLogger(), and until
      * the server object exists every print on it throws; Paper installs it after the bootstrap

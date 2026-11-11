@@ -1,0 +1,39 @@
+# c-imagine F2V 2.0 fluid-color manifest (14-cd/14-ch: the modded fluid
+# cube channel)
+#
+# Format (TSV): fluid_id <TAB> r <TAB> g <TAB> b   (the cube texture color,
+# 0..255 — the PRE-SHADE surface color: the 14-ch model bakes the liquid
+# renderer's directional face shading into per-face textures on top, so the
+# rendered front face = color * 0.8 * lightmap, the top = color * 1.0).
+#
+# DERIVATION (measured from run #231's truth crops, scripts/
+# measure_fluid_tints.py: the sampled case-interior patch mean / 0.8 front
+# shade): the mekanism chemical fluids render the generic gray liquid.png
+# canvas (opaque mean 212.4) tinted per chemical by the mod's client code;
+# the truth page shots are the only surface carrying the rendered tint. The
+# create/biomesoplenty rows (14-ch) ride the SAME calibration (the flat
+# L1-optimal surface replaces the animated-strip frame mismatch their real
+# textures measured at ae 268-500K on #250).
+mekanism:brine	154	155	128
+mekanism:chlorine	143	156	81
+mekanism:ethene	154	143	161
+mekanism:heavy_water	59	61	86
+mekanism:hydrofluoric_acid	123	130	129
+mekanism:hydrogen	139	148	149
+mekanism:hydrogen_chloride	131	166	176
+mekanism:lithium	154	144	104
+mekanism:nutritional_paste	154	115	154
+mekanism:oxygen	104	161	188
+mekanism:sodium	146	170	179
+mekanism:steam	153	169	181
+mekanism:sulfur_dioxide	131	139	143
+mekanism:sulfur_trioxide	145	122	129
+mekanism:sulfuric_acid	105	118	86
+mekanism:superheated_sodium	144	129	118
+mekanism:uranium_hexafluoride	114	140	127
+mekanism:uranium_oxide	150	173	134
+create:chocolate	139	85	75
+create:honey	194	160	71
+create:potion	121	121	140
+create:tea	175	143	130
+biomesoplenty:blood	128	71	71

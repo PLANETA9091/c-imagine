@@ -1,0 +1,148 @@
+# visual-emissive.tsv — emissive-bake table (the gallery LIGHTMAP class, the dominant
+# residual of the 99.46%-gated run 42085254497: ours renders glowing/modded-lit blocks
+# dim where the real client renders them fullbright).
+# stateId<TAB>level<TAB>evidence — level 0-15; the GalleryPack composite emit sets
+# element "light_emission" = level on EVERY element of the emitted model JSON
+# (1.21.2+ block-model element property, purely visual). Absent file = empty table =
+# today's behavior byte-for-byte (mirror of the visual-tints.tsv contract).
+# SEEDING: every row is a MEASURED RED row in run 42085254497's join-*.json for a block
+# whose mod code registers an emissive mechanism (BOP 21.1.0.14 ModBlocks.java; none
+# guessed from names). Pixel evidence (truth/ours crops, run 42085254497): on the
+# glowing pixels ours renders at 0.43-0.77x of truth while truth renders at ~1.08-1.11x
+# the raw mod texture — FULLBRIGHT — so level=15 (the measured truth brightness) for
+# every row, NOT the mod's code lightLevel (recorded per family below; the code value
+# sets the block's world emission in truth, and grid-neighbor spill lights the
+# lit=false cells of the dense gallery scene to the same fullbright).
+#   lumaloop                bop code lightLevel LIT?10:0 (LumaloopBlock.java lightLevel(10))
+#   glowworm_silk(+strand)  bop code lightLevel 2 + emissiveRendering(true)
+#   glowflower              bop code lightLevel 9
+#   glowshroom              bop code lightLevel 6 + emissiveRendering(true)
+#   rose_quartz_cluster / large / medium / small bud   8 / 7 / 6 / 5
+# EXCLUDED (honest negatives): create:refined_radiance — its measured RED is ITEM-channel
+# only (join-item-create-p6, n=63497); the create walk never emitted a block-state row,
+# so the block-composite bake cannot reach it (an item-channel surface is a separate lever).
+# GREEN-but-near-gate siblings sharing the dimness signature stay out of the table
+# (data-proven REDs only): lumaloop[age=7,lit=true] n=58456, lumaloop[age=9,lit=true]
+# n=52069, lumaloop[age=12,lit=true] n=33339, lumaloop[age=13,lit=true] n=56237,
+# lumaloop[age=21,lit=true] n=43551, lumaloop[age=9..14,lit=false], lumaloop_plant[lit=true]
+# n=58666, glowworm_silk[age=3,15,19,20,21,24,25], rose_quartz green facings.
+biomesoplenty:glowflower	15	biomesoplenty:glowflower@gallery-biomesoplenty-p33:c5,r1|n=82295|class=lightmap-fullbright
+biomesoplenty:glowshroom	15	biomesoplenty:glowshroom@gallery-biomesoplenty-p33:c8,r1|n=71930|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=0]	15	biomesoplenty:glowworm_silk[age=0]@gallery-biomesoplenty-p34:c7,r0|n=74808|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=10]	15	biomesoplenty:glowworm_silk[age=10]@gallery-biomesoplenty-p34:c6,r1|n=80120|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=11]	15	biomesoplenty:glowworm_silk[age=11]@gallery-biomesoplenty-p34:c7,r1|n=80891|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=12]	15	biomesoplenty:glowworm_silk[age=12]@gallery-biomesoplenty-p34:c8,r1|n=83252|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=13]	15	biomesoplenty:glowworm_silk[age=13]@gallery-biomesoplenty-p34:c9,r1|n=70780|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=14]	15	biomesoplenty:glowworm_silk[age=14]@gallery-biomesoplenty-p34:c10,r1|n=65143|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=16]	15	biomesoplenty:glowworm_silk[age=16]@gallery-biomesoplenty-p34:c1,r2|n=64455|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=17]	15	biomesoplenty:glowworm_silk[age=17]@gallery-biomesoplenty-p34:c2,r2|n=63783|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=18]	15	biomesoplenty:glowworm_silk[age=18]@gallery-biomesoplenty-p34:c3,r2|n=63495|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=1]	15	biomesoplenty:glowworm_silk[age=1]@gallery-biomesoplenty-p34:c8,r0|n=76493|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=22]	15	biomesoplenty:glowworm_silk[age=22]@gallery-biomesoplenty-p34:c7,r2|n=61885|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=23]	15	biomesoplenty:glowworm_silk[age=23]@gallery-biomesoplenty-p34:c8,r2|n=65008|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=2]	15	biomesoplenty:glowworm_silk[age=2]@gallery-biomesoplenty-p34:c9,r0|n=60245|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=4]	15	biomesoplenty:glowworm_silk[age=4]@gallery-biomesoplenty-p34:c0,r1|n=73546|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=5]	15	biomesoplenty:glowworm_silk[age=5]@gallery-biomesoplenty-p34:c1,r1|n=82019|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=6]	15	biomesoplenty:glowworm_silk[age=6]@gallery-biomesoplenty-p34:c2,r1|n=83686|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=7]	15	biomesoplenty:glowworm_silk[age=7]@gallery-biomesoplenty-p34:c3,r1|n=82838|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=8]	15	biomesoplenty:glowworm_silk[age=8]@gallery-biomesoplenty-p34:c4,r1|n=79094|class=lightmap-fullbright
+biomesoplenty:glowworm_silk[age=9]	15	biomesoplenty:glowworm_silk[age=9]@gallery-biomesoplenty-p34:c5,r1|n=68074|class=lightmap-fullbright
+biomesoplenty:glowworm_silk_strand	15	biomesoplenty:glowworm_silk_strand@gallery-biomesoplenty-p34:c0,r3|n=69556|class=lightmap-fullbright
+biomesoplenty:large_rose_quartz_bud[facing=down,waterlogged=false]	15	biomesoplenty:large_rose_quartz_bud[facing=down,waterlogged=false]@gallery-biomesoplenty-p47:c7,r2|n=84383|class=lightmap-fullbright
+biomesoplenty:large_rose_quartz_bud[facing=east,waterlogged=false]	15	biomesoplenty:large_rose_quartz_bud[facing=east,waterlogged=false]@gallery-biomesoplenty-p47:c10,r1|n=67598|class=lightmap-fullbright
+biomesoplenty:large_rose_quartz_bud[facing=north,waterlogged=false]	15	biomesoplenty:large_rose_quartz_bud[facing=north,waterlogged=false]@gallery-biomesoplenty-p47:c8,r1|n=69003|class=lightmap-fullbright
+biomesoplenty:large_rose_quartz_bud[facing=south,waterlogged=false]	15	biomesoplenty:large_rose_quartz_bud[facing=south,waterlogged=false]@gallery-biomesoplenty-p47:c1,r2|n=96955|class=lightmap-fullbright
+biomesoplenty:large_rose_quartz_bud[facing=up,waterlogged=false]	15	biomesoplenty:large_rose_quartz_bud[facing=up,waterlogged=false]@gallery-biomesoplenty-p47:c5,r2|n=61964|class=lightmap-fullbright
+biomesoplenty:large_rose_quartz_bud[facing=west,waterlogged=false]	15	biomesoplenty:large_rose_quartz_bud[facing=west,waterlogged=false]@gallery-biomesoplenty-p47:c3,r2|n=69848|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=0,lit=true]	15	biomesoplenty:lumaloop[age=0,lit=true]@gallery-biomesoplenty-p47:c3,r4|n=72606|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=1,lit=true]	15	biomesoplenty:lumaloop[age=1,lit=true]@gallery-biomesoplenty-p47:c5,r4|n=63134|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=10,lit=true]	15	biomesoplenty:lumaloop[age=10,lit=true]@gallery-biomesoplenty-p47:c1,r6|n=90057|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=11,lit=true]	15	biomesoplenty:lumaloop[age=11,lit=true]@gallery-biomesoplenty-p47:c3,r6|n=86715|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=14,lit=true]	15	biomesoplenty:lumaloop[age=14,lit=true]@gallery-biomesoplenty-p47:c9,r6|n=93677|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=15,lit=false]	15	biomesoplenty:lumaloop[age=15,lit=false]@gallery-biomesoplenty-p48:c1,r0|n=97171|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=15,lit=true]	15	biomesoplenty:lumaloop[age=15,lit=true]@gallery-biomesoplenty-p48:c0,r0|n=109808|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=16,lit=false]	15	biomesoplenty:lumaloop[age=16,lit=false]@gallery-biomesoplenty-p48:c3,r0|n=94021|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=16,lit=true]	15	biomesoplenty:lumaloop[age=16,lit=true]@gallery-biomesoplenty-p48:c2,r0|n=110202|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=17,lit=false]	15	biomesoplenty:lumaloop[age=17,lit=false]@gallery-biomesoplenty-p48:c5,r0|n=65098|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=17,lit=true]	15	biomesoplenty:lumaloop[age=17,lit=true]@gallery-biomesoplenty-p48:c4,r0|n=112881|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=18,lit=false]	15	biomesoplenty:lumaloop[age=18,lit=false]@gallery-biomesoplenty-p48:c7,r0|n=89909|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=18,lit=true]	15	biomesoplenty:lumaloop[age=18,lit=true]@gallery-biomesoplenty-p48:c6,r0|n=95012|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=19,lit=false]	15	biomesoplenty:lumaloop[age=19,lit=false]@gallery-biomesoplenty-p48:c9,r0|n=120663|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=19,lit=true]	15	biomesoplenty:lumaloop[age=19,lit=true]@gallery-biomesoplenty-p48:c8,r0|n=119979|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=2,lit=true]	15	biomesoplenty:lumaloop[age=2,lit=true]@gallery-biomesoplenty-p47:c7,r4|n=72507|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=20,lit=false]	15	biomesoplenty:lumaloop[age=20,lit=false]@gallery-biomesoplenty-p48:c0,r1|n=85685|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=20,lit=true]	15	biomesoplenty:lumaloop[age=20,lit=true]@gallery-biomesoplenty-p48:c10,r0|n=79216|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=21,lit=false]	15	biomesoplenty:lumaloop[age=21,lit=false]@gallery-biomesoplenty-p48:c2,r1|n=86926|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=22,lit=false]	15	biomesoplenty:lumaloop[age=22,lit=false]@gallery-biomesoplenty-p48:c4,r1|n=78930|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=22,lit=true]	15	biomesoplenty:lumaloop[age=22,lit=true]@gallery-biomesoplenty-p48:c3,r1|n=72272|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=23,lit=true]	15	biomesoplenty:lumaloop[age=23,lit=true]@gallery-biomesoplenty-p48:c5,r1|n=85149|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=24,lit=false]	15	biomesoplenty:lumaloop[age=24,lit=false]@gallery-biomesoplenty-p48:c8,r1|n=68141|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=24,lit=true]	15	biomesoplenty:lumaloop[age=24,lit=true]@gallery-biomesoplenty-p48:c7,r1|n=72152|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=25,lit=true]	15	biomesoplenty:lumaloop[age=25,lit=true]@gallery-biomesoplenty-p48:c9,r1|n=156045|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=3,lit=true]	15	biomesoplenty:lumaloop[age=3,lit=true]@gallery-biomesoplenty-p47:c9,r4|n=124952|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=4,lit=false]	15	biomesoplenty:lumaloop[age=4,lit=false]@gallery-biomesoplenty-p47:c1,r5|n=71058|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=4,lit=true]	15	biomesoplenty:lumaloop[age=4,lit=true]@gallery-biomesoplenty-p47:c0,r5|n=74516|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=5,lit=true]	15	biomesoplenty:lumaloop[age=5,lit=true]@gallery-biomesoplenty-p47:c2,r5|n=70662|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=6,lit=true]	15	biomesoplenty:lumaloop[age=6,lit=true]@gallery-biomesoplenty-p47:c4,r5|n=78792|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=8,lit=false]	15	biomesoplenty:lumaloop[age=8,lit=false]@gallery-biomesoplenty-p47:c9,r5|n=68350|class=lightmap-fullbright
+biomesoplenty:lumaloop[age=8,lit=true]	15	biomesoplenty:lumaloop[age=8,lit=true]@gallery-biomesoplenty-p47:c8,r5|n=74821|class=lightmap-fullbright
+biomesoplenty:medium_rose_quartz_bud[facing=east,waterlogged=false]	15	biomesoplenty:medium_rose_quartz_bud[facing=east,waterlogged=false]@gallery-biomesoplenty-p65:c3,r4|n=93580|class=lightmap-fullbright
+biomesoplenty:medium_rose_quartz_bud[facing=south,waterlogged=false]	15	biomesoplenty:medium_rose_quartz_bud[facing=south,waterlogged=false]@gallery-biomesoplenty-p65:c5,r4|n=74531|class=lightmap-fullbright
+biomesoplenty:medium_rose_quartz_bud[facing=west,waterlogged=false]	15	biomesoplenty:medium_rose_quartz_bud[facing=west,waterlogged=false]@gallery-biomesoplenty-p65:c7,r4|n=90474|class=lightmap-fullbright
+biomesoplenty:rose_quartz_cluster[facing=east,waterlogged=false]	15	biomesoplenty:rose_quartz_cluster[facing=east,waterlogged=false]@gallery-biomesoplenty-p91:c8,r2|n=154813|class=lightmap-fullbright
+biomesoplenty:rose_quartz_cluster[facing=south,waterlogged=false]	15	biomesoplenty:rose_quartz_cluster[facing=south,waterlogged=false]@gallery-biomesoplenty-p91:c10,r2|n=101309|class=lightmap-fullbright
+biomesoplenty:rose_quartz_cluster[facing=west,waterlogged=false]	15	biomesoplenty:rose_quartz_cluster[facing=west,waterlogged=false]@gallery-biomesoplenty-p91:c1,r3|n=137622|class=lightmap-fullbright
+biomesoplenty:small_rose_quartz_bud[facing=east,waterlogged=false]	15	biomesoplenty:small_rose_quartz_bud[facing=east,waterlogged=false]@gallery-biomesoplenty-p91:c0,r4|n=70980|class=lightmap-fullbright
+biomesoplenty:snowblossom_sapling[stage=0]	15	biomesoplenty:snowblossom_sapling[stage=0]@biomesoplenty-p95:c1,r3|n=63345|class=lightmap-fullbright
+biomesoplenty:stringy_cobweb[connected=bottom,facing=north]	15	biomesoplenty:stringy_cobweb[connected=bottom,facing=north]@biomesoplenty-p95:c3,r6|n=63701|class=lightmap-fullbright
+biomesoplenty:stringy_cobweb[connected=top,facing=north]	15	biomesoplenty:stringy_cobweb[connected=top,facing=north]@biomesoplenty-p95:c7,r6|n=94853|class=lightmap-fullbright
+biomesoplenty:stringy_cobweb[connected=top,facing=south]	15	biomesoplenty:stringy_cobweb[connected=top,facing=south]@biomesoplenty-p95:c8,r6|n=90175|class=lightmap-fullbright
+biomesoplenty:stringy_cobweb[connected=top,facing=west]	15	biomesoplenty:stringy_cobweb[connected=top,facing=west]@biomesoplenty-p95:c9,r6|n=77745|class=lightmap-fullbright
+biomesoplenty:blackstone_bulb	15	biomesoplenty:blackstone_bulb@biomesoplenty-p7:c8,r0|n=76589|class=lightmap-fullbright
+biomesoplenty:empyreal_sapling[stage=0]	15	biomesoplenty:empyreal_sapling[stage=0]@biomesoplenty-p23:c2,r6|n=70870|class=lightmap-fullbright
+biomesoplenty:empyreal_sapling[stage=1]	15	biomesoplenty:empyreal_sapling[stage=1]@biomesoplenty-p23:c3,r6|n=72363|class=lightmap-fullbright
+dynamictrees:flowering_azalea_leaves[distance=1,persistent=false,waterlogged=false]	15	dynamictrees:flowering_azalea_leaves[distance=1,persistent=false,waterlogged=false]@dynamictrees-p5:c1,r3|n=562994|class=lightmap-fullbright
+dynamictrees:flowering_azalea_leaves[distance=2,persistent=true,waterlogged=false]	15	dynamictrees:flowering_azalea_leaves[distance=2,persistent=true,waterlogged=false]@dynamictrees-p5:c3,r3|n=558275|class=lightmap-fullbright
+dynamictrees:flowering_azalea_leaves[distance=4,persistent=true,waterlogged=false]	15	dynamictrees:flowering_azalea_leaves[distance=4,persistent=true,waterlogged=false]@dynamictrees-p5:c0,r4|n=541861|class=lightmap-fullbright
+dynamictrees:flowering_azalea_leaves[distance=4,persistent=false,waterlogged=false]	15	dynamictrees:flowering_azalea_leaves[distance=4,persistent=false,waterlogged=false]@dynamictrees-p5:c2,r4|n=543331|class=lightmap-fullbright
+dynamictrees:flowering_azalea_leaves[distance=7,persistent=true,waterlogged=false]	15	dynamictrees:flowering_azalea_leaves[distance=7,persistent=true,waterlogged=false]@dynamictrees-p5:c1,r5|n=274047|class=lightmap-fullbright
+biomesoplenty:burning_blossom	15	biomesoplenty:burning_blossom@biomesoplenty-p13:c8,r4|n=69881|class=lightmap-fullbright
+biomesoplenty:rainbow_birch_sapling[stage=0]	15	biomesoplenty:rainbow_birch_sapling[stage=0]@biomesoplenty-p84:c8,r6|n=61196|class=lightmap-fullbright
+biomesoplenty:sea_oats[half=upper]	15	biomesoplenty:sea_oats[half=upper]@biomesoplenty-p91:c6,r3|n=66769|class=lightmap-fullbright
+biomesoplenty:goldenrod[half=upper]	15	biomesoplenty:goldenrod[half=upper]@biomesoplenty-p34:c1,r3|n=80112|class=lightmap-fullbright
+biomesoplenty:goldenrod[half=lower]	15	biomesoplenty:goldenrod[half=lower]@biomesoplenty-p34:c2,r3|n=65188|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=0]	15	biomesoplenty:hanging_cobweb[age=0]@biomesoplenty-p34:c4,r3|n=73860|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=1]	15	biomesoplenty:hanging_cobweb[age=1]@biomesoplenty-p34:c5,r3|n=69974|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=2]	15	biomesoplenty:hanging_cobweb[age=2]@biomesoplenty-p34:c6,r3|n=95675|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=5]	15	biomesoplenty:hanging_cobweb[age=5]@biomesoplenty-p34:c9,r3|n=91105|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=7]	15	biomesoplenty:hanging_cobweb[age=7]@biomesoplenty-p34:c0,r4|n=70158|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=8]	15	biomesoplenty:hanging_cobweb[age=8]@biomesoplenty-p34:c1,r4|n=86503|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=10]	15	biomesoplenty:hanging_cobweb[age=10]@biomesoplenty-p34:c3,r4|n=68589|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=12]	15	biomesoplenty:hanging_cobweb[age=12]@biomesoplenty-p34:c5,r4|n=68447|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=13]	15	biomesoplenty:hanging_cobweb[age=13]@biomesoplenty-p34:c6,r4|n=76121|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=16]	15	biomesoplenty:hanging_cobweb[age=16]@biomesoplenty-p34:c9,r4|n=87932|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=17]	15	biomesoplenty:hanging_cobweb[age=17]@biomesoplenty-p34:c10,r4|n=70015|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=20]	15	biomesoplenty:hanging_cobweb[age=20]@biomesoplenty-p34:c2,r5|n=99855|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb[age=23]	15	biomesoplenty:hanging_cobweb[age=23]@biomesoplenty-p34:c5,r5|n=97436|class=lightmap-fullbright
+biomesoplenty:hanging_cobweb_strand	15	biomesoplenty:hanging_cobweb_strand@biomesoplenty-p34:c8,r5|n=65069|class=lightmap-fullbright
+biomesoplenty:high_grass[age=23]	15	biomesoplenty:high_grass[age=23]@biomesoplenty-p41:c1,r0|n=69832|class=lightmap-fullbright
+biomesoplenty:high_grass[age=25]	15	biomesoplenty:high_grass[age=25]@biomesoplenty-p41:c3,r0|n=86963|class=lightmap-fullbright
+biomesoplenty:icy_iris[half=upper]	15	biomesoplenty:icy_iris[half=upper]@biomesoplenty-p41:c3,r2|n=70209|class=lightmap-fullbright
+biomesoplenty:bramble_leaves[facing=north]	15	biomesoplenty:bramble_leaves[facing=north]@biomesoplenty-p8:c4,r1|n=73058|class=lightmap-fullbright
+biomesoplenty:bramble_leaves[facing=up]	15	biomesoplenty:bramble_leaves[facing=up]@biomesoplenty-p8:c8,r1|n=63708|class=lightmap-fullbright
+biomesoplenty:high_grass[age=1]	15	biomesoplenty:high_grass[age=1]@biomesoplenty-p40:c1,r5|n=76902|class=lightmap-fullbright
+biomesoplenty:high_grass[age=3]	15	biomesoplenty:high_grass[age=3]@biomesoplenty-p40:c3,r5|n=95423|class=lightmap-fullbright
+biomesoplenty:high_grass[age=4]	15	biomesoplenty:high_grass[age=4]@biomesoplenty-p40:c4,r5|n=71077|class=lightmap-fullbright
+biomesoplenty:high_grass[age=5]	15	biomesoplenty:high_grass[age=5]@biomesoplenty-p40:c5,r5|n=61534|class=lightmap-fullbright
+biomesoplenty:high_grass[age=6]	15	biomesoplenty:high_grass[age=6]@biomesoplenty-p40:c6,r5|n=69984|class=lightmap-fullbright
+biomesoplenty:high_grass[age=7]	15	biomesoplenty:high_grass[age=7]@biomesoplenty-p40:c7,r5|n=85369|class=lightmap-fullbright
+biomesoplenty:high_grass[age=8]	15	biomesoplenty:high_grass[age=8]@biomesoplenty-p40:c8,r5|n=86369|class=lightmap-fullbright
+biomesoplenty:high_grass[age=9]	15	biomesoplenty:high_grass[age=9]@biomesoplenty-p40:c9,r5|n=69194|class=lightmap-fullbright
+biomesoplenty:high_grass[age=14]	15	biomesoplenty:high_grass[age=14]@biomesoplenty-p40:c3,r6|n=74375|class=lightmap-fullbright
+biomesoplenty:high_grass[age=17]	15	biomesoplenty:high_grass[age=17]@biomesoplenty-p40:c6,r6|n=62229|class=lightmap-fullbright
+biomesoplenty:high_grass[age=19]	15	biomesoplenty:high_grass[age=19]@biomesoplenty-p40:c8,r6|n=70285|class=lightmap-fullbright
+biomesoplenty:waterlily	15	biomesoplenty:waterlily@biomesoplenty-p104:c2,r0|n=117230|class=lightmap-fullbright
+biomesoplenty:white_lavender	15	biomesoplenty:white_lavender@biomesoplenty-p104:c1,r6|n=71719|class=lightmap-fullbright
+biomesoplenty:brimstone_cluster[half=lower]	15	biomesoplenty:brimstone_cluster[half=lower]@biomesoplenty-p13:c6,r4|n=69827|class=lightmap-uniform
+biomesoplenty:brimstone_cluster[half=upper]	15	biomesoplenty:brimstone_cluster[half=upper]@biomesoplenty-p13 sibling half|class=lightmap-uniform
+create:refined_radiance	15	create:refined_radiance@join-item-create-p6:c?,r?|n=63497|class=lightmap-fullbright (item channel, the sprite upgrade)

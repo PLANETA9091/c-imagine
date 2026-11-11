@@ -86,6 +86,16 @@ stable — the honest-RED semantics then apply unchanged. The anim liveness
 probe is NOT a ledger class (no pages of its own — its two-frame delta
 join runs per shard in the inline join step, outside this gate).
 
+VARIANT CLASSES (14-dx, 2026-11-11): the 12 no-walk classes (paintings,
+wolf/cat/frog variants, villager types, effects, trim materials/patterns,
+banners, decorated pots, enchantments, jukebox songs) graduated to real
+`gallery variant` walks — CLASSES/DIAGNOSTIC_CLASSES/VARIANT_CLASS below.
+NO_WALK is down to dimension_type (no per-entry surface in one world
+frame). The ours leg has NO variant replay channel yet (the F2V
+projection per kind is the named lane) — the classes report
+DIAG-INCOMPLETE missing_ours_shots until it ships, which is the audit
+item's "explicitly incomplete" state, not a pass.
+
 Usage:
   coverage-gate.py --ns create --index <gallery-<ns>-index.tsv> \
       --scenes <truth scenes dir> --truth-shots <dir> --ours-shots <dir> \
@@ -143,6 +153,49 @@ CLASSES = {
     # page), own walk, own exhaustion marker
     "inv": ("gallery-inv-{ns}-p{p}.tsv", "gal-inv", "ours-gal-inv",
             "gallery-inv done ns={ns} page={p} cells=0"),
+    # THE VARIANT CLASSES (14-dx, 2026-11-11): the 12-aq no-walk backlog's
+    # real scenes (`cimscene gallery variant <kind> <ns> <p>`). One manifest
+    # per kind per page (cell|x|y|z|subject|dyn|note), one shot stem per
+    # kind (gal-v<kind>-<ns><p>.png), one terminal marker per kind. Every
+    # class walks DIAGNOSTIC-first (see DIAGNOSTIC_CLASSES) — the F2V
+    # projection per kind (what the ours leg shows for content the vanilla
+    # 26.3 client's registries do not carry) is the named flip lane, so the
+    # ours shot columns report missing loudly until that slice ships.
+    "variant-painting": ("gallery-variant-painting-{ns}-p{p}.tsv", "gal-vpainting", "ours-gal-vpainting",
+                         "gallery-variant done kind=painting ns={ns} page={p} cells=0"),
+    "variant-wolf": ("gallery-variant-wolf-{ns}-p{p}.tsv", "gal-vwolf", "ours-gal-vwolf",
+                     "gallery-variant done kind=wolf ns={ns} page={p} cells=0"),
+    "variant-cat": ("gallery-variant-cat-{ns}-p{p}.tsv", "gal-vcat", "ours-gal-vcat",
+                    "gallery-variant done kind=cat ns={ns} page={p} cells=0"),
+    "variant-frog": ("gallery-variant-frog-{ns}-p{p}.tsv", "gal-vfrog", "ours-gal-vfrog",
+                     "gallery-variant done kind=frog ns={ns} page={p} cells=0"),
+    "variant-villager": ("gallery-variant-villager-{ns}-p{p}.tsv", "gal-vvillager", "ours-gal-vvillager",
+                         "gallery-variant done kind=villager ns={ns} page={p} cells=0"),
+    "variant-effect": ("gallery-variant-effect-{ns}-p{p}.tsv", "gal-veffect", "ours-gal-veffect",
+                       "gallery-variant done kind=effect ns={ns} page={p} cells=0"),
+    "variant-trimmaterial": ("gallery-variant-trimmaterial-{ns}-p{p}.tsv", "gal-vtrimmaterial", "ours-gal-vtrimmaterial",
+                             "gallery-variant done kind=trimmaterial ns={ns} page={p} cells=0"),
+    "variant-trimpattern": ("gallery-variant-trimpattern-{ns}-p{p}.tsv", "gal-vtrimpattern", "ours-gal-vtrimpattern",
+                            "gallery-variant done kind=trimpattern ns={ns} page={p} cells=0"),
+    "variant-banner": ("gallery-variant-banner-{ns}-p{p}.tsv", "gal-vbanner", "ours-gal-vbanner",
+                       "gallery-variant done kind=banner ns={ns} page={p} cells=0"),
+    "variant-pot": ("gallery-variant-pot-{ns}-p{p}.tsv", "gal-vpot", "ours-gal-vpot",
+                    "gallery-variant done kind=pot ns={ns} page={p} cells=0"),
+    "variant-enchant": ("gallery-variant-enchant-{ns}-p{p}.tsv", "gal-venchant", "ours-gal-venchant",
+                        "gallery-variant done kind=enchant ns={ns} page={p} cells=0"),
+    "variant-jukebox": ("gallery-variant-jukebox-{ns}-p{p}.tsv", "gal-vjukebox", "ours-gal-vjukebox",
+                        "gallery-variant done kind=jukebox ns={ns} page={p} cells=0"),
+    # 14-ec THE BLOCKENTITY LANE (2026-11-11): the special-BE class's real
+    # scenes (`gallery variant blockentity <ns> <p>`) — every BE type the
+    # static reconciliation names as wall-skipped (the INVISIBLE/fuid-carried
+    # render families) instantiated through its own placement surface
+    # (BlockItem against the support plane, else the direct setBlock of a
+    # valid state), the settle pass asserting the BE TYPE the world holds.
+    # DIAGNOSTIC-first (the F2V projection per kind is the named lane), but
+    # the instantiation receipts GATE: a reconciliation name nothing
+    # instantiated stays RED.
+    "variant-blockentity": ("gallery-variant-blockentity-{ns}-p{p}.tsv", "gal-vblockentity", "ours-gal-vblockentity",
+                            "gallery-variant done kind=blockentity ns={ns} page={p} cells=0"),
 }
 
 # Walked-but-diagnostic classes (2026-11-04): the checks run and print,
@@ -151,7 +204,18 @@ CLASSES = {
 # channel measured, gui the menu-translation channel, held the
 # first-person item channel, biome the tint channel, inv the GUI crop
 # geometry — first-run-unmeasured, computed from scale-3 GUI math).
-DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv"}
+# particle joined (2026-11-08, 14-cs): the pixel join compares data-carrying
+# particles the vanilla spawn command rejected bare (no-simple-options,
+# measured #30: ALL 13 create particles) — the stream join
+# (particle-diff.py, the visual-particles.tsv rewrite) is the honest
+# channel and runs DIAGNOSTICALLY per its own docstring until measured
+# stable; the pixel gal-pa shots stay diagnostic until that flip.
+DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv", "particle",
+                      "variant-painting", "variant-wolf", "variant-cat",
+                      "variant-frog", "variant-villager", "variant-effect",
+                      "variant-trimmaterial", "variant-trimpattern",
+                      "variant-banner", "variant-pot", "variant-enchant",
+                      "variant-jukebox", "variant-blockentity"}
 
 # the series word baked between the stem and the ns infix (SHOT NAME LAW):
 # minecraft's mob walk predates the series naming (gal-e0.png), every mod
@@ -160,24 +224,44 @@ DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv"}
 SERIES_WORD = {"entity-mobs": "mobs", "entity-dyn": "dyn",
                "entity-large": "large"}
 
-# THE REST OF THE VISUAL SURFACE (12-aq): ledger classes the scene COUNTS
-# (static BuiltIn + datapack registries whose entries alter a rendered
-# frame) but NO gallery walk exists for yet. A positive total is
-# COVERAGE-INCOMPLETE reason=no-walk-yet — the named backlog (the verdict
-# must SEE its holes, never green over them); total=0 is OK; a negative
-# total means the dynamic registry itself was unreadable at index time —
-# unverifiable coverage is also red, honestly.
+# THE REST OF THE VISUAL SURFACE (12-aq) — REDUCED TO THE ONE REMAINING
+# CLASS (14-dx, 2026-11-11): the 12 no-walk classes graduated to real
+# `gallery variant` walks (CLASSES above, DIAGNOSTIC-first — the audit
+# item's "add real scenes and runtime assertions instead of excluding these
+# registrations"). dimension_type STAYS no-walk: its visual surface is the
+# whole dimension's sky/fog (no per-entry surface inside ONE world frame;
+# a per-dimension camera rig is a named, unshipped lane). A positive total
+# is COVERAGE-INCOMPLETE reason=no-walk-yet — the named backlog (the
+# verdict must SEE its holes, never green over them); total=0 is OK; a
+# negative total means the dynamic registry itself was unreadable at index
+# time — unverifiable coverage is also red, honestly.
 # The documented line: worldgen plumbing (features, carvers, loot,
 # predicates, attributes, menus, recipes...) shapes the world or has no
 # per-entry pixel surface — it stays OUTSIDE the world-frame ledger.
-NO_WALK = {"painting_variant", "wolf_variant", "cat_variant",
-           "frog_variant", "villager_type", "mob_effect", "trim_material",
-           "trim_pattern", "banner_pattern", "decorated_pot_pattern",
-           "enchantment", "jukebox_song", "dimension_type"}
+NO_WALK = {"dimension_type"}
 # biome LEFT the no-walk set (2026-11-04): the biome-tint walk exists now
 # (`cimscene gallery biome <ns> <p>` — one biome per page, fillbiome over
 # the wall region, grass/foliage/water tint sample in frame). It starts
 # DIAGNOSTIC (see DIAGNOSTIC_CLASSES).
+# The 12 variant classes LEFT the no-walk set (2026-11-11, 14-dx): the
+# `gallery variant` walk exists; they start DIAGNOSTIC like biome did.
+
+# ledger class name -> the CLASSES key of its walk (the variant family's
+# registry names differ from their kind words)
+VARIANT_CLASS = {
+    "painting_variant": "variant-painting",
+    "wolf_variant": "variant-wolf",
+    "cat_variant": "variant-cat",
+    "frog_variant": "variant-frog",
+    "villager_type": "variant-villager",
+    "mob_effect": "variant-effect",
+    "trim_material": "variant-trimmaterial",
+    "trim_pattern": "variant-trimpattern",
+    "banner_pattern": "variant-banner",
+    "decorated_pot_pattern": "variant-pot",
+    "enchantment": "variant-enchant",
+    "jukebox_song": "variant-jukebox",
+}
 
 # per class: manifest skip-row notes that mean the subject is ABSENT from
 # the picture (see the HONEST-RED docstring above). A note matches when it
@@ -194,11 +278,33 @@ ABSENCE_NOTES = {
     "entity-dyn": ("dissolved", "no-instance", "failed", "client-crash-banned"),
     "entity-large": ("dissolved", "no-instance", "failed", "client-crash-banned"),
     "item": ("summon-failed",),
-    "particle": ("no-simple-options",),
+    "particle": ("no-simple-options", "null-path-dead-id"),
     "fluid": ("no-channel", "no-truth-surface"),
     "sound": ("play-failed",),
     "gui": ("open-failed", "no-viewer"),
     "biome": ("fillbiome-failed",),
+    # the variant kinds (14-dx): every named absence the walk's settle
+    # pass can emit — spawn/configure failures, oversized paintings, the
+    # vanilla-mapping holes (no sherd for a pattern, no disc for a song),
+    # and the RUNTIME assertions (effect expired, trim gone, glint gone,
+    # pattern/sherd/song state lost, play stopped)
+    "variant-painting": ("dissolved", "failed", "oversized", "no-support", "assert-failed"),
+    "variant-wolf": ("dissolved", "no-instance", "failed", "assert-failed"),
+    "variant-cat": ("dissolved", "no-instance", "failed", "assert-failed"),
+    "variant-frog": ("dissolved", "no-instance", "failed", "assert-failed"),
+    "variant-villager": ("dissolved", "no-instance", "failed", "assert-failed"),
+    "variant-effect": ("dissolved", "no-instance", "failed", "effect-expired", "assert-failed"),
+    "variant-trimmaterial": ("dissolved", "failed", "trim-missing", "assert-failed"),
+    "variant-trimpattern": ("dissolved", "failed", "trim-missing", "assert-failed"),
+    "variant-banner": ("dissolved", "failed", "pattern-missing", "assert-failed"),
+    "variant-pot": ("dissolved", "failed", "no-sherd", "sherd-missing", "assert-failed"),
+    "variant-enchant": ("dissolved", "failed", "glint-missing", "assert-failed"),
+    "variant-jukebox": ("dissolved", "failed", "no-disc", "play-failed", "stopped", "assert-failed"),
+    # 14-ec: every named absence the blockentity lane's placement/settle can
+    # emit — the plan builder found no placeable state, the registry lacks the
+    # support block, the item/setBlock placement failed, the settle read a
+    # different BE type at the cell
+    "variant-blockentity": ("no-valid-state", "no-support", "failed", "be-missing", "assert-failed"),
 }
 
 
@@ -294,12 +400,44 @@ def main():
     for cls, total_cells in index.items():
         total, cells_per_page = total_cells
         if cls == "blockentity":
-            # no pages of its own: the BE picture is drawn by the block
-            # wall — the reconciliation file is the contract
-            f = scenes / f"gallery-{args.ns}-be-uncovered.tsv"
+            # 14-ec THE BLOCKENTITY LANE: the class WALKS — the
+            # variant-blockentity kind instantiates every BE type through its
+            # own placement surface (the BlockItem against the support plane,
+            # else the direct setBlock of a valid state) and the settle pass
+            # asserts the BE TYPE the world holds. The reconciliation file
+            # (the static wall-skip predicate) stays the receipt naming what
+            # the BLOCK WALL structurally cannot carry; the walk's cell rows
+            # are what crosses those names off. A name nothing instantiated
+            # stays RED (named, never silent); the walked-class completeness
+            # rides the DIAGNOSTIC law (the ours leg has no variant replay
+            # channel yet — missing ours shots report, never red; a walk that
+            # never ran cannot claim coverage, so missing manifests/truth
+            # shots/terminal markers DO red).
             if total == 0:
                 print("OK\tblockentity\ttotal=0 (no BE types in this namespace)")
                 continue
+            mf_tpl, tbase, obase, done_tpl = CLASSES["variant-blockentity"]
+            if total < 0:
+                print(f"COVERAGE-INCOMPLETE\tblockentity\ttotal={total} "
+                      "reason=unreadable-registry "
+                      "(the ledger could not read the registry — "
+                      "unverifiable coverage is RED, not green)")
+                incomplete.append("blockentity")
+                continue
+            needed = math.ceil(total / cells_per_page) if cells_per_page > 0 else 0
+            # the instantiation receipts: the union of cell-row subjects
+            # across the variant-blockentity manifests (the 14-ec settle
+            # asserted BE TYPE ids)
+            covered = set()
+            for p in range(needed):
+                mf = scenes / mf_tpl.format(ns=args.ns, p=p)
+                if not mf.is_file():
+                    continue
+                for line in mf.read_text(encoding="utf-8").splitlines()[1:]:
+                    parts = line.split("\t")
+                    if len(parts) >= 5 and parts[0] == "cell":
+                        covered.add(parts[4].strip())
+            f = scenes / f"gallery-{args.ns}-be-uncovered.tsv"
             if not f.is_file():
                 print(f"COVERAGE-INCOMPLETE\tblockentity\ttotal={total} "
                       f"reason=reconciliation-file-missing ({f})")
@@ -307,14 +445,60 @@ def main():
                 continue
             names = [l.strip() for l in
                      f.read_text(encoding="utf-8").splitlines() if l.strip()]
-            if names:
+            remainder = [n for n in names if n not in covered]
+            # the walked-class completeness (the variant walk's own receipts)
+            infix = shot_infix("variant-blockentity", args.ns)
+            tstem = shot_stem(tbase, "variant-blockentity", args.ns)
+            ostem = shot_stem(obase, "variant-blockentity", args.ns)
+            missing_mf = missing_ts = missing_os = 0
+            no_exhaust = False
+            for p in range(needed):
+                if not (scenes / mf_tpl.format(ns=args.ns, p=p)).is_file():
+                    missing_mf += 1
+                if not shot_present(tshots, f"{tstem}{infix}{p}.png", tlist):
+                    missing_ts += 1
+                if not shot_present(oshots, f"{ostem}{infix}{p}.png", olist):
+                    missing_os += 1
+            if boot is not None and needed > 0:
+                marker = done_tpl.format(ns=args.ns, p=needed)
+                if marker not in boot:
+                    no_exhaust = True
+            unshown = unshown_rows(scenes, mf_tpl, args.ns, needed,
+                                   "variant-blockentity")
+            walked_ok = (needed > 0 and missing_mf == 0 and missing_ts == 0
+                         and not no_exhaust)
+            if not walked_ok:
                 print(f"COVERAGE-INCOMPLETE\tblockentity\ttotal={total} "
-                      f"uncovered={','.join(names)} (BE types whose every "
-                      f"valid state never reaches the wall are RED, not green)")
+                      f"pages_needed={needed} missing_manifests={missing_mf} "
+                      f"missing_truth_shots={missing_ts}"
+                      + (" terminal-marker-missing" if no_exhaust else "")
+                      + " (a walk that never ran cannot claim coverage)")
                 incomplete.append("blockentity")
-                continue
-            print(f"OK\tblockentity\ttotal={total} (every BE type has a "
-                  f"placeable valid state on the block wall)")
+            elif remainder:
+                print(f"COVERAGE-INCOMPLETE\tblockentity\ttotal={total} "
+                      f"uncovered-remaining={','.join(remainder[:8])}"
+                      + (f" +{len(remainder) - min(len(remainder), 8)} more"
+                         if len(remainder) > 8 else "")
+                      + " (BE types nothing instantiated are RED, not green)")
+                incomplete.append("blockentity")
+            elif not walked_ok:
+                print(f"COVERAGE-INCOMPLETE\tblockentity\ttotal={total} "
+                      f"pages_needed={needed} missing_manifests={missing_mf} "
+                      f"missing_truth_shots={missing_ts}"
+                      + (" terminal-marker-missing" if no_exhaust else "")
+                      + " (a walk that never ran cannot claim coverage)")
+                incomplete.append("blockentity")
+            else:
+                print(f"OK\tblockentity\ttotal={total} (every BE type "
+                      "instantiated by the blockentity lane or wall-reachable)")
+            if missing_os or unshown:
+                line = (f"DIAG\tblockentity\tmissing_ours_shots={missing_os}")
+                if unshown:
+                    line += (" unshown=" + ", ".join(unshown[:8])
+                             + " (absence notes are the honesty channel)")
+                line += (" (the variant replay channel is the named lane — "
+                         "reported, never red)")
+                print(line)
             continue
         if cls in NO_WALK:
             if total < 0:
@@ -335,8 +519,12 @@ def main():
         # each series paginates the SAME entry list, so each must walk
         # ceil(total / cellsPerPage) pages (wrong-series entries are
         # recorded skip rows, never coverage)
-        series = (["entity-mobs", "entity-dyn", "entity-large"]
-                  if cls == "entity" else [cls])
+        if cls in VARIANT_CLASS:
+            series = [VARIANT_CLASS[cls]]
+        elif cls == "entity":
+            series = ["entity-mobs", "entity-dyn", "entity-large"]
+        else:
+            series = [cls]
         # `held` rides the ITEM class: the item ledger row fans it out so
         # the held shots join against the item pages they were taken on
         if cls == "item":
@@ -349,6 +537,17 @@ def main():
             tstem = shot_stem(tbase, sub, args.ns)
             ostem = shot_stem(obase, sub, args.ns)
             needed = math.ceil(total / cells_per_page) if total > 0 else 0
+            # an unreadable dynamic registry (-1) on a WALKED class stays
+            # RED (the 12-aq law: unverifiable coverage is not green — the
+            # NO_WALK branch used to carry this; the variant graduation
+            # moved the class into the walked path, the law moves with it)
+            if total < 0:
+                print(f"COVERAGE-INCOMPLETE\t{sub}\ttotal={total} "
+                      "reason=unreadable-registry "
+                      "(the ledger could not read the dynamic registry — "
+                      "unverifiable coverage is RED, not green)")
+                incomplete.append(sub)
+                continue
             missing_mf = missing_ts = missing_os = 0
             no_exhaust = False
             for p in range(needed):

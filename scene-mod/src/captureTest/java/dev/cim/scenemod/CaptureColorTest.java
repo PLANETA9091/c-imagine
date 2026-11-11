@@ -1,0 +1,152 @@
+package dev.cim.scenemod;
+
+import com.mojang.blaze3d.platform.NativeImage;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.renderer.block.model.BakedQuad;
+import net.minecraft.client.renderer.texture.SpriteContents;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.metadata.animation.FrameSize;
+import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.ResourceMetadata;
+import net.minecraft.world.phys.Vec3;
+
+import java.nio.ByteOrder;
+import java.util.Arrays;
+import java.util.List;
+
+/** Compares both production recorders with the real NeoForge default consumer. */
+public final class CaptureColorTest {
+    public static void main(String[] args) throws Exception {
+        var directory = java.nio.file.Files.createTempDirectory("capture-native-sprites");
+        var output = QuadDump.class.getDeclaredField("capturedTextures");
+        output.setAccessible(true);
+        output.set(null, directory);
+        var id = ResourceLocation.parse("fixture:block/color");
+        byte[] originalPixels;
+        try (var contents = new SpriteContents(id, new FrameSize(16, 16),
+                new NativeImage(16, 16, true), ResourceMetadata.EMPTY)) {
+            contents.getOriginalImage().setPixelRGBA(0, 0, 0x80334455);
+            originalPixels = contents.getOriginalImage().asByteArray();
+            var constructor = TextureAtlasSprite.class.getDeclaredConstructor(ResourceLocation.class,
+                    SpriteContents.class, int.class, int.class, int.class, int.class);
+            constructor.setAccessible(true);
+            var sprite = constructor.newInstance(ResourceLocation.parse("minecraft:textures/atlas/blocks.png"),
+                    contents, 16, 16, 0, 0);
+            for (boolean readColor : new boolean[]{true, false}) {
+                for (float alpha : new float[]{1f, .37f, .73f}) {
+                    for (int[] light : new int[][]{{0, 8, 15},
+                            {(15 << 4) | (4 << 20), 8, 15}, {(3 << 4) | (12 << 20), 8, 5}}) {
+                        compare(sprite, readColor, alpha, light[0], light[1], light[2]);
+                    }
+                }
+            }
+        }
+        var aliasesField = QuadDump.class.getDeclaredField("spriteAliases");
+        aliasesField.setAccessible(true);
+        var aliases = (java.util.Map<?, ?>) aliasesField.get(null);
+        String decoded = (String) aliases.get(id.toString());
+        if (decoded == null || !decoded.matches("~[0-9a-f]{16}")) {
+            throw new AssertionError("native sprite identity lost its decoded pixel artifact");
+        }
+        if (!java.util.Arrays.equals(originalPixels,
+                java.nio.file.Files.readAllBytes(directory.resolve(decoded.substring(1) + ".png")))) {
+            throw new AssertionError("native sprite alias did not retain the decoded native pixels");
+        }
+        try (var paths = java.nio.file.Files.walk(directory)) {
+            for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                java.nio.file.Files.delete(path);
+            }
+        }
+        output.set(null, null);
+        System.out.println("capture baked RGBA vs native consumer: ALL 36 recorder comparisons OK");
+    }
+
+    private static void compare(TextureAtlasSprite sprite, boolean readColor, float alpha,
+                                int bakedLight, int sceneBlock, int sceneSky) throws Exception {
+        int[] vertices = new int[32];
+        int[] colors = {0x4c3399dd, 0x81e14023, 0x00ffffff, 0xffffffff};
+        for (int i = 0; i < 4; i++) {
+            int offset = i * 8;
+            vertices[offset] = Float.floatToIntBits(i == 1 || i == 2 ? 1 : 0);
+            vertices[offset + 1] = Float.floatToIntBits(i >= 2 ? 1 : 0);
+            vertices[offset + 3] = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN
+                    ? colors[i] : Integer.reverseBytes(colors[i]);
+            vertices[offset + 4] = Float.floatToIntBits(i == 1 || i == 2 ? 1 : 0);
+            vertices[offset + 5] = Float.floatToIntBits(i >= 2 ? 1 : 0);
+            vertices[offset + 6] = bakedLight;
+        }
+        var quad = new BakedQuad(vertices, -1, Direction.SOUTH, sprite, true);
+        float[] brightness = {1f, .87f, .53f, .4f};
+        // Compare the emitted native UV2 after combining scene and baked
+        // light. The serialized BLOCK/SKY tail uses the level nibbles.
+        int[] light = new int[4];
+        Arrays.fill(light, (sceneBlock << 4) | (sceneSky << 20));
+        var expected = new NativeRecorder();
+        var pose = new PoseStack().last();
+        expected.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, light, 0, readColor);
+        for (String name : List.of("ItemCapture", "Capture")) {
+            var type = Arrays.stream(QuadDump.class.getDeclaredClasses())
+                    .filter(c -> c.getSimpleName().equals(name)).findFirst().orElseThrow();
+            Object capture;
+            VertexConsumer consumer;
+            if (name.equals("Capture")) {
+                var ctor = type.getDeclaredConstructor(List.class, Vec3.class);
+                ctor.setAccessible(true);
+                capture = ctor.newInstance(List.of(sprite), Vec3.ZERO);
+                consumer = (VertexConsumer) capture;
+            } else {
+                var ctor = type.getDeclaredConstructor(List.class, float.class);
+                ctor.setAccessible(true);
+                capture = ctor.newInstance(List.of(sprite), 0f);
+                var buffer = type.getDeclaredMethod("bufferFor", Object.class, String.class, boolean.class);
+                buffer.setAccessible(true);
+                consumer = (VertexConsumer) buffer.invoke(capture, new Object(),
+                        "texture[Optional[minecraft:textures/atlas/blocks.png]]", true);
+            }
+            consumer.putBulkData(pose, quad, brightness, .83f, .61f, .97f, alpha, light, 0, readColor);
+            var out = type.getDeclaredField("out");
+            out.setAccessible(true);
+            String[] row = out.get(capture).toString().strip().split("\\t");
+            // Both native block and BER/item recorders retain the supplied light.
+            if (row.length != 41) {
+                throw new AssertionError(name + " lost vertex alpha: " + row.length);
+            }
+            String shaderShade = name.equals("ItemCapture") ? "1" : "0";
+            if (!row[1].equals(shaderShade)) {
+                throw new AssertionError(name + " repeats or loses source shader lighting: " + row[1]);
+            }
+            if (!row[39].equals(Integer.toString((expected.light[0][0] >> 4) & 15))
+                    || !row[40].equals(Integer.toString((expected.light[0][1] >> 4) & 15))) {
+                throw new AssertionError(name + " lost the packed light tail: " + row[39] + "/" + row[40]);
+            }
+            for (int i = 0; i < 4; i++) {
+                for (int c = 0; c < 4; c++) {
+                    int column = c == 3 ? 35 + i : 23 + i * 3 + c;
+                    float actual = Float.parseFloat(row[column]);
+                    float tolerance = c == 3 ? .000001f : .00051f; // TSV decimal precision
+                    if (Math.abs(actual - expected.colors[i][c] / 255f) > tolerance) {
+                        throw new AssertionError(name + " readColor=" + readColor + " alpha=" + alpha
+                                + " vertex=" + i + " channel=" + c + " actual=" + actual
+                                + " native=" + expected.colors[i][c] / 255f);
+                    }
+                }
+            }
+        }
+    }
+
+    private static final class NativeRecorder implements VertexConsumer {
+        final int[][] colors = new int[4][4];
+        final int[][] light = new int[4][2];
+        int vertex = -1;
+        public VertexConsumer addVertex(float x, float y, float z) { vertex++; return this; }
+        public VertexConsumer setColor(int r, int g, int b, int a) {
+            colors[vertex] = new int[]{r, g, b, a}; return this;
+        }
+        public VertexConsumer setUv(float u, float v) { return this; }
+        public VertexConsumer setUv1(int u, int v) { return this; }
+        public VertexConsumer setUv2(int u, int v) { light[vertex] = new int[]{u, v}; return this; }
+        public VertexConsumer setNormal(float x, float y, float z) { return this; }
+    }
+}

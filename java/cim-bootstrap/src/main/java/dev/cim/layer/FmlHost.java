@@ -40,8 +40,9 @@ import java.util.Set;
  *       {@code GameData.unfreezeData()} → {@code postRegisterEvents()} →
  *       {@code freezeData()} — the real RegisterEvent flow, per registry in
  *       the real order, posted to mod buses in mod order;</li>
- *   <li>{@code FMLCommonSetupEvent} + {@code FMLDedicatedServerSetupEvent} per
- *       container, then {@code NeoForge.EVENT_BUS.start()}.</li>
+ *   <li>native {@code CommonModLoader.load/finish}: common/sided setup,
+ *       registration hooks, IMC/load-complete, network registry lock;
+ *       then {@code NeoForge.EVENT_BUS.start()}.</li>
  * </ol>
  *
  * <p>Everything reaches the relocated stack reflectively with the
@@ -105,10 +106,6 @@ public final class FmlHost {
             "cim.shadow.neoforge.net.neoforged.fml.ModLoadingContext";
     private static final String DEFERRED_QUEUE =
             "cim.shadow.neoforge.net.neoforged.fml.DeferredWorkQueue";
-    private static final String COMMON_SETUP =
-            "cim.shadow.neoforge.net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent";
-    private static final String SERVER_SETUP =
-            "cim.shadow.neoforge.net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent";
     private static final String BUILT_IN_REGISTRIES =
             "cim.shadow.mc1211.net.minecraft.core.registries.BuiltInRegistries";
 
@@ -157,11 +154,16 @@ public final class FmlHost {
 
             // 3) real ModFile / ModFileInfo / ModInfo per jar (real toml parsing)
             List<Object> modFiles = new ArrayList<>();
+            Map<String, Object> scanByJar = new HashMap<>();
             List<Object> modInfos = new ArrayList<>();
             List<ModSpec> containerSpecs = new ArrayList<>();
             Map<ModSpec, Object> infoBySpec = new HashMap<>();
             for (ModSpec mod : mods) {
                 Object file = buildModFile(mod);
+                Object fileScan = buildScanData(mod);
+                file.getClass().getMethod("setScanResult", Class.forName(SCAN_DATA), Throwable.class)
+                        .invoke(file, fileScan, null);
+                scanByJar.put(mod.jar(), fileScan);
                 modFiles.add(file);
                 Object fileInfo = call(file, "getModFileInfo");
                 if (fileInfo == null) {
@@ -205,7 +207,8 @@ public final class FmlHost {
             // parallel loops stay aligned.
             List<ModSpec> containerMods = new ArrayList<>();
             for (ModSpec mod : containerSpecs) {
-                Object scanData = buildScanData(mod);
+                Object scanData = java.util.Objects.requireNonNull(scanByJar.get(mod.jar()),
+                        "missing scan data for " + mod.jar());
                 Object info = infoBySpec.get(mod);
                 if (info == null) {
                     throw new IllegalStateException("no ModInfo for " + mod.id());
@@ -401,8 +404,32 @@ public final class FmlHost {
             Map<String, Integer> registered = postRegisterEvents(gameData);
             gameData.getMethod("freezeData").invoke(null);
 
-            // 7) lifecycle: common setup + dedicated server setup, per container
-            fireSetupEvents(containers);
+            // CommonModLoader.begin loads COMMON configs after registration
+            // and before common/sided setup. SERVER configs belong to the
+            // native ServerLifecycleHooks once the actual server exists.
+            Class<?> configTracker = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.config.ConfigTracker");
+            Class<?> configType = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.config.ModConfig$Type");
+            Class<?> paths = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.fml.loading.FMLPaths");
+            Object configDir = paths.getMethod("get").invoke(paths.getField("CONFIGDIR").get(null));
+            configTracker.getMethod("loadConfigs", configType, Path.class)
+                    .invoke(configTracker.getField("INSTANCE").get(null),
+                            configType.getField("COMMON").get(null), configDir);
+
+            // Native load orders all common setup before sided setup, drains
+            // phase work, then initializes capabilities/data maps. Finish
+            // delivers IMC/load-complete and locks payload registration.
+            Class<?> commonLoader = Class.forName(
+                    "cim.shadow.neoforge.net.neoforged.neoforge.internal.CommonModLoader");
+            java.util.concurrent.Executor inline = Runnable::run;
+            for (String phase : new String[] {"load", "finish"}) {
+                Method dispatch = commonLoader.getDeclaredMethod(phase,
+                        java.util.concurrent.Executor.class, java.util.concurrent.Executor.class);
+                dispatch.setAccessible(true);
+                dispatch.invoke(null, inline, inline);
+            }
 
             // 8) start the game bus (mirrors ServerModLoader: after registration)
             Object gameBus = getStatic(Class.forName(NEOFORGE), "EVENT_BUS");
@@ -637,16 +664,10 @@ public final class FmlHost {
     }
 
     /**
-     * A {@code SecureJar} proxy over the mod jar file.
-     *
-     * <p>The real {@code SecureJar.from(Path)} needs the
-     * {@code UnionFileSystemProvider} installed at JVM boot
-     * ({@code FileSystemProvider.installedProviders()} is immutable after
-     * startup and our jars are never on the system classpath), so the
-     * interface is served by hand: the manifest is read through a plain
-     * {@code JarFile}, and resource lookups ({@code getPath}) extract single
-     * entries to a temp dir — the only consumer on this path is
-     * {@code ModFileParser.modsTomlParser} reading {@code neoforge.mods.toml}.
+     * SecureJar metadata over a JDK ZIP filesystem. Native PathPackResources
+     * requires a directory root with working traversal, not an archive filename
+     * or individually extracted metadata files. No boot-installed union provider
+     * is needed for this single-archive resource tree.
      */
     private static Object proxySecureJar(ModSpec mod) throws Exception {
         Class<?> sjIf = Class.forName(SECURE_JAR);
@@ -655,15 +676,25 @@ public final class FmlHost {
         java.util.jar.Manifest manifest = readManifest(jarPath);
         Object moduleDescriptor = java.lang.module.ModuleDescriptor
                 .newOpenModule(mod.id()).build();
-        Map<String, Path> extracted = new HashMap<>();
+        java.nio.file.FileSystem resources = java.nio.file.FileSystems.newFileSystem(jarPath);
+        Path resourceRoot = resources.getPath("/");
 
         Object mdp = Proxy.newProxyInstance(shadowLoader(), new Class<?>[] {mdpIf},
                 (proxy, method, args) -> switch (method.getName()) {
                     case "name" -> mod.id();
                     case "descriptor" -> moduleDescriptor;
                     case "uri" -> jarPath.toUri();
-                    case "findFile" -> java.util.Optional.empty();
-                    case "open" -> java.util.Optional.empty();
+                    case "findFile" -> {
+                        Path resource = resourceRoot.resolve((String) args[0]);
+                        yield java.nio.file.Files.exists(resource)
+                                ? java.util.Optional.of(resource.toUri()) : java.util.Optional.empty();
+                    }
+                    case "open" -> {
+                        Path resource = resourceRoot.resolve((String) args[0]);
+                        yield java.nio.file.Files.isRegularFile(resource)
+                                ? java.util.Optional.of(java.nio.file.Files.newInputStream(resource))
+                                : java.util.Optional.empty();
+                    }
                     case "getManifest" -> manifest;
                     case "verifyAndGetSigners" -> null;
                     default -> defaultValue(method);
@@ -674,16 +705,17 @@ public final class FmlHost {
                     case "moduleDataProvider" -> mdp;
                     case "name" -> mod.id();
                     case "getPrimaryPath" -> jarPath;
-                    // As on FML, the root is the jar's own filesystem: a mod walks folders in it
-                    // (measured: Dynamic Trees reads its tree packs from trees/, and every seed
-                    // was missing from the layer while getPath could only extract single files).
-                    case "getRootPath" -> jarRoot(jarPath, jarPath);
-                    case "getPath" -> jarPathOf(jarPath, joinPaths(args), extracted);
+                    case "getRootPath" -> resourceRoot;
+                    case "getPath" -> resourceRoot.resolve(joinPaths(args));
+
                     case "getManifestSigners", "getTrustedManifestEntries" -> null;
                     case "verifyAndGetSigners" -> null;
                     case "hasSecurityData" -> false;
                     case "verifyPath", "getFileStatus" -> defaultValue(method);
-                    case "close" -> null;
+                    case "close" -> {
+                        resources.close();
+                        yield null;
+                    }
                     default -> defaultValue(method);
                 });
     }
@@ -713,31 +745,6 @@ public final class FmlHost {
     }
 
     private static final Map<String, Path> EXTRACT_ROOT = new HashMap<>();
-
-    private static final Map<Path, java.nio.file.FileSystem> JAR_FS = new HashMap<>();
-
-    /** The root of a jar's zip filesystem, or the fallback when the jar cannot be opened as one. */
-    private static synchronized Path jarRoot(Path jar, Path fallback) {
-        java.nio.file.FileSystem fs = JAR_FS.computeIfAbsent(jar, j -> {
-            try {
-                return java.nio.file.FileSystems.newFileSystem(j, (ClassLoader) null);
-            } catch (Exception e) {
-                System.out.println("[c-imagine] jar filesystem unavailable for " + j + ": " + e);
-                return null;
-            }
-        });
-        return fs == null ? fallback : fs.getPath("/");
-    }
-
-    /** A path inside the jar: files and folders alike, read and walked in place. */
-    private static Path jarPathOf(Path jar, String entryPath, Map<String, Path> extracted) {
-        Path root = jarRoot(jar, null);
-        if (root == null) {
-            return extractEntry(jar, entryPath, extracted);
-        }
-        String rel = entryPath.startsWith("/") ? entryPath.substring(1) : entryPath;
-        return rel.isEmpty() ? root : root.resolve(rel);
-    }
 
     private static Path extractEntry(Path jar, String entryPath, Map<String, Path> cache) {
         return cache.computeIfAbsent(entryPath, k -> {
@@ -843,61 +850,8 @@ public final class FmlHost {
         return delta;
     }
 
-    /**
-     * Mod configs, as FML loads them before setup: STARTUP and COMMON from the config folder
-     * (written with their defaults when absent). Without them a mod's first config read
-     * throws "Cannot get config value before config is loaded" (measured: Mekanism's
-     * dosimeter and geiger counter, in the layer only). SERVER configs load with a world.
-     */
-    private static void loadModConfigs() {
-        try {
-            Class<?> tracker = Class.forName("cim.shadow.neoforge.net.neoforged.fml.config.ConfigTracker");
-            Object instance = tracker.getField("INSTANCE").get(null);
-            @SuppressWarnings({"unchecked", "rawtypes"})
-            Class<? extends Enum> type = (Class<? extends Enum>) Class.forName(
-                    "cim.shadow.neoforge.net.neoforged.fml.config.ModConfig$Type").asSubclass(Enum.class);
-            String game = System.getProperty("cim.gamedir", ".");
-            Path dir = Path.of(game).resolve("config");
-            java.nio.file.Files.createDirectories(dir);
-            Method load = tracker.getMethod("loadConfigs", type, Path.class);
-            for (String t : new String[] {"STARTUP", "COMMON"}) {
-                @SuppressWarnings("unchecked")
-                Object value = Enum.valueOf(type, t);
-                load.invoke(instance, value, dir);
-            }
-            // SERVER configs come with a world on a real server; the layer serves Paper's world,
-            // which has none of the mods' files, so they load as a fresh world's would: the
-            // defaults (measured: every Mekanism machine read one on its first click).
-            tracker.getMethod("loadDefaultServerConfigs").invoke(instance);
-            System.out.println(LOG + " mod configs loaded (STARTUP, COMMON from " + dir + "; SERVER defaults)");
-        } catch (Throwable t) {
-            System.out.println(LOG + " mod configs NOT loaded: " + t);
-        }
-    }
 
-    private static void fireSetupEvents(List<Object> containers) throws Exception {
-        loadModConfigs();
-        Class<?> ctxCls = Class.forName(MOD_LOADING_CONTEXT);
-        Object ctx = ctxCls.getMethod("get").invoke(null);
-        Method setActive = ctxCls.getMethod("setActiveContainer", Class.forName(MOD_CONTAINER));
-        Method acceptEvent = Class.forName(MOD_CONTAINER)
-                .getMethod("acceptEvent", Class.forName(EVENT));
-        Class<?> queueCls = Class.forName(DEFERRED_QUEUE);
-        for (Object container : containers) {
-            setActive.invoke(ctx, container);
-            for (String evt : new String[] {COMMON_SETUP, SERVER_SETUP}) {
-                Class<?> evtCls = Class.forName(evt);
-                Object queue = queueCls.getConstructor(String.class)
-                        .newInstance("cim-" + evtCls.getSimpleName());
-                Object event = evtCls
-                        .getConstructor(Class.forName(MOD_CONTAINER), queueCls)
-                        .newInstance(container, queue);
-                acceptEvent.invoke(container, event);
-                queueCls.getMethod("runTasks").invoke(queue);
-            }
-            setActive.invoke(ctx, (Object) null);
-        }
-    }
+
 
     // ---- census -------------------------------------------------------------------
 

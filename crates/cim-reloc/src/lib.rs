@@ -22,11 +22,12 @@
 //!   — field/method signatures that name relocatable classes. Required for
 //!   linking and for `invokedynamic`.
 //!
-//! What is deliberately **not** rewritten (loading never needs it, and
-//! keeping originals preserves FML's own raw-byte annotation scanning):
+//! Generic `Signature` attributes and runtime annotation descriptors are
+//! rewritten too: JVM reflection and the native event bus resolve these names.
+//! FML scan metadata comes from the Rust scanner's original class bytes.
 //!
-//! - generic `Signature` attribute contents,
-//! - runtime annotation descriptors (`Lnet/neoforged/...;` strings),
+//! What is deliberately **not** rewritten:
+//!
 //! - `CONSTANT_String` literals (reflection over own names is served by the
 //!   `ClassNames.decode` shim, tracked in the roadmap).
 //!
@@ -154,43 +155,44 @@ impl RelocationTable {
         }
     }
 
-    /// Map a generic signature (JVMS §4.7.9.1), rewriting every class-type
-    /// signature segment (`L<name>;`) it can. Type variables (`T…;`) and
-    /// segments with type arguments (`…<…>;`) pass through unchanged — the
-    /// first `;` scan is only trusted for plain class segments, which is
-    /// exactly what relocation needs (generic hierarchies of layer types are
-    /// resolved through reflection by these strings).
+    /// Map class names in a JVMS §4.7.9.1 signature, including parameterized
+    /// owners and nested arguments. Type variables and inner-class suffixes
+    /// are identifiers, not independently relocatable class names.
     pub fn map_signature(&self, signature: &str) -> String {
         let bytes = signature.as_bytes();
         let mut out = String::with_capacity(signature.len() + 8);
         let mut i = 0usize;
         while i < bytes.len() {
-            if bytes[i] == b'L' {
-                if let Some(end) = bytes[i + 1..].iter().position(|&b| b == b';') {
-                    let segment = &signature[i + 1..i + 1 + end];
-                    if !segment.contains('<') {
-                        match self.map_internal(segment) {
-                            Some(mapped) => {
-                                out.push('L');
-                                out.push_str(&mapped);
-                                out.push(';');
-                                i += end + 2;
-                                continue;
-                            }
-                            None => {
-                                // copy the whole segment verbatim (an 'L'
-                                // inside a class name can't mislead: the
-                                // segment is consumed either way)
-                                out.push_str(&signature[i..=i + 1 + end]);
-                                i += end + 2;
-                                continue;
-                            }
-                        }
+            if matches!(bytes[i], b'L' | b'T' | b'.') {
+                let start = i + 1;
+                let end = bytes[start..]
+                    .iter()
+                    .position(|b| matches!(b, b'<' | b'>' | b';' | b':' | b'.'))
+                    .map_or(bytes.len(), |n| start + n);
+                if bytes[i] == b'T' && bytes.get(end) == Some(&b';') {
+                    // A variable can itself contain 'L', e.g. TLONG;.
+                    out.push_str(&signature[i..=end]);
+                    i = end + 1;
+                    continue;
+                }
+                if bytes[i] != b'T' {
+                    out.push(char::from(bytes[i]));
+                    let name = &signature[start..end];
+                    if bytes[i] == b'L' {
+                        out.push_str(self.map_internal(name).as_deref().unwrap_or(name));
+                    } else {
+                        out.push_str(name);
                     }
+                    i = end;
+                    continue;
                 }
             }
-            out.push(signature[i..].chars().next().unwrap_or('\u{fffd}'));
-            i += signature[i..].chars().next().map_or(1, char::len_utf8);
+            let ch = signature[i..]
+                .chars()
+                .next()
+                .expect("valid string boundary");
+            out.push(ch);
+            i += ch.len_utf8();
         }
         out
     }
@@ -506,6 +508,25 @@ mod tests {
         // Primitives and void untouched.
         assert_eq!(t.map_descriptor("()V"), "()V");
         assert_eq!(t.map_descriptor("(JIJZBFS)V"), "(JIJZBFS)V");
+    }
+
+    #[test]
+    fn signatures_relocate_parameterized_owners_and_arguments() {
+        let t = RelocationTable::layer_default();
+        // Connection's superclass: Netty reflects this to derive its inbound type.
+        assert_eq!(
+            t.map_signature("Lio/netty/channel/SimpleChannelInboundHandler<Lnet/minecraft/network/protocol/Packet<*>;>;"),
+            "Lio/netty/channel/SimpleChannelInboundHandler<Lcim/shadow/mc1211/net/minecraft/network/protocol/Packet<*>;>;"
+        );
+        assert_eq!(
+            t.map_signature("<LONG:Ljava/lang/Object;>(TLONG;[Lnet/minecraft/Foo<TLONG;>;)Lnet/minecraft/Outer<TLONG;>.Leaf<Lnet/minecraft/Bar;>;"),
+            "<LONG:Ljava/lang/Object;>(TLONG;[Lcim/shadow/mc1211/net/minecraft/Foo<TLONG;>;)Lcim/shadow/mc1211/net/minecraft/Outer<TLONG;>.Leaf<Lcim/shadow/mc1211/net/minecraft/Bar;>;"
+        );
+        let nested = "Ljava/util/List<+Ljava/util/List<Lnet/minecraft/Item;>;>;";
+        assert_eq!(
+            t.map_signature(nested),
+            "Ljava/util/List<+Ljava/util/List<Lcim/shadow/mc1211/net/minecraft/Item;>;>;"
+        );
     }
 
     #[test]

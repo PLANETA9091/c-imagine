@@ -203,5 +203,36 @@ fn bridge_loop() -> Result<(), String> {
         .map_err(|e| format!("runSmoke: {e}"))?;
         Ok(())
     });
+
+    // 4) the layer server lifecycle owner (M2/M3 open blocker, 2026-11-10):
+    //    the REAL shadow-space DedicatedServer whose ticks ride Paper's main
+    //    thread. Install is best-effort and self-reporting: the Java side
+    //    prints its own armed/disabled/FAILED markers (the profiling tick
+    //    gate consumes them), a failed install never breaks the boot.
+    let _ = attached("layer server install", |env| {
+        let loader = unsafe { JObject::from_raw(loader_idx as jobject) };
+        let name = env
+            .new_string("dev.cim.bootstrap.Bootstrap")
+            .map_err(|e| format!("new_string: {e}"))?;
+        let host_cls = env
+            .call_method(
+                &loader,
+                "loadClass",
+                "(Ljava/lang/String;)Ljava/lang/Class;",
+                &[JValue::Object(&name)],
+            )
+            .map_err(|e| format!("loadClass(Bootstrap): {e}"))?
+            .l()
+            .map_err(|e| format!("class l(): {e}"))?;
+        let host: JClass = host_cls.into();
+        env.call_static_method(
+            &host,
+            "installLayerServer",
+            "(Ljava/lang/Object;)V",
+            &[JValue::Object(plugin_obj)],
+        )
+        .map_err(|e| format!("install: {e}"))?;
+        Ok(())
+    });
     Ok(())
 }

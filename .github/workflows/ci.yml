@@ -37,14 +37,21 @@ jobs:
         run: |
           pip install -q numpy pillow
           python3 scripts/cimscene/test-gallery-diff.py
+          python3 scripts/cimscene/test-coverage-gate.py
+          python3 scripts/cimscene/test-fidelity-forensics.py
+          python3 scripts/cimscene/test-wait-scene-marker.py
+          python3 scripts/cimscene/test-parity-channels.py
       - name: client download recovery
         run: python3 scripts/visual/test-fetch-client.py
       - name: performance evidence gates
         run: |
           python3 scripts/perf/test-criterion-gate.py
           python3 scripts/perf/test-boot-budget.py
+          python3 scripts/perf/test-tick-budget.py
       - name: embedded shell syntax
-        run: python3 scripts/audit_runblocks.py
+        run: |
+          python3 scripts/test-audit-runblocks.py
+          python3 scripts/audit_runblocks.py
 
   rust:
     name: rust (fmt, clippy, test, release build)
@@ -84,9 +91,12 @@ jobs:
           mkdir -p java/cim-bootstrap/build/test-classes
           javac --release 21 -cp java/cim-bootstrap/build/cim-bootstrap.jar \
             -d java/cim-bootstrap/build/test-classes \
-            java/cim-bootstrap/src/test/java/dev/cim/layer/FmlHostTest.java
+            java/cim-bootstrap/src/test/java/dev/cim/layer/FmlHostTest.java \
+            java/cim-bootstrap/src/test/java/dev/cim/layer/LayerServerHostTest.java
           java -cp java/cim-bootstrap/build/cim-bootstrap.jar:java/cim-bootstrap/build/test-classes \
             dev.cim.layer.FmlHostTest
+          java -cp java/cim-bootstrap/build/cim-bootstrap.jar:java/cim-bootstrap/build/test-classes \
+            dev.cim.layer.LayerServerHostTest
       - uses: actions/upload-artifact@v4
         with:
           name: cim-bootstrap-jar
@@ -113,6 +123,8 @@ jobs:
       - name: build
         working-directory: paper-plugin
         run: mvn -B -ntp -Dpaper.version="${{ steps.paper.outputs.version }}" package
+      - name: plugin startup artifact contract
+        run: python3 scripts/verify-plugin-jar.py paper-plugin/target/cim-paper-plugin.jar
       - name: f2v pack builder selftest (M5.2)
         working-directory: paper-plugin
         # gson is needed outside the server (F2vPack parses model JSON; on a
@@ -122,6 +134,14 @@ jobs:
         # transitive provided deps).
         run: |
           mvn -B -ntp -q dependency:build-classpath -Dmdep.outputFile=target/selftest-cp.txt
+          # Analysis must resolve from the packaged plugin, just as on Paper.
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          cp = Path('target/selftest-cp.txt')
+          cp.write_text(os.pathsep.join(p for p in cp.read_text().strip().split(os.pathsep)
+                                       if not Path(p).name.startswith('asm-analysis-')))
+          PY
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
       - name: menu verdict test
         run: |

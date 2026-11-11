@@ -83,7 +83,8 @@ public final class F2vPack {
     /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
     public record Result(List<VisualItem> items, List<VisualBlock> blocks,
                          String sha1, int entryCount, List<String> warnings,
-                         List<GalleryPack.Resolved> gallery) {
+                         List<GalleryPack.Resolved> gallery,
+                         List<String[]> placeholders) {
     }
 
     /**
@@ -93,6 +94,15 @@ public final class F2vPack {
      * rows through this manifest (fluidId -> cmd).
      */
     public record FluidTexture(String fluidId, float cmd, String modelRef) {
+    }
+
+    /** One FLUID CUBE row (14-cd): the ours leg's visible surface for the
+     * fluid walk's channel=block SOURCE rows — a 14/16-tall box model on the
+     * 410000+i CMD space carrying the fluid's still surface (a real texture
+     * frame, or the calibrated flat color for the modded chemicals whose
+     * appearance is code-tinted). The truth leg renders the real liquid; the
+     * cube replays the same block space (the glass case frames both). */
+    public record FluidCube(String fluidId, float cmd, String modelRef) {
     }
 
     /** fluid id derivation from the texture file name: strip .png, then a
@@ -140,12 +150,35 @@ public final class F2vPack {
                         continue;
                     }
                     String file = rest.substring(slash + 1);
-                    if (!file.startsWith("textures/fluid/")) {
+                    // 14-cd the scan conventions widened: create ships
+                    // textures/fluid/<p>_still.png, biomesoplenty ships
+                    // textures/block/<p>_still.png, mekanism ships
+                    // textures/liquid/<p>.png (the tinted chemical canvas —
+                    // the color table overrides those ids below). The
+                    // _still suffix keys the LIQUID surface textures; other
+                    // block textures stay out.
+                    boolean fluidPath = file.startsWith("textures/fluid/")
+                            || (file.startsWith("textures/block/")
+                                && file.endsWith("_still.png"))
+                            || file.startsWith("textures/liquid/");
+                    if (!fluidPath) {
                         continue;
                     }
                     paths.add(ns + ":" + file);
                     if (!entries.containsKey(n)) {
-                        entries.put(n, zf.getInputStream(e).readAllBytes());
+                        // 14-cf: the strip NEVER enters the atlas raw. The
+                        // still textures are animated strips (16xN: the
+                        // mekanism liquid canvas 16x512, the create fluids
+                        // 16x320) — hosting the raw strip grew the atlas
+                        // layout and the mip generation bled the neighbours'
+                        // pixels into the high-frequency faces (measured on
+                        // run #238: the ae2 chiseled quartz pages, solid
+                        // green on #231, corrupted into per-pixel RGB noise
+                        // across 162 cells the moment the 16x512 canvases
+                        // joined the atlas). The hosted sprite = the static
+                        // 16x16 frame 0 under the SAME sprite id — the
+                        // deterministic surface, the atlas keeps its size.
+                        entries.put(n, stillFramePng(zf.getInputStream(e).readAllBytes()));
                     }
                 }
             }
@@ -154,21 +187,346 @@ public final class F2vPack {
         int i = 0;
         for (String key : paths) {
             String ns = key.substring(0, key.indexOf(':'));
-            String file = key.substring(key.indexOf(':') + 1);   // textures/fluid/<name>.png
-            String base = file.substring("textures/fluid/".length());
+            String file = key.substring(key.indexOf(':') + 1);   // textures/<dir>/<name>.png
+            String rest2 = file.substring("textures/".length()); // <dir>/<name>.png
+            int slash2 = rest2.indexOf('/');
+            String dir = rest2.substring(0, slash2);             // fluid | block | liquid
+            String base = rest2.substring(slash2 + 1);           // <name>.png
             String sprite = base.substring(0, base.length() - 4); // <name> (no .png)
-            String modelPath = "assets/c-imagine/models/fluid/" + ns + "/" + sprite + ".json";
+            // Model identifiers are relative to models/: native
+            // FileToIdConverter prepends that directory during lookup.
+            String modelPath = "assets/c-imagine/models/fluid/f" + i + ".json";
             if (entries.containsKey(modelPath)) {
                 continue;
             }
+            // the texture ref keeps the file's OWN directory (fluid/, block/,
+            // liquid/ — the hosted path mirrors the jar path verbatim)
+            String texRef = ns + ":" + dir + "/" + sprite;
             String json = "{\"parent\": \"minecraft:item/generated\", "
-                    + "\"textures\": {\"layer0\": \"" + ns + ":fluid/" + sprite + "\"}}";
+                    + "\"textures\": {\"layer0\": \"" + texRef + "\"}}";
             entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
             out.add(new FluidTexture(fluidIdFromTexture(ns, base),
-                    400000f + i, "c-imagine:models/fluid/" + ns + "/" + sprite));
+                    400000f + i, "c-imagine:fluid/f" + i));
             i++;
         }
         return out;
+    }
+
+    /** The static 16x16 frame-0 crop of a still-texture strip, re-encoded:
+     *  the atlas-safe hosting of the fluid sprites (14-cf — the raw strips
+     *  grew the atlas and bled the neighbours, see the scan comment). */
+    private static byte[] stillFramePng(byte[] raw) throws IOException {
+        try {
+            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(
+                    new java.io.ByteArrayInputStream(raw));
+            if (img == null) {
+                return raw;
+            }
+            int w = Math.min(16, img.getWidth());
+            int h = Math.min(16, img.getHeight());
+            java.awt.image.BufferedImage frame = new java.awt.image.BufferedImage(
+                    w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            java.awt.Graphics2D g = frame.createGraphics();
+            g.drawImage(img, 0, 0, w, h, 0, 0, w, h, null);
+            g.dispose();
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(frame, "png", bos);
+            return bos.toByteArray();
+        } catch (Exception bad) {
+            return raw; // an unreadable png keeps its bytes (the loader will name it)
+        }
+    }
+
+    /** Read the fluid-color manifest (14-cd): fluidId -> {r,g,b} 0..255.
+     *  Absent file = an empty table (the chemical cube channel stays off —
+     *  the pack stays byte-identical to today's build). */
+    public static java.util.Map<String, int[]> readFluidColorTable(Path tsv)
+            throws IOException {
+        java.util.Map<String, int[]> map = new java.util.HashMap<>();
+        if (!Files.isRegularFile(tsv)) {
+            return map;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) {
+                continue;
+            }
+            String[] parts = line.split("\t");
+            if (parts.length >= 4) {
+                try {
+                    map.putIfAbsent(parts[0].trim(), new int[]{
+                            Integer.parseInt(parts[1].trim()),
+                            Integer.parseInt(parts[2].trim()),
+                            Integer.parseInt(parts[3].trim())});
+                } catch (NumberFormatException nfe) {
+                    // a malformed row is skipped, never fatal
+                }
+            }
+        }
+        return map;
+    }
+
+    /**
+     * The 14-cd CUBE channel: for every walked fluid id (the modded
+     * namespace fluids the manifests name) synthesize the 14/16 box model
+     * the channel=block SOURCE rows replay through. Two texture sources:
+     * <ul>
+     *   <li>the color-table ids (the modded chemicals whose appearance is
+     *       code-tinted — mekanism): a uniform 16x16 PNG of the calibrated
+     *       color (the L1-optimal flat surface);</li>
+     *   <li>everything else with a scanned still texture (create,
+     *       biomesoplenty): the texture's STATIC frame 0 (16x16) — the
+     *       animation phase is exactly what the legs cannot share, so the
+     *       cube ships deterministic pixels.</li>
+     * </ul>
+     * Writes {@code visual-fluid-cubes.tsv} (fluidId -> cmd, the 410000+i
+     * space) beside the flat manifest. Deterministic (sorted ids).
+     */
+    static List<FluidCube> synthesizeFluidCubes(java.util.Set<String> fluidIds,
+                                                java.util.Map<String, int[]> colorTable,
+                                                TreeMap<String, byte[]> entries,
+                                                List<String> warnings) throws IOException {
+        List<FluidCube> out = new ArrayList<>();
+        int i = 0;
+        for (String fluidId : new java.util.TreeSet<>(fluidIds)) {
+            String texPath;
+            int[] color = colorTable.get(fluidId);
+            if (color != null) {
+                // 14-ch THE SHADED SURFACE SET: the truth's liquid renders
+                // through the chunk pipeline's DIRECTIONAL face shading (the
+                // top 1.0, the north/south 0.8, the east/west 0.6, the
+                // bottom 0.5) while the item_display pipeline renders the
+                // model FLAT — the #250 measured the unshaded cube at ae
+                // 246-421K against the 240K gate with IDENTICAL ae on the
+                // run before the gate flip (the structure, not the pixels).
+                // The shading bakes into four per-face textures; the model
+                // picks them per face and the fit absorbs the rest.
+                // 14-dm THE CANVAS SURFACE: the uniform flat fill measured
+                // 249-484K against the pinned truth (the #310 chemical
+                // giants' self_ae measured 0.6-4K — the truth surface is
+                // STATIC once the 14-dl pin holds, and the flat fill's
+                // residual is the canvas's spatial detail, not phase). The
+                // mod's still canvas is hosted frame-0 under its own sprite
+                // path (mekanism ships textures/liquid/liquid.png for the
+                // chemicals, steam.png for steam; create/bop ship
+                // _still.png), so the cube texture becomes the REAL canvas
+                // pixels scaled per channel by (calibrated color / canvas
+                // mean) — the L1-optimal tint is preserved as the scale, the
+                // spatial detail survives, and truth (pinned frame 0 of the
+                // same canvas, tinted by the mod's code) meets ours at the
+                // pipeline gap. The uniform fill stays the fallback when no
+                // canvas is hosted.
+                String id = fluidId.replace(':', '_');
+                byte[] canvas = canvasFrameZero(entries, fluidId);
+                texPath = "assets/c-imagine/textures/fluidcube/" + id + ".png";
+                if (!entries.containsKey(texPath)) {
+                    entries.put(texPath, canvas != null
+                            ? tintedCanvasPng(canvas, color)
+                            : uniformPng(color[0], color[1], color[2]));
+                }
+                String nsPath = "assets/c-imagine/textures/fluidcube/" + id + "_ns.png";
+                if (!entries.containsKey(nsPath)) {
+                    int[] ns = shade(color, 0.8);
+                    entries.put(nsPath, canvas != null
+                            ? tintedCanvasPng(canvas, ns)
+                            : uniformPng(ns[0], ns[1], ns[2]));
+                }
+                String ewPath = "assets/c-imagine/textures/fluidcube/" + id + "_ew.png";
+                if (!entries.containsKey(ewPath)) {
+                    int[] ew = shade(color, 0.6);
+                    entries.put(ewPath, canvas != null
+                            ? tintedCanvasPng(canvas, ew)
+                            : uniformPng(ew[0], ew[1], ew[2]));
+                }
+                String bPath = "assets/c-imagine/textures/fluidcube/" + id + "_b.png";
+                if (!entries.containsKey(bPath)) {
+                    int[] bb = shade(color, 0.5);
+                    entries.put(bPath, canvas != null
+                            ? tintedCanvasPng(canvas, bb)
+                            : uniformPng(bb[0], bb[1], bb[2]));
+                }
+            } else {
+                // the real still texture's static frame 0, re-hosted under
+                // the cube namespace (the frame extraction keeps the cube
+                // deterministic — the strip's later frames never enter)
+                byte[] frame = stillFrameZero(entries, fluidId);
+                if (frame == null) {
+                    continue;
+                }
+                texPath = "assets/c-imagine/textures/fluidcube/"
+                        + fluidId.replace(':', '_') + ".png";
+                entries.put(texPath, frame);
+            }
+            String texRef = "c-imagine:fluidcube/"
+                    + fluidId.replace(':', '_');
+            // the 14/16 liquid surface box: the vanilla source block with a
+            // non-fluid above renders its top at 14/16 — the sides show the
+            // texture's lower 14 rows (uv v 2..16). Model and sprite ids
+            // omit the models/ and textures/ archive roots, respectively.
+            // 14-ch: the color-route faces carry the per-face shaded
+            // textures (the item_display pipeline applies no directional
+            // shade of its own — the #250 structure gap).
+            String textures = color != null
+                    ? "\"all\": \"" + texRef + "\", \"ns\": \"" + texRef + "_ns\", "
+                      + "\"ew\": \"" + texRef + "_ew\", \"b\": \"" + texRef + "_b\""
+                    : "\"all\": \"" + texRef + "\"";
+            String sideTex = color != null ? "#ns" : "#all";
+            String ewTex = color != null ? "#ew" : "#all";
+            String downTex = color != null ? "#b" : "#all";
+            String faces = "\"north\": {\"texture\": \"" + sideTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"south\": {\"texture\": \"" + sideTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"west\": {\"texture\": \"" + ewTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"east\": {\"texture\": \"" + ewTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"up\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]},"
+                    + "\"down\": {\"texture\": \"" + downTex + "\", \"uv\": [0, 0, 16, 16]}";
+            String modelPath = "assets/c-imagine/models/fluidcube/f" + i + ".json";
+            if (entries.containsKey(modelPath)) {
+                continue;
+            }
+            String json = "{\"parent\": \"minecraft:block/block\", "
+                    + "\"textures\": {" + textures + "}, "
+                    + "\"elements\": [{\"from\": [0, 0, 0], \"to\": [16, 14, 16], "
+                    + "\"faces\": {" + faces + "}}]}";
+            entries.put(modelPath, json.getBytes(StandardCharsets.UTF_8));
+            out.add(new FluidCube(fluidId, 410000f + i,
+                    "c-imagine:fluidcube/f" + i));
+            i++;
+        }
+        return out;
+    }
+
+    /** The static frame texture for a fluid id: the scan already hosts the
+     *  16x16 frame-0 crops under the jar paths (14-cf), so this just looks
+     *  the id up among the hosted entries under the three scan conventions.
+     *  Null when the id has no hosted still texture. */
+    private static byte[] stillFrameZero(TreeMap<String, byte[]> entries,
+                                         String fluidId) {
+        int colon = fluidId.indexOf(':');
+        if (colon <= 0) {
+            return null;
+        }
+        String ns = fluidId.substring(0, colon);
+        String name = fluidId.substring(colon + 1);
+        for (String dir : new String[]{"fluid/", "block/", "liquid/"}) {
+            for (String suffix : new String[]{"_still", ""}) {
+                byte[] raw = entries.get("assets/" + ns + "/textures/" + dir
+                        + name + suffix + ".png");
+                if (raw != null) {
+                    return raw;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The still canvas for a color-route fluid id: the direct-name lookups
+     *  (the three scan conventions) first, then the mod's GENERIC liquid
+     *  canvas — mekanism ships one shared textures/liquid/liquid.png that
+     *  its chemical fluids render tinted by code (the 14-cd derivation's
+     *  "generic gray canvas"; steam rides its own steam.png via the direct
+     *  lookup). Null when neither exists. */
+    private static byte[] canvasFrameZero(TreeMap<String, byte[]> entries,
+                                          String fluidId) {
+        byte[] direct = stillFrameZero(entries, fluidId);
+        if (direct != null) {
+            return direct;
+        }
+        int colon = fluidId.indexOf(':');
+        if (colon <= 0) {
+            return null;
+        }
+        String ns = fluidId.substring(0, colon);
+        return entries.get("assets/" + ns + "/textures/liquid/liquid.png");
+    }
+
+    /** The canvas surface scaled per channel by (target color / canvas
+     *  mean): the 14-dm chemical cube texture. The spatial detail of the
+     *  real canvas survives; the calibrated L1-optimal tint rides as the
+     *  scale so the measured calibration (the 14-cd derivation) is kept
+     *  exactly. Alpha is preserved; unreadable PNGs fall back to the raw
+     *  bytes (the loader names it). Deterministic: ImageIO's PNG encode is
+     *  byte-stable for the same input pixels. */
+    private static byte[] tintedCanvasPng(byte[] canvas, int[] color)
+            throws IOException {
+        java.awt.image.BufferedImage img;
+        try {
+            img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(canvas));
+        } catch (Exception bad) {
+            return canvas;
+        }
+        if (img == null) {
+            return canvas;
+        }
+        int w = Math.min(16, img.getWidth());
+        int h = Math.min(16, img.getHeight());
+        double[] sum = new double[3];
+        int n = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = img.getRGB(x, y);
+                if (((argb >>> 24) & 0xFF) == 0) {
+                    continue;
+                }
+                sum[0] += (argb >> 16) & 0xFF;
+                sum[1] += (argb >> 8) & 0xFF;
+                sum[2] += argb & 0xFF;
+                n++;
+            }
+        }
+        if (n == 0) {
+            return canvas;
+        }
+        double[] scale = new double[3];
+        for (int c = 0; c < 3; c++) {
+            double mean = sum[c] / n;
+            scale[c] = mean < 1.0 ? 1.0 : color[c] / mean;
+        }
+        java.awt.image.BufferedImage out = new java.awt.image.BufferedImage(
+                w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = img.getRGB(x, y);
+                int a = (argb >>> 24) & 0xFF;
+                if (a == 0) {
+                    out.setRGB(x, y, 0);
+                    continue;
+                }
+                int r = (int) Math.max(0, Math.min(255,
+                        Math.round(((argb >> 16) & 0xFF) * scale[0])));
+                int g = (int) Math.max(0, Math.min(255,
+                        Math.round(((argb >> 8) & 0xFF) * scale[1])));
+                int b = (int) Math.max(0, Math.min(255,
+                        Math.round((argb & 0xFF) * scale[2])));
+                out.setRGB(x, y, (a << 24) | (r << 16) | (g << 8) | b);
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(out, "png", bos);
+        return bos.toByteArray();
+    }
+
+    /** A uniform opaque 16x16 PNG of one RGB color (the calibrated chemical
+     *  surface). */
+    private static byte[] uniformPng(int r, int g, int b) throws IOException {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(
+                16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) {
+                img.setRGB(x, y, 0xFF000000 | (r << 16) | (g << 8) | b);
+            }
+        }
+        java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", bos);
+        return bos.toByteArray();
+    }
+
+    /** One color's channel-wise shade multiply, rounded and clamped — the
+     *  14-ch per-face shading bake (the liquid renderer's directional
+     *  shades: top 1.0, north/south 0.8, east/west 0.6, bottom 0.5). */
+    private static int[] shade(int[] color, double k) {
+        return new int[]{
+                (int) Math.round(Math.min(255, color[0] * k)),
+                (int) Math.round(Math.min(255, color[1] * k)),
+                (int) Math.round(Math.min(255, color[2] * k))};
     }
 
     /** Read the fluid-texture manifest the build wrote (fluidId -> cmd). */
@@ -467,7 +825,8 @@ public final class F2vPack {
     private static Result rebuildForVerification(Path mods, Path base, List<Path> assets) throws IOException {
         Path scratch = Files.createTempDirectory(base, "verify-");
         try {
-            for (String name : List.of("visual-gallery.tsv", "visual-tints.tsv", "quads", "overlay")) {
+            for (String name : List.of("visual-gallery.tsv", "visual-tints.tsv",
+                    "visual-emissive.tsv", "visual-rings.tsv", "quads", "overlay")) {
                 Path source = base.resolve(name);
                 if (!Files.exists(source)) {
                     continue;
@@ -605,7 +964,12 @@ public final class F2vPack {
      * <TAB>evidence]} — one calibrated per-channel MULTIPLY per modded
      * TEXTURE ref (the pack can only apply a tint at texture granularity,
      * so the calibrator keys the table by texture, with the source
-     * block/item state carried in the ignored evidence column). Optional;
+     * block/item state carried in the ignored evidence column). 14-db: the
+     * table also carries STATE-keyed rows ({@code ns:block[props]} — the
+     * state-keyed fallback for the multi/unresolved-texture states whose
+     * per-texture fold was refused); a state row's canonical property-order
+     * spelling binds as an alias (the same rule readEmissiveManifest
+     * carries), the raw key keeps priority. Optional;
      * MISSING FILE = empty table = today's behavior byte-for-byte (no bake,
      * no pack delta). Malformed rows are skipped. {@code #} comments blank.
      */
@@ -636,7 +1000,60 @@ public final class F2vPack {
                     }
                 }
                 if (sane) {
-                    map.putIfAbsent(parts[0].trim(), tint);
+                    String key = parts[0].trim();
+                    map.putIfAbsent(key, tint);
+                    // the CANONICAL spelling binds as an alias — the same rule
+                    // readEmissiveManifest carries (14-db): the manifest walk
+                    // and the table may order the same state's properties
+                    // differently, and applyStateTint's lookup (exact, then
+                    // canonical) needs both spellings present. The raw key
+                    // keeps priority (putIfAbsent, first row wins —
+                    // deterministic file order); a texture ref (no '[') maps
+                    // to itself, so the texture rows are unaffected.
+                    map.putIfAbsent(GalleryPack.canonicalState(key), tint);
+                }
+            } catch (NumberFormatException ignored) {
+                // a malformed row is skipped, never fatal
+            }
+        }
+        return map;
+    }
+
+    /**
+     * Read {@code visual-emissive.tsv} (the EMISSIVE-BAKE channel, the gallery
+     * LIGHTMAP class): {@code stateId<TAB>level[<TAB>evidence]} — one
+     * {@code light_emission} level 0-15 per measured-RED blockstate string
+     * (the 1.21.2+ block-model ELEMENT property, "defines the minimum light
+     * level that the element can receive" — purely visual). The composite
+     * emit bakes the level onto EVERY element of that state's emitted model
+     * JSON. Optional; MISSING FILE = empty table = today's behavior
+     * byte-for-byte (the mirror contract of {@link #readTintManifest}).
+     * Malformed rows are skipped. {@code #} comments blank.
+     */
+    public static Map<String, Integer> readEmissiveManifest(Path tsv) throws IOException {
+        Map<String, Integer> map = new TreeMap<>();
+        if (!Files.isRegularFile(tsv)) {
+            return map;
+        }
+        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String[] parts = t.split("\t", -1);
+            if (parts.length < 2 || parts[0].isBlank()) {
+                continue;
+            }
+            try {
+                int level = Integer.parseInt(parts[1].trim());
+                if (level >= 0 && level <= 15) {
+                    String key = parts[0].trim();
+                    map.putIfAbsent(key, level);
+                    // the CANONICAL spelling binds as an alias: the manifest
+                    // walk and the table may order the same properties
+                    // differently. The raw key keeps priority (putIfAbsent),
+                    // first row wins — deterministic file order.
+                    map.putIfAbsent(GalleryPack.canonicalState(key), level);
                 }
             } catch (NumberFormatException ignored) {
                 // a malformed row is skipped, never fatal
@@ -855,6 +1272,14 @@ public final class F2vPack {
         // vanilla parents resolve from the ASSETS jars (client jar), never
         // shadowing mod jars (mods first, client last, first-match-wins)
         jars.addAll(extraAssets);
+        // THE EMISSIVE TABLE loads here (before the item section): the
+        // ITEM channel needs it too — the item composite for a glowing
+        // modded item (measured: create:refined_radiance, the item-channel
+        // join ae=63497) must carry light_emission on its elements the same
+        // way the gallery block composite does. Absent file = empty table.
+        Map<String, Integer> emissiveTable =
+                readEmissiveManifest(outDir.resolve("visual-emissive.tsv"));
+        List<String> itemEmissiveBakeLog = new ArrayList<>();
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
         int itemCompositeNo = 0;
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
@@ -868,6 +1293,9 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
+                // 14-dy: the placeholder ledger attributes item-model
+                // fallbacks to the modded item id
+                GalleryPack.placeholderContext(row.moddedId());
                 String quadModel = GalleryPack.synthesizeItemQuads(jars, row.moddedId(), itemCompositeNo,
                         entries, warnings);
                 if (quadModel != null) {
@@ -886,7 +1314,31 @@ public final class F2vPack {
                     String comp = GalleryPack.synthesizeItemComposite(
                             jars, found, itemCompositeNo++, entries, warnings);
                     if (comp != null) {
+                        // THE ITEM EMISSIVE-BAKE: a tabled modded item's
+                        // standalone composite carries light_emission on
+                        // every element (the same contract the gallery
+                        // block composite honors) — the measured driver:
+                        // create:refined_radiance's item-cell red (ae
+                        // 63497) whose truth render is fullbright.
+                        comp = GalleryPack.applyItemEmissive(
+                                row.moddedId(), comp, emissiveTable, itemEmissiveBakeLog);
                         found = comp;
+                    }
+                } else if (quadModel == null && found != null) {
+                    // THE SPRITE EMISSIVE UPGRADE: a tabled item whose model
+                    // is an item/generated SPRITE (no elements — the element
+                    // light_emission lever does not exist there) upgrades to
+                    // a flat-quad composite carrying the sprite texture on
+                    // the faces + light_emission. Geometry-compatible with
+                    // the sprite (a flat quad), but fullbright — measured:
+                    // create:refined_radiance, the truth item renders
+                    // fullbright while ours renders the dim sprite.
+                    String upgraded = GalleryPack.synthesizeSpriteEmissive(
+                            jars, found, row.moddedId(), itemCompositeNo,
+                            emissiveTable, entries, warnings);
+                    if (upgraded != null) {
+                        itemCompositeNo++;
+                        found = upgraded;
                     }
                 }
                 if (found == null) {
@@ -923,12 +1375,18 @@ public final class F2vPack {
         // 26.3 equipment surface, manifest-driven, zero vanilla overrides
         List<Path> equipJars = jars.isEmpty() ? listJars(modsDir) : jars;
         for (EquipmentAsset asset : equipmentRows) {
+            // 14-dy: the placeholder ledger attributes equipment fallbacks
+            // to the asset id
+            GalleryPack.placeholderContext(asset.assetId());
             emitEquipment(equipJars, asset, entries, warnings);
         }
 
         // GALLERY channel (M5.5, the main pixel gate's ours leg): per-state
         // rows ride the SAME host (paper) range_dispatch as float entries.
         // The model refs resolve INSIDE GalleryPack (direct rows at original
+        for (String bake : itemEmissiveBakeLog) {
+            warnings.add("item emissive-bake applied: " + bake);
+        }
         // paths, multipart composites under c-imagine:models/gallery/).
         List<GalleryPack.Resolved> gallery = List.of();
         Path galleryManifest = outDir.resolve("visual-gallery.tsv");
@@ -943,11 +1401,23 @@ public final class F2vPack {
                 // pack stays byte-identical to today's build.
                 Map<String, double[]> tintTable =
                         readTintManifest(outDir.resolve("visual-tints.tsv"));
+                // 14-df RING channel: the same row parser, a separate table
+                // (the ring rows key the STATE to a corridor factor, not a
+                // texture multiply — the ring never rewrites a sprite).
+                // Absent visual-rings.tsv = empty table = byte-identical.
+                Map<String, double[]> ringTable =
+                        readTintManifest(outDir.resolve("visual-rings.tsv"));
                 List<String> tintBakeLog = new ArrayList<>();
+                // EMISSIVE-BAKE channel: the table loaded ABOVE (the item
+                // section needs it too) — this block only carries the logs.
+                List<String> emissiveBakeLog = new ArrayList<>();
                 gallery = GalleryPack.build(jars, galleryInputs, entries, warnings,
-                        tintTable, tintBakeLog);
+                        tintTable, tintBakeLog, emissiveTable, emissiveBakeLog, ringTable);
                 for (String bake : tintBakeLog) {
                     warnings.add("tint-bake applied: " + bake);
+                }
+                for (String bake : emissiveBakeLog) {
+                    warnings.add("emissive-bake applied: " + bake);
                 }
                 GalleryPack.writeResolvedManifest(
                         outDir.resolve("visual-gallery.resolved.tsv"), gallery);
@@ -999,6 +1469,45 @@ public final class F2vPack {
                     fl.toString(), StandardCharsets.UTF_8);
         }
 
+        // 14-cd FLUID CUBE channel: the ours leg's visible surface for the
+        // fluid walk's channel=block SOURCE rows (the modded liquids the
+        // truth leg renders as real blocks — the stock 26.3 client cannot
+        // draw those states, so the replay rides the item_display rig
+        // grammar). The cube ids: the color table (the calibrated chemicals)
+        // UNION the scanned still ids (create/biomesoplenty real textures).
+        // The 410000+i CMD space joins the SAME paper.json range dispatch —
+        // re-emitted when any cube landed.
+        Map<String, int[]> fluidColors =
+                readFluidColorTable(outDir.resolve("visual-fluid-colors.tsv"));
+        java.util.Set<String> cubeIds = new java.util.HashSet<>(fluidColors.keySet());
+        for (FluidTexture ft : fluidTextures) {
+            cubeIds.add(ft.fluidId());
+        }
+        List<FluidCube> fluidCubes =
+                synthesizeFluidCubes(cubeIds, fluidColors, entries, warnings);
+        if (!fluidCubes.isEmpty()) {
+            List<Map.Entry<Float, String>> paperEntries =
+                    new ArrayList<>(paperFloatEntries);
+            for (GalleryPack.Resolved r : gallery) {
+                paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+            }
+            for (FluidTexture ft : fluidTextures) {
+                paperEntries.add(Map.entry(ft.cmd(), ft.modelRef()));
+            }
+            for (FluidCube fc : fluidCubes) {
+                paperEntries.add(Map.entry(fc.cmd(), fc.modelRef()));
+            }
+            paperEntries.sort(Map.Entry.comparingByKey());
+            entries.put("assets/minecraft/items/paper.json",
+                    itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+            StringBuilder cb = new StringBuilder();
+            for (FluidCube fc : fluidCubes) {
+                cb.append(fc.fluidId()).append('\t').append(fc.cmd()).append('\n');
+            }
+            Files.writeString(outDir.resolve("visual-fluid-cubes.tsv"),
+                    cb.toString(), StandardCharsets.UTF_8);
+        }
+
         // block channel (parity matrix "blocks", block-channel-26-3.md):
         // note_block stand-in slots -> the modded block models, ONE merged
         // blockstates override, manifest-driven slot allocation
@@ -1029,6 +1538,24 @@ public final class F2vPack {
         // + addAll) — only OUR sources live here, vanilla trims keep working.
         emitPaletteAtlas(jars, validPalettes, entries, warnings);
 
+        // 14-cd THE FLUID ATLAS SOURCES: the vanilla block-atlas stack scans
+        // textures/block/ only — the fluid/liquid/fluidcube directories the
+        // fluid channels host would never stitch and the model renders the
+        // magenta checker. The directory sources APPEND to whatever the
+        // palette channel put in items.json (the measured SpriteSourceList
+        // merge — this emit runs AFTER emitPaletteAtlas for exactly that);
+        // the same three ride BOTH atlas files, each model's single sprite
+        // resolves in whichever atlas bakes it.
+        if (!fluidTextures.isEmpty() || !fluidCubes.isEmpty()) {
+            String fluidSources = "{\"sources\": ["
+                    + "{\"type\": \"minecraft:directory\", \"source\": \"fluid\", \"prefix\": \"fluid/\"}, "
+                    + "{\"type\": \"minecraft:directory\", \"source\": \"liquid\", \"prefix\": \"liquid/\"}, "
+                    + "{\"type\": \"minecraft:directory\", \"source\": \"fluidcube\", \"prefix\": \"fluidcube/\"}"
+                    + "]}";
+            appendAtlasSources("assets/minecraft/atlases/blocks.json", fluidSources, entries);
+            appendAtlasSources("assets/minecraft/atlases/items.json", fluidSources, entries);
+        }
+
         // 26.3 MODEL UV SANITIZER (run #46 forensics, measured): create-1.21.1
         // models carry element-face uv rects extending PAST the sprite
         // (creative_motor/block.json north face uv [14,4,20,10] — a legal
@@ -1054,21 +1581,36 @@ public final class F2vPack {
             }
         }
         byte[] zip = zip(entries);
+        validateDownloadSize(zip.length);
         String sha1 = sha1Hex(zip);
         Files.write(outDir.resolve("pack.zip"), zip);
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
+        // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
+        // (sprite, context, uses) — the texture-fidelity audit's named
+        // backlog, written next to the manifest and summarized in the
+        // report; the pack zip itself carries NO ledger entry (assets only)
+        java.util.List<String[]> placeholders = GalleryPack.drainPlaceholderUses();
+        GalleryPack.writePlaceholderLedger(placeholders, outDir.resolve("placeholders.tsv"));
         StringBuilder report = new StringBuilder("f2v pack build report\n")
                 .append("items requested: ").append(rows.size()).append('\n')
                 .append("zip entries:     ").append(entries.size()).append('\n')
+                .append("zip bytes:       ").append(zip.length).append('\n')
+                .append("tile hash collisions resolved: ").append(ObjMesh.tileHashCollisions()).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
-                .append("warnings:        ").append(warnings.size()).append('\n');
+                .append("warnings:        ").append(warnings.size()).append('\n')
+                .append("placeholders:    ").append(placeholders.size())
+                .append(" (see placeholders.tsv — a placeholder is NOT supported content)\n");
+        for (String[] ph : placeholders) {
+            report.append("  placeholder: ").append(ph[0]).append(" for ").append(ph[1])
+                    .append(" x").append(ph[2]).append('\n');
+        }
         for (String w : warnings) {
             report.append("  warn: ").append(w).append('\n');
         }
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
-        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery);
+        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery, placeholders);
     }
 
     /** Any element-face uv array in a model json, 4 numbers. */
@@ -1335,6 +1877,37 @@ public final class F2vPack {
         return fullResourcePath.substring(0, c) + ":" + rest;
     }
 
+    /** Append one atlas-source JSON object's sources into the pack's existing
+     *  atlas file (the SpriteSourceList merge is additive — two emitters may
+     *  own sources in one file, the palette channel and the 14-cd fluid
+     *  channel do). Absent file = create it. */
+    private static void appendAtlasSources(String atlasPath, String sourcesJson,
+                                           TreeMap<String, byte[]> entries) {
+        JsonObject merged = new JsonObject();
+        JsonArray sources = new JsonArray();
+        byte[] existing = entries.get(atlasPath);
+        if (existing != null) {
+            try {
+                JsonObject prev = JsonParser.parseString(
+                        new String(existing, StandardCharsets.UTF_8)).getAsJsonObject();
+                if (prev.has("sources") && prev.get("sources").isJsonArray()) {
+                    for (JsonElement s : prev.getAsJsonArray("sources")) {
+                        sources.add(s);
+                    }
+                }
+            } catch (RuntimeException bad) {
+                // an unparseable predecessor: the file is machine-built, the
+                // fresh sources array replaces it (never fatal)
+            }
+        }
+        JsonObject add = JsonParser.parseString(sourcesJson).getAsJsonObject();
+        for (JsonElement s : add.getAsJsonArray("sources")) {
+            sources.add(s);
+        }
+        merged.add("sources", sources);
+        entries.put(atlasPath, merged.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
     /** Copy one raw PNG resource (full {@code ns:textures/...} path) from the jars. */
     private static void copyResourcePng(List<Path> jars, String resource,
                                         TreeMap<String, byte[]> entries,
@@ -1474,7 +2047,21 @@ public final class F2vPack {
             warnings.add("texture outside item|block dirs not atlased: " + ref);
             return;
         }
-        entries.put(texFile, zf.getInputStream(te).readAllBytes());
+        byte[] bytes = zf.getInputStream(te).readAllBytes();
+        // 14-dr THE STATIC-FRAME RULE: an animated source ships as its first
+        // animation frame (cropped to the frame box, NO mcmeta). The item
+        // sprite route previously shipped the raw strip with NO mcmeta at
+        // all — the strip squashed into one smeared sprite on the client
+        // (the measured 18-strip bug); the re-host routes shipped it WITH
+        // the mcmeta and animated against the truth's pinned frame (run
+        // 42839844310: mysterious_cube/singularity/anomaly crops).
+        // GalleryPack.stillFrameCrop owns the rationale.
+        byte[] meta = null;
+        ZipEntry me = zf.getEntry(texFile + ".mcmeta");
+        if (me != null) {
+            meta = zf.getInputStream(me).readAllBytes();
+        }
+        entries.put(texFile, GalleryPack.stillFrameCrop(ref, bytes, meta, warnings));
     }
 
     // ---- emitters ---------------------------------------------------------------
@@ -1568,6 +2155,13 @@ public final class F2vPack {
     }
 
     // ---- deterministic zip ------------------------------------------------------
+
+    /** The stock client rejects even required server packs above 250 MiB. */
+    static void validateDownloadSize(long bytes) throws IOException {
+        if (bytes > 262_144_000L) {
+            throw new IOException("resource pack exceeds vanilla's 250 MiB download limit: " + bytes);
+        }
+    }
 
     /** Deterministic zip: sorted entries, fixed timestamps, fixed level. */
     static byte[] zip(TreeMap<String, byte[]> entries) throws IOException {
@@ -1712,7 +2306,8 @@ public final class F2vPack {
             System.out.println("f2v pack: built (" + r.items().size() + " item(s), "
                     + r.gallery().size() + " gallery state(s), "
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
-                    + r.warnings().size() + " warning(s))");
+                    + r.warnings().size() + " warning(s), "
+                    + r.placeholders().size() + " placeholder sprite(s) — see placeholders.tsv)");
             return;
         }
         System.err.println("usage: F2vPack --build <modsDir> <outDir> [--manifest <tsv>]"
@@ -1757,6 +2352,22 @@ public final class F2vPack {
             + "\"faces\": {\"north\": {\"uv\": [0,0,8,16], \"texture\": \"#tex\"}}}]}";
     private static final String BS_TINTED_BLOOM =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/tinted_bloom\"}}}";
+    /** The EMISSIVE-BAKE fixture: two elements so the "every element" contract
+     *  is observable; the state carries its properties in a DIFFERENT order
+     *  than the emissive table row keys it, so the canonical-state fallback
+     *  binds. */
+    private static final String MODEL_GLOW_BLOOM =
+            "{\"textures\": {\"tex\": \"fakemod:block/glow_tex\"}, "
+            + "\"elements\": ["
+            + "{\"from\": [2,0,2], \"to\": [8,16,8], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,6,16], \"texture\": \"#tex\"}}}, "
+            + "{\"from\": [8,0,8], \"to\": [14,16,14], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,6,16], \"texture\": \"#tex\"}}}]}";
+    private static final String BS_GLOW_BLOOM =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/glow_bloom\"}}}";
+    private static final String GALLERY_EMISSIVE_TSV =
+            "fakemod:glow_bloom[lit=true,power=7]\n"
+            + "fakemod:rock\n";
     /** The MEASURED #46 killer: create-1.21.1's creative_motor carries a face
      *  uv rect [14,4,20,10] — past the 16px sprite (a legal 1.21.1 texture
      *  bleed). 26.3's FaceBakery.computeMaterialTransparency samples the rect
@@ -1861,6 +2472,11 @@ public final class F2vPack {
                     BS_TINTED_BLOOM.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/tinted_bloom.json",
                     MODEL_TINTED_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/glow_bloom.json",
+                    BS_GLOW_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/glow_bloom.json",
+                    MODEL_GLOW_BLOOM.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/glow_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/bloom_tex.png", testGreyPng());
             jarEntries.put("assets/fakemod/blockstates/pane.json", BS_PANE.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/zmotor.json", BS_ZMOTOR.getBytes(StandardCharsets.UTF_8));
@@ -2187,6 +2803,315 @@ public final class F2vPack {
             expect(failures, str(noTintZip, noTintComp).contains("\"fakemod:block/bloom_tex\""),
                     "tint bake: absent visual-tints.tsv = composite references the raw sprite");
 
+            // -- EMISSIVE-BAKE channel asserts ---------------------------------------
+            // Own fixture dir: appending a state to GALLERY_TSV would churn every
+            // index-based gallery assert above; the emissive bake needs only a
+            // minimal manifest. The table keys the state with its properties in
+            // a DIFFERENT order than the manifest row (canonical fallback), plus
+            // the malformed-row contracts: an out-of-range level and a
+            // non-numeric level are skipped, never fatal.
+            Path out3 = tmp.resolve("out3");
+            Files.createDirectories(out3);
+            Files.writeString(out3.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out3.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out3.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            Files.writeString(out3.resolve("visual-emissive.tsv"),
+                    "# visual-emissive.tsv — the LIGHTMAP class (run 42085254497 join REDs)\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t15\t"
+                    + "fakemod:glow_bloom[lit=true,power=7]@gallery-fake:p1:c0,r0|n=9"
+                    + "|class=lightmap-fullbright\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t15\n"
+                    + "fakemod:bad\t99\tout-of-range levels are skipped\n"
+                    + "fakemod:bad2\tabc\tnon-numeric levels are skipped\n",
+                    StandardCharsets.UTF_8);
+            Map<String, Integer> emissiveParsed =
+                    readEmissiveManifest(out3.resolve("visual-emissive.tsv"));
+            expect(failures, emissiveParsed.size() == 2
+                            && Integer.valueOf(15).equals(emissiveParsed.get(
+                                    "fakemod:glow_bloom[power=7,lit=true]"))
+                            && Integer.valueOf(15).equals(emissiveParsed.get(
+                                    "fakemod:glow_bloom[lit=true,power=7]")),
+                    "emissive manifest: raw + canonical alias survive (malformed/out-of-range skipped)");
+            Result r3 = build(mods, out3, readManifest(out3.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out3.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            Result r4 = build(mods, out3, readManifest(out3.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out3.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            expect(failures, r3.sha1().equals(r4.sha1()),
+                    "emissive bake: deterministic (rebuild byte-identical)");
+            expect(failures, r3.warnings().stream().anyMatch(w -> w.startsWith(
+                            "emissive-bake applied: fakemod:glow_bloom[lit=true,power=7]"
+                            + " light_emission=15 on 2 elements")),
+                    "emissive bake recorded in the build log");
+            TreeMap<String, byte[]> emissiveZip = readZip(out3.resolve("pack.zip"));
+            java.util.function.Function<String, String> compositeOf = stateId ->
+                    r3.gallery().stream()
+                            .filter(r -> r.stateId().equals(stateId))
+                            .findFirst()
+                            .map(r -> "assets/c-imagine/models/gallery/"
+                                    + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1)
+                                    + ".json")
+                            .orElse("");
+            String glowComp = compositeOf.apply("fakemod:glow_bloom[lit=true,power=7]");
+            String rockComp = compositeOf.apply("fakemod:rock");
+            expect(failures, !glowComp.isEmpty() && !rockComp.isEmpty(),
+                    "emissive bake: both fixture composites located");
+            if (!glowComp.isEmpty()) {
+                JsonArray glowEls = JsonParser.parseString(str(emissiveZip, glowComp))
+                        .getAsJsonObject().getAsJsonArray("elements");
+                boolean allEmissive = glowEls.size() == 2;
+                for (JsonElement el : glowEls) {
+                    allEmissive &= el.getAsJsonObject().has("light_emission")
+                            && el.getAsJsonObject().get("light_emission").getAsInt() == 15;
+                }
+                expect(failures, allEmissive,
+                        "emissive bake: EVERY element of the tabled state carries light_emission 15");
+            }
+            if (!rockComp.isEmpty()) {
+                JsonArray rockEls = JsonParser.parseString(str(emissiveZip, rockComp))
+                        .getAsJsonObject().getAsJsonArray("elements");
+                boolean noneEmissive = true;
+                for (JsonElement el : rockEls) {
+                    noneEmissive &= !el.getAsJsonObject().has("light_emission");
+                }
+                expect(failures, noneEmissive,
+                        "emissive bake: a state not in the table emits untouched");
+            }
+            // ABSENT visual-emissive.tsv = today's behavior byte-for-byte
+            Path out5 = tmp.resolve("out5");
+            Files.createDirectories(out5);
+            Files.writeString(out5.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out5.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out5.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            build(mods, out5, readManifest(out5.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out5.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            TreeMap<String, byte[]> noEmissiveZip = readZip(out5.resolve("pack.zip"));
+            JsonArray noEls = JsonParser.parseString(str(noEmissiveZip,
+                    "assets/c-imagine/models/gallery/g0.json"))
+                    .getAsJsonObject().getAsJsonArray("elements");
+            boolean absentClean = true;
+            for (JsonElement el : noEls) {
+                absentClean &= !el.getAsJsonObject().has("light_emission");
+            }
+            expect(failures, absentClean,
+                    "emissive bake: absent visual-emissive.tsv = no light_emission anywhere");
+
+            // -- 14-db STATE-KEYED TINT route asserts --------------------------------
+            // The visual-tints.tsv rows keyed by the STATE now also serve the
+            // MODDED-texture states (the qio/sorter machine class — the texture
+            // route refuses their folds: multi-texture models, two lightings on
+            // one sprite). The contract: the state's composite re-hosts EVERY
+            // texture ref to the state-suffixed sibling (_cimtint_s<hash8>),
+            // the raw sprite keeps serving every other consumer, and a
+            // per-TEXTURE row wins over a state row for the same sprite
+            // (one multiply per pixel, never two — applyStateTint skips the
+            // refs the texture route already baked).
+            Path out6 = tmp.resolve("out6");
+            Files.createDirectories(out6);
+            Files.writeString(out6.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out6.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out6.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            // the CANONICAL property order in the row (the walk emits
+            // [lit=true,power=7]) — the stateTintFor canonical fallback
+            Files.writeString(out6.resolve("visual-tints.tsv"),
+                    "# 14-db state-keyed fixture\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t0.5\t1.0\t2.0\t"
+                    + "fakemod:glow_bloom[lit=true,power=7]@gallery-fake:p1:c0,r0"
+                    + "|n=64|class=luma-uniform\n",
+                    StandardCharsets.UTF_8);
+            Result r6 = build(mods, out6, readManifest(out6.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out6.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            String glow6 = r6.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:glow_bloom[lit=true,power=7]"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !glow6.isEmpty(), "state tint: glow composite located");
+            TreeMap<String, byte[]> stateTintZip = readZip(out6.resolve("pack.zip"));
+            expect(failures, !glow6.isEmpty()
+                            && java.util.regex.Pattern
+                                    .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}")
+                                    .matcher(str(stateTintZip, glow6)).find(),
+                    "state tint: the composite references the state-suffixed baked sprite");
+            String stateSprite = null;
+            if (!glow6.isEmpty()) {
+                java.util.regex.Matcher m2 = java.util.regex.Pattern
+                        .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}")
+                        .matcher(str(stateTintZip, glow6));
+                if (m2.find()) {
+                    stateSprite = m2.group();
+                }
+            }
+            expect(failures, stateSprite != null,
+                    "state tint: the state-suffixed sprite ref is recoverable");
+            if (stateSprite != null) {
+                String bakedKey6 = "assets/fakemod/textures/block/"
+                        + stateSprite.substring(stateSprite.lastIndexOf('/') + 1) + ".png";
+                expect(failures, stateTintZip.containsKey(bakedKey6),
+                        "state tint: the baked sibling PNG rides the pack");
+                if (stateTintZip.containsKey(bakedKey6)) {
+                    java.awt.image.BufferedImage baked6 = decodePng(stateTintZip.get(bakedKey6));
+                    java.awt.image.BufferedImage raw6 = decodePng(
+                            jarEntries.get("assets/fakemod/textures/block/glow_tex.png"));
+                    boolean px6 = baked6.getWidth() == raw6.getWidth()
+                            && baked6.getHeight() == raw6.getHeight();
+                    for (int y = 0; y < raw6.getHeight() && px6; y++) {
+                        for (int x = 0; x < raw6.getWidth() && px6; x++) {
+                            int ra = raw6.getRGB(x, y);
+                            int ba = baked6.getRGB(x, y);
+                            // raw RGB is the fixture's flat 0x4080C0: x (0.5,1.0,2.0)
+                            // = (32,128,255-clamped), alpha preserved per pixel
+                            int want = (ra & 0xFF000000) | (32 << 16) | (128 << 8) | 255;
+                            px6 &= ba == want;
+                            if (ba != want) {
+                                failures.add("state tint pixel (" + x + "," + y
+                                        + "): want " + Integer.toHexString(want)
+                                        + " got " + Integer.toHexString(ba));
+                            }
+                        }
+                    }
+                    expect(failures, px6,
+                            "state tint: baked pixels = raw x (0.5,1.0,2.0), alpha preserved");
+                }
+                expect(failures, java.util.Arrays.equals(
+                                stateTintZip.get("assets/fakemod/textures/block/glow_tex.png"),
+                                jarEntries.get("assets/fakemod/textures/block/glow_tex.png")),
+                        "state tint: the RAW texture is untouched in the pack");
+            }
+            String rock6 = r6.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:rock"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !rock6.isEmpty() && !str(stateTintZip, rock6).contains("_cimtint"),
+                    "state tint: a state not in the table keeps its raw sprite");
+            // the texture row WINS over a state row for the same sprite: the
+            // composite references the plain _cimtint sibling and NO state
+            // sibling ships
+            Path out7 = tmp.resolve("out7");
+            Files.createDirectories(out7);
+            Files.writeString(out7.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out7.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out7.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            Files.writeString(out7.resolve("visual-tints.tsv"),
+                    "fakemod:block/glow_tex\t0.5\t1.0\t2.0\tthe texture row\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]\t0.5\t1.0\t2.0\tthe state row\n",
+                    StandardCharsets.UTF_8);
+            Result r7 = build(mods, out7, readManifest(out7.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out7.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            String glow7 = r7.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:glow_bloom[lit=true,power=7]"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            TreeMap<String, byte[]> precZip = readZip(out7.resolve("pack.zip"));
+            expect(failures, !glow7.isEmpty()
+                            && str(precZip, glow7).contains("\"fakemod:block/glow_tex_cimtint\"")
+                            && !str(precZip, glow7).contains("_cimtint_s"),
+                    "state tint: a texture row wins — the composite keeps the plain "
+                    + "_cimtint sibling, the state route skips the baked refs");
+            expect(failures, precZip.keySet().stream().noneMatch(k -> k.contains("_cimtint_s")),
+                    "state tint: no state-suffixed sibling when the texture row covers the sprite");
+
+            // -- 14-df CORRIDOR RING route asserts -----------------------------------
+            // The visual-rings.tsv row scales the state's ambient-lit captured
+            // rows by the solved corridor factor: the shaded rows ride
+            // current x k (the gate's captured tint where the gate applied
+            // one, 1.0 on the non-flat rows the gradient refusal kept raw),
+            // the identity rows (the fullbright frame/LED art) and the
+            // (15,15) mod-light rows stay untinted, and an absent rings file
+            // leaves the 14-da gate behavior exactly as it was.
+            Path outRing = tmp.resolve("out-ring");
+            Files.createDirectories(outRing);
+            Files.createDirectories(outRing.resolve("quads"));
+            Files.writeString(outRing.resolve("visual-gallery.tsv"),
+                    "fixture:ringblock#qringfixture\n", StandardCharsets.UTF_8);
+            // 4 verts x (x y z u v): a full-face quad on the z=0 plane, uv 0..16
+            String quadGeom = "\t0\t0\t0\t0\t0\t16\t0\t0\t16\t0\t16\t16\t0\t16\t16\t0\t16\t0\t0\t16";
+            String ringQuadTsv = ""
+                    // row 1: shaded flat (the casing class) — gate tints 0.6/0.6/0.7
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t0.600\t0.600\t0.700\t0.600\t0.600\t0.700\t0.600\t0.600\t0.700\t0.600\t0.600\t0.700"
+                    + "\t1.0\t1.0\t1.0\t1.0\t8\t15\n"
+                    // row 2: identity flat (the fullbright frame art) — never tinted
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000\t1.000"
+                    + "\t1.0\t1.0\t1.0\t1.0\t8\t15\n"
+                    // row 3: shaded flat under the (15,15) mod-light override — never tinted
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800"
+                    + "\t1.0\t1.0\t1.0\t1.0\t15\t15\n"
+                    // row 4: shaded NON-flat (the legacy gradient refusal class) —
+                    // the gate keeps it raw, the ring dims it by k
+                    + "fakemod:block/glow_tex\t0\t-1" + quadGeom
+                    + "\t0.600\t0.600\t0.600\t0.600\t0.600\t0.600\t0.800\t0.800\t0.800\t0.800\t0.800\t0.800"
+                    + "\t1.0\t1.0\t1.0\t1.0\t8\t15\n";
+            Files.writeString(outRing.resolve("quads/ringfixture.tsv"), ringQuadTsv,
+                    StandardCharsets.UTF_8);
+            Result rRingPlain = build(mods, outRing, List.of(), List.of(), List.of(),
+                    List.of(), List.of());
+            String ringRef = rRingPlain.gallery().stream()
+                    .filter(r -> r.stateId().startsWith("fixture:ringblock"))
+                    .findFirst().map(r -> r.modelRef()).orElse("");
+            expect(failures, !ringRef.isEmpty(), "ring: the quad composite located; warnings="
+                    + rRingPlain.warnings());
+            JsonObject plainComposite = ringRef.isEmpty() ? null
+                    : GalleryPack.itemNode(ringRef);
+            java.util.function.Function<JsonObject, java.util.List<Integer>> tintValues =
+                    comp -> {
+                        java.util.List<Integer> vals = new ArrayList<>();
+                        if (comp != null && comp.has("models")) {
+                            for (var child : comp.getAsJsonArray("models")) {
+                                JsonObject node = child.getAsJsonObject();
+                                if (node.has("tints")) {
+                                    for (var t : node.getAsJsonArray("tints")) {
+                                        vals.add(t.getAsJsonObject().get("value").getAsInt());
+                                    }
+                                }
+                            }
+                        }
+                        return vals;
+                    };
+            // 0.7f parses to 0.699999988079071 — x255 = 178.4999... rounds to 178
+            int gateArgb = (255 << 24) | (153 << 16) | (153 << 8) | 178;
+            expect(failures, tintValues.apply(plainComposite).size() == 1
+                            && tintValues.apply(plainComposite).get(0) == gateArgb,
+                    "ring: absent rings file = the 14-da gate tint only (0.6/0.6/0.7)");
+            Files.writeString(outRing.resolve("visual-rings.tsv"),
+                    "# 14-df ring fixture\n"
+                    + "fixture:ringblock\t0.5\t0.5\t0.5\tfixture@gallery-fake-p0:c0,r0"
+                    + "|n_dim=90|n_match=120|mad=0.03|match=1.00\n",
+                    StandardCharsets.UTF_8);
+            Result rRing = build(mods, outRing, List.of(), List.of(), List.of(),
+                    List.of(), List.of());
+            JsonObject ringComposite = GalleryPack.itemNode(ringRef);
+            int ringShadedArgb = (255 << 24) | (77 << 16) | (77 << 8) | 89;
+            int ringRawArgb = (255 << 24) | (128 << 16) | (128 << 8) | 128;
+            java.util.List<Integer> ringTints = tintValues.apply(ringComposite);
+            expect(failures, ringTints.size() == 2 && ringTints.contains(ringShadedArgb)
+                            && ringTints.contains(ringRawArgb),
+                    "ring: shaded rows ride current x k (0.3/0.3/0.35 gate-tinted, "
+                    + "0.5/0.5/0.5 on the gradient refusal class), got " + ringTints);
+
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
             // 26.3 UV SANITIZER (run #46): the zmotor fixture rides the bad
@@ -2455,17 +3380,32 @@ public final class F2vPack {
         expect(failures, hostEntries.containsKey(
                 "assets/c-imagine/textures/block/items/unhosted.png"),
                 "gallery: the placeholder sprite ships in the pack");
+        // 14-dr: the placeholder phase = the decompiled vanilla missing
+        // sprite (TL black, TR/BL pink, BR black) — the old stand-in had it
+        // inverted and every missing-sprite quad rendered the opposite color
+        // (the ae2:facade + fe_p2p_tunnel measured crops).
+        var ph = decodePng(hostEntries.get("assets/c-imagine/textures/block/items/unhosted.png"));
+        expect(failures, ph.getWidth() == 16 && ph.getHeight() == 16
+                        && (ph.getRGB(0, 0) & 0xFFFFFF) == 0x000000
+                        && (ph.getRGB(15, 0) & 0xFFFFFF) == 0xF800F8
+                        && (ph.getRGB(0, 15) & 0xFFFFFF) == 0xF800F8
+                        && (ph.getRGB(15, 15) & 0xFFFFFF) == 0x000000,
+                "gallery: the placeholder matches the vanilla missing-sprite phase");
         expect(failures, hostWarnings.size() == 1 && hostWarnings.get(0).contains(trim),
                 "gallery: the unhostable sprite stays loud in the build report");
         expect(failures, GalleryPack.hostSprite(List.of(), "mod:block/gone", hostEntries,
                 hostWarnings).equals("mod:block/gone"),
                 "gallery: a missing block-path sprite keeps its blocks-atlas ref");
-        // a re-hosted sprite keeps animation metadata the client can honour;
-        // a frames list resolving to at most ONE valid frame on a multi-frame
-        // strip flips the sprite static with frame-sized contents and crashes
-        // the atlas upload — the client then DROPS the whole pack (measured
-        // run 42099936223: three re-hosted "frames": [] mcmeta turned every
-        // gallery cell into the paper fallback)
+        // 14-dr: an animated source ships as its FIRST ANIMATION FRAME,
+        // cropped to the frame box, with NO mcmeta at all — the truth side
+        // pins every animated sprite to its first frame (14-dl) while the
+        // ours client's sprite clocks free-run through the walk's unfreeze
+        // windows (run 42839844310 measured the singularity/mysterious-cube/
+        // anomaly REDs on shipped strips). Dropping the mcmeta alone would
+        // squash the strip into one smeared sprite (the measured 18-strip
+        // bug), so the crop is mandatory: glow (a 16x16 with a mcmeta) stays
+        // 16x16; the 16x32 dead strip (frames []) and the 16x48 live strip
+        // (frames [0,2]) both crop to their first frame block at 16x16.
         byte[] square16 = f2vSelftestPng(16, 16);
         byte[] strip32 = f2vSelftestPng(16, 32);
         byte[] strip48 = f2vSelftestPng(16, 48);
@@ -2493,18 +3433,20 @@ public final class F2vPack {
         GalleryPack.resetJarCache();
         String animated = GalleryPack.hostSprite(List.of(animJar), "mod:item/glow", hostEntries, hostWarnings);
         expect(failures, animated.equals("c-imagine:block/items/mod_item_glow")
-                && hostEntries.containsKey("assets/c-imagine/textures/block/items/mod_item_glow.png.mcmeta"),
-                "gallery: a re-hosted sprite keeps its animation metadata");
+                && !hostEntries.containsKey("assets/c-imagine/textures/block/items/mod_item_glow.png.mcmeta"),
+                "gallery: a re-hosted static frame ships without mcmeta");
         GalleryPack.hostSprite(List.of(animJar), "mod:item/dead_strip", hostEntries, hostWarnings);
-        byte[] deadRaw = hostEntries.get("assets/c-imagine/textures/block/items/mod_item_dead_strip.png.mcmeta");
-        String deadMeta = deadRaw == null ? null : new String(deadRaw, StandardCharsets.UTF_8);
-        expect(failures, deadMeta != null && !deadMeta.contains("\"frames\""),
-                "gallery: a frames list with no valid entries animates sequentially");
+        var deadImage = decodePng(hostEntries.get(
+                "assets/c-imagine/textures/block/items/mod_item_dead_strip.png"));
+        expect(failures, deadImage.getWidth() == 16 && deadImage.getHeight() == 16,
+                "gallery: an invalid-frames strip crops to its 16x16 first frame");
         GalleryPack.hostSprite(List.of(animJar), "mod:item/live_strip", hostEntries, hostWarnings);
-        byte[] liveRaw = hostEntries.get("assets/c-imagine/textures/block/items/mod_item_live_strip.png.mcmeta");
-        String liveMeta = liveRaw == null ? null : new String(liveRaw, StandardCharsets.UTF_8);
-        expect(failures, liveMeta != null && liveMeta.contains("[0,2]"),
-                "gallery: a valid frames list ships verbatim");
+        var liveImage = decodePng(hostEntries.get(
+                "assets/c-imagine/textures/block/items/mod_item_live_strip.png"));
+        expect(failures, liveImage.getWidth() == 16 && liveImage.getHeight() == 16
+                && !hostEntries.containsKey(
+                        "assets/c-imagine/textures/block/items/mod_item_live_strip.png.mcmeta"),
+                "gallery: a live strip crops to its first listed frame (0) and drops the mcmeta");
         GalleryPack.resetJarCache();
         Files.delete(animJar);
         JsonObject onLimit = new JsonObject();
@@ -2517,7 +3459,13 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        rawCaptureTextureSelftest(failures);
+        capturedAlphaSelftest(failures);
+        capturedEmptyMeshSelftest(failures);
+        capturedSpriteSelftest(failures);
+        placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
+        exactFaceTileSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -2535,13 +3483,322 @@ public final class F2vPack {
         }
     }
 
+    private static void rawCaptureTextureSelftest(List<String> failures) throws IOException {
+        Path jar = Files.createTempFile("f2v-raw-binding", ".jar");
+        try {
+            byte[] png = f2vSelftestPng(4, 4);
+            writeJar(jar, new TreeMap<>(Map.of("assets/fixture/render/gear.png", png,
+                    "assets/fixture/block/custom.png", png)));
+            GalleryPack.resetJarCache();
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            for (String path : List.of("render/gear.png", "block/custom.png")) {
+                String ref = GalleryPack.hostSprite(List.of(jar), "@fixture:" + path, entries, warnings);
+                String hostedPng = "assets/c-imagine/textures/" + ref.split(":", 2)[1] + ".png";
+                expect(failures, ref.startsWith("c-imagine:block/items/raw_")
+                                && java.util.Arrays.equals(png, entries.get(hostedPng)),
+                        "raw capture: exact resource bytes re-hosted on blocks atlas: " + path);
+            }
+            expect(failures, warnings.isEmpty(), "raw capture: no missing-texture fallback");
+        } finally {
+            GalleryPack.resetJarCache();
+            Files.deleteIfExists(jar);
+        }
+    }
+
+    private static void capturedAlphaSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-captured-alpha");
+        try {
+            var image = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 2; y++) {
+                for (int x = 0; x < 2; x++) image.setRGB(x, y, 0x80ABCDEF);
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", png);
+            Path jar = root.resolve("fixture.jar");
+            writeJar(jar, new TreeMap<>(Map.of("assets/fixture/textures/block/glass.png", png.toByteArray())));
+            String face = "fixture:block/glass\t1\t-1"
+                    + "\t0\t0\t0\t0\t0\t16\t0\t0\t16\t0"
+                    + "\t16\t16\t0\t16\t16\t0\t16\t0\t0\t16";
+            String rgb = "\t1\t1\t1".repeat(4);
+            // 14-dr: the legacy (39/41-col) rows let the TEXTURE's own alpha
+            // rule — the captured vertex alpha rides only the explicit
+            // translucent material rows (the huge_lily_pad measured the
+            // legacy zero-alpha trap: the ours cell EMPTY at ae 211987).
+            // rows = {RGB-only, RGBA opaque, RGBA 0.3} -> the tile alpha is
+            // the texture's 128 in every case.
+            String[] rows = {face, face + rgb, face + rgb + "\t0.3".repeat(4)};
+            int[] expected = {128, 128, 128};
+            for (int i = 0; i < rows.length; i++) {
+                ObjMesh.resetBaker();
+                GalleryPack.resetJarCache();
+                GalleryPack.setQuadDir(root);
+                Files.writeString(root.resolve("items.tsv"), "fixture:item\talpha\n");
+                Files.writeString(root.resolve("alpha.tsv"), rows[i] + "\n");
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                String ref = GalleryPack.synthesizeItemQuads(List.of(jar), "fixture:item", 0,
+                        entries, new ArrayList<>());
+                expect(failures, ref != null, "alpha capture: fixture resolves " + i);
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject model = JsonParser.parseString(new String(entries.get(
+                        "assets/c-imagine/models/items/i0.json"), StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject f = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").entrySet().iterator().next().getValue().getAsJsonObject();
+                String texture = model.getAsJsonObject("textures")
+                        .get(f.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get("assets/" + texture.replace(":", "/textures/") + ".png"));
+                JsonArray uv = f.getAsJsonArray("uv");
+                int x = (int) ((uv.get(0).getAsDouble() + uv.get(2).getAsDouble()) / 32 * sheet.getWidth());
+                int y = (int) ((uv.get(1).getAsDouble() + uv.get(3).getAsDouble()) / 32 * sheet.getHeight());
+                int pixel = sheet.getRGB(x, y);
+                expect(failures, pixel >>> 24 == expected[i],
+                        "alpha capture: legacy opacity or texture-times-vertex opacity " + i);
+                expect(failures, (pixel & 0xFFFFFF) == 0xABCDEF,
+                        "alpha capture: RGB stays unpremultiplied " + i);
+            }
+            String rgba = face + rgb + "\t0.3".repeat(4);
+            String zero = face + rgb + "\t0.0".repeat(4);
+            String[] blockRows = {rgba, rgba + "\t15\t15", rgba + "\tsolid",
+                    rgba + "\tcutout\t15\t15", rgba + "\ttranslucent", zero};
+            // 14-dr: only the explicit translucent material honors the vertex
+            // alpha (0.3 x the texture's 128 = 38); every legacy row and the
+            // explicit solid/cutout rows keep the texture's 128 — including
+            // the zero-alpha legacy row (the huge_lily_pad trap signature).
+            int[] blockAlpha = {128, 128, 128, 128, 38, 128};
+            for (int i = 0; i < blockRows.length; i++) {
+                ObjMesh.resetBaker();
+                GalleryPack.resetModelScales();
+                Files.writeString(root.resolve("alpha.tsv"), blockRows[i] + "\n");
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                var resolved = GalleryPack.build(List.of(jar),
+                        List.of(new GalleryPack.Input("fixture:block#qalpha")), entries, new ArrayList<>());
+                expect(failures, resolved.size() == 1, "block alpha: capture resolves " + i);
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject model = JsonParser.parseString(new String(entries.get(
+                        "assets/c-imagine/models/gallery/g0.json"), StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject f = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").entrySet().iterator().next().getValue().getAsJsonObject();
+                String texture = model.getAsJsonObject("textures")
+                        .get(f.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get("assets/" + texture.replace(":", "/textures/") + ".png"));
+                JsonArray uv = f.getAsJsonArray("uv");
+                int x = (int) ((uv.get(0).getAsDouble() + uv.get(2).getAsDouble()) / 32 * sheet.getWidth());
+                int y = (int) ((uv.get(1).getAsDouble() + uv.get(3).getAsDouble()) / 32 * sheet.getHeight());
+                expect(failures, sheet.getRGB(x, y) >>> 24 == blockAlpha[i],
+                        "block alpha: only explicit opaque chunk materials ignore vertex opacity " + i);
+            }
+        } finally {
+            GalleryPack.setQuadDir(null);
+            GalleryPack.resetJarCache();
+            ObjMesh.resetBaker();
+            deleteRecursively(root);
+        }
+    }
+
+    private static void capturedEmptyMeshSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-native-empty");
+        try {
+            GalleryPack.setQuadDir(root);
+            String[] cases = {"# cimscene native empty mesh v1\n", "",
+                    "# cimscene native empty mesh v1\ncorrupt\n"};
+            for (int i = 0; i < cases.length; i++) {
+                GalleryPack.resetModelScales();
+                Files.writeString(root.resolve("empty.tsv"), cases[i]);
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                List<String> warnings = new ArrayList<>();
+                var rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input(
+                        "fixture:door[half=upper,visible=false]#qempty")), entries, warnings);
+                if (i == 0) {
+                    expect(failures, rows.size() == 1 && warnings.isEmpty(),
+                            "native empty: observed no-draw retains its captured context");
+                    byte[] bytes = entries.get("assets/c-imagine/models/gallery/g0.json");
+                    expect(failures, bytes != null, "native empty: an actual model is emitted");
+                    if (bytes != null) {
+                        JsonObject model = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8))
+                                .getAsJsonObject();
+                        expect(failures, model.getAsJsonArray("elements").isEmpty()
+                                        && model.getAsJsonObject("textures").isEmpty(),
+                                "native empty: no fallback geometry or placeholder texture");
+                    }
+                } else {
+                    expect(failures, rows.isEmpty() && !warnings.isEmpty(),
+                            "native empty: unmarked/truncated capture remains a failure " + i);
+                }
+            }
+            Files.delete(root.resolve("empty.tsv"));
+            List<String> warnings = new ArrayList<>();
+            var missing = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:door#qempty")),
+                    new TreeMap<>(), warnings);
+            expect(failures, missing.isEmpty() && !warnings.isEmpty(),
+                    "native empty: missing capture never becomes an observed no-draw");
+        } finally {
+            GalleryPack.setQuadDir(null);
+            GalleryPack.resetModelScales();
+            deleteRecursively(root);
+        }
+    }
+
+    private static void capturedSpriteSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-captured-sprite");
+        String hash = "0123456789abcdef";
+        try {
+            Path textures = Files.createDirectory(root.resolve("textures"));
+            byte[] png = f2vSelftestPng(2, 4);
+            Files.write(textures.resolve(hash + ".png"), png);
+            Files.writeString(textures.resolve(hash + ".png.mcmeta"),
+                    "{\"animation\":{\"width\":2,\"height\":2,\"frametime\":3,\"frames\":[1,0]}}");
+            GalleryPack.setQuadDir(root);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            String ref = GalleryPack.hostSprite(List.of(), "~" + hash, entries, warnings);
+            String hosted = "assets/c-imagine/textures/block/items/captured_" + hash + ".png";
+            // 14-dr: the captured strip ships CROPPED to its first listed
+            // frame (frames [1,0] -> index 1 = the strip's SECOND 2x2 block)
+            // with NO mcmeta at all — the truth side pins animated sprites to
+            // their first listed frame (14-dl), the ours side's sprite clocks
+            // free-run; a shipped strip measured RED on the singularity/
+            // mysterious-cube/anomaly crops.
+            var cropped = decodePng(entries.get(hosted));
+            expect(failures, ref.equals("c-imagine:block/items/captured_" + hash)
+                            && cropped.getWidth() == 2 && cropped.getHeight() == 2
+                            && !entries.containsKey(hosted + ".mcmeta"),
+                    "captured sprite: strip re-hosts as its first listed frame, mcmeta dropped");
+            expect(failures, warnings.size() == 1 && warnings.get(0).contains("shipped static"),
+                    "captured sprite: the crop stays loud in the build report");
+            // Atlas generators can produce a real sprite with no PNG in any jar.
+            Files.writeString(root.resolve("sprite-aliases.tsv"),
+                    "# native sprite\tdecoded capture\nfixture:generated\t~" + hash + "\n");
+            GalleryPack.setQuadDir(root);
+            TreeMap<String, byte[]> generated = new TreeMap<>();
+            List<String> generatedWarnings = new ArrayList<>();
+            String generatedRef = GalleryPack.hostSprite(List.of(), "fixture:generated", generated, generatedWarnings);
+            expect(failures, generatedRef.equals(ref) && java.util.Arrays.equals(entries.get(hosted), generated.get(hosted))
+                            && generatedWarnings.stream().noneMatch(w -> w.contains("sprite missing")),
+                    "native sprite alias: generated atlas pixels and frame metadata survive absent jar PNG");
+            Files.delete(textures.resolve(hash + ".png"));
+            boolean missingPixelsRefused = false;
+            try {
+                GalleryPack.hostSprite(List.of(), "fixture:generated", generated, new ArrayList<>());
+            } catch (IOException expected) {
+                missingPixelsRefused = true;
+            }
+            expect(failures, missingPixelsRefused, "native sprite alias: missing decoded pixels never become a placeholder");
+            Files.write(textures.resolve(hash + ".png"), png);
+            Files.writeString(root.resolve("sprite-aliases.tsv"), "fixture:generated\t~../../outside\n");
+            GalleryPack.setQuadDir(root);
+            boolean malformedRefused = false;
+            try {
+                GalleryPack.hostSprite(List.of(), "fixture:generated", generated, new ArrayList<>());
+            } catch (IOException expected) {
+                malformedRefused = true;
+            }
+            expect(failures, malformedRefused, "native sprite alias: malformed ledger refused");
+            GalleryPack.setQuadDir(root);
+            for (String missing : List.of("~fedcba9876543210", "~../../outside")) {
+                boolean refused = false;
+                try {
+                    GalleryPack.hostSprite(List.of(), missing, entries, warnings);
+                } catch (IOException expected) {
+                    refused = true;
+                }
+                expect(failures, refused, "captured sprite: absent/invalid artifact fails: " + missing);
+            }
+        } finally {
+            GalleryPack.setQuadDir(null);
+            deleteRecursively(root);
+        }
+    }
+
+    /** True when any composite child carries a tint node (the 14-da gate checks). */
+    private static boolean nodeHasConstantTint(JsonObject node) {
+        if (node == null || !node.has("models")) {
+            return false;
+        }
+        for (var m : node.getAsJsonArray("models")) {
+            if (m.getAsJsonObject().has("tints")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 14-dy: the placeholder ledger — the fallback NAMES its source sprite
+     * and build context, the drain merges + sorts + clears, the writer
+     * emits the TSV with the exact header contract.
+     */
+    private static void placeholderLedgerSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-ph-selftest");
+        try {
+            // a captured quad whose sprite has NO png in the jars and a
+            // non-block path (the items-atlas family): the placeholder branch
+            String ghostFace = "fakemod:items/ghost\t0\t-1"
+                    + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
+                    + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n";
+            Files.writeString(quads.resolve("ghost.tsv"), ghostFace);
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(quads);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            List<GalleryPack.Resolved> rows = GalleryPack.build(List.of(),
+                    List.of(new GalleryPack.Input("fixture:ghosted#qghost")), entries, warnings,
+                    Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1,
+                    "placeholder: the ghost-sprite capture resolves to the placeholder composite");
+            expect(failures, warnings.stream().anyMatch(w ->
+                            w.equals("gallery: quad sprite missing: fakemod:items/ghost")),
+                    "placeholder: the warning stays (the diagnostic is visible)");
+            var drained = GalleryPack.drainPlaceholderUses();
+            expect(failures, drained.size() == 1
+                            && "fakemod:items/ghost".equals(drained.getFirst()[0])
+                            && "fixture:ghosted#qghost".equals(drained.getFirst()[1])
+                            && "1".equals(drained.getFirst()[2]),
+                    "placeholder: the ledger names the sprite + the state context");
+            Path tsv = quads.resolve("placeholders.tsv");
+            GalleryPack.writePlaceholderLedger(drained, tsv);
+            List<String> lines = Files.readAllLines(tsv);
+            expect(failures, lines.size() == 2
+                            && lines.getFirst().equals("sprite\tcontext\tuses")
+                            && lines.get(1).equals("fakemod:items/ghost\tfixture:ghosted#qghost\t1"),
+                    "placeholder: the ledger TSV carries the header + the named row");
+            expect(failures, GalleryPack.drainPlaceholderUses().isEmpty(),
+                    "placeholder: the drain clears the accumulator");
+        } finally {
+            GalleryPack.resetModelScales();
+            deleteRecursively(quads);
+        }
+    }
+
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
         unlitPlaneSelftest(failures);
         Path quads = Files.createTempDirectory("f2v-unlit-selftest");
         try {
-            String face = "minecraft:block/stone\t0\t-1"
+            String face = "fakemod:block/glow_tex\t0\t-1"
                     + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
                     + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n";
+            Path scene = quads.resolve("gallery-item-fixture-p0.tsv");
+            Files.writeString(scene, "cell\tx\ty\tz\titem\tdyn\tnote\n"
+                    + "skip\t-1\t-60\t9\tfixture:missing\t0\tnochannel\n"
+                    + "cell\t-5\t-60\t9\tfixture:first\t0\tok\n"
+                    + "cell\t-4\t-60\t9\tfixture:second\t0\tok\n");
+            expect(failures, "fixture:first".equals(GalleryPack.firstSceneItem(scene)),
+                    "scene: held replay selects the first real item, not header or skip");
+            expect(failures, GalleryPack.readSceneLines(scene).size() == 3
+                            && GalleryPack.readSceneLines(scene).getFirst().startsWith("skip\t"),
+                    "scene: schema header is removed; every data/skip row remains");
+            Path fluidScene = quads.resolve("gallery-fluid-fixture-p0.tsv");
+            Files.writeString(fluidScene, "cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n");
+            var firstTank = new GalleryPack.Resolved("fixture:tank#qfirst", 123, "fixture:first", 0, 0, true);
+            var secondTank = new GalleryPack.Resolved("fixture:tank#qsecond", 456, "fixture:second", 0, 0, true);
+            expect(failures, GalleryPack.capturedSceneRows(fluidScene, List.of(firstTank)).isEmpty(),
+                    "tank: missing context cannot substitute an empty/static tank");
+            Files.writeString(quads.resolve("gallery-fluid-fixture-p0.ctx.tsv"),
+                    "-5\t-60\t9\tqfirst\n-3\t-60\t9\tqsecond\n-1\t-60\t9\tqabsent\n");
+            var tanks = GalleryPack.capturedSceneRows(fluidScene, List.of(firstTank, secondTank));
+            expect(failures, tanks.get("-5,-60,9").cmd() == 123 && tanks.get("-3,-60,9").cmd() == 456,
+                    "tank: same block state replays distinct per-cell captured contents");
+            expect(failures, tanks.size() == 2 && !tanks.containsKey("-1,-60,9"),
+                    "tank: unknown captured mesh stays missing rather than substituting another fluid");
             // One unlit and one ordinary source face must remain distinct.
             Files.writeString(quads.resolve("fixture.tsv"), face + face.replace("\t0\t-1", "\t1\t-1"));
             Files.writeString(quads.resolve("items.tsv"), "fixture:item\tfixture\n");
@@ -2569,6 +3826,159 @@ public final class F2vPack {
                 expect(failures, GalleryPack.itemNode(ref) == null,
                         "unlit: repeated builds cannot inherit previous item layers");
             }
+            // Native liquid chunk materials and alpha survive the unlit
+            // child split; legacy captures retain their existing material.
+            for (String material : List.of("solid", "cutout", "translucent")) {
+                GalleryPack.resetModelScales();
+                String nativeFace = face.strip() + "\t1\t1\t1".repeat(4)
+                        + "\t0.3".repeat(4) + "\t" + material + "\n";
+                Files.writeString(quads.resolve("fixture.tsv"), nativeFace);
+                entries.clear();
+                rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:fluid#qfixture")),
+                        entries, warnings, Map.of(), new ArrayList<>());
+                expect(failures, rows.size() == 1, "native liquid: captured row resolves " + material);
+                int models = 0;
+                for (var entry : entries.entrySet()) {
+                    if (!entry.getKey().startsWith("assets/c-imagine/models/gallery/")) continue;
+                    JsonObject model = JsonParser.parseString(new String(entry.getValue(), StandardCharsets.UTF_8))
+                            .getAsJsonObject();
+                    expect(failures, model.get("render_type").getAsString().equals("minecraft:" + material),
+                            "native liquid: material retained through child model " + material);
+                    models++;
+                }
+                expect(failures, models >= 2, "native liquid: unlit child checked " + material);
+            }
+            // 14-cz captured-shade tint: the composite children carry the
+            // captured per-quad RGB as `minecraft:constant` node tints (the
+            // measured machine-wall class — ours rendered the raw texture
+            // fullbright, ours/truth ≈ 2.0). Identity rows (1.0) stay
+            // untinted; the 14-cy fullbright split is gone — one LIGHT_ALL
+            // composite per mesh (the (15,15) rows carry shaded RGB too).
+            GalleryPack.resetModelScales();
+            // 14-cz.1 tint gate: both rows shade:false; the 1.0 identity row
+            // and the (15,15) mod-light-override row stay untinted, only the
+            // (8,15) scene-lit 0.6 row rides the constant ARGB tint.
+            String litA = face.strip() + "\t1\t1\t1".repeat(4) + "\t1".repeat(4) + "\t8\t15\n";
+            String litB = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t8\t15\n";
+            String litFb = face.strip() + "\t0.5".repeat(12) + "\t1".repeat(4) + "\t15\t15\n";
+            Files.writeString(quads.resolve("lit.tsv"), litA + litB + litFb);
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:lit#qlit")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "captured shade: one LIGHT_ALL composite per mesh");
+            if (rows.size() == 1) {
+                JsonObject shadeNode = GalleryPack.itemNode(rows.get(0).modelRef());
+                expect(failures, shadeNode != null
+                                && shadeNode.get("type").getAsString().equals("minecraft:composite")
+                                && shadeNode.getAsJsonArray("models").size() == 3,
+                        "captured shade: composite carries all three quads");
+                if (shadeNode != null) {
+                    int tinted = 0;
+                    for (var m : shadeNode.getAsJsonArray("models")) {
+                        JsonObject child = m.getAsJsonObject();
+                        if (child.has("tints")) {
+                            tinted++;
+                            JsonObject t = child.getAsJsonArray("tints").get(0).getAsJsonObject();
+                            expect(failures, t.get("type").getAsString().equals("minecraft:constant")
+                                            && t.get("value").getAsInt() == ((255 << 24) | (153 << 16) | (153 << 8) | 153),
+                                    "captured shade: the 0.6 quad rides a constant ARGB tint");
+                        }
+                    }
+                    expect(failures, tinted == 1,
+                            "captured shade: identity and (15,15) override rows stay untinted");
+                }
+            }
+            // 14-da TINT GATE v2 fixtures: the tint is a MESH-level decision.
+            // (a) constant (5,15) mesh (the nixie casing class) — untinted;
+            // (b) constant (8,15) mesh (the isotopic centrifuge class) — tinted;
+            // (c) constant (0,15) mesh (the wall/webbing class) — untinted;
+            // (d) mixed (0,15)+(8,15) mesh (the machine class) — the (0,15)
+            //     rows ride the tint too (the truth shaded the whole mesh).
+            String shade06 = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
+            String shade10 = face.strip() + "\t1".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
+            // (a) nixie-like constant (5,15): shaded rows stay fullbright
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("nixie.tsv"), String.format(shade06, "5", "15")
+                    + String.format(shade10, "5", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:nixie#qnixie")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: constant (5,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint v2: constant (5,15) nixie casing replays fullbright");
+            }
+            // (b) centrifuge-like constant (8,15): shaded rows ride the tint
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("cent.tsv"), String.format(shade06, "8", "15")
+                    + String.format(shade10, "8", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:cent#qcent")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: constant (8,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint v2: constant (8,15) machine glow rides the tint");
+            }
+            // (c) webbing-like constant (0,15): untinted
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("webb.tsv"), String.format(shade06, "0", "15")
+                    + String.format(shade10, "0", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:webb#qwebb")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: constant (0,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint v2: constant (0,15) wall class stays fullbright");
+            }
+            // (d) machine-like mixed mesh: the (0,15) rows inherit the scene-lit tint
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("mach.tsv"), String.format(shade06, "8", "15")
+                    + String.format(shade06, "0", "15") + String.format(shade10, "0", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:mach#qmach")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint v2: mixed machine mesh resolves");
+            if (rows.size() == 1) {
+                JsonObject machNode = GalleryPack.itemNode(rows.get(0).modelRef());
+                int machTinted = 0;
+                if (machNode != null && machNode.has("models")) {
+                    for (var m : machNode.getAsJsonArray("models")) {
+                        if (m.getAsJsonObject().has("tints")) {
+                            machTinted++;
+                        }
+                    }
+                }
+                expect(failures, machTinted == 2,
+                        "tint v2: mixed mesh tints its (0,15) rows too (the (1.0) row skips by identity)");
+            }
+            // Equal planes across different meshes share model bytes while
+            // both draw nodes and their exact transforms remain present.
+            GalleryPack.resetModelScales();
+            String shaded = face.replace("\t0\t-1", "\t1\t-1");
+            Files.writeString(quads.resolve("first.tsv"), face
+                    + shaded.replace("minecraft:block/stone", "minecraft:block/dirt"));
+            Files.writeString(quads.resolve("second.tsv"),
+                    shaded.replace("minecraft:block/stone", "minecraft:block/gravel") + face);
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:a#qfirst"),
+                    new GalleryPack.Input("fixture:b#qsecond")), entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 2, "unlit sharing: every registry row retained");
+            if (rows.size() == 2) {
+                JsonArray first = GalleryPack.itemNode(rows.get(0).modelRef()).getAsJsonArray("models");
+                JsonArray second = GalleryPack.itemNode(rows.get(1).modelRef()).getAsJsonArray("models");
+                expect(failures, first.size() == 2 && second.size() == 2,
+                        "unlit sharing: no source draw removed");
+                expect(failures, first.get(0).equals(second.get(0)),
+                        "unlit sharing: unused textures/key names cannot duplicate an identical plane or transform");
+                expect(failures, entries.keySet().stream().filter(k -> k.contains("/gallery/unlit/")).count() == 1,
+                        "unlit sharing: identical plane stored exactly once");
+            }
+            validateDownloadSize(262_144_000L);
+            boolean oversized = false;
+            try { validateDownloadSize(262_144_001L); } catch (IOException expected) { oversized = true; }
+            expect(failures, oversized, "pack: vanilla download ceiling enforced before publication");
             // A non-planar first quad splits in two. Its output count must
             // never shift the second quad's explicit shade:false metadata.
             String nonplanar = face.replace("\t0\t-1", "\t1\t-1")
@@ -2593,6 +4003,105 @@ public final class F2vPack {
         }
     }
 
+    private static void exactFaceTileSelftest(List<String> failures) throws IOException {
+        Path jar = Files.createTempFile("f2v-face-tile", ".jar");
+        ObjMesh.resetBaker();
+        GalleryPack.resetJarCache();
+        try {
+            int[] pixelsA = {0xff808080, 0xff808080, 0xff808080, 0xff808080};
+            int[] pixelsB = pixelsA.clone();
+            pixelsB[0] += 0x10000;
+            pixelsB[1] -= 31 * 0x10000;
+            expect(failures, java.util.Arrays.hashCode(pixelsA) == java.util.Arrays.hashCode(pixelsB)
+                            && java.util.Arrays.hashCode(java.util.Arrays.copyOf(pixelsA, 2))
+                            == java.util.Arrays.hashCode(java.util.Arrays.copyOf(pixelsB, 2)),
+                    "tile: regression fixture collides in both legacy hashes");
+            var tileA = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            var tileB = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            tileA.setRGB(0, 0, 2, 2, pixelsA, 0, 2);
+            tileB.setRGB(0, 0, 2, 2, pixelsB, 0, 2);
+            int[] atA = ObjMesh.placeExactTile(tileA), atB = ObjMesh.placeExactTile(tileB);
+            expect(failures, !java.util.Arrays.equals(atA, atB), "tile: hash collision cannot substitute pixels");
+            expect(failures, java.util.Arrays.equals(atA, ObjMesh.placeExactTile(tileA))
+                            && java.util.Arrays.equals(atB, ObjMesh.placeExactTile(tileB)),
+                    "tile: each colliding tile still reuses its own allocation");
+            expect(failures, ObjMesh.tileHashCollisions() == 1, "tile: collision report counts new distinct tiles once");
+            TreeMap<String, byte[]> collisionEntries = new TreeMap<>();
+            ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, collisionEntries);
+            var collisionSheet = decodePng(collisionEntries.get("assets/c-imagine/textures/block/objcut/sheet0.png"));
+            expect(failures, java.util.Arrays.equals(pixelsA, collisionSheet.getRGB(atA[1], atA[2], 2, 2, null, 0, 2))
+                            && java.util.Arrays.equals(pixelsB, collisionSheet.getRGB(atB[1], atB[2], 2, 2, null, 0, 2)),
+                    "tile: colliding source pixels survive PNG publication exactly");
+            var source = new java.awt.image.BufferedImage(16, 16,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) source.setRGB(x, y, 0xFF000080 | x << 20 | y << 12);
+            }
+            var bytes = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(source, "png", bytes);
+            TreeMap<String, byte[]> files = new TreeMap<>();
+            files.put("assets/ae2/textures/block/chiseled_quartz_test.png", bytes.toByteArray());
+            files.put("assets/ae2/blockstates/tile.json", ("{\"variants\":{\"\":{"
+                    + "\"model\":\"ae2:block/tile\"}}}").getBytes(StandardCharsets.UTF_8));
+            double[][] windows = {{2,4,14,12}, {14,4,2,12}, {2,12,14,4}, {14,12,2,4}};
+            JsonArray elements = new JsonArray();
+            for (double[] window : windows) {
+                JsonObject element = JsonParser.parseString("{\"from\":[0,0,0],\"to\":[16,16,16],"
+                        + "\"faces\":{\"south\":{\"texture\":\"#all\",\"rotation\":90}}}")
+                        .getAsJsonObject();
+                JsonArray uv = new JsonArray();
+                for (double value : window) uv.add(value);
+                element.getAsJsonObject("faces").getAsJsonObject("south").add("uv", uv);
+                elements.add(element);
+            }
+            JsonObject model = JsonParser.parseString("{\"textures\":{\"all\":"
+                    + "\"ae2:block/chiseled_quartz_test\"}}").getAsJsonObject();
+            model.add("elements", elements);
+            files.put("assets/ae2/models/block/tile.json", model.toString().getBytes(StandardCharsets.UTF_8));
+            writeJar(jar, files);
+            ObjMesh.placeExactTile(new java.awt.image.BufferedImage(7, 9,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB)); // occupy an earlier tile
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            var built = GalleryPack.build(List.of(jar), List.of(new GalleryPack.Input("ae2:tile")),
+                    entries, new ArrayList<>(), Map.of(), null);
+            expect(failures, built.size() == 1, "tile: composite fixture resolves");
+            ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+            JsonObject output = JsonParser.parseString(new String(
+                    entries.get("assets/c-imagine/models/gallery/g0.json"), StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+            for (int i = 0; i < windows.length; i++) {
+                JsonObject face = output.getAsJsonArray("elements").get(i).getAsJsonObject()
+                        .getAsJsonObject("faces").getAsJsonObject("south");
+                JsonArray uv = face.getAsJsonArray("uv");
+                String texture = output.getAsJsonObject("textures")
+                        .get(face.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get("assets/" + texture.replace(":", "/textures/") + ".png"));
+                double x0 = uv.get(0).getAsDouble() * sheet.getWidth() / 16;
+                double y0 = uv.get(1).getAsDouble() * sheet.getHeight() / 16;
+                double x1 = uv.get(2).getAsDouble() * sheet.getWidth() / 16;
+                double y1 = uv.get(3).getAsDouble() * sheet.getHeight() / 16;
+                expect(failures, Math.abs(x1 - x0) == 12 && Math.abs(y1 - y0) == 8,
+                        "tile: face samples allocated window instead of entire sheet " + i);
+                boolean pixelsMatch = true;
+                for (int y = 0; y < 8; y++) {
+                    for (int x = 0; x < 12; x++) {
+                        int sx = (int) Math.floor(x0 + (x + .5) / 12 * (x1 - x0));
+                        int sy = (int) Math.floor(y0 + (y + .5) / 8 * (y1 - y0));
+                        int tx = windows[i][0] < windows[i][2] ? 2 + x : 13 - x;
+                        int ty = windows[i][1] < windows[i][3] ? 4 + y : 11 - y;
+                        pixelsMatch &= sheet.getRGB(sx, sy) == source.getRGB(tx, ty);
+                    }
+                }
+                expect(failures, pixelsMatch, "tile: source texels and mirrored orientation preserved " + i);
+                expect(failures, face.get("rotation").getAsInt() == 90, "tile: face rotation preserved");
+            }
+        } finally {
+            ObjMesh.resetBaker();
+            GalleryPack.resetJarCache();
+            Files.deleteIfExists(jar);
+        }
+    }
+
     private static void freshOutputSelftest(List<String> failures) throws IOException {
         Path root = Files.createTempDirectory("f2v-fresh-selftest");
         try {
@@ -2604,10 +4113,49 @@ public final class F2vPack {
             build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
             expect(failures, Files.isRegularFile(out.resolve("visual-gallery-fluids.tsv")),
                     "pack: fluid manifest can be emitted into a fresh nested output directory");
+            // 14-cd: the widened scan (fluid/ + block/*_still + liquid/) feeds
+            // the cube channel — the fixture's water_still must land BOTH the
+            // flat row and a 14/16 cube row in its own manifest
+            expect(failures, Files.isRegularFile(out.resolve("visual-fluid-cubes.tsv")),
+                    "pack: fluid cube manifest emitted beside the flat one");
+            java.util.Map<String, Float> selfCubes =
+                    readFluidManifest(out.resolve("visual-fluid-cubes.tsv"));
+            expect(failures, selfCubes.containsKey("fixture:water"),
+                    "pack: fixture water_still derives the fixture:water cube row");
+            // Native FileToIdConverter adds models/ and textures/ itself.
+            // Verify the references consumed by the client, not just manifests.
+            try (ZipFile pack = new ZipFile(out.resolve("pack.zip").toFile())) {
+                JsonArray dispatch = JsonParser.parseString(new String(pack.getInputStream(
+                        pack.getEntry("assets/minecraft/items/paper.json")).readAllBytes(),
+                        StandardCharsets.UTF_8)).getAsJsonObject().getAsJsonObject("model")
+                        .getAsJsonArray("entries");
+                int fluidModels = 0;
+                for (var entry : dispatch) {
+                    JsonObject row = entry.getAsJsonObject();
+                    float threshold = row.get("threshold").getAsFloat();
+                    if (threshold < 400000 || threshold >= 420000) continue;
+                    fluidModels++;
+                    String ref = row.getAsJsonObject("model").get("model").getAsString();
+                    String modelPath = "assets/" + ref.replace(":", "/models/") + ".json";
+                    ZipEntry model = pack.getEntry(modelPath);
+                    expect(failures, model != null, "pack: fluid dispatch resolves " + ref);
+                    if (model == null) continue;
+                    JsonObject textures = JsonParser.parseString(new String(
+                            pack.getInputStream(model).readAllBytes(), StandardCharsets.UTF_8))
+                            .getAsJsonObject().getAsJsonObject("textures");
+                    for (var texture : textures.entrySet()) {
+                        String sprite = texture.getValue().getAsString();
+                        String spritePath = "assets/" + sprite.replace(":", "/textures/") + ".png";
+                        expect(failures, pack.getEntry(spritePath) != null,
+                                "pack: fluid sprite resolves " + sprite);
+                    }
+                }
+                expect(failures, fluidModels == 2, "pack: flat and cube fluid models exercised");
+            }
             Files.createDirectories(out.resolve("overlay/assets/fixture"));
             Files.writeString(out.resolve("overlay/assets/fixture/evidence.txt"), "overlay input");
             Files.createDirectory(out.resolve("quads"));
-            Files.writeString(out.resolve("quads/fixture.tsv"), "minecraft:block/stone\t0\t-1"
+            Files.writeString(out.resolve("quads/fixture.tsv"), "fakemod:block/glow_tex\t0\t-1"
                     + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
                     + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0\n");
             Files.writeString(out.resolve("visual-gallery.tsv"), "fixture:block#qfixture\n");

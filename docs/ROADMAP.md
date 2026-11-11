@@ -4,6 +4,143 @@ Each milestone has acceptance criteria enforced by CI. The loop is strict:
 **analyze → implement → test (CI matrix) → analyze → fix**; nothing advances while
 the matrix is red.
 
+## Open blockers — server execution and F2V completeness (2026-11-10)
+
+The milestone completions below describe their stated acceptance slices. They do
+not establish 100% server-side NeoForge compatibility or complete translation of
+arbitrary mod traffic. The architecture's embedded logical server is a target,
+not evidence that a full NeoForge dedicated-server runtime already runs in Paper.
+
+- [ ] **M2/M3: complete real server lifecycle and ticking.** The current
+  `LayerMain.boot` bootstraps relocated registries; `FmlHost` constructs real mod
+  containers and runs registration/setup phases. These are not a complete running
+  NeoForge server. Deliver the real server/world context and lifecycle required by
+  mods, with server ticks driven by Paper's main thread over authoritative Paper
+  state. Verify start, tick and stop ordering against native NeoForge; do not
+  fabricate events, substitute a dummy server, or run an unrelated tick loop.
+- [ ] **M3/M7: prove runtime mechanics beyond the facade smoke tests.** Close and
+  measure gaps in world/entity/block-entity access, scheduled work, interactions,
+  persistence and restart behavior. Use real mods from the Tier 0 ladder in
+  `MODPACK.md`, starting with Create. Matching registration counts or successful
+  mod construction does not establish matching gameplay behavior.
+- [ ] **M9: complete the genuine lifecycle-driven profiling workload.** The heavy
+  probe must receive the actual server-start and server-tick callbacks, self-arm,
+  execute its configured workload and emit its real completion result. Keep a
+  missing completion a failure; do not synthesize log markers or relax budgets.
+- [ ] **M4: establish complete live translation coverage.** Rust `cim-f2v`
+  currently supplies mapping tables and translation plans. The existing Paper
+  facade projects supported content before packet creation; `NetWatch` observes
+  outbound packets and checks selected payloads. Neither the plans nor a clean
+  watcher census proves a general packet translator. Audit and implement the
+  missing paths for spawn/metadata/removal, block/section/chunk updates,
+  items/containers, custom payloads and incoming player actions. Record which
+  paths are translated at the facade and which require actual packet handling.
+  Prove ordering, state synchronization and absence of modded-id leaks with real
+  mod traffic and a vanilla client, including interactions and reconnects.
+  MEASURED AUDIT (2026-11-10):
+  `runtime-analysis/f2v-translation-coverage.md` records the per-path table —
+  every outbound family is vanilla-clean at the source (facade projection /
+  pack channel / native Paper), the measured modded-id leak count is 0, and the
+  two genuinely absent paths are named (incoming player actions into the layer,
+  reconnect/state-sync measurement); the sound/particle replays stay
+  substituted, not reproduced, per the fidelity audit below.
+- [ ] **M5/M6/M7: prove visuals and server mechanics together.** Resource packs,
+  custom model data and display entities already provide visual representations;
+  the gallery does not prove the corresponding machine/entity logic runs inside
+  Paper. The separately launched native NeoForge stack is the reference, not the
+  embedded implementation. Require paired real-mod behavior traces, both stacks'
+  screenshots, census coverage and profiling before claiming end-to-end parity.
+
+**Acceptance:** each blocker needs an implementation and reproducible dual-stack
+runtime evidence. Existing boot, protocol and gallery passes retain their narrow
+meaning; the campaign remains incomplete while any required matrix gate is red.
+
+## Open audit — mod content fidelity and CI blind spots (2026-11-10)
+
+Read-only source audit against `d7ed34fa` (runtime, gallery workflow and coverage
+scripts). This separates confirmed substitutions from behavior without adequate
+proof. A missing test is not evidence that a whole content class is unsupported.
+The acceptance criteria below require original mod semantics and assets; a
+vanilla substitute or a generated demonstration does not establish parity.
+
+- [ ] **Sound fidelity:** `CimPlugin` uses `minecraft:block.wood.place` when the
+  sound mapping or target is unavailable and counts `unmapped-fallback`. This is
+  different audio, not reproduction of the original event. Preserve and play
+  the mod's real sound assets and event parameters; report every substitution
+  against its source ID and require zero unexplained fallbacks for parity.
+- [ ] **Particle fidelity:** the corresponding fallback is `minecraft:poof`.
+  Preserve the original particle appearance, options and behavior; verify
+  data-carrying particles as well as simple spawns. A successful substitute spawn
+  is not a pass for the source particle.
+  LEVER SHIPPED (2026-11-11, 14-dz + the parallel 108009d4 verified-simple
+  table, reconciled): the mapping generator resolves the 38 measured
+  families through verified-SIMPLE targets only (98 VANILLA_SIMPLE ids
+  validated against the 26.3 client jar's particles/*.json AND the
+  paper-api Particle enum's data-carrying constructor classes; generation
+  hard-fails on a bad target; measured 38/38 mapped preview over the #302
+  artifacts), so the mapped preview and the actual send agree; the replay
+  still validates live and ledgers drift. The 14-dw live-viewer seed fix
+  ships the cells; the flip waits for the measured mapped-identity
+  evidence per the sound bar (position_hits == expected with order_exact).
+- [ ] **Texture fidelity:** `GalleryPack.placeholderSprite` generates a visible
+  magenta/black texture for an item-atlas sprite that cannot be hosted. Keep this
+  diagnostic visible, name the source sprite and affected cells, and repair
+  runtime/generated texture hosting. A placeholder is not supported mod content.
+  LEDGER SHIPPED (2026-11-11, 14-dy): every fallback records (source sprite,
+  build context, use count) into placeholders.tsv + build-report.txt (the
+  header-only file is the substituted-nothing receipt); the diagnostic stays
+  visible. The hosting-repair half is the named 14-dg lane — the #310 receipt
+  measured the GPU-atlas readback never firing in the live client (the
+  where-do-text-quads-go diagnostic run is its precondition).
+- [ ] **GUI, keys and HUD behavior:** M6.2 already records that real-player
+  hosting is missing, key/slot/HUD values do not yet reach mod code, seven other
+  Create menus and non-Create menus remain open, and mod HUD layers need live
+  data. Prove actual menu transactions, permissions, key-triggered actions and
+  live HUD values against native NeoForge; showing a dialog or inventory is
+  insufficient.
+- [ ] **Diagnostic classes must not imply complete green:**
+  `coverage-gate.py` lists sound, GUI, held items, biome tint, inventory and
+  particles in `DIAGNOSTIC_CLASSES`. The gallery tolerates missing diagnostic
+  screenshots/logs and some diagnostic join failures; mod-namespace dyn/large
+  entity comparisons are also diagnostic. Measure and calibrate each channel,
+  then make missing evidence and real mismatches blocking. Keep all unmeasured
+  classes explicitly incomplete until that happens.
+- [ ] **No-walk visual classes:** `coverage-gate.py:NO_WALK` still includes
+  paintings, wolf/cat/frog variants, villager types, effects, trim materials and
+  patterns, banners, decorated pots, enchantments, jukebox songs and dimension
+  types. Positive registrations already produce named coverage failures; add
+  real scenes and runtime assertions instead of excluding these registrations.
+  SCENES SHIPPED (2026-11-11, 14-dx): `cimscene gallery variant <kind>` walks
+  12 of the 13 classes with real vanilla-mechanics scenes (a hung painting,
+  the frozen variant mobs, the component-carrying armor stands, the pattern
+  banner, the sherd pot, the playing jukebox) and settle-pass runtime
+  assertions (effect-expired / trim-missing / glint-missing /
+  pattern-missing / sherd-missing / stopped are named skip rows); the gate
+  walks them DIAGNOSTIC-first and NO_WALK is down to {dimension_type} (no
+  per-entry surface in one world frame — the per-dimension camera rig is
+  the named lane). The ours leg has no variant replay channel yet (the F2V
+  projection per kind is the named lane); the flips wait for the measured
+  evidence.
+- [ ] **Gameplay outside the visual ledger:** world generation/features/carvers,
+  loot, predicates, attributes, menus and recipes are outside its world-frame
+  coverage contract. Add separate runtime coverage for generation and dimensions,
+  crafting/processing, drops, combat/effects, capability-backed item/fluid/energy
+  transfer and persistence. Verify outcomes on both stacks; census parity and
+  a biome-tint screenshot do not prove those behaviors.
+- [ ] **Results must retain their actual scope:** mod-matrix construction,
+  registration and census checks do not prove working mod machinery or gameplay.
+  Gallery verdicts such as DYNAMIC, AIR, ANIMATED and SPILL are not GREEN; report
+  them separately with their reasons. `flip-report.py` already distinguishes
+  `NO-DATA` and diagnostic frames: zero effective samples or frame content alone
+  must never become a 100% compatibility claim.
+
+**Evidence entry points:** `paper-plugin/.../CimPlugin.java` (sound/particle replay
+and defaults), `paper-plugin/.../GalleryPack.java` (sprite hosting),
+`scripts/cimscene/coverage-gate.py`, `gallery-diff.py`, `flip-report.py`,
+`.github/workflows/gallery.yml`, `.github/workflows/mod-matrix.yml`, and M6.2 below.
+Track registered, exercised, faithfully reproduced, substituted, absent and
+unverified content separately, with real-mod artifacts for every closure.
+
 ## M0 — Foundation (this repository)
 
 - [x] Repo `c-imagine`, EN language, conventional commits, noreply author.

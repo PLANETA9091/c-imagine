@@ -263,3 +263,30 @@ pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_clientMembersSt
 ) -> i64 {
     cim_reloc::client_members_stripped_total() as i64
 }
+
+/// Check the original class-level OnlyIn annotation before definition.
+///
+/// # Safety
+/// Called by the JVM with valid JNI handles for the current native frame.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_dev_cim_bootstrap_NativeReloc_isClientOnly0(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    input: JByteArray<'_>,
+) -> jni::sys::jboolean {
+    let result = env
+        .convert_byte_array(&input)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| {
+            cim_reloc::classfile::ClassFile::parse(&bytes)
+                .map(|file| file.is_client_only())
+                .map_err(|e| e.to_string())
+        });
+    match result {
+        Ok(client_only) => u8::from(client_only),
+        Err(error) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", error);
+            0
+        }
+    }
+}

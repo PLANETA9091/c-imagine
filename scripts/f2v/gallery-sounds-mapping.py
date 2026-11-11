@@ -33,7 +33,41 @@ import sys
 
 DEFAULT = "minecraft:block.wood.place"
 
+# ORDER MATTERS (first match wins): the specific buckets ride BEFORE the
+# generic prefixes, so "mechanical_press_activation" lands on the piston
+# bucket, not the "press"-in-path generic. Every target validated against
+# the real 26.3 sound registry (1991 events, all present).
 CATEGORY_TABLE = [
+    # Create kinetic machinery -> mechanical motion
+    ("cog", "minecraft:block.piston.extend"),
+    ("crank", "minecraft:block.piston.extend"),
+    ("press", "minecraft:block.piston.extend"),
+    ("saw", "minecraft:block.piston.extend"),
+    ("mixing", "minecraft:block.piston.extend"),
+    ("millstone", "minecraft:block.piston.extend"),
+    ("crushing", "minecraft:block.piston.extend"),
+    ("drill", "minecraft:block.piston.extend"),
+    ("deployer", "minecraft:block.piston.extend"),
+    # trains and whistles -> the minecart ride
+    ("whistle", "minecraft:entity.minecart.riding"),
+    ("train", "minecraft:entity.minecart.riding"),
+    # bells -> the bell
+    ("bell", "minecraft:block.bell.use"),
+    # item transfer -> the pickup/drink family
+    ("funnel", "minecraft:entity.item.pickup"),
+    ("package", "minecraft:entity.item.pickup"),
+    ("hatch", "minecraft:entity.item.pickup"),
+    ("depot", "minecraft:entity.item.pickup"),
+    ("spout", "minecraft:entity.generic.drink"),
+    ("steam", "minecraft:entity.generic.extinguish_fire"),
+    # UI confirm/deny
+    ("confirm", "minecraft:ui.button.click"),
+    ("deny", "minecraft:entity.villager.no"),
+    # Mekanism (validated: assets/mekanism/sounds.json, 46 events)
+    ("gui.digital", "minecraft:ui.button.click"),
+    ("tile.machine", "minecraft:block.piston.extend"),
+    ("geiger", "minecraft:ui.button.click"),
+    # generic families (the original buckets, kept last)
     ("music", "minecraft:music.menu"),
     ("ui.", "minecraft:ui.button.click"),
     ("button", "minecraft:ui.button.click"),

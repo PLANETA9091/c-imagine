@@ -13,9 +13,8 @@
     <description>Paper-side lifecycle bridge for the c-imagine CRUSSTY module</description>
 
     <properties>
-        <!-- Paper 26.3 API jars are class-file v69: the compiler must be JDK 25
-             and the plugin bytecode targets Java 25 (the runtime Paper uses). -->
-        <maven.compiler.release>25</maven.compiler.release>
+        <!-- JDK 25 reads Paper's v69 API; repository plugin bytecode stays Java 21. -->
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <!-- Overridden by CI after resolving the newest stable 26.3 API build. -->
         <paper.version>26.3.build.223-stable</paper.version>
@@ -56,8 +55,8 @@
             <version>4.2.16.Final</version>
             <scope>provided</scope>
         </dependency>
-        <!-- F2V's bytecode scanners. asm and maven-artifact come with Paper;
-             asm-analysis does not, so plugin.yml asks Paper to fetch it. -->
+        <!-- Paper supplies ASM core/tree and maven-artifact. Bundle analysis
+             at build time so plugin startup needs no dependency resolver. -->
         <dependency>
             <groupId>org.ow2.asm</groupId>
             <artifactId>asm-tree</artifactId>
@@ -68,7 +67,6 @@
             <groupId>org.ow2.asm</groupId>
             <artifactId>asm-analysis</artifactId>
             <version>9.9.1</version>
-            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.maven</groupId>
@@ -80,6 +78,31 @@
 
     <build>
         <finalName>cim-paper-plugin</finalName>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.2</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals><goal>shade</goal></goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <artifactSet>
+                                <includes><include>org.ow2.asm:asm-analysis</include></includes>
+                            </artifactSet>
+                            <filters>
+                                <filter>
+                                    <artifact>org.ow2.asm:asm-analysis</artifact>
+                                    <excludes><exclude>module-info.class</exclude></excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
         <resources>
             <resource>
                 <directory>src/main/resources</directory>

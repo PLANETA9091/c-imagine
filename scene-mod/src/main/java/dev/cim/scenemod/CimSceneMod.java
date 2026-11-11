@@ -10,30 +10,68 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Holder;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.FloatTag;
+import net.minecraft.nbt.IntTag;
+import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.StringTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.animal.Cat;
+import net.minecraft.world.entity.animal.FrogVariant;
+import net.minecraft.world.entity.animal.Pig;
+import net.minecraft.world.entity.animal.Wolf;
+import net.minecraft.world.entity.animal.frog.Frog;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.decoration.Painting;
+import net.minecraft.world.entity.decoration.PaintingVariant;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.entity.npc.VillagerData;
+import net.minecraft.world.entity.npc.VillagerProfession;
+import net.minecraft.world.entity.npc.VillagerType;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.item.DyeColor;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.JukeboxSong;
+import net.minecraft.world.item.armortrim.ArmorTrim;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BannerBlockEntity;
+import net.minecraft.world.level.block.entity.BannerPatternLayers;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.block.entity.DecoratedPotBlockEntity;
+import net.minecraft.world.level.block.entity.DecoratedPotPatterns;
+import net.minecraft.world.level.block.entity.JukeboxBlockEntity;
+import net.minecraft.world.level.block.entity.PotDecorations;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.FluidState;
@@ -62,12 +100,14 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -119,6 +159,7 @@ public final class CimSceneMod {
         NeoForge.EVENT_BUS.addListener(this::onEntityJoinLevel);
         NeoForge.EVENT_BUS.addListener(this::onServerTickPost);
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()) {
+            NeoForge.EVENT_BUS.addListener(this::onClientTickPost);
             ScreenArt.init();
         }
         if (net.neoforged.fml.loading.FMLEnvironment.dist.isClient()
@@ -143,6 +184,9 @@ public final class CimSceneMod {
      */
     private void onEntityJoinLevel(EntityJoinLevelEvent event) {
         if (event.getLevel().isClientSide()) return;
+        if (!ACTIVE_GANTRY_RIGS.isEmpty()) {
+            for (GantryRig rig : List.copyOf(ACTIVE_GANTRY_RIGS)) rig.observe(event.getEntity());
+        }
         if (GUI_JOINED != null && !(event.getEntity() instanceof net.minecraft.world.entity.player.Player)) {
             GUI_JOINED.add(event.getEntity());
         }
@@ -172,6 +216,27 @@ public final class CimSceneMod {
     private void serverStarted(ServerStartedEvent event) {
         writeCensus("scene-manifest.tsv");
         LOGGER.info("[cimscene] server started ok (census emitter armed)");
+        // THE PARTICLE-FILLER SELFARM (the individual test contract): a
+        // marker file "c-imagine/scenes/particle-selfarm" carrying
+        // "<namespace> <page>" runs the gallery-particle spawn once from the
+        // server's own console source and HALTS the server — the test boots,
+        // the manifest + the [cimscene] log lines land, the process exits.
+        // The CI gallery boots never carry the marker (the same contract the
+        // cimtest-heavy selfarm rides).
+        try {
+            java.nio.file.Path marker = Path.of("c-imagine", "scenes", "particle-selfarm");
+            if (Files.isRegularFile(marker)) {
+                String[] parts = Files.readString(marker).trim().split("\\s+");
+                MinecraftServer server = event.getServer();
+                int page = parts.length > 1 ? Integer.parseInt(parts[1]) : 0;
+                LOGGER.info("[cimscene] particle selfarm: ns={} page={} (halting after)",
+                        parts[0], page);
+                galleryParticle(server.createCommandSourceStack(), parts[0], page);
+                server.execute(() -> server.halt(false));
+            }
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] particle selfarm failed (stays disarmed): {}", t.toString());
+        }
     }
 
     // --- census -----------------------------------------------------------
@@ -239,6 +304,15 @@ public final class CimSceneMod {
                                     false);
                             return 1;
                         }))
+                        .then(Commands.literal("selftest-package").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), false)))
+                        .then(Commands.literal("selftest-blueprint").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), true)))
+                        .then(Commands.literal("selftest-potato").executes(ctx -> potatoSpawnSelftest(ctx.getSource())))
+                        .then(Commands.literal("selftest-bearing").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), false)))
+                        .then(Commands.literal("selftest-cart").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), true)))
+                        .then(Commands.literal("selftest-bearing-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "bearing")))
+                        .then(Commands.literal("selftest-glue-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "glue")))
+                        .then(Commands.literal("selftest-seat-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "seat")))
+                        .then(Commands.literal("selftest-gantry-live").executes(ctx -> gantryLifetimeSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -344,7 +418,15 @@ public final class CimSceneMod {
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
                                                 .executes(ctx -> galleryInv(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
-                                                        IntegerArgumentType.getInteger(ctx, "page")))))))
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("variant")
+                                .then(Commands.argument("kind", StringArgumentType.word())
+                                        .then(Commands.argument("namespace", StringArgumentType.word())
+                                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> galleryVariant(ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "kind"),
+                                                                StringArgumentType.getString(ctx, "namespace"),
+                                                                IntegerArgumentType.getInteger(ctx, "page"))))))))
                         .then(Commands.literal("probe-class").then(Commands.argument("fqn", StringArgumentType.string())
                                 .executes(ctx -> {
                                     String fqn = StringArgumentType.getString(ctx, "fqn");
@@ -373,7 +455,7 @@ public final class CimSceneMod {
                                     return 1;
                                 })))
         );
-        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome|inv]|probe-class)");
+        LOGGER.info("[cimscene] commands registered (/cimscene census|selftest|gallery[page|entity|item|particle|fluid|sound|gui|biome|inv|variant]|probe-class)");
     }
 
     // --- gallery (the universal mod-content wall, roadmap M5.5) ------------
@@ -435,6 +517,7 @@ public final class CimSceneMod {
      */
     private static int gallery(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "block page entry");
         writeGalleryIndex(level, namespace);
         String blockStem = "gallery-" + namespace + "-p" + page;
         int swept = sweepGalleryDrops(level);
@@ -564,6 +647,26 @@ public final class CimSceneMod {
     private static final int BLOCK_SETTLE_RETRIES = 8;
 
     /**
+     * The tile's settled state, gzipped NBT in base64 — tab/newline-free for
+     * the manifest-adjacent file. Never throws: a tile whose serializer fails
+     * loses its row (the dump falls back to the fresh BE), not its page.
+     */
+    private static String benbtB64(ServerLevel level, BlockEntity tile) {
+        try {
+            CompoundTag tag = CaptureBlockEntityData.snapshot(
+                    tile.saveWithoutMetadata(level.registryAccess()),
+                    tile.getUpdateTag(level.registryAccess()));
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            NbtIo.writeCompressed(tag, bos);
+            return Base64.getEncoder().encodeToString(bos.toByteArray());
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] gallery be nbt skip {}: {}",
+                    BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(tile.getType()), t.toString());
+            return null;
+        }
+    }
+
+    /**
      * Rewrite the page from what the wall holds now. Placed blocks fall, pop off
      * unsupported or turn into something else over the following ticks, and a
      * falling block can land on a cell that was empty. A cell the world emptied
@@ -582,6 +685,17 @@ public final class CimSceneMod {
         }
         int dissolved = 0;
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\tlight\n");
+        // 14-bn: the settled BEs' real NBT rides a SIBLING file (".benbt" — no
+        // ".tsv" suffix, so every manifest glob that counts pages stays
+        // blind to it): one row per BE cell — cell x y z nbt(base64 gzip).
+        // The quad dump loads it into its capture BE, so runtime state a mod
+        // only sets at runtime (the gearshift's shifted flag, the fluid
+        // pipe's flow data, the whistle's pressure) renders EXACTLY as the
+        // wall settled instead of the fresh BE's defaults; and the truth leg
+        // writes the same file from its own world, so the legs' BE-state
+        // convergence becomes byte-comparable like the manifests already are.
+        StringBuilder benbt = new StringBuilder("cell\tx\ty\tz\tnbt\n");
+        int benbtRows = 0;
         for (int i = 0; i < GALLERY_CELLS; i++) {
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
             BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
@@ -615,6 +729,15 @@ public final class CimSceneMod {
                     .append(stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))).append('\t')
                     .append(blockDynFlag(now)).append('\t')
                     .append(now.getLightEmission()).append('\n');
+            if (now.hasBlockEntity()) {
+                BlockEntity tile = level.getBlockEntity(pos);
+                String nbt = tile == null ? null : benbtB64(level, tile);
+                if (nbt != null) {
+                    benbt.append("cell\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
+                            .append(pos.getZ()).append('\t').append(nbt).append('\n');
+                    benbtRows++;
+                }
+            }
         }
 
         // drops from the settle window are not page content
@@ -629,6 +752,12 @@ public final class CimSceneMod {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
             Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+            Files.writeString(parent.resolve(manifest.replace(".tsv", ".light")),
+                    CaptureLightData.snapshot(level, tsv.toString()), StandardCharsets.UTF_8);
+            if (benbtRows > 0) {
+                String benbtFile = "gallery-" + namespace + "-p" + page + ".benbt";
+                Files.writeString(parent.resolve(benbtFile), benbt.toString(), StandardCharsets.UTF_8);
+            }
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] gallery manifest write failed {}: {}", manifest, ioe.toString());
         }
@@ -640,6 +769,1136 @@ public final class CimSceneMod {
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
         writeDoneMarkerFile(blockStem, false);
+        // 14-di THE SETTLE FREEZE: the world stops HERE, at the settle frame,
+        // before the walk's settle-shot loop fires a single md5 attempt — the
+        // javadoc on setGalleryFrozen is the law. The block series is the
+        // 436-RED universe (machines, doors, nixies, walls); every BE-ticker
+        // animation phase (the door slide/fold progress, the machine active
+        // states, the nixie tickers) now pins at this pass, the same relative
+        // tick every run, on both legs (the freeze broadcasts to the joined
+        // client and stops its mcmeta/particle/gameTime clocks too).
+        setGalleryFrozen(level.getServer(), true, "settle " + blockStem);
+    }
+
+    // --- variant gallery (the no-walk classes' real scenes, 14-dx) --------
+
+    /** Entity-grid variant kinds: the sparse pitch-2 6x3 wall (18 cells,
+     *  rows y=-60/-58/-56). Every subject on this grid is a live ENTITY
+     *  (the painting, the frozen mobs, the trim/enchant armor stands) — the
+     *  measured entity-grid law (no neighbour overlap by construction)
+     *  applies to them exactly as it applies to the entity walk. */
+    static final int VARIANT_CELLS_ENTITY = ENTITY_CELLS; // 18
+    /** Block-grid variant kinds: the block wall itself (11x7 = 77 cells,
+     *  pitch 1) — banner patterns, pot sherds and jukebox songs are real
+     *  BLOCKS placed like the block wall's states. */
+    static final int VARIANT_CELLS_BLOCK = GALLERY_CELLS; // 77
+
+    /** The variant kinds that render on the entity grid (everything else
+     *  is block-grid). Keep in lockstep with the ledger rows above. */
+    private static boolean variantEntityGrid(String kind) {
+        return switch (kind) {
+            case "painting", "wolf", "cat", "frog", "villager", "effect",
+                 "trimmaterial", "trimpattern", "enchant" -> true;
+            case "banner", "pot", "jukebox", "blockentity" -> false;
+            default -> false;
+        };
+    }
+
+    /**
+     * The no-walk classes' real scenes (roadmap audit "No-walk visual
+     * classes": "add real scenes and runtime assertions instead of excluding
+     * these registrations"). ONE command family, TWELVE kinds, every kind a
+     * REAL vanilla-mechanics rendering of the registry entry — zero per-mod
+     * code, the sweep is the registry walk, identical on both parity stacks
+     * (the same ordinary-mod code over the same registries):
+     *
+     * <ul>
+     *   <li>{@code painting} — a real {@link Painting} hung on a smooth
+     *       support wall behind the wall plane, facing the camera; variants
+     *       wider/taller than 2 blocks are named {@code oversized} skips
+     *       (the pitch-2 grid cannot isolate a 3x3+ painting from its
+     *       neighbours without a per-subject page geometry).</li>
+     *   <li>{@code wolf} / {@code cat} / {@code frog} — the real mob spawned
+     *       frozen (the entity walk's NoAI+NoGravity+Invulnerable contract)
+     *       with the variant set through the entity's own public API.</li>
+     *   <li>{@code villager} — a frozen villager with
+     *       {@code setVillagerData(new VillagerData(type, NONE, 1))}.</li>
+     *   <li>{@code effect} — a frozen pig carrying the real
+     *       {@link MobEffectInstance} (visible, so the client draws the
+     *       ambient effect particles) — the settle pass asserts the effect
+     *       is STILL ACTIVE, not just that the entity lives.</li>
+     *   <li>{@code trimmaterial} / {@code trimpattern} — an armor stand
+     *       wearing an iron chestplate whose {@code minecraft:trim}
+     *       component pairs every material with a fixed pattern (first
+     *       sorted id, deterministic) / every pattern with a fixed
+     *       material.</li>
+     *   <li>{@code enchant} — an armor stand HOLDING an iron sword with the
+     *       real {@code minecraft:enchantments} component (the glint is the
+     *       client-side proof; dyn=1, the glint shimmers).</li>
+     *   <li>{@code banner} — a real white standing banner whose
+     *       {@code minecraft:banner_patterns} BE state carries the pattern
+     *       (built through {@code BannerBlockEntity#fromItem}, the vanilla
+     *       item->BE path).</li>
+     *   <li>{@code pot} — a real decorated pot whose sherds resolve the
+     *       pattern through {@code DecoratedPotPatterns#getPatternFromItem}
+     *       (the vanilla item->pattern link, scanned once and cached; a
+     *       pattern with no sherd is a named {@code no-sherd} skip).</li>
+     *   <li>{@code jukebox} — a real jukebox holding the disc whose
+     *       {@code minecraft:jukebox_playable} component resolves to the
+     *       song, PLAYING (the runtime assertion is
+     *       {@code getSongPlayer().isPlaying()} at settle); the song stops
+     *       when the next page's clear discards the BE.</li>
+     * </ul>
+     *
+     * <p>Manifest per page {@code c-imagine/scenes/gallery-variant-<kind>-<ns>-p<p>.tsv}
+     * rows {@code cell|x|y|z|subject|dyn|note} — the SAME 7-column shape the
+     * entity manifests use, so the gate's absence-note join works unchanged.
+     * Every failure is a named skip row ({@code no-instance}, {@code
+     * failed:<t>}, {@code oversized}, {@code no-sherd}, {@code no-disc},
+     * {@code dissolved}, ...); the settle pass (40 ticks, then the 12-as
+     * final rewrite 40 ticks later) re-reads what the world HOLDS — the
+     * 14-di law (the manifest carries the settled state) applies. The world
+     * is NOT frozen by this walk (the subjects are entity-flavored; the next
+     * block page re-arms the freeze at its own settle, per the 14-di
+     * unfreeze contract every gallery command entry follows).
+     *
+     * <p>THE OURS LEG (named lane, intentionally not replayed yet): the
+     * classes ride registries the vanilla 26.3 client does not carry — the
+     * F2V projection per kind is the named next lane (the same
+     * diagnostic-first shape the sound/gui/biome walks shipped in). The
+     * coverage gate runs these classes DIAGNOSTIC-first; the missing ours
+     * shots are the named backlog, reported loudly, never red.
+     */
+    private static int galleryVariant(CommandSourceStack src, String kind, String namespace, int page) {
+        if (!variantKindKnown(kind)) {
+            LOGGER.info("[cimscene] gallery-variant unknown kind={} (known: painting, wolf, cat, frog, "
+                    + "villager, effect, trimmaterial, trimpattern, banner, pot, enchant, jukebox)", kind);
+            src.sendFailure(Component.literal("[cimscene] unknown variant kind: " + kind));
+            return 0;
+        }
+        ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "variant page entry");
+        // shared supersession channel: a NEW page command (any series) must
+        // supersede this series' pending settle passes the same way the
+        // entity walk's passes supersede each other
+        final int gen = ++entityPageGen;
+        writeGalleryIndex(level, namespace);
+        int swept = sweepGalleryDrops(level);
+        if (swept > 0) {
+            LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
+        }
+        String stem = "gallery-variant-" + kind + "-" + namespace + "-p" + page;
+        boolean entityGrid = variantEntityGrid(kind);
+        int cellsPerPage = entityGrid ? VARIANT_CELLS_ENTITY : VARIANT_CELLS_BLOCK;
+
+        List<ResourceLocation> entries = variantEntries(level, kind, namespace);
+        if (entries == null) {
+            // the dynamic registry itself is unreadable: terminate the walk
+            // honestly (the ledger's -1 row already reds the coverage) — a
+            // hang here would burn the CI wait for nothing
+            writeDoneMarkerFile(stem, true);
+            LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells=0 failed=0 "
+                    + "skipped=0 exhausted=1 registry-unreadable=1", kind, namespace, page);
+            return 0;
+        }
+
+        LOGGER.info("[cimscene] gallery-variant begin kind={} ns={} page={} entries={} cellsPerPage={}",
+                kind, namespace, page, entries.size(), cellsPerPage);
+
+        int from = page * cellsPerPage;
+        if (from >= entries.size()) {
+            writeDoneMarkerFile(stem, true);
+            LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells=0 failed=0 "
+                    + "skipped=0 exhausted=1", kind, namespace, page);
+            return 0;
+        }
+        List<ResourceLocation> slice = entries.subList(from, Math.min(from + cellsPerPage, entries.size()));
+
+        // the wall region: blocks swept (both grids live inside the shared
+        // clearWall box) and stale gallery entities killed — the same hygiene
+        // the entity walk runs, because a prior page's subjects photobomb the
+        // crops exactly the same way
+        clearWall(level);
+        killStaleGalleryEntities(level);
+
+        final List<Entity> spawned = new ArrayList<>();
+        final List<Integer> spawnedIdx = new ArrayList<>();
+        final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
+        int failed = 0;
+        int kindBlocks = 0; // block-grid kinds: the placed block cells
+
+        switch (kind) {
+            case "painting" -> {
+                fillPaintingSupport(level);
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    try {
+                        Holder<PaintingVariant> holder = dynamicHolder(level, Registries.PAINTING_VARIANT, id);
+                        PaintingVariant variant = holder.value();
+                        if (variant.width() > 2 || variant.height() > 2) {
+                            skipNotes.put(i, "oversized");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=painting ns={} page={} index={} "
+                                    + "reason=oversized {}x{} subject={}", namespace, page, from + i,
+                                    variant.width(), variant.height(), id);
+                            continue;
+                        }
+                        // the painting FACES the camera (north = -z, the camera
+                        // sits at z<9 looking +z) and hangs on the support wall
+                        // at z+1 (direction.getOpposite() — the vanilla
+                        // HangingEntity.survives() contract)
+                        Painting p = new Painting(level, cell, Direction.NORTH, holder);
+                        if (!p.survives()) {
+                            skipNotes.put(i, "no-support");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=painting ns={} page={} index={} "
+                                    + "reason=no-support subject={}", namespace, page, from + i, id);
+                            continue;
+                        }
+                        p.setInvulnerable(true);
+                        p.addTag(GALLERY_TAG);
+                        level.addFreshEntity(p);
+                        spawned.add(p);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind=painting ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "wolf", "cat", "frog", "villager", "effect" -> {
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+                    double cy = GALLERY_Y0 + row * ENTITY_PITCH;
+                    double cz = GALLERY_Z + 0.5;
+                    try {
+                        Entity e = switch (kind) {
+                            case "wolf" -> {
+                                Wolf w = new Wolf(net.minecraft.world.entity.EntityType.WOLF, level);
+                                w.setVariant(dynamicHolder(level, Registries.WOLF_VARIANT, id));
+                                yield w;
+                            }
+                            case "cat" -> {
+                                Cat c = new Cat(net.minecraft.world.entity.EntityType.CAT, level);
+                                c.setVariant(staticHolder(BuiltInRegistries.CAT_VARIANT, id));
+                                yield c;
+                            }
+                            case "frog" -> {
+                                Frog f = new Frog(net.minecraft.world.entity.EntityType.FROG, level);
+                                f.setVariant(staticHolder(BuiltInRegistries.FROG_VARIANT, id));
+                                yield f;
+                            }
+                            case "villager" -> {
+                                VillagerType type = BuiltInRegistries.VILLAGER_TYPE.get(id);
+                                if (type == null) {
+                                    skipNotes.put(i, "no-instance");
+                                    LOGGER.info("[cimscene] gallery-variant skip kind=villager ns={} page={} "
+                                            + "index={} reason=no-instance subject={}", namespace, page, from + i, id);
+                                    yield null;
+                                }
+                                Villager v = new Villager(net.minecraft.world.entity.EntityType.VILLAGER, level, type);
+                                v.setVillagerData(new VillagerData(type, VillagerProfession.NONE, 1));
+                                yield v;
+                            }
+                            case "effect" -> {
+                                Pig pig = new Pig(net.minecraft.world.entity.EntityType.PIG, level);
+                                pig.addEffect(new MobEffectInstance(
+                                        staticHolder(BuiltInRegistries.MOB_EFFECT, id), EFFECT_DURATION, 0, false, true));
+                                yield pig;
+                            }
+                            default -> null;
+                        };
+                        if (e == null) {
+                            continue;
+                        }
+                        if (!freezeVariantSubject(e)) {
+                            failed++;
+                            skipNotes.put(i, "failed:configure");
+                            LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                    + "reason=failed:configure subject={}", kind, namespace, page, from + i, id);
+                            continue;
+                        }
+                        e.moveTo(cx, cy, cz, 180.0f, 0.0f);
+                        e.setYHeadRot(180.0f);
+                        e.setYBodyRot(180.0f);
+                        e.addTag(GALLERY_TAG);
+                        level.addFreshEntity(e);
+                        spawned.add(e);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", kind, namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "trimmaterial", "trimpattern" -> {
+                Holder<net.minecraft.world.item.armortrim.TrimPattern> fixedPattern = null;
+                Holder<net.minecraft.world.item.armortrim.TrimMaterial> fixedMaterial = null;
+                try {
+                    if ("trimmaterial".equals(kind)) {
+                        fixedPattern = dynamicHolder(level, Registries.TRIM_PATTERN, firstIdOrThrow(level, Registries.TRIM_PATTERN));
+                    } else {
+                        fixedMaterial = dynamicHolder(level, Registries.TRIM_MATERIAL, firstIdOrThrow(level, Registries.TRIM_MATERIAL));
+                    }
+                } catch (Throwable t) {
+                    LOGGER.error("[cimscene] gallery-variant {} fixed-half resolve failed: {}", kind, t.toString());
+                }
+                final Holder<net.minecraft.world.item.armortrim.TrimPattern> fp = fixedPattern;
+                final Holder<net.minecraft.world.item.armortrim.TrimMaterial> fm = fixedMaterial;
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+                    double cy = GALLERY_Y0 + row * ENTITY_PITCH;
+                    double cz = GALLERY_Z + 0.5;
+                    try {
+                        ArmorStand stand = new ArmorStand(net.minecraft.world.entity.EntityType.ARMOR_STAND, level);
+                        ItemStack chest = new ItemStack(Items.IRON_CHESTPLATE);
+                        if ("trimmaterial".equals(kind)) {
+                            chest.set(DataComponents.TRIM, new ArmorTrim(
+                                    dynamicHolder(level, Registries.TRIM_MATERIAL, id), fp));
+                        } else {
+                            chest.set(DataComponents.TRIM, new ArmorTrim(fm,
+                                    dynamicHolder(level, Registries.TRIM_PATTERN, id)));
+                        }
+                        if (!freezeVariantSubject(stand)) {
+                            failed++;
+                            skipNotes.put(i, "failed:configure");
+                            continue;
+                        }
+                        stand.moveTo(cx, cy, cz, 180.0f, 0.0f);
+                        stand.setYHeadRot(180.0f);
+                        stand.setYBodyRot(180.0f);
+                        stand.addTag(GALLERY_TAG);
+                        level.addFreshEntity(stand);
+                        // wear AFTER the join: the equipment broadcast rides the
+                        // spawn + equipment packets in order
+                        stand.setItemSlot(EquipmentSlot.CHEST, chest);
+                        spawned.add(stand);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", kind, namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "enchant" -> {
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % ENTITY_COLS, row = i / ENTITY_COLS;
+                    double cx = GALLERY_X0 + col * ENTITY_PITCH + 0.5;
+                    double cy = GALLERY_Y0 + row * ENTITY_PITCH;
+                    double cz = GALLERY_Z + 0.5;
+                    try {
+                        ArmorStand stand = new ArmorStand(net.minecraft.world.entity.EntityType.ARMOR_STAND, level);
+                        ItemStack sword = new ItemStack(Items.IRON_SWORD);
+                        // ItemEnchantments.Mutable.set returns void — the
+                        // chain goes through a local
+                        ItemEnchantments.Mutable ench = new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
+                        ench.set(dynamicHolder(level, Registries.ENCHANTMENT, id), 1);
+                        sword.set(DataComponents.ENCHANTMENTS, ench.toImmutable());
+                        if (!freezeVariantSubject(stand)) {
+                            failed++;
+                            skipNotes.put(i, "failed:configure");
+                            continue;
+                        }
+                        stand.moveTo(cx, cy, cz, 180.0f, 0.0f);
+                        stand.setYHeadRot(180.0f);
+                        stand.setYBodyRot(180.0f);
+                        stand.addTag(GALLERY_TAG);
+                        level.addFreshEntity(stand);
+                        stand.setItemSlot(EquipmentSlot.MAINHAND, sword);
+                        spawned.add(stand);
+                        spawnedIdx.add(i);
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.put(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind=enchant ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "banner", "pot", "jukebox" -> {
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+                    BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+                    try {
+                        boolean placed = switch (kind) {
+                            case "banner" -> {
+                                level.setBlock(pos, Blocks.WHITE_BANNER.defaultBlockState(), Block.UPDATE_CLIENTS);
+                                if (level.getBlockEntity(pos) instanceof BannerBlockEntity be) {
+                                    ItemStack item = new ItemStack(Items.WHITE_BANNER);
+                                    item.set(DataComponents.BANNER_PATTERNS, new BannerPatternLayers(java.util.List.of(
+                                            new BannerPatternLayers.Layer(
+                                                    dynamicHolder(level, Registries.BANNER_PATTERN, id), DyeColor.BLACK))));
+                                    be.fromItem(item, DyeColor.WHITE);
+                                    be.setChanged();
+                                    yield true;
+                                }
+                                yield false;
+                            }
+                            case "pot" -> {
+                                Item sherd = potSherdForPattern(id);
+                                if (sherd == null) {
+                                    skipNotes.put(i, "no-sherd");
+                                    LOGGER.info("[cimscene] gallery-variant skip kind=pot ns={} page={} index={} "
+                                            + "reason=no-sherd subject={}", namespace, page, from + i, id);
+                                    yield true; // the row is already named; no block
+                                }
+                                level.setBlock(pos, Blocks.DECORATED_POT.defaultBlockState(), Block.UPDATE_CLIENTS);
+                                if (level.getBlockEntity(pos) instanceof DecoratedPotBlockEntity be) {
+                                    be.setFromItem(DecoratedPotBlockEntity.createDecoratedPotItem(
+                                            new PotDecorations(sherd, sherd, sherd, sherd)));
+                                    be.setChanged();
+                                    yield true;
+                                }
+                                yield false;
+                            }
+                            case "jukebox" -> {
+                                ItemStack disc = discForSong(level, id);
+                                if (disc == null) {
+                                    skipNotes.put(i, "no-disc");
+                                    LOGGER.info("[cimscene] gallery-variant skip kind=jukebox ns={} page={} index={} "
+                                            + "reason=no-disc subject={}", namespace, page, from + i, id);
+                                    yield true; // the row is already named; no block
+                                }
+                                level.setBlock(pos, Blocks.JUKEBOX.defaultBlockState(), Block.UPDATE_CLIENTS);
+                                if (level.getBlockEntity(pos) instanceof JukeboxBlockEntity be) {
+                                    be.setTheItem(disc);
+                                    be.getSongPlayer().play(level, dynamicHolder(level, Registries.JUKEBOX_SONG, id));
+                                    be.setChanged();
+                                    yield true;
+                                }
+                                yield false;
+                            }
+                            default -> false;
+                        };
+                        if (placed && !skipNotes.containsKey(i)) {
+                            kindBlocks++;
+                        }
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.putIfAbsent(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind={} ns={} page={} index={} "
+                                + "reason=failed subject={} err={}", kind, namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            case "blockentity" -> {
+                // 14-ec THE BLOCKENTITY LANE (the coverage audit's named lane
+                // for the special-BE class): the reconciliation predicate
+                // names every BE type whose every valid state is
+                // fluid-carried or RenderShape.INVISIBLE — the types the
+                // BLOCK WALL structurally cannot carry (the sign/canvas
+                // families render wholly through their BlockEntityRenderer,
+                // the skull/head families attach only through their items,
+                // the multiblock/moving internals never exist as bare wall
+                // states). The variant lane instantiates EACH type at its
+                // own cell through the subject's REAL placement surface:
+                // the BlockItem used against the z+1 support plane (the same
+                // measured item route the gui lanes ride — the placement
+                // that produces the real BER content), falling back to the
+                // direct setBlock of a valid state when no item exists. The
+                // settle pass asserts the BE TYPE the world HOLDS at the
+                // cell (the coverage contract: the type instantiated, not a
+                // lookalike block); a type the lane cannot instantiate is a
+                // named skip row the gate keeps red.
+                fillPaintingSupport(level);
+                net.neoforged.neoforge.common.util.FakePlayer placer =
+                        new net.neoforged.neoforge.common.util.FakePlayer(level, VARIANT_BE_PLACER);
+                placer.moveTo(GALLERY_X0 + 5.0, GALLERY_Y0 + 3.0, GALLERY_Z - 2.0, 180.0f, 0.0f);
+                for (int i = 0; i < slice.size(); i++) {
+                    ResourceLocation id = slice.get(i);
+                    int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
+                    BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+                    try {
+                        BePlacement plan = bePlacementPlan(id);
+                        if (plan == null) {
+                            skipNotes.put(i, "no-valid-state");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=blockentity ns={} page={} "
+                                            + "index={} reason=no-valid-state subject={}",
+                                    namespace, page, from + i, id);
+                            continue;
+                        }
+                        boolean placed = false;
+                        String route = "setblock";
+                        if (plan.item() != null) {
+                            route = "item";
+                            ItemStack stack = new ItemStack(plan.item());
+                            placer.setItemInHand(InteractionHand.MAIN_HAND, stack);
+                            BlockPos support = pos.south();
+                            BlockHitResult hit = new BlockHitResult(
+                                    Vec3.atCenterOf(support).relative(Direction.NORTH, 0.5),
+                                    Direction.NORTH, support, false);
+                            try {
+                                placed = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
+                                        placer, InteractionHand.MAIN_HAND, hit)).consumesAction();
+                            } finally {
+                                placer.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                            }
+                        }
+                        if (!placed) {
+                            route = "setblock";
+                            level.setBlock(pos, plan.state(), Block.UPDATE_CLIENTS);
+                            placed = !level.getBlockState(pos).isAir();
+                        }
+                        if (placed) {
+                            kindBlocks++;
+                            LOGGER.info("[cimscene] gallery-variant blockentity ns={} page={} index={} "
+                                            + "subject={} route={}", namespace, page, from + i, id, route);
+                        } else {
+                            skipNotes.put(i, "failed:place");
+                            LOGGER.info("[cimscene] gallery-variant skip kind=blockentity ns={} page={} "
+                                            + "index={} reason=failed:place subject={}",
+                                    namespace, page, from + i, id);
+                        }
+                    } catch (Throwable t) {
+                        failed++;
+                        skipNotes.putIfAbsent(i, "failed:" + t.getClass().getName());
+                        LOGGER.info("[cimscene] gallery-variant skip kind=blockentity ns={} page={} "
+                                        + "index={} reason=failed subject={} err={}",
+                                namespace, page, from + i, id, t.toString());
+                    }
+                }
+            }
+            default -> {
+                // variantKindKnown guards this; unreachable
+            }
+        }
+
+        final ServerLevel fLevel = level;
+        final String fNs = namespace;
+        final int fPage = page;
+        final List<ResourceLocation> fSlice = slice;
+        final int fFrom = from;
+        final int fFailed = failed;
+        final String fKind = kind;
+        final int fKindBlocks = kindBlocks;
+        runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleVariantPage(
+                fLevel, fKind, fNs, fPage, fSlice, spawned, spawnedIdx, skipNotes, fFrom, gen,
+                fFailed, fKindBlocks, false));
+        return spawned.size() + kindBlocks;
+    }
+
+    /** The known variant kinds (the dispatcher's kind argument is free-form
+     *  text — an unknown kind must fail LOUDLY, not walk nothing). */
+    private static boolean variantKindKnown(String kind) {
+        return switch (kind) {
+            case "painting", "wolf", "cat", "frog", "villager", "effect",
+                 "trimmaterial", "trimpattern", "banner", "pot", "enchant",
+                 "jukebox", "blockentity" -> true;
+            default -> false;
+        };
+    }
+
+    /** 10 minutes: the effect/jukebox assertions must outlive the settle
+     *  window and the shot, never the walk (pages are killed per page). */
+    private static final int EFFECT_DURATION = 20 * 60 * 10;
+
+    /** Sorted ids of the namespace from the kind's registry; null = the
+     *  dynamic registry itself is unreadable (the honest walk termination). */
+    private static List<ResourceLocation> variantEntries(ServerLevel level, String kind, String namespace) {
+        return switch (kind) {
+            // dynamic (datapack) registries — read through the level's access
+            case "painting" -> dynamicIds(level, Registries.PAINTING_VARIANT, namespace);
+            case "wolf" -> dynamicIds(level, Registries.WOLF_VARIANT, namespace);
+            case "trimmaterial" -> dynamicIds(level, Registries.TRIM_MATERIAL, namespace);
+            case "trimpattern" -> dynamicIds(level, Registries.TRIM_PATTERN, namespace);
+            case "banner" -> dynamicIds(level, Registries.BANNER_PATTERN, namespace);
+            case "enchant" -> dynamicIds(level, Registries.ENCHANTMENT, namespace);
+            case "jukebox" -> dynamicIds(level, Registries.JUKEBOX_SONG, namespace);
+            // static BuiltIn registries
+            case "cat" -> sortedIdsOf(BuiltInRegistries.CAT_VARIANT, namespace);
+            case "frog" -> sortedIdsOf(BuiltInRegistries.FROG_VARIANT, namespace);
+            case "villager" -> sortedIdsOf(BuiltInRegistries.VILLAGER_TYPE, namespace);
+            case "effect" -> sortedIdsOf(BuiltInRegistries.MOB_EFFECT, namespace);
+            case "pot" -> sortedIdsOf(BuiltInRegistries.DECORATED_POT_PATTERN, namespace);
+            case "blockentity" -> sortedIdsOf(BuiltInRegistries.BLOCK_ENTITY_TYPE, namespace);
+            default -> List.of();
+        };
+    }
+
+    /** Sorted ids of a static (BuiltIn) registry for one namespace. */
+    private static List<ResourceLocation> sortedIdsOf(Registry<?> reg, String namespace) {
+        List<ResourceLocation> ids = new ArrayList<>(reg.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> out = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
+    /** Sorted ids of a namespace from a DATAPACK (dynamic) registry; null
+     *  when the registry itself cannot be read — the walk terminates
+     *  honestly (the ledger's -1 row already reds the coverage). */
+    @SuppressWarnings("unchecked")
+    private static List<ResourceLocation> dynamicIds(ServerLevel level,
+                                                     ResourceKey<? extends Registry<?>> key,
+                                                     String namespace) {
+        try {
+            Registry<?> reg = level.registryAccess().registryOrThrow((ResourceKey) key);
+            return sortedIdsOf(reg, namespace);
+        } catch (Throwable t) {
+            LOGGER.error("[cimscene] gallery-variant dynamic registry unreadable {}: {}",
+                    key.location(), t.toString());
+            return null;
+        }
+    }
+
+    /** Holder from a static (BuiltIn) registry by id. */
+    private static <T> Holder<T> staticHolder(Registry<T> reg, ResourceLocation id) {
+        return reg.getHolderOrThrow(ResourceKey.create(reg.key(), id));
+    }
+
+    /** Holder from a dynamic (datapack) registry through the level's access. */
+    @SuppressWarnings("unchecked")
+    private static <T> Holder<T> dynamicHolder(ServerLevel level,
+                                               ResourceKey<? extends Registry<T>> key,
+                                               ResourceLocation id) {
+        return level.registryAccess().registryOrThrow(key)
+                .getHolderOrThrow(ResourceKey.create(key, id));
+    }
+
+    /** First sorted id of a dynamic registry (the fixed half of the
+     *  trim pairing — deterministic on both stacks, same registries). */
+    private static ResourceLocation firstIdOrThrow(ServerLevel level,
+                                                   ResourceKey<? extends Registry<?>> key) {
+        List<ResourceLocation> ids = dynamicIds(level, key, "");
+        // dynamicIds never filters the minecraft ns away; the full sorted
+        // list's first entry is the pairing constant
+        if (ids == null || ids.isEmpty()) {
+            throw new IllegalStateException("empty dynamic registry " + key.location());
+        }
+        return ids.get(0);
+    }
+
+    /**
+     * Freeze contract for the variant subjects (the entity walk's measured
+     * rules): Mobs get NoAI + persistence (a still picture), everything gets
+     * NoGravity + Invulnerable. Returns false when the subject is not a
+     * creature this walk knows how to freeze (never expected — the kinds
+     * spawn Wolf/Cat/Frog/Villager/Pig/ArmorStand by construction).
+     */
+    private static boolean freezeVariantSubject(Entity e) {
+        e.setNoGravity(true);
+        e.setInvulnerable(true);
+        if (e instanceof Mob m) {
+            m_setNoAi(m);
+        } else if (!(e instanceof ArmorStand)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * The painting support wall: smooth stone filling the plane BEHIND the
+     * wall grid (z = GALLERY_Z + 1) so every hung painting passes the vanilla
+     * {@code HangingEntity#survives()} check (the attached block is
+     * {@code direction.getOpposite()} = south = z+1 for the north-facing
+     * paintings). Cleared by every page's clearWall first — the fill is the
+     * painting kind's own addition.
+     */
+    private static void fillPaintingSupport(ServerLevel level) {
+        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
+            for (int y = GALLERY_Y0 - 1; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
+                level.setBlock(new BlockPos(x, y, GALLERY_Z + 1),
+                        Blocks.SMOOTH_STONE.defaultBlockState(), Block.UPDATE_CLIENTS);
+            }
+        }
+    }
+
+    /** Shared stale-subject sweep (the entity walk's box and tag contract). */
+    private static void killStaleGalleryEntities(ServerLevel level) {
+        AABB sweep = new AABB(GALLERY_X0 - 1, GALLERY_Y0, GALLERY_Z - 1,
+                GALLERY_X0 + GALLERY_COLS + 1, GALLERY_Y0 + GALLERY_ROWS + 3, GALLERY_Z + 2);
+        List<Entity> stale = level.getEntitiesOfClass(Entity.class, sweep,
+                e -> e.getTags().contains(GALLERY_TAG));
+        for (Entity e : stale) {
+            e.discard();
+        }
+        if (!stale.isEmpty()) {
+            LOGGER.info("[cimscene] gallery stale-entity sweep removed={}", stale.size());
+        }
+    }
+
+    // --- 14-ea/14-eb/14-ec: the dissolve-class and special-BE instruments --
+
+    /**
+     * 14-ea THE MOTION PIN — the frozen-subject law applied to the entity
+     * walk's projectile rows (the measured #42899212217 verdict: supplementaries
+     * bomb / brick_projectile / cannonball / falling_ash / falling_sack /
+     * falling_urn / pearl_marker / slimeball_projectile and dynamictrees
+     * falling_tree / lingering_effector all settled as {@code dissolved}).
+     * The spawn path already writes NoGravity+Invulnerable, but a projectile's
+     * OWN tick re-applies its hardcoded gravity (FallingBlockEntity.tick and
+     * ThrowableProjectile.tick both {@code setDeltaMovement(+g)} INSIDE the
+     * tick body, ungated by NoGravity) and self-animating subjects fly, fall
+     * and explode before the settle pass re-reads them 40 ticks later — every
+     * such subject settled as {@code dissolved} (gone or drift &gt; 1.0).
+     * The pin re-zeros each spawn's delta movement EVERY server tick from the
+     * spawn through the settle and the shot window ({@link
+     * #MOTION_PIN_GRACE_TICKS}), so the cell position the manifest carries is
+     * the position the shot draws. The subjects' own tick timers still run
+     * (no fabricated state, no per-mod code): a fuse that expires inside the
+     * window still dies, and the manifest honestly names it — the pin buys
+     * the physics window, not immortality.
+     */
+    private static final java.util.Map<Entity, Integer> MOTION_PINNED =
+            new java.util.IdentityHashMap<>();
+    /** The settle (40 ticks) plus the shot window the pin must outlive. */
+    static final int MOTION_PIN_GRACE_TICKS = 160;
+
+    private static void drainMotionPin(int now) {
+        if (MOTION_PINNED.isEmpty()) {
+            return;
+        }
+        MOTION_PINNED.entrySet().removeIf(en -> {
+            Entity e = en.getKey();
+            if (now >= en.getValue() || e.isRemoved()) {
+                return true;
+            }
+            try {
+                e.setDeltaMovement(Vec3.ZERO);
+            } catch (Throwable ignored) {
+                // a pin failure must never kill the tick loop — the settle
+                // pass re-reads the real state and names the drifted subject
+            }
+            return false;
+        });
+    }
+
+    /**
+     * 14-eb THE SPAWN-SUPPORT TABLE: the subjects that only live on their
+     * own support block, placed at the cell's ground BEFORE the spawn (the
+     * same shape the painting kind's support wall uses — the support rides
+     * the cell's picture on both legs because both stacks run this same
+     * code). mekanism:robit removes itself when it has no charge pad to call
+     * home (the measured #42899212217 entity-mobs verdict named
+     * {@code mekanism:robit(dissolved)} while every other frozen mob held
+     * its cell; the gui lane's bare-spawn comment already recorded the same
+     * removal) — the pad-first placement is the named fix. A subject without
+     * a table entry places nothing (zero behavior change); a table entry
+     * whose block is absent from the registry is a named {@code no-support}
+     * skip row (honest, never a crash).
+     */
+    private static ResourceLocation spawnSupportFor(ResourceLocation id) {
+        if ("mekanism:robit".equals(id.toString())) {
+            return ResourceLocation.parse("mekanism:chargepad");
+        }
+        return null;
+    }
+
+    /** The 14-ec blockentity lane's placer identity (the same shape the
+     *  GuiProbe profile uses — a fixed UUID so the placement is
+     *  deterministic run to run). */
+    private static final com.mojang.authlib.GameProfile VARIANT_BE_PLACER =
+            new com.mojang.authlib.GameProfile(
+                    java.util.UUID.nameUUIDFromBytes("cimscene-vbe".getBytes(StandardCharsets.UTF_8)),
+                    "cimscene-vbe");
+
+    /** The 14-ec per-type placement plan: a valid placeable state plus the
+     *  item that places it (null when the block ships no BlockItem). */
+    private record BePlacement(BlockState state, Item item) {}
+
+    private static volatile Map<String, BePlacement> BE_PLACEMENTS;
+    private static final Object BE_PLACEMENT_LOCK = new Object();
+
+    /** The 14-ec plan for one BE type id; null when the type has no valid
+     *  non-fluid block state at all (nothing in the world can instantiate
+     *  it — the honest {@code no-valid-state} skip). */
+    private static BePlacement bePlacementPlan(ResourceLocation beTypeId) {
+        Map<String, BePlacement> m = BE_PLACEMENTS;
+        if (m == null) {
+            synchronized (BE_PLACEMENT_LOCK) {
+                if (BE_PLACEMENTS == null) {
+                    BE_PLACEMENTS = buildBePlacements();
+                }
+                m = BE_PLACEMENTS;
+            }
+        }
+        return m.get(beTypeId.toString());
+    }
+
+    /**
+     * The 14-ec plan builder (once per server, the reconciliation's own
+     * O(states x BE-types) cost): for each BE type, the first valid
+     * fluid-empty state with a VISIBLE render shape (the wall-reachable
+     * case — the item route produces the real placement), else the first
+     * fluid-empty valid state (the INVISIBLE families the block wall skips
+     * — the exact class the lane exists for), plus the block's BlockItem
+     * when one exists. Types with no valid non-fluid state map to no plan.
+     */
+    private static Map<String, BePlacement> buildBePlacements() {
+        Map<Block, Item> blockItems = new java.util.HashMap<>();
+        for (ResourceLocation iid : BuiltInRegistries.ITEM.keySet()) {
+            Item it = BuiltInRegistries.ITEM.get(iid);
+            if (it instanceof net.minecraft.world.item.BlockItem bi) {
+                blockItems.putIfAbsent(bi.getBlock(), it);
+            }
+        }
+        Map<String, BePlacement> out = new java.util.HashMap<>();
+        for (ResourceLocation beId : BuiltInRegistries.BLOCK_ENTITY_TYPE.keySet()) {
+            BlockEntityType<?> type = BuiltInRegistries.BLOCK_ENTITY_TYPE.get(beId);
+            if (type == null) {
+                continue;
+            }
+            BlockState chosen = null;
+            BlockState fallback = null;
+            for (ResourceLocation bid : BuiltInRegistries.BLOCK.keySet()) {
+                for (BlockState st : BuiltInRegistries.BLOCK.get(bid)
+                        .getStateDefinition().getPossibleStates()) {
+                    if (!type.isValid(st) || !st.getFluidState().isEmpty()) {
+                        continue;
+                    }
+                    if (st.getRenderShape() != RenderShape.INVISIBLE) {
+                        chosen = st;
+                        break;
+                    }
+                    if (fallback == null) {
+                        fallback = st;
+                    }
+                }
+                if (chosen != null) {
+                    break;
+                }
+            }
+            if (chosen == null) {
+                chosen = fallback;
+            }
+            if (chosen == null) {
+                continue;
+            }
+            out.put(beId.toString(), new BePlacement(chosen, blockItems.get(chosen.getBlock())));
+        }
+        return java.util.Collections.unmodifiableMap(out);
+    }
+
+
+    /** Sherd item for a decorated-pot pattern id (the vanilla item->pattern
+     *  link scanned once per boot and cached; BLANK never resolves — the
+     *  blank pattern has no sherd by vanilla's own construction). */
+    private static Item potSherdForPattern(ResourceLocation patternId) {
+        Map<ResourceLocation, Item> sherds = potSherds();
+        return sherds.get(patternId);
+    }
+
+    private static volatile Map<ResourceLocation, Item> POT_SHERDS;
+    private static final Object POT_SHERD_LOCK = new Object();
+
+    private static Map<ResourceLocation, Item> potSherds() {
+        Map<ResourceLocation, Item> m = POT_SHERDS;
+        if (m != null) {
+            return m;
+        }
+        synchronized (POT_SHERD_LOCK) {
+            if (POT_SHERDS == null) {
+                Map<ResourceLocation, Item> built = new java.util.HashMap<>();
+                for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+                    Item item = BuiltInRegistries.ITEM.get(itemId);
+                    if (item == null) {
+                        continue;
+                    }
+                    ResourceKey<net.minecraft.world.level.block.entity.DecoratedPotPattern> key =
+                            DecoratedPotPatterns.getPatternFromItem(item);
+                    if (key == null || DecoratedPotPatterns.BLANK.equals(key)) {
+                        continue;
+                    }
+                    built.putIfAbsent(key.location(), item);
+                }
+                POT_SHERDS = java.util.Collections.unmodifiableMap(built);
+                LOGGER.info("[cimscene] gallery-variant sherd index built: {} pattern->sherd mappings", built.size());
+            }
+            return POT_SHERDS;
+        }
+    }
+
+    /**
+     * The disc whose {@code minecraft:jukebox_playable} component resolves
+     * to the song id (the vanilla item->song link scanned once per boot and
+     * cached; a song with no disc is a named {@code no-disc} skip — real
+     * content the wall cannot host by vanilla's own mapping).
+     */
+    private static ItemStack discForSong(ServerLevel level, ResourceLocation songId) {
+        Map<ResourceLocation, ResourceLocation> discs = jukeboxDiscs(level);
+        ResourceLocation itemId = discs.get(songId);
+        if (itemId == null) {
+            return null;
+        }
+        Item item = BuiltInRegistries.ITEM.get(itemId);
+        return item == null ? null : new ItemStack(item);
+    }
+
+    private static volatile Map<ResourceLocation, ResourceLocation> JUKEBOX_DISCS;
+    private static final Object JUKEBOX_DISC_LOCK = new Object();
+
+    private static Map<ResourceLocation, ResourceLocation> jukeboxDiscs(ServerLevel level) {
+        Map<ResourceLocation, ResourceLocation> m = JUKEBOX_DISCS;
+        if (m != null) {
+            return m;
+        }
+        synchronized (JUKEBOX_DISC_LOCK) {
+            if (JUKEBOX_DISCS == null) {
+                Map<ResourceLocation, ResourceLocation> built = new java.util.HashMap<>();
+                for (ResourceLocation itemId : BuiltInRegistries.ITEM.keySet()) {
+                    Item item = BuiltInRegistries.ITEM.get(itemId);
+                    if (item == null) {
+                        continue;
+                    }
+                    try {
+                        // the disc's DEFAULT components carry the playable
+                        // song — a fresh stack resolves it
+                        var song = JukeboxSong.fromStack(level.registryAccess(), new ItemStack(item));
+                        if (song.isEmpty()) {
+                            continue;
+                        }
+                        song.get().unwrapKey().ifPresent(k ->
+                                built.putIfAbsent(k.location(), itemId));
+                    } catch (Throwable ignored) {
+                        // an item whose components cannot parse is not a disc
+                    }
+                }
+                JUKEBOX_DISCS = java.util.Collections.unmodifiableMap(built);
+                LOGGER.info("[cimscene] gallery-variant disc index built: {} song->disc mappings", built.size());
+            }
+            return JUKEBOX_DISCS;
+        }
+    }
+
+    /**
+     * The variant settle pass (the 14-di law: the manifest carries what the
+     * world HOLDS, not what was placed). Pass 1 writes the manifest + the
+     * done marker; the 12-as final rewrite runs {@link #ENTITY_FINAL_TICKS}
+     * later, rewrites the manifest, writes no marker. Per kind the
+     * assertions are the RUNTIME proofs the audit item asks for:
+     * <ul>
+     *   <li>entity-grid kinds: alive + within 1.0 of the cell (the entity
+     *       walk's dissolved/moved contract), then the kind's own state —
+     *       the effect is STILL ACTIVE, the worn trim STILL PRESENT, the
+     *       glint STILL ENCHANTED;</li>
+     *   <li>block-grid kinds: the block still the kind's block (a popped
+     *       banner/pot/jukebox is a named dissolved), then the BE state —
+     *       the banner patterns non-empty, the pot decorations non-empty,
+     *       the jukebox song STILL PLAYING.</li>
+     * </ul>
+     */
+    private static void settleVariantPage(ServerLevel level, String kind, String namespace, int page,
+                                          List<ResourceLocation> slice,
+                                          List<Entity> spawned, List<Integer> spawnedIdx,
+                                          java.util.Map<Integer, String> skipNotes, int from, int gen,
+                                          int failed, int kindBlocks, boolean finalPass) {
+        if (gen != entityPageGen) {
+            LOGGER.info("[cimscene] gallery-variant settle superseded kind={} ns={} page={} finalPass={}",
+                    kind, namespace, page, finalPass);
+            return;
+        }
+        boolean entityGrid = variantEntityGrid(kind);
+        int cols = entityGrid ? ENTITY_COLS : GALLERY_COLS;
+        int pitch = entityGrid ? ENTITY_PITCH : 1;
+        String[] rowStr = new String[slice.size()];
+        int cells = 0, dissolved = 0, absent = 0;
+        for (int j = 0; j < spawned.size(); j++) {
+            Entity e = spawned.get(j);
+            int i = spawnedIdx.get(j);
+            ResourceLocation id = slice.get(i);
+            int col = i % cols, row = i / cols;
+            if (skipNotes.containsKey(i)) {
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + skipNotes.get(i);
+                continue;
+            }
+            double cx = GALLERY_X0 + col * pitch + (entityGrid ? 0.5 : 0.0);
+            double cy = GALLERY_Y0 + row * pitch;
+            double cz = GALLERY_Z + (entityGrid ? 0.5 : 0.0);
+            boolean alive = e.isAlive() && !e.isRemoved();
+            double drift = alive ? e.position().distanceTo(new Vec3(cx, cy, cz)) : -1.0;
+            if (!alive || drift > 1.0) {
+                dissolved++;
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\tdissolved";
+                LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} reason={} "
+                        + "subject={} drift={}", kind, namespace, page, from + i,
+                        alive ? "moved" : "dissolved", id, drift);
+                continue;
+            }
+            String note = variantRuntimeNote(level, kind, id, e);
+            if (note != null) {
+                absent++;
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + note;
+                LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} reason={} "
+                        + "subject={}", kind, namespace, page, from + i, note, id);
+                continue;
+            }
+            cells++;
+            rowStr[i] = "cell\t" + (GALLERY_X0 + col * pitch) + '\t' + (GALLERY_Y0 + row * pitch)
+                    + '\t' + GALLERY_Z + '\t' + id + '\t' + variantDyn(kind) + "\tok";
+        }
+        if (!entityGrid) {
+            // block-grid kinds: every cell re-read from the world (the block
+            // walk's settle law) — the placed state can pop, and the BE can
+            // lose its pattern/sherd/song only if the block itself went away
+            for (int i = 0; i < slice.size(); i++) {
+                ResourceLocation id = slice.get(i);
+                int col = i % cols, row = i / cols;
+                BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+                if (skipNotes.containsKey(i)) {
+                    rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + skipNotes.get(i);
+                    continue;
+                }
+                if (level.getBlockState(pos).isAir()) {
+                    dissolved++;
+                    rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\tdissolved";
+                    LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} "
+                            + "reason=dissolved subject={}", kind, namespace, page, from + i, id);
+                    continue;
+                }
+                String note = variantBlockNote(level, kind, pos, id);
+                if (note != null) {
+                    absent++;
+                    rowStr[i] = "skip\t-1\t-1\t-1\t" + id + "\t" + variantDyn(kind) + "\t" + note;
+                    LOGGER.info("[cimscene] gallery-variant settle kind={} ns={} page={} index={} reason={} "
+                            + "subject={}", kind, namespace, page, from + i, note, id);
+                    continue;
+                }
+                cells++;
+                rowStr[i] = "cell\t" + pos.getX() + '\t' + pos.getY() + '\t' + pos.getZ()
+                        + '\t' + id + '\t' + variantDyn(kind) + "\tok";
+            }
+        }
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tsubject\tdyn\tnote\n");
+        for (int i = 0; i < slice.size(); i++) {
+            if (rowStr[i] == null && skipNotes.containsKey(i)) {
+                rowStr[i] = "skip\t-1\t-1\t-1\t" + slice.get(i) + "\t" + variantDyn(kind) + "\t"
+                        + skipNotes.get(i);
+            }
+            if (rowStr[i] != null) {
+                tsv.append(rowStr[i]).append('\n');
+            }
+        }
+        String manifest = "gallery-variant-" + kind + "-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-variant manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        if (finalPass) {
+            LOGGER.info("[cimscene] gallery-variant settle-final kind={} ns={} page={} cells={} absent={} "
+                            + "dissolved={} (manifest rewritten inside the shot window; no done marker)",
+                    kind, namespace, page, cells, absent, dissolved);
+            writeMarkerFile("gallery-variant-" + kind + "-" + namespace + "-p" + page + ".settled");
+            return;
+        }
+        LOGGER.info("[cimscene] gallery-variant done kind={} ns={} page={} cells={} absent={} dissolved={} "
+                        + "failed={} skipped={} first={} last={}",
+                kind, namespace, page, cells, absent, dissolved, failed,
+                slice.get(0), slice.get(slice.size() - 1));
+        writeDoneMarkerFile("gallery-variant-" + kind + "-" + namespace + "-p" + page, false);
+        runAfterTicks(level.getServer(), ENTITY_FINAL_TICKS, () -> settleVariantPage(
+                level, kind, namespace, page, slice, spawned, spawnedIdx, skipNotes, from, gen,
+                failed, kindBlocks, true));
+    }
+
+    /** The dyn flag per kind (the join's diagnostic demotion channel): the
+     *  ambient effect particles and the glint shimmer are time-varying by
+     *  vanilla's own rendering, the jukebox note particles likewise; every
+     *  other kind renders a still. */
+    private static int variantDyn(String kind) {
+        return switch (kind) {
+            case "effect", "enchant", "jukebox", "blockentity" -> 1;
+            default -> 0;
+        };
+    }
+
+    /**
+     * The kind's runtime state assertion on a live entity subject; null =
+     * the state HOLDS. A non-null return is a named absence note (the gate's
+     * honesty channel — content that proves itself absent is not green).
+     */
+    private static String variantRuntimeNote(ServerLevel level, String kind, ResourceLocation id, Entity e) {
+        try {
+            return switch (kind) {
+                case "effect" -> {
+                    if (!(e instanceof net.minecraft.world.entity.LivingEntity le)) {
+                        yield "effect-expired";
+                    }
+                    Holder<net.minecraft.world.effect.MobEffect> holder =
+                            staticHolder(BuiltInRegistries.MOB_EFFECT, id);
+                    yield le.getEffect(holder) != null ? null : "effect-expired";
+                }
+                case "trimmaterial", "trimpattern" -> {
+                    if (!(e instanceof ArmorStand stand)) {
+                        yield "trim-missing";
+                    }
+                    ItemStack chest = stand.getItemBySlot(EquipmentSlot.CHEST);
+                    yield chest.get(DataComponents.TRIM) != null ? null : "trim-missing";
+                }
+                case "enchant" -> {
+                    if (!(e instanceof ArmorStand stand)) {
+                        yield "glint-missing";
+                    }
+                    ItemStack held = stand.getItemBySlot(EquipmentSlot.MAINHAND);
+                    ItemEnchantments ench = held.get(DataComponents.ENCHANTMENTS);
+                    yield (ench != null && ench.size() > 0) ? null : "glint-missing";
+                }
+                default -> null;
+            };
+        } catch (Throwable t) {
+            return "assert-failed:" + t.getClass().getName();
+        }
+    }
+
+    /** The kind's runtime state assertion on a block-grid subject; null =
+     *  the state HOLDS. */
+    private static String variantBlockNote(ServerLevel level, String kind, BlockPos pos, ResourceLocation id) {
+        try {
+            return switch (kind) {
+                case "banner" -> {
+                    if (!(level.getBlockEntity(pos) instanceof BannerBlockEntity be)) {
+                        yield "pattern-missing";
+                    }
+                    yield be.getPatterns().layers().isEmpty() ? "pattern-missing" : null;
+                }
+                case "pot" -> {
+                    if (!(level.getBlockEntity(pos) instanceof DecoratedPotBlockEntity be)) {
+                        yield "sherd-missing";
+                    }
+                    PotDecorations dec = be.getDecorations();
+                    yield (dec.back().isEmpty() && dec.left().isEmpty()
+                            && dec.right().isEmpty() && dec.front().isEmpty())
+                            ? "sherd-missing" : null;
+                }
+                case "jukebox" -> {
+                    if (!(level.getBlockEntity(pos) instanceof JukeboxBlockEntity be)) {
+                        yield "play-failed";
+                    }
+                    yield be.getSongPlayer().isPlaying() ? null : "stopped";
+                }
+                case "blockentity" -> {
+                    // the coverage contract: the BE TYPE the world HOLDS at
+                    // the cell is the subject id (a lookalike block without
+                    // the type's BE is not coverage)
+                    BlockEntity be = level.getBlockEntity(pos);
+                    ResourceLocation actual = be == null ? null
+                            : BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+                    yield id.equals(actual) ? null : "be-missing";
+                }
+                default -> null;
+            };
+        } catch (Throwable t) {
+            return "assert-failed:" + t.getClass().getName();
+        }
     }
 
     // --- coverage ledger (owner directive 2026-10-31: the verdict must SEE
@@ -703,13 +1962,18 @@ public final class CimSceneMod {
         // paintings, entity texture variants, mob effects (particle
         // overlays), armor trims, banner patterns, decorated-pot patterns,
         // enchantments (item glint), jukebox songs, dimension types
-        // (sky/fog). These classes have NO gallery walk yet — the gate
-        // reports them COVERAGE-INCOMPLETE reason=no-walk-yet: the ledger
-        // SEES the hole, the red is the named backlog. (The biome row
-        // graduated 2026-11-04: the fillbiome tint walk exists,
-        // DIAGNOSTIC-first.) Worldgen plumbing (features, loot, predicates,
-        // attributes...) shapes the world, not a gallery cell, and stays
-        // outside the world-frame ledger (documented line, challengeable).
+        // (sky/fog). 14-dx: the no-walk backlog (the roadmap's "No-walk
+        // visual classes" audit item) SHIPPED ITS REAL SCENES — the
+        // `gallery variant <kind>` walk below places/spawns one entry per
+        // cell and the gate walks the classes DIAGNOSTIC-first (the
+        // 2026-11-04 sound/gui/biome pattern). dimension_type has no
+        // per-entry surface inside ONE world frame (its picture is the
+        // whole dimension's sky/fog) and stays the documented no-walk line.
+        // (The biome row graduated 2026-11-04: the fillbiome tint walk
+        // exists, DIAGNOSTIC-first.) Worldgen plumbing (features, loot,
+        // predicates, attributes...) shapes the world, not a gallery cell,
+        // and stays outside the world-frame ledger (documented line,
+        // challengeable).
         RegistryAccess access = level.registryAccess();
         long biomes = dynCount(access, Registries.BIOME, namespace);
         long paintingVariants = dynCount(access, Registries.PAINTING_VARIANT, namespace);
@@ -731,10 +1995,14 @@ public final class CimSceneMod {
                 .append("item\t").append(items).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("particle\t").append(particles).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("fluid\t").append(fluids).append('\t').append(FLUID_CELLS).append('\n')
-                // no pages of its own: the BE class's picture is drawn by the
-                // block wall (real EntityBlock placement); the gate checks the
-                // reconciliation file below instead of page counts
-                .append("blockentity\t").append(blockEntities).append('\t').append(0).append('\n')
+                // no pages of its own UNTIL 14-ec: the BE class's picture is
+                // drawn by the block wall (real EntityBlock placement) — the
+                // variant-blockentity lane now WALKS the class at 77 cells
+                // per page (the item/setBlock instantiation through the
+                // subject's own placement surface); the reconciliation file
+                // below stays the static wall-skip receipt and the gate
+                // crosses the walked names off it
+                .append("blockentity\t").append(blockEntities).append('\t').append(VARIANT_CELLS_BLOCK).append('\n')
                 // the 2026-11-04 classes: sound (the packet-stream channel,
                 // one page = 77 events played in order), gui (one MenuType
                 // per page), biome (one biome per page — the tint channel).
@@ -750,21 +2018,25 @@ public final class CimSceneMod {
                 // biome LEFT the no-walk set (the fillbiome walk exists): one
                 // biome per page
                 .append("biome\t").append(biomes).append("\t1\n")
-                // the no-walk classes (12-aq): counted, not walked yet — a
+                // the no-walk classes (12-aq) GRADUATED (14-dx): every class
+                // but dimension_type now has a real `gallery variant` walk —
+                // entity-grid kinds at 18 cells (pitch 2: the subjects and
+                // the 2x2 paintings never overlap their neighbours, the
+                // measured entity-grid law), block-grid kinds at 77. A
                 // negative total means the dynamic registry itself could not
                 // be READ at index time (the gate reds that honestly)
-                .append("painting_variant\t").append(paintingVariants).append("\t0\n")
-                .append("wolf_variant\t").append(wolfVariants).append("\t0\n")
-                .append("cat_variant\t").append(catVariants).append("\t0\n")
-                .append("frog_variant\t").append(frogVariants).append("\t0\n")
-                .append("villager_type\t").append(villagerTypes).append("\t0\n")
-                .append("mob_effect\t").append(mobEffects).append("\t0\n")
-                .append("trim_material\t").append(trimMaterials).append("\t0\n")
-                .append("trim_pattern\t").append(trimPatterns).append("\t0\n")
-                .append("banner_pattern\t").append(bannerPatterns).append("\t0\n")
-                .append("decorated_pot_pattern\t").append(potPatterns).append("\t0\n")
-                .append("enchantment\t").append(enchantments).append("\t0\n")
-                .append("jukebox_song\t").append(jukeboxSongs).append("\t0\n")
+                .append("painting_variant\t").append(paintingVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("wolf_variant\t").append(wolfVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("cat_variant\t").append(catVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("frog_variant\t").append(frogVariants).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("villager_type\t").append(villagerTypes).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("mob_effect\t").append(mobEffects).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("trim_material\t").append(trimMaterials).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("trim_pattern\t").append(trimPatterns).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("enchantment\t").append(enchantments).append("\t").append(VARIANT_CELLS_ENTITY).append('\n')
+                .append("banner_pattern\t").append(bannerPatterns).append("\t").append(GALLERY_CELLS).append('\n')
+                .append("decorated_pot_pattern\t").append(potPatterns).append("\t").append(GALLERY_CELLS).append('\n')
+                .append("jukebox_song\t").append(jukeboxSongs).append("\t").append(GALLERY_CELLS).append('\n')
                 .append("dimension_type\t").append(dimensionTypes).append("\t0\n");
         // BLOCK ENTITY RECONCILIATION: a BlockEntityType whose every valid
         // state is fluid-carried or RenderShape.INVISIBLE would never reach
@@ -890,6 +2162,7 @@ public final class CimSceneMod {
 
     /** The shared wall sweep (identical coordinates on every gallery leg). */
     private static void clearWall(ServerLevel level) {
+        closeGalleryGantries();
         for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
             for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
                 for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
@@ -949,6 +2222,7 @@ public final class CimSceneMod {
      */
     private static int galleryItem(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "item page entry");
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1060,6 +2334,7 @@ public final class CimSceneMod {
      */
     private static int galleryParticle(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "particle page entry");
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1169,6 +2444,16 @@ public final class CimSceneMod {
      *       refuses (the DataResult carries the error, surfaced in the
      *       note). Whether a given modded codec accepts empty data is
      *       FIRST-RUN-measured, not asserted.</li>
+     *   <li>THE ERROR-DRIVEN DEFAULT FILLER (rung 3): the refusal names the
+     *       MISSING keys ("No key speed in MapLike[{}]"), so fill every
+     *       missing key with the current candidate and re-parse; when
+     *       nothing is missing but the parse still refuses, advance the
+     *       candidate (a typed value was rejected) and rebuild. Deterministic
+     *       BY CONSTRUCTION — both legs run the same codec over the same
+     *       candidate ladder and land on the SAME options, the cell compares
+     *       like with like. Measured #30: 8/13 create particles refuse the
+     *       empty compound (fluid refs, rgb triples, speed/drag floats) —
+     *       the generic filler is the answer, zero per-mod code anywhere.</li>
      * </ol>
      */
     private static ResolvedOptions resolveParticleOptions(ParticleType<?> type) {
@@ -1176,18 +2461,245 @@ public final class CimSceneMod {
             return new ResolvedOptions(simple, null);
         }
         try {
-            DataResult<? extends ParticleOptions> res = type.codec().codec()
-                    .parse(NbtOps.INSTANCE, new CompoundTag());
-            ParticleOptions opts = res.result().orElse(null);
-            if (opts != null) {
-                return new ResolvedOptions(opts, null);
+            var codec = type.codec().codec();
+            DataResult<? extends ParticleOptions> res =
+                    codec.parse(NbtOps.INSTANCE, new CompoundTag());
+            if (res.result().isPresent()) {
+                return new ResolvedOptions(res.result().get(), null);
             }
-            String err = res.error().map(e -> e.message()).orElse("empty-decode");
-            return new ResolvedOptions(null, "no-simple-options:" + err);
+            String firstErr = res.error().map(e -> e.message()).orElse("empty-decode");
+            // RUNG 3 — the error-driven default filler (see the ladder doc).
+            // PER-KEY cursors with key-name hints: a mixed-type codec (a
+            // string id beside numeric fields) has NO uniform candidate —
+            // measured: the scalar-only ladder left (string + 5 numerics)
+            // and the fluid trio unsolved. Each key starts at its hint
+            // index; a type-error round advances every key's cursor.
+            CompoundTag probe = new CompoundTag();
+            Map<String, Integer> cursors = new LinkedHashMap<>();
+            List<String> trace = new ArrayList<>();
+            for (int round = 0; round < OPTION_FILL_CANDIDATES_LENGTH + 2; round++) {
+                DataResult<? extends ParticleOptions> r =
+                        codec.parse(NbtOps.INSTANCE, probe);
+                if (r.result().isPresent()) {
+                    return new ResolvedOptions(r.result().get(), null);
+                }
+                String err = r.error().map(e -> e.message()).orElse("");
+                trace.add("r" + round + "[" + probe + "]:" + err);
+                List<String> missing = missingOptionKeys(err);
+                if (!missing.isEmpty()) {
+                    // THE FILL LANDS ON THE NODE THE REFUSAL NAMED: the fluid
+                    // holder's keys live INSIDE the nested {Name:...} map —
+                    // measured r1-r4: a root-level fill the codec ignores,
+                    // the error repeating verbatim. The target = the deepest
+                    // compound whose serialized form the error quotes.
+                    FillTarget target = findFillTarget(probe, err);
+                    for (String key : missing) {
+                        String cpath = target.path().isEmpty()
+                                ? key : target.path() + "." + key;
+                        target.node().put(key, fillCandidate(cursors
+                                .computeIfAbsent(cpath,
+                                        k -> hintIndex(key)).intValue()));
+                    }
+                    continue;
+                }
+                // a type-error round: THE ZERO-VALUED KEYS MOVE FIRST — a
+                // "Value must be positive: 0" refusal targets the zeros, and
+                // bumping the keys the codec already ACCEPTED would destroy
+                // the solved structure (measured: the lockstep walk replaced
+                // the accepted {Name, amount, id} map with "x"). A bare type
+                // mismatch (Not a string / Not a map) still advances every
+                // key — the hints missed for it.
+                boolean zeroComplaint = err.contains("positive")
+                        || err.contains("must be") || err.contains("range")
+                        || err.contains("smaller than")
+                        || err.contains("bigger than");
+                boolean advanced = false;
+                List<String> bumped = new ArrayList<>();
+                for (Map.Entry<String, Integer> e : cursors.entrySet()) {
+                    Tag cur = tagAtPath(probe, e.getKey());
+                    boolean zeroLike = cur instanceof net.minecraft.nbt.NumericTag n
+                            && n.getAsDouble() == 0.0;
+                    if ((zeroLike || !zeroComplaint)
+                            && e.getValue() + 1 < OPTION_FILL_CANDIDATES_LENGTH) {
+                        cursors.put(e.getKey(), e.getValue() + 1);
+                        bumped.add(e.getKey());
+                        advanced = true;
+                    }
+                }
+                if (!advanced) {
+                    LOGGER.info("[cimscene] particle filler trace: {}",
+                            String.join(" | ", trace));
+                    return new ResolvedOptions(null,
+                            "no-simple-options:filler-cursor-exhausted:" + err);
+                }
+                for (String path : bumped) {
+                    setAtPath(probe, path, fillCandidate(cursors.get(path)));
+                }
+                firstErr = err; // the last refusal rides the exhausted note
+            }
+            LOGGER.info("[cimscene] particle filler trace: {}",
+                    String.join(" | ", trace));
+            return new ResolvedOptions(null,
+                    "no-simple-options:filler-rounds-exhausted:" + firstErr);
         } catch (Throwable t) {
             return new ResolvedOptions(null,
                     "no-simple-options:" + t.getClass().getName());
         }
+    }
+
+    /**
+     * The filler candidates, mildest first: zero for numerics (speed, xyz,
+     * scale, ages — a NumericTag decodes as any numeric), false for flags
+     * (NbtOps reads a boolean from any number), unit-scale numerics (rgb,
+     * unit scales), then the registry-ref string ids (fluids, block refs),
+     * the empty string, and the MAP shapes a registry-entry codec reads on
+     * NbtOps ({@code {Name: ...}} the vanilla form, {@code {id: ...}} the
+     * NeoForge holder form) — measured: the create fluid-particle keys
+     * refuse every scalar and accept only a map. A value that renders
+     * nothing on BOTH legs identically is the honest floor — the join
+     * compares like with like.
+     */
+    private static final int OPTION_FILL_CANDIDATES_LENGTH = 13;
+
+    /** Fresh tag per use (tags are shared-mutable; the probe owns its copy). */
+    private static Tag fillCandidate(int i) {
+        return switch (Math.floorMod(i, OPTION_FILL_CANDIDATES_LENGTH)) {
+            case 0 -> IntTag.valueOf(0);
+            case 1 -> ByteTag.valueOf(false);
+            case 2 -> FloatTag.valueOf(1.0f);
+            case 3 -> StringTag.valueOf("minecraft:water");
+            case 4 -> StringTag.valueOf("minecraft:air");
+            case 5 -> StringTag.valueOf("minecraft:block");
+            case 6 -> StringTag.valueOf("");
+            case 7 -> ByteTag.valueOf(true);
+            case 8 -> FloatTag.valueOf(0.5f);
+            case 9 -> mapRef("Name", "minecraft:water");
+            case 10 -> mapRef("id", "minecraft:water");
+            case 11 -> StringTag.valueOf("x"); // the axis enum's first member
+            default -> StringTag.valueOf("north"); // the Direction enum's member
+        };
+    }
+
+    /** A one-entry registry-reference map ({@code {Name: "minecraft:water"}}). */
+    private static CompoundTag mapRef(String key, String id) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString(key, id);
+        return tag;
+    }
+
+    /** Where a missing key lands: the node + its cursor path. */
+    private record FillTarget(CompoundTag node, String path) {
+    }
+
+    /** The tag at a dotted cursor path ({@code fluid.amount} → the nested). */
+    private static Tag tagAtPath(CompoundTag root, String path) {
+        CompoundTag node = root;
+        int dot = path.lastIndexOf('.');
+        if (dot >= 0) {
+            node = node.getCompound(path.substring(0, dot));
+        }
+        return node.get(path.substring(dot + 1));
+    }
+
+    /** In-place write at a dotted cursor path (the parent maps exist). */
+    private static void setAtPath(CompoundTag root, String path, Tag value) {
+        CompoundTag node = root;
+        int dot = path.lastIndexOf('.');
+        if (dot >= 0) {
+            node = node.getCompound(path.substring(0, dot));
+        }
+        node.put(path.substring(dot + 1), value);
+    }
+
+    /**
+     * The deepest compound in the probe whose serialized form the codec
+     * refusal quotes (the DFU MapLike[...] renders the parsed node's NBT) —
+     * the root always matches its own {@code MapLike[{}]}, a nested holder
+     * matches only when the refusal descends into it, so the longest match
+     * is the node the missing keys belong to.
+     */
+    private static FillTarget findFillTarget(CompoundTag probe, String err) {
+        String[] best = {"", ""}; // path, serialization (the root is the fallback)
+        findFillTargetWalk(probe, "", err, best);
+        if (best[0].isEmpty()) {
+            return new FillTarget(probe, "");
+        }
+        CompoundTag node = probe;
+        for (String part : best[0].split("\\.")) {
+            node = node.getCompound(part);
+        }
+        return new FillTarget(node, best[0]);
+    }
+
+    private static void findFillTargetWalk(CompoundTag node, String path,
+                                           String err, String[] best) {
+        String ser = node.getAsString();
+        // the refusal quotes the node it parsed (DFU's MapLike[...] renders
+        // the node's NBT verbatim) — the LONGEST quoted compound is the
+        // innermost failing map the missing keys belong to
+        if (err.contains(ser) && ser.length() > best[1].length()) {
+            best[0] = path;
+            best[1] = ser;
+        }
+        for (String k : node.getAllKeys()) {
+            if (node.get(k) instanceof CompoundTag child) {
+                findFillTargetWalk(child, path.isEmpty() ? k : path + "." + k,
+                        err, best);
+            }
+        }
+    }
+
+    /**
+     * The per-key STARTING candidate from the key's own name: fluid keys
+     * begin at the registry-map form, id/name/type keys at the string form,
+     * boolean-looking keys at false, everything else at the zero numeric.
+     * Deterministic — the same key name starts at the same candidate on
+     * both legs.
+     */
+    private static int hintIndex(String key) {
+        String k = key.toLowerCase(java.util.Locale.ROOT);
+        if (k.equals("axis") || k.endsWith("_axis")) {
+            return 11; // the axis enum's "x" member (measured: create's
+                       // axis/color options codec wants a valid enum name,
+                       // the numeric fields beside it accept the zero)
+        }
+        if (k.equals("direction") || k.equals("facing")) {
+            return 12; // a Direction member (measured: mekanism's jetpack
+                       // flame options want direction=north beside numerics)
+        }
+        if (k.equals("fluid") || k.endsWith("_fluid")) {
+            return 9; // {Name: minecraft:water}
+        }
+        if (k.equals("id") || k.equals("name") || k.equals("type")
+                || k.equals("target") || k.equals("block") || k.equals("item")) {
+            return 3; // a string registry id
+        }
+        if (k.equals("hot") || k.equals("glow") || k.startsWith("is_")
+                || k.endsWith("_flag") || k.equals("gravity")) {
+            return 1; // false
+        }
+        return 0; // the zero numeric
+    }
+
+    /**
+     * The missing keys a codec refusal named: the DataResult message shape
+     * "No key &lt;name&gt; in MapLike[...]" (one per absent field, "; "
+     * separated when several are absent — the #30 notes carry them).
+     */
+    private static List<String> missingOptionKeys(String error) {
+        List<String> keys = new ArrayList<>();
+        if (error == null || error.isEmpty()) {
+            return keys;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("No key ([A-Za-z0-9_]+) in MapLike")
+                .matcher(error);
+        while (m.find()) {
+            if (!keys.contains(m.group(1))) {
+                keys.add(m.group(1));
+            }
+        }
+        return keys;
     }
 
     // --- fluid gallery (every registered FLUID of the namespace) -----------
@@ -1208,9 +2720,8 @@ public final class CimSceneMod {
      *       rig grammar);</li>
      *   <li>{@code mod-tank} — the mod registers its own fluid-tank block
      *       ({@code <ns>:fluid_tank} — create's vessel): the block is
-     *       PLACED, its CONTENTS ARE NOT FILLED (the fill API is
-     *       mod-specific and unverified from this workspace — the manifest
-     *       note says so; an open question, not a claimed surface);</li>
+     *       placed and filled through NeoForge's fluid capability; the
+     *       settled BE contents are saved for native model/BER capture;</li>
      *   <li>{@code texture-model} — the server resource manager finds the
      *       fluid's still texture ({@code textures/fluid/<path>.png} or
      *       {@code <path>_still.png}): the OURS pack builder synthesizes an
@@ -1236,6 +2747,7 @@ public final class CimSceneMod {
      */
     private static int galleryFluid(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "fluid page entry");
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -1268,6 +2780,7 @@ public final class CimSceneMod {
 
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tfluid\tdyn\tchannel\textra\n");
         int placed = 0, failed = 0;
+        int settleTicks = BLOCK_SETTLE_TICKS;
         for (int i = 0; i < slice.size(); i++) {
             ResourceLocation id = slice.get(i);
             int col = i % FLUID_COLS, row = i / FLUID_COLS;
@@ -1281,6 +2794,9 @@ public final class CimSceneMod {
                 BlockState legacy = fs.createLegacyBlock();
                 // (a) the placeable liquid in the sealed case
                 if (!legacy.isAir()) {
+                    // Let a falling default state execute its actual scheduled
+                    // fluid tick before naming the captured settled surface.
+                    settleTicks = Math.max(settleTicks, Math.multiplyExact(2, fluid.getTickDelay(level)));
                     buildFluidShell(level, x, y, z);
                     level.setBlock(new BlockPos(x, y, z), legacy, 3);
                     channel = "block";
@@ -1357,17 +2873,54 @@ public final class CimSceneMod {
                         .append('\t').append(extra).append('\n');
             }
         }
-        String manifest = "gallery-fluid-" + namespace + "-p" + page + ".tsv";
-        try {
-            Path parent = Path.of("c-imagine", "scenes");
-            Files.createDirectories(parent);
-            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
-        } catch (IOException ioe) {
-            LOGGER.error("[cimscene] gallery-fluid manifest write failed {}: {}", manifest, ioe.toString());
-        }
-        LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells={} failed={} first={} last={}",
-                namespace, page, placed, failed, slice.get(0), slice.get(slice.size() - 1));
-        writeDoneMarkerFile(fluidStem, false);
+        final int filledCells = placed, failedCells = failed;
+        // Snapshot real contents after native connectivity/client updates settle.
+        // The done marker follows the files, so seed capture cannot race them.
+        runAfterTicks(level.getServer(), settleTicks, () -> {
+            StringBuilder settled = new StringBuilder();
+            StringBuilder tags = new StringBuilder("cell\tx\ty\tz\tnbt\n");
+            for (String line : tsv.toString().split("\n")) {
+                String[] row = line.split("\t", -1);
+                if (row.length >= 8 && row[0].equals("cell") && !row[1].equals("x")
+                        && row[6].equals("block")) {
+                    BlockPos pos = new BlockPos(Integer.parseInt(row[1]),
+                            Integer.parseInt(row[2]), Integer.parseInt(row[3]));
+                    BlockState now = level.getBlockState(pos);
+                    row[7] = stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()));
+                    line = String.join("\t", row);
+                }
+                if (row.length >= 8 && row[0].equals("cell") && row[6].equals("mod-tank")) {
+                    BlockPos pos = new BlockPos(Integer.parseInt(row[1]),
+                            Integer.parseInt(row[2]), Integer.parseInt(row[3]));
+                    BlockState now = level.getBlockState(pos);
+                    int bar = row[7].indexOf('|');
+                    row[7] = stateString(now, BuiltInRegistries.BLOCK.getKey(now.getBlock()))
+                            + (bar >= 0 ? row[7].substring(bar) : "");
+                    line = String.join("\t", row);
+                    BlockEntity tile = level.getBlockEntity(pos);
+                    String nbt = tile == null ? null : benbtB64(level, tile);
+                    if (nbt != null) {
+                        tags.append("cell\t").append(row[1]).append('\t').append(row[2])
+                                .append('\t').append(row[3]).append('\t').append(nbt).append('\n');
+                    }
+                }
+                settled.append(line).append('\n');
+            }
+            try {
+                Path parent = Path.of("c-imagine", "scenes");
+                Files.createDirectories(parent);
+                Files.writeString(parent.resolve(fluidStem + ".tsv"), settled, StandardCharsets.UTF_8);
+                Files.writeString(parent.resolve(fluidStem + ".light"),
+                        CaptureLightData.snapshot(level, settled.toString()), StandardCharsets.UTF_8);
+                Files.writeString(parent.resolve(fluidStem + ".benbt"), tags, StandardCharsets.UTF_8);
+            } catch (IOException ioe) {
+                LOGGER.error("[cimscene] gallery-fluid manifest write failed {}: {}", fluidStem, ioe.toString());
+                return; // missing done marker is a hard capture failure
+            }
+            LOGGER.info("[cimscene] gallery-fluid done ns={} page={} cells={} failed={} first={} last={}",
+                    namespace, page, filledCells, failedCells, slice.get(0), slice.get(slice.size() - 1));
+            writeDoneMarkerFile(fluidStem, false);
+        });
         return placed;
     }
 
@@ -1410,11 +2963,9 @@ public final class CimSceneMod {
      * and no build.gradle change. A lone tank block is its own controller;
      * the capability resolves (or the note says so). The quota is a fixed
      * generous 16000 mB; the tank takes what fits and the accepted amount
-     * rides the manifest's extra column — deterministic on the truth
-     * server (create is loaded there); the ours leg renders the tank BLOCK
-     * through the pack channel only (the level is BE-drawn — dyn class,
-     * no red verdict), so the note is the honest pair: truth shows a filled
-     * tank, ours shows the same tank's static model.
+     * rides the manifest's extra column. The delayed snapshot saves the
+     * real settled BE inventory; the native capture renders both the tank
+     * and its contents for the ours replay. Pixel parity remains gate-hard.
      */
     private static String fillTankContents(ServerLevel level, ResourceLocation fluidId,
                                            int x, int y, int z) {
@@ -1485,6 +3036,7 @@ public final class CimSceneMod {
      */
     private static int gallerySound(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "sound page entry");
         writeGalleryIndex(level, namespace);
         String soundStem = "gallery-sound-" + namespace + "-p" + page;
 
@@ -1705,7 +3257,12 @@ public final class CimSceneMod {
     /** Prepares what the opener acts on. Openers read {@code [sneak+][place+]kind:id}. */
     private static void guiPlace(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
         String plain = opener.replace("sneak+", "");
-        if (plain.startsWith("cube")) {
+        if (plain.startsWith("specialized:")) {
+            SpecializedOpeners.place(level, player, rig, plain.substring("specialized:".length()), e -> {
+                guiEntity = e;
+                GUI_SPAWNED.add(e);
+            });
+        } else if (plain.startsWith("cube")) {
             guiBuildCube(level, player, rig, plain);
         } else if (plain.startsWith("settle+use+item:")) {
             // The block first; the item is used once it has ticked (see guiActOnce).
@@ -1775,6 +3332,739 @@ public final class CimSceneMod {
         }
     }
 
+    /** A real motor/shaft/controller assembly; every delayed action runs on normal server ticks. */
+    private static final class GantryRig {
+        final ServerLevel level;
+        final BlockPos cell;
+        final java.util.Map<BlockPos, BlockState> previous = new java.util.LinkedHashMap<>();
+        final List<Entity> joined = new ArrayList<>();
+        Entity entity;
+        boolean closed;
+
+        GantryRig(ServerLevel level, BlockPos cell) {
+            this.level = level;
+            this.cell = cell;
+        }
+
+        private void put(BlockPos pos, BlockState state) {
+            previous.putIfAbsent(pos, level.getBlockState(pos));
+            level.setBlock(pos, state, 3);
+        }
+
+        void observe(Entity candidate) {
+            if (closed || candidate.level() != level
+                    || !BuiltInRegistries.ENTITY_TYPE.getKey(candidate.getType()).toString().equals("create:gantry_contraption")) return;
+            try {
+                Object contraption = candidate.getClass().getMethod("getContraption").invoke(candidate);
+                Object anchor = contraption == null ? null : contraption.getClass().getField("anchor").get(contraption);
+                LOGGER.info("[cimscene] native gantry join anchor={} position={}", anchor, candidate.position());
+                if (cell.equals(anchor)) joined.add(candidate);
+            } catch (ReflectiveOperationException failure) {
+                LOGGER.error("[cimscene] native gantry join identification failed", failure);
+            }
+        }
+
+        private Entity find() {
+            List<Entity> found = joined.stream().filter(e -> e.isAlive() && e.isAddedToLevel()).toList();
+            if (found.size() > 1) throw new IllegalStateException("Ambiguous native gantry assembly");
+            return found.isEmpty() ? null : found.get(0);
+        }
+
+        private String diagnose() throws ReflectiveOperationException {
+            ClassLoader loader = CimSceneMod.class.getClassLoader();
+            Class<?> type = Class.forName("com.simibubi.create.content.contraptions.gantry.GantryContraption", true, loader);
+            Object probe = type.getConstructor(Direction.class).newInstance(Direction.UP);
+            boolean assembled = (boolean) type.getMethod("assemble", net.minecraft.world.level.Level.class, BlockPos.class)
+                    .invoke(probe, level, cell);
+            Object blocks = type.getMethod("getBlocks").invoke(probe);
+            Class<?> translating = Class.forName("com.simibubi.create.content.contraptions.TranslatingContraption", true, loader);
+            Class<?> collider = Class.forName("com.simibubi.create.content.contraptions.ContraptionCollider", true, loader);
+            boolean collides = assembled && (boolean) collider.getMethod("isCollidingWithWorld",
+                    net.minecraft.world.level.Level.class, translating, BlockPos.class, Direction.class)
+                    .invoke(null, level, probe, cell.east(), Direction.EAST);
+            return "assembled=" + assembled + ", blocks=" + blocks + ", collides=" + collides
+                    + ", joined=" + joined.stream().map(e -> e.getId() + ":" + e.getRemovalReason()).toList();
+        }
+
+        void start(java.util.function.Consumer<Entity> ready, java.util.function.Consumer<Throwable> failed) {
+            try {
+                ACTIVE_GANTRY_RIGS.add(this);
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) level.getChunkAt(cell.offset(dx, 0, dz));
+                }
+                BlockPos motorPos = cell.below().west();
+                put(motorPos, BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:creative_motor"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
+                BlockEntity motor = level.getBlockEntity(motorPos);
+                // This is the real motor's public scroll setting, not a rewritten kinetic speed field.
+                Object speed = motor.getClass().getField("generatedSpeed").get(motor);
+                speed.getClass().getMethod("setValue", int.class).invoke(speed, -1);
+                put(cell.below(), BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_shaft"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
+                // A SINGLE segment cannot host native gantry movement. Its real neighbor
+                // updates derive START/END; do not forge the shaft's PART property.
+                put(cell.below().east(), BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_shaft"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.EAST));
+                BlockState carriage = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:gantry_carriage"))
+                        .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING, Direction.UP);
+                var alongFirst = (net.minecraft.world.level.block.state.properties.BooleanProperty)
+                        carriage.getBlock().getClass().getField("AXIS_ALONG_FIRST_COORDINATE").get(null);
+                carriage = carriage.setValue(alongFirst, false);
+                Object shaftAxis = carriage.getBlock().getClass().getMethod("getValidGantryShaftAxis", BlockState.class)
+                        .invoke(null, carriage);
+                if (shaftAxis != Direction.Axis.X) throw new IllegalStateException("Native carriage does not match its shaft axis");
+                put(cell, carriage);
+                put(cell.above(), Blocks.OAK_PLANKS.defaultBlockState());
+                runAfterTicks(level.getServer(), 5, () -> {
+                    if (closed) return;
+                    try {
+                        entity = find();
+                        if (entity != null) {
+                            ready.accept(entity);
+                            return;
+                        }
+                        BlockEntity shaft = level.getBlockEntity(cell.below());
+                        float movement = (float) shaft.getClass().getMethod("getPinionMovementSpeed").invoke(shaft);
+                        if (movement == 0) throw new IllegalStateException("Native motor did not drive its gantry shaft");
+                        if (!(boolean) shaft.getClass().getMethod("canAssembleOn").invoke(shaft)) {
+                            throw new IllegalStateException("Native shaft track cannot host its gantry: " + shaft.getBlockState());
+                        }
+                        BlockEntity controller = level.getBlockEntity(cell);
+                        controller.getClass().getMethod("queueAssembly").invoke(controller);
+                        runAfterTicks(level.getServer(), 5, () -> {
+                            if (closed) return;
+                            try {
+                                entity = find();
+                                if (entity == null) throw new IllegalStateException("Native gantry did not assemble: "
+                                        + controller.getClass().getMethod("getLastAssemblyException").invoke(controller)
+                                        + ", carriage=" + level.getBlockState(cell) + ", movement=" + movement + ", " + diagnose());
+                                ready.accept(entity);
+                            } catch (Throwable failure) {
+                                failed.accept(failure);
+                            }
+                        });
+                    } catch (Throwable failure) {
+                        failed.accept(failure);
+                    }
+                });
+            } catch (Throwable failure) {
+                failed.accept(failure);
+            }
+        }
+
+        void close() {
+            if (closed) return;
+            closed = true;
+            ACTIVE_GANTRY_RIGS.remove(this);
+            try {
+                if (entity == null) entity = find();
+                if (entity != null) entity.getClass().getMethod("disassemble").invoke(entity);
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("Native gantry cleanup failed", failure);
+            } finally {
+                if (entity != null) entity.discard();
+                previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
+            }
+        }
+    }
+
+    private static final List<GantryRig> ACTIVE_GANTRY_RIGS = new ArrayList<>();
+    private static final List<GantryRig> GALLERY_GANTRIES = new ArrayList<>();
+
+    private static void closeGalleryGantries() {
+        try {
+            for (GantryRig rig : GALLERY_GANTRIES) rig.close();
+        } finally {
+            GALLERY_GANTRIES.clear();
+        }
+    }
+
+    private static void checkGantryContraption(Entity entity) throws ReflectiveOperationException {
+        Object contraption = entity.getClass().getMethod("getContraption").invoke(entity);
+        Object value = contraption.getClass().getMethod("getBlocks").invoke(contraption);
+        if (!(value instanceof java.util.Map<?, ?> blocks) || blocks.size() != 2
+                || !(blocks.get(BlockPos.ZERO) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo base)
+                || !BuiltInRegistries.BLOCK.getKey(base.state().getBlock()).toString().equals("create:gantry_carriage")
+                || !(blocks.get(BlockPos.ZERO.above()) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo top)
+                || !top.state().is(Blocks.OAK_PLANKS)) {
+            throw new IllegalStateException("Native gantry lost its assembled carriage or plank");
+        }
+    }
+
+    private static int gantryLifetimeSelftest(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos cell = new BlockPos(72, 100, 72);
+        var chunk = new net.minecraft.world.level.ChunkPos(cell);
+        boolean wasForced = level.getForcedChunks().contains(chunk.toLong());
+        level.setChunkForced(chunk.x, chunk.z, true);
+        GantryRig rig = new GantryRig(level, cell);
+        Runnable cleanup = () -> {
+            try {
+                rig.close();
+            } finally {
+                if (!wasForced) level.setChunkForced(chunk.x, chunk.z, false);
+            }
+        };
+        runAfterTicks(level.getServer(), 5, () -> rig.start(entity -> {
+            int started = level.getServer().getTickCount();
+            Vec3 start = entity.position();
+            runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS + ENTITY_FINAL_TICKS, () -> {
+                boolean passed = false;
+                int ticks = entity.tickCount;
+                double distance = entity.position().distanceTo(start);
+                try {
+                    if (!entity.isAlive() || !entity.isAddedToLevel() || ticks < ENTITY_SETTLE_TICKS
+                            || distance <= 0 || distance >= 1) {
+                        throw new IllegalStateException("Native powered gantry lifecycle mismatch: alive=" + entity.isAlive()
+                                + ", entityTicks=" + ticks + ", distance=" + distance);
+                    }
+                    checkGantryContraption(entity);
+                    var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+                    try {
+                        ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) entity).writeSpawnData(buffer);
+                        Entity received = entity.getType().create(level);
+                        received.setPos(entity.getX(), entity.getY(), entity.getZ());
+                        ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+                        checkGantryContraption(received);
+                        if (buffer.isReadable()) throw new IllegalStateException("Unconsumed native gantry spawn data");
+                        buffer.clear();
+                        boolean refused = false;
+                        try {
+                            Entity bare = entity.getType().create(level);
+                            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+                            Entity bareReceiver = entity.getType().create(level);
+                            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bareReceiver).readSpawnData(buffer);
+                        } catch (RuntimeException expected) {
+                            refused = true;
+                        }
+                        if (!refused) throw new IllegalStateException("Bare gantry negative control unexpectedly decoded");
+                    } finally {
+                        buffer.release();
+                    }
+                    passed = true;
+                } catch (Throwable failure) {
+                    LOGGER.error("[cimscene] selftest gantry live FAILED", failure);
+                } finally {
+                    try {
+                        cleanup.run();
+                    } catch (Throwable failure) {
+                        passed = false;
+                        LOGGER.error("[cimscene] selftest gantry live FAILED during cleanup", failure);
+                    }
+                }
+                if (passed) LOGGER.info("[cimscene] selftest gantry live PASS serverTicks={} entityTicks={} distance={} bare-rejected=true",
+                        level.getServer().getTickCount() - started, ticks, distance);
+            });
+        }, failure -> {
+            LOGGER.error("[cimscene] selftest gantry live FAILED during setup", failure);
+            cleanup.run();
+        }));
+        return 1;
+    }
+
+    /** Assemble real world blocks through Create's controller, which owns entity and contraption initialization. */
+    private static Entity assembleGalleryBearing(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        return assembleGalleryBearing(level, cell, true);
+    }
+
+    private static Entity assembleGalleryBearing(ServerLevel level, BlockPos cell, boolean retainWhenStopped)
+            throws ReflectiveOperationException {
+        // Create checks adjacent blocks during assembly and rejects unloaded chunks,
+        // including at a chunk corner where the controller and body alone load only two.
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) level.getChunkAt(cell.offset(dx, 0, dz));
+        }
+        BlockPos controller = cell.north();
+        BlockState bearing = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:mechanical_bearing"))
+                .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING,
+                        Direction.SOUTH);
+        level.setBlock(controller, bearing, 3);
+        level.setBlock(cell, Blocks.OAK_PLANKS.defaultBlockState(), 3);
+        BlockEntity be = level.getBlockEntity(controller);
+        if (retainWhenStopped) {
+            ClassLoader loader = be.getClass().getClassLoader();
+            Class<?> scroll = Class.forName("com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollValueBehaviour", true, loader);
+            Class<?> behaviourType = Class.forName("com.simibubi.create.foundation.blockEntity.behaviour.BehaviourType", true, loader);
+            Object mode = be.getClass().getMethod("getBehaviour", behaviourType).invoke(be, scroll.getField("TYPE").get(null));
+            Class<?> modes = Class.forName("com.simibubi.create.content.contraptions.IControlContraption$RotationMode", true, loader);
+            Object neverPlace = modes.getField("ROTATE_NEVER_PLACE").get(null);
+            mode.getClass().getMethod("setValue", int.class).invoke(mode, ((Enum<?>) neverPlace).ordinal());
+            if (mode.getClass().getMethod("get").invoke(mode) != neverPlace) {
+                throw new IllegalStateException("Native bearing did not accept Never Place mode");
+            }
+        }
+        be.getClass().getMethod("assemble").invoke(be);
+        Entity entity = (Entity) be.getClass().getMethod("getMovedContraption").invoke(be);
+        // NeoForge sets this after successful entity-manager insertion. The UUID
+        // lookup only exposes tracked entities and can lag insertion in a new chunk.
+        if (entity == null || !entity.isAlive() || !entity.isAddedToLevel()
+                || !BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")) {
+            throw new IllegalStateException("Native bearing assembly did not add its stationary contraption: entity="
+                    + entity + ", assembly=" + be.getClass().getMethod("getLastAssemblyException").invoke(be));
+        }
+        return entity;
+    }
+
+    /** Use the same native span and volume constructor as SuperGlueSelectionPacket. */
+    private static Entity createGalleryGlue(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        level.setBlock(cell.north(), Blocks.STONE.defaultBlockState(), 3);
+        level.setBlock(cell, Blocks.OAK_PLANKS.defaultBlockState(), 3);
+        Class<?> glue = Class.forName("com.simibubi.create.content.contraptions.glue.SuperGlueEntity",
+                true, CimSceneMod.class.getClassLoader());
+        AABB span = (AABB) glue.getMethod("span", BlockPos.class, BlockPos.class).invoke(null, cell.north(), cell);
+        Entity entity = (Entity) glue.getConstructor(net.minecraft.world.level.Level.class, AABB.class).newInstance(level, span);
+        if (!level.addFreshEntity(entity) || !entity.isAddedToLevel()) {
+            throw new IllegalStateException("Native glue volume insertion refused");
+        }
+        return entity;
+    }
+
+    /** Verify the actual connection and native additional-spawn bounds, rather than guessed NBT. */
+    private static void checkGalleryGlue(Entity entity, BlockPos cell) throws ReflectiveOperationException {
+        Class<?> glue = entity.getClass();
+        AABB span = (AABB) glue.getMethod("span", BlockPos.class, BlockPos.class).invoke(null, cell.north(), cell);
+        if (!entity.getBoundingBox().equals(span)
+                || !(boolean) glue.getMethod("contains", BlockPos.class).invoke(entity, cell)
+                || !(boolean) glue.getMethod("contains", BlockPos.class).invoke(entity, cell.north())) {
+            throw new IllegalStateException("Native glue lost its selected volume");
+        }
+        var isGlued = glue.getMethod("isGlued", net.minecraft.world.level.LevelAccessor.class,
+                BlockPos.class, Direction.class, java.util.Set.class);
+        if (!(boolean) isGlued.invoke(null, entity.level(), cell.north(), Direction.SOUTH, null)
+                || (boolean) isGlued.invoke(null, entity.level(), cell, Direction.EAST, null)) {
+            throw new IllegalStateException("Native glue connection lookup differs from its selected blocks");
+        }
+        var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), entity.registryAccess());
+        try {
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) entity).writeSpawnData(buffer);
+            Entity received = entity.getType().create(entity.level());
+            received.setPos(entity.getX(), entity.getY(), entity.getZ());
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+            if (!received.getBoundingBox().equals(span) || buffer.isReadable()) {
+                throw new IllegalStateException("Native glue spawn round trip lost its selected bounds");
+            }
+        } finally {
+            buffer.release();
+        }
+    }
+
+    /** Native SeatBlock.sitDown creates and mounts its own seat entity. */
+    private static Entity createGallerySeat(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        level.setBlock(cell, BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:white_seat")).defaultBlockState(), 3);
+        var rider = net.minecraft.world.entity.EntityType.PIG.create(level);
+        boolean seated = false;
+        try {
+            m_setNoAi(rider);
+            rider.setNoGravity(true);
+            rider.setInvulnerable(true);
+            rider.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180, 0);
+            if (!level.addFreshEntity(rider)) throw new IllegalStateException("Native seat rider insertion refused");
+            Class<?> seat = level.getBlockState(cell).getBlock().getClass();
+            seat.getMethod("sitDown", net.minecraft.world.level.Level.class, BlockPos.class, Entity.class)
+                    .invoke(null, level, cell, rider);
+            Entity entity = rider.getVehicle();
+            if (entity == null || !entity.isAlive() || !entity.isAddedToLevel()
+                    || !BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:seat")) {
+                throw new IllegalStateException("Native seat did not mount its real rider");
+            }
+            seated = true;
+            return entity;
+        } finally {
+            if (!seated && rider != null) {
+                Entity vehicle = rider.getVehicle();
+                rider.discard();
+                if (vehicle != null) vehicle.discard();
+            }
+        }
+    }
+
+    /** Real ticking regressions: configured subjects survive; their unconfigured controls self-remove. */
+    private static int entityLifetimeSelftest(CommandSourceStack src, String subjectName) {
+        boolean glue = subjectName.equals("glue");
+        boolean seat = subjectName.equals("seat");
+        ServerLevel level = src.getLevel();
+        BlockPos retainedCell = new BlockPos(72, 100, 72);
+        BlockPos defaultCell = retainedCell.east(4);
+        var chunk = new net.minecraft.world.level.ChunkPos(retainedCell);
+        boolean wasForced = level.getForcedChunks().contains(chunk.toLong());
+        var previous = new java.util.LinkedHashMap<BlockPos, BlockState>();
+        for (BlockPos cell : List.of(retainedCell, defaultCell)) {
+            previous.put(cell.north(), level.getBlockState(cell.north()));
+            previous.put(cell, level.getBlockState(cell));
+        }
+        Entity[] subjects = new Entity[2];
+        Runnable cleanup = () -> {
+            try {
+                if (!glue && !seat) {
+                    for (BlockPos cell : List.of(retainedCell, defaultCell)) {
+                        BlockEntity be = level.getBlockEntity(cell.north());
+                        if (be != null) be.getClass().getMethod("disassemble").invoke(be);
+                    }
+                }
+            } catch (ReflectiveOperationException failure) {
+                throw new IllegalStateException("Native " + subjectName + " live-test cleanup failed", failure);
+            } finally {
+                for (Entity subject : subjects) {
+                    if (subject == null) continue;
+                    for (Entity passenger : List.copyOf(subject.getPassengers())) passenger.discard();
+                    subject.discard();
+                }
+                previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
+                if (!wasForced) level.setChunkForced(chunk.x, chunk.z, false);
+            }
+        };
+        level.setChunkForced(chunk.x, chunk.z, true);
+        // Let the native ticket make this chunk entity-ticking before assembly.
+        runAfterTicks(level.getServer(), 5, () -> {
+            try {
+                if (glue || seat) {
+                    subjects[0] = seat ? createGallerySeat(level, retainedCell) : createGalleryGlue(level, retainedCell);
+                    AABB nativeBounds = subjects[0].getBoundingBox();
+                    alignGalleryEntity(subjects[0], retainedCell, true);
+                    if (!subjects[0].getBoundingBox().equals(nativeBounds)) {
+                        throw new IllegalStateException("Gallery alignment moved native glue bounds");
+                    }
+                    subjects[1] = subjects[0].getType().create(level);
+                    subjects[1].setPos(defaultCell.getX() + 0.5, defaultCell.getY(), defaultCell.getZ() + 0.5);
+                    if ((glue && subjects[1].getBoundingBox().getXsize() != 0) || !level.addFreshEntity(subjects[1])) {
+                        throw new IllegalStateException("Native bare " + subjectName + " control setup failed");
+                    }
+                } else {
+                    subjects[0] = assembleGalleryBearing(level, retainedCell, true);
+                    subjects[1] = assembleGalleryBearing(level, defaultCell, false);
+                }
+                int started = level.getServer().getTickCount();
+                runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS + ENTITY_FINAL_TICKS, () -> {
+                    boolean passed = false;
+                    int elapsed = level.getServer().getTickCount() - started;
+                    int ticks = subjects[0].tickCount;
+                    try {
+                        if (!subjects[0].isAlive() || !subjects[0].isAddedToLevel()
+                                || ticks < ENTITY_SETTLE_TICKS || !subjects[1].isRemoved()) {
+                            throw new IllegalStateException("Native " + subjectName + " lifecycle mismatch: retained="
+                                    + subjects[0].isAlive() + ", entityTicks=" + ticks
+                                    + ", defaultRemoved=" + subjects[1].isRemoved());
+                        }
+                        if (seat) {
+                            Entity rider = subjects[0].getFirstPassenger();
+                            Class<?> seatBlock = level.getBlockState(retainedCell).getBlock().getClass();
+                            boolean occupied = (boolean) seatBlock.getMethod("isSeatOccupied",
+                                    net.minecraft.world.level.Level.class, BlockPos.class).invoke(null, level, retainedCell);
+                            if (!(rider instanceof net.minecraft.world.entity.animal.Pig) || !rider.isAlive()
+                                    || !rider.isAddedToLevel() || rider.getVehicle() != subjects[0] || !occupied
+                                    || rider.tickCount < ENTITY_SETTLE_TICKS) {
+                                throw new IllegalStateException("Native seat lost its ticking rider or seat block");
+                            }
+                        } else if (glue) {
+                            // ServerLevel owns tickCount, including for native entities
+                            // whose tick override does not call Entity.baseTick.
+                            checkGalleryGlue(subjects[0], retainedCell);
+                        } else {
+                            checkGalleryContraption(subjects[0], false);
+                            BlockEntity be = level.getBlockEntity(retainedCell.north());
+                            if (be.getClass().getMethod("getMovedContraption").invoke(be) != subjects[0]) {
+                                throw new IllegalStateException("Native retained bearing lost its controller attachment");
+                            }
+                        }
+                        passed = true;
+                    } catch (Throwable failure) {
+                        LOGGER.error("[cimscene] selftest " + subjectName + " live FAILED", failure);
+                    } finally {
+                        try {
+                            cleanup.run();
+                        } catch (Throwable failure) {
+                            passed = false;
+                            LOGGER.error("[cimscene] selftest " + subjectName + " live FAILED during cleanup", failure);
+                        }
+                    }
+                    if (passed) LOGGER.info("[cimscene] selftest {} live PASS serverTicks={} entityTicks={} default-removed=true", subjectName, elapsed, ticks);
+                });
+            } catch (Throwable failure) {
+                LOGGER.error("[cimscene] selftest " + subjectName + " live FAILED during setup", failure);
+                cleanup.run();
+            }
+        });
+        return 1;
+    }
+
+    /** Use the real powered assembler and minecart; the native controller assembles and mounts its payload. */
+    private static Entity assembleGalleryCart(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) level.getChunkAt(cell.offset(dx, 0, dz));
+        }
+        level.setBlock(cell.below(), Blocks.STONE.defaultBlockState(), 3);
+        level.setBlock(cell, BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:cart_assembler"))
+                .defaultBlockState(), 3);
+        level.setBlock(cell.above(), Blocks.OAK_PLANKS.defaultBlockState(), 3);
+        // A real neighboring power source drives the assembler's native POWERED update.
+        level.setBlock(cell.north(), Blocks.REDSTONE_BLOCK.defaultBlockState(), 3);
+        var cart = net.minecraft.world.entity.EntityType.MINECART.create(level);
+        boolean assembled = false;
+        try {
+            cart.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 0, 0);
+            if (!level.addFreshEntity(cart)) throw new IllegalStateException("Native minecart insertion refused");
+            BlockEntity be = level.getBlockEntity(cell);
+            be.getClass().getMethod("tryAssemble", net.minecraft.world.entity.vehicle.AbstractMinecart.class)
+                    .invoke(be, cart);
+            for (Entity passenger : cart.getPassengers()) {
+                if (BuiltInRegistries.ENTITY_TYPE.getKey(passenger.getType()).toString().equals("create:contraption")
+                        && passenger.isAlive() && passenger.isAddedToLevel()) {
+                    assembled = true;
+                    return passenger;
+                }
+            }
+            throw new IllegalStateException("Native cart assembly did not mount its contraption: "
+                    + be.getClass().getMethod("getLastAssemblyException").invoke(be));
+        } finally {
+            if (!assembled && cart != null) {
+                for (Entity passenger : List.copyOf(cart.getPassengers())) passenger.discard();
+                cart.discard();
+            }
+        }
+    }
+
+    private static void checkGalleryContraption(Entity entity, boolean cart) throws ReflectiveOperationException {
+        Object contraption = entity.getClass().getMethod("getContraption").invoke(entity);
+        if (contraption == null) throw new IllegalStateException("Native entity has no contraption");
+        Object blocks = contraption.getClass().getMethod("getBlocks").invoke(contraption);
+        if (!(blocks instanceof java.util.Map<?, ?> captured) || captured.size() != (cart ? 2 : 1)
+                || !(captured.get(cart ? BlockPos.ZERO.above() : BlockPos.ZERO) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo block)
+                || !block.state().is(Blocks.OAK_PLANKS)) {
+            throw new IllegalStateException("Native assembly lost its actual world block");
+        }
+        if (cart && (!(captured.get(BlockPos.ZERO) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo anchor)
+                || !BuiltInRegistries.BLOCK.getKey(anchor.state().getBlock()).toString().equals("create:minecart_anchor"))) {
+            throw new IllegalStateException("Native mounted contraption lost its minecart anchor");
+        }
+    }
+
+    /** Real assembly and native additional-spawn decoding, including the formerly null contraption. */
+    private static int contraptionSpawnSelftest(CommandSourceStack src, boolean cart) {
+        String subject = cart ? "cart" : "bearing";
+        ServerLevel level = src.getLevel();
+        BlockPos cell = new BlockPos(64, 100, 64);
+        level.getChunkAt(cell);
+        var previous = new java.util.LinkedHashMap<BlockPos, BlockState>();
+        for (BlockPos pos : List.of(cell.below(), cell.north(), cell, cell.above())) previous.put(pos, level.getBlockState(pos));
+        Entity assembled = null;
+        Entity vehicle = null;
+        int bytes = 0;
+        boolean passed = false;
+        var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+        try {
+            assembled = cart ? assembleGalleryCart(level, cell) : assembleGalleryBearing(level, cell);
+            vehicle = assembled.getVehicle();
+            if (cart && !(vehicle instanceof net.minecraft.world.entity.vehicle.AbstractMinecart)) {
+                throw new IllegalStateException("Native cart contraption has no minecart vehicle");
+            }
+            checkGalleryContraption(assembled, cart);
+            Vec3 nativePosition = assembled.position();
+            float nativeYaw = assembled.getYRot();
+            alignGalleryEntity(assembled, cell, true);
+            if (!assembled.position().equals(nativePosition) || assembled.getYRot() != nativeYaw) {
+                throw new IllegalStateException("Gallery alignment moved the native bearing attachment");
+            }
+            var codec = (net.neoforged.neoforge.entity.IEntityWithComplexSpawn) assembled;
+            codec.writeSpawnData(buffer);
+            bytes = buffer.readableBytes();
+            Entity received = assembled.getType().create(level);
+            received.moveTo(assembled.getX(), assembled.getY(), assembled.getZ(), assembled.getYRot(), assembled.getXRot());
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+            checkGalleryContraption(received, cart);
+            if (buffer.isReadable()) throw new IllegalStateException("Unconsumed native bearing spawn data");
+            buffer.clear();
+            Entity bare = assembled.getType().create(level);
+            boolean refused = false;
+            try {
+                ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+                Entity bareReceiver = assembled.getType().create(level);
+                ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bareReceiver).readSpawnData(buffer);
+            } catch (RuntimeException expected) {
+                refused = true;
+            }
+            if (!refused) throw new IllegalStateException("Bare bearing negative control unexpectedly encoded");
+            passed = true;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest " + subject + " native-spawn FAILED", failure);
+        } finally {
+            buffer.release();
+            try {
+                if (cart) {
+                    if (assembled != null) assembled.getClass().getMethod("disassemble").invoke(assembled);
+                } else {
+                    BlockEntity be = level.getBlockEntity(cell.north());
+                    if (be != null) be.getClass().getMethod("disassemble").invoke(be);
+                }
+            } catch (ReflectiveOperationException failure) {
+                passed = false;
+                LOGGER.error("[cimscene] selftest " + subject + " native-spawn FAILED during cleanup", failure);
+            } finally {
+                if (assembled != null) assembled.discard();
+                if (vehicle != null) vehicle.discard();
+                previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
+            }
+        }
+        if (passed) LOGGER.info("[cimscene] selftest {} native-spawn PASS bytes={} bare-rejected=true", subject, bytes);
+        return passed ? 1 : 0;
+    }
+
+    /** Match PotatoCannonItem: setItem resolves the data-driven projectile type before spawning. */
+    private static void configurePotatoProjectile(Entity entity) throws ReflectiveOperationException {
+        entity.getClass().getMethod("setItem", ItemStack.class).invoke(entity, new ItemStack(Items.POTATO));
+    }
+
+    /** Native render-mode lookup and additional-spawn round trip; no client or synthetic ticks. */
+    private static int potatoSpawnSelftest(CommandSourceStack src) {
+        var type = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse("create:potato_projectile"));
+        ServerLevel level = src.getLevel();
+        var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+        try {
+            Entity projectile = type.create(level);
+            var renderMode = projectile.getClass().getMethod("getRenderMode");
+            boolean refused = false;
+            try {
+                renderMode.invoke(projectile);
+            } catch (java.lang.reflect.InvocationTargetException expected) {
+                if (!(expected.getCause() instanceof NullPointerException)) throw expected;
+                refused = true;
+            }
+            if (!refused) throw new IllegalStateException("Bare projectile negative control unexpectedly rendered");
+            configurePotatoProjectile(projectile);
+            Object projectileType = projectile.getClass().getMethod("getProjectileType").invoke(projectile);
+            if (projectileType == null || renderMode.invoke(projectile) == null) {
+                throw new IllegalStateException("Configured projectile has no native type or render mode");
+            }
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) projectile).writeSpawnData(buffer);
+            int bytes = buffer.readableBytes();
+            Entity received = type.create(level);
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+            ItemStack receivedItem = (ItemStack) received.getClass().getMethod("getItem").invoke(received);
+            Object receivedType = received.getClass().getMethod("getProjectileType").invoke(received);
+            if (!receivedItem.is(Items.POTATO) || receivedItem.getCount() != 1 || receivedType != projectileType
+                    || renderMode.invoke(received) == null || buffer.isReadable()) {
+                throw new IllegalStateException("Native projectile spawn round trip lost ammo, type or render mode");
+            }
+            LOGGER.info("[cimscene] selftest potato native-spawn PASS bytes={} bare-rejected=true", bytes);
+            return 1;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest potato native-spawn FAILED", failure);
+            return 0;
+        } finally {
+            buffer.release();
+        }
+    }
+
+    /** Real Create item placement and its native additional-spawn codec, exercised by CI. */
+    private static int itemEntitySpawnSelftest(CommandSourceStack src, boolean blueprint) {
+        String subject = blueprint ? "blueprint" : "package";
+        String entityId = blueprint ? "create:crafting_blueprint" : "create:package";
+        String itemId = blueprint ? "create:crafting_blueprint" : "create:cardboard_package_12x12";
+        ServerLevel level = src.getLevel();
+        BlockPos support = new BlockPos(64, 100, 64);
+        level.getChunkAt(support);
+        BlockState previous = level.getBlockState(support);
+        Entity placed = null;
+        try {
+            GuiProbe player = new GuiProbe(level);
+            ItemStack held = new ItemStack(Items.STICK);
+            player.setItemInHand(InteractionHand.MAIN_HAND, held);
+            player.setShiftKeyDown(true);
+            level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+            placed = placeEntityItem(level, player, support,
+                    blueprint ? Direction.SOUTH : Direction.UP, itemId, entityId);
+            if (placed == null || player.getItemInHand(InteractionHand.MAIN_HAND) != held
+                    || !player.isShiftKeyDown()) {
+                throw new IllegalStateException(subject + " item placement or player state restoration failed");
+            }
+            Vec3 nativePosition = placed.position();
+            float nativeYaw = placed.getYRot();
+            alignGalleryEntity(placed, support.relative(blueprint ? Direction.SOUTH : Direction.UP), true);
+            if (blueprint && (!placed.position().equals(nativePosition) || placed.getYRot() != nativeYaw)) {
+                throw new IllegalStateException("Gallery alignment changed the native hanging attachment");
+            }
+            if (placed instanceof net.minecraft.world.entity.decoration.HangingEntity hanging && !hanging.survives()) {
+                throw new IllegalStateException("Item-placed hanging entity does not survive on its support");
+            }
+            var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+            try {
+                ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) placed).writeSpawnData(buffer);
+                if (buffer.readableBytes() <= (blueprint ? 0 : 12)) {
+                    throw new IllegalStateException(subject + " spawn payload has no item data");
+                }
+                int bytes = buffer.readableBytes();
+                Entity bare = BuiltInRegistries.ENTITY_TYPE.get(ResourceLocation.parse(entityId)).create(level);
+                boolean refused = false;
+                buffer.clear();
+                try {
+                    ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+                } catch (RuntimeException expected) {
+                    refused = true;
+                }
+                if (!refused) throw new IllegalStateException("Bare " + subject + " negative control unexpectedly encoded");
+                LOGGER.info("[cimscene] selftest {} native-spawn PASS bytes={} bare-rejected=true", subject, bytes);
+            } finally {
+                buffer.release();
+            }
+            return 1;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest " + subject + " native-spawn FAILED", failure);
+            return 0;
+        } finally {
+            if (placed != null) placed.discard();
+            level.setBlock(support, previous, 3);
+        }
+    }
+
+    /** Place through Mekanism's item: it assigns the real chargepad home and owner. */
+    static Entity placeRobit(ServerLevel level, ServerPlayer player, BlockPos pad) {
+        level.setBlock(pad.below(), Blocks.STONE.defaultBlockState(), 3);
+        // A previous menu may have left this pad active; create a fresh placement context.
+        level.setBlock(pad, Blocks.AIR.defaultBlockState(), 3);
+        level.setBlock(pad, BuiltInRegistries.BLOCK.get(
+                ResourceLocation.parse("mekanism:chargepad")).defaultBlockState(), 3);
+        return placeEntityItem(level, player, pad, "mekanism:robit", "mekanism:robit");
+    }
+
+    /** Native hanging items and assembled bearings retain their actual attachment. */
+    private static void alignGalleryEntity(Entity entity, BlockPos cell, boolean nativePlaced) {
+        if (nativePlaced && (entity instanceof net.minecraft.world.entity.decoration.HangingEntity || entity.isPassenger() || entity.isVehicle()
+                || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")
+                || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:super_glue"))) return;
+        entity.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180.0f, 0.0f);
+        // Frozen mobs must send the same head/body direction as their entity yaw.
+        entity.setYHeadRot(180.0f);
+        entity.setYBodyRot(180.0f);
+    }
+
+    /** The item's native placement supplies entity state required by its spawn payload. */
+    private static Entity placeEntityItem(ServerLevel level, ServerPlayer player, BlockPos against,
+                                          String itemId, String entityId) {
+        return placeEntityItem(level, player, against, Direction.UP, itemId, entityId);
+    }
+
+    private static Entity placeEntityItem(ServerLevel level, ServerPlayer player, BlockPos against,
+                                          Direction face, String itemId, String entityId) {
+        ItemStack previous = player.getItemInHand(InteractionHand.MAIN_HAND);
+        boolean shifted = player.isShiftKeyDown();
+        List<Entity> previousJoined = GUI_JOINED;
+        List<Entity> joined = new ArrayList<>();
+        GUI_JOINED = joined;
+        try {
+            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId)));
+            player.setShiftKeyDown(false);
+            player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+            stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(against).relative(face, 0.5), face, against, false)));
+            return joined.stream().filter(e -> e.isAlive() && BuiltInRegistries.ENTITY_TYPE.getKey(e.getType())
+                    .equals(ResourceLocation.parse(entityId))).findFirst().orElse(null);
+        } finally {
+            GUI_JOINED = previousJoined;
+            if (previousJoined != null) previousJoined.addAll(joined);
+            player.setItemInHand(InteractionHand.MAIN_HAND, previous);
+            player.setShiftKeyDown(shifted);
+        }
+    }
+
     /** Entities that joined the level while a use ran; null when no use is running. */
     private static List<net.minecraft.world.entity.Entity> GUI_JOINED;
     /** Everything a use spawned, so the rig can be cleared of it. */
@@ -1805,6 +4095,14 @@ public final class CimSceneMod {
      * only from one side, and twice, because some items claim an owner on the first use.
      */
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
+        if (opener.startsWith("specialized:") || opener.startsWith("sneak+specialized:")) {
+            String spec = opener.replace("sneak+", "").substring("specialized:".length());
+            SpecializedOpeners.act(level, player, rig, spec, guiEntity);
+            if (player instanceof GuiProbe probe && probe.seen == null) {
+                probe.seen = ResourceLocation.parse(spec);
+            }
+            return;
+        }
         boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:")
                 || opener.contains("cube") || opener.contains("settle+use+item:");
         Direction[] faces = block
@@ -1923,6 +4221,11 @@ public final class CimSceneMod {
         List<String> both = new ArrayList<>(out);
         for (String each : out) {
             both.add("sneak+" + each);
+        }
+        for (String spec : SpecializedOpeners.MENUS) {
+            if (spec.startsWith(namespace + ":")) {
+                both.add("specialized:" + spec);
+            }
         }
         return both;
     }
@@ -2166,6 +4469,9 @@ public final class CimSceneMod {
      */
     private static int galleryGuiScan(CommandSourceStack src, String namespace) {
         ServerLevel level = src.getLevel();
+        // 14-dj: the probe builds and tool sweeps need real BE/world ticking —
+        // a freeze left behind by the last gui page's terminal would park them.
+        setGalleryFrozen(level.getServer(), false, "gui scan entry");
         Map<ResourceLocation, List<String>> openers = new HashMap<>();
         Map<ResourceLocation, String> classes = new HashMap<>();
         Map<ResourceLocation, String> titles = new HashMap<>();
@@ -2238,6 +4544,9 @@ public final class CimSceneMod {
      * opener; c-imagine/scenes/settle-NS.done marks the end.
      */
     private static int galleryGuiSettle(ServerLevel level, String namespace) {
+        // 14-dj: the settle pass builds rigs, spawns entities and sweeps tools —
+        // it needs the ticking world, so it unfreezes like every page entry.
+        setGalleryFrozen(level.getServer(), false, "gui settle entry");
         java.util.Set<ResourceLocation> wanted = new java.util.TreeSet<>();
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.MENU.keySet());
         ids.removeIf(id -> !id.getNamespace().equals(namespace));
@@ -2426,6 +4735,7 @@ public final class CimSceneMod {
      */
     private static int galleryGui(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "gui page entry");
         writeGalleryIndex(level, namespace);
         String guiStem = "gallery-gui-" + namespace + "-p" + page;
 
@@ -2468,6 +4778,9 @@ public final class CimSceneMod {
             boolean planned = Files.isRegularFile(Path.of("c-imagine", "scenes",
                     "gallery-gui-" + namespace + "-p" + page + ".tsv"));
             String opener = planned ? guiManifestOpener(namespace, page) : guiOpeners(level, viewer, namespace).get(id);
+            if (opener == null && SpecializedOpeners.isSpecialized(id.toString())) {
+                opener = "specialized:" + id.toString();
+            }
             if (opener != null) {
                 guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
@@ -2480,17 +4793,21 @@ public final class CimSceneMod {
                 }
             }
             String chosen = opener;
-            runAfterTicks(level.getServer(), chosen != null && (chosen.contains("entity:") || chosen.startsWith("cube") || chosen.contains("settle+"))
-                            ? 40 : GUI_SETTLE_TICKS,
-                    () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig));
+            boolean slowSettle = chosen != null && (chosen.contains("entity:") || chosen.contains("robit")
+                    || chosen.startsWith("cube") || chosen.contains("settle+"));
+            if (id.toString().contains("robit")) {
+                slowSettle = true;
+            }
+            runAfterTicks(level.getServer(), slowSettle ? 40 : GUI_SETTLE_TICKS,
+                    () -> finishGuiPage(level, viewer, namespace, page, id, chosen, rig, src));
             return 1;
         }
-        writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed);
+        writeGuiManifest(namespace, page, id, guiStem, tsv, placed, failed, src);
         return placed;
     }
 
     private static void finishGuiPage(ServerLevel level, ServerPlayer viewer, String namespace, int page,
-                                      ResourceLocation id, String opener, BlockPos rig) {
+                                      ResourceLocation id, String opener, BlockPos rig, CommandSourceStack src) {
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tmenu\tnote\n");
         int placed = 0;
         int failed = 0;
@@ -2505,6 +4822,22 @@ public final class CimSceneMod {
             }
             if (guiOpenMenu(viewer) != null) {
                 how = "opened-by:" + opener;
+            }
+        }
+        if (how == null) {
+            String spec = id.toString();
+            if (SpecializedOpeners.isSpecialized(spec)) {
+                try {
+                    SpecializedOpeners.place(level, viewer, rig, spec, e -> {
+                        guiEntity = e;
+                        GUI_SPAWNED.add(e);
+                    });
+                    if (SpecializedOpeners.act(level, viewer, rig, spec, guiEntity) && guiOpenMenu(viewer) != null) {
+                        how = "opened-by:specialized:" + spec;
+                    }
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] finishGuiPage specialized fallback failed for {}: {}", spec, t.toString());
+                }
             }
         }
         if (how == null) {
@@ -2546,11 +4879,37 @@ public final class CimSceneMod {
                         .append(slot.container == viewer.getInventory() ? "player" : "menu").append('\t').append(slot.getContainerSlot()).append('\n');
             }
         }
-        writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed);
+        writeGuiManifest(namespace, page, id, "gallery-gui-" + namespace + "-p" + page, tsv, placed, failed, src);
     }
 
     private static void writeGuiManifest(String namespace, int page, ResourceLocation id, String guiStem,
-                                         StringBuilder tsv, int placed, int failed) {
+                                         StringBuilder tsv, int placed, int failed, CommandSourceStack src) {
+        // 14-dj THE GUI SETTLE PIN + FREEZE — the menus lane's half of the
+        // settle-freeze instrument (the block half graduated in 14-di). The
+        // menus crawl's shots were framed against a LIVE world: the day clock
+        // ran the sky gradient wherever each leg's boot/settle timing had
+        // brought it (the measured robit-class backdrop: the truth leg stood
+        // in morning light, the ours leg in near-darkness — 627984 ae across
+        // the whole backdrop on every robit press page, while the GUI panel
+        // itself matched pixel for pixel), and the weather timer dimmed the
+        // sky whenever its own clock said so. A menu can only be honest-red
+        // or honest-green against a backdrop the next run can reproduce: the
+        // terminal point pins the day clock at noon and clears the weather
+        // through the proven quiet dispatcher (runQuiet — the same surface
+        // the biome walk uses for fillbiome, zero new mojmap), THEN freezes
+        // the world at that exact frame — the same vanilla tickRateManager
+        // freeze 14-di verified on the 1.21.1 decompile: the server's day
+        // clock, BE tickers and scheduled ticks gate on runsNormally, and
+        // the broadcast ClientboundTickingStatePacket stops the joined
+        // client's sky/particle/texture clocks on the same flag. Every page
+        // therefore shoots the identical noon sky on both legs and across
+        // runs; the widget crawl's press pages inherit the frozen frame (the
+        // press packets ride the network stack, which never freezes). Every
+        // gui command entry (page, scan, settle) unfreezes first — the
+        // openers' settles and the probe builds need the ticking world.
+        runQuiet(src, "time set 6000");
+        runQuiet(src, "weather clear");
+        setGalleryFrozen(src.getServer(), true, "gui " + guiStem);
         String manifest = "gallery-gui-" + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
@@ -2587,6 +4946,7 @@ public final class CimSceneMod {
      */
     private static int galleryBiome(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "biome page entry");
         writeGalleryIndex(level, namespace);
         String biomeStem = "gallery-biome-" + namespace + "-p" + page;
 
@@ -2678,6 +5038,7 @@ public final class CimSceneMod {
      */
     private static int galleryInv(CommandSourceStack src, String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "inv page entry");
         writeGalleryIndex(level, namespace);
 
         List<ResourceLocation> ids = new ArrayList<>(BuiltInRegistries.ITEM.keySet());
@@ -2703,8 +5064,17 @@ public final class CimSceneMod {
 
         StringBuilder tsv = new StringBuilder("slot\titem\n");
         for (int i = 0; i < slice.size(); i++) {
-            // vanilla slot naming: 0..8 = hotbar.N, 9..35 = inventory.N
-            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + i);
+            // THE VANILLA SLOT SEMANTICS (measured: run #302's ae2 p0 pair
+            // shifted the truth's items down one row item-for-item — the
+            // writer emitted CONTAINER numbering (Bukkit 9..35) under the
+            // vanilla-looking inventory.N name, and the truth's rcon
+            // `item replace entity cimviewer $slot` passes the name RAW,
+            // where vanilla inventory.N indexes the 27 MAIN slots 0..26:
+            // manifest inventory.9 filled the truth's middle row while ours
+            // filled the top row). 0..8 = hotbar.N; 9..35 = inventory.(i-9)
+            // — the manifest names the slots the vanilla command fills, so
+            // BOTH legs place the same item in the same slot.
+            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + (i - 9));
             tsv.append(slot).append('\t').append(slice.get(i)).append('\n');
         }
         String manifest = "gallery-inv-" + namespace + "-p" + page + ".tsv";
@@ -2792,10 +5162,12 @@ public final class CimSceneMod {
     private static int galleryEntity(CommandSourceStack src, String series,
                                      String namespace, int page) {
         ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "entity page entry");
         // Every command (the exhausted early return included) supersedes the
         // previous page's pending settle: its subjects are about to be
         // discarded, and a late pass must not relabel them dissolved.
         final int gen = ++entityPageGen;
+        closeGalleryGantries();
         writeGalleryIndex(level, namespace);
         int swept = sweepGalleryDrops(level);
         if (swept > 0) {
@@ -2868,6 +5240,12 @@ public final class CimSceneMod {
         // named notes RED (content absent from the picture is not green).
         final java.util.Map<Integer, String> skipNotes = new java.util.HashMap<>();
         int noInstance = 0, wrongSeries = 0, failed = 0;
+        final int[] asyncFailures = {0};
+        // 14-ea: the pin deadline — spawn tick through the settle and the
+        // shot window (every spawned subject's delta movement is re-zeroed
+        // on every tick until then; see MOTION_PINNED)
+        final int pinDeadline = level.getServer().getTickCount()
+                + ENTITY_SETTLE_TICKS + MOTION_PIN_GRACE_TICKS;
         // 14-ak CLIENT-CRASH BAN READ (at the start of every entity command):
         // a type on the ban list never spawns — a named skip row
         // (note=client-crash-banned) mirrors the no-instance machinery
@@ -2906,6 +5284,23 @@ public final class CimSceneMod {
                         + "reason=no-instance entity={}", namespace, page, from + i, id);
                 continue;
             }
+            // 14-eb THE SPAWN-SUPPORT TABLE: a subject that only lives on its
+            // own support block (the robit's charge pad) gets it placed at
+            // the cell's ground BEFORE the spawn — the support rides the
+            // cell's picture on both legs (both stacks run this same code).
+            ResourceLocation supportId = spawnSupportFor(id);
+            if (supportId != null) {
+                Block supBlock = BuiltInRegistries.BLOCK.get(supportId);
+                if (supBlock == null || supBlock.defaultBlockState().isAir()) {
+                    skipNotes.put(i, "no-support");
+                    LOGGER.info("[cimscene] gallery-entity skip ns={} page={} index={} "
+                            + "reason=no-support entity={}", namespace, page, from + i, id);
+                    continue;
+                }
+                level.setBlock(new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                                GALLERY_Y0 + row * ENTITY_PITCH - 1, GALLERY_Z),
+                        supBlock.defaultBlockState(), Block.UPDATE_CLIENTS);
+            }
             boolean isMob = e instanceof Mob;
             String kind = !isMob ? "dyn"
                     : (e.getBbWidth() <= 2.0f && e.getBbHeight() <= 2.0f ? "mobs" : "large");
@@ -2929,16 +5324,82 @@ public final class CimSceneMod {
                 continue;
             }
             try {
+                if (id.toString().equals("create:gantry_contraption")) {
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    GantryRig rig = new GantryRig(level, cell);
+                    GALLERY_GANTRIES.add(rig);
+                    final int index = i;
+                    rig.start(ready -> {
+                        if (gen != entityPageGen) {
+                            rig.close();
+                            return;
+                        }
+                        ready.setNoGravity(true);
+                        ready.setInvulnerable(true);
+                        ready.addTag(GALLERY_TAG);
+                        // Keep the real controller/shaft attachment and native motion.
+                        spawned.add(ready);
+                        spawnedIdx.add(index);
+                    }, failure -> {
+                        if (gen == entityPageGen) {
+                            asyncFailures[0]++;
+                            skipNotes.put(index, "failed:" + failure.getClass().getName());
+                            LOGGER.error("[cimscene] gallery native gantry assembly failed", failure);
+                        }
+                        rig.close();
+                    });
+                    continue;
+                }
+                if (id.toString().equals("create:potato_projectile")) configurePotatoProjectile(e);
+                boolean robit = id.toString().equals("mekanism:robit");
+                boolean parcel = id.toString().equals("create:package");
+                boolean blueprint = id.toString().equals("create:crafting_blueprint");
+                boolean bearing = id.toString().equals("create:stationary_contraption");
+                boolean cart = id.toString().equals("create:contraption");
+                boolean glue = id.toString().equals("create:super_glue");
+                boolean seat = id.toString().equals("create:seat");
+                boolean itemPlaced = robit || parcel || blueprint;
+                if (bearing || cart || glue || seat) {
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    e = seat ? createGallerySeat(level, cell) : glue ? createGalleryGlue(level, cell)
+                            : cart ? assembleGalleryCart(level, cell) : assembleGalleryBearing(level, cell);
+                    if (cart) {
+                        Entity vehicle = e.getVehicle();
+                        vehicle.addTag(GALLERY_TAG);
+                        vehicle.setNoGravity(true);
+                        vehicle.setInvulnerable(true);
+                        vehicle.setDeltaMovement(Vec3.ZERO);
+                        MOTION_PINNED.put(vehicle, pinDeadline);
+                    } else if (seat) {
+                        Entity rider = e.getFirstPassenger();
+                        rider.addTag(GALLERY_TAG);
+                        rider.setDeltaMovement(Vec3.ZERO);
+                        MOTION_PINNED.put(rider, pinDeadline);
+                    }
+                } else if (itemPlaced) {
+                    ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
+                    if (owner == null) owner = new GuiProbe(level);
+                    BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
+                    BlockPos support = blueprint ? cell.north() : cell.below();
+                    if (robit) {
+                        e = placeRobit(level, owner, support);
+                    } else if (blueprint) {
+                        level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+                        e = placeEntityItem(level, owner, support, Direction.SOUTH,
+                                "create:crafting_blueprint", "create:crafting_blueprint");
+                    } else {
+                        level.setBlock(support, Blocks.SMOOTH_STONE.defaultBlockState(), 3);
+                        e = placeEntityItem(level, owner, support, "create:cardboard_package_12x12", "create:package");
+                    }
+                    if (e == null) throw new IllegalStateException("Item placement did not spawn " + id);
+                }
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
-                e.moveTo(GALLERY_X0 + col * ENTITY_PITCH + 0.5,
-                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z + 0.5,
-                        180.0f, 0.0f);
-                // moveTo only sets yRot; the client takes body and head from
-                // yHeadRot, so a frozen mob would stand with its back to the
-                // camera while the ours leg's setRotation turns it around
-                e.setYHeadRot(180.0f);
-                e.setYBodyRot(180.0f);
+                alignGalleryEntity(e, new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced || bearing || cart || glue || seat);
                 e.addTag(GALLERY_TAG);
                 if (isMob) {
                     // NoAI: no movement, no look-at, no AI despawn logic — a
@@ -2946,7 +5407,16 @@ public final class CimSceneMod {
                     // between the settle pass and the shot.
                     m_setNoAi(e);
                 }
-                level.addFreshEntity(e);
+                if (!itemPlaced && !bearing && !cart && !glue && !seat) level.addFreshEntity(e);
+                // 14-ea THE MOTION PIN: a projectile's own tick re-applies
+                // its hardcoded gravity (FallingBlockEntity / ThrowableProjectile
+                // both add it INSIDE tick(), ungated by NoGravity) — one
+                // zeroed velocity at spawn survives exactly one tick. The
+                // per-tick drain (onServerTickPost) re-zeros every pinned
+                // subject until the deadline, so the cell position the
+                // settle pass manifests is the position the shot draws.
+                e.setDeltaMovement(Vec3.ZERO);
+                MOTION_PINNED.put(e, pinDeadline);
             } catch (Throwable t) {
                 failed++;
                 skipNotes.put(i, "failed:" + t.getClass().getName());
@@ -2987,7 +5457,7 @@ public final class CimSceneMod {
         final String fSeries = series;
         runAfterTicks(level.getServer(), ENTITY_SETTLE_TICKS, () -> settleGalleryEntity(
                 fLevel, fNs, fPage, fSlice, spawned, spawnedIdx,
-                fNoInstance, fWrongSeries, fFailed, fSkipNotes,
+                fNoInstance, fWrongSeries, fFailed + asyncFailures[0], fSkipNotes,
                 fFrom, fSeries, gen, false));
         return spawned.size();
     }
@@ -3013,19 +5483,187 @@ public final class CimSceneMod {
     }
 
     private void onServerTickPost(ServerTickEvent.Post event) {
-        if (DELAYED_TASKS.isEmpty()) {
+        int now = event.getServer().getTickCount();
+        if (!DELAYED_TASKS.isEmpty()) {
+            List<DelayedTask> due = new ArrayList<>();
+            DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
+            for (DelayedTask t : due) {
+                try {
+                    t.task().run();
+                } catch (Throwable ex) {
+                    // A mod's Error (a NoSuchMethodError from its own bytecode) must not hide the page.
+                    LOGGER.error("[cimscene] delayed task failed: {}", ex.toString(), ex);
+                }
+            }
+        }
+        // 14-ea: the motion pin rides the same tick drain — it must re-zero
+        // EVERY tick between the spawn and the pin deadline, independent of
+        // the delayed-task schedule (the projectiles' hardcoded per-tick
+        // gravity re-applies every tick; the pin answers every tick)
+        drainMotionPin(now);
+    }
+
+    /** Receipt flags: the first client-side unfreeze logs once per join. */
+    private static boolean CLIENT_UNFREEZE_SEEN = false;
+    private static boolean MCMETA_PIN_LOGGED = false;
+    private static boolean MCMETA_PIN_BROKEN = false;
+    /** Reflection caches (resolved on the first pin attempt, reused after). */
+    private static java.lang.reflect.Field TM_BY_PATH;
+    private static java.lang.reflect.Field ATLAS_ANIMATED;
+
+    /**
+     * 14-dk THE CLIENT KEEPS TICKING — the freeze stays server-authoritative.
+     * The vanilla freeze broadcast ({@code ClientboundTickingStatePacket})
+     * gates the JOINED CLIENT's whole tick on the runsNormally flag — and the
+     * frozen client destroyed the walk's shots (measured run #308, the 14-di
+     * freeze run: NET -303 = FIXED 22 / NEW 325, 747 RED / 28044 states =
+     * 97.34% vs #307's 98.42%): the frozen client never finished the page's
+     * mesh catch-up (llvmpipe needs seconds per page; the freeze landed ~50ms
+     * after placement at tick rate 1000 — the shots carry half-built sections),
+     * the placement/break particles NEVER died (particleEngine.tick gated —
+     * they hang in the shots as frozen black squares over the wall, the
+     * biomesoplenty p43 fence-gate page measured 22/25 RED on them alone),
+     * the client-side render-state lerps (the sliding doors' 13/16 slide, the
+     * nixie text fades) froze mid-animation against the pack's settled
+     * composites, and the gate's t0/t1 self-pairs became identical so the
+     * ANIMATED excuse died for the dyn rows (the fluid class lost its escape).
+     *
+     * <p>The instrument is the SERVER's animation state only: BE tickers,
+     * scheduled block/fluid ticks, entity AI and the day clock gate on the
+     * SERVER's runsNormally and stay pinned (the churn band stays dead — the
+     * fluix_wall family's 12 states measured FIXED on #308). The client's own
+     * tick-rate manager is forced unfrozen every tick, so meshing, particles,
+     * the render lerps and the mcmeta residual behave exactly as they did in
+     * the measured-good pre-freeze walks. The client's manager never
+     * broadcasts, so the local flip cannot leak back to the server, and the
+     * broadcast packet fires only on a server-side flip (once per page) — the
+     * override re-arms every tick it is received.
+     */
+    private void onClientTickPost(net.neoforged.neoforge.client.event.ClientTickEvent.Post event) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.level == null) {
+            CLIENT_UNFREEZE_SEEN = false;
+            MCMETA_PIN_LOGGED = false;
             return;
         }
-        int now = event.getServer().getTickCount();
-        List<DelayedTask> due = new ArrayList<>();
-        DELAYED_TASKS.removeIf(t -> t.dueTick() <= now && due.add(t));
-        for (DelayedTask t : due) {
-            try {
-                t.task().run();
-            } catch (Throwable ex) {
-                // A mod's Error (a NoSuchMethodError from its own bytecode) must not hide the page.
-                LOGGER.error("[cimscene] delayed task failed: {}", ex.toString(), ex);
+        if (mc.level.tickRateManager().isFrozen()) {
+            mc.level.tickRateManager().setFrozen(false);
+            if (!CLIENT_UNFREEZE_SEEN) {
+                CLIENT_UNFREEZE_SEEN = true;
+                LOGGER.info("[cimscene] 14-dk client keeps ticking (the freeze stays server-authoritative)");
             }
+        }
+        pinMcmetaFrameZero(mc);
+    }
+
+    /**
+     * 14-dl THE MCMETA FRAME-0 PIN — the client half of the animation
+     * instrument. The 14-di server freeze stopped the BE tickers and the
+     * 14-dk client-unfreeze kept the client's meshing/particles/lerps alive,
+     * but the client's mcmeta sprite clocks still free-run: the sprite
+     * tickers advance per client tick (TextureManager.tick ->
+     * TextureAtlas.tick -> cycleAnimationFrames -> SpriteContents$Ticker
+     * .tickAndUpload, verified on the 1.21.1 decompile), so every
+     * mcmeta-animated surface (the fluid stills, the fluix_wall family, the
+     * blaze flames, water/lava) shipped a DIFFERENT frame every run — the
+     * named 14-di mcmeta residual, measured live as the 8 OURS-STATIC
+     * fluix_wall pages (14-dk.1 receipts: truth_delta &gt; 0.35 while ours
+     * stands) and the fluid-series giants whose self-pairs stay below the
+     * gate while the truth-vs-ours ae measures 249K-1168K.
+     *
+     * <p>The pin walks the texture manager's atlas registry EVERY client
+     * tick (post the textureManager.tick that cycleAnimationFrames runs in)
+     * and, for every atlas whose animatedTextures list is still populated:
+     * for each animated sprite, zeroes the inner ticker's frame/subFrame
+     * counters and re-uploads the sprite's FIRST frame ({@code
+     * TextureAtlasSprite#uploadFirstFrame}, the same call the stitch path
+     * uses), then empties the atlas's animatedTextures list so
+     * cycleAnimationFrames iterates nothing. The empty-list check makes the
+     * steady state O(atlas count) per tick and the pin re-fires
+     * automatically after a resource reload (which replaces the atlas
+     * objects with fresh lists). The atlas content thereafter is frame 0,
+     * bit-deterministic, matching what the pack composites carry BY
+     * CONSTRUCTION (the 14-cf hosting ships the static frame-0 crop under
+     * the sprite's own path, and the dump client's captures ride the same
+     * pinned clocks) — the phase residual dies at the source instead of
+     * being excused post-hoc. The ANIMATED self-pair excuse mostly
+     * evaporates with it: a cell whose only motion was the mcmeta phase
+     * measures a zero t0/t1 delta AND a near-zero truth-vs-ours ae.
+     *
+     * <p>Resource reloads replace the atlas objects (fresh lists) — the
+     * per-tick empty-list check re-pins the new generation automatically.
+     * Reflection targets (all verified on the 1.21.1 client-named jar):
+     * TextureManager.byPath (private final Map), TextureAtlas.animatedTextures
+     * (private List), the anonymous TextureAtlasSprite$Ticker wrapper's
+     * captured fields (val$ticker: SpriteTicker, this$0: TextureAtlasSprite),
+     * SpriteContents$Ticker.frame/subFrame (package-private ints). Any
+     * reflection miss disables the pin once with a warn — the walk never
+     * crashes on it. The ours (Paper/26.3) leg runs no scenemod and needs no
+     * pin: its composites are static by construction.
+     */
+    private static void pinMcmetaFrameZero(net.minecraft.client.Minecraft mc) {
+        if (MCMETA_PIN_BROKEN) {
+            return;
+        }
+        try {
+            if (TM_BY_PATH == null) {
+                TM_BY_PATH = net.minecraft.client.renderer.texture.TextureManager.class
+                        .getDeclaredField("byPath");
+                TM_BY_PATH.setAccessible(true);
+                ATLAS_ANIMATED = net.minecraft.client.renderer.texture.TextureAtlas.class
+                        .getDeclaredField("animatedTextures");
+                ATLAS_ANIMATED.setAccessible(true);
+            }
+            Object byPath = TM_BY_PATH.get(mc.getTextureManager());
+            int atlases = 0;
+            int sprites = 0;
+            for (Object tex : ((java.util.Map<?, ?>) byPath).values()) {
+                if (!(tex instanceof net.minecraft.client.renderer.texture.TextureAtlas atlas)) {
+                    continue;
+                }
+                java.util.List<?> tickers = (java.util.List<?>) ATLAS_ANIMATED.get(atlas);
+                if (tickers.isEmpty()) {
+                    continue;
+                }
+                for (Object wrapper : tickers) {
+                    // the anonymous TextureAtlasSprite.Ticker captures the
+                    // inner SpriteContents$Ticker (val$ticker) and the sprite
+                    // (this$0) as synthetic fields
+                    Object inner = null;
+                    net.minecraft.client.renderer.texture.TextureAtlasSprite sprite = null;
+                    for (java.lang.reflect.Field f : wrapper.getClass().getDeclaredFields()) {
+                        f.setAccessible(true);
+                        Object v = f.get(wrapper);
+                        if (v instanceof net.minecraft.client.renderer.texture.SpriteTicker) {
+                            inner = v;
+                        } else if (v instanceof net.minecraft.client.renderer.texture.TextureAtlasSprite s) {
+                            sprite = s;
+                        }
+                    }
+                    if (inner != null && sprite != null) {
+                        java.lang.reflect.Field frame = inner.getClass().getDeclaredField("frame");
+                        frame.setAccessible(true);
+                        java.lang.reflect.Field subFrame = inner.getClass().getDeclaredField("subFrame");
+                        subFrame.setAccessible(true);
+                        frame.setInt(inner, 0);
+                        subFrame.setInt(inner, 0);
+                        sprite.uploadFirstFrame();
+                        sprites++;
+                    }
+                }
+                // the atlas stops ticking its sprites: the pinned frame-0
+                // content stays on the GPU until the atlas object is replaced
+                // (resource reload — the empty-list check re-pins it then)
+                ATLAS_ANIMATED.set(atlas, java.util.List.of());
+                atlases++;
+            }
+            if (atlases > 0 && !MCMETA_PIN_LOGGED) {
+                MCMETA_PIN_LOGGED = true;
+                LOGGER.info("[cimscene] 14-dl mcmeta frame-0 pin: {} atlases / {} animated sprites pinned (the sprite ticker stops at frame 0)", atlases, sprites);
+            }
+        } catch (Exception ex) {
+            MCMETA_PIN_BROKEN = true;
+            LOGGER.warn("[cimscene] 14-dl mcmeta frame-0 pin disabled (reflection miss: {})", ex.toString());
         }
     }
 
@@ -3067,6 +5705,67 @@ public final class CimSceneMod {
                     String.valueOf(System.currentTimeMillis()), StandardCharsets.UTF_8);
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] marker file write failed {}: {}", name, ioe.toString());
+        }
+    }
+
+    /**
+     * 14-di THE SETTLE FREEZE — the universal wobble instrument. The walk's
+     * settle-shot loop demands two identical consecutive md5s ("the frame is
+     * settled"), but the world kept ticking through it: the block walk runs at
+     * tick rate 1000 (the packet-backlog drain), so between the done marker
+     * and the client's shot the server advanced ~1000 ticks of BE-ticker
+     * animation (the door slide/fold phase, the machine active states, the
+     * nixie tickers), the scheduled block/fluid ticks kept running, and the
+     * CLIENT's own clocks (the mcmeta frame counters, the particle engine,
+     * the ambient animateTick, the client gameTime behind the scrolling
+     * text) never stopped — the shipped frame's animation phase was whatever
+     * the llvmpipe/poll timing produced, and the SAME page settled at a
+     * DIFFERENT phase the next run (the measured churn band: gantry
+     * END/START, fluix_wall, the chargepad pair; the #306→#307 pixel proof:
+     * truth moved ONLY inside the animated machine cells while the pack
+     * stood still). A state can only be honest-red or honest-green against a
+     * frame the next run can reproduce.
+     *
+     * <p>The instrument is the VANILLA freeze, flipped server-side at the
+     * settle pass's terminal point: {@code server.tickRateManager()}
+     * .setFrozen(...). Verified against the 1.21.1 sources, one call pins
+     * BOTH legs bit-deterministically — the server (BE tickers gate on
+     * runsNormally in Level.tickBlockEntities, as do the scheduled block/
+     * fluid ticks, block events, entity ticks and tickTime in
+     * ServerLevel.tick) and every CLIENT joined to it (ServerTickRateManager
+     * .setFrozen broadcasts ClientboundTickingStatePacket; the client gates
+     * textureManager.tick — the mcmeta frame counters stop advancing —
+     * particleEngine.tick, animateTick and tickTime on the same
+     * runsNormally flag in Minecraft.tick). The walk's own machinery keeps
+     * running while frozen: the server tick loop, RCON, connections and the
+     * chunk source are ungated (chunk sending continues), the settle-shot
+     * loop's {@code tp cimviewer} re-pin is a player teleport and players
+     * never freeze (TickRateManager.isEntityFrozen). The settle pass itself
+     * runs BEFORE the freeze (the fluid settle needs its ticking; the
+     * falling-block retries finish first — the terminal pass freezes, a
+     * superseded pass does not).
+     *
+     * <p>Scope of this slice: the BLOCK settle freeze only, and every
+     * gallery command entry UNFREEZES first — the seed walk and the run
+     * shards run blocks → entities → items → particles → fluids → sound →
+     * biome → gui → inv on ONE server, and a freeze left behind by the last
+     * block page would otherwise park the whole rest of the walk (its
+     * settles and mob/entity spawns need ticking). Exhaustion writes no
+     * settle pass and keeps the freeze — the next series' first command
+     * lifts it. The run-side receipts: the ANIM liveness probe's t0/t1
+     * frames on dyn pages now measure a zero delta on a frozen walk, and
+     * the determinism probe's re-shot of page 0 must md5-match the original
+     * (the same page frozen at the same settle phase).
+     */
+    private static void setGalleryFrozen(net.minecraft.server.MinecraftServer server, boolean frozen, String why) {
+        try {
+            if (server.tickRateManager().isFrozen() == frozen) {
+                return;
+            }
+            server.tickRateManager().setFrozen(frozen);
+            LOGGER.info("[cimscene] gallery freeze {} ({})", frozen ? "on" : "off", why);
+        } catch (Throwable t) {
+            LOGGER.error("[cimscene] gallery freeze switch failed ({}): {}", why, t.toString());
         }
     }
 
@@ -3240,6 +5939,31 @@ public final class CimSceneMod {
                 continue;
             }
             boolean isMob = e instanceof Mob;
+            if (isMob) {
+                // THE AMBIENT-HOPPER RE-PIN (measured: run 42255431005's
+                // rabbit cell — NoAI freezes AI but the spawn-packet yaw
+                // race left the truth rabbit facing AWAY from the locked
+                // camera while ours faced it; one cell, ae 436k). Re-assert
+                // the pose HERE, inside the settle pass that runs right
+                // before the page's done marker + shot — no mob can turn
+                // between this and the picture.
+                Mob m = (Mob) e;
+                m.setYRot(180.0f);
+                m.setYHeadRot(180.0f);
+                m.setYBodyRot(180.0f);
+            }
+            if (!isMob) {
+                // 14-ea: the settle-frame pin — the manifest carries THIS
+                // frame's position and the shot reads it right after; the
+                // velocity zero is re-asserted here so the per-tick gravity
+                // the subject's own tick applied between the last drain and
+                // this pass cannot move it inside the shot window
+                try {
+                    e.setDeltaMovement(Vec3.ZERO);
+                } catch (Throwable ignored) {
+                    // the drift check already measured the real position
+                }
+            }
             if (!isMob) dyn++;
             cells++;
             rowStr[i] = "cell\t" + (GALLERY_X0 + col * ENTITY_PITCH) + '\t'

@@ -52,7 +52,7 @@ final class ObjMesh {
     record Vert(double[] p, double[] uv, int pi, int ti) {
     }
 
-    /** {@code colors}: per-vertex rgb multipliers (ambient occlusion x tint), or null. */
+    /** Per-vertex RGB or RGBA multipliers (ambient occlusion x tint, optional opacity). */
     record Face(List<Vert> verts, String tex, float[][] colors) {
         Face(List<Vert> verts, String tex) {
             this(verts, tex, null);
@@ -512,6 +512,31 @@ final class ObjMesh {
         BAKER.reset();
     }
 
+    static int tileHashCollisions() {
+        return BAKER.hashCollisions;
+    }
+
+    /**
+     * 14-bs: an exact-pixel tile for a rect face's sprite window. The
+     * near-miss statics sample the direct sprites through each leg's atlas;
+     * the atlas layouts and mip chains differ (1.21.1 vs 26.3) and the
+     * minified wall sampling blends neighbours differently. Baking the face's
+     * own window as a tile (the shared sheets carry 2px gutters — wider than
+     * the mip radius) makes the face sample ITS OWN pixels 1:1 and the atlas
+     * layout stops mattering. Returns {sheet, x, y} like {@link Baker#place}.
+     */
+    static int[] placeExactTile(java.awt.image.BufferedImage img) {
+        int w = img.getWidth();
+        int h = img.getHeight();
+        int[] argb = img.getRGB(0, 0, w, h, null, 0, w);
+        return BAKER.place(argb, w, h);
+    }
+
+    /** Model UV units of a pixel coordinate on a shared baked sheet. */
+    static double sheetUv(double pixel) {
+        return pixel / Baker.SIZE * 16;
+    }
+
     /** Writes the baked sheets into the pack; call once, after every model is emitted. */
     static void flushBaker(String spriteNs, Map<String, byte[]> entries) throws IOException {
         BAKER.flush(spriteNs, entries);
@@ -522,11 +547,12 @@ final class ObjMesh {
         static final int SIZE = 1024;
         static final String SHEET = "objcut/sheet";
         private final List<BufferedImage> sheets = new ArrayList<>();
-        private final Map<String, int[]> tiles = new HashMap<>();
+        private final Map<String, List<int[]>> tiles = new HashMap<>();
         private final Map<String, BufferedImage> images = new HashMap<>();
         private int x;
         private int y;
         private int shelf;
+        private int hashCollisions;
 
         void reset() {
             sheets.clear();
@@ -535,6 +561,7 @@ final class ObjMesh {
             x = 0;
             y = 0;
             shelf = 0;
+            hashCollisions = 0;
         }
 
         BufferedImage image(String sprite, SpriteReader reader, List<String> warnings) throws IOException {
@@ -555,9 +582,12 @@ final class ObjMesh {
         int[] place(int[] argb, int w, int h) {
             String key = w + "x" + h + ":" + java.util.Arrays.hashCode(argb) + ":"
                     + java.util.Arrays.hashCode(java.util.Arrays.copyOf(argb, argb.length / 2));
-            int[] hit = tiles.get(key);
-            if (hit != null) {
-                return hit;
+            List<int[]> hits = tiles.get(key);
+            if (hits != null) {
+                for (int[] hit : hits) {
+                    if (samePixels(hit, argb, w, h)) return hit;
+                }
+                hashCollisions++;
             }
             if (sheets.isEmpty() || x + w + 2 > SIZE) {
                 x = 0;
@@ -575,8 +605,19 @@ final class ObjMesh {
             sheets.get(sheet).setRGB(at[1], at[2], w, h, argb, 0, w);
             x += w + 2;
             shelf = Math.max(shelf, h + 2);
-            tiles.put(key, at);
+            tiles.computeIfAbsent(key, ignored -> new ArrayList<>()).add(at);
             return at;
+        }
+
+        /** Hashes select candidates; the sheet's actual ARGB pixels prove identity. */
+        private boolean samePixels(int[] at, int[] argb, int w, int h) {
+            BufferedImage sheet = sheets.get(at[0]);
+            for (int row = 0; row < h; row++) {
+                for (int col = 0; col < w; col++) {
+                    if (sheet.getRGB(at[1] + col, at[2] + row) != argb[row * w + col]) return false;
+                }
+            }
+            return true;
         }
 
         void flush(String spriteNs, Map<String, byte[]> entries) throws IOException {
@@ -665,9 +706,10 @@ final class ObjMesh {
         }
 
         private static float[][] readColors(JsonArray cs) {
-            float[][] out = new float[cs.size()][3];
+            int channels = cs.get(0).getAsJsonArray().size();
+            float[][] out = new float[cs.size()][channels];
             for (int i = 0; i < out.length; i++) {
-                for (int k = 0; k < 3; k++) {
+                for (int k = 0; k < channels; k++) {
                     out[i][k] = cs.get(i).getAsJsonArray().get(k).getAsFloat();
                 }
             }
@@ -681,6 +723,7 @@ final class ObjMesh {
                 return out;
             }
             int w = src.getWidth();
+            int h = src.getHeight();
             double[][] flat = new double[pts.length][];
             for (int i = 0; i < pts.length; i++) {
                 flat[i] = new double[]{dot(pts[i], ex), dot(pts[i], ey)};
@@ -696,9 +739,53 @@ final class ObjMesh {
                         }
                         double u = l[0] * uvs[0][0] + l[1] * uvs[t][0] + l[2] * uvs[t + 1][0];
                         double v = l[0] * uvs[0][1] + l[1] * uvs[t][1] + l[2] * uvs[t + 1][1];
-                        int tx = Math.floorMod((int) Math.floor(u / 16 * w), w);
-                        int ty = Math.floorMod((int) Math.floor(v / 16 * w), w); // frame 0 of an animation
-                        int argb = src.getRGB(tx, ty);
+                        // 14-cc THE PURE TEXEL: the truth's chunk pipeline samples
+                        // the sprite NEAREST — one fragment, one texel. The 14-bm
+                        // bilerp bake evaluated the sprite at the 4px/texel sample
+                        // phases (0.125/0.375/0.625/0.875 of a texel) where NO
+                        // output pixel carries a pure texel (max weight 87.5%):
+                        // every texel boundary smeared over 2 bake px, and on the
+                        // CUTOUT layer those alpha-blend px render OPAQUE (the
+                        // alpha<0.1 discard only drops the nearly-empty ones) —
+                        // the leaf/vine/grass sprites' hole edges baked
+                        // alpha-blended dark halos and the high-frequency faces
+                        // lost their pixel-level contrast. Measured on the #231
+                        // crops (42359045079): 126 BOP block REDs, ONE blur class
+                        // (willow_leaves/vine, pine/mahogany leaves, high_grass
+                        // ages, bramble, the open-trapdoor faces; ae 60-151K,
+                        // ours defocused where the truth is crisp blocky texels;
+                        // sheet forensics: the objcut tiles themselves are
+                        // pre-blurred). The tile keeps the 4px/texel screen
+                        // density (the display pipeline minifies it ~0.94x onto
+                        // the 60.5px cell) — only the sampling goes pure: the
+                        // tile = the sprite's own texels x the interpolated
+                        // vertex colour, and the client's bilinear resample then
+                        // reproduces the same phase-matched staircase the truth's
+                        // nearest sampler draws. The 14-bm door-panel finding
+                        // rode the era when the door faces baked through THIS
+                        // path; since 14-bs they route to exact-pixel tiles
+                        // (DOOR_SPRITE) and the poly bake's consumer set is the
+                        // coloured/cutout families the truth renders NEAREST.
+                        double sx = u / 16 * w;
+                        // frame 0 of an animation: the strip's frame height is w
+                        // (h = frames*w, h > w) — but a PLAIN sprite taller-or-wider
+                        // than square maps v over its full height h; multiplying by
+                        // w on a wide sprite (w > h) sent sy past h-1 and the bake
+                        // died on getRGB (measured: the 14-dq run's seed, the
+                        // supplementaries/farmersdelight sprites — AIOOBE at
+                        // ByteInterleavedRaster). The shape rule: h a multiple of
+                        // w with h > w = the animation strip (frame height w);
+                        // anything else maps over h.
+                        double fh = (h > w && h % w == 0) ? w : h;
+                        double sy = v / 16 * fh;
+                        int px = (int) Math.floor(sx);
+                        int py = (int) Math.floor(sy);
+                        // vanilla atlas pads sprites by extending their edge texels
+                        // (the stitcher's border pass) — clamp, never repeat, to the
+                        // ACTUAL bounds of each axis
+                        int tx0 = Math.min(w - 1, Math.max(0, px));
+                        int ty0 = Math.min(h - 1, Math.max(0, py));
+                        int argb = src.getRGB(tx0, ty0);
                         if (colors != null) {
                             int rgb = 0;
                             for (int c = 0; c < 3; c++) {
@@ -708,6 +795,12 @@ final class ObjMesh {
                                 rgb |= Math.min(255, value) << shift;
                             }
                             argb = (argb & 0xFF000000) | rgb;
+                            if (colors[0].length >= 4) {
+                                double alpha = l[0] * colors[0][3] + l[1] * colors[t][3]
+                                        + l[2] * colors[t + 1][3];
+                                int opacity = (int) Math.round((argb >>> 24) * alpha);
+                                argb = (argb & 0xFFFFFF) | Math.clamp(opacity, 0, 255) << 24;
+                            }
                         }
                         out[j * pw + i] = argb;
                         break;
