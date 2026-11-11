@@ -306,8 +306,9 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-potato").executes(ctx -> potatoSpawnSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest-bearing").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), false)))
                         .then(Commands.literal("selftest-cart").executes(ctx -> contraptionSpawnSelftest(ctx.getSource(), true)))
-                        .then(Commands.literal("selftest-bearing-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), false)))
-                        .then(Commands.literal("selftest-glue-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), true)))
+                        .then(Commands.literal("selftest-bearing-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "bearing")))
+                        .then(Commands.literal("selftest-glue-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "glue")))
+                        .then(Commands.literal("selftest-seat-live").executes(ctx -> entityLifetimeSelftest(ctx.getSource(), "seat")))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3412,9 +3413,40 @@ public final class CimSceneMod {
         }
     }
 
+    /** Native SeatBlock.sitDown creates and mounts its own seat entity. */
+    private static Entity createGallerySeat(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        level.setBlock(cell, BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:white_seat")).defaultBlockState(), 3);
+        var rider = net.minecraft.world.entity.EntityType.PIG.create(level);
+        boolean seated = false;
+        try {
+            m_setNoAi(rider);
+            rider.setNoGravity(true);
+            rider.setInvulnerable(true);
+            rider.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180, 0);
+            if (!level.addFreshEntity(rider)) throw new IllegalStateException("Native seat rider insertion refused");
+            Class<?> seat = level.getBlockState(cell).getBlock().getClass();
+            seat.getMethod("sitDown", net.minecraft.world.level.Level.class, BlockPos.class, Entity.class)
+                    .invoke(null, level, cell, rider);
+            Entity entity = rider.getVehicle();
+            if (entity == null || !entity.isAlive() || !entity.isAddedToLevel()
+                    || !BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:seat")) {
+                throw new IllegalStateException("Native seat did not mount its real rider");
+            }
+            seated = true;
+            return entity;
+        } finally {
+            if (!seated && rider != null) {
+                Entity vehicle = rider.getVehicle();
+                rider.discard();
+                if (vehicle != null) vehicle.discard();
+            }
+        }
+    }
+
     /** Real ticking regressions: configured subjects survive; their unconfigured controls self-remove. */
-    private static int entityLifetimeSelftest(CommandSourceStack src, boolean glue) {
-        String subjectName = glue ? "glue" : "bearing";
+    private static int entityLifetimeSelftest(CommandSourceStack src, String subjectName) {
+        boolean glue = subjectName.equals("glue");
+        boolean seat = subjectName.equals("seat");
         ServerLevel level = src.getLevel();
         BlockPos retainedCell = new BlockPos(72, 100, 72);
         BlockPos defaultCell = retainedCell.east(4);
@@ -3428,7 +3460,7 @@ public final class CimSceneMod {
         Entity[] subjects = new Entity[2];
         Runnable cleanup = () -> {
             try {
-                if (!glue) {
+                if (!glue && !seat) {
                     for (BlockPos cell : List.of(retainedCell, defaultCell)) {
                         BlockEntity be = level.getBlockEntity(cell.north());
                         if (be != null) be.getClass().getMethod("disassemble").invoke(be);
@@ -3437,7 +3469,11 @@ public final class CimSceneMod {
             } catch (ReflectiveOperationException failure) {
                 throw new IllegalStateException("Native " + subjectName + " live-test cleanup failed", failure);
             } finally {
-                for (Entity subject : subjects) if (subject != null) subject.discard();
+                for (Entity subject : subjects) {
+                    if (subject == null) continue;
+                    for (Entity passenger : List.copyOf(subject.getPassengers())) passenger.discard();
+                    subject.discard();
+                }
                 previous.forEach((pos, state) -> level.setBlock(pos, state, 3));
                 if (!wasForced) level.setChunkForced(chunk.x, chunk.z, false);
             }
@@ -3446,8 +3482,8 @@ public final class CimSceneMod {
         // Let the native ticket make this chunk entity-ticking before assembly.
         runAfterTicks(level.getServer(), 5, () -> {
             try {
-                if (glue) {
-                    subjects[0] = createGalleryGlue(level, retainedCell);
+                if (glue || seat) {
+                    subjects[0] = seat ? createGallerySeat(level, retainedCell) : createGalleryGlue(level, retainedCell);
                     AABB nativeBounds = subjects[0].getBoundingBox();
                     alignGalleryEntity(subjects[0], retainedCell, true);
                     if (!subjects[0].getBoundingBox().equals(nativeBounds)) {
@@ -3455,8 +3491,8 @@ public final class CimSceneMod {
                     }
                     subjects[1] = subjects[0].getType().create(level);
                     subjects[1].setPos(defaultCell.getX() + 0.5, defaultCell.getY(), defaultCell.getZ() + 0.5);
-                    if (subjects[1].getBoundingBox().getXsize() != 0 || !level.addFreshEntity(subjects[1])) {
-                        throw new IllegalStateException("Bare glue negative control did not start with zero-width bounds");
+                    if ((glue && subjects[1].getBoundingBox().getXsize() != 0) || !level.addFreshEntity(subjects[1])) {
+                        throw new IllegalStateException("Native bare " + subjectName + " control setup failed");
                     }
                 } else {
                     subjects[0] = assembleGalleryBearing(level, retainedCell, true);
@@ -3469,12 +3505,22 @@ public final class CimSceneMod {
                     int ticks = subjects[0].tickCount;
                     try {
                         if (!subjects[0].isAlive() || !subjects[0].isAddedToLevel()
-                                || (!glue && ticks < ENTITY_SETTLE_TICKS) || !subjects[1].isRemoved()) {
+                                || (!glue && !seat && ticks < ENTITY_SETTLE_TICKS) || !subjects[1].isRemoved()) {
                             throw new IllegalStateException("Native " + subjectName + " lifecycle mismatch: retained="
                                     + subjects[0].isAlive() + ", entityTicks=" + ticks
                                     + ", defaultRemoved=" + subjects[1].isRemoved());
                         }
-                        if (glue) {
+                        if (seat) {
+                            Entity rider = subjects[0].getFirstPassenger();
+                            Class<?> seatBlock = level.getBlockState(retainedCell).getBlock().getClass();
+                            boolean occupied = (boolean) seatBlock.getMethod("isSeatOccupied",
+                                    net.minecraft.world.level.Level.class, BlockPos.class).invoke(null, level, retainedCell);
+                            if (!(rider instanceof net.minecraft.world.entity.animal.Pig) || !rider.isAlive()
+                                    || !rider.isAddedToLevel() || rider.getVehicle() != subjects[0] || !occupied
+                                    || rider.tickCount < ENTITY_SETTLE_TICKS) {
+                                throw new IllegalStateException("Native seat lost its ticking rider or seat block");
+                            }
+                        } else if (glue) {
                             // SuperGlueEntity.tick does not call baseTick, so its native
                             // tickCount stays zero. Bare-control removal proves real ticking.
                             checkGalleryGlue(subjects[0], retainedCell);
@@ -3746,7 +3792,7 @@ public final class CimSceneMod {
 
     /** Native hanging items and assembled bearings retain their actual attachment. */
     private static void alignGalleryEntity(Entity entity, BlockPos cell, boolean nativePlaced) {
-        if (nativePlaced && (entity instanceof net.minecraft.world.entity.decoration.HangingEntity || entity.isPassenger()
+        if (nativePlaced && (entity instanceof net.minecraft.world.entity.decoration.HangingEntity || entity.isPassenger() || entity.isVehicle()
                 || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")
                 || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:super_glue"))) return;
         entity.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180.0f, 0.0f);
@@ -5048,11 +5094,12 @@ public final class CimSceneMod {
                 boolean bearing = id.toString().equals("create:stationary_contraption");
                 boolean cart = id.toString().equals("create:contraption");
                 boolean glue = id.toString().equals("create:super_glue");
+                boolean seat = id.toString().equals("create:seat");
                 boolean itemPlaced = robit || parcel || blueprint;
-                if (bearing || cart || glue) {
+                if (bearing || cart || glue || seat) {
                     BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
                             GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z);
-                    e = glue ? createGalleryGlue(level, cell)
+                    e = seat ? createGallerySeat(level, cell) : glue ? createGalleryGlue(level, cell)
                             : cart ? assembleGalleryCart(level, cell) : assembleGalleryBearing(level, cell);
                     if (cart) {
                         Entity vehicle = e.getVehicle();
@@ -5061,6 +5108,11 @@ public final class CimSceneMod {
                         vehicle.setInvulnerable(true);
                         vehicle.setDeltaMovement(Vec3.ZERO);
                         MOTION_PINNED.put(vehicle, pinDeadline);
+                    } else if (seat) {
+                        Entity rider = e.getFirstPassenger();
+                        rider.addTag(GALLERY_TAG);
+                        rider.setDeltaMovement(Vec3.ZERO);
+                        MOTION_PINNED.put(rider, pinDeadline);
                     }
                 } else if (itemPlaced) {
                     ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
@@ -5083,7 +5135,7 @@ public final class CimSceneMod {
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
                 alignGalleryEntity(e, new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
-                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced || bearing || cart || glue);
+                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced || bearing || cart || glue || seat);
                 e.addTag(GALLERY_TAG);
                 if (isMob) {
                     // NoAI: no movement, no look-at, no AI despawn logic — a
@@ -5091,7 +5143,7 @@ public final class CimSceneMod {
                     // between the settle pass and the shot.
                     m_setNoAi(e);
                 }
-                if (!itemPlaced && !bearing && !cart && !glue) level.addFreshEntity(e);
+                if (!itemPlaced && !bearing && !cart && !glue && !seat) level.addFreshEntity(e);
                 // 14-ea THE MOTION PIN: a projectile's own tick re-applies
                 // its hardcoded gravity (FallingBlockEntity / ThrowableProjectile
                 // both add it INSIDE tick(), ungated by NoGravity) — one
