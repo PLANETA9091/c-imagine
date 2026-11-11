@@ -89,6 +89,23 @@ public final class FacadeServerLevel extends ServerLevel {
 
     // --- the server side mods ask for
 
+    // Lazy: the instance is allocated, so no initialiser runs.
+    private net.minecraft.world.RandomSequences sequences;
+
+    /** The random sequences loot tables draw from (a broken block's drops). */
+    @Override
+    public net.minecraft.world.RandomSequences getRandomSequences() {
+        if (sequences == null) {
+            sequences = new net.minecraft.world.RandomSequences(0L);
+        }
+        return sequences;
+    }
+
+    @Override
+    public net.minecraft.util.RandomSource getRandomSequence(net.minecraft.resources.ResourceLocation id) {
+        return getRandomSequences().get(id);
+    }
+
     /** Paper decides who may build where before a click reaches the layer. */
     @Override
     public boolean mayInteract(Player player, BlockPos pos) {
