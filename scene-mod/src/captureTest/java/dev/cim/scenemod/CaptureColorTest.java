@@ -19,9 +19,16 @@ import java.util.List;
 /** Compares both production recorders with the real NeoForge default consumer. */
 public final class CaptureColorTest {
     public static void main(String[] args) throws Exception {
+        var directory = java.nio.file.Files.createTempDirectory("capture-native-sprites");
+        var output = QuadDump.class.getDeclaredField("capturedTextures");
+        output.setAccessible(true);
+        output.set(null, directory);
         var id = ResourceLocation.parse("fixture:block/color");
+        byte[] originalPixels;
         try (var contents = new SpriteContents(id, new FrameSize(16, 16),
                 new NativeImage(16, 16, true), ResourceMetadata.EMPTY)) {
+            contents.getOriginalImage().setPixelRGBA(0, 0, 0x80334455);
+            originalPixels = contents.getOriginalImage().asByteArray();
             var constructor = TextureAtlasSprite.class.getDeclaredConstructor(ResourceLocation.class,
                     SpriteContents.class, int.class, int.class, int.class, int.class);
             constructor.setAccessible(true);
@@ -36,6 +43,23 @@ public final class CaptureColorTest {
                 }
             }
         }
+        var aliasesField = QuadDump.class.getDeclaredField("spriteAliases");
+        aliasesField.setAccessible(true);
+        var aliases = (java.util.Map<?, ?>) aliasesField.get(null);
+        String decoded = (String) aliases.get(id.toString());
+        if (decoded == null || !decoded.matches("~[0-9a-f]{16}")) {
+            throw new AssertionError("native sprite identity lost its decoded pixel artifact");
+        }
+        if (!java.util.Arrays.equals(originalPixels,
+                java.nio.file.Files.readAllBytes(directory.resolve(decoded.substring(1) + ".png")))) {
+            throw new AssertionError("native sprite alias did not retain the decoded native pixels");
+        }
+        try (var paths = java.nio.file.Files.walk(directory)) {
+            for (var path : paths.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                java.nio.file.Files.delete(path);
+            }
+        }
+        output.set(null, null);
         System.out.println("capture baked RGBA vs native consumer: ALL 36 recorder comparisons OK");
     }
 

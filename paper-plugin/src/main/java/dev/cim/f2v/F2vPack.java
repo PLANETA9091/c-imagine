@@ -3665,6 +3665,35 @@ public final class F2vPack {
                     "captured sprite: strip re-hosts as its first listed frame, mcmeta dropped");
             expect(failures, warnings.size() == 1 && warnings.get(0).contains("shipped static"),
                     "captured sprite: the crop stays loud in the build report");
+            // Atlas generators can produce a real sprite with no PNG in any jar.
+            Files.writeString(root.resolve("sprite-aliases.tsv"),
+                    "# native sprite\tdecoded capture\nfixture:generated\t~" + hash + "\n");
+            GalleryPack.setQuadDir(root);
+            TreeMap<String, byte[]> generated = new TreeMap<>();
+            List<String> generatedWarnings = new ArrayList<>();
+            String generatedRef = GalleryPack.hostSprite(List.of(), "fixture:generated", generated, generatedWarnings);
+            expect(failures, generatedRef.equals(ref) && java.util.Arrays.equals(entries.get(hosted), generated.get(hosted))
+                            && generatedWarnings.stream().noneMatch(w -> w.contains("sprite missing")),
+                    "native sprite alias: generated atlas pixels and frame metadata survive absent jar PNG");
+            Files.delete(textures.resolve(hash + ".png"));
+            boolean missingPixelsRefused = false;
+            try {
+                GalleryPack.hostSprite(List.of(), "fixture:generated", generated, new ArrayList<>());
+            } catch (IOException expected) {
+                missingPixelsRefused = true;
+            }
+            expect(failures, missingPixelsRefused, "native sprite alias: missing decoded pixels never become a placeholder");
+            Files.write(textures.resolve(hash + ".png"), png);
+            Files.writeString(root.resolve("sprite-aliases.tsv"), "fixture:generated\t~../../outside\n");
+            GalleryPack.setQuadDir(root);
+            boolean malformedRefused = false;
+            try {
+                GalleryPack.hostSprite(List.of(), "fixture:generated", generated, new ArrayList<>());
+            } catch (IOException expected) {
+                malformedRefused = true;
+            }
+            expect(failures, malformedRefused, "native sprite alias: malformed ledger refused");
+            GalleryPack.setQuadDir(root);
             for (String missing : List.of("~fedcba9876543210", "~../../outside")) {
                 boolean refused = false;
                 try {

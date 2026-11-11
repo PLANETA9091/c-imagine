@@ -1595,11 +1595,13 @@ public final class GalleryPack {
     // ---- the real-client quad channel ---------------------------------------
 
     private static Path quadDir;
+    private static Map<String, String> spriteAliases;
 
     /** Where the seed's QuadDump meshes live ({@code quads/<hash>.tsv}). */
     static void setQuadDir(Path dir) {
         quadDir = dir;
         itemQuadMap = null;
+        spriteAliases = null;
     }
 
     // ------------------------------------------------------- 14-bq doors --
@@ -2506,11 +2508,28 @@ public final class GalleryPack {
         return node;
     }
 
-    /**
-     * A sprite the pack can bake against the blocks atlas: mod block/ sprites
-     * ship at their own path (with any animation metadata), everything else is
-     * re-hosted under block/ (see THE ATLAS OWNERSHIP RULE).
-     */
+    /** Optional native pixels for generated sprites absent from physical jars. */
+    private static String nativeSpriteAlias(String sprite) throws IOException {
+        if (spriteAliases == null) {
+            Map<String, String> aliases = new java.util.HashMap<>();
+            Path index = quadDir == null ? null : quadDir.resolve("sprite-aliases.tsv");
+            if (index != null && Files.isRegularFile(index)) {
+                for (String line : Files.readAllLines(index, StandardCharsets.UTF_8)) {
+                    if (line.isBlank() || line.startsWith("#")) continue;
+                    String[] row = line.split("\t", -1);
+                    if (row.length != 2 || !row[0].matches("[a-z0-9_.-]+:[a-z0-9_./-]+")
+                            || !row[1].matches("~[0-9a-f]{16}")
+                            || aliases.putIfAbsent(row[0], row[1]) != null) {
+                        throw new IOException("gallery: malformed native sprite alias: " + line);
+                    }
+                }
+            }
+            spriteAliases = aliases;
+        }
+        return spriteAliases.get(sprite);
+    }
+
+    /** Re-host readable sprites onto the blocks atlas, retaining real native pixel artifacts. */
     static String hostSprite(List<Path> jars, String sprite, TreeMap<String, byte[]> entries,
                              List<String> warnings) throws IOException {
         if (sprite.startsWith("~")) {
@@ -2540,6 +2559,10 @@ public final class GalleryPack {
         byte[] bytes = readPngFromJars(jars, png);
         boolean blockPath = !sprite.startsWith("@") && spritePathOf(sprite).startsWith("block/");
         if (bytes == null) {
+            String nativeCapture = nativeSpriteAlias(sprite);
+            if (nativeCapture != null) {
+                return hostSprite(jars, nativeCapture, entries, warnings);
+            }
             warnings.add("gallery: quad sprite missing: " + sprite);
             // 14-dy: the diagnostic stays visible AND names its source (the
             // placeholder ledger — sprite + build context + uses)
