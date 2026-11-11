@@ -404,6 +404,7 @@ public final class ScreenArt {
             restore(mc, lifted);
         }
         save(target, w, h, dir.resolve(base + ".png"));
+        saveAnimation(mc, screen, w, h, target, dir.resolve(base + ".anim.png"));
         mc.getMainRenderTarget().bindWrite(true);
         target.destroyBuffers();
     }
@@ -441,6 +442,7 @@ public final class ScreenArt {
         } catch (Throwable t) {
             LOGGER.warn("[cimscene] icon capture failed: {}", t.toString());
         }
+        saveAnimation(mc, screen, w, h, target, dir.resolve(name + ".anim.png"));
         mc.getMainRenderTarget().bindWrite(true);
         target.destroyBuffers();
         double scale = mc.getWindow().getGuiScale();
@@ -460,6 +462,74 @@ public final class ScreenArt {
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
+    }
+
+    /** Later moments the screen is drawn at, to find what moves with the clock alone. */
+    private static final long[] ANIMATION_SHIFTS_MS = {640L, 1730L, 2910L};
+
+    /**
+     * The pixels of the art that change with time alone: the screen drawn again with the
+     * clock moved on (Mekanism scrolls a label too long for its box by the time the screen has
+     * been open, so two captures of one state differ there by the moment). Written as a white
+     * mask only when something moves; the verdict judges those pixels apart.
+     */
+    private static void saveAnimation(Minecraft mc, AbstractContainerScreen<?> screen, int w, int h,
+                                      TextureTarget art, Path file) {
+        net.minecraft.util.TimeSource.NanoTimeSource real = net.minecraft.Util.timeSource;
+        NativeImage mask = null;
+        try (NativeImage base = download(art, w, h)) {
+            for (long shift : ANIMATION_SHIFTS_MS) {
+                long add = shift * 1_000_000L;
+                net.minecraft.Util.timeSource = () -> real.getAsLong() + add;
+                TextureTarget later = new TextureTarget(w, h, true, Minecraft.ON_OSX);
+                later.setClearColor(0f, 0f, 0f, 0f);
+                later.clear(Minecraft.ON_OSX);
+                later.bindWrite(true);
+                List<ItemStack> lifted = lift(mc);
+                capturing = true;
+                try {
+                    GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+                    screen.render(graphics, -10000, -10000, 0f);
+                    graphics.flush();
+                } finally {
+                    capturing = false;
+                    restore(mc, lifted);
+                    net.minecraft.Util.timeSource = real;
+                }
+                try (NativeImage other = download(later, w, h)) {
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            if (other.getPixelRGBA(x, y) != base.getPixelRGBA(x, y)) {
+                                if (mask == null) {
+                                    mask = new NativeImage(w, h, true);
+                                }
+                                mask.setPixelRGBA(x, y, -1);
+                            }
+                        }
+                    }
+                } finally {
+                    later.destroyBuffers();
+                }
+            }
+            if (mask != null) {
+                mask.writeToFile(file);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[cimscene] animation capture failed: {}", t.toString());
+        } finally {
+            net.minecraft.Util.timeSource = real;
+            if (mask != null) {
+                mask.close();
+            }
+        }
+    }
+
+    private static NativeImage download(TextureTarget target, int w, int h) {
+        NativeImage image = new NativeImage(w, h, false);
+        RenderSystem.bindTexture(target.getColorTextureId());
+        image.downloadTexture(0, false);
+        image.flipY();
+        return image;
     }
 
     private static void save(TextureTarget target, int w, int h, Path file) throws IOException {

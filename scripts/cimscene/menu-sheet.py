@@ -88,8 +88,22 @@ def art_mask(path, size):
     return ImageChops.lighter(opaque, part)
 
 
+def animation_mask(art, size):
+    """Pixels of the art that move with the clock alone (its .anim.png from the capture), or None."""
+    path = art[:-4] + ".anim.png" if art else None
+    if not path or not os.path.isfile(path):
+        return None
+    anim = Image.open(path).convert("L")
+    if anim.size != size:
+        return None
+    anim = anim.point(lambda v: 255 if v else 0)
+    return anim if anim.getbbox() else None
+
+
 def compare(truth_path, ours_path, slots, scale, art=None):
-    """Returns (differing pixels, total pixels, mask image), or None without both frames."""
+    """Returns (differing pixels, total pixels, mask image, animated pixels), or None without both
+    frames. Pixels the real screen moves with the clock alone (a scrolling label) are judged apart:
+    two captures of one state differ there by the moment, so they are counted, not compared."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return None
     truth = Image.open(truth_path).convert("RGB")
@@ -104,15 +118,20 @@ def compare(truth_path, ours_path, slots, scale, art=None):
         exact = ImageChops.multiply(level.point(lambda v: 255 if v else 0), opaque)
         loose = ImageChops.multiply(level.point(lambda v: 255 if v > TRANSLUCENT_TOLERANCE else 0), part)
         diff = ImageChops.lighter(exact, loose)
+        animated = 0
+        anim = animation_mask(art, truth.size)
+        if anim is not None:
+            animated = sum(1 for v in ImageChops.multiply(anim, mask).getdata() if v)
+            diff = ImageChops.subtract(diff, anim)
         box = mask.getbbox()
         total = sum(1 for v in mask.crop(box).getdata() if v)
-        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box)
+        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box), animated
     box = menu_box(truth.size, slots, scale)
     # Per channel: converting to grey would round a one-step difference away.
     r, g, b = ImageChops.difference(truth.crop(box), ours.crop(box)).split()
     diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
     red = sum(1 for v in diff.getdata() if v)
-    return red, diff.size[0] * diff.size[1], diff
+    return red, diff.size[0] * diff.size[1], diff, 0
 
 
 def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
@@ -163,8 +182,9 @@ def judge(menu, opened, note, result):
         return "RED", f"not opened: {note}"
     if result is None:
         return "RED", "frame missing"
-    red, total, _ = result
-    return ("GREEN", "pixel identical") if red == 0 else ("RED", f"{red} of {total} pixels differ")
+    red, total, _, animated = result
+    moving = f" ({animated} animated pixels judged apart)" if animated else ""
+    return ("GREEN", "pixel identical" + moving) if red == 0 else ("RED", f"{red} of {total} pixels differ" + moving)
 
 
 def main():
