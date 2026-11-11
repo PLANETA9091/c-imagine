@@ -112,6 +112,7 @@ public final class ScreenArt {
     private static final int CRAWL_WAIT_TICKS = 70;
     private static final int CRAWL_MAX_WIDGETS = 18;
     private static final int CRAWL_CLOSED_TICKS = 30;
+    private static final int CRAWL_STATE_TIMEOUT_TICKS = 60;
 
     /** Pressing through one open screen. */
     private static final class Crawl {
@@ -354,6 +355,12 @@ public final class ScreenArt {
                 } else {
                     pendingState = crawl.name + (crawl.pressed == CRAWL_MOVE ? ".move" : ".w" + crawl.pressed);
                 }
+            } else if (crawlTicks > crawl.settleAt + CRAWL_STATE_TIMEOUT_TICKS) {
+                // The screen never drew again to be captured (measured: the QIO dashboard after a
+                // press held the crawl until the shard gave up on it): no state for this press.
+                LOGGER.info("[cimscene] crawl {} press {} drew no state", crawl.name, crawl.pressed);
+                pendingState = null;
+                crawl.pressed = -1;
             }
             return;
         }
