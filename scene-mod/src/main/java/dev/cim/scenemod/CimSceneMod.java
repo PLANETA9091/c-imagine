@@ -304,6 +304,7 @@ public final class CimSceneMod {
                         .then(Commands.literal("selftest-package").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), false)))
                         .then(Commands.literal("selftest-blueprint").executes(ctx -> itemEntitySpawnSelftest(ctx.getSource(), true)))
                         .then(Commands.literal("selftest-potato").executes(ctx -> potatoSpawnSelftest(ctx.getSource())))
+                        .then(Commands.literal("selftest-bearing").executes(ctx -> bearingSpawnSelftest(ctx.getSource())))
                         .then(Commands.literal("selftest").executes(ctx -> {
                             CommandSourceStack src = ctx.getSource();
                             ServerLevel level = src.getLevel();
@@ -3322,6 +3323,94 @@ public final class CimSceneMod {
         }
     }
 
+    /** Assemble real world blocks through Create's controller, which owns entity and contraption initialization. */
+    private static Entity assembleGalleryBearing(ServerLevel level, BlockPos cell) throws ReflectiveOperationException {
+        BlockPos controller = cell.north();
+        BlockState bearing = BuiltInRegistries.BLOCK.get(ResourceLocation.parse("create:mechanical_bearing"))
+                .defaultBlockState().setValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING,
+                        Direction.SOUTH);
+        level.setBlock(controller, bearing, 3);
+        level.setBlock(cell, Blocks.OAK_PLANKS.defaultBlockState(), 3);
+        BlockEntity be = level.getBlockEntity(controller);
+        be.getClass().getMethod("assemble").invoke(be);
+        Entity entity = (Entity) be.getClass().getMethod("getMovedContraption").invoke(be);
+        if (entity == null || !entity.isAlive() || level.getEntity(entity.getUUID()) != entity
+                || !BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")) {
+            throw new IllegalStateException("Native bearing assembly did not add its stationary contraption");
+        }
+        return entity;
+    }
+
+    private static Object bearingContraption(Entity entity) throws ReflectiveOperationException {
+        Object contraption = entity.getClass().getMethod("getContraption").invoke(entity);
+        if (contraption == null) throw new IllegalStateException("Native bearing entity has no contraption");
+        Object blocks = contraption.getClass().getMethod("getBlocks").invoke(contraption);
+        if (!(blocks instanceof java.util.Map<?, ?> captured) || captured.size() != 1
+                || !(captured.get(BlockPos.ZERO) instanceof net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo block)
+                || !block.state().is(Blocks.OAK_PLANKS)) {
+            throw new IllegalStateException("Native bearing assembly lost its actual world block");
+        }
+        return contraption;
+    }
+
+    /** Real assembly and native additional-spawn decoding, including the formerly null contraption. */
+    private static int bearingSpawnSelftest(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        BlockPos cell = new BlockPos(64, 100, 64);
+        level.getChunkAt(cell);
+        BlockState previousController = level.getBlockState(cell.north());
+        BlockState previousBody = level.getBlockState(cell);
+        Entity assembled = null;
+        int bytes = 0;
+        boolean passed = false;
+        var buffer = new net.minecraft.network.RegistryFriendlyByteBuf(Unpooled.buffer(), level.registryAccess());
+        try {
+            assembled = assembleGalleryBearing(level, cell);
+            bearingContraption(assembled);
+            Vec3 nativePosition = assembled.position();
+            float nativeYaw = assembled.getYRot();
+            alignGalleryEntity(assembled, cell, true);
+            if (!assembled.position().equals(nativePosition) || assembled.getYRot() != nativeYaw) {
+                throw new IllegalStateException("Gallery alignment moved the native bearing attachment");
+            }
+            var codec = (net.neoforged.neoforge.entity.IEntityWithComplexSpawn) assembled;
+            codec.writeSpawnData(buffer);
+            bytes = buffer.readableBytes();
+            Entity received = assembled.getType().create(level);
+            received.moveTo(assembled.getX(), assembled.getY(), assembled.getZ(), assembled.getYRot(), assembled.getXRot());
+            ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) received).readSpawnData(buffer);
+            bearingContraption(received);
+            if (buffer.isReadable()) throw new IllegalStateException("Unconsumed native bearing spawn data");
+            buffer.clear();
+            Entity bare = assembled.getType().create(level);
+            boolean refused = false;
+            try {
+                ((net.neoforged.neoforge.entity.IEntityWithComplexSpawn) bare).writeSpawnData(buffer);
+            } catch (RuntimeException expected) {
+                refused = true;
+            }
+            if (!refused) throw new IllegalStateException("Bare bearing negative control unexpectedly encoded");
+            passed = true;
+        } catch (Throwable failure) {
+            LOGGER.error("[cimscene] selftest bearing native-spawn FAILED", failure);
+        } finally {
+            buffer.release();
+            try {
+                BlockEntity be = level.getBlockEntity(cell.north());
+                if (be != null) be.getClass().getMethod("disassemble").invoke(be);
+            } catch (ReflectiveOperationException failure) {
+                passed = false;
+                LOGGER.error("[cimscene] selftest bearing native-spawn FAILED during cleanup", failure);
+            } finally {
+                if (assembled != null) assembled.discard();
+                level.setBlock(cell.north(), previousController, 3);
+                level.setBlock(cell, previousBody, 3);
+            }
+        }
+        if (passed) LOGGER.info("[cimscene] selftest bearing native-spawn PASS bytes={} bare-rejected=true", bytes);
+        return passed ? 1 : 0;
+    }
+
     /** Match PotatoCannonItem: setItem resolves the data-driven projectile type before spawning. */
     private static void configurePotatoProjectile(Entity entity) throws ReflectiveOperationException {
         entity.getClass().getMethod("setItem", ItemStack.class).invoke(entity, new ItemStack(Items.POTATO));
@@ -3439,9 +3528,10 @@ public final class CimSceneMod {
         return placeEntityItem(level, player, pad, "mekanism:robit", "mekanism:robit");
     }
 
-    /** Item-placed hanging entities retain the attachment established by their own item. */
-    private static void alignGalleryEntity(Entity entity, BlockPos cell, boolean itemPlaced) {
-        if (itemPlaced && entity instanceof net.minecraft.world.entity.decoration.HangingEntity) return;
+    /** Native hanging items and assembled bearings retain their actual attachment. */
+    private static void alignGalleryEntity(Entity entity, BlockPos cell, boolean nativePlaced) {
+        if (nativePlaced && (entity instanceof net.minecraft.world.entity.decoration.HangingEntity
+                || BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption"))) return;
         entity.moveTo(cell.getX() + 0.5, cell.getY(), cell.getZ() + 0.5, 180.0f, 0.0f);
         // Frozen mobs must send the same head/body direction as their entity yaw.
         entity.setYHeadRot(180.0f);
@@ -4738,8 +4828,12 @@ public final class CimSceneMod {
                 boolean robit = id.toString().equals("mekanism:robit");
                 boolean parcel = id.toString().equals("create:package");
                 boolean blueprint = id.toString().equals("create:crafting_blueprint");
+                boolean bearing = id.toString().equals("create:stationary_contraption");
                 boolean itemPlaced = robit || parcel || blueprint;
-                if (itemPlaced) {
+                if (bearing) {
+                    e = assembleGalleryBearing(level, new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
+                            GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z));
+                } else if (itemPlaced) {
                     ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
                     if (owner == null) owner = new GuiProbe(level);
                     BlockPos cell = new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
@@ -4760,7 +4854,7 @@ public final class CimSceneMod {
                 e.setNoGravity(true);
                 e.setInvulnerable(true);
                 alignGalleryEntity(e, new BlockPos(GALLERY_X0 + col * ENTITY_PITCH,
-                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced);
+                        GALLERY_Y0 + row * ENTITY_PITCH, GALLERY_Z), itemPlaced || bearing);
                 e.addTag(GALLERY_TAG);
                 if (isMob) {
                     // NoAI: no movement, no look-at, no AI despawn logic — a
@@ -4768,7 +4862,7 @@ public final class CimSceneMod {
                     // between the settle pass and the shot.
                     m_setNoAi(e);
                 }
-                if (!itemPlaced) level.addFreshEntity(e);
+                if (!itemPlaced && !bearing) level.addFreshEntity(e);
                 // 14-ea THE MOTION PIN: a projectile's own tick re-applies
                 // its hardcoded gravity (FallingBlockEntity / ThrowableProjectile
                 // both add it INSIDE tick(), ungated by NoGravity) — one
