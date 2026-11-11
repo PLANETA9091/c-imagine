@@ -229,10 +229,10 @@ final class QuadDump {
                 }
                 BlockPos pos = new BlockPos(Integer.parseInt(c[1]), Integer.parseInt(c[2]), Integer.parseInt(c[3]));
                 try {
-                    // manifests print some enum values by constant name (part=PULLEY);
-                    // the parser takes the serialized name, and ids are lowercase anyway
+                    // The manifest uses Property.getName, exactly as the native
+                    // parser expects. Mod-defined serialized values can be case-sensitive.
                     page.cells.put(pos, BlockStateParser.parseForBlock(BuiltInRegistries.BLOCK.asLookup(),
-                                    c[4].toLowerCase(Locale.ROOT), false)
+                                    c[4], false)
                             .blockState());
                     names.put(pos, c[4]);
                     targets.put(pos, page.cells.get(pos));

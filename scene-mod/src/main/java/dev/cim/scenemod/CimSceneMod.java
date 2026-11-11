@@ -6313,7 +6313,7 @@ public final class CimSceneMod {
     }
 
     private static <T extends Comparable<T>> String valueOf(BlockState st, Property<T> p) {
-        return st.getValue(p).toString();
+        return SceneStateNames.value(p, st.getValue(p));
     }
 
     /**
