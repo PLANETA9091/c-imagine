@@ -1001,14 +1001,36 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return null;
         }
         GuiCaptures.Slot c = s.capture.slots().get(index);
+        // 1) Where both are drawn, when the server's positions are real ones.
+        LiveBridge.Slot byPosition = null;
+        int at = 0;
         for (LiveBridge.Slot l : s.liveSlots) {
             if (l.x() == c.x() && l.y() == c.y() && l.player() == c.player()) {
-                return l;
+                byPosition = l;
+                at++;
             }
         }
-        // An answer without positions (older layer): the list position, as before.
-        boolean positioned = !s.liveSlots.isEmpty() && s.liveSlots.get(0).x() != Integer.MIN_VALUE;
-        return !positioned && index < s.liveSlots.size() ? s.liveSlots.get(index) : null;
+        if (at == 1) {
+            return byPosition;
+        }
+        // 2) Some mods create slots at 0,0 on the server and place them in the screen (AE2):
+        // the same owner and container slot, the n-th such capture slot to the n-th live one.
+        int nth = 0;
+        for (int k = 0; k < index; k++) {
+            GuiCaptures.Slot o = s.capture.slots().get(k);
+            if (o.player() == c.player() && o.index() == c.index()) {
+                nth++;
+            }
+        }
+        if (c.index() >= 0) {
+            for (LiveBridge.Slot l : s.liveSlots) {
+                if (l.player() == c.player() && l.containerSlot() == c.index() && nth-- == 0) {
+                    return l;
+                }
+            }
+        }
+        // 3) An answer that says neither: the list position.
+        return index < s.liveSlots.size() ? s.liveSlots.get(index) : null;
     }
 
     private void applyLive(Player player, Session s, LiveBridge.State state) {
