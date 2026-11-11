@@ -454,8 +454,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (m == null) {
             return "no move";
         }
+        // The real client counted the slots on its screen, which the capture's own list is;
+        // the manifest's list is the server's, hidden slots included (Mekanism's QIO window).
+        List<GuiCaptures.Slot> shown = s.scene.captured().slots().isEmpty()
+                ? s.capture.slots() : s.scene.captured().slots();
         for (int slot : m) {
-            GuiCaptures.Slot at = s.capture.slots().get(slot);
+            if (slot < 0 || slot >= shown.size()) {
+                return "no slot " + slot;
+            }
+            GuiCaptures.Slot at = shown.get(slot);
             s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
             click(player, "left");
         }
@@ -511,7 +518,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         s.pointerShown = false;
         s.live = true;
         applyLive(player, s, state);
-        log.info("[cim-screen] live harness opened " + menuId + " by " + opener + " (" + state.slots().size() + " slots)");
+        log.info("[cim-screen] live harness opened " + menuId + " by " + opener + " (" + state.slots().size() + " slots)"
+                + pairing(s));
         return true;
     }
 
@@ -1001,6 +1009,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return null;
         }
         GuiCaptures.Slot c = s.capture.slots().get(index);
+        // 0) The menu's own index, the number the real client's packets carry, when the
+        // capture names it and the live slot has the same owner (measured: a position pairing
+        // put Sophisticated Backpacks' slot 26 contents nowhere, where the real client shows it).
+        if (c.menuIndex() >= 0) {
+            for (LiveBridge.Slot l : s.liveSlots) {
+                if (l.menuIndex() == c.menuIndex()) {
+                    if (l.player() == c.player()) {
+                        return l;
+                    }
+                    break;
+                }
+            }
+        }
         // 1) Where both are drawn, when the server's positions are real ones.
         LiveBridge.Slot byPosition = null;
         int at = 0;
@@ -1031,6 +1052,27 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         // 3) An answer that says neither: the list position.
         return index < s.liveSlots.size() ? s.liveSlots.get(index) : null;
+    }
+
+    /** Where each filled live slot is drawn: the evidence when a gallery page shows an item elsewhere. */
+    private static String pairing(Session s) {
+        StringBuilder out = new StringBuilder();
+        java.util.Set<LiveBridge.Slot> drawn = new java.util.HashSet<>();
+        for (int k = 0; k < s.capture.slots().size(); k++) {
+            LiveBridge.Slot l = liveSlotFor(s, k);
+            if (l != null) {
+                drawn.add(l);
+                if (!l.stack().equals("-")) {
+                    out.append(' ').append(k).append("->").append(l.menuIndex());
+                }
+            }
+        }
+        for (LiveBridge.Slot l : s.liveSlots) {
+            if (!drawn.contains(l) && !l.stack().equals("-")) {
+                out.append(" undrawn:").append(l.menuIndex());
+            }
+        }
+        return out.length() == 0 ? "" : "; filled" + out;
     }
 
     private void applyLive(Player player, Session s, LiveBridge.State state) {

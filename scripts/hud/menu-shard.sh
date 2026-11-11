@@ -108,8 +108,9 @@ for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
     with open(page_file, 'w', encoding='utf-8') as out:
         out.write('cell\tx\ty\tz\tmenu\tnote\n')
         out.write(f'cell\t0\t0\t0\t{menu[1]}\topened-by:crawl\t{menu[2]}\n')
+        # The menu's own index when the capture says it: the screen lists active slots only.
         for i, r in enumerate(x for x in rows if x[0] == 'slot'):
-            out.write(f'slot\t{i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
+            out.write(f'slot\t{r[5] if len(r) > 5 else i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
     shutil.copy(frame, f'truth-shots/gal-gui-{ns}{page}.png')
     print(page)
 # Interactions: each recorded state's frame becomes a page of its own.
