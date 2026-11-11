@@ -3339,7 +3339,9 @@ public final class CimSceneMod {
         BlockEntity be = level.getBlockEntity(controller);
         be.getClass().getMethod("assemble").invoke(be);
         Entity entity = (Entity) be.getClass().getMethod("getMovedContraption").invoke(be);
-        if (entity == null || !entity.isAlive() || level.getEntity(entity.getUUID()) != entity
+        // NeoForge sets this after successful entity-manager insertion. The UUID
+        // lookup only exposes tracked entities and can lag insertion in a new chunk.
+        if (entity == null || !entity.isAlive() || !entity.isAddedToLevel()
                 || !BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString().equals("create:stationary_contraption")) {
             throw new IllegalStateException("Native bearing assembly did not add its stationary contraption: entity="
                     + entity + ", assembly=" + be.getClass().getMethod("getLastAssemblyException").invoke(be));
