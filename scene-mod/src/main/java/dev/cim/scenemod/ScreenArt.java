@@ -126,6 +126,10 @@ public final class ScreenArt {
         int settleAt;
         boolean moveDone;
 
+        void collect(List<? extends GuiEventListener> children, int sw, int sh, int depth) {
+            collectInto(targets, children, sw, sh, depth);
+        }
+
         Crawl(AbstractContainerScreen<?> screen, int start) {
             parent = screen;
             next = start;
@@ -140,12 +144,36 @@ public final class ScreenArt {
                 id = "unknown";
             }
             name = id;
-            for (GuiEventListener child : screen.children()) {
-                if (child instanceof AbstractWidget w && w.visible && w.active && !(w instanceof EditBox)
-                        && targets.size() < CRAWL_MAX_WIDGETS) {
+            collect(screen.children(), screen.width, screen.height, 0);
+        }
+    }
+
+    /**
+     * Every pressable control on the screen: vanilla widgets, and a mod's own controls that
+     * are not AbstractWidgets but have bounds (Sophisticated Backpacks' settings tab), also
+     * inside a container element. A control as large as half the screen is a panel, not a
+     * button.
+     */
+    private static void collectInto(List<int[]> targets, List<? extends GuiEventListener> children, int sw, int sh,
+                                    int depth) {
+        for (GuiEventListener child : children) {
+            if (targets.size() >= CRAWL_MAX_WIDGETS) {
+                return;
+            }
+            if (child instanceof AbstractWidget w) {
+                if (w.visible && w.active && !(w instanceof EditBox)) {
                     targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2,
                             w.getX(), w.getY(), w.getWidth(), w.getHeight()});
                 }
+                continue;
+            }
+            net.minecraft.client.gui.navigation.ScreenRectangle r = child.getRectangle();
+            if (r.width() > 0 && r.height() > 0 && r.width() < sw / 2 && r.height() < sh / 2) {
+                targets.add(new int[]{r.left() + r.width() / 2, r.top() + r.height() / 2,
+                        r.left(), r.top(), r.width(), r.height()});
+            }
+            if (depth < 3 && child instanceof net.minecraft.client.gui.components.events.ContainerEventHandler inner) {
+                collectInto(targets, inner.children(), sw, sh, depth + 1);
             }
         }
     }
