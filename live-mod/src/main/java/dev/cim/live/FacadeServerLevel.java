@@ -106,6 +106,20 @@ public final class FacadeServerLevel extends ServerLevel {
         return getRandomSequences().get(id);
     }
 
+    /**
+     * The registries mods read their data from: with the layer's real server running, its
+     * own, which hold the data-pack registries (Supplementaries' red merchant draws its offers
+     * from one); without it, the facade's built-in ones.
+     */
+    @Override
+    public net.minecraft.core.RegistryAccess registryAccess() {
+        MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (real != null && !(real instanceof FacadeServer)) {
+            return real.registryAccess();
+        }
+        return super.registryAccess();
+    }
+
     /** Paper decides who may build where before a click reaches the layer. */
     @Override
     public boolean mayInteract(Player player, BlockPos pos) {
