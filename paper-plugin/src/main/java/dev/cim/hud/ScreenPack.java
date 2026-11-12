@@ -466,15 +466,15 @@ public final class ScreenPack {
     }
 
     /** Every wash the bake found, by font row: alpha, red, green, blue. */
-    static final List<int[]> WASHES = new ArrayList<>();
-    /** The wash the last {@link #coverArt} recognised, or null. */
-    private static Wash lastWash;
+    static final List<double[]> WASHES = new ArrayList<>();
+    /** The wash the last {@link #coverArt} recognised (k, then red, green, blue added), or null. */
+    private static double[] lastWash;
 
     private static void noteWash(Map<String, int[]> placed, int state) {
         if (lastWash == null) {
             return;
         }
-        int[] w = {lastWash.alpha(), lastWash.r(), lastWash.g(), lastWash.b()};
+        double[] w = lastWash;
         int index = -1;
         for (int i = 0; i < WASHES.size(); i++) {
             if (java.util.Arrays.equals(WASHES.get(i), w)) {
@@ -960,7 +960,14 @@ public final class ScreenPack {
         Wash wash = washOf(base, state, slots, at, scale, left, top);
         boolean washable = wash != null && baseShown != null
                 && baseShown.getWidth() == shown.getWidth() && baseShown.getHeight() == shown.getHeight();
-        lastWash = washable ? wash : null;
+        lastWash = washable ? new double[]{(255 - wash.alpha()) / 255.0, wash.r() * wash.alpha() / 255.0,
+                wash.g() * wash.alpha() / 255.0, wash.b() * wash.alpha() / 255.0} : null;
+        if (washable && frames) {
+            double[] measured = washFromFrames(baseFrame, stateFrame, base, state, wash, slots, at, scale, left, top);
+            if (measured != null) {
+                lastWash = measured;
+            }
+        }
         BufferedImage out = null;
         for (int i = 0; i < slots.size(); i++) {
             GuiCaptures.Slot slot = slots.get(i);
@@ -1049,6 +1056,78 @@ public final class ScreenPack {
             return false;
         }
         return (frame.getRGB(x, y) & 0xFFFFFF) == (f & 0xFFFFFF);
+    }
+
+    /**
+     * The wash as the real frames show it, the items under it included: one factor and one
+     * added colour per channel that reproduce the most frame pixels exactly (measured: the
+     * robit's wash puts 252 at 207 and 139 at 120, which no 8-bit colour and alpha does both).
+     */
+    static double[] washFromFrames(BufferedImage baseFrame, BufferedImage stateFrame, BufferedImage base,
+                                   BufferedImage state, Wash wash, List<GuiCaptures.Slot> slots, List<int[]> at,
+                                   int scale, int left, int top) {
+        Map<Long, Integer> pairs = new HashMap<>();
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int dx = (at.get(i)[0] - slot.x()) * scale;
+            int dy = (at.get(i)[1] - slot.y()) * scale;
+            for (int y = y0; y < y0 + 18 * scale; y++) {
+                for (int x = x0; x < x0 + 18 * scale; x++) {
+                    if (!inside(base, x, y) || !inside(state, x + dx, y + dy)
+                            || !wash.fits(base.getRGB(x, y), state.getRGB(x + dx, y + dy))) {
+                        continue;
+                    }
+                    long b = baseFrame.getRGB(x, y) & 0xFFFFFFL;
+                    long s = stateFrame.getRGB(x + dx, y + dy) & 0xFFFFFFL;
+                    pairs.merge(b << 24 | s, 1, Integer::sum);
+                }
+            }
+        }
+        if (pairs.size() < 2) {
+            return null;
+        }
+        double k0 = (255 - wash.alpha()) / 255.0;
+        double[] best = null;
+        int bestHits = -1;
+        for (int step = -80; step <= 80; step++) {
+            double k = k0 + step * 0.0002;
+            double[] out = {k, 0, 0, 0};
+            int hits = 0;
+            for (int ch = 0; ch < 3; ch++) {
+                int sh = 16 - 8 * ch;
+                // Each pair allows added colours in [s - 0.5 - b*k, s + 0.5 - b*k): the most covered point.
+                List<double[]> events = new ArrayList<>();
+                for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+                    int b = (int) (e.getKey() >>> (24 + sh)) & 0xFF;
+                    int sv = (int) (e.getKey() >>> sh) & 0xFF;
+                    events.add(new double[]{sv - 0.5 - b * k, e.getValue()});
+                    events.add(new double[]{sv + 0.5 - b * k, -e.getValue()});
+                }
+                events.sort((p, q) -> p[0] != q[0] ? Double.compare(p[0], q[0]) : Double.compare(p[1], q[1]));
+                int run = 0;
+                int top1 = -1;
+                double at1 = 0;
+                for (int j = 0; j < events.size(); j++) {
+                    run += (int) events.get(j)[1];
+                    if (run > top1 && j + 1 < events.size()) {
+                        top1 = run;
+                        at1 = (events.get(j)[0] + events.get(j + 1)[0]) / 2;
+                    }
+                }
+                out[1 + ch] = at1;
+                hits += top1;
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = out;
+            }
+        }
+        return best;
     }
 
     private static boolean inside(BufferedImage image, int x, int y) {

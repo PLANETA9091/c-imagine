@@ -180,6 +180,12 @@ public final class SpecializedOpeners {
                     Class.forName("com.simibubi.create.content.logistics.packagerLink.LogisticallyLinkedBlockItem", true, cl)
                             .getMethod("assignFrequency", ItemStack.class, Player.class, java.util.UUID.class)
                             .invoke(null, gauge, player, java.util.UUID.nameUUIDFromBytes("cimscene".getBytes()));
+                    // Before the placement uses the stack up. What a player holds, said plainly, so another server can do the same: the
+                    // tuned item placed, then what it placed right-clicked.
+                    replay = "place+item:" + BuiltInRegistries.ITEM.getKey(gauge.getItem()) + "#"
+                            + net.minecraft.core.component.DataComponentPatch.CODEC.encodeStart(
+                                    level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE),
+                                    gauge.getComponentsPatch()).getOrThrow();
                     ItemStack held = player.getMainHandItem();
                     player.setItemInHand(InteractionHand.MAIN_HAND, gauge);
                     try {
@@ -191,12 +197,7 @@ public final class SpecializedOpeners {
                         player.setItemInHand(InteractionHand.MAIN_HAND, held);
                     }
                     LOGGER.info("[cimscene] factory gauge placed: {}", level.getBlockState(rig));
-                    // What a player holds, said plainly, so another server can do the same: the
-                    // tuned item placed, then what it placed right-clicked.
-                    replay = "place+item:" + BuiltInRegistries.ITEM.getKey(gauge.getItem()) + "#"
-                            + net.minecraft.core.component.DataComponentPatch.CODEC.encodeStart(
-                                    level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE),
-                                    gauge.getComponentsPatch()).getOrThrow();
+
                 }
                 case "ae2:basic_cell_chest", "ae2:craftamount", "ae2:craftconfirm" ->
                     setBlock(level, rig, "ae2:chest");

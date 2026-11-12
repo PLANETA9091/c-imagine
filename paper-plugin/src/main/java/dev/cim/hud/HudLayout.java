@@ -135,7 +135,7 @@ public final class HudLayout {
 
     /**
      * The 26.3 {@code core/text.vsh} with the decoder added. {@code washes}: alpha, red,
-     * green, blue (0-255) of each wash, by index.
+     * k and the colour each wash adds per channel (0-255), by index.
      */
     /** The 26.3 {@code core/text.fsh} adding the wash's colour (see {@link Anchor#FREE_WASH}). */
     static String fragmentShader() {
@@ -207,14 +207,14 @@ public final class HudLayout {
                 """;
     }
 
-    static String vertexShader(List<int[]> washes) {
+    static String vertexShader(List<double[]> washes) {
         StringBuilder table = new StringBuilder("const vec4 CIM_WASHES[" + WASHES + "] = vec4[" + WASHES + "](");
         for (int i = 0; i < WASHES; i++) {
-            int[] w = i < washes.size() ? washes.get(i) : new int[]{0, 0, 0, 0};
-            // The real fill: c*a + d*(255-a), over 255. The glyph's own colour is d.
-            table.append(i == 0 ? "" : ", ").append("vec4(").append((255 - w[0]) / 255.0).append(", ")
-                    .append(w[1] * w[0] / 65025.0).append(", ").append(w[2] * w[0] / 65025.0).append(", ")
-                    .append(w[3] * w[0] / 65025.0).append(')');
+            double[] w = i < washes.size() ? washes.get(i) : new double[]{1, 0, 0, 0};
+            // The glyph's own colour d becomes d*k plus the added colour (0-255 scale).
+            table.append(i == 0 ? "" : ", ").append("vec4(").append(w[0]).append(", ")
+                    .append(w[1] / 255.0).append(", ").append(w[2] / 255.0).append(", ")
+                    .append(w[3] / 255.0).append(')');
         }
         table.append(");");
         return vertexShaderSource().replace("CIM_WASH_TABLE", table.toString());
