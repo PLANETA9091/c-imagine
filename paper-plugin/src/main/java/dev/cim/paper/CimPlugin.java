@@ -2042,6 +2042,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         int cells = 0;
         String menuClass = null;
         String opener = "";
+        String sneakOpener = null;
         String menuId = null;
         try {
             for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
@@ -2056,6 +2057,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                     if (row.length > 5) {
                         opener = row[5].replace("opened-by:", "").replace("sneak+", "");
+                        sneakOpener = row[5].replace("opened-by:", "").startsWith("sneak+")
+                                ? row[5].replace("opened-by:", "") : null;
                     }
                 }
                 // header / skip rows (open-failed notes pass through — the
@@ -2071,7 +2074,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         final String hudId = menuId;
         // The truth leg holds the item that opened the menu, and its slot shows it.
         final String heldId = opener.startsWith("item:") ? opener.substring("item:".length()) : null;
-        final String harnessOpener = opener;
+        // The live opener keeps the walk's sneak (Create's linked controller opens on a
+        // sneaking use only); the held item's id is the same either way.
+        final String harnessOpener = sneakOpener != null ? sneakOpener : opener;
         callSync(() -> {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");

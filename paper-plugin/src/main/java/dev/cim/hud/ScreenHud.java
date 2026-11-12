@@ -520,12 +520,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         refreshCaptures();
         close(player);
         LiveBridge.State state;
+        boolean sneak = opener.startsWith("sneak+");
+        if (sneak) {
+            opener = opener.substring("sneak+".length());
+        }
         if (opener.startsWith("item:")) {
             ItemStack hand = player.getInventory().getItemInMainHand();
             if ((hand == null || hand.getType().isAir()) && heldId != null) {
                 player.getInventory().setItemInMainHand(bridge.stackOf(heldId, 1));
             }
-            state = bridge.openHeld(player);
+            state = bridge.openHeld(player, sneak);
         } else if (opener.startsWith("block:")) {
             state = bridge.openBlock(player, player.getLocation().getBlock().getRelative(2, 0, 0),
                     opener.substring("block:".length()), true);

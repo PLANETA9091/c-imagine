@@ -242,8 +242,13 @@ final class LiveBridge {
 
     /** The held item's own use(), with the player's inventory mirrored first. */
     State openHeld(Player player) {
+        return openHeld(player, player.isSneaking());
+    }
+
+    /** {@code sneaking}: the use as a sneaking player makes it (some items open their menu so only). */
+    State openHeld(Player player, boolean sneaking) {
         StringBuilder in = new StringBuilder("open-item\t").append(player.getUniqueId()).append('\t')
-                .append(player.getName());
+                .append(player.getName()).append('\t').append(sneaking ? "1" : "0");
         // The layer's player holds slot 0 selected: the held stack goes there, the stack
         // there goes where the held one was, so no item is lost or doubled.
         appendInventory(in, player, true);

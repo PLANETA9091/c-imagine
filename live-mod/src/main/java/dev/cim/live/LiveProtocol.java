@@ -56,10 +56,16 @@ public final class LiveProtocol {
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
+                    // open-item TAB uuid TAB name [TAB sneaking 1|0]
                     SessionServerPlayer player = LiveMenus.session(id, head[2]);
                     player.closeContainer();
                     readInventory(player, lines);
-                    yield state(player, LiveMenus.useHeld(player, player.getMainHandItem()));
+                    player.setShiftKeyDown(head.length > 3 && head[3].equals("1"));
+                    try {
+                        yield state(player, LiveMenus.useHeld(player, player.getMainHandItem()));
+                    } finally {
+                        player.setShiftKeyDown(false);
+                    }
                 }
                 case "open-block" -> {
                     // open-block TAB uuid TAB name TAB blockId TAB x TAB y TAB z, then inv lines and an
