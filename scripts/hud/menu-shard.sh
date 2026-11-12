@@ -77,7 +77,7 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   # is reopened whenever one of them replaces it.
   if grep -q '^cell' "srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv" 2>/dev/null; then
     IDX=0
-    for round in $(seq 1 12); do
+    for round in $(seq 1 40); do
       rm -f "$SCR/crawl-done"; echo "$IDX" > "$SCR/crawl-go"
       for i in $(seq 1 600); do [ -f "$SCR/crawl-done" ] && break; sleep 0.2; done
       [ -f "$SCR/crawl-done" ] || { rm -f "$SCR/crawl-go"; break; }
@@ -222,11 +222,25 @@ for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   # The same interactions, in the order the real client made them.
   TAGS=$( { [ -f "truth-shots/gal-guiw-$NS$p-move.png" ] && echo move; ls truth-shots | grep -oE "^gal-guiw-$NS$p-w[0-9]+\.png$" | grep -oE 'w[0-9]+\.png$' | tr -d '.png' | sort -t w -k2 -n; } )
   PREV=-1
+  # The real client's rounds: each began on the page opened again ("reopen N" before press N,
+  # after a press that left the screen or found its control covered).
+  MENU=$(awk -F'\t' '$1=="cell" && $2!="x" {print $5; exit}' "srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv" 2>/dev/null)
+  PRESSES="srv-wall/c-imagine/screens/$(echo "$MENU" | tr ':/' '__').presses"
   for T in $TAGS; do
-    # A press number the real client skipped left its screen (a sub-menu, a close): the truth
-    # walk then opened the page again, as just placed or just handed over, keeping the
-    # inventory. The same reopening here, before the next press.
-    if [ "$T" != move ] && [ "${T#w}" -gt $((PREV + 1)) ]; then
+    # A press the truth walk reached on the page opened again, as just placed or just handed
+    # over, keeping the inventory: the same reopening here, before that press. Without the
+    # record (an older capture), a skipped press number means the same.
+    REOPEN=0
+    if [ "$T" != move ]; then
+      if grep -q '^reopen' "$PRESSES" 2>/dev/null; then
+        grep -qx "reopen	${T#w}" "$PRESSES" && REOPEN=1
+        # rounds that began before this press and after the previous one count too
+        for n in $(seq $((PREV + 1)) $((${T#w} - 1))); do grep -qx "reopen	$n" "$PRESSES" && REOPEN=1; done
+      elif [ "${T#w}" -gt $((PREV + 1)) ]; then
+        REOPEN=1
+      fi
+    fi
+    if [ "$REOPEN" = 1 ]; then
       $RC 'item replace entity cimviewer weapon.mainhand with air' "cim gallerypage-gui $NS $p" >/dev/null
       sleep 0.6
     fi

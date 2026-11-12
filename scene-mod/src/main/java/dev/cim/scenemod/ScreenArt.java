@@ -126,6 +126,9 @@ public final class ScreenArt {
         final int left;
         final int top;
         final List<int[]> targets = new ArrayList<>();
+        /** What each target's point hit when the round began: a press there finds it again. */
+        final List<GuiEventListener> under = new ArrayList<>();
+        final int start;
         int next;
         int wait;
         /** Steps this press has shown no screen, waiting for a sub-menu the server opens. */
@@ -141,6 +144,7 @@ public final class ScreenArt {
 
         Crawl(AbstractContainerScreen<?> screen, int start) {
             parent = screen;
+            this.start = start;
             next = start;
             moveDone = start > 0;
             left = screen.getGuiLeft();
@@ -154,6 +158,13 @@ public final class ScreenArt {
             }
             name = id;
             collect(screen.children(), screen.width, screen.height, 0);
+            for (int[] t : targets) {
+                under.add(screen.getChildAt(t[0], t[1]).orElse(null));
+            }
+            if (start > 0) {
+                // The page as opened again before this press: ours opens it again here too.
+                record(this, "reopen\t" + start);
+            }
             if (start == 0) {
                 StringBuilder at = new StringBuilder();
                 for (int[] t : targets) {
@@ -406,8 +417,19 @@ public final class ScreenArt {
             finishCrawl(-1);
             return;
         }
-        int index = crawl.next++;
+        int index = crawl.next;
         int[] at = crawl.targets.get(index);
+        // Something a press opened covers this control (a Mekanism window: the robit's rename
+        // took every later press). A player closes it first; the crawl opens the page again,
+        // unless this round began here already.
+        GuiEventListener now = crawl.parent.getChildAt(at[0], at[1]).orElse(null);
+        if (now != crawl.under.get(index) && index != crawl.start) {
+            LOGGER.info("[cimscene] crawl {} press {} covered by {}, page opened again", crawl.name, index,
+                    now == null ? "-" : now.getClass().getName());
+            finishCrawl(index);
+            return;
+        }
+        crawl.next++;
         crawl.wait = 0;
         crawl.closed = 0;
         sent = null;
