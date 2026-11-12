@@ -85,6 +85,56 @@ public final class GalleryPack {
         }
     }
 
+    /**
+     * 14-dh THE CAPTURE-FIRST PICK (the one resolution law for a gallery
+     * cell row, extracted so the selftest can hold it): a cell's state
+     * string resolves through FOUR channels, most-specific first.
+     *
+     * <ol>
+     * <li>{@code state#<ctKey>} — the 14-ak per-position CT tile composite
+     * (the wall's connected textures are position-calibrated).</li>
+     * <li>{@code byQuadHash.get(ctKey)} — the 14-bt mesh identity: a ctx
+     * hash always resolves through the captured mesh itself.</li>
+     * <li>{@code byQuadState.get(state)} — THE 14-dh RULE: when a captured
+     * quad row names THIS EXACT state, it wins over the static composite.
+     * The capture is the truth client's OWN rendering of that state (its
+     * real per-quad shades ride the 14-cz constant tints and its scene
+     * light rides the 14-cy pin) — for every runtime-built class (the
+     * globe's BER map cube, the bunting flags, the book piles, the rope
+     * knots) the static model chain is a stub the pack cannot reproduce,
+     * measured on gallery 43072158799: 313 of the 385 red cells' states
+     * carry an exact capture row while their composites render the stub.
+     * Rows.tsv dedupes by content, so one capture serves its sibling
+     * states through the plain composite exactly as before — only the
+     * exact-name row flips channel.</li>
+     * <li>{@code byState.get(state)} — the plain static composite (the
+     * legacy channel, unchanged for states without a capture).</li>
+     * </ol>
+     *
+     * @param byState     bare state -> resolved row (both channels' rows)
+     * @param byQuadState bare state of a {@code state#q<hash>} row -> that
+     *                    row (first wins — the resolved manifest is sorted)
+     * @param byQuadHash  {@code q<hash>} hash -> the row (14-bt)
+     * @param state       the manifest cell's state string (bare)
+     * @param ctKey       the position's ctx tile key or null
+     */
+    public static Resolved pickResolved(Map<String, Resolved> byState,
+                                 Map<String, Resolved> byQuadState,
+                                 Map<String, Resolved> byQuadHash,
+                                 String state, String ctKey) {
+        Resolved picked = ctKey == null ? null : byState.get(state + "#" + ctKey);
+        if (picked == null && ctKey != null) {
+            picked = byQuadHash.get(ctKey);
+        }
+        if (picked == null) {
+            picked = byQuadState.get(state);
+        }
+        if (picked == null) {
+            picked = byState.get(state);
+        }
+        return picked;
+    }
+
     /** First auto-assigned custom_model_data float for gallery rows. */
     public static final float CMD_BASE = 100_000.0f;
     /** Namespace + dir the composite models emit under. */

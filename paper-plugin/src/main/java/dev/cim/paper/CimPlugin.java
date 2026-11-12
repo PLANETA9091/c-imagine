@@ -1172,12 +1172,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // index every quad row by its bare hash and let the ctx position
         // resolve through it directly.
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadHash = new java.util.HashMap<>();
+        // 14-dh THE CAPTURE-FIRST INDEX: every quad row indexed by its BARE
+        // state prefix — when the capture names the manifest state exactly,
+        // that row is the truth client's own rendering of the state and
+        // outranks the static composite (the runtime-built classes' stub
+        // models never reproduce the BER-painted content: measured 313 of
+        // the 385 red cells on gallery 43072158799 carry an exact capture).
+        // First wins: the resolved manifest is sorted, so the representative
+        // capture is deterministic across builds.
+        java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadState = new java.util.HashMap<>();
         for (dev.cim.f2v.GalleryPack.Resolved r : f2v.gallery()) {
-            byState.put(r.stateId(), r);
+            byState.putIfAbsent(r.stateId(), r);
             String id = r.stateId();
             int q = id.indexOf("#q");
             if (q >= 0) {
                 byQuadHash.putIfAbsent(id.substring(q + 2), r);
+                byQuadState.putIfAbsent(id.substring(0, q), r);
             }
         }
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -1250,16 +1260,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 String state = row[4];
                 String ctKey = ctByPos.get(row[1] + "," + row[2] + "," + row[3]);
-                dev.cim.f2v.GalleryPack.Resolved picked = ctKey == null ? null
-                        : map.get(state + "#" + ctKey);
-                // 14-bt: the mesh identity outranks the state spelling — a
-                // ctx hash always resolves through the captured mesh itself
-                if (picked == null && ctKey != null) {
-                    picked = byQuadHash.get(ctKey);
-                }
-                if (picked == null) {
-                    picked = map.get(state);
-                }
+                // 14-dh: the ONE pick law (CT ctx -> mesh hash -> the exact
+                // state's captured mesh -> the plain composite) lives in
+                // GalleryPack.pickResolved — the selftest holds it
+                dev.cim.f2v.GalleryPack.Resolved picked =
+                        dev.cim.f2v.GalleryPack.pickResolved(map, byQuadState,
+                                byQuadHash, state, ctKey);
                 if (picked == null) {
                     log().warning(LOG_PREFIX + "f2v gallery: no pack CMD for " + state
                             + " — cell " + row[1] + "," + row[2] + "," + row[3] + " skipped");

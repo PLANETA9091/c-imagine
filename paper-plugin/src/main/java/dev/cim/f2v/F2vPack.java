@@ -3493,6 +3493,7 @@ public final class F2vPack {
         capturedEmptyMeshSelftest(failures);
         capturedSpriteSelftest(failures);
         compositeBoundsSelftest(failures);
+        captureFirstPickSelftest(failures);
         placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
@@ -3703,6 +3704,51 @@ public final class F2vPack {
         JsonArray stable = elements.deepCopy();
         expect(failures, GalleryPack.normalizeCompositeBounds(elements) == 1 && stable.equals(elements),
                 "composite bounds: legal geometry stays byte-stable");
+    }
+
+    /** 14-dh THE CAPTURE-FIRST PICK: the one resolution law, held end-to-end. */
+    private static void captureFirstPickSelftest(List<String> failures) {
+        java.util.Map<String, GalleryPack.Resolved> byState = new java.util.HashMap<>();
+        java.util.Map<String, GalleryPack.Resolved> byQuadState = new java.util.HashMap<>();
+        java.util.Map<String, GalleryPack.Resolved> byQuadHash = new java.util.HashMap<>();
+        GalleryPack.Resolved composite = new GalleryPack.Resolved(
+                "fakemod:block/globe", CMD_BASE, "g0", 0, 0, true);
+        GalleryPack.Resolved capture = new GalleryPack.Resolved(
+                "fakemod:block/globe#qabc123", CMD_BASE + 1, "g1", 0, 0, true, 3, 15, 0f);
+        GalleryPack.Resolved ct = new GalleryPack.Resolved(
+                "fakemod:block/globe#i0,i1", CMD_BASE + 2, "g2", 0, 0, true);
+        byState.put(composite.stateId(), composite);
+        byState.put(capture.stateId(), capture);
+        byState.put(ct.stateId(), ct);
+        byQuadState.put("fakemod:block/globe", capture);
+        byQuadHash.put("abc123", capture);
+        expect(failures,
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/globe", null) == capture,
+                "14-dh: the exact state's captured mesh outranks the static composite");
+        GalleryPack.Resolved picked = GalleryPack.pickResolved(
+                byState, byQuadState, byQuadHash, "fakemod:block/globe", null);
+        expect(failures, picked.lightBlock() == 3 && picked.lightSky() == 15,
+                "14-dh: the capture pick carries the 14-cy captured light pin");
+        expect(failures,
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/globe", "i0,i1") == ct,
+                "14-dh: the per-position CT ctx still outranks the capture (14-ak stands)");
+        expect(failures,
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/other", "abc123") == capture,
+                "14-dh: a ctx hash resolves through the captured mesh itself (14-bt stands)");
+        expect(failures,
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/plain", null) == null,
+                "14-dh: a state with no rows resolves null (the caller names the skip)");
+        GalleryPack.Resolved plain = new GalleryPack.Resolved(
+                "fakemod:block/plain", CMD_BASE + 3, "g3", 0, 0, true);
+        byState.put("fakemod:block/plain", plain);
+        expect(failures,
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/plain", null) == plain,
+                "14-dh: a sibling state without its own capture rides the plain composite");
     }
 
     private static void capturedSpriteSelftest(List<String> failures) throws IOException {
