@@ -205,6 +205,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
     private final Map<String, String> blockCarriers = new HashMap<>();
+    /** Per player: inventory slots the real client shows empty after a click its server ignored. */
+    private final Map<UUID, java.util.Set<Integer>> clientEmptied = new HashMap<>();
     /** Mod block id to the note block that stands for it in Paper's world. */
     private final Map<String, F2vPack.VisualBlock> blockCarrierRows = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
@@ -635,6 +637,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (s.desynced.contains(index)) {
                 return null;
             }
+            GuiCaptures.Slot c = s.capture.slots().get(index);
+            if (c.player() && clientEmptied.getOrDefault(player.getUniqueId(), java.util.Set.of())
+                    .contains(playerSlot(s, index))) {
+                return null;
+            }
         }
         return s.capture.slots().get(index).player()
                 ? player.getInventory().getItem(playerSlot(s, index)) : s.held[index];
@@ -791,6 +798,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             // A slot the client has and the server's menu does not (a block-placed backpack's
             // storage on a server that gave it none): the click reaches nothing on the server.
             s.desynced.add(index);
+            if (s.capture.slots().get(index).player()) {
+                // The client's own inventory slot stays empty until the server sends it again,
+                // which a menu without that slot never does (also after the page is reopened).
+                clientEmptied.computeIfAbsent(player.getUniqueId(), k -> new java.util.HashSet<>())
+                        .add(playerSlot(s, index));
+            }
             return;
         }
         if (target != null) {
@@ -1259,6 +1272,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             // A player slot both sides agree on is the player's inventory, which Paper holds
             // (the carried item as itself, not rebuilt from the layer's stack).
             boolean bothPlayer = slot != null && slot.player() && s.capture.slots().get(k).player();
+            if (bothPlayer && slot.containerSlot() == s.capture.slots().get(k).index()) {
+                // This menu sends that inventory slot to the client: what it shows is real again.
+                java.util.Set<Integer> emptied = clientEmptied.get(player.getUniqueId());
+                if (emptied != null) {
+                    emptied.remove(slot.containerSlot());
+                }
+            }
             s.liveHeld[k] = slot != null && !bothPlayer;
             s.held[k] = slot == null || bothPlayer || !slot.pickable() ? null : live.toPaper(slot.stack());
         }
