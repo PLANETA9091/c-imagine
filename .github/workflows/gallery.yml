@@ -1279,7 +1279,10 @@ jobs:
           # safe/trapped_present ride VariableSizeContainerScreen, the ae2
           # terminals) get their scenes from the run instead of the seed.
           mkdir -p truth-screens
-          LAUNCH=$(sed 's/^java /java -Dcim.nomouse=true -Dcim.screenart='"$PWD"'/truth-screens /' truth-client/launch.txt)
+          # delimiter '#': $PWD is /-joined, a /-delimited sed program dies on it
+          # (char 51: unknown option to `s' — all 8 truth shards died on exactly
+          # this line in run 43189508798). '#' cannot appear in an absolute path.
+          LAUNCH=$(sed "s#^java #java -Dcim.nomouse=true -Dcim.screenart=$PWD/truth-screens #" truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
@@ -1515,7 +1518,8 @@ jobs:
             sleep 2
             # 14-di: the rejoin carries the screen-art dump too (a menu opened
             # on a rejoined client must still capture its art)
-            LAUNCH=$(sed 's/^java /java -Dcim.screenart='"$PWD"'/truth-screens /' truth-client/launch.txt)
+            # delimiter '#' — same $PWD-contains-slashes fix as the first attempt
+            LAUNCH=$(sed "s#^java #java -Dcim.screenart=$PWD/truth-screens #" truth-client/launch.txt)
             setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
             local L=""
             for i in $(seq 1 90); do
