@@ -43,8 +43,12 @@ final class LiveRegistries {
                         .mobSpawnSettings(net.minecraft.world.level.biome.MobSpawnSettings.EMPTY)
                         .generationSettings(net.minecraft.world.level.biome.BiomeGenerationSettings.EMPTY)
                         .build()));
+        // Chat types: a mob that speaks to the player (Supplementaries' red merchant on a click).
+        MappedRegistry<net.minecraft.network.chat.ChatType> chat = bootstrap(Registries.CHAT_TYPE,
+                net.minecraft.network.chat.ChatType::bootstrap);
         List<Registry<?>> all = new ArrayList<>();
         BuiltInRegistries.REGISTRY.forEach(all::add);
+        all.add(chat);
         all.add(dimensions);
         all.add(damage);
         all.add(biomes);

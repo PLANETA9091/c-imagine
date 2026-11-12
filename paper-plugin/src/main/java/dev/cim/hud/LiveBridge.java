@@ -227,6 +227,11 @@ final class LiveBridge {
         return new Broken(removed, spilled, state);
     }
 
+    /** A record payload rebuilt from the plain values the real client's press sent. */
+    State payload(Player player, String payloadClass, String values) {
+        return parse(call("payload\t" + player.getUniqueId() + "\t" + payloadClass + "\t" + values));
+    }
+
     /** A vanilla menu packet a screen's button sends ("button" id or "trade" offer), by the server's handler. */
     State vanilla(Player player, String kind, int n) {
         return parse(call("vanilla\t" + player.getUniqueId() + "\t" + kind + "\t" + n));

@@ -534,7 +534,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             state = bridge.openBlock(player, player.getLocation().getBlock().getRelative(2, 0, 0),
                     opener.substring("block:".length()), true);
         } else if (opener.startsWith("place+item:") || opener.startsWith("use+item:")
-                || opener.startsWith("settle+use+item:")) {
+                || opener.startsWith("settle+use+item:") || opener.startsWith("entity:")) {
             state = bridge.openUse(player, player.getLocation().getBlock().getRelative(2, 0, 0), opener);
         } else {
             return false;
@@ -774,6 +774,24 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     }
                 } else if (s.live && live != null) {
                     LiveButtons.Button b = buttonFor(s.liveMenuClass, wi, w.label());
+                    int recAt = w.label() == null ? -1 : w.label().indexOf("|rec:");
+                    if (b == null && recAt >= 0) {
+                        // No scanned button sends it, but the real press's message is plain values:
+                        // the same record payload, to the mod's own handler.
+                        String cls = w.label().substring(w.label().indexOf(" sent=") + " sent=".length(), recAt);
+                        int hash = cls.indexOf('#');
+                        if (hash >= 0) {
+                            cls = cls.substring(0, hash);
+                        }
+                        LiveBridge.State state = live.payload(player, cls, w.label().substring(recAt + "|rec:".length()));
+                        if (state.error() != null) {
+                            log.warning("[cim-screen] live payload failed: " + state.error());
+                        } else {
+                            applyLive(player, s, state);
+                            log.info("[cim-screen] live " + player.getName() + " pressed '" + w.label() + "': "
+                                    + state.pressed());
+                        }
+                    }
                     if (b != null) {
                         LiveBridge.State state = live.press(player, b);
                         if (state.error() != null) {
@@ -1155,7 +1173,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // (and the same enum constant, when the payload carries one).
         int at = label == null ? -1 : label.indexOf(" sent=");
         if (at >= 0) {
-            String[] sent = label.substring(at + " sent=".length()).split("#", 2);
+            String described = label.substring(at + " sent=".length());
+            int rec = described.indexOf("|rec:");
+            if (rec >= 0) {
+                described = described.substring(0, rec);
+            }
+            String[] sent = described.split("#", 2);
             String payload = sent[0].replace('.', '/');
             for (LiveButtons.Button b : mine) {
                 if (!b.payload().equals(payload)) {

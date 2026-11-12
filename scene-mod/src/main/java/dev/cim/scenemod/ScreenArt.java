@@ -710,7 +710,64 @@ public final class ScreenArt {
                 break;
             }
         }
+        // A record payload's values, when each is a plain value: what the press said, so the
+        // HUD sends the same message (a merchant offer's index, a slot number).
+        if (payload.getClass().isRecord()) {
+            StringBuilder values = new StringBuilder();
+            boolean plain = true;
+            for (java.lang.reflect.RecordComponent rc : payload.getClass().getRecordComponents()) {
+                try {
+                    java.lang.reflect.Method get = rc.getAccessor();
+                    get.setAccessible(true);
+                    String v = plainValue(get.invoke(payload));
+                    if (v == null) {
+                        plain = false;
+                        break;
+                    }
+                    values.append(values.length() == 0 ? "" : ";").append(v);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    plain = false;
+                    break;
+                }
+            }
+            if (plain) {
+                out.append("|rec:").append(values);
+            }
+        }
         sent = out.toString();
+    }
+
+    /** A value as "type:text" for the record payload replay, or null when it is not plain. */
+    private static String plainValue(Object v) {
+        if (v instanceof Integer i) {
+            return "int:" + i;
+        }
+        if (v instanceof Boolean b) {
+            return "bool:" + b;
+        }
+        if (v instanceof Long l) {
+            return "long:" + l;
+        }
+        if (v instanceof Float f) {
+            return "float:" + f;
+        }
+        if (v instanceof Double d) {
+            return "double:" + d;
+        }
+        if (v instanceof Short s) {
+            return "short:" + s;
+        }
+        if (v instanceof Byte b) {
+            return "byte:" + b;
+        }
+        if (v instanceof String s && !s.contains(";") && !s.contains("\t") && !s.contains("|")) {
+            return "string:" + s;
+        }
+        if (v instanceof Enum<?> e) {
+            return "enum:" + e.getDeclaringClass().getName() + "." + e.name();
+        }
+        // A position or an id names the walk's own block or entity, not one a replay has.
+        return null;
     }
 
     /**

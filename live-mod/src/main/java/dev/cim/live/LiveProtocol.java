@@ -207,6 +207,19 @@ public final class LiveProtocol {
                     }
                     yield out.toString();
                 }
+                case "payload" -> {
+                    // payload TAB uuid TAB class TAB value;value...: a record payload a real
+                    // client's press sent, rebuilt from its plain values, to the mod's handler.
+                    SessionServerPlayer player = LiveMenus.session(id, "cimlive");
+                    java.util.List<String> values = head.length > 3 && !head[3].isEmpty()
+                            ? java.util.List.of(head[3].split(";")) : java.util.List.of();
+                    String pressed = LivePayloads.record(player, head[2], values);
+                    AbstractContainerMenu menu = player.opened();
+                    if (menu != null) {
+                        menu.broadcastChanges();
+                    }
+                    yield "pressed\t" + pressed + "\n" + state(player, menu);
+                }
                 case "vanilla" -> {
                     // vanilla TAB uuid TAB kind TAB n: a vanilla menu packet a screen's button sends
                     // (button: a menu button id; trade: a merchant offer), through the server's own
@@ -292,6 +305,30 @@ public final class LiveProtocol {
                             }
                         }
                         yield state(player, player.opened() != null ? player.opened() : LiveMenus.clickBlock(player, pos));
+                    }
+                    if (opener.startsWith("entity:")) {
+                        // A mob the walk spawned and clicked (Supplementaries' red merchant): made
+                        // in the facade beside the player, and clicked the way a client's click is.
+                        net.minecraft.world.entity.EntityType<?> type = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                                .get(net.minecraft.resources.ResourceLocation.parse(opener.substring("entity:".length())));
+                        net.minecraft.world.entity.Entity made = type.create(level);
+                        if (made == null) {
+                            BLOCKS.remove(id);
+                            yield "error\tno entity " + opener;
+                        }
+                        // As the walk spawns it: placed, added, one tick of its own.
+                        made.moveTo(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5, 0f, 0f);
+                        level.addFreshEntity(made);
+                        made.tick();
+                        if (made.isRemoved()) {
+                            BLOCKS.remove(id);
+                            yield "error\tthe entity removed itself: " + opener;
+                        }
+                        if (!made.interactAt(player, net.minecraft.world.phys.Vec3.ZERO,
+                                net.minecraft.world.InteractionHand.MAIN_HAND).consumesAction()) {
+                            made.interact(player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                        }
+                        yield state(player, player.opened());
                     }
                     String plain = opener.replace("settle+", "");
                     if (plain.startsWith("use+item:")) {
