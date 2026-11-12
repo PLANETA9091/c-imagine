@@ -415,8 +415,12 @@ public final class ScreenArt {
         crawl.pressed = index;
         crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
         try {
-            crawl.parent.mouseClicked(at[0], at[1], 0);
+            boolean handled = crawl.parent.mouseClicked(at[0], at[1], 0);
             crawl.parent.mouseReleased(at[0], at[1], 0);
+            // What took the click: the evidence when a press sends nothing it should.
+            String target = crawl.parent.getChildAt(at[0], at[1]).map(c -> c.getClass().getName()).orElse("-");
+            LOGGER.info("[cimscene] crawl {} press {} at {},{} on {} handled={} sent={}", crawl.name, index,
+                    at[2] - crawl.left, at[3] - crawl.top, target, handled, sent);
         } catch (Throwable t) {
             LOGGER.info("[cimscene] crawl press threw {}", t.toString());
         }
