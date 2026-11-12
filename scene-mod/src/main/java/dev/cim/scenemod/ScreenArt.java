@@ -671,6 +671,13 @@ public final class ScreenArt {
         return !known || DRAWN.contains(slot);
     }
 
+    /** Called by the payload-send mixin for a vanilla menu packet a press sent. */
+    public static void vanillaSent(String described) {
+        if (crawl != null && crawl.pressed >= 0 && crawl.pressed != CRAWL_MOVE && sent == null) {
+            sent = described;
+        }
+    }
+
     /** Called by the slot-render mixin for every slot a screen draws. */
     public static void slotDrawn(Slot slot) {
         if (!capturing) {

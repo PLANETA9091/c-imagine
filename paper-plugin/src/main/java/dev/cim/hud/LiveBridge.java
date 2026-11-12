@@ -227,6 +227,11 @@ final class LiveBridge {
         return new Broken(removed, spilled, state);
     }
 
+    /** A vanilla menu packet a screen's button sends ("button" id or "trade" offer), by the server's handler. */
+    State vanilla(Player player, String kind, int n) {
+        return parse(call("vanilla\t" + player.getUniqueId() + "\t" + kind + "\t" + n));
+    }
+
     /** A mod block Paper now holds: its block entity's data, kept for its first opening. */
     void keepPlaced(org.bukkit.block.Block block, String blockId, String blockEntity) {
         if (blockEntity != null) {

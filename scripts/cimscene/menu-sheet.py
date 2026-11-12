@@ -241,7 +241,8 @@ def main():
             for t in sorted(glob.glob(os.path.join(a.truth, f"gal-guiw-{ns}{page}-*.png"))):
                 tag = t.rsplit("-", 1)[1][:-4]
                 o = os.path.join(a.ours, f"ours-gal-guiw-{ns}{page}-{tag}.png")
-                state = (art[:-4] + "." + tag + ".png") if art and tag != "move" else art
+                # Each state has its own art, the move's too (the screen as the move left it).
+                state = (art[:-4] + "." + tag + ".png") if art else art
                 # No art of its own for this state: the menu's own area still bounds the judgement,
                 # since the world behind a menu is not the menu.
                 if state and not os.path.isfile(state):

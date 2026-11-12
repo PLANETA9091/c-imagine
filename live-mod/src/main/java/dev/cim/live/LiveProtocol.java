@@ -201,6 +201,27 @@ public final class LiveProtocol {
                     }
                     yield out.toString();
                 }
+                case "vanilla" -> {
+                    // vanilla TAB uuid TAB kind TAB n: a vanilla menu packet a screen's button sends
+                    // (button: a menu button id; trade: a merchant offer), through the server's own
+                    // packet handler, as the real client's press reaches it.
+                    SessionServerPlayer player = LiveMenus.session(id, "cimlive");
+                    AbstractContainerMenu menu = player.opened();
+                    if (menu == null) {
+                        yield "error\tno open menu";
+                    }
+                    int n = Integer.parseInt(head[3]);
+                    if (head[2].equals("button")) {
+                        player.connection.handleContainerButtonClick(
+                                new net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket(menu.containerId, n));
+                    } else if (head[2].equals("trade")) {
+                        player.connection.handleSelectTrade(new net.minecraft.network.protocol.game.ServerboundSelectTradePacket(n));
+                    } else {
+                        yield "error\tunknown vanilla press " + head[2];
+                    }
+                    menu.broadcastChanges();
+                    yield "pressed\tvanilla:" + head[2] + "#" + n + "\n" + state(player, player.opened());
+                }
                 case "state" -> {
                     // What the open menu holds now, after ticks moved it.
                     SessionServerPlayer player = LiveMenus.session(id, "cimlive");

@@ -81,6 +81,9 @@ public final class ScreenPack {
 
     private static final int[] ZERO_SHIFT = {0, 0};
 
+    /** The state key of the screen as the slot move left it. */
+    public static final int MOVE_STATE = 9999;
+
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
     public record Scene(String className, String menu, int width, int height, boolean titleCentered,
                         List<Piece> pieces, List<Widget> widgets, Captured captured) {
@@ -113,7 +116,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v15");
+        StringBuilder out = new StringBuilder("v16");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -585,6 +588,18 @@ public final class ScreenPack {
                     if (q[0].equals("move") && move == null) {
                         // Every click of the move, in order (a third puts a copied stack back).
                         move = java.util.Arrays.stream(q).skip(1).mapToInt(Integer::parseInt).toArray();
+                        // How the screen itself looks once the slot holds something (a present's
+                        // label field turns editable): the move's own art, items lifted, as a state.
+                        Path moveArt = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".move.png"));
+                        BufferedImage moveImage = Files.isRegularFile(moveArt) ? ImageIO.read(moveArt.toFile()) : null;
+                        if (moveImage != null) {
+                            BufferedImage shown = opaque(moveImage, frameOf(tsv, ".move"));
+                            states.put(MOVE_STATE, captureTiles(shown, scale, left, top, art2, heights));
+                            BufferedImage over = coverArt(image, moveImage, shown, slots, scale, left, top);
+                            if (over != null) {
+                                covers.put(MOVE_STATE, captureTiles(over, scale, left, top, art2, heights));
+                            }
+                        }
                     } else if (q[0].equals("press")) {
                         int i = widgets.size();
                         // What the real press sent rides the label: the HUD presses the scanned

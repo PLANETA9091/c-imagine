@@ -495,6 +495,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             s.pointer.moveTo(s.originX + at.x() + 8, s.originY + at.y() + 8);
             click(player, "left");
         }
+        // The screen as the move left it (a recording of its look; the items stay live).
+        List<ScreenPack.Piece> moved = s.scene.captured().states().get(ScreenPack.MOVE_STATE);
+        if (moved != null) {
+            s.pieces = moved;
+            s.stateIndex = ScreenPack.MOVE_STATE;
+        }
         return "moved " + m[0] + " to " + m[1];
     }
 
@@ -729,7 +735,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     s.pieces = s.scene.captured().states().get(wi);
                     s.stateIndex = wi;
                 }
-                if (s.live && live != null) {
+                int vanillaAt = w.label() == null ? -1 : w.label().indexOf(" sent=vanilla:");
+                if (s.live && live != null && vanillaAt >= 0) {
+                    // A vanilla menu packet (a menu button id, a merchant offer): what the real
+                    // client's press of this control sends, through the server's own handler.
+                    String[] kind = w.label().substring(vanillaAt + " sent=vanilla:".length()).split("#", 2);
+                    LiveBridge.State state = live.vanilla(player, kind[0], Integer.parseInt(kind[1].trim()));
+                    if (state.error() != null) {
+                        log.warning("[cim-screen] live vanilla press failed: " + state.error());
+                    } else {
+                        applyLive(player, s, state);
+                        log.info("[cim-screen] live " + player.getName() + " pressed '" + w.label() + "': " + state.pressed());
+                    }
+                } else if (s.live && live != null) {
                     LiveButtons.Button b = buttonFor(s.liveMenuClass, wi, w.label());
                     if (b != null) {
                         LiveBridge.State state = live.press(player, b);

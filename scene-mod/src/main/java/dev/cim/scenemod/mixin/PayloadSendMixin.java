@@ -21,6 +21,11 @@ public class PayloadSendMixin {
     private void cimscene$sent(Packet<?> packet, CallbackInfo ci) {
         if (packet instanceof ServerboundCustomPayloadPacket custom) {
             ScreenArt.payloadSent(custom.payload());
+        } else if (packet instanceof net.minecraft.network.protocol.game.ServerboundContainerButtonClickPacket button) {
+            // A menu button the vanilla way (enchanting table, stonecutter, a mod's own buttons).
+            ScreenArt.vanillaSent("vanilla:button#" + button.buttonId());
+        } else if (packet instanceof net.minecraft.network.protocol.game.ServerboundSelectTradePacket trade) {
+            ScreenArt.vanillaSent("vanilla:trade#" + trade.getItem());
         }
     }
 }
