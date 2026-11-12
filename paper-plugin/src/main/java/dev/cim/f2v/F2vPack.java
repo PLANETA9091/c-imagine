@@ -3715,6 +3715,8 @@ public final class F2vPack {
                 "fakemod:block/globe", CMD_BASE, "g0", 0, 0, true);
         GalleryPack.Resolved capture = new GalleryPack.Resolved(
                 "fakemod:block/globe#qabc123", CMD_BASE + 1, "g1", 0, 0, true, 3, 15, 0f);
+        GalleryPack.Resolved doorWindow = new GalleryPack.Resolved(
+                "fakemod:block/door#qdef456", CMD_BASE + 4, "g4", 0, 0, true, 3, 15, 0f);
         GalleryPack.Resolved ct = new GalleryPack.Resolved(
                 "fakemod:block/globe#i0,i1", CMD_BASE + 2, "g2", 0, 0, true);
         byState.put(composite.stateId(), composite);
@@ -3749,6 +3751,30 @@ public final class F2vPack {
                 GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
                         "fakemod:block/plain", null) == plain,
                 "14-dh: a sibling state without its own capture rides the plain composite");
+
+        // 14-dt THE MULTI-MESH LAW: a state with several captured meshes
+        // (the door's panel + window) replays ALL of them — the pick serves
+        // the first, remainingCapturedMeshes returns the rest, in order,
+        // excluded by identity (a CT/ctx pick of the same row adds nothing).
+        java.util.Map<String, java.util.List<GalleryPack.Resolved>> byQuadStateAll =
+                new java.util.HashMap<>();
+        byQuadStateAll.put("fakemod:block/door", java.util.List.of(capture, doorWindow));
+        expect(failures,
+                GalleryPack.remainingCapturedMeshes(byQuadStateAll, capture,
+                        "fakemod:block/door").equals(java.util.List.of(doorWindow)),
+                "14-dt: the state's second captured mesh rides as the extra display");
+        expect(failures,
+                GalleryPack.remainingCapturedMeshes(byQuadStateAll, doorWindow,
+                        "fakemod:block/door").equals(java.util.List.of(capture)),
+                "14-dt: whichever mesh the pick served, the others ride");
+        expect(failures,
+                GalleryPack.remainingCapturedMeshes(byQuadStateAll, ct,
+                        "fakemod:block/globe").isEmpty(),
+                "14-dt: a state with one captured mesh has no extras");
+        expect(failures,
+                GalleryPack.remainingCapturedMeshes(byQuadStateAll, plain,
+                        "fakemod:block/plain").isEmpty(),
+                "14-dt: a state with no captures has no extras");
     }
 
     private static void capturedSpriteSelftest(List<String> failures) throws IOException {

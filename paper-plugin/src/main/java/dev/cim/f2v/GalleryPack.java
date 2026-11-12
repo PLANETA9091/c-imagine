@@ -135,6 +135,38 @@ public final class GalleryPack {
         return picked;
     }
 
+    /**
+     * 14-dt THE MULTI-MESH LAW: one state's truth render can be SEVERAL
+     * distinct captured meshes — the Create sliding door's panel and its
+     * window ride different render layers (two {@code #q} rows, two
+     * meshes), the pillars' shaft and connected caps likewise. The pick
+     * law above serves the FIRST; this law returns EVERY OTHER captured
+     * mesh of the same bare state, in manifest order, for the caller to
+     * spawn as extra displays at the same cell. Measured on the seed's
+     * resolved manifest: 300 states carry more than one quad row — today
+     * they replay only their first mesh (the door's second panel, the
+     * pillar's cap — measured 210K ae on one brass_door cell alone).
+     *
+     * @param byQuadStateAll every quad row of a bare state, manifest order
+     * @param picked         the row the pick law chose (excluded by identity)
+     * @param state          the manifest cell's bare state string
+     */
+    public static java.util.List<Resolved> remainingCapturedMeshes(
+            Map<String, java.util.List<Resolved>> byQuadStateAll,
+            Resolved picked, String state) {
+        java.util.List<Resolved> all = byQuadStateAll.get(state);
+        if (all == null || all.size() < 2) {
+            return java.util.List.of();
+        }
+        java.util.List<Resolved> out = new java.util.ArrayList<>();
+        for (Resolved r : all) {
+            if (r != picked) {
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
     /** First auto-assigned custom_model_data float for gallery rows. */
     public static final float CMD_BASE = 100_000.0f;
     /** Namespace + dir the composite models emit under. */

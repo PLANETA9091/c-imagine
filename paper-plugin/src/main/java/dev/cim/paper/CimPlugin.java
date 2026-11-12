@@ -1181,6 +1181,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // First wins: the resolved manifest is sorted, so the representative
         // capture is deterministic across builds.
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadState = new java.util.HashMap<>();
+        // 14-dt THE MULTI-MESH INDEX: a state's truth render can be SEVERAL
+        // distinct captured meshes (the sliding door's panel + window, the
+        // pillar's shaft + connected caps, the cog's parts — measured 300
+        // states in the seed's resolved manifest carry >1 quad row); the
+        // pick serves the first and the caller spawns the rest, one display
+        // per extra mesh, same cell, same transform, each with its own
+        // captured light fields.
+        java.util.Map<String, java.util.List<dev.cim.f2v.GalleryPack.Resolved>> byQuadStateAll = new java.util.HashMap<>();
         for (dev.cim.f2v.GalleryPack.Resolved r : f2v.gallery()) {
             byState.putIfAbsent(r.stateId(), r);
             String id = r.stateId();
@@ -1188,6 +1196,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             if (q >= 0) {
                 byQuadHash.putIfAbsent(id.substring(q + 2), r);
                 byQuadState.putIfAbsent(id.substring(0, q), r);
+                byQuadStateAll.computeIfAbsent(id.substring(0, q),
+                        ignored -> new java.util.ArrayList<>()).add(r);
             }
         }
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -1369,6 +1379,43 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                             + row[1] + "," + row[2] + "," + row[3] + " state=" + state
                             + " fullbright cmd=" + fbCmd + " uuid=" + fbDisplay.getUniqueId());
+                }
+                // 14-dt THE MULTI-MESH EXTRAS: a state whose truth render is
+                // several distinct captured meshes (the door's window, the
+                // pillar's caps) spawns one extra display per remaining mesh
+                // — same cell, same transform, the extra row's own captured
+                // light fields (legacy rows keep the 14-bk pin). GUARD: only
+                // when the pick rode the BARE-STATE capture row — a
+                // position-calibrated 14-ak CT tile or 14-bt ctx hash row
+                // already carries that position's full content, and drawing
+                // the bare state's other meshes on top would double it.
+                if (r == byQuadState.get(state)) {
+                    java.util.List<dev.cim.f2v.GalleryPack.Resolved> extras =
+                            dev.cim.f2v.GalleryPack.remainingCapturedMeshes(byQuadStateAll, r, state);
+                    for (dev.cim.f2v.GalleryPack.Resolved extra : extras) {
+                        final dev.cim.f2v.GalleryPack.Resolved xr = extra;
+                        ItemStack xStack = new ItemStack(material);
+                        xStack.editMeta(meta -> {
+                            CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                            cmd.setFloats(List.of(xr.cmd()));
+                            meta.setCustomModelDataComponent(cmd);
+                        });
+                        final boolean xCaptured = xr.lightBlock() >= 0 && xr.lightSky() >= 0;
+                        final int xPinBlock = xCaptured
+                                ? Math.min(15, Math.max(0, xr.lightBlock())) : fEmission;
+                        final int xPinSky = xCaptured
+                                ? Math.min(15, Math.max(0, xr.lightSky())) : 15;
+                        org.bukkit.entity.ItemDisplay xDisplay = world(worldName()).spawn(at,
+                                org.bukkit.entity.ItemDisplay.class, e -> {
+                                    e.setItemStack(xStack);
+                                    e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                                    e.setTransformation(tr);
+                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(xPinBlock, xPinSky));
+                                });
+                        log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
+                                + row[1] + "," + row[2] + "," + row[3] + " state=" + state
+                                + " extra-mesh cmd=" + xr.cmd() + " uuid=" + xDisplay.getUniqueId());
+                    }
                 }
             }
             return n;
