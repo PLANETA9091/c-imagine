@@ -64,6 +64,28 @@ public final class FacadeServer extends MinecraftServer {
         return self;
     }
 
+    /**
+     * The real server's loaded data (recipes, advancements, loot, functions) once it runs: a
+     * mod's code reaches it through the server's own fields (an item used on a block triggers an
+     * advancement criterion, which reads the advancement manager). Without a real server the
+     * facade has none, as before.
+     */
+    void adoptRealResources() {
+        try {
+            Field resources = MinecraftServer.class.getDeclaredField("resources");
+            resources.setAccessible(true);
+            if (resources.get(this) != null) {
+                return;
+            }
+            MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+            if (real != null && real != this) {
+                resources.set(this, resources.get(real));
+            }
+        } catch (ReflectiveOperationException e) {
+            // the facade keeps no data; a mod reaching for it fails as before
+        }
+    }
+
     @Override
     public ServerLevel getLevel(ResourceKey<Level> key) {
         return level;

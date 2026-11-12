@@ -207,9 +207,22 @@ public final class FacadeLevel extends Level {
         return front != null ? front : this;
     }
 
-    /** No entities: Paper's world has them. */
+    /**
+     * Entities a session's own placement made (a robit set down on its chargepad), so the
+     * click that follows and the menu's own lookups find them; the world's others are Paper's.
+     */
+    private final java.util.Map<Integer, Entity> placed = new java.util.LinkedHashMap<>();
+
+    void addPlaced(Entity entity) {
+        placed.put(entity.getId(), entity);
+    }
+
+    java.util.Collection<Entity> placedEntities() {
+        return placed.values();
+    }
+
     LevelEntityGetter<Entity> entities() {
-        return NO_ENTITIES;
+        return PLACED;
     }
 
     /** Drops every block a session placed. */
@@ -220,6 +233,8 @@ public final class FacadeLevel extends Level {
         all.forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
         states.clear();
         chunks.clear();
+        placed.values().forEach(e -> e.setRemoved(Entity.RemovalReason.DISCARDED));
+        placed.clear();
     }
 
     // --- no chunks: what is not a block above is Paper's
@@ -231,45 +246,68 @@ public final class FacadeLevel extends Level {
 
     @Override
     protected LevelEntityGetter<Entity> getEntities() {
-        return NO_ENTITIES;
+        return PLACED;
     }
 
-    /** Entities are Paper's: a query here finds none, as in an empty part of a world. */
-    private static final LevelEntityGetter<Entity> NO_ENTITIES = new LevelEntityGetter<>() {
+    /** The placed entities as a world's entity lookup sees them. */
+    private final LevelEntityGetter<Entity> PLACED = new LevelEntityGetter<>() {
         @Override
         public Entity get(int id) {
-            return null;
+            return placed.get(id);
         }
 
         @Override
         public Entity get(java.util.UUID id) {
+            for (Entity e : placed.values()) {
+                if (e.getUUID().equals(id)) {
+                    return e;
+                }
+            }
             return null;
         }
 
         @Override
         public Iterable<Entity> getAll() {
-            return List.of();
+            return List.copyOf(placed.values());
         }
 
         @Override
         public <U extends Entity> void get(net.minecraft.world.level.entity.EntityTypeTest<Entity, U> test,
                                            net.minecraft.util.AbortableIterationConsumer<U> consumer) {
+            for (Entity e : List.copyOf(placed.values())) {
+                U u = test.tryCast(e);
+                if (u != null && consumer.accept(u).shouldAbort()) {
+                    return;
+                }
+            }
         }
 
         @Override
         public void get(net.minecraft.world.phys.AABB box, java.util.function.Consumer<Entity> consumer) {
+            for (Entity e : List.copyOf(placed.values())) {
+                if (e.getBoundingBox().intersects(box)) {
+                    consumer.accept(e);
+                }
+            }
         }
 
         @Override
         public <U extends Entity> void get(net.minecraft.world.level.entity.EntityTypeTest<Entity, U> test,
                                            net.minecraft.world.phys.AABB box,
                                            net.minecraft.util.AbortableIterationConsumer<U> consumer) {
+            for (Entity e : List.copyOf(placed.values())) {
+                U u = test.tryCast(e);
+                if (u != null && e.getBoundingBox().intersects(box) && consumer.accept(u).shouldAbort()) {
+                    return;
+                }
+            }
         }
     };
 
+
     @Override
     public Entity getEntity(int id) {
-        return null;
+        return placed.get(id);
     }
 
     @Override

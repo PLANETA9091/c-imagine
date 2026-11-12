@@ -278,12 +278,12 @@ public final class FacadeServerLevel extends ServerLevel {
 
     @Override
     public Entity getEntity(int id) {
-        return null;
+        return store.getEntity(id);
     }
 
     @Override
     public Entity getEntity(UUID id) {
-        return null;
+        return store.entities().get(id);
     }
 
     @Override
@@ -305,6 +305,12 @@ public final class FacadeServerLevel extends ServerLevel {
         // The world's entities are Paper's: an item entity's stack goes to Paper to drop.
         if (entity instanceof net.minecraft.world.entity.item.ItemEntity item && !item.getItem().isEmpty()) {
             SPILLED.add(item.getItem().copy());
+            return true;
+        }
+        // An entity a session's placement made (a robit on its chargepad): kept for the click
+        // that opens its menu and the menu's own lookups by id.
+        if (!(entity instanceof net.minecraft.world.entity.player.Player)) {
+            store.addPlaced(entity);
             return true;
         }
         return false;

@@ -46,6 +46,7 @@ public final class LiveMenus {
 
     /** The session for a Paper player, made on first use. */
     public static synchronized SessionServerPlayer session(UUID id, String name) {
+        ((FacadeServer) level().getServer()).adoptRealResources();
         return SESSIONS.computeIfAbsent(id, k -> SessionServerPlayer.create(level(), new GameProfile(k, name)));
     }
 
@@ -202,6 +203,18 @@ public final class LiveMenus {
                 .orElse(broken.split("\n")[0]), spills);
     }
 
+    /** A walk-proven opener done by the protocol (open-use), as the gallery's ours leg does it. */
+    private static void useTest(String opener) {
+        if (opener == null || opener.isBlank()) {
+            return;
+        }
+        UUID uuid = UUID.nameUUIDFromBytes(("cimlive-use-" + opener).getBytes(StandardCharsets.UTF_8));
+        String answer = LiveProtocol.call("open-use\t" + uuid + "\tcimlive\t" + opener.trim() + "\t0\t64\t8");
+        LOG.info("[cimlive] selftest use {} -> {}", opener.trim(), answer.split("\n")[0]);
+        String after = LiveProtocol.call("close\t" + uuid);
+        level().store().clearBlocks();
+    }
+
     static void selfTest(String spec) {
         java.util.Set<String> wanted = new java.util.TreeSet<>();
         for (String ns : spec.split("[,\\s]+")) {
@@ -323,6 +336,7 @@ public final class LiveMenus {
         LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
         LOG.info("[cimlive] selftest kinds {}", kinds);
         placeTest(System.getenv("CIM_LIVE_PLACE"));
+        useTest(System.getenv("CIM_LIVE_USE"));
         LOG.info("[cimlive] selftest ok");
     }
 
