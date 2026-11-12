@@ -274,6 +274,17 @@ public final class LiveProtocol {
                                 net.minecraft.core.Direction.UP, below, false)));
                         player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
                                 net.minecraft.world.item.ItemStack.EMPTY);
+                        // What it placed is clicked next: an entity it hung (Create's blueprint)
+                        // first, else the block.
+                        for (net.minecraft.world.entity.Entity made : java.util.List.copyOf(level.store().placedEntities())) {
+                            if (player.opened() != null) {
+                                break;
+                            }
+                            if (!made.interactAt(player, net.minecraft.world.phys.Vec3.ZERO,
+                                    net.minecraft.world.InteractionHand.MAIN_HAND).consumesAction()) {
+                                made.interact(player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                            }
+                        }
                         yield state(player, player.opened() != null ? player.opened() : LiveMenus.clickBlock(player, pos));
                     }
                     String plain = opener.replace("settle+", "");
