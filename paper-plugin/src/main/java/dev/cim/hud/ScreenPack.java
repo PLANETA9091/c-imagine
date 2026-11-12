@@ -907,6 +907,9 @@ public final class ScreenPack {
                 && stateFrame.getWidth() == state.getWidth() && stateFrame.getHeight() == state.getHeight();
         boolean filled = frames && stateFilled != null
                 && stateFilled.getWidth() == state.getWidth() && stateFilled.getHeight() == state.getHeight();
+        // Measured (run f2fa3ff3): the vanilla client blends a translucent glyph a level off the
+        // real fill (139 under the robit's wash: 121 against 120), across every washed slot. A
+        // wash is recognised, so it reaches no slot as a window, but not drawn.
         Wash wash = washOf(base, state, slots, at, scale, left, top);
         boolean washable = wash != null && baseShown != null
                 && baseShown.getWidth() == shown.getWidth() && baseShown.getHeight() == shown.getHeight();
@@ -946,12 +949,11 @@ public final class ScreenPack {
                         // frame (Create's requester writes the amount over its filter items).
                         pixel = 0xFF000000 | stateFilled.getRGB(x + dx, y + dy);
                     } else if (washable && wash.fits(b, s)) {
-                        pixel = wash.argb();
-                        shown.setRGB(x + dx, y + dy, baseShown.getRGB(x, y));
+                        continue;
                     } else if (item > 0 && itemShown(state, stateFrame, x + dx, y + dy) == 0) {
                         // The base's frame drew an item here; the state's frame shows its own art.
                         pixel = shown.getRGB(x + dx, y + dy);
-                    } else if (item > 0) {
+                    } else if (item > 0 && itemShown(state, stateFrame, x + dx, y + dy) > 0) {
                         continue;
                     } else if (reached && b != s) {
                         pixel = shown.getRGB(x + dx, y + dy);

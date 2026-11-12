@@ -449,6 +449,21 @@ public final class ScreenArt {
     }
 
     private static final int CRAWL_MOVE = 1000;
+
+    /**
+     * The mouse as the real screen sees it in the same frame: the parked cursor scaled to GUI
+     * coordinates, exactly as the game passes it. A screen that turns an entity after the mouse
+     * (Create's stock keeper) draws it the same way in the art as in the real frame only so.
+     */
+    private static int parkedX() {
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.xpos() * mc.getWindow().getGuiScaledWidth() / mc.getWindow().getScreenWidth());
+    }
+
+    private static int parkedY() {
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.ypos() * mc.getWindow().getGuiScaledHeight() / mc.getWindow().getScreenHeight());
+    }
     private static boolean stateSaved;
 
     /** One state of a screen, the same two pictures a first capture takes. */
@@ -477,7 +492,7 @@ public final class ScreenArt {
         capturing = true;
         try {
             GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-            screen.render(graphics, -10000, -10000, 0f);
+            screen.render(graphics, parkedX(), parkedY(), 0f);
             graphics.flush();
         } finally {
             capturing = false;
@@ -508,7 +523,7 @@ public final class ScreenArt {
         capturing = true;
         try {
             GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-            screen.render(graphics, -10000, -10000, 0f);
+            screen.render(graphics, parkedX(), parkedY(), 0f);
             graphics.flush();
         } finally {
             capturing = false;
@@ -583,7 +598,7 @@ public final class ScreenArt {
                 capturing = true;
                 try {
                     GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-                    screen.render(graphics, -10000, -10000, 0f);
+                    screen.render(graphics, parkedX(), parkedY(), 0f);
                     graphics.flush();
                 } finally {
                     capturing = false;
@@ -637,7 +652,7 @@ public final class ScreenArt {
             filledPass = true;
             try {
                 GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-                screen.render(graphics, -10000, -10000, 0f);
+                screen.render(graphics, parkedX(), parkedY(), 0f);
                 graphics.flush();
             } finally {
                 filledPass = false;
