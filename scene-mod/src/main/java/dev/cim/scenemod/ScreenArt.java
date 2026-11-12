@@ -62,6 +62,11 @@ public final class ScreenArt {
         if (System.getProperty("cim.screenart") != null) {
             NeoForge.EVENT_BUS.addListener(ScreenArt::onRender);
             NeoForge.EVENT_BUS.addListener(ScreenArt::onTick);
+            NeoForge.EVENT_BUS.addListener((ScreenEvent.Render.Pre e) -> {
+                if (!capturing) {
+                    DRAWN.clear();
+                }
+            });
             LOGGER.info("[cimscene] screen art capture on: {}", System.getProperty("cim.screenart"));
         }
     }
@@ -247,7 +252,9 @@ public final class ScreenArt {
         ItemStack moving = from < 0 ? ItemStack.EMPTY : shown.get(from).getItem();
         for (int i = 0; i < shown.size() && to < 0 && from >= 0; i++) {
             Slot slot = shown.get(i);
-            if (slot.container != mc.player.getInventory() && !slot.hasItem() && slot.mayPlace(moving)) {
+            // ...and drawn: a player cannot put anything into a slot the screen does not show.
+            if (slot.container != mc.player.getInventory() && !slot.hasItem() && slot.mayPlace(moving)
+                    && (DRAWN.isEmpty() || DRAWN.contains(slot))) {
                 to = i;
             }
         }
@@ -305,13 +312,6 @@ public final class ScreenArt {
 
     private static void onTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        // The system pointer parks in the corner, off every menu: where it happened to be, it
-        // hovered a button in the frame that the art (drawn with no pointer) does not show
-        // hovered, and the real screen drew a carried stack there (measured: AE2's storage bus
-        // buttons, Create's filter). The crawl clicks through the screen, never the pointer.
-        if (mc.screen instanceof AbstractContainerScreen<?> && (mc.mouseHandler.xpos() != 0 || mc.mouseHandler.ypos() != 0)) {
-            org.lwjgl.glfw.GLFW.glfwSetCursorPos(mc.getWindow().getWindow(), 0, 0);
-        }
         if (crawl == null) {
             Path go = Path.of(System.getProperty("cim.screenart"), "crawl-go");
             // Not before this screen's own capture: the art and the base frame are the menu as
@@ -498,7 +498,8 @@ public final class ScreenArt {
             }
             tsv.append("slot\t").append(slot.x).append('\t').append(slot.y).append('\t')
                     .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\t')
-                    .append(slot.getContainerSlot()).append('\t').append(slot.index).append('\n');
+                    .append(slot.getContainerSlot()).append('\t').append(slot.index).append('\t')
+                    .append(DRAWN.contains(slot) ? 1 : 0).append('\n');
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
@@ -607,6 +608,17 @@ public final class ScreenArt {
             graphics.renderItemDecorations(mc.font, one, 0, 0);
             graphics.flush();
             save(target, mc.getWindow().getWidth(), mc.getWindow().getHeight(), file);
+        }
+    }
+
+    /** The slots the screen drew in its last frame (a slot can be active and never drawn). */
+    private static final java.util.Set<Slot> DRAWN =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** Called by the slot-render mixin for every slot a screen draws. */
+    public static void slotDrawn(Slot slot) {
+        if (!capturing) {
+            DRAWN.add(slot);
         }
     }
 

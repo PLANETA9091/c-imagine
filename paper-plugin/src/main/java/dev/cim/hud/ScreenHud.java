@@ -665,7 +665,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 GuiCaptures.Slot slot = s.capture.slots().get(i);
                 int x = s.originX + slot.x() + shift[0];
                 int y = s.originY + slot.y() + shift[1];
-                if (slot.x() > -1000) {
+                // A slot the real screen never draws shows nothing here either.
+                boolean drawn = s.scene.captured() == null || !s.scene.captured().hidden().contains(slot.menuIndex());
+                if (slot.x() > -1000 && drawn) {
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }

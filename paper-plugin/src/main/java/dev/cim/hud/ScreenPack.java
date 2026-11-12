@@ -67,10 +67,10 @@ public final class ScreenPack {
      */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                            Map<Integer, List<Piece>> states, int[] move, Map<Integer, List<Piece>> covers,
-                           Map<Integer, int[]> shifts) {
+                           Map<Integer, int[]> shifts, java.util.Set<Integer> hidden) {
         public Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                         Map<Integer, List<Piece>> states, int[] move) {
-            this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>());
+            this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>(), new java.util.HashSet<>());
         }
 
         /** How far the menu's slots moved in a press state (a recipe book opening), or 0,0. */
@@ -113,7 +113,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v13");
+        StringBuilder out = new StringBuilder("v14");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -148,6 +148,9 @@ public final class ScreenPack {
                                 .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
                                 .append(q.h()).append('\n');
                     }
+                }
+                for (int h : s.captured().hidden()) {
+                    out.append("hidden\t").append(h).append('\n');
                 }
                 for (var sh : s.captured().shifts().entrySet()) {
                     out.append("shift\t").append(sh.getKey()).append('\t').append(sh.getValue()[0]).append('\t')
@@ -199,7 +202,9 @@ public final class ScreenPack {
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts())));
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden())));
+            } else if (p[0].equals("hidden")) {
+                out.get(out.size() - 1).captured().hidden().add(Integer.parseInt(p[1]));
             } else if (p[0].equals("shift")) {
                 out.get(out.size() - 1).captured().shifts().put(Integer.parseInt(p[1]),
                         new int[]{Integer.parseInt(p[2]), Integer.parseInt(p[3])});
@@ -520,6 +525,7 @@ public final class ScreenPack {
             int xSize = 0;
             int ySize = 0;
             List<GuiCaptures.Slot> slots = new ArrayList<>();
+            java.util.Set<Integer> hidden = new java.util.HashSet<>();
             for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
                 switch (p[0]) {
@@ -538,8 +544,14 @@ public final class ScreenPack {
                         xSize = Integer.parseInt(p[3]);
                         ySize = Integer.parseInt(p[4]);
                     }
-                    case "slot" -> slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
-                            p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1));
+                    case "slot" -> {
+                        slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
+                                p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1));
+                        // A slot the real screen never draws (column 6, the slot-render record).
+                        if (p.length > 6 && p[6].equals("0")) {
+                            hidden.add(Integer.parseInt(p[5]));
+                        }
+                    }
                     default -> {
                     }
                 }
@@ -600,7 +612,7 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts, hidden)));
         }
     }
 

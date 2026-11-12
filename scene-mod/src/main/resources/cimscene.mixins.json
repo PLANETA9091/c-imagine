@@ -13,6 +13,7 @@
   "client": [
     "ScreenBackgroundMixin",
     "MouseParkMixin",
-    "EditBoxBlinkMixin"
+    "EditBoxBlinkMixin",
+    "SlotRenderMixin"
   ]
 }
