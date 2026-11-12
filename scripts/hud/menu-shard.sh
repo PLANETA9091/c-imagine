@@ -88,14 +88,17 @@ for p in $(seq "$SI" "$K" $((N-1))); do
 done
 stamp "truth done: $(find srv-wall/c-imagine/screens -maxdepth 1 -name '*.png' | wc -l) screens captured"
 # A menu the crawl reached has no opener, so its capture becomes its page.
-python3 - "$NS" <<'PY' > crawl-pages.txt
+python3 - "$NS" "$SI" "$K" <<'PY' > crawl-pages.txt
 import glob, os, shutil, sys
-ns = sys.argv[1]
+ns, si, k = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 pages = {}
 for f in glob.glob(f'srv-wall/c-imagine/scenes/gallery-gui-{ns}-p*.tsv'):
     rows = [l.rstrip('\n').split('\t') for l in open(f, encoding='utf-8', errors='replace')]
+    walked_here = int(f.rsplit('-p', 1)[1][:-4]) % k == si
     for r in rows:
-        if r[0] == 'skip' and len(r) > 4:
+        # A page that did not open, and a page another slice walks (the robit's tab menus,
+        # reached here by the main robit's buttons): a crawl capture here is its page.
+        if (r[0] == 'skip' or (r[0] == 'cell' and r[1] != 'x' and not walked_here)) and len(r) > 4:
             pages[r[4]] = f
 for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
     rows = [l.rstrip('\n').split('\t') for l in open(tsv, encoding='utf-8')]
