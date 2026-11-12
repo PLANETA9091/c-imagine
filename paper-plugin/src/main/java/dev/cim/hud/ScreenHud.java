@@ -1224,8 +1224,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             // Every client slot shows what the server sent for its index, as the real client's
             // content packet fills it; a slot past the server's menu keeps the client's own.
             // A display slot is in the art, drawn by the mod's screen with its own decorations.
-            s.liveHeld[k] = slot != null;
-            s.held[k] = slot == null || !slot.pickable() ? null : live.toPaper(slot.stack());
+            // A player slot both sides agree on is the player's inventory, which Paper holds
+            // (the carried item as itself, not rebuilt from the layer's stack).
+            boolean bothPlayer = slot != null && slot.player() && s.capture.slots().get(k).player();
+            s.liveHeld[k] = slot != null && !bothPlayer;
+            s.held[k] = slot == null || bothPlayer || !slot.pickable() ? null : live.toPaper(slot.stack());
         }
         s.cursor = live.toPaper(state.carried());
         live.applyInventory(player, state);

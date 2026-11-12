@@ -113,7 +113,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v14");
+        StringBuilder out = new StringBuilder("v15");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -165,7 +165,8 @@ public final class ScreenPack {
                 }
                 for (GuiCaptures.Slot slot : s.captured().slots()) {
                     out.append("cslot\t").append(slot.x()).append('\t').append(slot.y()).append('\t')
-                            .append(slot.player()).append('\t').append(slot.index()).append('\n');
+                            .append(slot.player()).append('\t').append(slot.index()).append('\t')
+                            .append(slot.menuIndex()).append('\n');
                 }
             }
             for (Piece p : s.pieces()) {
@@ -219,7 +220,7 @@ public final class ScreenPack {
             } else if (p[0].equals("cslot")) {
                 out.get(out.size() - 1).captured().slots().add(new GuiCaptures.Slot(
                         Integer.parseInt(p[1]), Integer.parseInt(p[2]), Boolean.parseBoolean(p[3]),
-                        Integer.parseInt(p[4])));
+                        Integer.parseInt(p[4]), p.length > 5 ? Integer.parseInt(p[5]) : -1));
             } else if (p[0].equals("piece") && pieces != null) {
                 pieces.add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
                         Integer.parseInt(p[4]), Integer.parseInt(p[5]), Boolean.parseBoolean(p[6])));
@@ -545,8 +546,11 @@ public final class ScreenPack {
                         ySize = Integer.parseInt(p[4]);
                     }
                     case "slot" -> {
+                        // The menu index the real client gave the slot (column 5): what the
+                        // server's content packet fills it from.
                         slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
-                                p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1));
+                                p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1,
+                                p.length > 5 ? Integer.parseInt(p[5]) : -1));
                         // A slot the real screen never draws (column 6, the slot-render record).
                         if (p.length > 6 && p[6].equals("0")) {
                             hidden.add(Integer.parseInt(p[5]));
