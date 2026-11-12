@@ -97,7 +97,11 @@ def animation_mask(art, size):
     if anim.size != size:
         return None
     anim = anim.point(lambda v: 255 if v else 0)
-    return anim if anim.getbbox() else None
+    if not anim.getbbox():
+        return None
+    # A glyph moving by fractions of a pixel touches its neighbours too: one pixel around.
+    from PIL import ImageFilter
+    return anim.filter(ImageFilter.MaxFilter(3))
 
 
 def compare(truth_path, ours_path, slots, scale, art=None):

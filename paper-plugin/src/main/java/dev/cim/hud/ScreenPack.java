@@ -609,6 +609,9 @@ public final class ScreenPack {
             // their slots and only their pixels skipped (the filled pass), so the screen's own logic
             // sees what the slots hold (a present's label field turns editable once it holds
             // something) and a filled slot shows no placeholder. Otherwise the lifted art.
+            // Covers compare the lifted arts, where every slot looks empty alike: a window over a
+            // slot shows, a slot that only looks different once filled (AE2's placeholder) does not.
+            BufferedImage liftedBase = image;
             image = chooseArt(image, filledOf(tsv, ""), vanillaDrawn);
             List<Piece> pieces = captureTiles(opaque(image, frameOf(tsv, "")), scale, left, top, art2, heights);
             if (pieces.isEmpty()) {
@@ -636,13 +639,14 @@ public final class ScreenPack {
                         // label field turns editable): the move's own art, items lifted, as a state.
                         Path moveArt = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".move.png"));
                         BufferedImage moveImage = Files.isRegularFile(moveArt) ? ImageIO.read(moveArt.toFile()) : null;
+                        BufferedImage liftedMove = moveImage;
                         moveImage = moveImage == null ? null : chooseArt(moveImage, filledOf(tsv, ".move"), vanillaDrawn);
                         if (moveImage != null) {
                             BufferedImage shown = opaque(moveImage, frameOf(tsv, ".move"));
                             states.put(MOVE_STATE, captureTiles(shown, scale, left, top, art2, heights));
                             addFills(fills, MOVE_STATE, moveImage, filledOf(tsv, ".move"), slots, vanillaDrawn, scale,
                                     left, top, art2, heights);
-                            BufferedImage over = coverArt(image, moveImage, shown, slots, scale, left, top);
+                            BufferedImage over = coverArt(liftedBase, liftedMove, shown, slots, scale, left, top);
                             if (over != null) {
                                 covers.put(MOVE_STATE, captureTiles(over, scale, left, top, art2, heights));
                             }
@@ -661,13 +665,14 @@ public final class ScreenPack {
                                 .replaceAll("\\.tsv$", ".w" + q[1] + ".slots")), slots);
                         Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
+                        BufferedImage liftedState = stateImage;
                         stateImage = stateImage == null ? null : chooseArt(stateImage, filledOf(tsv, ".w" + q[1]), vanillaDrawn);
                         if (stateImage != null) {
                             BufferedImage shown = opaque(stateImage, frameOf(tsv, ".w" + q[1]));
                             states.put(i, captureTiles(shown, scale, left, top, art2, heights));
                             addFills(fills, i, stateImage, filledOf(tsv, ".w" + q[1]), slots, vanillaDrawn, scale,
                                     left, top, art2, heights);
-                            BufferedImage over = coverArt(image, stateImage, shown, slots, scale, left, top);
+                            BufferedImage over = coverArt(liftedBase, liftedState, shown, slots, scale, left, top);
                             if (over != null) {
                                 covers.put(i, captureTiles(over, scale, left, top, art2, heights));
                             }
@@ -698,6 +703,19 @@ public final class ScreenPack {
      * covers and leaves what it does not (measured: Mekanism's Upgrades window hides the slots
      * beneath it; its side configuration leaves a diamond's count showing below its edge).
      */
+    /**
+     * Whether a state draws something else there, not just a shade of the same: a window or a
+     * popup changes a slot's pixels outright; a faint shade a state casts over the whole screen
+     * (Mekanism's open window) leaves the items the real screen draws over it in view.
+     */
+    private static boolean visiblyDifferent(int a, int b) {
+        int da = Math.abs((a >>> 24) - (b >>> 24));
+        int dr = Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF));
+        int dg = Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF));
+        int db = Math.abs((a & 0xFF) - (b & 0xFF));
+        return Math.max(da, Math.max(dr, Math.max(dg, db))) > 24;
+    }
+
     static BufferedImage coverArt(BufferedImage base, BufferedImage state, BufferedImage shown,
                                   List<GuiCaptures.Slot> slots, int scale, int left, int top) {
         if (base.getWidth() != state.getWidth() || base.getHeight() != state.getHeight()
@@ -715,7 +733,7 @@ public final class ScreenPack {
             int size = 18 * scale;
             for (int y = Math.max(0, y0); y < Math.min(base.getHeight(), y0 + size); y++) {
                 for (int x = Math.max(0, x0); x < Math.min(base.getWidth(), x0 + size); x++) {
-                    if (base.getRGB(x, y) != state.getRGB(x, y)) {
+                    if (visiblyDifferent(base.getRGB(x, y), state.getRGB(x, y))) {
                         if (out == null) {
                             out = new BufferedImage(base.getWidth(), base.getHeight(), BufferedImage.TYPE_INT_ARGB);
                         }
