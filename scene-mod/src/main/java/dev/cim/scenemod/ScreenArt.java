@@ -454,6 +454,7 @@ public final class ScreenArt {
         }
         save(target, w, h, dir.resolve(base + ".png"));
         saveAnimation(mc, screen, w, h, target, dir.resolve(base + ".anim.png"));
+        saveFilled(mc, screen, w, h, dir.resolve(base + ".filled.png"));
         mc.getMainRenderTarget().bindWrite(true);
         target.destroyBuffers();
     }
@@ -488,6 +489,7 @@ public final class ScreenArt {
         save(target, w, h, dir.resolve(name + ".png"));
         // Before the icons: they are drawn into this same target, over the art.
         saveAnimation(mc, screen, w, h, target, dir.resolve(name + ".anim.png"));
+        saveFilled(mc, screen, w, h, dir.resolve(name + ".filled.png"));
         try {
             captureIcons(mc, target, lifted, dir.resolve("icons"));
         } catch (Throwable t) {
@@ -509,7 +511,7 @@ public final class ScreenArt {
             tsv.append("slot\t").append(slot.x).append('\t').append(slot.y).append('\t')
                     .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\t')
                     .append(slot.getContainerSlot()).append('\t').append(slot.index).append('\t')
-                    .append(drawn(screen, slot) ? 1 : 0).append('\n');
+                    .append(drawKnown(screen) ? (DRAWN.contains(slot) ? 1 : 0) : 2).append('\n');
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
@@ -576,6 +578,40 @@ public final class ScreenArt {
             if (mask != null) {
                 mask.close();
             }
+        }
+    }
+
+    /** Set during the filled pass: the vanilla slot body draws nothing for a slot holding an item. */
+    public static boolean filledPass;
+
+    /**
+     * The screen as its filled slots look without their items: the items stay in their slots
+     * (a screen draws a placeholder icon only in an empty one: AE2's inscriber), and the vanilla
+     * slot body, which draws the item, is skipped for each filled slot. The HUD draws a filled
+     * slot's background from this before its live item.
+     */
+    private static void saveFilled(Minecraft mc, AbstractContainerScreen<?> screen, int w, int h, Path file) {
+        TextureTarget target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
+        try {
+            target.setClearColor(0f, 0f, 0f, 0f);
+            target.clear(Minecraft.ON_OSX);
+            target.bindWrite(true);
+            capturing = true;
+            filledPass = true;
+            try {
+                GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+                screen.render(graphics, -10000, -10000, 0f);
+                graphics.flush();
+            } finally {
+                filledPass = false;
+                capturing = false;
+            }
+            save(target, w, h, file);
+        } catch (Throwable t) {
+            LOGGER.warn("[cimscene] filled capture failed: {}", t.toString());
+        } finally {
+            mc.getMainRenderTarget().bindWrite(true);
+            target.destroyBuffers();
         }
     }
 
@@ -661,14 +697,17 @@ public final class ScreenArt {
      * then nothing is known and every active slot counts as drawn.
      */
     private static boolean drawn(AbstractContainerScreen<?> screen, Slot slot) {
-        boolean known = false;
+        return !drawKnown(screen) || DRAWN.contains(slot);
+    }
+
+    /** Whether the screen draws its slots through the vanilla body (so the record means anything). */
+    private static boolean drawKnown(AbstractContainerScreen<?> screen) {
         for (Slot each : screen.getMenu().slots) {
             if (DRAWN.contains(each)) {
-                known = true;
-                break;
+                return true;
             }
         }
-        return !known || DRAWN.contains(slot);
+        return false;
     }
 
     /** Called by the payload-send mixin for a vanilla menu packet a press sent. */

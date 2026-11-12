@@ -67,10 +67,16 @@ public final class ScreenPack {
      */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                            Map<Integer, List<Piece>> states, int[] move, Map<Integer, List<Piece>> covers,
-                           Map<Integer, int[]> shifts, java.util.Set<Integer> hidden) {
+                           Map<Integer, int[]> shifts, java.util.Set<Integer> hidden, Map<String, List<Piece>> fills) {
         public Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                         Map<Integer, List<Piece>> states, int[] move) {
-            this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>(), new java.util.HashSet<>());
+            this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>(), new java.util.HashSet<>(),
+                    new HashMap<>());
+        }
+
+        /** A filled slot's background in a state (-1: as opened), drawn before its item, or null. */
+        public List<Piece> fill(int state, int menuIndex) {
+            return fills.get(state + ":" + menuIndex);
         }
 
         /** How far the menu's slots moved in a press state (a recipe book opening), or 0,0. */
@@ -116,7 +122,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v16");
+        StringBuilder out = new StringBuilder("v17");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -148,6 +154,13 @@ public final class ScreenPack {
                 for (var st : s.captured().states().entrySet()) {
                     for (Piece q : st.getValue()) {
                         out.append("spiece\t").append(st.getKey()).append('\t').append((int) q.glyph()).append('\t')
+                                .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
+                                .append(q.h()).append('\n');
+                    }
+                }
+                for (var fl : s.captured().fills().entrySet()) {
+                    for (Piece q : fl.getValue()) {
+                        out.append("fill\t").append(fl.getKey()).append('\t').append((int) q.glyph()).append('\t')
                                 .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
                                 .append(q.h()).append('\n');
                     }
@@ -206,7 +219,11 @@ public final class ScreenPack {
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden())));
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden(), c.fills())));
+            } else if (p[0].equals("fill")) {
+                out.get(out.size() - 1).captured().fills().computeIfAbsent(p[1], k -> new ArrayList<>())
+                        .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
+                                Integer.parseInt(p[5]), Integer.parseInt(p[6]), false));
             } else if (p[0].equals("hidden")) {
                 out.get(out.size() - 1).captured().hidden().add(Integer.parseInt(p[1]));
             } else if (p[0].equals("shift")) {
@@ -530,6 +547,10 @@ public final class ScreenPack {
             int ySize = 0;
             List<GuiCaptures.Slot> slots = new ArrayList<>();
             java.util.Set<Integer> hidden = new java.util.HashSet<>();
+            // Slots the screen draws through the vanilla body (column 6 = 1): only there does the
+            // filled pass show a filled slot's own background.
+            java.util.Set<Integer> vanillaDrawn = new java.util.HashSet<>();
+            Map<String, List<Piece>> fills = new HashMap<>();
             for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
                 switch (p[0]) {
@@ -558,6 +579,9 @@ public final class ScreenPack {
                         if (p.length > 6 && p[6].equals("0")) {
                             hidden.add(Integer.parseInt(p[5]));
                         }
+                        if (p.length > 6 && p[6].equals("1")) {
+                            vanillaDrawn.add(Integer.parseInt(p[5]));
+                        }
                     }
                     default -> {
                     }
@@ -575,6 +599,7 @@ public final class ScreenPack {
             // Its buttons are kept when that class belongs to this menu alone, because
             // the capture has their pixels but not where a click should land.
             String key = menu;
+            addFills(fills, -1, image, filledOf(tsv, ""), slots, vanillaDrawn, scale, left, top, art2, heights);
             List<Widget> widgets = new ArrayList<>();
             Map<Integer, List<Piece>> states = new HashMap<>();
             Map<Integer, List<Piece>> covers = new HashMap<>();
@@ -595,6 +620,8 @@ public final class ScreenPack {
                         if (moveImage != null) {
                             BufferedImage shown = opaque(moveImage, frameOf(tsv, ".move"));
                             states.put(MOVE_STATE, captureTiles(shown, scale, left, top, art2, heights));
+                            addFills(fills, MOVE_STATE, moveImage, filledOf(tsv, ".move"), slots, vanillaDrawn, scale,
+                                    left, top, art2, heights);
                             BufferedImage over = coverArt(image, moveImage, shown, slots, scale, left, top);
                             if (over != null) {
                                 covers.put(MOVE_STATE, captureTiles(over, scale, left, top, art2, heights));
@@ -615,6 +642,8 @@ public final class ScreenPack {
                         if (stateImage != null) {
                             BufferedImage shown = opaque(stateImage, frameOf(tsv, ".w" + q[1]));
                             states.put(i, captureTiles(shown, scale, left, top, art2, heights));
+                            addFills(fills, i, stateImage, filledOf(tsv, ".w" + q[1]), slots, vanillaDrawn, scale,
+                                    left, top, art2, heights);
                             BufferedImage over = coverArt(image, stateImage, shown, slots, scale, left, top);
                             if (over != null) {
                                 covers.put(i, captureTiles(over, scale, left, top, art2, heights));
@@ -634,7 +663,7 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts, hidden)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts, hidden, fills)));
         }
     }
 
@@ -736,6 +765,59 @@ public final class ScreenPack {
         return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 1
                 && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 1
                 && Math.abs((a & 0xFF) - (b & 0xFF)) <= 1;
+    }
+
+    private static BufferedImage filledOf(Path tsv, String suffix) {
+        Path f = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", suffix + ".filled.png"));
+        try {
+            return Files.isRegularFile(f) ? ImageIO.read(f.toFile()) : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Each slot's background as the screen draws it when the slot holds an item, where that
+     * differs from the empty look in the art (AE2's inscriber draws a placeholder only in an
+     * empty slot): a few tiles per slot, keyed by state and menu index, drawn before the item.
+     */
+    private static void addFills(Map<String, List<Piece>> fills, int state, BufferedImage art, BufferedImage filled,
+                                 List<GuiCaptures.Slot> slots, java.util.Set<Integer> vanillaDrawn, int scale,
+                                 int left, int top, Map<Character, BufferedImage> glyphs,
+                                 Map<Character, Integer> heights) throws IOException {
+        if (art == null || filled == null || art.getWidth() != filled.getWidth()
+                || art.getHeight() != filled.getHeight()) {
+            return;
+        }
+        BufferedImage opaqueFilled = opaque(filled);
+        for (GuiCaptures.Slot slot : slots) {
+            if (slot.x() <= -1000 || !vanillaDrawn.contains(slot.menuIndex())) {
+                continue;
+            }
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int size = 16 * scale;
+            BufferedImage tile = null;
+            for (int y = Math.max(0, y0); y < Math.min(art.getHeight(), y0 + size); y++) {
+                for (int x = Math.max(0, x0); x < Math.min(art.getWidth(), x0 + size); x++) {
+                    if (art.getRGB(x, y) != filled.getRGB(x, y)) {
+                        if (tile == null) {
+                            tile = new BufferedImage(art.getWidth(), art.getHeight(), BufferedImage.TYPE_INT_ARGB);
+                        }
+                        tile.setRGB(x, y, opaqueFilled.getRGB(x, y));
+                    }
+                }
+            }
+            if (tile != null) {
+                // The whole square, so the empty look under it is gone wherever the item leaves it.
+                for (int y = Math.max(0, y0); y < Math.min(art.getHeight(), y0 + size); y++) {
+                    for (int x = Math.max(0, x0); x < Math.min(art.getWidth(), x0 + size); x++) {
+                        tile.setRGB(x, y, opaqueFilled.getRGB(x, y));
+                    }
+                }
+                fills.put(state + ":" + slot.menuIndex(), captureTiles(tile, scale, left, top, glyphs, heights));
+            }
+        }
     }
 
     private static BufferedImage frameOf(Path tsv, String suffix) {

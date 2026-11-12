@@ -693,7 +693,21 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     if (slot.player() && !panel && s.scene.captured() == null) {
                         frame.free(x - 1, y - 1, String.valueOf(HudPack.SLOT), 19);
                     }
-                    drawItem(frame, x, y, slotItem(player, s, i));
+                    ItemStack item = slotItem(player, s, i);
+                    if (item != null && !item.getType().isAir() && s.scene.captured() != null) {
+                        // The slot's own background when it holds something (no placeholder icon).
+                        List<ScreenPack.Piece> fill = s.scene.captured().fill(s.stateIndex, slot.menuIndex());
+                        if (fill == null && s.stateIndex >= 0) {
+                            fill = s.scene.captured().fill(-1, slot.menuIndex());
+                        }
+                        if (fill != null) {
+                            for (ScreenPack.Piece piece : fill) {
+                                frame.free(s.originX + piece.x(), s.originY + piece.y(), String.valueOf(piece.glyph()),
+                                        piece.w() + 1);
+                            }
+                        }
+                    }
+                    drawItem(frame, x, y, item);
                     if (i == hover) {
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }

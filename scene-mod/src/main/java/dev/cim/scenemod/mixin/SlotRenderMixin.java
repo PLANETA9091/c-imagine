@@ -18,8 +18,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(AbstractContainerScreen.class)
 public class SlotRenderMixin {
 
-    @Inject(method = "renderSlot", at = @At("HEAD"))
+    @Inject(method = "renderSlot", at = @At("HEAD"), cancellable = true)
     private void cimscene$drawn(GuiGraphics graphics, Slot slot, CallbackInfo ci) {
         ScreenArt.slotDrawn(slot);
+        if (ScreenArt.filledPass && slot.hasItem()
+                && slot.mayPickup(net.minecraft.client.Minecraft.getInstance().player)) {
+            ci.cancel();
+        }
     }
 }
