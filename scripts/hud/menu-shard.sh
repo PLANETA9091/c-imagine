@@ -221,7 +221,16 @@ for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true
   # The same interactions, in the order the real client made them.
   TAGS=$( { [ -f "truth-shots/gal-guiw-$NS$p-move.png" ] && echo move; ls truth-shots | grep -oE "^gal-guiw-$NS$p-w[0-9]+\.png$" | grep -oE 'w[0-9]+\.png$' | tr -d '.png' | sort -t w -k2 -n; } )
+  PREV=-1
   for T in $TAGS; do
+    # A press number the real client skipped left its screen (a sub-menu, a close): the truth
+    # walk then opened the page again, as just placed or just handed over, keeping the
+    # inventory. The same reopening here, before the next press.
+    if [ "$T" != move ] && [ "${T#w}" -gt $((PREV + 1)) ]; then
+      $RC 'item replace entity cimviewer weapon.mainhand with air' "cim gallerypage-gui $NS $p" >/dev/null
+      sleep 0.6
+    fi
+    [ "$T" != move ] && PREV=${T#w}
     if [ "$T" = move ]; then $RC "cim hudpress move" >/dev/null; else $RC "cim hudpress ${T#w}" >/dev/null; fi
     sleep 0.5
     $SHOT "ours-shots/ours-gal-guiw-$NS$p-$T.png" || true
