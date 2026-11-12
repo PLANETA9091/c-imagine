@@ -1199,6 +1199,84 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     static final float GALLERY_TZ = 0.0f;
 
     /**
+     * 14-du THE LIGHT-SPILL LAW: the truth's light-emitting rows light the
+     * scene AROUND them (the lit candle's wall renders at block light 12-13
+     * while the replay's air band sits at 0 — the crop measured the whole-cell
+     * delta on every lit row: the 7 candle-holder reds, the BOP glow family,
+     * the emissive table's neighbour-spill half). The seed's .light file
+     * (written per page by the walk, next to the manifest) carries the truth's
+     * MEASURED block light at every scanned position. A real
+     * {@code minecraft:light[level=N]} at each AIR position reproduces the
+     * field structurally — the vanilla propagation does the decay, zero
+     * per-family code, no threshold touched. Solid positions (the floor, the
+     * wall blocks) are never replaced: only AIR carries a light block, and
+     * the real blocks light from their lit neighbours exactly as in the truth
+     * scene. Every page clears the previous page's lights first (a lit page
+     * must never leak into an unlit one); the entity/item sweeps clear the
+     * band too, the tracker keeps the ledger exact.
+     */
+    private final java.util.List<int[]> placedLightBlocks = new java.util.ArrayList<>();
+
+    /** {@code x y z block sky} per scanned position; block light 1..15 kept. */
+    public static java.util.List<int[]> parseLightFile(Path file) throws IOException {
+        java.util.List<int[]> out = new java.util.ArrayList<>();
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) {
+                continue;
+            }
+            String[] p = line.trim().split("\\s+");
+            if (p.length < 5) {
+                continue;
+            }
+            try {
+                int x = Integer.parseInt(p[0]), y = Integer.parseInt(p[1]), z = Integer.parseInt(p[2]);
+                int block = Integer.parseInt(p[3]);
+                Integer.parseInt(p[4]); // sky must parse too — a malformed row skips whole
+                if (block >= 1 && block <= 15) {
+                    out.add(new int[]{x, y, z, block});
+                }
+            } catch (NumberFormatException malformed) {
+                // the header or a partial trailing row: skip, never abort the page
+            }
+        }
+        return out;
+    }
+
+    private void clearPlacedLights(World w) {
+        for (int[] pos : placedLightBlocks) {
+            try {
+                w.getBlockAt(pos[0], pos[1], pos[2]).setType(Material.AIR, false);
+            } catch (Exception clearFail) {
+                // unloaded corner: never abort the page
+            }
+        }
+        placedLightBlocks.clear();
+    }
+
+    private void placeLightsFromTruth(World w, Path lightMf) {
+        if (!Files.isRegularFile(lightMf)) {
+            return;
+        }
+        try {
+            for (int[] row : parseLightFile(lightMf)) {
+                try {
+                    org.bukkit.block.Block b = w.getBlockAt(row[0], row[1], row[2]);
+                    if (b.getType() != Material.AIR) {
+                        continue;   // the floor/wall blocks stay; they light from their lit neighbours
+                    }
+                    b.setBlockData(org.bukkit.Bukkit.createBlockData(
+                            "minecraft:light[level=" + row[3] + "]"), false);
+                    placedLightBlocks.add(new int[]{row[0], row[1], row[2]});
+                } catch (Exception placeFail) {
+                    // unloaded corner: never abort the page
+                }
+            }
+        } catch (IOException readFail) {
+            log().warning(LOG_PREFIX + "f2v gallery: 14-du light file read failed " + lightMf + ": " + readFail);
+        }
+    }
+
+    /**
      * Replay one truth-leg gallery page manifest as ItemDisplay rigs:
      * {@code c-imagine/scenes/gallery-<ns>-p<page>.tsv} rows
      * {@code cell<TAB>x<TAB>y<TAB>TABz<TAB>state} — one display per cell at
@@ -1318,6 +1396,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         final java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> map = byState;
         Integer placed = callSync(() -> {
             int n = 0;
+            // 14-du: the previous page's light blocks go first, then this
+            // page's truth-measured light field lands before any display
+            // spawns — the lit cells' surroundings render at the truth's
+            // world light from the very first shot.
+            World wLights = world(worldName());
+            clearPlacedLights(wLights);
+            String lightName = (mfName.endsWith(".tsv")
+                    ? mfName.substring(0, mfName.length() - 4) : mfName) + ".light";
+            placeLightsFromTruth(wLights, mf.resolveSibling(lightName));
             for (String[] row : cells) {
                 // cell<TAB>x<TAB>y<TAB>z<TAB>state
                 if (row.length < 5) {
@@ -1551,6 +1638,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
+            // 14-du: the sweep cleared any light blocks in the band — the tracker follows
+            placedLightBlocks.clear();
             for (String[] row : cells) {
                 // cell|x|y|z|entity|dyn|note
                 if (row.length < 5) {
@@ -1688,6 +1777,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
+            // 14-du: the sweep cleared any light blocks in the band — the tracker follows
+            placedLightBlocks.clear();
             for (String[] row : cells) {
                 // cell|x|y|z|item|dyn|note
                 if (row.length < 5) {
@@ -2228,6 +2319,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         int[] counts = callSync(() -> {
             int placed = 0, nochannel = 0;
             World w = world(worldName());
+            // 14-du: stale light blocks never leak into the biome shots
+            clearPlacedLights(w);
             for (int bx = -6; bx <= 6; bx++) {
                 for (int by = -60; by <= -53; by++) {
                     for (int bz = 8; bz <= 10; bz++) {
@@ -2512,6 +2605,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
+            // 14-du: the sweep cleared any light blocks in the band — the tracker follows
+            placedLightBlocks.clear();
             Player viewer = Bukkit.getPlayerExact("cimviewer");
             if (viewer == null) {
                 log().warning(LOG_PREFIX + "f2v gallery-particle: no cimviewer online — "
@@ -2652,6 +2747,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
+            // 14-du: the sweep cleared any light blocks in the band — the tracker follows
+            placedLightBlocks.clear();
             for (String[] row : rows) {
                 // cell|x|y|z|fluid|dyn|channel|extra   (skip|...|fluid|dyn|reason)
                 if (row.length < 5 || row[0].equals("skip")) {
