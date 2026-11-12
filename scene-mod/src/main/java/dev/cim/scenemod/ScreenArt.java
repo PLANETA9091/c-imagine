@@ -509,7 +509,11 @@ public final class ScreenArt {
     }
 
     /** Later moments the screen is drawn at, to find what moves with the clock alone. */
-    private static final long[] ANIMATION_SHIFTS_MS = {640L, 1730L, 2910L};
+    // Spread over a scroll's whole cycle (Mekanism scrolls a long label over several seconds):
+    // three moments left a few edge pixels of the label's travel unseen.
+    private static final long[] ANIMATION_SHIFTS_MS = {
+            170L, 410L, 640L, 930L, 1270L, 1730L, 2190L, 2910L, 3530L, 4370L, 5210L, 6110L, 7340L, 8650L,
+            10070L, 11930L};
 
     /**
      * The pixels of the art that change with time alone: the screen drawn again with the
