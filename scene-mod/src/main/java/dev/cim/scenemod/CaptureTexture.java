@@ -55,4 +55,39 @@ final class CaptureTexture {
         }
         return match.group(1);
     }
+
+    /**
+     * 14-ds THE READBACK-CHANNEL LAW: a texture is captured as a WHITE
+     * COVERAGE MASK (RED-channel readback, the vertex tint repaints it)
+     * ONLY when its class hierarchy carries the glyph-atlas marker — a
+     * boolean {@code colored} field, {@code false} on the single-channel
+     * fonts ({@code FontTexture}). EVERY OTHER runtime texture is full
+     * color. The previous default (mask when no field exists anywhere)
+     * turned the supplementaries globe's 32x16 DynamicTexture map — a
+     * runtime texture with no {@code colored} field anywhere — into a
+     * white coverage mask. Measured on gallery 43185864024: the captured
+     * map read back mean RGBA [255,255,255,106], 0 non-white pixels, and
+     * the 75 globe/globe_sepia red cells measured 18.45M ae — 41% of the
+     * entire 44.85M red mass — on a family whose capture row, mesh model,
+     * replay channel and light pin were all correct except this decision.
+     *
+     * <p>{@code Object} on purpose: the law holds headless
+     * (CaptureTextureTest drives it with plain fake classes).</p>
+     */
+    static boolean isCoverageMaskReadback(Object texture) {
+        for (Class<?> c = texture.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                java.lang.reflect.Field f = c.getDeclaredField("colored");
+                if (f.getType() == boolean.class) {
+                    f.setAccessible(true);
+                    return !f.getBoolean(texture);
+                }
+            } catch (NoSuchFieldException ignored) {
+                // walk up
+            } catch (Throwable t) {
+                break;
+            }
+        }
+        return false;
+    }
 }

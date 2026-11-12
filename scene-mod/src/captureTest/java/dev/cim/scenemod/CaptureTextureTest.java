@@ -30,7 +30,40 @@ public final class CaptureTextureTest {
         checkLocation(null, "entity_solid[texture[Optional.empty]]");
         checkLocation("mod:textures/entity/gear.png",
                 "entity_solid[texture[Optional[mod:textures/entity/gear.png]]]");
-        System.out.println("capture texture tests: ALL OK (13 cases)");
+        // 14-ds THE READBACK-CHANNEL LAW: mask (RED) only for the glyph
+        // marker (boolean `colored`, false on fonts); every other runtime
+        // texture captures full RGBA. The old default-false read the
+        // supplementaries globe's DynamicTexture map as a white mask —
+        // mean RGBA [255,255,255,106], 0 non-white pixels — and its 75
+        // cells measured 18.45M ae (41% of the run's whole red mass).
+        if (!CaptureTexture.isCoverageMaskReadback(new FakeColoredMaskTexture())) {
+            throw new AssertionError("colored=false marker must read back as a mask");
+        }
+        if (CaptureTexture.isCoverageMaskReadback(new FakeColoredTrueTexture())) {
+            throw new AssertionError("colored=true marker must capture RGBA");
+        }
+        if (!CaptureTexture.isCoverageMaskReadback(new FakeMaskChild())) {
+            throw new AssertionError("the marker is honored at any hierarchy depth");
+        }
+        if (CaptureTexture.isCoverageMaskReadback(new Object())) {
+            throw new AssertionError("a marker-less runtime texture is full color — the globe map bug");
+        }
+        System.out.println("capture texture tests: ALL OK (17 cases)");
+    }
+
+    /** The vanilla glyph-atlas shape: boolean `colored`, false = single channel. */
+    private static class FakeColoredMaskTexture {
+        @SuppressWarnings("unused")
+        private final boolean colored = false;
+    }
+
+    private static final class FakeColoredTrueTexture {
+        @SuppressWarnings("unused")
+        private final boolean colored = true;
+    }
+
+    /** The marker lives on the SUPERCLASS (FontTexture's real position). */
+    private static final class FakeMaskChild extends FakeColoredMaskTexture {
     }
 
     private static void check(String expected, String resource) {

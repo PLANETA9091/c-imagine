@@ -757,6 +757,24 @@ final class QuadDump {
                     }
                 }
             }
+            // 14-ds forensics: one line per captured runtime texture — the
+            // channel decision, the texture's real class and its mean RGBA,
+            // so a white-mask regression names itself in the seed log
+            // (the globe's mask read [255,255,255,106] with 0 non-white px).
+            long rs = 0, gs = 0, bs = 0, as = 0, n = (long) width * height;
+            for (int y = 0; y < height; y++) {
+                for (int x = 0; x < width; x++) {
+                    int p = image.getPixelRGBA(x, y);
+                    rs += FastColor.ABGR32.red(p);
+                    gs += FastColor.ABGR32.green(p);
+                    bs += FastColor.ABGR32.blue(p);
+                    as += FastColor.ABGR32.alpha(p);
+                }
+            }
+            LOGGER.info("[cimscene] 14-ds runtime texture {}x{} class={} colored={} meanRGBA=[{},{},{},{}]",
+                    width, height, texture.getClass().getName(), colored,
+                    n == 0 ? -1 : rs / n, n == 0 ? -1 : gs / n,
+                    n == 0 ? -1 : bs / n, n == 0 ? -1 : as / n);
             byte[] png = image.asByteArray();
             image.close();
             String hash = sha(Base64.getEncoder().encodeToString(png));
@@ -773,22 +791,18 @@ final class QuadDump {
         }
     }
 
-    /** The FontTexture colored flag decides the readback format (RED vs RGBA). */
+    /**
+     * 14-ds: the readback channel — a WHITE COVERAGE MASK (RED channel)
+     * only for the glyph atlases (the {@code colored} marker, false on
+     * fonts), FULL RGBA for every other runtime texture. The old
+     * default-false painted every marker-less runtime texture white:
+     * the supplementaries globe's DynamicTexture map captured as
+     * mean RGBA [255,255,255,106] and its 75 cells measured 18.45M ae
+     * (41% of the whole red mass) while every other capture stage was
+     * correct. The law lives in CaptureTexture (headless-testable).
+     */
     private static boolean coloredTexture(AbstractTexture texture) {
-        for (Class<?> c = texture.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
-            try {
-                java.lang.reflect.Field f = c.getDeclaredField("colored");
-                if (f.getType() == boolean.class) {
-                    f.setAccessible(true);
-                    return f.getBoolean(texture);
-                }
-            } catch (NoSuchFieldException ignored) {
-                // walk up
-            } catch (Throwable t) {
-                break;
-            }
-        }
-        return false;
+        return !CaptureTexture.isCoverageMaskReadback(texture);
     }
 
     /** One quad row; {@code uv} is 0..1 across the named sprite or texture. */
