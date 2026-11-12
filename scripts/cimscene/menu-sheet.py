@@ -197,11 +197,26 @@ def main():
         ap.add_argument(name, required=True)
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--art", default="")
+    ap.add_argument("--art-run", default="",
+                    help="the run's own ScreenArt dump (truth-meta/truth-screens) — "
+                         "preferred over --art per menu: the seed's captures predate "
+                         "the current walk's opener routes, so a menu the run opened "
+                         "and the seed missed must bound the judgement with the RUN's "
+                         "own art (14-di); the seed art stays the fallback")
     ap.add_argument("--stride", default="", help="index/count of this shard's pages, e.g. 3/8")
     a = ap.parse_args()
     a.stride = tuple(int(v) for v in a.stride.split("/")) if a.stride else None
     os.makedirs(a.out, exist_ok=True)
     os.makedirs(a.report, exist_ok=True)
+
+    def art_path(menu):
+        name = menu.replace(":", "_").replace("/", "_")
+        if a.art_run:
+            p = os.path.join(a.art_run, name + ".png")
+            if os.path.isfile(p):
+                return p
+        return os.path.join(a.art, name + ".png") if a.art else None
+
     rows = []
     for ns in a.ns.replace(",", " ").split():
         pattern = os.path.join(a.meta, "**", f"gallery-gui-{ns}-p*.tsv")
@@ -217,7 +232,7 @@ def main():
             menu, opened, note, slots = read
             if a.stride and int(page) % a.stride[1] != a.stride[0] and note != "opened-by:crawl":
                 continue
-            art = os.path.join(a.art, menu.replace(":", "_").replace("/", "_") + ".png") if a.art else None
+            art = art_path(menu) if (a.art or a.art_run) else None
             bounds = read_bounds(art[:-4] + ".tsv") if art else None
             result = compare(truth, ours, slots, a.scale, art, bounds)
             verdict, why = judge(menu, opened, note, result)

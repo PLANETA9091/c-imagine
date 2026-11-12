@@ -1272,7 +1272,14 @@ jobs:
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
             "gamerule doMobSpawning false" "gamerule randomTickSpeed 0" | tee truth-pins.log
-          LAUNCH=$(sed 's/^java /java -Dcim.nomouse=true /' truth-client/launch.txt)
+          # 14-di THE PER-RUN SCREEN ART: every menu the truth walk opens
+          # dumps its art (ScreenArt) into truth-screens/ — the menu gate's
+          # art mask then bounds the CURRENT truth's drawing, and the menus
+          # the seed's capture pass missed (the generic-screen class ceiling:
+          # safe/trapped_present ride VariableSizeContainerScreen, the ae2
+          # terminals) get their scenes from the run instead of the seed.
+          mkdir -p truth-screens
+          LAUNCH=$(sed 's/^java /java -Dcim.nomouse=true -Dcim.screenart='"$PWD"'/truth-screens /' truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
@@ -1506,7 +1513,9 @@ jobs:
             cp -r truth-client/game/crash-reports "truth-client-deaths/crash-reports-$DEATHS" 2>/dev/null || true
             pkill -f "truth-client/game" 2>/dev/null || true   # the dead JVM stays on the disconnect screen; free the window + heap
             sleep 2
-            LAUNCH=$(cat truth-client/launch.txt)
+            # 14-di: the rejoin carries the screen-art dump too (a menu opened
+            # on a rejoined client must still capture its art)
+            LAUNCH=$(sed 's/^java /java -Dcim.screenart='"$PWD"'/truth-screens /' truth-client/launch.txt)
             setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
             local L=""
             for i in $(seq 1 90); do
@@ -1881,6 +1890,7 @@ jobs:
             truth-client/client.out
             truth-shots/shots.txt
             truth-client-deaths/
+            truth-screens/
           if-no-files-found: warn
 
   # ------------------------------------------------------------ wall-ours --
@@ -3180,8 +3190,12 @@ jobs:
             done
           done
           echo "=== MENU gate: every menu pixel-identical or RED ==="
+          # 14-di: the run's own screen art (when the truth walk dumped it)
+          # bounds the judgement first; the seed's captures stay the fallback
+          RUN_ART=""
+          [ -d truth-meta/truth-screens ] && RUN_ART="--art-run truth-meta/truth-screens"
           python3 scripts/cimscene/menu-sheet.py --meta truth-meta --truth truth-shots \
-            --ours ours-shots --art seed-pack/screens --stride "$SI/$K" --out gallery-report/menus \
+            --ours ours-shots --art seed-pack/screens $RUN_ART --stride "$SI/$K" --out gallery-report/menus \
             --report gallery-report --ns "$LADDER_NS" || GATE=1
           cat gallery-report/menus/menus.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
           echo "=== per-page verdicts (this shard) ==="
