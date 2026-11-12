@@ -76,16 +76,31 @@ public final class LiveMenus {
      * A right click on a block with an empty hand, as the server's game mode applies it:
      * the block's item use first, then its use without an item when that passes.
      */
+    /**
+     * A right click on a block, where the walk's real player clicks it: the top face low in the
+     * cell (a part placed on the floor sits there: AE2's terminals and buses), then the middle
+     * of each side, twice over, until a menu opens.
+     */
     public static AbstractContainerMenu clickBlock(SessionServerPlayer player, net.minecraft.core.BlockPos pos) {
-        net.minecraft.world.level.block.state.BlockState state = level().getBlockState(pos);
-        net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
-                net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(net.minecraft.core.Direction.SOUTH, 0.5),
-                net.minecraft.core.Direction.SOUTH, pos, false);
-        ItemStack hand = player.getItemInHand(InteractionHand.MAIN_HAND);
-        net.minecraft.world.ItemInteractionResult result = state.useItemOn(hand, level(), player,
-                InteractionHand.MAIN_HAND, hit);
-        if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
-            state.useWithoutItem(level(), player, hit);
+        net.minecraft.core.Direction[] faces = {net.minecraft.core.Direction.UP, net.minecraft.core.Direction.SOUTH,
+                net.minecraft.core.Direction.NORTH, net.minecraft.core.Direction.EAST, net.minecraft.core.Direction.WEST};
+        for (int pass = 0; pass < 2; pass++) {
+            for (net.minecraft.core.Direction face : faces) {
+                net.minecraft.world.level.block.state.BlockState state = level().getBlockState(pos);
+                net.minecraft.world.phys.Vec3 at = face == net.minecraft.core.Direction.UP
+                        ? new net.minecraft.world.phys.Vec3(pos.getX() + 0.5, pos.getY() + 0.06, pos.getZ() + 0.5)
+                        : net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5);
+                net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(at, face, pos, false);
+                ItemStack hand = player.getItemInHand(InteractionHand.MAIN_HAND);
+                net.minecraft.world.ItemInteractionResult result = state.useItemOn(hand, level(), player,
+                        InteractionHand.MAIN_HAND, hit);
+                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                    state.useWithoutItem(level(), player, hit);
+                }
+                if (player.opened() != null) {
+                    return player.opened();
+                }
+            }
         }
         return player.opened();
     }
