@@ -591,6 +591,11 @@ public final class ScreenPack {
             if (menu == null || image == null) {
                 continue;
             }
+            // A screen that draws its slots through the vanilla body: its art with the items left in
+            // their slots and only their pixels skipped (the filled pass), so the screen's own logic
+            // sees what the slots hold (a present's label field turns editable once it holds
+            // something) and a filled slot shows no placeholder. Otherwise the lifted art.
+            image = chooseArt(image, filledOf(tsv, ""), vanillaDrawn);
             List<Piece> pieces = captureTiles(opaque(image, frameOf(tsv, "")), scale, left, top, art2, heights);
             if (pieces.isEmpty()) {
                 continue;
@@ -617,6 +622,7 @@ public final class ScreenPack {
                         // label field turns editable): the move's own art, items lifted, as a state.
                         Path moveArt = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".move.png"));
                         BufferedImage moveImage = Files.isRegularFile(moveArt) ? ImageIO.read(moveArt.toFile()) : null;
+                        moveImage = moveImage == null ? null : chooseArt(moveImage, filledOf(tsv, ".move"), vanillaDrawn);
                         if (moveImage != null) {
                             BufferedImage shown = opaque(moveImage, frameOf(tsv, ".move"));
                             states.put(MOVE_STATE, captureTiles(shown, scale, left, top, art2, heights));
@@ -639,6 +645,7 @@ public final class ScreenPack {
                         }
                         Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
+                        stateImage = stateImage == null ? null : chooseArt(stateImage, filledOf(tsv, ".w" + q[1]), vanillaDrawn);
                         if (stateImage != null) {
                             BufferedImage shown = opaque(stateImage, frameOf(tsv, ".w" + q[1]));
                             states.put(i, captureTiles(shown, scale, left, top, art2, heights));
@@ -765,6 +772,11 @@ public final class ScreenPack {
         return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 1
                 && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 1
                 && Math.abs((a & 0xFF) - (b & 0xFF)) <= 1;
+    }
+
+    private static BufferedImage chooseArt(BufferedImage lifted, BufferedImage filled, java.util.Set<Integer> vanillaDrawn) {
+        return !vanillaDrawn.isEmpty() && filled != null && filled.getWidth() == lifted.getWidth()
+                && filled.getHeight() == lifted.getHeight() ? filled : lifted;
     }
 
     private static BufferedImage filledOf(Path tsv, String suffix) {
