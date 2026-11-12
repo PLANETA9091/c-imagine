@@ -76,8 +76,12 @@ public final class ItemGlyphs {
 
     /** One bitmap provider per icon, for the free font. */
     public JsonArray providers() {
+        return providers(HudLayout.ascent(HudLayout.freeId()));
+    }
+
+    /** The same providers for another font (a wash's). */
+    public JsonArray providers(int ascent) {
         JsonArray out = new JsonArray();
-        int ascent = HudLayout.ascent(HudLayout.freeId());
         for (Map.Entry<String, String> e : files.entrySet()) {
             JsonObject o = new JsonObject();
             o.addProperty("type", "bitmap");

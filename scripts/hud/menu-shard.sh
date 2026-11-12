@@ -77,9 +77,9 @@ for p in $(seq "$SI" "$K" $((N-1))); do
   # is reopened whenever one of them replaces it.
   if grep -q '^cell' "srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv" 2>/dev/null; then
     IDX=0
-    for round in $(seq 1 12); do
+    for round in $(seq 1 40); do
       rm -f "$SCR/crawl-done"; echo "$IDX" > "$SCR/crawl-go"
-      for i in $(seq 1 90); do [ -f "$SCR/crawl-done" ] && break; sleep 0.2; done
+      for i in $(seq 1 600); do [ -f "$SCR/crawl-done" ] && break; sleep 0.2; done
       [ -f "$SCR/crawl-done" ] || { rm -f "$SCR/crawl-go"; break; }
       IDX=$(cat "$SCR/crawl-done"); [ "$IDX" = "-1" ] && break
       $RC "cimscene gallery gui $NS $p" >/dev/null; sleep 1
@@ -88,14 +88,17 @@ for p in $(seq "$SI" "$K" $((N-1))); do
 done
 stamp "truth done: $(find srv-wall/c-imagine/screens -maxdepth 1 -name '*.png' | wc -l) screens captured"
 # A menu the crawl reached has no opener, so its capture becomes its page.
-python3 - "$NS" <<'PY' > crawl-pages.txt
+python3 - "$NS" "$SI" "$K" <<'PY' > crawl-pages.txt
 import glob, os, shutil, sys
-ns = sys.argv[1]
+ns, si, k = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 pages = {}
 for f in glob.glob(f'srv-wall/c-imagine/scenes/gallery-gui-{ns}-p*.tsv'):
     rows = [l.rstrip('\n').split('\t') for l in open(f, encoding='utf-8', errors='replace')]
+    walked_here = int(f.rsplit('-p', 1)[1][:-4]) % k == si
     for r in rows:
-        if r[0] == 'skip' and len(r) > 4:
+        # A page that did not open, and a page another slice walks (the robit's tab menus,
+        # reached here by the main robit's buttons): a crawl capture here is its page.
+        if (r[0] == 'skip' or (r[0] == 'cell' and r[1] != 'x' and not walked_here)) and len(r) > 4:
             pages[r[4]] = f
 for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
     rows = [l.rstrip('\n').split('\t') for l in open(tsv, encoding='utf-8')]
@@ -108,8 +111,9 @@ for tsv in glob.glob(f'srv-wall/c-imagine/screens/{ns}_*.tsv'):
     with open(page_file, 'w', encoding='utf-8') as out:
         out.write('cell\tx\ty\tz\tmenu\tnote\n')
         out.write(f'cell\t0\t0\t0\t{menu[1]}\topened-by:crawl\t{menu[2]}\n')
+        # The menu's own index when the capture says it: the screen lists active slots only.
         for i, r in enumerate(x for x in rows if x[0] == 'slot'):
-            out.write(f'slot\t{i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
+            out.write(f'slot\t{r[5] if len(r) > 5 else i}\t{r[1]}\t{r[2]}\t{menu[1]}\t{r[3]}\t{r[4]}\n')
     shutil.copy(frame, f'truth-shots/gal-gui-{ns}{page}.png')
     print(page)
 # Interactions: each recorded state's frame becomes a page of its own.
@@ -173,18 +177,62 @@ cp srv-wall/c-imagine/scenes/gallery-gui-*.tsv srv-ours/c-imagine/scenes/
 echo eula=true > srv-ours/eula.txt
 printf "online-mode=false\nwhite-list=false\ndifficulty=peaceful\nlevel-type=minecraft\\\\:flat\nlevel-seed=42\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\nmax-players=5\nserver-port=$GAME_PORT\nenable-rcon=true\nrcon.port=$RCON_PORT\nrcon.password=cimgate\nresource-pack=http\\\\://127.0.0.1\\\\:$PACK_PORT/cim-f2v-pack.zip\nresource-pack-sha1=%s\n" "$SHA1" > srv-ours/server.properties
 [ -f srv-ours/paper.jar ] || { URL=$(curl -s https://fill.papermc.io/v3/projects/paper/versions/26.3/builds/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['downloads']['server:default']['url'])"); curl -sL --max-time 200 -o srv-ours/paper.jar "$URL"; }
-( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+if [ -n "${OURS_CRUSSTY:-}" ]; then
+  # Ours on the c-imagine stack: Paper under CRUSSTY with the layer, the same mods as the
+  # truth and cimlive, so every open, slot move and button press runs the mod's own code.
+  cp -r "$OURS_CRUSSTY/." srv-ours/
+  unzip -oq dist/module-imagine.zip -d srv-ours/modules/
+  mkdir -p srv-ours/crus srv-ours/mods
+  printf '{"layerDir": "%s"}\n' "$ROOT/layer-srv/libraries" > srv-ours/crus/c-imagine.json
+  sed -i 's/memory = "[0-9]*G"/memory = "5G"/' srv-ours/crussty.toml
+  cp mods-ladder/*.jar live-mod/build/libs/cimlive-1.0.0.jar srv-ours/mods/
+  # Jars the layer cannot load yet (LAYER_EXCLUDE, file-name prefixes): their pages show the
+  # recorded screen, every other mod keeps its own code. Each one is an open layer blocker.
+  for x in ${LAYER_EXCLUDE:-}; do rm -f srv-ours/mods/"$x"*.jar; done
+  cp scripts/log4j2-layer.xml srv-ours/
+  boot_ours() { ( cd srv-ours && PATH="$J25/bin:$PATH" JAVA_HOME="$J25" CIM_F2V_PORT=$PACK_PORT CIM_F2V_FASTBOOT=true \
+      setsid bash -c "crussty run >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & ) ; }
+  boot_ours
+else
+  ( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+fi
 [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client
 sed -i -e "s#127.0.0.1:25565#127.0.0.1:$GAME_PORT#g" -e 's/^java /java -Xmx1G /' visual-client/launch.txt
 mkdir -p visual-client/game
 printf "${OPTS}preferredGraphicsBackend:opengl\n" > visual-client/game/options.txt
 python3 scripts/visual/make_servers_dat.py visual-client/game 127.0.0.1:$GAME_PORT
 wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
+if [ -n "${OURS_CRUSSTY:-}" ]; then
+  # The button and widget scan runs in the background from boot; the pages need it.
+  for i in $(seq 1 240); do grep -q "live scan:" srv-ours/boot.log && break; sleep 1; done
+  stamp "ours $(grep -o 'live scan:.*' srv-ours/boot.log | head -1)"
+fi
 $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
 ARGS=$(sed 's/^java //' visual-client/launch.txt)
 export SDL_VIDEODRIVER=x11
-setsid bash -c "cd visual-client && $J25/bin/java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
-wait_viewer || { tail -30 visual-client/client.out; exit 2; }
+ours_client() { setsid bash -c "cd visual-client && $J25/bin/java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 & }
+ours_client
+if ! wait_viewer; then
+  # The engine sometimes leaves a class of Paper's networking unverifiable for one boot
+  # (CRUSSTY: VerifyError in ServerHandshakePacketListenerImpl.handleIntention, every join
+  # refused): one fresh boot of the ours server, then the client again.
+  grep -m1 -A2 'VerifyError' srv-ours/boot.log | head -3 || true
+  if [ -n "${OURS_CRUSSTY:-}" ]; then
+    stamp "ours join refused, booting the ours server again"
+    pkill -f 'visual-client' || true
+    $RC stop >/dev/null 2>&1 || true
+    for i in $(seq 1 60); do pgrep -f onload.pidFile >/dev/null || break; sleep 2; done
+    pgrep -f onload.pidFile >/dev/null && pkill -9 -f onload.pidFile
+    boot_ours
+    wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
+    for i in $(seq 1 240); do [ "$(grep -c 'live scan:' srv-ours/boot.log)" -ge 2 ] && break; sleep 1; done
+    $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
+    ours_client
+    wait_viewer || { tail -30 visual-client/client.out; exit 2; }
+  else
+    tail -30 visual-client/client.out; exit 2
+  fi
+fi
 for i in $(seq 1 40); do [ "$(grep -c 'Reloading ResourceManager' visual-client/client.out)" -ge 2 ] && break; sleep 1; done
 sleep 10   # the join toasts pass
 stamp ours joined
@@ -198,7 +246,30 @@ for p in $( { seq "$SI" "$K" $((N-1)); cat crawl-pages.txt; } | sort -nu); do
   $SHOT "ours-shots/ours-gal-gui-$NS$p.png" || true
   # The same interactions, in the order the real client made them.
   TAGS=$( { [ -f "truth-shots/gal-guiw-$NS$p-move.png" ] && echo move; ls truth-shots | grep -oE "^gal-guiw-$NS$p-w[0-9]+\.png$" | grep -oE 'w[0-9]+\.png$' | tr -d '.png' | sort -t w -k2 -n; } )
+  PREV=-1
+  # The real client's rounds: each began on the page opened again ("reopen N" before press N,
+  # after a press that left the screen or found its control covered).
+  MENU=$(awk -F'\t' '$1=="cell" && $2!="x" {print $5; exit}' "srv-wall/c-imagine/scenes/gallery-gui-$NS-p$p.tsv" 2>/dev/null)
+  PRESSES="srv-wall/c-imagine/screens/$(echo "$MENU" | tr ':/' '__').presses"
   for T in $TAGS; do
+    # A press the truth walk reached on the page opened again, as just placed or just handed
+    # over, keeping the inventory: the same reopening here, before that press. Without the
+    # record (an older capture), a skipped press number means the same.
+    REOPEN=0
+    if [ "$T" != move ]; then
+      if grep -q '^reopen' "$PRESSES" 2>/dev/null; then
+        grep -qx "reopen	${T#w}" "$PRESSES" && REOPEN=1
+        # rounds that began before this press and after the previous one count too
+        for n in $(seq $((PREV + 1)) $((${T#w} - 1))); do grep -qx "reopen	$n" "$PRESSES" && REOPEN=1; done
+      elif [ "${T#w}" -gt $((PREV + 1)) ]; then
+        REOPEN=1
+      fi
+    fi
+    if [ "$REOPEN" = 1 ]; then
+      $RC 'item replace entity cimviewer weapon.mainhand with air' "cim gallerypage-gui $NS $p" >/dev/null
+      sleep 0.6
+    fi
+    [ "$T" != move ] && PREV=${T#w}
     if [ "$T" = move ]; then $RC "cim hudpress move" >/dev/null; else $RC "cim hudpress ${T#w}" >/dev/null; fi
     sleep 0.5
     $SHOT "ours-shots/ours-gal-guiw-$NS$p-$T.png" || true

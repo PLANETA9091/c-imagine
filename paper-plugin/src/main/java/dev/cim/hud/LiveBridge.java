@@ -29,7 +29,9 @@ final class LiveBridge {
     private static final Pattern COUNT = Pattern.compile("\"count\"\\s*:\\s*(\\d+)");
 
     /** One slot as the layer's menu has it, in the order the screen draws them. */
-    record Slot(int menuIndex, boolean player, int containerSlot, String stack) {
+    /** {@code x, y}: where the menu puts the slot; pairs it with the captured screen's slot. */
+    /** {@code pickable}: false for a slot the mod only displays in, which its screen draws itself. */
+    record Slot(int menuIndex, boolean player, int containerSlot, String stack, int x, int y, boolean pickable) {
     }
 
     /** What the layer's menu holds after a command. */
@@ -66,16 +68,30 @@ final class LiveBridge {
      * Paper kept for it (none the first time, as a freshly placed block has none).
      */
     State openBlock(Player player, org.bukkit.block.Block block, String blockId) {
+        return openBlock(player, block, blockId, false);
+    }
+
+    /**
+     * {@code fresh}: the block as just placed, whatever was there before (the gallery places a
+     * new block for every page, as the truth walk does); its kept data is dropped too.
+     */
+    State openBlock(Player player, org.bukkit.block.Block block, String blockId, boolean fresh) {
         StringBuilder in = new StringBuilder("open-block\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(blockId).append('\t')
                 .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
         appendInventory(in, player, false);
-        String kept = block.getChunk().getPersistentDataContainer().get(blockKey(block), PersistentDataType.STRING);
+        org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
+        if (fresh) {
+            chunk.remove(blockKey(block, blockId));
+            in.append("\nfresh");
+        }
+        String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
         if (kept != null) {
             in.append("\nbe\t").append(kept);
         }
         heldSlots.put(player.getUniqueId(), 0);
         openBlocks.put(player.getUniqueId(), block);
+        openBlockIds.put(player.getUniqueId(), blockId);
         return parse(call(in.toString()));
     }
 
@@ -83,16 +99,25 @@ final class LiveBridge {
     private final java.util.Map<java.util.UUID, org.bukkit.block.Block> openBlocks = new java.util.HashMap<>();
     private final java.util.Map<java.util.UUID, Integer> heldSlots = new java.util.HashMap<>();
 
-    /** Paper keeps a mod block entity's data in its chunk, under the block's position. */
-    private NamespacedKey blockKey(org.bukkit.block.Block block) {
-        return new NamespacedKey(key.getNamespace(), "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ());
+    private final java.util.Map<java.util.UUID, String> openBlockIds = new java.util.HashMap<>();
+
+    /**
+     * Paper keeps a mod block entity's data in its chunk, under the block's position and id: a
+     * different block put there later never reads it (measured: a vibration chamber opened with
+     * the previous page's machine contents in its fuel slot).
+     */
+    private NamespacedKey blockKey(org.bukkit.block.Block block, String blockId) {
+        String id = blockId.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._-]", "_");
+        return new NamespacedKey(key.getNamespace(),
+                "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ() + "_" + id);
     }
 
     /** The block entity's data the close handed back, stored for the next opening. */
     void keepBlockEntity(Player player, State state) {
         org.bukkit.block.Block block = openBlocks.remove(player.getUniqueId());
-        if (block != null && state.blockEntity() != null) {
-            block.getChunk().getPersistentDataContainer().set(blockKey(block), PersistentDataType.STRING,
+        String id = openBlockIds.remove(player.getUniqueId());
+        if (block != null && id != null && state.blockEntity() != null) {
+            block.getChunk().getPersistentDataContainer().set(blockKey(block, id), PersistentDataType.STRING,
                     state.blockEntity());
         }
     }
@@ -109,10 +134,126 @@ final class LiveBridge {
         }
     }
 
+    /** A walk-proven opener done in the facade beside the player (part placement, an item on a block). */
+    State openUse(Player player, org.bukkit.block.Block block, String opener) {
+        StringBuilder in = new StringBuilder("open-use\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(opener).append('\t')
+                .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
+        appendInventory(in, player, false);
+        heldSlots.put(player.getUniqueId(), 0);
+        return parse(call(in.toString()));
+    }
+
+    /** What a right click with a mod item on a block did: a menu, and/or a block it placed. */
+    record UseOn(State state, String placedId, int x, int y, int z, String placedBlockEntity) {
+    }
+
+    /**
+     * A right click with the held item on a block of Paper's world, by the item's own code:
+     * {@code clickedId} is the mod block clicked, or null for a world block.
+     */
+    UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId) {
+        return useOn(player, clicked, face, clickedId, player.isSneaking());
+    }
+
+    UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId,
+                boolean sneaking) {
+        StringBuilder in = new StringBuilder("use-on\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(clicked.getX()).append('\t').append(clicked.getY())
+                .append('\t').append(clicked.getZ()).append('\t').append(face.name().toLowerCase(java.util.Locale.ROOT))
+                .append('\t').append(clickedId == null ? "-" : clickedId).append('\t').append(sneaking ? "1" : "0");
+        appendInventory(in, player, true);
+        heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
+        String answer = call(in.toString());
+        String placed = null;
+        String be = null;
+        int x = 0;
+        int y = 0;
+        int z = 0;
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t");
+                placed = p[1];
+                x = Integer.parseInt(p[2]);
+                y = Integer.parseInt(p[3]);
+                z = Integer.parseInt(p[4]);
+            } else if (line.startsWith("placedbe\t")) {
+                be = line.substring("placedbe\t".length());
+            }
+        }
+        State state = parse(answer);
+        if (state.open() && placed == null) {
+            openBlocks.remove(player.getUniqueId());
+        }
+        return new UseOn(state, placed, x, y, z, be);
+    }
+
+    /** What breaking a mod block did: the stacks it spilled, the player's inventory after. */
+    record Broken(boolean removed, List<ItemStack> spilled, State state) {
+    }
+
+    /**
+     * The player breaks a mod block of Paper's world by the block's own code, with the data
+     * Paper kept for it; the kept data goes with the block.
+     */
+    Broken breakBlock(Player player, org.bukkit.block.Block block, String blockId) {
+        StringBuilder in = new StringBuilder("break\t").append(player.getUniqueId()).append('\t')
+                .append(player.getName()).append('\t').append(blockId).append('\t')
+                .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
+        appendInventory(in, player, true);
+        heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
+        org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
+        String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
+        if (kept != null) {
+            in.append("\nbe\t").append(kept);
+        }
+        String answer = call(in.toString());
+        boolean removed = false;
+        List<ItemStack> spilled = new ArrayList<>();
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("broken\t")) {
+                removed = Boolean.parseBoolean(line.substring(7));
+            } else if (line.startsWith("spill\t")) {
+                ItemStack stack = toPaper(line.substring(6));
+                if (stack != null) {
+                    spilled.add(stack);
+                }
+            }
+        }
+        State state = parse(answer);
+        if (removed) {
+            chunk.remove(blockKey(block, blockId));
+        }
+        return new Broken(removed, spilled, state);
+    }
+
+    /** A record payload rebuilt from the plain values the real client's press sent. */
+    State payload(Player player, String payloadClass, String values) {
+        return parse(call("payload\t" + player.getUniqueId() + "\t" + payloadClass + "\t" + values));
+    }
+
+    /** A vanilla menu packet a screen's button sends ("button" id or "trade" offer), by the server's handler. */
+    State vanilla(Player player, String kind, int n) {
+        return parse(call("vanilla\t" + player.getUniqueId() + "\t" + kind + "\t" + n));
+    }
+
+    /** A mod block Paper now holds: its block entity's data, kept for its first opening. */
+    void keepPlaced(org.bukkit.block.Block block, String blockId, String blockEntity) {
+        if (blockEntity != null) {
+            block.getChunk().getPersistentDataContainer().set(blockKey(block, blockId), PersistentDataType.STRING,
+                    blockEntity);
+        }
+    }
+
     /** The held item's own use(), with the player's inventory mirrored first. */
     State openHeld(Player player) {
+        return openHeld(player, player.isSneaking());
+    }
+
+    /** {@code sneaking}: the use as a sneaking player makes it (some items open their menu so only). */
+    State openHeld(Player player, boolean sneaking) {
         StringBuilder in = new StringBuilder("open-item\t").append(player.getUniqueId()).append('\t')
-                .append(player.getName());
+                .append(player.getName()).append('\t').append(sneaking ? "1" : "0");
         // The layer's player holds slot 0 selected: the held stack goes there, the stack
         // there goes where the held one was, so no item is lost or doubled.
         appendInventory(in, player, true);
@@ -150,6 +291,19 @@ final class LiveBridge {
             }
         }
         return out;
+    }
+
+    /** The open menu as it is now. */
+    State state(Player player) {
+        return parse(call("state\t" + player.getUniqueId()));
+    }
+
+    /** One tick of the open live block menus, once per Paper tick. */
+    static void tick() {
+        Function<String, String> fn = entry();
+        if (fn != null) {
+            fn.apply("tick\t-");
+        }
     }
 
     State close(Player player) {
@@ -199,8 +353,15 @@ final class LiveBridge {
                 }
                 case "pressed" -> pressed = p.length > 1 ? p[1] : "";
                 case "be" -> blockEntity = line.substring(3);
-                case "slot" -> slots.add(new Slot(Integer.parseInt(p[2]), p[3].equals("player"),
-                        Integer.parseInt(p[4]), p[5]));
+                case "slot" -> {
+                    // stack JSON never holds a tab, so the position follows it.
+                    String[] q = line.split("\t");
+                    int x = q.length > 7 ? Integer.parseInt(q[6]) : Integer.MIN_VALUE;
+                    int y = q.length > 7 ? Integer.parseInt(q[7]) : Integer.MIN_VALUE;
+                    boolean pickable = q.length <= 8 || !q[8].equals("0");
+                    slots.add(new Slot(Integer.parseInt(q[2]), q[3].equals("player"), Integer.parseInt(q[4]), q[5], x, y,
+                            pickable));
+                }
                 case "carried" -> carried = p[1];
                 case "inv" -> {
                     String[] q = line.split("\t", 3);

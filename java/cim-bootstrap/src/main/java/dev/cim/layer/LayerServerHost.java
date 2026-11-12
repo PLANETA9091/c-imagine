@@ -219,12 +219,21 @@ public final class LayerServerHost {
     // ---- lifecycle (the shadow-space half) -------------------------------------
 
     /** One Paper tick: lazily start, then drive one real tickServer pass. */
+    private static final java.util.concurrent.atomic.AtomicLong WAITED = new java.util.concurrent.atomic.AtomicLong();
+
     private static void runTick() {
         if (STOPPING.get()) {
             return;
         }
         try {
             if (!STARTED.get()) {
+                // Paper ticks before the mods finish loading (they wait for its server
+                // object): a start now finds every mod registry entry unbound (measured:
+                // Create's AddPackFindersEvent on create:cutting, 5 s before the load ended).
+                // A host that never loads mods starts after two minutes of waiting.
+                if (!FmlHost.loadEnded() && WAITED.incrementAndGet() < 2400) {
+                    return;
+                }
                 start();
                 if (!STARTED.get()) {
                     return; // a failed start keeps the gate failing; no markers synthesized

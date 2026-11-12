@@ -120,6 +120,7 @@ public final class LiveButtons {
                     menuOf.put(i.screenClass.replace('.', '/'), menus);
                 }
             }
+            inheritMenus(jar, menuOf);
             for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
                 for (ClientSurfaceScanner.Action a : surface.actions) {
                     if (a.type != ClientSurfaceScanner.ActionType.SEND_PACKET || a.target == null
@@ -142,7 +143,50 @@ public final class LiveButtons {
     }
 
     /** The proven arguments in constructor order, or null when one is not replayable. */
+    /**
+     * A button a superclass screen adds (Create's AbstractFilterScreen: the trash and the
+     * confirm button of every filter) belongs to every menu its concrete screens show.
+     */
+    static void inheritMenus(Path jar, Map<String, List<String>> menuOf) {
+        Map<String, String> superOf = new HashMap<>();
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+            for (String screen : new ArrayList<>(menuOf.keySet())) {
+                String current = screen;
+                for (int depth = 0; depth < 8 && current != null; depth++) {
+                    String parent = superOf.computeIfAbsent(current, c -> superName(zip, c));
+                    if (parent == null || parent.isEmpty()) {
+                        break;
+                    }
+                    List<String> into = menuOf.computeIfAbsent(parent, k -> new ArrayList<>());
+                    for (String m : menuOf.get(screen)) {
+                        if (!into.contains(m)) {
+                            into.add(m);
+                        }
+                    }
+                    current = parent;
+                }
+            }
+        } catch (IOException e) {
+            // no inheritance known: the concrete screens keep their own buttons
+        }
+    }
+
+    private static String superName(java.util.zip.ZipFile zip, String internal) {
+        java.util.zip.ZipEntry entry = zip.getEntry(internal + ".class");
+        if (entry == null) {
+            return "";
+        }
+        try (java.io.InputStream in = zip.getInputStream(entry)) {
+            return new org.objectweb.asm.ClassReader(in.readAllBytes()).getSuperName();
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
     static List<String> specs(ClientSurfaceScanner.Action a) {
+        if (a.constructorDesc.startsWith("static:")) {
+            return List.of();   // the singleton itself, nothing to build
+        }
         int count = org.objectweb.asm.Type.getArgumentTypes(a.constructorDesc).length;
         String[] specs = new String[count];
         for (ClientSurfaceScanner.PacketArgument p : a.packetArguments) {

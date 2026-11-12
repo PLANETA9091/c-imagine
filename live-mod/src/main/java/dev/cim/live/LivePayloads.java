@@ -96,6 +96,16 @@ final class LivePayloads {
         AbstractContainerMenu menu = player.opened();
         ClassLoader loader = menu != null ? menu.getClass().getClassLoader() : LivePayloads.class.getClassLoader();
         Class<?> type = load(payloadClass, loader);
+        if (constructorDesc.startsWith("static:")) {
+            // A stateless payload sent as its singleton (Create's ClearMenuPacket.INSTANCE).
+            String member = constructorDesc.substring("static:".length());
+            int dot = member.lastIndexOf('.');
+            Field single = load(member.substring(0, dot), loader).getDeclaredField(member.substring(dot + 1));
+            single.setAccessible(true);
+            Object payload = single.get(null);
+            return payload instanceof CustomPacketPayload custom ? dispatch(player, custom)
+                    : "not a payload: " + type.getName();
+        }
         Constructor<?> ctor = constructor(type, constructorDesc);
         Class<?>[] params = ctor.getParameterTypes();
         ctor.setAccessible(true);
@@ -108,6 +118,54 @@ final class LivePayloads {
             return "not a payload: " + type.getName();
         }
         return dispatch(player, custom);
+    }
+
+    /**
+     * A record payload built from the plain values a real client's press sent (a merchant
+     * offer's index): its canonical constructor, then the mod's own handler.
+     */
+    static String record(SessionServerPlayer player, String payloadClass, List<String> values) throws Exception {
+        AbstractContainerMenu menu = player.opened();
+        ClassLoader loader = menu != null ? menu.getClass().getClassLoader() : LivePayloads.class.getClassLoader();
+        Class<?> type = load(payloadClass.replace('.', '/'), loader);
+        if (!type.isRecord()) {
+            return "not a record: " + type.getName();
+        }
+        java.lang.reflect.RecordComponent[] parts = type.getRecordComponents();
+        if (parts.length != values.size()) {
+            return "record " + type.getName() + " has " + parts.length + " values, the press sent " + values.size();
+        }
+        Class<?>[] types = new Class<?>[parts.length];
+        Object[] args = new Object[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            types[i] = parts[i].getType();
+            String v = values.get(i);
+            int colon = v.indexOf(':');
+            String kind = v.substring(0, colon);
+            String text = v.substring(colon + 1);
+            args[i] = switch (kind) {
+                case "int" -> Integer.parseInt(text);
+                case "bool" -> Boolean.parseBoolean(text);
+                case "long" -> Long.parseLong(text);
+                case "float" -> Float.parseFloat(text);
+                case "double" -> Double.parseDouble(text);
+                case "short" -> Short.parseShort(text);
+                case "byte" -> Byte.parseByte(text);
+                case "string" -> text;
+                case "enum" -> {
+                    int dot = text.lastIndexOf('.');
+                    @SuppressWarnings({"unchecked", "rawtypes"})
+                    Object e = Enum.valueOf((Class) load(text.substring(0, dot).replace('.', '/'), loader),
+                            text.substring(dot + 1));
+                    yield e;
+                }
+                default -> throw new IllegalArgumentException("value kind " + kind);
+            };
+        }
+        Constructor<?> ctor = type.getDeclaredConstructor(types);
+        ctor.setAccessible(true);
+        Object payload = ctor.newInstance(args);
+        return payload instanceof CustomPacketPayload custom ? dispatch(player, custom) : "not a payload: " + type.getName();
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

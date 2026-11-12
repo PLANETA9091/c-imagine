@@ -172,7 +172,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             // rows load from the SAME build that wrote that zip. Default is
             // unchanged: without -Dcim.f2v.fastBoot=true every boot still
             // rebuilds + compares (drift detection for non-CI boots).
-            if (Boolean.getBoolean("cim.f2v.fastBoot")
+            if ((Boolean.getBoolean("cim.f2v.fastBoot") || "true".equals(System.getenv("CIM_F2V_FASTBOOT")))
                     && Files.isRegularFile(packZip)
                     && Files.isRegularFile(base.resolve("pack.sha1"))) {
                 String cachedSha1 = Files.readString(base.resolve("pack.sha1")).trim();
@@ -191,7 +191,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 : List.of();
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
                         readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
-                int fastPort = Integer.getInteger("cim.f2v.port", 25580);
+                int fastPort = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
                 dev.cim.f2v.PackHttp fastHttp = null;
                 // 14-di THE RUN-CAPTURE OVERLAY: the captures dir carries the truth
                 // client's ScreenArt dump for THIS run's menus; scenes the seed's
@@ -259,7 +259,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
                     readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
-            int port = Integer.getInteger("cim.f2v.port", 25580);
+            int port = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
             visualPack = http;
@@ -337,6 +337,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     public String worldName() {
         World w = getServer().getWorlds().get(0);
         return w.getName();
+    }
+
+    /** A launcher without JVM arguments (CRUSSTY) passes the same settings as environment. */
+    private static int envInt(String name, int fallback) {
+        try {
+            String v = System.getenv(name);
+            return v == null || v.isBlank() ? fallback : Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     // ---- bridge surface (KernelBridge reflection targets) --------------------
@@ -601,9 +611,20 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             // M6.3 end to end (live.yml): a mod item's menu run by the mod's own code in the
             // layer, for a real connected player, and the Paper inventory it leaves.
             String liveItem = System.getenv("CIM_LIVETEST");
+            // The button scan runs in the background from boot; the test presses one, so it waits.
+            for (int i = 0; i < 360 && liveItem != null && !dev.cim.hud.HudBootstrap.liveScanDone(); i++) {
+                Thread.sleep(500);
+            }
             if (liveItem != null && !liveItem.isBlank()) {
                 Player target = bot;
                 for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveSelfTest(target, liveItem.trim()))) {
+                    log().info("[cim-live] paper " + line);
+                }
+            }
+            String livePlace = System.getenv("CIM_LIVETEST_PLACE");
+            if (livePlace != null && !livePlace.isBlank()) {
+                Player target = bot;
+                for (String line : callSync(() -> dev.cim.hud.HudBootstrap.livePlaceTest(target, livePlace.trim()))) {
                     log().info("[cim-live] paper " + line);
                 }
             }
@@ -2228,7 +2249,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         int cells = 0;
         String menuClass = null;
         String opener = "";
+        String sneakOpener = null;
         String menuId = null;
+        String replay = null;
         try {
             for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
@@ -2242,6 +2265,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                     if (row.length > 5) {
                         opener = row[5].replace("opened-by:", "").replace("sneak+", "");
+                        sneakOpener = row[5].replace("opened-by:", "").startsWith("sneak+")
+                                ? row[5].replace("opened-by:", "") : null;
+                    }
+                }
+                if (line.startsWith("replay\t")) {
+                    // The walk's opener said plainly (a tuned item placed, then clicked): the
+                    // layer replays it with the mod's own code where the walk's own is specialized.
+                    String[] row = line.split("\t", -1);
+                    if (row.length > 5) {
+                        replay = row[5];
                     }
                 }
                 // header / skip rows (open-failed notes pass through — the
@@ -2257,13 +2290,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         final String hudId = menuId;
         // The truth leg holds the item that opened the menu, and its slot shows it.
         final String heldId = opener.startsWith("item:") ? opener.substring("item:".length()) : null;
+        // The live opener keeps the walk's sneak (Create's linked controller opens on a
+        // sneaking use only); the held item's id is the same either way.
+        final String harnessOpener = replay != null ? replay : sneakOpener != null ? sneakOpener : opener;
         callSync(() -> {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer != null) {
                 viewer.closeInventory();
                 if (hudId != null) {
-                    dev.cim.hud.HudBootstrap.openForHarness(viewer, hudId, hudClass, heldId);
+                    dev.cim.hud.HudBootstrap.openForHarness(viewer, hudId, hudClass, heldId, harnessOpener);
                 }
             }
             World w = world(worldName());

@@ -29,16 +29,16 @@ public final class LiveMenus {
 
     private static final Logger LOG = LoggerFactory.getLogger("cimlive");
 
-    private static FacadeLevel level;
+    private static FacadeServerLevel level;
     private static final Map<UUID, SessionServerPlayer> SESSIONS = new HashMap<>();
 
     private LiveMenus() {
     }
 
-    public static synchronized FacadeLevel level() {
+    public static synchronized FacadeServerLevel level() {
         if (level == null) {
             long t0 = System.nanoTime();
-            level = new FacadeLevel(LiveRegistries.build());
+            level = FacadeServerLevel.create(new FacadeLevel(LiveRegistries.build()));
             LOG.info("[cimlive] facade level up in {} ms", (System.nanoTime() - t0) / 1_000_000);
         }
         return level;
@@ -46,7 +46,13 @@ public final class LiveMenus {
 
     /** The session for a Paper player, made on first use. */
     public static synchronized SessionServerPlayer session(UUID id, String name) {
+        ((FacadeServer) level().getServer()).adoptRealResources();
         return SESSIONS.computeIfAbsent(id, k -> SessionServerPlayer.create(level(), new GameProfile(k, name)));
+    }
+
+    /** Every live session, for the tick. */
+    static synchronized java.util.List<SessionServerPlayer> openSessions() {
+        return new java.util.ArrayList<>(SESSIONS.values());
     }
 
     /** Ends a player's session: the menu's own removed() runs, as on close. */
@@ -71,16 +77,31 @@ public final class LiveMenus {
      * A right click on a block with an empty hand, as the server's game mode applies it:
      * the block's item use first, then its use without an item when that passes.
      */
+    /**
+     * A right click on a block, where the walk's real player clicks it: the top face low in the
+     * cell (a part placed on the floor sits there: AE2's terminals and buses), then the middle
+     * of each side, twice over, until a menu opens.
+     */
     public static AbstractContainerMenu clickBlock(SessionServerPlayer player, net.minecraft.core.BlockPos pos) {
-        net.minecraft.world.level.block.state.BlockState state = level().getBlockState(pos);
-        net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
-                net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(net.minecraft.core.Direction.SOUTH, 0.5),
-                net.minecraft.core.Direction.SOUTH, pos, false);
-        ItemStack hand = player.getItemInHand(InteractionHand.MAIN_HAND);
-        net.minecraft.world.ItemInteractionResult result = state.useItemOn(hand, level(), player,
-                InteractionHand.MAIN_HAND, hit);
-        if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
-            state.useWithoutItem(level(), player, hit);
+        net.minecraft.core.Direction[] faces = {net.minecraft.core.Direction.UP, net.minecraft.core.Direction.SOUTH,
+                net.minecraft.core.Direction.NORTH, net.minecraft.core.Direction.EAST, net.minecraft.core.Direction.WEST};
+        for (int pass = 0; pass < 2; pass++) {
+            for (net.minecraft.core.Direction face : faces) {
+                net.minecraft.world.level.block.state.BlockState state = level().getBlockState(pos);
+                net.minecraft.world.phys.Vec3 at = face == net.minecraft.core.Direction.UP
+                        ? new net.minecraft.world.phys.Vec3(pos.getX() + 0.5, pos.getY() + 0.06, pos.getZ() + 0.5)
+                        : net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5);
+                net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(at, face, pos, false);
+                ItemStack hand = player.getItemInHand(InteractionHand.MAIN_HAND);
+                net.minecraft.world.ItemInteractionResult result = state.useItemOn(hand, level(), player,
+                        InteractionHand.MAIN_HAND, hit);
+                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                    state.useWithoutItem(level(), player, hit);
+                }
+                if (player.opened() != null) {
+                    return player.opened();
+                }
+            }
         }
         return player.opened();
     }
@@ -118,6 +139,82 @@ public final class LiveMenus {
      * the inventory onto the menu's first slot of its own), then a close. One log line per
      * item that did anything, in id order, so the real server and the layer can be diffed.
      */
+    /**
+     * The protocol Paper drives a placement with: the item set down by a sneaking click on a
+     * block below, then the block it became opened with the data it was placed with.
+     */
+    private static void placeTest(String itemId) {
+        if (itemId == null || itemId.isBlank()) {
+            return;
+        }
+        UUID uuid = UUID.nameUUIDFromBytes(("cimlive-place-" + itemId).getBytes(StandardCharsets.UTF_8));
+        String held = LiveProtocol.encode(new ItemStack(BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemId.trim()))));
+        String answer = LiveProtocol.call("use-on\t" + uuid + "\tcimlive\t0\t64\t0\tup\t-\t1\ninv\t0\t" + held);
+        String placed = null;
+        String be = null;
+        String[] at = null;
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t");
+                placed = p[1];
+                at = new String[]{p[2], p[3], p[4]};
+            } else if (line.startsWith("placedbe\t")) {
+                be = line.substring("placedbe\t".length());
+            }
+        }
+        LOG.info("[cimlive] selftest place {} -> {}", itemId, placed == null ? "nothing placed: " + answer.split("\n")[0]
+                : "placed " + placed + " with " + (be == null ? "no" : "its") + " block entity data");
+        if (placed == null) {
+            return;
+        }
+        String diamonds = LiveProtocol.encode(new ItemStack(Items.DIAMOND, 5));
+        String open = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
+                + "\t" + at[2] + "\ninv\t9\t" + diamonds + "\nfresh" + (be == null ? "" : "\nbe\t" + be));
+        long own = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu")).count();
+        LOG.info("[cimlive] selftest place opened {} own={}", open.split("\n")[0], own);
+        // 5 diamonds into its storage, closed, opened again from the data the close gave back.
+        String from = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("player")
+                && l.split("\t")[4].equals("9")).map(l -> l.split("\t")[2]).findFirst().orElse(null);
+        String to = open.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu"))
+                .map(l -> l.split("\t")[2]).findFirst().orElse(null);
+        if (from != null && to != null) {
+            LiveProtocol.call("click\t" + uuid + "\t" + from + "\t0\tPICKUP");
+            LiveProtocol.call("click\t" + uuid + "\t" + to + "\t0\tPICKUP");
+        }
+        String closed = LiveProtocol.call("close\t" + uuid);
+        String keptData = closed.lines().filter(l -> l.startsWith("be\t")).map(l -> l.substring(3)).findFirst().orElse(null);
+        String again = LiveProtocol.call("open-block\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
+                + "\t" + at[2] + "\nfresh" + (keptData == null ? "" : "\nbe\t" + keptData));
+        String first = again.lines().filter(l -> l.startsWith("slot\t") && l.split("\t")[3].equals("menu"))
+                .map(l -> l.split("\t")[5]).findFirst().orElse("none");
+        LOG.info("[cimlive] selftest place reopened, first own slot {}", first.equals("-") ? "empty"
+                : first.contains("minecraft:diamond") ? "minecraft:diamond" : first);
+        closed = LiveProtocol.call("close\t" + uuid);
+        String kept = closed.lines().filter(l -> l.startsWith("be\t")).map(l -> l.substring(3)).findFirst().orElse(be);
+        // Broken by hand, by the block's own code: what it drops is the item, with its data.
+        String broken = LiveProtocol.call("break\t" + uuid + "\tcimlive\t" + placed + "\t" + at[0] + "\t" + at[1]
+                + "\t" + at[2] + (kept == null ? "" : "\nbe\t" + kept));
+        java.util.List<String> spills = broken.lines().filter(l -> l.startsWith("spill\t")).map(l -> {
+            ItemStack drop = LiveProtocol.decode(l.substring(6));
+            return BuiltInRegistries.ITEM.getKey(drop.getItem()) + " x" + drop.getCount()
+                    + (drop.getComponentsPatch().isEmpty() ? "" : "+data");
+        }).toList();
+        LOG.info("[cimlive] selftest place broken {}: {}", broken.lines().filter(l -> l.startsWith("broken\t")).findFirst()
+                .orElse(broken.split("\n")[0]), spills);
+    }
+
+    /** A walk-proven opener done by the protocol (open-use), as the gallery's ours leg does it. */
+    private static void useTest(String opener) {
+        if (opener == null || opener.isBlank()) {
+            return;
+        }
+        UUID uuid = UUID.nameUUIDFromBytes(("cimlive-use-" + opener).getBytes(StandardCharsets.UTF_8));
+        String answer = LiveProtocol.call("open-use\t" + uuid + "\tcimlive\t" + opener.trim() + "\t0\t64\t8");
+        LOG.info("[cimlive] selftest use {} -> {}", opener.trim(), answer.split("\n")[0]);
+        String after = LiveProtocol.call("close\t" + uuid);
+        level().store().clearBlocks();
+    }
+
     static void selfTest(String spec) {
         java.util.Set<String> wanted = new java.util.TreeSet<>();
         for (String ns : spec.split("[,\\s]+")) {
@@ -232,12 +329,14 @@ public final class LiveMenus {
                 SESSIONS.remove(uuid);
             }
         }
-        level().clearBlocks();
+        level().store().clearBlocks();
         LOG.info("[cimlive] selftest blocks: blocks={} menus={} threw={}", blocks.size(), blockMenus, blockThrew);
         pressButtons(opened, openedBlocks);
         widgetStates(openedBlocks);
         LOG.info("[cimlive] selftest summary: items={} menus={} kinds={} threw={}", items.size(), menus, kinds.size(), threw);
         LOG.info("[cimlive] selftest kinds {}", kinds);
+        placeTest(System.getenv("CIM_LIVE_PLACE"));
+        useTest(System.getenv("CIM_LIVE_USE"));
         LOG.info("[cimlive] selftest ok");
     }
 
@@ -371,7 +470,7 @@ public final class LiveMenus {
                         simple(b[4]), result, after);
             }
         }
-        level().clearBlocks();
+        level().store().clearBlocks();
         LOG.info("[cimlive] selftest buttons: proven={} pressed={} handled={}", buttons.size(), pressed, handled);
     }
 
@@ -441,7 +540,7 @@ public final class LiveMenus {
             }
             LiveProtocol.call("close\t" + uuid);
         }
-        level().clearBlocks();
+        level().store().clearBlocks();
         LOG.info("[cimlive] selftest widgets: evaluated={} grounded={}", evaluated, grounded);
     }
 

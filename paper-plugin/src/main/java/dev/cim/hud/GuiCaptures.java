@@ -17,7 +17,15 @@ import java.util.stream.Stream;
  */
 public final class GuiCaptures {
 
-    public record Slot(int x, int y, boolean player, int index) {
+    /**
+     * {@code index}: the slot in its container; {@code menuIndex}: the slot in the menu's list,
+     * the number a click names (-1 when the row does not say).
+     */
+    public record Slot(int x, int y, boolean player, int index, int menuIndex) {
+
+        public Slot(int x, int y, boolean player, int index) {
+            this(x, y, player, index, -1);
+        }
     }
 
     public record Capture(String menuId, String menuClass, String title, List<String> openers, List<Slot> slots) {
@@ -68,10 +76,18 @@ public final class GuiCaptures {
                 openers.add(p[5]);
             } else if (p[0].equals("slot")) {
                 slots.add(new Slot(Integer.parseInt(p[2]), Integer.parseInt(p[3]), p[5].equals("player"),
-                        p.length > 6 ? Integer.parseInt(p[6]) : -1));
+                        p.length > 6 ? Integer.parseInt(p[6]) : -1, menuIndexOf(p[1])));
             }
         }
         return menu == null ? null : new Capture(menu, menuClass, title, openers, slots);
+    }
+
+    private static int menuIndexOf(String field) {
+        try {
+            return Integer.parseInt(field);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     /** Menu id to capture. An id is unique; a class is often shared by a whole mod. */

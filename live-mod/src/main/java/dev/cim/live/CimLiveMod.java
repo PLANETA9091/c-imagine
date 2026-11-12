@@ -18,7 +18,12 @@ public final class CimLiveMod {
         String item = System.getenv("CIM_LIVE_SELFTEST");
         if (item != null && !item.isBlank()) {
             // Registries are complete here on both stacks, and the menu types with them.
-            LiveMenus.selfTest(item.trim());
+            try {
+                LiveMenus.selfTest(item.trim());
+            } catch (Throwable t) {
+                // A self-test failure is a finding in the log, never a failed mod load.
+                org.slf4j.LoggerFactory.getLogger("cimlive").error("[cimlive] selftest FAILED: {}", t.toString(), t);
+            }
         }
     }
 }

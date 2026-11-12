@@ -19,6 +19,7 @@ import argparse
 import glob
 import json
 import os
+import shutil
 import re
 
 from PIL import Image, ImageChops, ImageDraw
@@ -94,21 +95,57 @@ def menu_box(frame_size, slots, scale):
     return (cx - w * scale // 2, cy - h * scale // 2, cx + w * scale // 2, cy + h * scale // 2)
 
 
-def art_mask(path, size):
-    """The pixels the mod really draws, from its captured screen, or None."""
+# A translucent art pixel (a shadow) has nothing of the screen beneath it: its colour is
+# the mod's shadow over the world behind the menu, which is not the menu. Those pixels are
+# judged within this many levels per channel; every opaque pixel of the menu is judged exactly.
+TRANSLUCENT_TOLERANCE = 12
+
+
+def art_masks(path, size):
+    """(opaque mask, translucent mask) of the pixels the mod really draws, or (None, None)."""
     if not path or not os.path.isfile(path):
-        return None
+        return None, None
     art = Image.open(path).convert("RGBA")
     if art.size != size:
-        return None
+        return None, None
     r, g, b, a = art.split()
     # Colour with zero alpha is solid in a real framebuffer, as ScreenPack treats it.
-    solid = ImageChops.lighter(ImageChops.lighter(r, g), ImageChops.lighter(b, a))
-    return solid.point(lambda v: 255 if v else 0)
+    coloured = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
+    full = a.point(lambda v: 255 if v == 255 else 0)
+    none = a.point(lambda v: 255 if v == 0 else 0)
+    part = a.point(lambda v: 255 if 0 < v < 255 else 0)
+    opaque = ImageChops.lighter(full, ImageChops.multiply(none, coloured))
+    return opaque, part
+
+
+def art_mask(path, size):
+    """The pixels the mod really draws, from its captured screen, or None."""
+    opaque, part = art_masks(path, size)
+    if opaque is None:
+        return None
+    return ImageChops.lighter(opaque, part)
+
+
+def animation_mask(art, size):
+    """Pixels of the art that move with the clock alone (its .anim.png from the capture), or None."""
+    path = art[:-4] + ".anim.png" if art else None
+    if not path or not os.path.isfile(path):
+        return None
+    anim = Image.open(path).convert("L")
+    if anim.size != size:
+        return None
+    anim = anim.point(lambda v: 255 if v else 0)
+    if not anim.getbbox():
+        return None
+    # A glyph moving by fractions of a pixel touches its neighbours too: one pixel around.
+    from PIL import ImageFilter
+    return anim.filter(ImageFilter.MaxFilter(3))
 
 
 def compare(truth_path, ours_path, slots, scale, art=None, bounds=None):
-    """Returns (differing pixels, total pixels, mask image), or None without both frames."""
+    """Returns (differing pixels, total pixels, mask image, animated pixels), or None without both
+    frames. Pixels the real screen moves with the clock alone (a scrolling label) are judged apart:
+    two captures of one state differ there by the moment, so they are counted, not compared."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return None
     truth = Image.open(truth_path).convert("RGB")
@@ -116,28 +153,50 @@ def compare(truth_path, ours_path, slots, scale, art=None, bounds=None):
     if truth.size != ours.size:
         return None
     mask = art_mask(art, truth.size)
+    bm = bound_mask(bounds, scale, truth.size) if mask is not None else None
+    if bm is not None:
+        # Only the screen's own panel and what hangs off it: a menu that dims the whole frame
+        # itself would otherwise judge the two worlds behind it.
+        mask = ImageChops.multiply(mask, bm)
     if mask is not None and mask.getbbox():
-        bm = bound_mask(bounds, scale, truth.size)
+        opaque, part = art_masks(art, truth.size)
         if bm is not None:
-            mask = ImageChops.multiply(mask, bm)
-        if not mask.getbbox():
-            return None
+            opaque = ImageChops.multiply(opaque, bm)
+            part = ImageChops.multiply(part, bm)
         r, g, b = ImageChops.difference(truth, ours).split()
-        diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
-        diff = ImageChops.multiply(diff, mask)
+        level = ImageChops.lighter(ImageChops.lighter(r, g), b)
+        exact = ImageChops.multiply(level.point(lambda v: 255 if v else 0), opaque)
+        # A translucent pixel is the mod's colour over whatever is behind the menu: the world
+        # behind may move it by as much as it lets through (measured: the digital miner's
+        # window edges over the miner's own structure on the real server, over sky on ours).
+        through = ImageChops.invert(Image.open(art).convert("RGBA").split()[3])
+        menu_part = ImageChops.subtract(level, through)
+        loose = ImageChops.multiply(menu_part.point(lambda v: 255 if v > TRANSLUCENT_TOLERANCE else 0), part)
+        diff = ImageChops.lighter(exact, loose)
+        animated = 0
+        anim = animation_mask(art, truth.size)
+        if anim is not None:
+            moving = sum(1 for v in ImageChops.multiply(anim, mask).getdata() if v)
+            # A screen that moves almost everywhere is a capture gone wrong, not an
+            # animation: it excuses nothing (measured: icons drawn over the base art).
+            if moving * 5 <= sum(1 for v in mask.getdata() if v):
+                animated = moving
+                diff = ImageChops.subtract(diff, anim)
         box = mask.getbbox()
         total = sum(1 for v in mask.crop(box).getdata() if v)
-        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box)
+        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box), animated, box[:2]
     box = menu_box(truth.size, slots, scale)
     # Per channel: converting to grey would round a one-step difference away.
     r, g, b = ImageChops.difference(truth.crop(box), ours.crop(box)).split()
     diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
     red = sum(1 for v in diff.getdata() if v)
-    return red, diff.size[0] * diff.size[1], diff
+    return red, diff.size[0] * diff.size[1], diff, 0, box[:2]
 
 
-def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96, scale=3, bounds=None):
-    """Full-resolution truth | ours | diff around where they differ, so a RED is readable."""
+def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96, result=None):
+    """Full-resolution truth | ours | diff around where they differ, so a RED is readable.
+    With the verdict's result, around the pixels it counted (a screen-wide shade differs
+    everywhere by less than the verdict judges, and would pull the crop to the corner)."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return
     truth = Image.open(truth_path).convert("RGB")
@@ -148,11 +207,12 @@ def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96, scale=3, bounds=
     diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
     mask = art_mask(art, truth.size)
     if mask is not None and mask.getbbox():
-        bm = bound_mask(bounds, scale, truth.size)
-        if bm is not None:
-            mask = ImageChops.multiply(mask, bm)
         diff = ImageChops.multiply(diff, mask)
     box = diff.getbbox()
+    if result is not None and result[2].getbbox():
+        counted = result[2].getbbox()
+        ox, oy = result[4]
+        box = (counted[0] + ox, counted[1] + oy, counted[2] + ox, counted[3] + oy)
     if not box:
         return
     x0, y0 = max(0, box[0] - pad), max(0, box[1] - pad)
@@ -166,6 +226,15 @@ def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96, scale=3, bounds=
     for i, im in enumerate(parts):
         out.paste(im, (i * (parts[0].width + 4), LABEL))
     out.save(out_path)
+
+
+def keep_raw(out, name, truth, ours, art):
+    """A RED's full frames and the art it was judged by, for reading the numbers later."""
+    raw = os.path.join(out, "raw")
+    os.makedirs(raw, exist_ok=True)
+    for path, tag in ((truth, "truth"), (ours, "ours"), (art, "art")):
+        if path and os.path.isfile(path):
+            shutil.copyfile(path, os.path.join(raw, f"{name}.{tag}.png"))
 
 
 def panel(image, title, size):
@@ -187,8 +256,9 @@ def judge(menu, opened, note, result):
         return "RED", f"not opened: {note}"
     if result is None:
         return "RED", "frame missing"
-    red, total, _ = result
-    return ("GREEN", "pixel identical") if red == 0 else ("RED", f"{red} of {total} pixels differ")
+    red, total, animated = result[0], result[1], result[3]
+    moving = f" ({animated} animated pixels judged apart)" if animated else ""
+    return ("GREEN", "pixel identical" + moving) if red == 0 else ("RED", f"{red} of {total} pixels differ" + moving)
 
 
 def main():
@@ -198,17 +268,12 @@ def main():
     ap.add_argument("--scale", type=int, default=3)
     ap.add_argument("--art", default="")
     ap.add_argument("--art-run", default="",
-                    help="the run's own ScreenArt dump (truth-meta/truth-screens) — "
-                         "preferred over --art per menu: the seed's captures predate "
-                         "the current walk's opener routes, so a menu the run opened "
-                         "and the seed missed must bound the judgement with the RUN's "
-                         "own art (14-di); the seed art stays the fallback")
+                    help="the run's own ScreenArt dump, preferred over --art per menu (14-di)")
     ap.add_argument("--stride", default="", help="index/count of this shard's pages, e.g. 3/8")
     a = ap.parse_args()
     a.stride = tuple(int(v) for v in a.stride.split("/")) if a.stride else None
     os.makedirs(a.out, exist_ok=True)
     os.makedirs(a.report, exist_ok=True)
-
     def art_path(menu):
         name = menu.replace(":", "_").replace("/", "_")
         if a.art_run:
@@ -243,7 +308,8 @@ def main():
             sheet.paste(panel(result[2] if result else None, why, SHEET), (SHEET[0] * 2 + 8, 0))
             sheet.save(os.path.join(a.out, f"{name}.png"))
             if verdict == "RED" and result:
-                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"), scale=a.scale, bounds=bounds)
+                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"), result=result)
+                keep_raw(a.out, name, truth, ours, art)
             with open(os.path.join(a.report, f"join-menu-{name}.json"), "w", encoding="utf-8") as f:
                 json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
                            "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
@@ -252,7 +318,8 @@ def main():
             for t in sorted(glob.glob(os.path.join(a.truth, f"gal-guiw-{ns}{page}-*.png"))):
                 tag = t.rsplit("-", 1)[1][:-4]
                 o = os.path.join(a.ours, f"ours-gal-guiw-{ns}{page}-{tag}.png")
-                state = (art[:-4] + "." + tag + ".png") if art and tag != "move" else art
+                # Each state has its own art, the move's too (the screen as the move left it).
+                state = (art[:-4] + "." + tag + ".png") if art else art
                 # No art of its own for this state: the menu's own area still bounds the judgement,
                 # since the world behind a menu is not the menu.
                 if state and not os.path.isfile(state):
@@ -267,7 +334,8 @@ def main():
                     sheet.paste(panel(res[2] if res else None, w2, SHEET), (SHEET[0] * 2 + 8, 0))
                     sheet.save(os.path.join(a.out, f"{name}-{tag}.png"))
                     if res:
-                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"), scale=a.scale, bounds=bounds)
+                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"), result=res)
+                        keep_raw(a.out, f"{name}-{tag}", t, o, state)
                 with open(os.path.join(a.report, f"join-menu-{name}-{tag}.json"), "w", encoding="utf-8") as f:
                     json.dump({"verdict": v, "cells": 1, "red": int(v == "RED"), "dynamic": 0, "skipped": 0,
                                "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)

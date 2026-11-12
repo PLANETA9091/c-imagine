@@ -137,7 +137,28 @@ public final class FmlHost {
      *
      * @return JSON status: {"state":"ok",...} or {"state":"error","error":...}
      */
+    /** Set once the mod load has ended, either way: the layer server starts only after it. */
+    private static volatile boolean loadEnded;
+
+    /** No mod load will run (no manifest): the server need not wait for one. */
+    public static void markLoadEnded() {
+        loadEnded = true;
+    }
+
+    /** Whether the mod load has ended (successfully or not). */
+    public static boolean loadEnded() {
+        return loadEnded;
+    }
+
     public static String run(Map<String, Object> manifest) {
+        try {
+            return runLoad(manifest);
+        } finally {
+            loadEnded = true;
+        }
+    }
+
+    private static String runLoad(Map<String, Object> manifest) {
         long started = System.nanoTime();
         try {
             List<ModSpec> mods = parseManifest(manifest);
@@ -163,13 +184,17 @@ public final class FmlHost {
                 Object fileScan = buildScanData(mod);
                 file.getClass().getMethod("setScanResult", Class.forName(SCAN_DATA), Throwable.class)
                         .invoke(file, fileScan, null);
-                scanByJar.put(mod.jar(), fileScan);
-                modFiles.add(file);
                 Object fileInfo = call(file, "getModFileInfo");
                 if (fileInfo == null) {
-                    throw new IllegalStateException("ModFileInfo null for " + mod.id()
-                            + " (mods.toml not found through the SecureJar proxy)");
+                    // FML makes no container for a jar with no mod description it reads (a
+                    // library); its classes stay on the loader. One such jar must not cost
+                    // every other mod its load.
+                    System.out.println(LOG + " no mod description for " + mod.id() + " (" + mod.jar()
+                            + "): loaded as a library");
+                    continue;
                 }
+                scanByJar.put(mod.jar(), fileScan);
+                modFiles.add(file);
                 List<?> infos = (List<?>) call(fileInfo, "getMods");
                 for (Object info : infos) {
                     modInfos.add(info);
@@ -376,6 +401,14 @@ public final class FmlHost {
                 Thread tcclThread = Thread.currentThread();
                 ClassLoader oldTccl = tcclThread.getContextClassLoader();
                 tcclThread.setContextClassLoader(shadowLoader());
+                // FML constructs each mod as its active container: a constructor that asks
+                // ModLoadingContext for its own container or event bus finds it (moonlight
+                // does; without it: "Where is minecraft???!").
+                Object loadingContext = Class.forName(MOD_LOADING_CONTEXT).getMethod("get").invoke(null);
+                java.lang.reflect.Method setActive = Class.forName(MOD_LOADING_CONTEXT)
+                        .getDeclaredMethod("setActiveContainer", Class.forName(MOD_CONTAINER));
+                setActive.setAccessible(true);
+                setActive.invoke(loadingContext, container);
                 try {
                     construct.invoke(container);
                     System.out.println(LOG + " mod " + mod.id()
@@ -386,10 +419,14 @@ public final class FmlHost {
                 } finally {
                     tcclThread.setContextClassLoader(oldTccl);
                 }
-                Object event = constructModEventCls
-                        .getConstructor(Class.forName(MOD_CONTAINER), Class.forName(DEFERRED_QUEUE))
-                        .newInstance(container, queue);
-                acceptEvent.invoke(container, event);
+                try {
+                    Object event = constructModEventCls
+                            .getConstructor(Class.forName(MOD_CONTAINER), Class.forName(DEFERRED_QUEUE))
+                            .newInstance(container, queue);
+                    acceptEvent.invoke(container, event);
+                } finally {
+                    setActive.invoke(loadingContext, (Object) null);
+                }
             }
             Class.forName(DEFERRED_QUEUE).getMethod("runTasks").invoke(queue);
 

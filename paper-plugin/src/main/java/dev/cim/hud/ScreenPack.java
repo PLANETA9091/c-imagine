@@ -58,11 +58,49 @@ public final class ScreenPack {
     /**
      * {@code states} holds what the screen looked like after each recorded press, by widget
      * index: a recording of the real mod's screen, not its logic. {@code move} is the slot
-     * move the real client made first, or null. {@code movePieces} is the visual state after move.
+     * move the real client made first, or null.
+     */
+    /**
+     * {@code covers}: per press state, the part of its art that draws over slots (a window, a
+     * popup), drawn again over the slots' items: the real screen hides an item under a window
+     * and shows the part of it the window leaves free.
      */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
-                           Map<Integer, List<Piece>> states, int[] move, List<Piece> movePieces) {
+                           Map<Integer, List<Piece>> states, int[] move, Map<Integer, List<Piece>> covers,
+                           Map<Integer, int[]> shifts, java.util.Set<Integer> hidden, Map<String, List<Piece>> fills,
+                           Map<String, int[]> placed) {
+        public Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
+                        Map<Integer, List<Piece>> states, int[] move) {
+            this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>(), new java.util.HashSet<>(),
+                    new HashMap<>(), new HashMap<>());
+        }
+
+        /** Where a slot sits in a press state that laid the screen out again, or null. */
+        public int[] placed(int state, int menuIndex) {
+            return placed.get(state + ":" + menuIndex);
+        }
+
+        /** A filled slot's background in a state (-1: as opened), drawn before its item, or null. */
+        public List<Piece> fill(int state, int menuIndex) {
+            return fills.get(state + ":" + menuIndex);
+        }
+
+        /** The wash a press state lays over its slots' items (its font row), or -1. */
+        public int wash(int state) {
+            int[] w = placed.get("wash:" + state);
+            return w == null ? -1 : w[0];
+        }
+
+        /** How far the menu's slots moved in a press state (a recipe book opening), or 0,0. */
+        public int[] shift(int state) {
+            return shifts.getOrDefault(state, ZERO_SHIFT);
+        }
     }
+
+    private static final int[] ZERO_SHIFT = {0, 0};
+
+    /** The state key of the screen as the slot move left it. */
+    public static final int MOVE_STATE = 9999;
 
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
     public record Scene(String className, String menu, int width, int height, boolean titleCentered,
@@ -266,7 +304,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v9");
+        StringBuilder out = new StringBuilder("v19");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -289,19 +327,11 @@ public final class ScreenPack {
                 out.append("captured\t").append(s.captured().originX()).append('\t')
                         .append(s.captured().originY()).append('\n');
                 if (s.captured().move() != null) {
-                    out.append("move\t").append(s.captured().move()[0]).append('\t')
-                            .append(s.captured().move()[1]);
-                    if (s.captured().move().length > 2) {
-                        out.append('\t').append(s.captured().move()[2]);
+                    out.append("move");
+                    for (int click : s.captured().move()) {
+                        out.append('\t').append(click);
                     }
                     out.append('\n');
-                }
-                if (s.captured().movePieces() != null) {
-                    for (Piece q : s.captured().movePieces()) {
-                        out.append("mpiece\t").append((int) q.glyph()).append('\t')
-                                .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
-                                .append(q.h()).append('\n');
-                    }
                 }
                 for (var st : s.captured().states().entrySet()) {
                     for (Piece q : st.getValue()) {
@@ -310,9 +340,35 @@ public final class ScreenPack {
                                 .append(q.h()).append('\n');
                     }
                 }
+                for (var fl : s.captured().fills().entrySet()) {
+                    for (Piece q : fl.getValue()) {
+                        out.append("fill\t").append(fl.getKey()).append('\t').append((int) q.glyph()).append('\t')
+                                .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
+                                .append(q.h()).append('\n');
+                    }
+                }
+                for (var pl : s.captured().placed().entrySet()) {
+                    out.append("placed\t").append(pl.getKey()).append('\t').append(pl.getValue()[0]).append('\t')
+                            .append(pl.getValue()[1]).append('\n');
+                }
+                for (int h : s.captured().hidden()) {
+                    out.append("hidden\t").append(h).append('\n');
+                }
+                for (var sh : s.captured().shifts().entrySet()) {
+                    out.append("shift\t").append(sh.getKey()).append('\t').append(sh.getValue()[0]).append('\t')
+                            .append(sh.getValue()[1]).append('\n');
+                }
+                for (var cv : s.captured().covers().entrySet()) {
+                    for (Piece q : cv.getValue()) {
+                        out.append("cover\t").append(cv.getKey()).append('\t').append((int) q.glyph()).append('\t')
+                                .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
+                                .append(q.h()).append('\n');
+                    }
+                }
                 for (GuiCaptures.Slot slot : s.captured().slots()) {
                     out.append("cslot\t").append(slot.x()).append('\t').append(slot.y()).append('\t')
-                            .append(slot.player()).append('\t').append(slot.index()).append('\n');
+                            .append(slot.player()).append('\t').append(slot.index()).append('\t')
+                            .append(slot.menuIndex()).append('\n');
                 }
             }
             for (Piece p : s.pieces()) {
@@ -343,22 +399,29 @@ public final class ScreenPack {
                 Scene last = out.remove(out.size() - 1);
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>(),
-                        new HashMap<>(), null, new ArrayList<>())));
+                        new HashMap<>(), null)));
             } else if (p[0].equals("move")) {
                 Scene last = out.remove(out.size() - 1);
                 Captured c = last.captured();
-                int[] m = p.length > 3
-                        ? new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3])}
-                        : new int[]{Integer.parseInt(p[1]), Integer.parseInt(p[2]), 1};
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        m, c.movePieces())));
-            } else if (p[0].equals("mpiece")) {
-                Captured c = out.get(out.size() - 1).captured();
-                if (c != null && c.movePieces() != null) {
-                    c.movePieces().add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
-                            Integer.parseInt(p[4]), Integer.parseInt(p[5]), false));
-                }
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden(), c.fills(), c.placed())));
+            } else if (p[0].equals("fill")) {
+                out.get(out.size() - 1).captured().fills().computeIfAbsent(p[1], k -> new ArrayList<>())
+                        .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
+                                Integer.parseInt(p[5]), Integer.parseInt(p[6]), false));
+            } else if (p[0].equals("placed")) {
+                out.get(out.size() - 1).captured().placed().put(p[1],
+                        new int[]{Integer.parseInt(p[2]), Integer.parseInt(p[3])});
+            } else if (p[0].equals("hidden")) {
+                out.get(out.size() - 1).captured().hidden().add(Integer.parseInt(p[1]));
+            } else if (p[0].equals("shift")) {
+                out.get(out.size() - 1).captured().shifts().put(Integer.parseInt(p[1]),
+                        new int[]{Integer.parseInt(p[2]), Integer.parseInt(p[3])});
+            } else if (p[0].equals("cover")) {
+                out.get(out.size() - 1).captured().covers().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
+                        .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
+                                Integer.parseInt(p[5]), Integer.parseInt(p[6]), false));
             } else if (p[0].equals("spiece")) {
                 out.get(out.size() - 1).captured().states().computeIfAbsent(Integer.parseInt(p[1]), k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
@@ -366,7 +429,7 @@ public final class ScreenPack {
             } else if (p[0].equals("cslot")) {
                 out.get(out.size() - 1).captured().slots().add(new GuiCaptures.Slot(
                         Integer.parseInt(p[1]), Integer.parseInt(p[2]), Boolean.parseBoolean(p[3]),
-                        Integer.parseInt(p[4])));
+                        Integer.parseInt(p[4]), p.length > 5 ? Integer.parseInt(p[5]) : -1));
             } else if (p[0].equals("piece") && pieces != null) {
                 pieces.add(new Piece((char) Integer.parseInt(p[1]), Integer.parseInt(p[2]), Integer.parseInt(p[3]),
                         Integer.parseInt(p[4]), Integer.parseInt(p[5]), Boolean.parseBoolean(p[6])));
@@ -412,7 +475,19 @@ public final class ScreenPack {
         StringBuilder listed = new StringBuilder();
         icons.forEach((id, file) -> listed.append(id).append('\t').append(file).append('\n'));
         Files.writeString(iconFile, listed.toString(), StandardCharsets.UTF_8);
-        providers.addAll(new ItemGlyphs(icons).providers());
+        ItemGlyphs itemGlyphs = new ItemGlyphs(icons);
+        providers.addAll(itemGlyphs.providers());
+        // Washed states: the shader holds each wash, a font row each draws the icons and the
+        // counts through it (see HudLayout.Anchor.FREE_WASH).
+        entries.put("assets/minecraft/shaders/core/text.vsh",
+                HudLayout.vertexShader(WASHES).getBytes(StandardCharsets.UTF_8));
+        for (int w = 0; w < WASHES.size(); w++) {
+            int id = HudLayout.washId(HudLayout.Anchor.FREE_WASH, w);
+            JsonObject washed = HudPack.font(id);
+            washed.getAsJsonArray("providers").addAll(itemGlyphs.providers(HudLayout.ascent(id)));
+            entries.put("assets/" + HudPack.NS + "/font/" + HudLayout.fontName(id) + ".json",
+                    washed.toString().getBytes(StandardCharsets.UTF_8));
+        }
         // A provider's file must exist in the pack, or the client drops the font.
         copyIcons(entries, icons, modsDir);
         entries.put("assets/" + HudPack.NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
@@ -560,7 +635,33 @@ public final class ScreenPack {
         }
     }
 
+    /** Every wash the bake found, by font row: alpha, red, green, blue. */
+    static final List<double[]> WASHES = new ArrayList<>();
+    /** The wash the last {@link #coverArt} recognised (k, then red, green, blue added), or null. */
+    private static double[] lastWash;
+
+    private static void noteWash(Map<String, int[]> placed, int state) {
+        if (lastWash == null) {
+            return;
+        }
+        double[] w = lastWash;
+        int index = -1;
+        for (int i = 0; i < WASHES.size(); i++) {
+            if (java.util.Arrays.equals(WASHES.get(i), w)) {
+                index = i;
+            }
+        }
+        if (index < 0 && WASHES.size() < HudLayout.WASHES) {
+            WASHES.add(w);
+            index = WASHES.size() - 1;
+        }
+        if (index >= 0) {
+            placed.put("wash:" + state, new int[]{index, 0});
+        }
+    }
+
     private static Baked bake(Path modsDir) throws IOException {
+        WASHES.clear();
         List<Scene> scenes = new ArrayList<>();
         Map<Character, BufferedImage> art = new java.util.LinkedHashMap<>();
         Map<Character, Integer> heights = new HashMap<>();
@@ -682,6 +783,12 @@ public final class ScreenPack {
             int xSize = 0;
             int ySize = 0;
             List<GuiCaptures.Slot> slots = new ArrayList<>();
+            java.util.Set<Integer> hidden = new java.util.HashSet<>();
+            // Slots the screen draws through the vanilla body (column 6 = 1): only there does the
+            // filled pass show a filled slot's own background.
+            java.util.Set<Integer> vanillaDrawn = new java.util.HashSet<>();
+            Map<String, List<Piece>> fills = new HashMap<>();
+            Map<String, int[]> placed = new HashMap<>();
             for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
                 switch (p[0]) {
@@ -700,8 +807,20 @@ public final class ScreenPack {
                         xSize = Integer.parseInt(p[3]);
                         ySize = Integer.parseInt(p[4]);
                     }
-                    case "slot" -> slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
-                            p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1));
+                    case "slot" -> {
+                        // The menu index the real client gave the slot (column 5): what the
+                        // server's content packet fills it from.
+                        slots.add(new GuiCaptures.Slot(Integer.parseInt(p[1]), Integer.parseInt(p[2]),
+                                p[3].equals("player"), p.length > 4 ? Integer.parseInt(p[4]) : -1,
+                                p.length > 5 ? Integer.parseInt(p[5]) : -1));
+                        // A slot the real screen never draws (column 6, the slot-render record).
+                        if (p.length > 6 && p[6].equals("0")) {
+                            hidden.add(Integer.parseInt(p[5]));
+                        }
+                        if (p.length > 6 && p[6].equals("1")) {
+                            vanillaDrawn.add(Integer.parseInt(p[5]));
+                        }
+                    }
                     default -> {
                     }
                 }
@@ -713,7 +832,17 @@ public final class ScreenPack {
             if (menu == null || image == null) {
                 continue;
             }
-            List<Piece> pieces = captureTiles(opaque(image), scale, left, top, art2, heights);
+            // A screen that draws its slots through the vanilla body: its art with the items left in
+            // their slots and only their pixels skipped (the filled pass), so the screen's own logic
+            // sees what the slots hold (a present's label field turns editable once it holds
+            // something) and a filled slot shows no placeholder. Otherwise the lifted art.
+            // Covers compare the lifted arts, where every slot looks empty alike: a window over a
+            // slot shows, a slot that only looks different once filled (AE2's placeholder) does not.
+            BufferedImage liftedBase = image;
+            image = chooseArt(image, filledOf(tsv, ""), vanillaDrawn);
+            BufferedImage baseFrame = frameOf(tsv, "");
+            BufferedImage baseShown = opaque(image, baseFrame);
+            List<Piece> pieces = captureTiles(baseShown, scale, left, top, art2, heights);
             if (pieces.isEmpty()) {
                 continue;
             }
@@ -721,36 +850,67 @@ public final class ScreenPack {
             // Its buttons are kept when that class belongs to this menu alone, because
             // the capture has their pixels but not where a click should land.
             String key = menu;
+            addFills(fills, -1, image, filledOf(tsv, ""), slots, vanillaDrawn, scale, left, top, art2, heights);
             List<Widget> widgets = new ArrayList<>();
             Map<Integer, List<Piece>> states = new HashMap<>();
+            Map<Integer, List<Piece>> covers = new HashMap<>();
+            Map<Integer, int[]> shifts = new HashMap<>();
             int[] move = null;
-            List<Piece> movePieces = null;
             Path presses = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".presses"));
             if (Files.isRegularFile(presses)) {
                 // What the real client pressed is the exact list of controls, in order.
                 for (String line : Files.readAllLines(presses, StandardCharsets.UTF_8)) {
                     String[] q = line.split("\t");
                     if (q[0].equals("move") && move == null) {
-                        boolean accepted = q.length > 3 ? Boolean.parseBoolean(q[3]) : true;
-                        move = new int[]{Integer.parseInt(q[1]), Integer.parseInt(q[2]), accepted ? 1 : 0};
+                        // Every click of the move, in order (a third puts a copied stack back).
+                        move = java.util.Arrays.stream(q).skip(1).mapToInt(Integer::parseInt).toArray();
+                        // How the screen itself looks once the slot holds something (a present's
+                        // label field turns editable): the move's own art, items lifted, as a state.
                         Path moveArt = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".move.png"));
-                        if (Files.isRegularFile(moveArt)) {
-                            BufferedImage moveImage = ImageIO.read(moveArt.toFile());
-                            if (moveImage != null) {
-                                movePieces = captureTiles(opaque(moveImage), scale, left, top, art2, heights);
+                        BufferedImage moveImage = Files.isRegularFile(moveArt) ? ImageIO.read(moveArt.toFile()) : null;
+                        BufferedImage liftedMove = moveImage;
+                        moveImage = moveImage == null ? null : chooseArt(moveImage, filledOf(tsv, ".move"), vanillaDrawn);
+                        if (moveImage != null) {
+                            BufferedImage shown = opaque(moveImage, frameOf(tsv, ".move"));
+                            BufferedImage over = coverArt(liftedBase, liftedMove, shown, baseShown, baseFrame,
+                                    frameOf(tsv, ".move"), filledOf(tsv, ".move"), slots,
+                                    statePositions(slots, placed, MOVE_STATE, null), scale, left, top);
+                            states.put(MOVE_STATE, captureTiles(shown, scale, left, top, art2, heights));
+                            addFills(fills, MOVE_STATE, moveImage, filledOf(tsv, ".move"), slots, vanillaDrawn, scale,
+                                    left, top, art2, heights);
+                            if (over != null) {
+                                covers.put(MOVE_STATE, captureTiles(over, scale, left, top, art2, heights));
                             }
+                            noteWash(placed, MOVE_STATE);
                         }
                     } else if (q[0].equals("press")) {
                         int i = widgets.size();
-                        int targetId = Integer.parseInt(q[1]);
+                        // What the real press sent rides the label: the HUD presses the scanned
+                        // button that sends the same payload.
+                        String sent = q.length > 8 && !q[8].equals("-") ? " sent=" + q[8] : "";
                         widgets.add(new Widget(Integer.parseInt(q[2]), Integer.parseInt(q[3]), Integer.parseInt(q[4]),
-                                Integer.parseInt(q[5]), "press " + targetId));
-                        Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + targetId + ".png"));
+                                Integer.parseInt(q[5]), "press " + q[1] + sent));
+                        if (q.length > 7 && (Integer.parseInt(q[6]) != 0 || Integer.parseInt(q[7]) != 0)) {
+                            shifts.put(i, new int[]{Integer.parseInt(q[6]), Integer.parseInt(q[7])});
+                        }
+                        readPlaced(placed, i, tsv.resolveSibling(tsv.getFileName().toString()
+                                .replaceAll("\\.tsv$", ".w" + q[1] + ".slots")), slots);
+                        Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
+                        BufferedImage liftedState = stateImage;
+                        stateImage = stateImage == null ? null : chooseArt(stateImage, filledOf(tsv, ".w" + q[1]), vanillaDrawn);
                         if (stateImage != null) {
-                            List<Piece> tiles = captureTiles(opaque(stateImage), scale, left, top, art2, heights);
-                            states.put(targetId, tiles);
-                            states.put(i, tiles);
+                            BufferedImage shown = opaque(stateImage, frameOf(tsv, ".w" + q[1]));
+                            BufferedImage over = coverArt(liftedBase, liftedState, shown, baseShown, baseFrame,
+                                    frameOf(tsv, ".w" + q[1]), filledOf(tsv, ".w" + q[1]), slots,
+                                    statePositions(slots, placed, i, shifts.get(i)), scale, left, top);
+                            states.put(i, captureTiles(shown, scale, left, top, art2, heights));
+                            addFills(fills, i, stateImage, filledOf(tsv, ".w" + q[1]), slots, vanillaDrawn, scale,
+                                    left, top, art2, heights);
+                            if (over != null) {
+                                covers.put(i, captureTiles(over, scale, left, top, art2, heights));
+                            }
+                            noteWash(placed, i);
                         }
                     }
                 }
@@ -766,8 +926,408 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, movePieces)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts, hidden, fills,
+                            placed)));
         }
+    }
+
+    /**
+     * Whether a state draws something else there, not just a shade of the same: a window or a
+     * popup changes a slot's pixels outright.
+     */
+    private static boolean visiblyDifferent(int a, int b) {
+        int da = Math.abs((a >>> 24) - (b >>> 24));
+        int dr = Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF));
+        int dg = Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF));
+        int db = Math.abs((a & 0xFF) - (b & 0xFF));
+        return Math.max(da, Math.max(dr, Math.max(dg, db))) > 24;
+    }
+
+    /**
+     * A translucent wash a state lays over the whole screen, the items in the slots included
+     * (measured: Mekanism's robit rename window tints everything behind it, 139 grey to
+     * 120,120,136): one colour blended at one alpha, as the real fill blends it.
+     */
+    record Wash(int alpha, int r, int g, int b) {
+        static int blend(int c, int a, int d) {
+            return (int) Math.round((c * a + d * (255 - a)) / 255.0);
+        }
+
+        int over(int base) {
+            return 0xFF000000 | blend(r, alpha, (base >> 16) & 0xFF) << 16
+                    | blend(g, alpha, (base >> 8) & 0xFF) << 8 | blend(b, alpha, base & 0xFF);
+        }
+
+        boolean fits(int base, int state) {
+            return base >>> 24 == 0xFF && state >>> 24 == 0xFF && over(base) == state;
+        }
+
+        int argb() {
+            return alpha << 24 | r << 16 | g << 8 | b;
+        }
+    }
+
+    /**
+     * The wash a state casts over the slots, or null: fitted to the slot pixels that changed,
+     * kept only when one colour at one alpha reproduces most of them exactly across most slots.
+     */
+    static Wash washOf(BufferedImage base, BufferedImage state, List<GuiCaptures.Slot> slots, List<int[]> at,
+                       int scale, int left, int top) {
+        Map<Long, Integer> pairs = new HashMap<>();
+        int changed = 0;
+        int squares = 0;
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            squares++;
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int dx = (at.get(i)[0] - slot.x()) * scale;
+            int dy = (at.get(i)[1] - slot.y()) * scale;
+            for (int y = y0; y < y0 + 18 * scale; y++) {
+                for (int x = x0; x < x0 + 18 * scale; x++) {
+                    if (!inside(base, x, y) || !inside(state, x + dx, y + dy)) {
+                        continue;
+                    }
+                    int b = base.getRGB(x, y);
+                    int s = state.getRGB(x + dx, y + dy);
+                    if (b != s && b >>> 24 == 0xFF && s >>> 24 == 0xFF) {
+                        pairs.merge((long) (b & 0xFFFFFF) << 24 | (s & 0xFFFFFF), 1, Integer::sum);
+                        changed++;
+                    }
+                }
+            }
+        }
+        if (squares == 0 || pairs.size() < 2) {
+            return null;
+        }
+        // The slope from the most common change of each base shade, robust to a window's pixels.
+        double sw = 0, sb = 0, ss = 0, sbb = 0, sbs = 0;
+        Map<Integer, int[]> modes = new HashMap<>();
+        for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+            int b = (int) (e.getKey() >>> 24);
+            int[] best = modes.get(b);
+            if (best == null || e.getValue() > best[1]) {
+                modes.put(b, new int[]{(int) (e.getKey() & 0xFFFFFF), e.getValue()});
+            }
+        }
+        for (Map.Entry<Integer, int[]> e : modes.entrySet()) {
+            double w = e.getValue()[1];
+            for (int sh = 0; sh <= 16; sh += 8) {
+                double b = (e.getKey() >> sh) & 0xFF;
+                double s = (e.getValue()[0] >> sh) & 0xFF;
+                sw += w;
+                sb += w * b;
+                ss += w * s;
+                sbb += w * b * b;
+                sbs += w * b * s;
+            }
+        }
+        double var = sbb - sb * sb / sw;
+        if (var < 1) {
+            return null;
+        }
+        double k = (sbs - sb * ss / sw) / var;
+        int a0 = (int) Math.round(255 * (1 - k));
+        Wash best = null;
+        int bestHits = 0;
+        for (int a = Math.max(8, a0 - 4); a <= Math.min(247, a0 + 4); a++) {
+            int[] c = new int[3];
+            for (int ch = 0; ch < 3; ch++) {
+                int sh = 16 - 8 * ch;
+                int[] votes = new int[256];
+                for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+                    int b = (int) (e.getKey() >>> (24 + sh)) & 0xFF;
+                    int s = (int) (e.getKey() >>> sh) & 0xFF;
+                    // The colours that blend to s: a short run around (s*255 - b*(255-a)) / a.
+                    double mid = (s * 255.0 - b * (255.0 - a)) / a;
+                    int span = 255 / a + 2;
+                    for (int cc = Math.max(0, (int) mid - span); cc <= Math.min(255, (int) mid + span); cc++) {
+                        if (Wash.blend(cc, a, b) == s) {
+                            votes[cc] += e.getValue();
+                        }
+                    }
+                }
+                for (int cc = 1; cc < 256; cc++) {
+                    if (votes[cc] > votes[c[ch]]) {
+                        c[ch] = cc;
+                    }
+                }
+            }
+            Wash w = new Wash(a, c[0], c[1], c[2]);
+            int hits = 0;
+            for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+                if (w.over((int) (e.getKey() >>> 24)) == (0xFF000000 | (int) (e.getKey() & 0xFFFFFF))) {
+                    hits += e.getValue();
+                }
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = w;
+            }
+        }
+        if (best == null || bestHits * 5 < changed * 3) {
+            return null;
+        }
+        // Screen-wide: the wash changed most slots, not a shadow along one window's edge.
+        int washed = 0;
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            int cx = (left + slot.x()) * scale + 8 * scale;
+            int cy = (top + slot.y()) * scale + 8 * scale;
+            int sx = (left + at.get(i)[0]) * scale + 8 * scale;
+            int sy = (top + at.get(i)[1]) * scale + 8 * scale;
+            if (inside(base, cx, cy) && inside(state, sx, sy)) {
+                int b = base.getRGB(cx, cy);
+                int s = state.getRGB(sx, sy);
+                if (b != s && best.fits(b, s)) {
+                    washed++;
+                }
+            }
+        }
+        return washed * 2 >= squares ? best : null;
+    }
+
+    /**
+     * What a press state draws over the slots, or null; drawn after the items. Both arts are
+     * captured with the inventory lifted, so only the screen itself differs.
+     * <ul>
+     * <li>A slot a window or popup reaches (some pixel visibly different): every pixel the
+     * state changed there, opaque, hides what lies under the window and leaves what does not
+     * (measured: Mekanism's Upgrades window hides the slots beneath it, its grey list within a
+     * few levels of the slot's own grey; its side configuration leaves a diamond's count
+     * showing below its edge).</li>
+     * <li>A wash over the whole screen ({@link #washOf}): its colour at its alpha over every
+     * slot pixel it explains, with the state's tile showing the base there, so an item in the
+     * slot is washed as the real screen washes it.</li>
+     * <li>A faint change no wash explains covers nothing.</li>
+     * <li>Where the base's real frame shows an item (it differs from the lifted art), the
+     * state's real frame tells: showing the state's own art there, the state hides the item
+     * (measured: the robit's skin window draws cells of the slot's own grey over the
+     * inventory, so no colour tells the cell from the slot); showing something over the art,
+     * the item stays in view.</li>
+     * </ul>
+     * {@code shown}: the state's tiles, {@code baseShown}: the base's; washed pixels of
+     * {@code shown} take the base's pixel. {@code at}: where each slot sits in the state (a
+     * press that lays the screen out again moves them): the state's square there is judged
+     * against the base's square where the slot opened, so a moved screen is not a window.
+     */
+    static BufferedImage coverArt(BufferedImage base, BufferedImage state, BufferedImage shown,
+                                  BufferedImage baseShown, List<GuiCaptures.Slot> slots, List<int[]> at,
+                                  int scale, int left, int top) {
+        return coverArt(base, state, shown, baseShown, null, null, null, slots, at, scale, left, top);
+    }
+
+    static BufferedImage coverArt(BufferedImage base, BufferedImage state, BufferedImage shown,
+                                  BufferedImage baseShown, BufferedImage baseFrame, BufferedImage stateFrame,
+                                  BufferedImage stateFilled, List<GuiCaptures.Slot> slots, List<int[]> at,
+                                  int scale, int left, int top) {
+        lastWash = null;
+        if (base.getWidth() != state.getWidth() || base.getHeight() != state.getHeight()
+                || shown.getWidth() != state.getWidth() || shown.getHeight() != state.getHeight()) {
+            return null;
+        }
+        boolean frames = baseFrame != null && stateFrame != null
+                && baseFrame.getWidth() == base.getWidth() && baseFrame.getHeight() == base.getHeight()
+                && stateFrame.getWidth() == state.getWidth() && stateFrame.getHeight() == state.getHeight();
+        boolean filled = frames && stateFilled != null
+                && stateFilled.getWidth() == state.getWidth() && stateFilled.getHeight() == state.getHeight();
+        // Measured (run f2fa3ff3): the vanilla client blends a translucent glyph a level off the
+        // real fill (139 under the robit's wash: 121 against 120), across every washed slot. A
+        // wash is recognised, so it reaches no slot as a window, but not drawn.
+        Wash wash = washOf(base, state, slots, at, scale, left, top);
+        boolean washable = wash != null && baseShown != null
+                && baseShown.getWidth() == shown.getWidth() && baseShown.getHeight() == shown.getHeight();
+        lastWash = washable ? new double[]{(255 - wash.alpha()) / 255.0, wash.r() * wash.alpha() / 255.0,
+                wash.g() * wash.alpha() / 255.0, wash.b() * wash.alpha() / 255.0} : null;
+        if (washable && frames) {
+            double[] measured = washFromFrames(baseFrame, stateFrame, base, state, wash, slots, at, scale, left, top);
+            if (measured != null) {
+                lastWash = measured;
+            }
+        }
+        BufferedImage out = null;
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            // The item and its count: 16 pixels, the count's shadow one more past the 17th.
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int dx = (at.get(i)[0] - slot.x()) * scale;
+            int dy = (at.get(i)[1] - slot.y()) * scale;
+            int size = 18 * scale;
+            boolean reached = false;
+            for (int y = y0; y < y0 + size && !reached; y++) {
+                for (int x = x0; x < x0 + size && !reached; x++) {
+                    if (inside(base, x, y) && inside(state, x + dx, y + dy)) {
+                        int b = base.getRGB(x, y);
+                        int s = state.getRGB(x + dx, y + dy);
+                        reached = visiblyDifferent(b, s) && !(washable && wash.fits(b, s));
+                    }
+                }
+            }
+            for (int y = y0; y < y0 + size; y++) {
+                for (int x = x0; x < x0 + size; x++) {
+                    if (!inside(base, x, y) || !inside(state, x + dx, y + dy)) {
+                        continue;
+                    }
+                    int b = base.getRGB(x, y);
+                    int s = state.getRGB(x + dx, y + dy);
+                    int pixel;
+                    int item = frames ? itemShown(base, baseFrame, x, y) : 0;
+                    if (filled && drawnOverItem(state, stateFilled, stateFrame, x + dx, y + dy)) {
+                        // What the screen draws once the slot holds something, in view on the real
+                        // frame (Create's requester writes the amount over its filter items).
+                        pixel = 0xFF000000 | stateFilled.getRGB(x + dx, y + dy);
+                    } else if (washable && wash.fits(b, s)) {
+                        continue;
+                    } else if (item > 0 && itemShown(state, stateFrame, x + dx, y + dy) == 0) {
+                        // The base's frame drew an item here; the state's frame shows its own art.
+                        pixel = shown.getRGB(x + dx, y + dy);
+                    } else if (item > 0 && itemShown(state, stateFrame, x + dx, y + dy) > 0) {
+                        continue;
+                    } else if (reached && b != s) {
+                        pixel = shown.getRGB(x + dx, y + dy);
+                    } else {
+                        continue;
+                    }
+                    if (out == null) {
+                        out = new BufferedImage(base.getWidth(), base.getHeight(), BufferedImage.TYPE_INT_ARGB);
+                    }
+                    out.setRGB(x + dx, y + dy, pixel);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Whether the real frame shows something over the art at this pixel: 1 it does (an item),
+     * 0 it shows the art itself, -1 the art lets the world through there (no evidence).
+     */
+    private static int itemShown(BufferedImage art, BufferedImage frame, int x, int y) {
+        int a = art.getRGB(x, y);
+        int alpha = a >>> 24;
+        // Colour with zero alpha is solid in a real framebuffer (see opaque()).
+        if (alpha != 0xFF && !(alpha == 0 && (a & 0xFFFFFF) != 0)) {
+            return -1;
+        }
+        return (frame.getRGB(x, y) & 0xFFFFFF) != (a & 0xFFFFFF) ? 1 : 0;
+    }
+
+    /**
+     * The filled pass (items in their slots, only their pixels skipped) draws something the
+     * lifted pass does not, and the real frame shows it: drawn by the screen over the item.
+     * A placeholder an empty slot shows is the other way round: the item hides it.
+     */
+    private static boolean drawnOverItem(BufferedImage lifted, BufferedImage filled, BufferedImage frame, int x, int y) {
+        int f = filled.getRGB(x, y);
+        int fa = f >>> 24;
+        if (fa != 0xFF && !(fa == 0 && (f & 0xFFFFFF) != 0)) {
+            return false;
+        }
+        int l = lifted.getRGB(x, y);
+        boolean liftedSolid = l >>> 24 == 0xFF || (l >>> 24 == 0 && (l & 0xFFFFFF) != 0);
+        if (liftedSolid && (l & 0xFFFFFF) == (f & 0xFFFFFF)) {
+            return false;
+        }
+        return (frame.getRGB(x, y) & 0xFFFFFF) == (f & 0xFFFFFF);
+    }
+
+    /**
+     * The wash as the real frames show it, the items under it included: one factor and one
+     * added colour per channel that reproduce the most frame pixels exactly (measured: the
+     * robit's wash puts 252 at 207 and 139 at 120, which no 8-bit colour and alpha does both).
+     */
+    static double[] washFromFrames(BufferedImage baseFrame, BufferedImage stateFrame, BufferedImage base,
+                                   BufferedImage state, Wash wash, List<GuiCaptures.Slot> slots, List<int[]> at,
+                                   int scale, int left, int top) {
+        Map<Long, Integer> pairs = new HashMap<>();
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int dx = (at.get(i)[0] - slot.x()) * scale;
+            int dy = (at.get(i)[1] - slot.y()) * scale;
+            for (int y = y0; y < y0 + 18 * scale; y++) {
+                for (int x = x0; x < x0 + 18 * scale; x++) {
+                    if (!inside(base, x, y) || !inside(state, x + dx, y + dy)
+                            || !wash.fits(base.getRGB(x, y), state.getRGB(x + dx, y + dy))) {
+                        continue;
+                    }
+                    long b = baseFrame.getRGB(x, y) & 0xFFFFFFL;
+                    long s = stateFrame.getRGB(x + dx, y + dy) & 0xFFFFFFL;
+                    pairs.merge(b << 24 | s, 1, Integer::sum);
+                }
+            }
+        }
+        if (pairs.size() < 2) {
+            return null;
+        }
+        double k0 = (255 - wash.alpha()) / 255.0;
+        double[] best = null;
+        int bestHits = -1;
+        for (int step = -80; step <= 80; step++) {
+            double k = k0 + step * 0.0002;
+            double[] out = {k, 0, 0, 0};
+            int hits = 0;
+            for (int ch = 0; ch < 3; ch++) {
+                int sh = 16 - 8 * ch;
+                // Each pair allows added colours in [s - 0.5 - b*k, s + 0.5 - b*k): the most covered point.
+                List<double[]> events = new ArrayList<>();
+                for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+                    int b = (int) (e.getKey() >>> (24 + sh)) & 0xFF;
+                    int sv = (int) (e.getKey() >>> sh) & 0xFF;
+                    events.add(new double[]{sv - 0.5 - b * k, e.getValue()});
+                    events.add(new double[]{sv + 0.5 - b * k, -e.getValue()});
+                }
+                events.sort((p, q) -> p[0] != q[0] ? Double.compare(p[0], q[0]) : Double.compare(p[1], q[1]));
+                int run = 0;
+                int top1 = -1;
+                double at1 = 0;
+                for (int j = 0; j < events.size(); j++) {
+                    run += (int) events.get(j)[1];
+                    if (run > top1 && j + 1 < events.size()) {
+                        top1 = run;
+                        at1 = (events.get(j)[0] + events.get(j + 1)[0]) / 2;
+                    }
+                }
+                out[1 + ch] = at1;
+                hits += top1;
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = out;
+            }
+        }
+        return best;
+    }
+
+    private static boolean inside(BufferedImage image, int x, int y) {
+        return x >= 0 && y >= 0 && x < image.getWidth() && y < image.getHeight();
+    }
+
+    /** Where each slot sits in a state: its placed position there, moved by the state's shift. */
+    private static List<int[]> statePositions(List<GuiCaptures.Slot> slots, Map<String, int[]> placed, int state,
+                                              int[] shift) {
+        List<int[]> at = new ArrayList<>();
+        for (GuiCaptures.Slot slot : slots) {
+            int[] p = placed.get(state + ":" + slot.menuIndex());
+            int x = p != null ? p[0] : slot.x();
+            int y = p != null ? p[1] : slot.y();
+            at.add(shift == null ? new int[]{x, y} : new int[]{x + shift[0], y + shift[1]});
+        }
+        return at;
     }
 
     /**
@@ -775,14 +1335,155 @@ public final class ScreenPack {
      * colour is what a player sees: any pixel holding colour counts as solid.
      */
     private static BufferedImage opaque(BufferedImage src) {
+        return opaque(src, null);
+    }
+
+    /**
+     * {@code frame}: the real screenshot taken with the capture. A translucent capture pixel is
+     * either a shadow over the world (the frame shows the world through it) or a pixel the
+     * screen covered with a blend that left alpha below 255 (AE2's "Out of Power" overlay: the
+     * frame shows exactly the captured colour). Only the first stays translucent.
+     */
+    private static BufferedImage opaque(BufferedImage src, BufferedImage frame) {
+        boolean judge = frame != null && frame.getWidth() == src.getWidth() && frame.getHeight() == src.getHeight();
         BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < src.getHeight(); y++) {
             for (int x = 0; x < src.getWidth(); x++) {
                 int c = src.getRGB(x, y);
-                out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+                int alpha = c >>> 24;
+                if (alpha == 0 && (c & 0xFFFFFF) != 0 && judge && near(c, frame.getRGB(x, y))) {
+                    // Colour with zero alpha is solid in a real framebuffer, and the real frame
+                    // says which colour: drawn over the screen's background, a little darker than
+                    // the capture over nothing (measured: Mekanism's window border, 3-4 levels).
+                    out.setRGB(x, y, 0xFF000000 | (frame.getRGB(x, y) & 0xFFFFFF));
+                } else if (alpha == 0) {
+                    // Colour with zero alpha is solid in a real framebuffer.
+                    out.setRGB(x, y, (c & 0xFFFFFF) != 0 ? 0xFF000000 | c : c);
+                } else if (alpha < 255 && judge && !sameColour(c, frame.getRGB(x, y)) && near(c, frame.getRGB(x, y))) {
+                    // The same, for a covered pixel whose blend left alpha below 255.
+                    out.setRGB(x, y, 0xFF000000 | (frame.getRGB(x, y) & 0xFFFFFF));
+                } else if (alpha < 255 && (!judge || sameColour(c, frame.getRGB(x, y)))) {
+                    // The real frame shows the captured colour itself: the screen covered this pixel.
+                    out.setRGB(x, y, 0xFF000000 | c);
+                } else if (alpha < 255) {
+                    // Nothing of the screen beneath it: a shadow over the world. The capture holds
+                    // it premultiplied (drawn over transparent black); the client blends a glyph
+                    // as colour*alpha over the world, so the colour goes back to straight.
+                    int r = Math.min(255, Math.round(((c >> 16) & 0xFF) * 255f / alpha));
+                    int g = Math.min(255, Math.round(((c >> 8) & 0xFF) * 255f / alpha));
+                    int b = Math.min(255, Math.round((c & 0xFF) * 255f / alpha));
+                    out.setRGB(x, y, (alpha << 24) | (r << 16) | (g << 8) | b);
+                } else {
+                    out.setRGB(x, y, c);
+                }
             }
         }
         return out;
+    }
+
+    /** Within a few levels per channel: the same pixel drawn over a slightly different backdrop. */
+    private static boolean near(int a, int b) {
+        return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 8
+                && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 8
+                && Math.abs((a & 0xFF) - (b & 0xFF)) <= 8;
+    }
+
+    private static boolean sameColour(int a, int b) {
+        return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 1
+                && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 1
+                && Math.abs((a & 0xFF) - (b & 0xFF)) <= 1;
+    }
+
+    /** A state's slot positions where they differ from the screen as opened. */
+    private static void readPlaced(Map<String, int[]> placed, int state, Path file, List<GuiCaptures.Slot> slots)
+            throws IOException {
+        if (!Files.isRegularFile(file)) {
+            return;
+        }
+        Map<Integer, GuiCaptures.Slot> opened = new HashMap<>();
+        for (GuiCaptures.Slot s : slots) {
+            opened.put(s.menuIndex(), s);
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String[] p = line.split("\t");
+            if (p.length < 3) {
+                continue;
+            }
+            int index = Integer.parseInt(p[0]);
+            int x = Integer.parseInt(p[1]);
+            int y = Integer.parseInt(p[2]);
+            GuiCaptures.Slot was = opened.get(index);
+            if (was != null && (was.x() != x || was.y() != y)) {
+                placed.put(state + ":" + index, new int[]{x, y});
+            }
+        }
+    }
+
+    private static BufferedImage chooseArt(BufferedImage lifted, BufferedImage filled, java.util.Set<Integer> vanillaDrawn) {
+        return !vanillaDrawn.isEmpty() && filled != null && filled.getWidth() == lifted.getWidth()
+                && filled.getHeight() == lifted.getHeight() ? filled : lifted;
+    }
+
+    private static BufferedImage filledOf(Path tsv, String suffix) {
+        Path f = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", suffix + ".filled.png"));
+        try {
+            return Files.isRegularFile(f) ? ImageIO.read(f.toFile()) : null;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Each slot's background as the screen draws it when the slot holds an item, where that
+     * differs from the empty look in the art (AE2's inscriber draws a placeholder only in an
+     * empty slot): a few tiles per slot, keyed by state and menu index, drawn before the item.
+     */
+    private static void addFills(Map<String, List<Piece>> fills, int state, BufferedImage art, BufferedImage filled,
+                                 List<GuiCaptures.Slot> slots, java.util.Set<Integer> vanillaDrawn, int scale,
+                                 int left, int top, Map<Character, BufferedImage> glyphs,
+                                 Map<Character, Integer> heights) throws IOException {
+        if (art == null || filled == null || art.getWidth() != filled.getWidth()
+                || art.getHeight() != filled.getHeight()) {
+            return;
+        }
+        BufferedImage opaqueFilled = opaque(filled);
+        for (GuiCaptures.Slot slot : slots) {
+            if (slot.x() <= -1000 || !vanillaDrawn.contains(slot.menuIndex())) {
+                continue;
+            }
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int size = 16 * scale;
+            BufferedImage tile = null;
+            for (int y = Math.max(0, y0); y < Math.min(art.getHeight(), y0 + size); y++) {
+                for (int x = Math.max(0, x0); x < Math.min(art.getWidth(), x0 + size); x++) {
+                    if (art.getRGB(x, y) != filled.getRGB(x, y)) {
+                        if (tile == null) {
+                            tile = new BufferedImage(art.getWidth(), art.getHeight(), BufferedImage.TYPE_INT_ARGB);
+                        }
+                        tile.setRGB(x, y, opaqueFilled.getRGB(x, y));
+                    }
+                }
+            }
+            if (tile != null) {
+                // The whole square, so the empty look under it is gone wherever the item leaves it.
+                for (int y = Math.max(0, y0); y < Math.min(art.getHeight(), y0 + size); y++) {
+                    for (int x = Math.max(0, x0); x < Math.min(art.getWidth(), x0 + size); x++) {
+                        tile.setRGB(x, y, opaqueFilled.getRGB(x, y));
+                    }
+                }
+                fills.put(state + ":" + slot.menuIndex(), captureTiles(tile, scale, left, top, glyphs, heights));
+            }
+        }
+    }
+
+    private static BufferedImage frameOf(Path tsv, String suffix) {
+        Path f = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", suffix + ".frame"));
+        try {
+            return Files.isRegularFile(f) ? ImageIO.read(f.toFile()) : null;
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** Cuts the opaque area into glyphs that land one GUI pixel per {@code scale} source pixels. */

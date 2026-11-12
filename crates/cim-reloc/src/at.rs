@@ -46,7 +46,15 @@ impl AccessTransformTable {
                 let entry = table.classes.entry(class).or_default();
                 match member {
                     Some(m) => {
-                        entry.members.insert(m, at);
+                        // Several mods may name one member; the AT engine keeps the widest
+                        // access and every modifier removal any of them asks for (measured:
+                        // glitchcore's public-f AxeItem.STRIPPABLES lost to another mod's
+                        // plain public, and its write to the still-final field failed).
+                        entry
+                            .members
+                            .entry(m)
+                            .and_modify(|seen| *seen = merge(*seen, at))
+                            .or_insert(at);
                     }
                     None => entry.class_level.push(at),
                 }
@@ -122,6 +130,26 @@ fn parse_line(line: &str) -> Option<(String, Option<String>, AccessTransform)> {
         m.to_string()
     });
     Some((target.replace('.', "/"), member, at))
+}
+
+/// Two directives for one member, combined: the more open visibility, and every flag
+/// change either asks for.
+fn merge(a: AccessTransform, b: AccessTransform) -> AccessTransform {
+    let rank = |v: u16| match v {
+        ACC_PUBLIC => 3,
+        ACC_PROTECTED => 2,
+        _ => 1,
+    };
+    AccessTransform {
+        visibility: if rank(b.visibility) > rank(a.visibility) {
+            b.visibility
+        } else {
+            a.visibility
+        },
+        clear_final: a.clear_final || b.clear_final,
+        clear_static: a.clear_static || b.clear_static,
+        make_static: a.make_static || b.make_static,
+    }
 }
 
 /// Apply an access transform to one member's access flags.
@@ -201,6 +229,22 @@ mod tests {
         assert!(t
             .for_member("net/minecraft/world/level/biome/Biome$BiomeBuilder", "*()")
             .is_some());
+    }
+
+    #[test]
+    fn directives_for_one_member_merge_to_the_widest() {
+        let t = AccessTransformTable::parse(
+            "public-f net.minecraft.world.item.AxeItem STRIPPABLES\n\
+             public net.minecraft.world.item.AxeItem STRIPPABLES # STRIPPABLES\n",
+        );
+        let at = t
+            .for_member("net/minecraft/world/item/AxeItem", "STRIPPABLES")
+            .expect("entry");
+        assert!(
+            at.clear_final,
+            "the -f of one mod survives another's plain public"
+        );
+        assert_eq!(at.visibility, ACC_PUBLIC);
     }
 
     #[test]

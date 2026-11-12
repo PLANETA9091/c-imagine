@@ -23,6 +23,8 @@ concurrency:
 env:
   # Every item of every mod in the lock: whatever menu its own code opens gets a move and a close.
   CIM_LIVE_SELFTEST: all
+  # And a placement: the item set down by its own sneaking click, opened as the block it became.
+  CIM_LIVE_PLACE: sophisticatedbackpacks:backpack
 
 jobs:
   buttons:
@@ -174,6 +176,10 @@ jobs:
           bash scripts/run-m2-harness.sh layer1211/libraries mods out-live || true
           grep '\[cimlive\]' out-live/harness.log | tee layer-live.txt
           grep -q "\[cimlive\] selftest ok" out-live/harness.log || { grep -n 'cimlive\|Exception' out-live/harness.log | tail -60; exit 1; }
+          grep -q "\[cimlive\] selftest place opened menu.*sophisticatedbackpacks:backpack.* own=27" out-live/harness.log \
+            || { echo "ASSERTION FAILED: the placed backpack did not open with its storage"; grep 'selftest place' out-live/harness.log; exit 1; }
+          grep -q "\[cimlive\] selftest place reopened, first own slot minecraft:diamond" out-live/harness.log \
+            || { echo "ASSERTION FAILED: the placed backpack lost its storage between a close and a reopen"; grep 'selftest place' out-live/harness.log; exit 1; }
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -246,8 +252,8 @@ jobs:
           curl -sL --max-time 300 -o nf-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           JAVA_HOME="$JAVA_HOME_21_X64" java -jar nf-installer.jar --installServer srv/layer1211
-      - name: fetch Create
-        run: bash scripts/cimscene/fetch-ladder.sh mods-create create
+      - name: fetch Create and Sophisticated Backpacks
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create sophisticated-backpacks sophisticated-core
       - name: install module, plugin and mods
         run: |
           mkdir -p srv/crus
@@ -268,6 +274,8 @@ jobs:
           CIM_LIVETEST_BUTTON: blacklist
           # ...and a mod block: Create's toolbox, its block entity kept by Paper between openings.
           CIM_LIVETEST_BLOCK: create:brown_toolbox
+          # ...and a mod item set down in the world by its own code, then opened as that block.
+          CIM_LIVETEST_PLACE: sophisticatedbackpacks:backpack
           CIM_LIVE_SELFTEST: ''
         run: |
           set +e
@@ -309,6 +317,14 @@ jobs:
             || fail "the toolbox block's own use did not open its menu on Paper"
           grep -q "\[cim-live\] paper block reopen: first own slot minecraft:diamond x5" live-paper.txt \
             || fail "the toolbox did not keep the diamonds between two openings (block entity data through Paper)"
+          grep -q "\[cim-live\] paper place sophisticatedbackpacks:backpack -> placed sophisticatedbackpacks:backpack with its block entity data" live-paper.txt \
+            || fail "the backpack's own sneaking click did not place it as a block with its data"
+          grep -q "\[cim-live\] paper placed block open -> sophisticatedbackpacks:backpack own=27" live-paper.txt \
+            || fail "the placed backpack block did not open with its 27 slots of storage"
+          grep -q "\[cim-live\] paper placed block broken -> removed=true drops \[sophisticatedbackpacks:backpack x1\]" live-paper.txt \
+            || fail "breaking the placed backpack did not drop the backpack by its own loot"
+          grep -q "\[cim-live\] paper dropped item open -> sophisticatedbackpacks:backpack first own slot minecraft:diamond x5" live-paper.txt \
+            || fail "the dropped backpack lost what was stored in it while it was a block"
           echo "live menus on Paper: Create's FilterMenu, its blacklist button and the toolbox block ran Create's own code"
       - uses: actions/upload-artifact@v4
         if: always()

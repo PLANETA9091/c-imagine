@@ -62,5 +62,15 @@ for ns, n in sorted(count.items()):
     include += [{"ns": ns, "si": i, "k": k} for i in range(k)]
 print(json.dumps({"include": include}))
 PY
+# A quick check of one fix: only the namespaces asked for (workflow_dispatch input).
+if [ -n "${ONLY_NS:-}" ]; then
+  python3 - "$ONLY_NS" <<'PY'
+import json, sys
+keep = set(sys.argv[1].split())
+m = json.load(open('matrix.json'))
+m['include'] = [e for e in m['include'] if e['ns'] in keep]
+json.dump(m, open('matrix.json', 'w'))
+PY
+fi
 cat matrix.json
 echo "matrix=$(cat matrix.json)" >> "$GITHUB_OUTPUT"

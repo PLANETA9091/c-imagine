@@ -52,6 +52,16 @@ public final class HudBootstrap {
         return screens == null ? java.util.List.of("no screens") : screens.liveSelfTest(player, itemId);
     }
 
+    /** Whether the live button scan has finished (integration waits for it off the server thread). */
+    public static boolean liveScanDone() {
+        return screens == null || screens.liveScanDone();
+    }
+
+    /** Integration: a mod item placed by its own code, then opened as a block, see {@link ScreenHud#livePlaceTest}. */
+    public static java.util.List<String> livePlaceTest(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.livePlaceTest(player, itemId);
+    }
+
     /** Integration: block menus on Paper end to end, see {@link ScreenHud#liveBlockTest}. */
     public static java.util.List<String> liveBlockTest(org.bukkit.entity.Player player, String blockId) {
         return screens == null ? java.util.List.of("no screens") : screens.liveBlockTest(player, blockId);
@@ -66,12 +76,22 @@ public final class HudBootstrap {
     /** The gallery's ours leg: shows the menu it recorded, to the harness account too. */
     public static boolean openForHarness(org.bukkit.entity.Player player, String menuId, String menuClass,
                                          String heldId) {
+        return openForHarness(player, menuId, menuClass, heldId, null);
+    }
+
+    /**
+     * The gallery's ours leg with the opener the walk used: when the layer answers, the page's
+     * menu is opened by the mod's own code (the held item's use, the block's use), so every
+     * press and slot move after it runs the mod's logic; otherwise the recorded screen.
+     */
+    public static boolean openForHarness(org.bukkit.entity.Player player, String menuId, String menuClass,
+                                         String heldId, String opener) {
         if (screens == null) {
             return false;
         }
         hud.show(player);
         player.getInventory().setItemInMainHand(screens.carrier(heldId));
-        return screens.openMenu(player, menuId, menuClass);
+        return screens.openMenuLive(player, menuId, menuClass, heldId, opener) || screens.openMenu(player, menuId, menuClass);
     }
 
     public static void enable(JavaPlugin plugin) {

@@ -1,5 +1,7 @@
 package dev.cim.hud;
 
+import java.util.List;
+
 /**
  * The glyph position code shared by the pack, the shader and the encoder.
  *
@@ -29,7 +31,16 @@ public final class HudLayout {
          */
         FREE_TEXT,
         /** The drop shadow of that text: a quarter of 0xFC through the same lightmap, 0x3E. */
-        FREE_SHADOW;
+        FREE_SHADOW,
+        /**
+         * A free glyph (an item icon) under a screen's wash, row = the wash: drawn opaque as the
+         * real fill leaves it, colour times (1 - a) plus the wash's colour times a.
+         */
+        FREE_WASH,
+        /** {@link #FREE_TEXT} under a wash. */
+        FREE_WASH_TEXT,
+        /** {@link #FREE_SHADOW} under a wash. */
+        FREE_WASH_SHADOW;
 
         public boolean right() {
             return this == TOP_RIGHT || this == MIDDLE_RIGHT || this == BOTTOM_RIGHT;
@@ -47,11 +58,16 @@ public final class HudLayout {
     public static final int TEXT_ROWS = 16;
     public static final int TEXT_ROW_HEIGHT = 10;
     static final int FREE_ZERO = 2048;
+    /** How many washes the shader holds (one font row each). */
+    public static final int WASHES = 8;
 
     private HudLayout() {
     }
 
     public static int rows(Anchor a) {
+        if (a == Anchor.FREE_WASH || a == Anchor.FREE_WASH_TEXT || a == Anchor.FREE_WASH_SHADOW) {
+            return WASHES;
+        }
         return a == Anchor.FREE || a == Anchor.FREE_DARK || a == Anchor.FREE_TEXT || a == Anchor.FREE_SHADOW ? 0 : TEXT_ROWS;
     }
 
@@ -108,8 +124,103 @@ public final class HudLayout {
         return "l" + id;
     }
 
-    /** The 26.3 {@code core/text.vsh} with the decoder added. */
+    /** The font a wash's glyphs use: {@code kind} is FREE_WASH, FREE_WASH_TEXT or FREE_WASH_SHADOW. */
+    public static int washId(Anchor kind, int wash) {
+        return id(kind, wash);
+    }
+
     static String vertexShader() {
+        return vertexShader(List.of());
+    }
+
+    /**
+     * The 26.3 {@code core/text.vsh} with the decoder added. {@code washes}: alpha, red,
+     * k and the colour each wash adds per channel (0-255), by index.
+     */
+    /** The 26.3 {@code core/text.fsh} adding the wash's colour (see {@link Anchor#FREE_WASH}). */
+    static String fragmentShader() {
+        return """
+                #version 330
+                #extension GL_ARB_separate_shader_objects : require
+
+                #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
+                #include <minecraft:fog.glsl>
+                #endif
+
+                #include <minecraft:dynamictransforms.glsl>
+                #include <minecraft:oit.glsl>
+
+                uniform sampler2D Sampler0;
+
+                #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
+                layout(location = 0) in float sphericalVertexDistance;
+                layout(location = 1) in float cylindricalVertexDistance;
+                #endif
+
+                layout(location = 2) in vec4 vertexColor;
+                layout(location = 3) in vec2 texCoord0;
+                layout(location = 4) in vec3 cimWashAdd;
+
+                #ifndef OIT_ALPHA_ONLY
+                layout(location = 0) out vec4 fragColor;
+                #endif
+
+                vec4 calculateFinalColor(vec4 color) {
+                    #ifdef OIT_ACCUMULATE
+                    color = sampleColorForAccumulation(color);
+                    #endif
+
+                    #if !defined(IS_SEE_THROUGH) && !defined(IS_GUI)
+
+                    #ifdef OIT_ACCUMULATE
+                    vec4 fogColor = vec4(FogColor.rgb * color.a, FogColor.a);
+                    #else
+                    vec4 fogColor = FogColor;
+                    #endif
+
+                    color = apply_fog(color, sphericalVertexDistance, cylindricalVertexDistance, FogEnvironmentalStart, FogEnvironmentalEnd, FogRenderDistanceStart, FogRenderDistanceEnd, fogColor);
+                    #endif
+
+                    return color;
+                }
+
+                void main() {
+                    #ifdef IS_GRAYSCALE
+                    vec4 texColor = texture(Sampler0, texCoord0).rrrr;
+                    #else
+                    vec4 texColor = texture(Sampler0, texCoord0);
+                    #endif
+
+                    vec4 color = texColor * vertexColor * ColorModulator;
+                    color.rgb += cimWashAdd * color.a;
+
+                    if (color.a < 0.1) {
+                        discard;
+                    }
+
+                    #ifdef OIT_ALPHA_ONLY
+                    executeAlphaOnlyPhase(gl_FragCoord.z, color.a);
+                    #else
+                    fragColor = calculateFinalColor(color);
+                    #endif
+                }
+                """;
+    }
+
+    static String vertexShader(List<double[]> washes) {
+        StringBuilder table = new StringBuilder("const vec4 CIM_WASHES[" + WASHES + "] = vec4[" + WASHES + "](");
+        for (int i = 0; i < WASHES; i++) {
+            double[] w = i < washes.size() ? washes.get(i) : new double[]{1, 0, 0, 0};
+            // The glyph's own colour d becomes d*k plus the added colour (0-255 scale).
+            table.append(i == 0 ? "" : ", ").append("vec4(").append(w[0]).append(", ")
+                    .append(w[1] / 255.0).append(", ").append(w[2] / 255.0).append(", ")
+                    .append(w[3] / 255.0).append(')');
+        }
+        table.append(");");
+        return vertexShaderSource().replace("CIM_WASH_TABLE", table.toString());
+    }
+
+    private static String vertexShaderSource() {
         return """
                 #version 330
                 #extension GL_ARB_separate_shader_objects : require
@@ -137,8 +248,10 @@ public final class HudLayout {
 
                 layout(location = 2) out vec4 vertexColor;
                 layout(location = 3) out vec2 texCoord0;
+                layout(location = 4) out vec3 cimWashAdd;
 
                 vec4 cimColor;
+                CIM_WASH_TABLE
 
                 // c-imagine HUD decoder. Technique: BetterHud (MIT), see HudLayout.java.
                 vec3 cimHudPlace(vec3 pos) {
@@ -154,13 +267,20 @@ public final class HudLayout {
                     int anchor = id >> ROW_BITS;
                     int row = id & ((1 << ROW_BITS) - 1);
                     pos.y -= float(bit << HEIGHT_BIT) + BASELINE;
-                    if (anchor == FREE_ANCHOR || anchor == FREE_DARK_ANCHOR || anchor == FREE_TEXT_ANCHOR || anchor == FREE_SHADOW_ANCHOR) {
+                    if (anchor == FREE_ANCHOR || anchor == FREE_DARK_ANCHOR || anchor == FREE_TEXT_ANCHOR || anchor == FREE_SHADOW_ANCHOR
+                            || anchor == FREE_WASH_ANCHOR || anchor == FREE_WASH_TEXT_ANCHOR || anchor == FREE_WASH_SHADOW_ANCHOR) {
                         ivec3 c = ivec3(round(Color.rgb * 255.0));
                         // Drawn shadows carry a quarter of this colour, so runs turn them off.
                         pos.x += float((c.r << 4) | (c.g >> 4)) - FREE_ORIGIN;
                         pos.y += 0.5 * ui.y + float(((c.g & 15) << 8) | c.b) - FREE_ORIGIN + FREE_Y;
-                        float shade = anchor == FREE_DARK_ANCHOR ? 0.25 : anchor == FREE_TEXT_ANCHOR ? 252.0 / 255.0
-                                : anchor == FREE_SHADOW_ANCHOR ? 62.0 / 255.0 : 1.0;
+                        float shade = anchor == FREE_DARK_ANCHOR ? 0.25
+                                : anchor == FREE_TEXT_ANCHOR || anchor == FREE_WASH_TEXT_ANCHOR ? 252.0 / 255.0
+                                : anchor == FREE_SHADOW_ANCHOR || anchor == FREE_WASH_SHADOW_ANCHOR ? 62.0 / 255.0 : 1.0;
+                        if (anchor == FREE_WASH_ANCHOR || anchor == FREE_WASH_TEXT_ANCHOR || anchor == FREE_WASH_SHADOW_ANCHOR) {
+                            vec4 wash = CIM_WASHES[row];
+                            shade *= wash.x;
+                            cimWashAdd = wash.yzw;
+                        }
                         cimColor = vec4(shade, shade, shade, Color.a);
                         return pos;
                     }
@@ -178,6 +298,7 @@ public final class HudLayout {
 
                 void main() {
                     cimColor = Color;
+                    cimWashAdd = vec3(0.0);
                     gl_Position = ProjMat * ModelViewMat * vec4(cimHudPlace(Position), 1.0);
 
                 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
@@ -193,6 +314,9 @@ public final class HudLayout {
                 .replace("HEIGHT_BIT", String.valueOf(HEIGHT_BIT))
                 .replace("MAX_BIT", String.valueOf(MAX_BIT))
                 .replace("ROW_BITS", String.valueOf(ROW_BITS))
+                .replace("FREE_WASH_TEXT_ANCHOR", String.valueOf(Anchor.FREE_WASH_TEXT.ordinal()))
+                .replace("FREE_WASH_SHADOW_ANCHOR", String.valueOf(Anchor.FREE_WASH_SHADOW.ordinal()))
+                .replace("FREE_WASH_ANCHOR", String.valueOf(Anchor.FREE_WASH.ordinal()))
                 .replace("FREE_DARK_ANCHOR", String.valueOf(Anchor.FREE_DARK.ordinal()))
                 .replace("FREE_TEXT_ANCHOR", String.valueOf(Anchor.FREE_TEXT.ordinal()))
                 .replace("FREE_SHADOW_ANCHOR", String.valueOf(Anchor.FREE_SHADOW.ordinal()))

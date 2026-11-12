@@ -62,6 +62,11 @@ public final class ScreenArt {
         if (System.getProperty("cim.screenart") != null) {
             NeoForge.EVENT_BUS.addListener(ScreenArt::onRender);
             NeoForge.EVENT_BUS.addListener(ScreenArt::onTick);
+            NeoForge.EVENT_BUS.addListener((ScreenEvent.Render.Pre e) -> {
+                if (!capturing) {
+                    DRAWN.clear();
+                }
+            });
             LOGGER.info("[cimscene] screen art capture on: {}", System.getProperty("cim.screenart"));
         }
     }
@@ -110,7 +115,9 @@ public final class ScreenArt {
 
     private static final int CRAWL_STEP_TICKS = 6;
     private static final int CRAWL_WAIT_TICKS = 70;
-    private static final int CRAWL_MAX_WIDGETS = 18;
+    private static final int CRAWL_MAX_WIDGETS = 40;
+    private static final int CRAWL_CLOSED_TICKS = 30;
+    private static final int CRAWL_STATE_TIMEOUT_TICKS = 60;
 
     /** Pressing through one open screen. */
     private static final class Crawl {
@@ -119,15 +126,25 @@ public final class ScreenArt {
         final int left;
         final int top;
         final List<int[]> targets = new ArrayList<>();
+        /** What each target's point hit when the round began: a press there finds it again. */
+        final List<GuiEventListener> under = new ArrayList<>();
+        final int start;
         int next;
         int wait;
+        /** Steps this press has shown no screen, waiting for a sub-menu the server opens. */
+        int closed;
         /** The press waiting for its result to be captured, or -1. */
         int pressed = -1;
         int settleAt;
         boolean moveDone;
 
+        void collect(List<? extends GuiEventListener> children, int sw, int sh, int depth) {
+            collectInto(targets, children, sw, sh, depth);
+        }
+
         Crawl(AbstractContainerScreen<?> screen, int start) {
             parent = screen;
+            this.start = start;
             next = start;
             moveDone = start > 0;
             left = screen.getGuiLeft();
@@ -140,22 +157,75 @@ public final class ScreenArt {
                 id = "unknown";
             }
             name = id;
-            collectWidgets(screen, targets);
+            collect(screen.children(), screen.width, screen.height, 0);
+            for (int[] t : targets) {
+                under.add(screen.getChildAt(t[0], t[1]).orElse(null));
+            }
+            if (start > 0) {
+                // The page as opened again before this press: ours opens it again here too.
+                record(this, "reopen\t" + start);
+            }
+            if (start == 0) {
+                StringBuilder at = new StringBuilder();
+                for (int[] t : targets) {
+                    at.append(' ').append(t[2] - left).append(',').append(t[3] - top).append(' ').append(t[4]).append('x').append(t[5]);
+                }
+                LOGGER.info("[cimscene] crawl {} targets {}:{}", name, targets.size(), at);
+            }
         }
+    }
 
-        private void collectWidgets(GuiEventListener listener, List<int[]> targets) {
+    /**
+     * Every pressable control on the screen: vanilla widgets, and a mod's own controls that
+     * are not AbstractWidgets but have bounds (Sophisticated Backpacks' settings tab), also
+     * inside a container element. A control as large as half the screen is a panel, not a
+     * button.
+     */
+    private static void collectInto(List<int[]> targets, List<? extends GuiEventListener> children, int sw, int sh,
+                                    int depth) {
+        for (GuiEventListener child : children) {
             if (targets.size() >= CRAWL_MAX_WIDGETS) {
                 return;
             }
-            if (listener instanceof AbstractWidget w && w.visible && w.active && !(w instanceof EditBox)) {
-                targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2,
-                        w.getX(), w.getY(), w.getWidth(), w.getHeight()});
-            }
-            if (listener instanceof net.minecraft.client.gui.components.events.ContainerEventHandler ceh) {
-                for (GuiEventListener child : ceh.children()) {
-                    collectWidgets(child, targets);
+            if (child instanceof AbstractWidget w) {
+                if (w.visible && w.active && !(w instanceof EditBox)) {
+                    targets.add(new int[]{w.getX() + w.getWidth() / 2, w.getY() + w.getHeight() / 2,
+                            w.getX(), w.getY(), w.getWidth(), w.getHeight()});
                 }
+                continue;
             }
+            boolean container = child instanceof net.minecraft.client.gui.components.events.ContainerEventHandler inner
+                    && !inner.children().isEmpty();
+            net.minecraft.client.gui.navigation.ScreenRectangle r = child.getRectangle();
+            if (r.width() <= 0 || r.height() <= 0) {
+                // A mod's own control that keeps its bounds outside the vanilla rectangle
+                // (Sophisticated Core's tabs: getX/getY/getWidth/getHeight): a container's
+                // own centre is one of its children, pressed on its own.
+                r = container ? r : boundsOf(child);
+            }
+            if (r.width() > 0 && r.height() > 0 && r.width() < sw / 2 && r.height() < sh / 2) {
+                targets.add(new int[]{r.left() + r.width() / 2, r.top() + r.height() / 2,
+                        r.left(), r.top(), r.width(), r.height()});
+            }
+            if (depth < 3 && container) {
+                collectInto(targets,
+                        ((net.minecraft.client.gui.components.events.ContainerEventHandler) child).children(),
+                        sw, sh, depth + 1);
+            }
+        }
+    }
+
+    /** The bounds a control answers through public getX/getY/getWidth/getHeight, or empty. */
+    private static net.minecraft.client.gui.navigation.ScreenRectangle boundsOf(GuiEventListener child) {
+        try {
+            Class<?> c = child.getClass();
+            int x = (int) c.getMethod("getX").invoke(child);
+            int y = (int) c.getMethod("getY").invoke(child);
+            int w = (int) c.getMethod("getWidth").invoke(child);
+            int h = (int) c.getMethod("getHeight").invoke(child);
+            return new net.minecraft.client.gui.navigation.ScreenRectangle(x, y, w, h);
+        } catch (ReflectiveOperationException | ClassCastException | IllegalArgumentException e) {
+            return net.minecraft.client.gui.navigation.ScreenRectangle.empty();
         }
     }
 
@@ -181,13 +251,21 @@ public final class ScreenArt {
         List<Slot> shown = screen.getMenu().slots.stream().filter(Slot::isActive).toList();
         int from = -1;
         int to = -1;
-        for (int i = 0; i < shown.size(); i++) {
+        for (int i = 0; i < shown.size() && from < 0; i++) {
             Slot slot = shown.get(i);
-            boolean mine = slot.container == mc.player.getInventory();
-            if (from < 0 && mine && slot.hasItem()) {
+            if (slot.container == mc.player.getInventory() && slot.hasItem()) {
                 from = i;
             }
-            if (to < 0 && !mine && !slot.hasItem()) {
+        }
+        // The slot a player would put it in: empty and accepting it. A slot that refuses it
+        // (an upgrade or energy slot) leaves the stack on the cursor, drawn wherever the
+        // pointer happens to be (measured: the digital miner's states).
+        ItemStack moving = from < 0 ? ItemStack.EMPTY : shown.get(from).getItem();
+        for (int i = 0; i < shown.size() && to < 0 && from >= 0; i++) {
+            Slot slot = shown.get(i);
+            // ...and drawn: a player cannot put anything into a slot the screen does not show.
+            if (slot.container != mc.player.getInventory() && !slot.hasItem() && slot.mayPlace(moving)
+                    && drawn(screen, slot)) {
                 to = i;
             }
         }
@@ -199,8 +277,15 @@ public final class ScreenArt {
                 net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
         mc.gameMode.handleInventoryMouseClick(id, shown.get(to).index, 0,
                 net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
-        boolean accepted = shown.get(to).hasItem();
-        record(c, "move\t" + from + "\t" + to + "\t" + accepted);
+        // A slot that only copies what it is shown (Create's filter slots) leaves the stack on
+        // the cursor; a player puts it back where it came from rather than carry it on.
+        if (!screen.getMenu().getCarried().isEmpty()) {
+            mc.gameMode.handleInventoryMouseClick(id, shown.get(from).index, 0,
+                    net.minecraft.world.inventory.ClickType.PICKUP, mc.player);
+            record(c, "move\t" + from + "\t" + to + "\t" + from);
+        } else {
+            record(c, "move\t" + from + "\t" + to);
+        }
         return true;
     }
 
@@ -258,14 +343,35 @@ public final class ScreenArt {
             return;
         }
         if (mc.screen != crawl.parent) {
+            // A server that opens a sub-menu closes this one first: the client shows no screen
+            // for a moment (measured: Mekanism's digital miner config, the robit's tabs).
+            if (mc.screen == null && crawl.closed++ < CRAWL_CLOSED_TICKS / CRAWL_STEP_TICKS) {
+                return;
+            }
+            if (crawl.wait == 0) {
+                // What the press led to: the evidence for a sub-menu that is never captured.
+                String type = "-";
+                if (mc.screen instanceof AbstractContainerScreen<?> other) {
+                    try {
+                        type = String.valueOf(BuiltInRegistries.MENU.getKey(other.getMenu().getType()));
+                    } catch (UnsupportedOperationException none) {
+                        type = "untyped";
+                    }
+                }
+                LOGGER.info("[cimscene] crawl {} press {} -> screen {} menu {}", crawl.name, crawl.next - 1,
+                        mc.screen == null ? "none" : mc.screen.getClass().getName(), type);
+            }
             if (newMenuUp(mc) && crawl.wait++ < CRAWL_WAIT_TICKS / CRAWL_STEP_TICKS) {
                 return;   // onRender is capturing it
             }
-            if (mc.screen instanceof AbstractContainerScreen<?> || mc.screen == null) {
-                finishCrawl(crawl.next);   // the server has moved on, so the parent must be reopened
-            } else {
-                mc.setScreen(crawl.parent);   // a client-only page: step back out
+            if (!(mc.screen instanceof AbstractContainerScreen<?>) && mc.screen != null) {
+                // A client-only page (AE2's guide): showing the old screen object again would
+                // bring back a menu its removal already emptied on the client (measured: the
+                // pattern provider's return slot), which no player sees. Leave it, and let the
+                // page be opened again, as after any press that left the screen.
+                mc.setScreen(null);
             }
+            finishCrawl(crawl.next);   // the parent must be reopened
             return;
         }
         // A press that kept this screen: wait for its effect, then save what it looks like.
@@ -278,13 +384,24 @@ public final class ScreenArt {
                     stateSaved = false;
                     if (crawl.pressed < CRAWL_MOVE) {
                         int[] at = crawl.targets.get(crawl.pressed);
+                        // Where the menu sits in this state, against where it opened: a press
+                        // may move it (Farmer's Delight's recipe book pushes the pot right).
+                        int dx = crawl.parent instanceof AbstractContainerScreen<?> s ? s.getGuiLeft() - crawl.left : 0;
+                        int dy = crawl.parent instanceof AbstractContainerScreen<?> s ? s.getGuiTop() - crawl.top : 0;
                         record(crawl, "press\t" + crawl.pressed + "\t" + (at[2] - crawl.left) + "\t"
-                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5]);
+                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5] + "\t" + dx + "\t" + dy
+                                + "\t" + (sent == null ? "-" : sent));
                     }
                     crawl.pressed = -1;
                 } else {
                     pendingState = crawl.name + (crawl.pressed == CRAWL_MOVE ? ".move" : ".w" + crawl.pressed);
                 }
+            } else if (crawlTicks > crawl.settleAt + CRAWL_STATE_TIMEOUT_TICKS) {
+                // The screen never drew again to be captured (measured: the QIO dashboard after a
+                // press held the crawl until the shard gave up on it): no state for this press.
+                LOGGER.info("[cimscene] crawl {} press {} drew no state", crawl.name, crawl.pressed);
+                pendingState = null;
+                crawl.pressed = -1;
             }
             return;
         }
@@ -300,20 +417,53 @@ public final class ScreenArt {
             finishCrawl(-1);
             return;
         }
-        int index = crawl.next++;
+        int index = crawl.next;
         int[] at = crawl.targets.get(index);
+        // Something a press opened covers this control (a Mekanism window: the robit's rename
+        // took every later press). A player closes it first; the crawl opens the page again,
+        // unless this round began here already.
+        GuiEventListener now = crawl.parent.getChildAt(at[0], at[1]).orElse(null);
+        if (now != crawl.under.get(index) && index != crawl.start) {
+            LOGGER.info("[cimscene] crawl {} press {} covered by {}, page opened again", crawl.name, index,
+                    now == null ? "-" : now.getClass().getName());
+            finishCrawl(index);
+            return;
+        }
+        crawl.next++;
         crawl.wait = 0;
+        crawl.closed = 0;
+        sent = null;
+        // Pressed before the click: the payload it sends is recorded as this press's.
+        crawl.pressed = index;
+        crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
         try {
-            crawl.parent.mouseClicked(at[0], at[1], 0);
+            boolean handled = crawl.parent.mouseClicked(at[0], at[1], 0);
             crawl.parent.mouseReleased(at[0], at[1], 0);
-            crawl.pressed = index;
-            crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
+            // What took the click: the evidence when a press sends nothing it should.
+            String target = crawl.parent.getChildAt(at[0], at[1]).map(c -> c.getClass().getName()).orElse("-");
+            LOGGER.info("[cimscene] crawl {} press {} at {},{} on {} handled={} sent={}", crawl.name, index,
+                    at[2] - crawl.left, at[3] - crawl.top, target, handled, sent);
         } catch (Throwable t) {
             LOGGER.info("[cimscene] crawl press threw {}", t.toString());
         }
     }
 
     private static final int CRAWL_MOVE = 1000;
+
+    /**
+     * The mouse as the real screen sees it in the same frame: the parked cursor scaled to GUI
+     * coordinates, exactly as the game passes it. A screen that turns an entity after the mouse
+     * (Create's stock keeper) draws it the same way in the art as in the real frame only so.
+     */
+    private static int parkedX() {
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.xpos() * mc.getWindow().getGuiScaledWidth() / mc.getWindow().getScreenWidth());
+    }
+
+    private static int parkedY() {
+        Minecraft mc = Minecraft.getInstance();
+        return (int) (mc.mouseHandler.ypos() * mc.getWindow().getGuiScaledHeight() / mc.getWindow().getScreenHeight());
+    }
     private static boolean stateSaved;
 
     /** One state of a screen, the same two pictures a first capture takes. */
@@ -325,6 +475,15 @@ public final class ScreenArt {
         try (NativeImage frame = Screenshot.takeScreenshot(mc.getMainRenderTarget())) {
             frame.writeToFile(dir.resolve(base + ".frame"));
         }
+        // Where each slot sits in this state: a press may lay the screen out again (AE2's
+        // terminal style moves the inventory), and the HUD draws the items there.
+        StringBuilder at = new StringBuilder();
+        for (Slot slot : screen.getMenu().slots) {
+            if (slot.isActive()) {
+                at.append(slot.index).append('\t').append(slot.x).append('\t').append(slot.y).append('\n');
+            }
+        }
+        Files.writeString(dir.resolve(base + ".slots"), at.toString(), StandardCharsets.UTF_8);
         TextureTarget target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
         target.setClearColor(0f, 0f, 0f, 0f);
         target.clear(Minecraft.ON_OSX);
@@ -333,13 +492,15 @@ public final class ScreenArt {
         capturing = true;
         try {
             GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-            screen.render(graphics, -10000, -10000, 0f);
+            screen.render(graphics, parkedX(), parkedY(), 0f);
             graphics.flush();
         } finally {
             capturing = false;
             restore(mc, lifted);
         }
         save(target, w, h, dir.resolve(base + ".png"));
+        saveAnimation(mc, screen, w, h, target, dir.resolve(base + ".anim.png"));
+        saveFilled(mc, screen, w, h, dir.resolve(base + ".filled.png"));
         mc.getMainRenderTarget().bindWrite(true);
         target.destroyBuffers();
     }
@@ -362,7 +523,7 @@ public final class ScreenArt {
         capturing = true;
         try {
             GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
-            screen.render(graphics, -10000, -10000, 0f);
+            screen.render(graphics, parkedX(), parkedY(), 0f);
             graphics.flush();
         } finally {
             capturing = false;
@@ -372,6 +533,9 @@ public final class ScreenArt {
         Files.createDirectories(dir);
         String name = id.getNamespace() + "_" + id.getPath().replace('/', '_');
         save(target, w, h, dir.resolve(name + ".png"));
+        // Before the icons: they are drawn into this same target, over the art.
+        saveAnimation(mc, screen, w, h, target, dir.resolve(name + ".anim.png"));
+        saveFilled(mc, screen, w, h, dir.resolve(name + ".filled.png"));
         try {
             captureIcons(mc, target, lifted, dir.resolve("icons"));
         } catch (Throwable t) {
@@ -392,10 +556,123 @@ public final class ScreenArt {
             }
             tsv.append("slot\t").append(slot.x).append('\t').append(slot.y).append('\t')
                     .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\t')
-                    .append(slot.getContainerSlot()).append('\n');
+                    .append(slot.getContainerSlot()).append('\t').append(slot.index).append('\t')
+                    .append(drawKnown(screen) ? (DRAWN.contains(slot) ? 1 : 0) : 2).append('\n');
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
+    }
+
+    /** Later moments the screen is drawn at, to find what moves with the clock alone. */
+    // Spread over a scroll's whole cycle (Mekanism scrolls a long label over several seconds):
+    // three moments left a few edge pixels of the label's travel unseen.
+    private static final long[] ANIMATION_SHIFTS_MS = new long[40];
+
+    static {
+        // Forty moments over twenty seconds, none a multiple of another's period (a long label
+        // scrolls over several seconds; sixteen moments still left some glyph edges unseen).
+        for (int i = 0; i < ANIMATION_SHIFTS_MS.length; i++) {
+            ANIMATION_SHIFTS_MS[i] = 137L + i * 497L;
+        }
+    }
+
+    /**
+     * The pixels of the art that change with time alone: the screen drawn again with the
+     * clock moved on (Mekanism scrolls a label too long for its box by the time the screen has
+     * been open, so two captures of one state differ there by the moment). Written as a white
+     * mask only when something moves; the verdict judges those pixels apart.
+     */
+    private static void saveAnimation(Minecraft mc, AbstractContainerScreen<?> screen, int w, int h,
+                                      TextureTarget art, Path file) {
+        net.minecraft.util.TimeSource.NanoTimeSource real = net.minecraft.Util.timeSource;
+        NativeImage mask = null;
+        try (NativeImage base = download(art, w, h)) {
+            for (long shift : ANIMATION_SHIFTS_MS) {
+                long add = shift * 1_000_000L;
+                net.minecraft.Util.timeSource = () -> real.getAsLong() + add;
+                TextureTarget later = new TextureTarget(w, h, true, Minecraft.ON_OSX);
+                later.setClearColor(0f, 0f, 0f, 0f);
+                later.clear(Minecraft.ON_OSX);
+                later.bindWrite(true);
+                List<ItemStack> lifted = lift(mc);
+                capturing = true;
+                try {
+                    GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+                    screen.render(graphics, parkedX(), parkedY(), 0f);
+                    graphics.flush();
+                } finally {
+                    capturing = false;
+                    restore(mc, lifted);
+                    net.minecraft.Util.timeSource = real;
+                }
+                try (NativeImage other = download(later, w, h)) {
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            if (other.getPixelRGBA(x, y) != base.getPixelRGBA(x, y)) {
+                                if (mask == null) {
+                                    mask = new NativeImage(w, h, true);
+                                }
+                                mask.setPixelRGBA(x, y, -1);
+                            }
+                        }
+                    }
+                } finally {
+                    later.destroyBuffers();
+                }
+            }
+            if (mask != null) {
+                mask.writeToFile(file);
+            }
+        } catch (Throwable t) {
+            LOGGER.warn("[cimscene] animation capture failed: {}", t.toString());
+        } finally {
+            net.minecraft.Util.timeSource = real;
+            if (mask != null) {
+                mask.close();
+            }
+        }
+    }
+
+    /** Set during the filled pass: the vanilla slot body draws nothing for a slot holding an item. */
+    public static boolean filledPass;
+
+    /**
+     * The screen as its filled slots look without their items: the items stay in their slots
+     * (a screen draws a placeholder icon only in an empty one: AE2's inscriber), and the vanilla
+     * slot body, which draws the item, is skipped for each filled slot. The HUD draws a filled
+     * slot's background from this before its live item.
+     */
+    private static void saveFilled(Minecraft mc, AbstractContainerScreen<?> screen, int w, int h, Path file) {
+        TextureTarget target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
+        try {
+            target.setClearColor(0f, 0f, 0f, 0f);
+            target.clear(Minecraft.ON_OSX);
+            target.bindWrite(true);
+            capturing = true;
+            filledPass = true;
+            try {
+                GuiGraphics graphics = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+                screen.render(graphics, parkedX(), parkedY(), 0f);
+                graphics.flush();
+            } finally {
+                filledPass = false;
+                capturing = false;
+            }
+            save(target, w, h, file);
+        } catch (Throwable t) {
+            LOGGER.warn("[cimscene] filled capture failed: {}", t.toString());
+        } finally {
+            mc.getMainRenderTarget().bindWrite(true);
+            target.destroyBuffers();
+        }
+    }
+
+    private static NativeImage download(TextureTarget target, int w, int h) {
+        NativeImage image = new NativeImage(w, h, false);
+        RenderSystem.bindTexture(target.getColorTextureId());
+        image.downloadTexture(0, false);
+        image.flipY();
+        return image;
     }
 
     private static void save(TextureTarget target, int w, int h, Path file) throws IOException {
@@ -436,18 +713,164 @@ public final class ScreenArt {
         }
     }
 
-    /** Empties the player's inventory for the pass, so slots draw bare. */
+    /** The slots the screen drew in its last frame (a slot can be active and never drawn). */
+    private static final java.util.Set<Slot> DRAWN =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** The first payload the current press sent, as "class" or "class#ENUM". */
+    private static String sent;
+
+    /** Called by the payload-send mixin for every custom payload the client sends. */
+    public static void payloadSent(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        if (crawl == null || crawl.pressed < 0 || sent != null) {
+            return;
+        }
+        StringBuilder out = new StringBuilder(payload.getClass().getName());
+        for (java.lang.reflect.Field f : payload.getClass().getDeclaredFields()) {
+            if (f.getType().isEnum() && !java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(payload);
+                    if (v != null) {
+                        out.append('#').append(((Enum<?>) v).name());
+                    }
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    // the class alone still names the button's action
+                }
+                break;
+            }
+        }
+        // A record payload's values, when each is a plain value: what the press said, so the
+        // HUD sends the same message (a merchant offer's index, a slot number).
+        if (payload.getClass().isRecord()) {
+            StringBuilder values = new StringBuilder();
+            boolean plain = true;
+            for (java.lang.reflect.RecordComponent rc : payload.getClass().getRecordComponents()) {
+                try {
+                    java.lang.reflect.Method get = rc.getAccessor();
+                    get.setAccessible(true);
+                    String v = plainValue(get.invoke(payload));
+                    if (v == null) {
+                        plain = false;
+                        break;
+                    }
+                    values.append(values.length() == 0 ? "" : ";").append(v);
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    plain = false;
+                    break;
+                }
+            }
+            if (plain) {
+                out.append("|rec:").append(values);
+            }
+        }
+        sent = out.toString();
+    }
+
+    /** A value as "type:text" for the record payload replay, or null when it is not plain. */
+    private static String plainValue(Object v) {
+        if (v instanceof Integer i) {
+            return "int:" + i;
+        }
+        if (v instanceof Boolean b) {
+            return "bool:" + b;
+        }
+        if (v instanceof Long l) {
+            return "long:" + l;
+        }
+        if (v instanceof Float f) {
+            return "float:" + f;
+        }
+        if (v instanceof Double d) {
+            return "double:" + d;
+        }
+        if (v instanceof Short s) {
+            return "short:" + s;
+        }
+        if (v instanceof Byte b) {
+            return "byte:" + b;
+        }
+        if (v instanceof String s && !s.contains(";") && !s.contains("\t") && !s.contains("|")) {
+            return "string:" + s;
+        }
+        if (v instanceof Enum<?> e) {
+            return "enum:" + e.getDeclaringClass().getName() + "." + e.name();
+        }
+        // A position or an id names the walk's own block or entity, not one a replay has.
+        return null;
+    }
+
+    /**
+     * Whether the screen drew this slot in its last frame. A screen that draws its slots its own
+     * way (Sophisticated Backpacks overrides renderSlot without the vanilla body) records none:
+     * then nothing is known and every active slot counts as drawn.
+     */
+    private static boolean drawn(AbstractContainerScreen<?> screen, Slot slot) {
+        return !drawKnown(screen) || DRAWN.contains(slot);
+    }
+
+    /** Whether the screen draws its slots through the vanilla body (so the record means anything). */
+    private static boolean drawKnown(AbstractContainerScreen<?> screen) {
+        for (Slot each : screen.getMenu().slots) {
+            if (DRAWN.contains(each)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Called by the payload-send mixin for a vanilla menu packet a press sent. */
+    public static void vanillaSent(String described) {
+        if (crawl != null && crawl.pressed >= 0 && crawl.pressed != CRAWL_MOVE && sent == null) {
+            sent = described;
+        }
+    }
+
+    /** Called by the slot-render mixin for every slot a screen draws. */
+    public static void slotDrawn(Slot slot) {
+        if (!capturing) {
+            DRAWN.add(slot);
+        }
+    }
+
+    /** The menu slots emptied for the current pass, with what they held. */
+    private static final java.util.Map<Slot, ItemStack> LIFTED_MENU = new java.util.LinkedHashMap<>();
+
+    /**
+     * Empties the player's inventory and the open menu's own slots for the pass, so every slot
+     * draws bare: the art is the screen alone, and the HUD draws whatever the slots hold, live,
+     * with the icons captured here (measured: an item baked into the art showed twice once the
+     * live menu drew it again). The returned list holds every lifted stack, for the icons.
+     */
     private static List<ItemStack> lift(Minecraft mc) {
         List<ItemStack> items = new ArrayList<>(mc.player.getInventory().items);
         for (int i = 0; i < mc.player.getInventory().items.size(); i++) {
             mc.player.getInventory().items.set(i, ItemStack.EMPTY);
         }
-        return items;
+        LIFTED_MENU.clear();
+        if (mc.screen instanceof AbstractContainerScreen<?> screen) {
+            for (Slot slot : screen.getMenu().slots) {
+                // A slot nobody takes from is the mod's display: its screen draws the item with
+                // its own decorations (Create's attribute summary and its count), so it stays.
+                if (slot.container != mc.player.getInventory() && slot.hasItem() && slot.mayPickup(mc.player)) {
+                    LIFTED_MENU.put(slot, slot.getItem());
+                    slot.set(ItemStack.EMPTY);
+                }
+            }
+        }
+        List<ItemStack> all = new ArrayList<>(items);
+        all.addAll(LIFTED_MENU.values());
+        return all;
     }
 
     private static void restore(Minecraft mc, List<ItemStack> items) {
-        for (int i = 0; i < items.size(); i++) {
+        int n = mc.player.getInventory().items.size();
+        for (int i = 0; i < n && i < items.size(); i++) {
             mc.player.getInventory().items.set(i, items.get(i));
         }
+        for (java.util.Map.Entry<Slot, ItemStack> e : LIFTED_MENU.entrySet()) {
+            e.getKey().set(e.getValue());
+        }
+        LIFTED_MENU.clear();
     }
 }

@@ -97,6 +97,47 @@ const MAX_NESTED_DEPTH: usize = 3;
 const MAX_CLASS_BYTES: usize = 256 * 1024;
 const MAX_CLASSES_SCANNED: usize = 20_000;
 
+/// Whether `META-INF/MANIFEST.MF` names the jar a library for FML (`FMLModType: LIBRARY` or
+/// `GAMELIBRARY`).
+fn declares_library<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> bool {
+    let Ok(mut entry) = archive.by_name("META-INF/MANIFEST.MF") else {
+        return false;
+    };
+    let mut text = String::new();
+    if entry.read_to_string(&mut text).is_err() {
+        return false;
+    }
+    text.lines().any(|line| {
+        line.split_once(':').is_some_and(|(key, value)| {
+            key.trim() == "FMLModType" && matches!(value.trim(), "LIBRARY" | "GAMELIBRARY")
+        })
+    })
+}
+
+/// The `path` of every entry in `META-INF/jarjar/metadata.json`, when the jar has one.
+fn jarjar_metadata_paths<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Vec<String> {
+    let Ok(mut entry) = archive.by_name("META-INF/jarjar/metadata.json") else {
+        return Vec::new();
+    };
+    let mut text = String::new();
+    if entry.read_to_string(&mut text).is_err() {
+        return Vec::new();
+    }
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    json.get("jars")
+        .and_then(|jars| jars.as_array())
+        .map(|jars| {
+            jars.iter()
+                .filter_map(|jar| jar.get("path").and_then(|p| p.as_str()))
+                .filter(|p| p.ends_with(".jar"))
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Scan a jar file on disk.
 pub fn scan_file(path: &Path) -> Result<ScannedMod, ScannerError> {
     let file = std::fs::File::open(path)?;
@@ -140,6 +181,16 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
             out.toml_path = Some(key.to_string());
             break;
         }
+    }
+
+    // A jar its manifest declares a library (FMLModType LIBRARY or GAMELIBRARY) is one to
+    // NeoForge whatever toml it carries: classpath material, never a mod container
+    // (measured: supplementaries nests mixinsquared-forge, a GAMELIBRARY with a legacy
+    // mods.toml, and loading it as a mod aborted every mod in the layer).
+    let library = declares_library(&mut archive);
+    if library {
+        out.toml = None;
+        out.toml_path = None;
     }
 
     // 2) classes, mixins, nested jars.
@@ -207,7 +258,9 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
         match parse_class(&bytes) {
             Ok(info) => {
                 for ann in &info.annotations {
-                    if MOD_ANNOTATION_DESCRIPTORS.contains(&ann.type_descriptor.as_str()) {
+                    if !library
+                        && MOD_ANNOTATION_DESCRIPTORS.contains(&ann.type_descriptor.as_str())
+                    {
                         for id in ann.modid_values() {
                             if !out.code_mod_ids.contains(&id) {
                                 out.code_mod_ids.push(id);
@@ -247,6 +300,27 @@ fn scan_jar_depth<R: Read + Seek>(reader: R, depth: usize) -> Result<ScannedMod,
         }
     }
 
+    // 3) Jars the jar-in-jar metadata names outside META-INF/jarjar/ (MixinSquared's forge
+    // jar keeps its core under META-INF/jars/): NeoForge's JarJar reads the paths from
+    // META-INF/jarjar/metadata.json, wherever they point.
+    for path in jarjar_metadata_paths(&mut archive) {
+        if out.nested.iter().any(|n| n.file_name == path) {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        match archive.by_name(&path) {
+            Ok(mut entry) => {
+                entry.read_to_end(&mut bytes)?;
+            }
+            Err(_) => continue,
+        }
+        let nested = scan_jar_depth(Cursor::new(bytes), depth + 1)?;
+        out.nested.push(ScannedMod {
+            file_name: path,
+            ..nested
+        });
+    }
+
     Ok(out)
 }
 
@@ -268,6 +342,46 @@ mod tests {
             zip.finish().unwrap();
         }
         buf.into_inner()
+    }
+
+    #[test]
+    fn finds_nested_jars_the_metadata_names_anywhere() {
+        let inner = build_jar(&[("com/x/Core.class", b"not a class".as_slice())]);
+        let meta = br#"{"jars":[{"identifier":{"group":"g","artifact":"core"},"path":"META-INF/jars/core-1.jar"}]}"#;
+        let jar = build_jar(&[
+            ("META-INF/jarjar/metadata.json", meta.as_slice()),
+            ("META-INF/jars/core-1.jar", &inner),
+        ]);
+        let scanned = scan_jar(Cursor::new(jar)).unwrap();
+        assert_eq!(scanned.nested.len(), 1);
+        assert_eq!(scanned.nested[0].file_name, "META-INF/jars/core-1.jar");
+    }
+
+    #[test]
+    fn a_library_manifest_makes_no_mod() {
+        let toml = b"[[mods]]\nmodId = \"mixinsquared\"\n".as_slice();
+        let jar = build_jar(&[
+            (
+                "META-INF/MANIFEST.MF",
+                b"Manifest-Version: 1.0\r\nFMLModType: GAMELIBRARY\r\n".as_slice(),
+            ),
+            ("META-INF/mods.toml", toml),
+        ]);
+        let scanned = scan_jar(Cursor::new(jar)).unwrap();
+        assert!(scanned.mod_ids().is_empty());
+        assert!(scanned.toml_path.is_none());
+
+        let plain = build_jar(&[
+            (
+                "META-INF/MANIFEST.MF",
+                b"Manifest-Version: 1.0\r\nFMLModType: MOD\r\n".as_slice(),
+            ),
+            ("META-INF/mods.toml", toml),
+        ]);
+        assert_eq!(
+            scan_jar(Cursor::new(plain)).unwrap().mod_ids(),
+            ["mixinsquared"]
+        );
     }
 
     #[test]

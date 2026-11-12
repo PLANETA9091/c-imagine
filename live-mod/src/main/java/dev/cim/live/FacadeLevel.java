@@ -58,6 +58,13 @@ public final class FacadeLevel extends Level {
 
     @Override
     public RecipeManager getRecipeManager() {
+        // The layer's real server loaded every mod's recipes; the facade's own manager is empty
+        // (measured: Mekanism's crusher input refused a diamond the real server accepts, as
+        // its slot only takes what a recipe uses).
+        net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (real != null && !(real instanceof FacadeServer)) {
+            return real.getRecipeManager();
+        }
         return recipes;
     }
 
@@ -126,7 +133,7 @@ public final class FacadeLevel extends Level {
             if (state.getBlock() instanceof net.minecraft.world.level.block.EntityBlock maker) {
                 net.minecraft.world.level.block.entity.BlockEntity made = maker.newBlockEntity(pos.immutable(), state);
                 if (made != null) {
-                    made.setLevel(this);
+                    made.setLevel(face());
                     blockEntities.put(key, made);
                     // A world calls this when the chunk's block entities load; there is no tick here.
                     made.onLoad();
@@ -148,7 +155,7 @@ public final class FacadeLevel extends Level {
 
     @Override
     public void setBlockEntity(net.minecraft.world.level.block.entity.BlockEntity blockEntity) {
-        blockEntity.setLevel(this);
+        blockEntity.setLevel(face());
         blockEntities.put(blockEntity.getBlockPos().asLong(), blockEntity);
     }
 
@@ -175,7 +182,7 @@ public final class FacadeLevel extends Level {
     public net.minecraft.world.level.chunk.ChunkAccess getChunk(int x, int z,
             net.minecraft.world.level.chunk.status.ChunkStatus status, boolean create) {
         return chunks.computeIfAbsent(net.minecraft.world.level.ChunkPos.asLong(x, z),
-                k -> new net.minecraft.world.level.chunk.LevelChunk(this, new net.minecraft.world.level.ChunkPos(x, z)));
+                k -> new net.minecraft.world.level.chunk.LevelChunk(face(), new net.minecraft.world.level.ChunkPos(x, z)));
     }
 
     /** Every spot a session looks at is loaded: the block is there or it is air. */
@@ -189,12 +196,45 @@ public final class FacadeLevel extends Level {
         return null;
     }
 
+    /** The ServerLevel front that mods see; block entities and chunks belong to it. */
+    private Level front;
+
+    void front(Level level) {
+        front = level;
+    }
+
+    private Level face() {
+        return front != null ? front : this;
+    }
+
+    /**
+     * Entities a session's own placement made (a robit set down on its chargepad), so the
+     * click that follows and the menu's own lookups find them; the world's others are Paper's.
+     */
+    private final java.util.Map<Integer, Entity> placed = new java.util.LinkedHashMap<>();
+
+    void addPlaced(Entity entity) {
+        placed.put(entity.getId(), entity);
+    }
+
+    java.util.Collection<Entity> placedEntities() {
+        return placed.values();
+    }
+
+    LevelEntityGetter<Entity> entities() {
+        return PLACED;
+    }
+
     /** Drops every block a session placed. */
     void clearBlocks() {
-        blockEntities.values().forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
+        // A copy: on the server front, a removed block entity reaches back into this store.
+        java.util.List<net.minecraft.world.level.block.entity.BlockEntity> all = new java.util.ArrayList<>(blockEntities.values());
         blockEntities.clear();
+        all.forEach(net.minecraft.world.level.block.entity.BlockEntity::setRemoved);
         states.clear();
         chunks.clear();
+        placed.values().forEach(e -> e.setRemoved(Entity.RemovalReason.DISCARDED));
+        placed.clear();
     }
 
     // --- no chunks: what is not a block above is Paper's
@@ -206,45 +246,68 @@ public final class FacadeLevel extends Level {
 
     @Override
     protected LevelEntityGetter<Entity> getEntities() {
-        return NO_ENTITIES;
+        return PLACED;
     }
 
-    /** Entities are Paper's: a query here finds none, as in an empty part of a world. */
-    private static final LevelEntityGetter<Entity> NO_ENTITIES = new LevelEntityGetter<>() {
+    /** The placed entities as a world's entity lookup sees them. */
+    private final LevelEntityGetter<Entity> PLACED = new LevelEntityGetter<>() {
         @Override
         public Entity get(int id) {
-            return null;
+            return placed.get(id);
         }
 
         @Override
         public Entity get(java.util.UUID id) {
+            for (Entity e : placed.values()) {
+                if (e.getUUID().equals(id)) {
+                    return e;
+                }
+            }
             return null;
         }
 
         @Override
         public Iterable<Entity> getAll() {
-            return List.of();
+            return List.copyOf(placed.values());
         }
 
         @Override
         public <U extends Entity> void get(net.minecraft.world.level.entity.EntityTypeTest<Entity, U> test,
                                            net.minecraft.util.AbortableIterationConsumer<U> consumer) {
+            for (Entity e : List.copyOf(placed.values())) {
+                U u = test.tryCast(e);
+                if (u != null && consumer.accept(u).shouldAbort()) {
+                    return;
+                }
+            }
         }
 
         @Override
         public void get(net.minecraft.world.phys.AABB box, java.util.function.Consumer<Entity> consumer) {
+            for (Entity e : List.copyOf(placed.values())) {
+                if (e.getBoundingBox().intersects(box)) {
+                    consumer.accept(e);
+                }
+            }
         }
 
         @Override
         public <U extends Entity> void get(net.minecraft.world.level.entity.EntityTypeTest<Entity, U> test,
                                            net.minecraft.world.phys.AABB box,
                                            net.minecraft.util.AbortableIterationConsumer<U> consumer) {
+            for (Entity e : List.copyOf(placed.values())) {
+                U u = test.tryCast(e);
+                if (u != null && e.getBoundingBox().intersects(box) && consumer.accept(u).shouldAbort()) {
+                    return;
+                }
+            }
         }
     };
 
+
     @Override
     public Entity getEntity(int id) {
-        return null;
+        return placed.get(id);
     }
 
     @Override

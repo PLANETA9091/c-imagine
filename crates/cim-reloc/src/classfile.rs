@@ -556,6 +556,27 @@ impl ClassFile {
                         );
                     }
                 }
+                TAG_STRING => {
+                    // A class named by its dotted binary name in a string literal (a mod's
+                    // Class.forName: moonlight reaches FML's LoadedConfig so): the literal
+                    // names the relocated class, as a shading relocation rewrites it.
+                    let str_idx = e.u2_at(0).ok_or(ParseError::Truncated("string idx"))?;
+                    let Some(text) = self.utf8(str_idx).and_then(|b| std::str::from_utf8(b).ok())
+                    else {
+                        continue;
+                    };
+                    if let Some(mapped) = map_class_literal(table, text) {
+                        let idx = intern.intern(mapped.as_bytes(), &mut next_index);
+                        rewritten.insert(
+                            slot as u16,
+                            RawEntry {
+                                tag: TAG_STRING,
+                                data: idx.to_be_bytes().to_vec(),
+                            },
+                        );
+                        stats.descriptors_rewritten += 1;
+                    }
+                }
                 TAG_METHOD_TYPE => {
                     let desc_idx = e.u2_at(0).ok_or(ParseError::Truncated("mt desc idx"))?;
                     if let Some(idx) = self.rewrite_descriptor(table, desc_idx)? {
@@ -1052,7 +1073,34 @@ fn rewrite_attr_block(
             }
         });
         let is_annotation_default = attr_name.as_deref() == Some(ANNOTATION_DEFAULT_ATTR);
-        if attr_name.as_deref() == Some("Signature") && content.len() >= 2 {
+        if attr_name.as_deref() == Some("Code") {
+            // The code itself references the constant pool only; its own attributes carry
+            // utf8 descriptors (the local variable tables) that Mixin reads to match an
+            // injector's locals (measured: an LVT left on net/minecraft/... types failed
+            // every @Local and every locals-capturing @Inject against relocated targets).
+            let rewritten = rewrite_code(
+                content,
+                cf,
+                table,
+                intern,
+                next_index,
+                stats,
+                rewrite_annotations,
+            )?;
+            new_block.extend_from_slice(&name_idx.to_be_bytes());
+            new_block.extend_from_slice(&(rewritten.len() as u32).to_be_bytes());
+            new_block.extend_from_slice(&rewritten);
+        } else if matches!(
+            attr_name.as_deref(),
+            Some("LocalVariableTable" | "LocalVariableTypeTable")
+        ) {
+            let signature = attr_name.as_deref() == Some("LocalVariableTypeTable");
+            let rewritten =
+                rewrite_local_table(content, cf, table, intern, next_index, stats, signature)?;
+            new_block.extend_from_slice(&name_idx.to_be_bytes());
+            new_block.extend_from_slice(&(rewritten.len() as u32).to_be_bytes());
+            new_block.extend_from_slice(&rewritten);
+        } else if attr_name.as_deref() == Some("Signature") && content.len() >= 2 {
             // Generic signatures: one utf8 index; the JVM resolves class-type
             // segments through reflection by NAME, so they must be rewritten
             // in BOTH modes (layer classes' signatures reference relocated
@@ -1113,6 +1161,109 @@ fn rewrite_attr_block(
     }
     out.extend_from_slice(&new_block);
     Ok(())
+}
+
+/// The relocated dotted name of a string literal that is a class's dotted binary name
+/// (`net.neoforged.fml.config.LoadedConfig`), or None for any other text: no slashes or
+/// spaces, at least two dots, a simple name starting upper-case, and a table that maps it.
+pub(crate) fn map_class_literal(table: &RelocationTable, text: &str) -> Option<String> {
+    if text.matches('.').count() < 2
+        || !text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '$')
+    {
+        return None;
+    }
+    let simple = text.rsplit('.').next()?;
+    if !simple.chars().next()?.is_ascii_uppercase() {
+        return None;
+    }
+    let internal = text.replace('.', "/");
+    let mapped = table.map_internal(&internal)?;
+    (mapped != internal).then(|| mapped.replace('/', "."))
+}
+
+/// Re-emit a Code attribute: header, code and exception table as they are, its own
+/// attribute block rewritten.
+#[allow(clippy::too_many_arguments)] // raw attribute rewrite needs full context
+fn rewrite_code(
+    content: &[u8],
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    rewrite_annotations: bool,
+) -> Result<Vec<u8>, ParseError> {
+    // max_stack u2, max_locals u2, code_length u4, code, exception_table_length u2,
+    // 8 bytes per exception entry, then the attribute block.
+    if content.len() < 8 {
+        return Ok(content.to_vec());
+    }
+    let code_len = u32::from_be_bytes([content[4], content[5], content[6], content[7]]) as usize;
+    let ex_at = 8 + code_len;
+    let ex_count = content
+        .get(ex_at..ex_at + 2)
+        .map(|b| u16::from_be_bytes([b[0], b[1]]) as usize)
+        .ok_or(ParseError::Truncated("code exception table"))?;
+    let attrs_at = ex_at + 2 + ex_count * 8;
+    let attrs = content
+        .get(attrs_at..)
+        .ok_or(ParseError::Truncated("code attributes"))?;
+    let mut out: Vec<u8> = Vec::with_capacity(content.len());
+    out.extend_from_slice(&content[..attrs_at]);
+    rewrite_attr_block(
+        attrs,
+        &mut out,
+        cf,
+        table,
+        intern,
+        next_index,
+        stats,
+        rewrite_annotations,
+    )?;
+    Ok(out)
+}
+
+/// Re-emit a LocalVariableTable (descriptors) or LocalVariableTypeTable (signatures) with
+/// relocated types: per entry start_pc u2, length u2, name u2, descriptor/signature u2, index u2.
+fn rewrite_local_table(
+    content: &[u8],
+    cf: &ClassFile,
+    table: &RelocationTable,
+    intern: &mut Utf8Intern,
+    next_index: &mut u16,
+    stats: &mut RewriteStats,
+    signature: bool,
+) -> Result<Vec<u8>, ParseError> {
+    let mut out = content.to_vec();
+    if content.len() < 2 {
+        return Ok(out);
+    }
+    let count = u16::from_be_bytes([content[0], content[1]]) as usize;
+    for e in 0..count {
+        let at = 2 + e * 10 + 6;
+        let Some(bytes) = content.get(at..at + 2) else {
+            return Err(ParseError::Truncated("local variable entry"));
+        };
+        let idx = u16::from_be_bytes([bytes[0], bytes[1]]);
+        let orig = cf
+            .utf8(idx)
+            .ok_or(ParseError::Truncated("local variable type"))?;
+        let orig =
+            std::str::from_utf8(orig).map_err(|_| ParseError::Truncated("non-utf8 local type"))?;
+        let mapped = if signature {
+            table.map_signature(orig)
+        } else {
+            table.map_descriptor(orig)
+        };
+        if mapped != orig {
+            let new_idx = intern.intern(mapped.as_bytes(), next_index);
+            stats.descriptors_rewritten += 1;
+            out[at..at + 2].copy_from_slice(&new_idx.to_be_bytes());
+        }
+    }
+    Ok(out)
 }
 
 /// Re-emit one Runtime*Annotations payload with relocated annotation type

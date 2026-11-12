@@ -62,6 +62,21 @@ public final class SessionServerPlayer extends ServerPlayer {
         }
         self.containerMenu = self.inventoryMenu;
         self.connection = SessionConnection.create(self);
+        // ServerPlayer.server is final: the field is set as the allocated instance has none.
+        try {
+            Field server = ServerPlayer.class.getDeclaredField("server");
+            server.setAccessible(true);
+            server.set(self, level.getServer());
+            // Its game mode, survival as Paper's player plays: a mod asks it before it acts
+            // (Supplementaries' cannon checks whether the player may build).
+            Field gameMode = ServerPlayer.class.getDeclaredField("gameMode");
+            gameMode.setAccessible(true);
+            net.minecraft.server.level.ServerPlayerGameMode mode = new net.minecraft.server.level.ServerPlayerGameMode(self);
+            mode.changeGameModeForPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+            gameMode.set(self, mode);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("cannot bind the session player's server", e);
+        }
         return self;
     }
 

@@ -4471,10 +4471,9 @@ public final class CimSceneMod {
     private static void guiAct(ServerLevel level, ServerPlayer player, BlockPos rig, String opener) {
         if (opener.startsWith("specialized:") || opener.startsWith("sneak+specialized:")) {
             String spec = opener.replace("sneak+", "").substring("specialized:".length());
+            // A probe counts a menu only when one really opened for it (its openMenu records it):
+            // an opener that only claims a menu makes a page whose screen the client never shows.
             SpecializedOpeners.act(level, player, rig, spec, guiEntity);
-            if (player instanceof GuiProbe probe && probe.seen == null) {
-                probe.seen = ResourceLocation.parse(spec);
-            }
             return;
         }
         boolean block = opener.contains("block:") || opener.contains("place+item:") || opener.contains("use+item:")
@@ -4507,16 +4506,10 @@ public final class CimSceneMod {
                 player.setItemInHand(InteractionHand.MAIN_HAND, stack);
                 Vec3 at = Vec3.atCenterOf(rig).relative(face, 0.5);
                 BlockHitResult hit = new BlockHitResult(at, face, rig, false);
-                BlockState state = level.getBlockState(rig);
-                net.minecraft.world.ItemInteractionResult result = state.useItemOn(stack, level, player,
-                        InteractionHand.MAIN_HAND, hit);
-                if (result == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION
-                        && !state.useWithoutItem(level, player, hit).consumesAction()) {
-                    stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
-                } else if (!result.consumesAction()
-                        && result != net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
-                    stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, InteractionHand.MAIN_HAND, hit));
-                }
+                // The server's own handling of a client's right click on a block, in its order:
+                // NeoForge's onItemUseFirst (AE2's network tool opens a node's network status
+                // there, before the block is asked), the block, then the item.
+                player.gameMode.useItemOn(player, level, stack, InteractionHand.MAIN_HAND, hit);
                 player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
             } else if (guiEntity != null && plain.contains("+item:")) {
                 if (!guiEntity.interactAt(player, Vec3.ZERO, InteractionHand.MAIN_HAND).consumesAction()) {
@@ -5155,6 +5148,7 @@ public final class CimSceneMod {
             if (opener == null && SpecializedOpeners.isSpecialized(id.toString())) {
                 opener = "specialized:" + id.toString();
             }
+            SpecializedOpeners.replay = null;
             if (opener != null) {
                 guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
@@ -5244,6 +5238,9 @@ public final class CimSceneMod {
             List<String> all = GUI_ALL_OPENERS.getOrDefault(id, opener == null ? List.of() : List.of(opener));
             for (String each : all) {
                 tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
+            }
+            if (SpecializedOpeners.replay != null) {
+                tsv.append("replay\t-\t-\t-\t").append(id).append('\t').append(SpecializedOpeners.replay).append('\n');
             }
             // Slot geometry is server state, so every opened menu documents itself.
             int slotIndex = 0;
