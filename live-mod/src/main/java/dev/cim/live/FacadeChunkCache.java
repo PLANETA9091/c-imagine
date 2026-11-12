@@ -49,6 +49,17 @@ public final class FacadeChunkCache extends ServerChunkCache {
         return getChunkNow(x, z);
     }
 
+    // Lazy: the instance is allocated, so no initialiser runs.
+    private FacadeLightEngine light;
+
+    @Override
+    public net.minecraft.server.level.ThreadedLevelLightEngine getLightEngine() {
+        if (light == null) {
+            light = FacadeLightEngine.create();
+        }
+        return light;
+    }
+
     @Override
     public boolean hasChunk(int x, int z) {
         return true;
