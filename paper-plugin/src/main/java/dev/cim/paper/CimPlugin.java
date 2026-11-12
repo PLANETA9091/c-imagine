@@ -2747,8 +2747,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
-            // 14-du: the sweep cleared any light blocks in the band — the tracker follows
+            // 14-du: the sweep cleared any light blocks in the band — the tracker follows,
+            // then this page's truth-measured light field lands (the glow fluids light
+            // their cases: the liquid_null spill measured block 3-5 at the cells)
             placedLightBlocks.clear();
+            String fluidMfName = mf.getFileName().toString();
+            placeLightsFromTruth(w, mf.resolveSibling(
+                    (fluidMfName.endsWith(".tsv")
+                            ? fluidMfName.substring(0, fluidMfName.length() - 4) : fluidMfName)
+                            + ".light"));
             for (String[] row : rows) {
                 // cell|x|y|z|fluid|dyn|channel|extra   (skip|...|fluid|dyn|reason)
                 if (row.length < 5 || row[0].equals("skip")) {
