@@ -2170,14 +2170,14 @@ public final class F2vPack {
     // ---- deterministic zip ------------------------------------------------------
 
     /** The stock client rejects even required server packs above 250 MiB. */
-    static void validateDownloadSize(long bytes) throws IOException {
+    public static void validateDownloadSize(long bytes) throws IOException {
         if (bytes > 262_144_000L) {
             throw new IOException("resource pack exceeds vanilla's 250 MiB download limit: " + bytes);
         }
     }
 
     /** Deterministic zip: sorted entries, fixed timestamps, fixed level. */
-    static byte[] zip(TreeMap<String, byte[]> entries) throws IOException {
+    public static byte[] zip(TreeMap<String, byte[]> entries) throws IOException {
         java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(bos, StandardCharsets.UTF_8)) {
             zos.setLevel(9);
@@ -2194,7 +2194,7 @@ public final class F2vPack {
         return bos.toByteArray();
     }
 
-    static String sha1Hex(byte[] data) {
+    public static String sha1Hex(byte[] data) {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-1");
             return String.format("%040x", new BigInteger(1, md.digest(data)));

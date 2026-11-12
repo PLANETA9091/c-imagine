@@ -107,6 +107,26 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
+     * 14-di: the served pack's entries for the run-capture overlay builder.
+     * Sorted by name — the overlay's zip must be deterministic (F2vPack.zip
+     * writes sorted entries at a fixed epoch).
+     */
+    private static java.util.TreeMap<String, byte[]> readZipEntries(Path zip) throws IOException {
+        java.util.TreeMap<String, byte[]> out = new java.util.TreeMap<>();
+        try (java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(
+                Files.newInputStream(zip), StandardCharsets.UTF_8)) {
+            java.util.zip.ZipEntry e;
+            while ((e = zis.getNextEntry()) != null) {
+                if (e.isDirectory()) {
+                    continue;
+                }
+                out.put(e.getName(), zis.readAllBytes());
+            }
+        }
+        return out;
+    }
+
+    /**
      * The fluid-CUBE manifest (14-cd): fluidId -> pack CMD, written by the
      * F2vPack build (visual-fluid-cubes.tsv, the 410000+i space). Read from
      * the f2v dir in BOTH resolution paths (fast boot and full rebuild). A
@@ -172,17 +192,50 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
                         readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
                 int fastPort = Integer.getInteger("cim.f2v.port", 25580);
-                dev.cim.f2v.PackHttp fastHttp =
-                        dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
+                dev.cim.f2v.PackHttp fastHttp = null;
+                // 14-di THE RUN-CAPTURE OVERLAY: the captures dir carries the truth
+                // client's ScreenArt dump for THIS run's menus; scenes the seed's
+                // walk never captured (the generic-screen class ceiling, the opener
+                // asymmetry) get real art here. One pass allocates the glyph numbers
+                // the pack and the replay agree on; the overlay zip is served at ITS
+                // sha1 and the play-phase offer pins that. Any failure falls back to
+                // the plain seed pack — the named scene-gap reds stay, nothing crashes.
+                if (Boolean.getBoolean("cim.f2v.screenOverlay")) {
+                    try {
+                        dev.cim.hud.ScreenPack.RunOverlay ov = dev.cim.hud.ScreenPack.mergeRunCaptures(
+                                modsDir, readZipEntries(packZip));
+                        if (ov != null && ov.newGlyphs() > 0) {
+                            byte[] zipBytes = dev.cim.f2v.F2vPack.zip(ov.entries());
+                            dev.cim.f2v.F2vPack.validateDownloadSize(zipBytes.length);
+                            Path overlayZip = base.resolve("pack-overlay.zip");
+                            Files.write(overlayZip, zipBytes);
+                            String overlaySha1 = dev.cim.f2v.F2vPack.sha1Hex(zipBytes);
+                            fastHttp = dev.cim.f2v.PackHttp.start(overlayZip, fastPort, overlaySha1);
+                            visualPack = fastHttp;
+                            log().info(LOG_PREFIX + "f2v pack: FAST BOOT + 14-di RUN-CAPTURE OVERLAY — "
+                                    + ov.newGlyphs() + " new glyph(s) over " + ov.seedGlyphs()
+                                    + " seed glyph(s), scenes=" + ov.scenes().size()
+                                    + ", font=" + ov.fontEntry()
+                                    + ", serving pack-overlay.zip sha1=" + overlaySha1);
+                        } else {
+                            log().info(LOG_PREFIX + "f2v pack: 14-di overlay: no new run captures to serve");
+                        }
+                    } catch (Throwable t) {
+                        log().warning(LOG_PREFIX + "f2v pack: 14-di overlay FAILED (serving the plain seed pack): " + t);
+                    }
+                }
+                if (fastHttp == null) {
+                    fastHttp = dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
+                }
                 visualPack = fastHttp;
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
-                        + "serving the pre-boot build's zip, sha1=" + cachedSha1
+                        + "serving the pre-boot build's zip, sha1=" + visualPack.sha1()
                         + ", " + fastGallery.size() + " gallery row(s), "
                         + fastItems.size() + " item row(s); rebuild-verification "
                         + "skipped (integrity = the server.properties sha1 pin "
                         + "+ the client's pack hash check)");
                 log().info(LOG_PREFIX + "f2v pack: serving " + fastHttp.url()
-                        + " sha1=" + cachedSha1);
+                        + " sha1=" + visualPack.sha1());
                 return;
             }
             if (Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {

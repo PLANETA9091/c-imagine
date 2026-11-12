@@ -1297,6 +1297,85 @@ jobs:
           done
           sleep 8   # first chunk render on llvmpipe
 
+      # 14-di THE GUI-FIRST WALK + THE EARLY ART HANDSHAKE: the menus lane
+      # runs BEFORE the heavy walks so every menu the run opens dumps its
+      # ScreenArt (truth-screens/) within the first minutes of the shard;
+      # the upload below publishes it, and the ours sibling waits for
+      # exactly this artifact before its Paper boot — the pack overlay
+      # serves the run's own captures for the menus the seed's walk missed
+      # (the generic-screen class ceiling, the opener asymmetry) without
+      # serializing the whole truth leg behind the ours boot.
+      - name: wall walk — GUI first (14-di early art)
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export LP_NUM_THREADS=4
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() { # one command per argument; prints "> cmd" + response per command
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue   # the driver skips empty lines; sending one would deadlock the reader
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
+          source scripts/cimscene/walk-helpers.sh
+          rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
+          sleep 5
+          java -cp vtools Key F1
+          sleep 1
+          mkdir -p truth-shots truth-screens
+          # GUI walk (per ladder ns, to exhaustion — DIAGNOSTIC class): ONE
+          # MenuType per page opened for the rig viewer through the vanilla
+          # openMenu surface; menus that need block context throw on the
+          # empty extra-data buffer and become named open-failed rows (the
+          # honest measured surface). Screenshot 2s after the marker (the
+          # screen renders on the next client tick).
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-gui-$NS-p$p"
+              rcon "cimscene gallery gui $NS $p"
+              RC=0; wait_done "gallery-gui-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS gui page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              if [ "$RC" = "1" ]; then EX=1; break; fi
+              grep "gallery-gui done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
+              sleep 2   # the client screen renders
+              # MOUSEOFF (menus lane, 477489e6): the real client's mouse is parked
+              # off the menu so no hover state leaks into the truth shot; shot.sh
+              # (main lane, b49718b1) captures through the warm ShotD daemon.
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              java -cp vtools Key MOUSEOFF || true
+              sleep 0.5
+              bash scripts/visual/shot.sh "truth-shots/gal-gui-$NS$p.png" \
+                || echo "$NS gui page $p shot failed (diagnostic tolerated)"
+              # ESC closes the open screen before the next page (the next
+              # command also closeContainer()s server-side — belt, braces)
+              java -cp vtools Key ESC || true
+            done
+            [ "$EX" = "1" ] || { echo "$NS gui walk hit the MAXP cap without exhausted"; exit 1; }
+          done
+          # the menus lane is done — the client must be alive for the heavy walks
+          client_alive || truth_rejoin
+
+      - name: upload truth screens s${{ matrix.shard }} (14-di early art — the ours sibling waits for exactly this)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wall-truth-screens-${{ matrix.shard }}
+          path: truth-screens/
+          if-no-files-found: warn
+
       - name: wall walk — STRIDE, fixed camera, page shots (blocks per ladder ns + probes)
         run: |
           set -euo pipefail
@@ -1329,8 +1408,8 @@ jobs:
           [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
           rcon "cimscene cleanup-assemblies" "kill @e[type=!player]" "tp cimviewer 0.5 -60 0.5 0 0"
           sleep 5
-          java -cp vtools Key F1
-          sleep 1
+          # 14-di: the HUD is already OFF — the gui-first step pressed F1, and
+          # a second press would TOGGLE it back ON over every block shot.
           mkdir -p truth-shots
           # THE STRIDE WALK (13-b): pages $SI, $SI+$K, ... — every shard
           # walks its own arithmetic progression; the scene answers
@@ -1339,26 +1418,8 @@ jobs:
           # exactly the full page space. THE MARKER IS THE FILE the scene
           # writes at the same code point as the boot.log line (13-c — a
           # quiet console pipeline can stall, a Files.writeString cannot).
-          base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
-            # command: the scene writes the marker INSIDE the command's
-            # execution (the mtime measured #39: 17:57:32 vs the response
-            # 17:57:33.8) — a baseline read after the response would see
-            # the fresh file and wait for a change that already happened
-            V0D=$(cat "srv-wall/c-imagine/scenes/$1.done" 2>/dev/null || echo 0)
-            V0E=$(cat "srv-wall/c-imagine/scenes/$1.exhausted" 2>/dev/null || echo 0)
-          }
-          wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
-            local BASE="srv-wall/c-imagine/scenes/$1"
-            local VD VE
-            for i in $(seq 1 1000); do
-              VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
-              VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
-              [ "$VD" != "$2" ] && return 0
-              [ "$VE" != "$3" ] && return 1
-              sleep 0.03
-            done
-            echo "no done marker file: $1"; return 2
-          }
+          # the shared walk helpers (14-di: sourced, not inline — three steps, one law)
+          source scripts/cimscene/walk-helpers.sh
           EXHAUSTED=0
           for NS in $LADDER_NS; do
             for p in $(seq $SI $K $MAXP); do
@@ -1463,101 +1524,8 @@ jobs:
           # block walk; the entity settle pass writes its marker file in the
           # same server-thread task that rewrites the manifest (40 ticks
           # after the command, still inside the shot window).
-          base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
-            # command: the scene writes the marker INSIDE the command's
-            # execution (the mtime measured #39: 17:57:32 vs the response
-            # 17:57:33.8) — a baseline read after the response would see
-            # the fresh file and wait for a change that already happened
-            V0D=$(cat "srv-wall/c-imagine/scenes/$1.done" 2>/dev/null || echo 0)
-            V0E=$(cat "srv-wall/c-imagine/scenes/$1.exhausted" 2>/dev/null || echo 0)
-          }
-          wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 timeout
-            local BASE="srv-wall/c-imagine/scenes/$1"
-            local VD VE
-            for i in $(seq 1 1000); do
-              VD=$(cat "$BASE.done" 2>/dev/null || echo 0)
-              VE=$(cat "$BASE.exhausted" 2>/dev/null || echo 0)
-              [ "$VD" != "$2" ] && return 0
-              [ "$VE" != "$3" ] && return 1
-              sleep 0.03
-            done
-            echo "no done marker file: $1"; return 2
-          }
-          # 14-ak CLIENT-CRASH CONTAINMENT (measured #84, run 41848055305
-          # truth shard 0: during the create-entity DYN walk the REAL client
-          # DIED — a bare create:contraption spawn carries spawn data the
-          # client cannot process (Contraption.readNBT NPE, "contraption" is
-          # null) and the frame became the "Connection Lost" screen; EVERY
-          # truth shot after that point on the shard was the disconnect
-          # screen — the two item pages joined 77/77 garbage RED each and
-          # gated the gallery). After each page's wait_done the walk asserts
-          # the client is alive (rcon "list" must carry cimviewer); on death:
-          # rejoin (the camera-pins launch snippet), RE-RUN the same page
-          # command once more — the scene's entity-crash-ban.tsv now holds
-          # the killer types as named skip rows (the scene's settle pass
-          # bans them when it sees zero players online) so the re-run cannot
-          # kill again — and re-shoot. Bounded: max 2 rejoins per page, then
-          # the shard FAILS loudly with the page id (the coverage gate stays
-          # honest — no silent gaps). The item/particle/fluid walks run the
-          # same liveness check (they follow the entity walk; their content
-          # is not modded-entity spawns — item_display rigs are vanilla
-          # types — so no ban is expected, but the rejoin + re-run applies).
-          client_alive() {
-            local L
-            L=$(rcon "list" 2>/dev/null) || return 1
-            case "$L" in *cimviewer*) return 0;; *) return 1;; esac
-          }
-          DEATHS=0
-          truth_rejoin() {
-            echo "client death detected — rejoining the truth client"
-            DEATHS=$((DEATHS+1))
-            mkdir -p truth-client-deaths
-            cp truth-client/client.out "truth-client-deaths/client-$DEATHS.out" 2>/dev/null || true
-            cp -r truth-client/game/crash-reports "truth-client-deaths/crash-reports-$DEATHS" 2>/dev/null || true
-            pkill -f "truth-client/game" 2>/dev/null || true   # the dead JVM stays on the disconnect screen; free the window + heap
-            sleep 2
-            # 14-di: the rejoin carries the screen-art dump too (a menu opened
-            # on a rejoined client must still capture its art)
-            # delimiter '#' — same $PWD-contains-slashes fix as the first attempt
-            LAUNCH=$(sed "s#^java #java -Dcim.screenart=$PWD/truth-screens #" truth-client/launch.txt)
-            setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
-            local L=""
-            for i in $(seq 1 90); do
-              L=$(rcon "list" 2>/dev/null || true)
-              case "$L" in *cimviewer*) break;; esac
-              sleep 1
-            done
-            case "$L" in *cimviewer*) ;;
-              *) echo "truth client FAILED to rejoin"; tail -30 truth-client/client.out; return 1;; esac
-            for i in $(seq 1 30); do
-              grep -qE "Loaded [0-9]+ advancements" truth-client/client.out 2>/dev/null && break
-              sleep 1
-            done
-            sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
-            # a fresh client boots with the HUD on: without this every later
-            # shot carries the hotbar, the hand and the tutorial toast
-            java -cp vtools Key F1
-            sleep 1
-            echo "truth client rejoined: $L"
-          }
-          ensure_alive_rerun() { # $1=stem $2=page label $3=page; $4..=the page's rcon words (re-run verbatim)
-            local STEM="$1" LABEL="$2" P="$3" RC ATTEMPTS=0
-            shift 3
-            while ! client_alive; do
-              ATTEMPTS=$((ATTEMPTS+1))
-              if [ "$ATTEMPTS" -gt 2 ]; then
-                echo "CLIENT-DEATH-UNCONTAINED after page $LABEL — 2 rejoins spent, failing the shard honestly"
-                exit 1
-              fi
-              truth_rejoin || exit 1
-              base_of "$STEM"
-              rcon "$@" >/dev/null 2>&1 || true
-              RC=0; wait_done "$STEM" "$V0D" "$V0E" || RC=$?
-              if [ "$RC" = "2" ]; then
-                echo "page $LABEL re-run no done marker"; tail -10 srv-wall/boot.log; exit 1
-              fi
-            done
-          }
+          # the shared walk helpers (14-di: sourced, not inline — three steps, one law)
+          source scripts/cimscene/walk-helpers.sh
           # MOB series (the gate): frozen NoAI subjects on the wall. The
           # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq $SI $K $((EPAGES-1))); do
@@ -1744,36 +1712,6 @@ jobs:
             done
             [ "$EX" = "1" ] || { echo "$NS sound walk hit the MAXP cap without exhausted"; exit 1; }
           done
-          # GUI walk (per ladder ns, to exhaustion — DIAGNOSTIC class): ONE
-          # MenuType per page opened for the rig viewer through the vanilla
-          # openMenu surface; menus that need block context throw on the
-          # empty extra-data buffer and become named open-failed rows (the
-          # honest measured surface). Screenshot 2s after the marker (the
-          # screen renders on the next client tick).
-          for NS in $LADDER_NS; do
-            EX=0
-            for p in $(seq $SI $K $MAXP); do
-              base_of "gallery-gui-$NS-p$p"
-              rcon "cimscene gallery gui $NS $p"
-              RC=0; wait_done "gallery-gui-$NS-p$p" "$V0D" "$V0E" || RC=$?
-              [ "$RC" = "2" ] && { echo "$NS gui page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
-              if [ "$RC" = "1" ]; then EX=1; break; fi
-              grep "gallery-gui done ns=$NS page=$p " srv-wall/boot.log | tail -1 || true
-              sleep 2   # the client screen renders
-              # MOUSEOFF (menus lane, 477489e6): the real client's mouse is parked
-              # off the menu so no hover state leaks into the truth shot; shot.sh
-              # (main lane, b49718b1) captures through the warm ShotD daemon.
-              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              java -cp vtools Key MOUSEOFF || true
-              sleep 0.5
-              bash scripts/visual/shot.sh "truth-shots/gal-gui-$NS$p.png" \
-                || echo "$NS gui page $p shot failed (diagnostic tolerated)"
-              # ESC closes the open screen before the next page (the next
-              # command also closeContainer()s server-side — belt, braces)
-              java -cp vtools Key ESC || true
-            done
-            [ "$EX" = "1" ] || { echo "$NS gui walk hit the MAXP cap without exhausted"; exit 1; }
-          done
           # BIOME-TINT walk (per ladder ns, to exhaustion — DIAGNOSTIC
           # class; the P1 BOP channel proof surface): ONE biome per page,
           # the fillbiome surface re-biomes the wall region, the fixed
@@ -1906,7 +1844,7 @@ jobs:
   wall-ours:
     name: gallery ours s${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
     needs: [seed]
     strategy:
       fail-fast: false
@@ -1976,6 +1914,35 @@ jobs:
           [ "${N:-0}" -gt 100 ] || { echo "seed payload stale: only $N block manifests"; exit 1; }
           echo "seed ready: pack.sha1=$(cat seed-pack/f2v/pack.sha1), $N block manifests"
 
+      # 14-di THE EARLY ART HANDSHAKE: poll this run's artifacts for the
+      # truth sibling's ScreenArt dump (the gui-first walk publishes it
+      # minutes into the shard). Bounded ~40 min; on timeout the ours leg
+      # boots without the overlay (the named scene-gap reds stay — never
+      # staged away), never fails the shard on the sibling's account.
+      - name: wait for this shard's truth art (14-di early handshake)
+        id: truth-art
+        run: |
+          set -euo pipefail
+          FOUND=""
+          for i in $(seq 1 80); do
+            N=$(curl -sf -m 30 -H "Authorization: Bearer ${{ github.token }}" \
+                  "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+                | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for a in d['artifacts'] if a['name']=='wall-truth-screens-${{ matrix.shard }}' and not a['expired']))" || echo 0)
+            if [ "${N:-0}" -ge 1 ]; then FOUND=1; echo "truth art landed after ~$((i*30))s"; break; fi
+            sleep 30
+          done
+          if [ -z "$FOUND" ]; then
+            echo "WARN: this shard's truth screens did not land in ~40 min — booting without the 14-di overlay"
+          fi
+          echo "art=${FOUND:-0}" >> "$GITHUB_OUTPUT"
+
+      - name: download truth screens (14-di)
+        if: steps.truth-art.outputs.art == '1'
+        uses: actions/download-artifact@v4
+        with:
+          name: wall-truth-screens-${{ matrix.shard }}
+          path: truth-meta-screens
+
       - name: launch Paper (background, FAST BOOT) + prepare the client while it boots
         run: |
           set -euo pipefail
@@ -1996,6 +1963,12 @@ jobs:
           cp -r seed-pack/f2v/. srv-wall/c-imagine/f2v/
           cp -r seed-pack/scenes/. srv-wall/c-imagine/scenes/
           ls srv-wall/c-imagine/scenes/ | wc -l
+          # 14-di THE RUN-CAPTURE OVERLAY's input: the early-art handshake
+          # landed this shard's truth ScreenArt dump; the plugin merges it
+          # into the served pack + the replay's scene list at boot.
+          mkdir -p srv-wall/c-imagine/screens
+          if [ -d truth-meta-screens ]; then cp -r truth-meta-screens/. srv-wall/c-imagine/screens/; fi
+          echo "14-di run captures: $(ls srv-wall/c-imagine/screens 2>/dev/null | wc -l)"
           echo "eula=true" > srv-wall/eula.txt
           cat > srv-wall/server.properties <<PROPS
           online-mode=false
@@ -2024,7 +1997,7 @@ jobs:
           # play-phase offer pins the same SHA1 for the client's hash check).
           # Measured cost of
           # the rebuild: 4.8 min of every ours boot (#35).
-          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
           # MEASURED (run 42250969085, all 8 ours shards): the client died
