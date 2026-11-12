@@ -353,11 +353,14 @@ public final class ScreenArt {
             if (newMenuUp(mc) && crawl.wait++ < CRAWL_WAIT_TICKS / CRAWL_STEP_TICKS) {
                 return;   // onRender is capturing it
             }
-            if (mc.screen instanceof AbstractContainerScreen<?> || mc.screen == null) {
-                finishCrawl(crawl.next);   // the server has moved on, so the parent must be reopened
-            } else {
-                mc.setScreen(crawl.parent);   // a client-only page: step back out
+            if (!(mc.screen instanceof AbstractContainerScreen<?>) && mc.screen != null) {
+                // A client-only page (AE2's guide): showing the old screen object again would
+                // bring back a menu its removal already emptied on the client (measured: the
+                // pattern provider's return slot), which no player sees. Leave it, and let the
+                // page be opened again, as after any press that left the screen.
+                mc.setScreen(null);
             }
+            finishCrawl(crawl.next);   // the parent must be reopened
             return;
         }
         // A press that kept this screen: wait for its effect, then save what it looks like.
