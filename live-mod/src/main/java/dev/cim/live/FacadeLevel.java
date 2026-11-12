@@ -58,6 +58,13 @@ public final class FacadeLevel extends Level {
 
     @Override
     public RecipeManager getRecipeManager() {
+        // The layer's real server loaded every mod's recipes; the facade's own manager is empty
+        // (measured: Mekanism's crusher input refused a diamond the real server accepts, as
+        // its slot only takes what a recipe uses).
+        net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (real != null && !(real instanceof FacadeServer)) {
+            return real.getRecipeManager();
+        }
         return recipes;
     }
 
