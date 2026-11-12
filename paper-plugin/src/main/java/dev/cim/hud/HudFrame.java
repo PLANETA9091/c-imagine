@@ -57,6 +57,26 @@ public final class HudFrame {
         return this;
     }
 
+    /** Free glyphs under a screen's wash (a font row of {@link HudLayout.Anchor#FREE_WASH}). */
+    public HudFrame freeWashed(int x, int y, String glyphs, int advance, int wash) {
+        parts.add(Component.text(glyphs + move(-advance))
+                .font(font(HudLayout.washId(HudLayout.Anchor.FREE_WASH, wash)))
+                .color(TextColor.color(HudLayout.freeColor(x, y)))
+                .shadowColor(ShadowColor.none()));
+        return this;
+    }
+
+    /** {@link #freeShadowed} under a screen's wash. */
+    public HudFrame freeShadowedWashed(int x, int y, String raw, int wash) {
+        String s = HudText.sanitize(raw);
+        int w = HudText.width(s);
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.washId(HudLayout.Anchor.FREE_WASH_SHADOW, wash)))
+                .color(TextColor.color(HudLayout.freeColor(x + 1, y + 1))).shadowColor(ShadowColor.none()));
+        parts.add(Component.text(s + move(-w)).font(font(HudLayout.washId(HudLayout.Anchor.FREE_WASH_TEXT, wash)))
+                .color(TextColor.color(HudLayout.freeColor(x, y))).shadowColor(ShadowColor.none()));
+        return this;
+    }
+
     /** ASCII at a pixel in label grey, for text on a light panel. */
     public HudFrame freeLabel(int x, int y, String raw) {
         String s = HudText.sanitize(raw);

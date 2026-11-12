@@ -281,9 +281,27 @@ public final class LiveProtocol {
                     player.setPos(pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 2.5);
                     BLOCKS.put(id, pos);
                     if (opener.startsWith("place+item:")) {
+                        // place+item:I#C: the item with the components C the walk's player held
+                        // (an item a mod wants tuned before it places, Create's factory gauge).
+                        String itemSpec = opener.substring("place+item:".length());
+                        String components = null;
+                        if (itemSpec.contains("#")) {
+                            components = itemSpec.substring(itemSpec.indexOf('#') + 1);
+                            itemSpec = itemSpec.substring(0, itemSpec.indexOf('#'));
+                        }
                         net.minecraft.world.item.ItemStack stack = new net.minecraft.world.item.ItemStack(
                                 net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
-                                        net.minecraft.resources.ResourceLocation.parse(opener.substring("place+item:".length()))));
+                                        net.minecraft.resources.ResourceLocation.parse(itemSpec)));
+                        if (components != null) {
+                            try {
+                                stack.applyComponents(net.minecraft.core.component.DataComponentPatch.CODEC.parse(
+                                        level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE),
+                                        net.minecraft.nbt.TagParser.parseTag(components)).getOrThrow());
+                            } catch (Exception e) {
+                                BLOCKS.remove(id);
+                                yield "error\tcomponents of " + itemSpec + ": " + e;
+                            }
+                        }
                         net.minecraft.core.BlockPos below = pos.below();
                         level.setBlock(below, net.minecraft.world.level.block.Blocks.STONE.defaultBlockState(), 3);
                         player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
@@ -304,7 +322,27 @@ public final class LiveProtocol {
                                 made.interact(player, net.minecraft.world.InteractionHand.MAIN_HAND);
                             }
                         }
-                        yield state(player, player.opened() != null ? player.opened() : LiveMenus.clickBlock(player, pos));
+                        if (player.opened() == null) {
+                            LiveMenus.clickBlock(player, pos);
+                        }
+                        if (player.opened() == null) {
+                            // A click the mod takes in its own right-click handler (Create's value
+                            // boxes on a factory gauge): the server's game mode, which posts the
+                            // event first, over each quarter of the placed block's floor.
+                            double[] at = {0.25, 0.75};
+                            for (double dx : at) {
+                                for (double dz : at) {
+                                    if (player.opened() != null) {
+                                        break;
+                                    }
+                                    player.gameMode.useItemOn(player, level, net.minecraft.world.item.ItemStack.EMPTY,
+                                            net.minecraft.world.InteractionHand.MAIN_HAND, new net.minecraft.world.phys.BlockHitResult(
+                                                    new net.minecraft.world.phys.Vec3(pos.getX() + dx, pos.getY() + 0.06, pos.getZ() + dz),
+                                                    net.minecraft.core.Direction.UP, pos, false));
+                                }
+                            }
+                        }
+                        yield state(player, player.opened());
                     }
                     if (opener.startsWith("entity:")) {
                         // A mob the walk spawned and clicked (Supplementaries' red merchant): made

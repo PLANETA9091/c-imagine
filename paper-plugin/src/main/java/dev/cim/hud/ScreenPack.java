@@ -85,6 +85,12 @@ public final class ScreenPack {
             return fills.get(state + ":" + menuIndex);
         }
 
+        /** The wash a press state lays over its slots' items (its font row), or -1. */
+        public int wash(int state) {
+            int[] w = placed.get("wash:" + state);
+            return w == null ? -1 : w[0];
+        }
+
         /** How far the menu's slots moved in a press state (a recipe book opening), or 0,0. */
         public int[] shift(int state) {
             return shifts.getOrDefault(state, ZERO_SHIFT);
@@ -299,7 +305,19 @@ public final class ScreenPack {
         StringBuilder listed = new StringBuilder();
         icons.forEach((id, file) -> listed.append(id).append('\t').append(file).append('\n'));
         Files.writeString(iconFile, listed.toString(), StandardCharsets.UTF_8);
-        providers.addAll(new ItemGlyphs(icons).providers());
+        ItemGlyphs itemGlyphs = new ItemGlyphs(icons);
+        providers.addAll(itemGlyphs.providers());
+        // Washed states: the shader holds each wash, a font row each draws the icons and the
+        // counts through it (see HudLayout.Anchor.FREE_WASH).
+        entries.put("assets/minecraft/shaders/core/text.vsh",
+                HudLayout.vertexShader(WASHES).getBytes(StandardCharsets.UTF_8));
+        for (int w = 0; w < WASHES.size(); w++) {
+            int id = HudLayout.washId(HudLayout.Anchor.FREE_WASH, w);
+            JsonObject washed = HudPack.font(id);
+            washed.getAsJsonArray("providers").addAll(itemGlyphs.providers(HudLayout.ascent(id)));
+            entries.put("assets/" + HudPack.NS + "/font/" + HudLayout.fontName(id) + ".json",
+                    washed.toString().getBytes(StandardCharsets.UTF_8));
+        }
         // A provider's file must exist in the pack, or the client drops the font.
         copyIcons(entries, icons, modsDir);
         entries.put("assets/" + HudPack.NS + "/font/" + HudLayout.fontName(HudLayout.freeId()) + ".json",
@@ -447,7 +465,33 @@ public final class ScreenPack {
         }
     }
 
+    /** Every wash the bake found, by font row: alpha, red, green, blue. */
+    static final List<int[]> WASHES = new ArrayList<>();
+    /** The wash the last {@link #coverArt} recognised, or null. */
+    private static Wash lastWash;
+
+    private static void noteWash(Map<String, int[]> placed, int state) {
+        if (lastWash == null) {
+            return;
+        }
+        int[] w = {lastWash.alpha(), lastWash.r(), lastWash.g(), lastWash.b()};
+        int index = -1;
+        for (int i = 0; i < WASHES.size(); i++) {
+            if (java.util.Arrays.equals(WASHES.get(i), w)) {
+                index = i;
+            }
+        }
+        if (index < 0 && WASHES.size() < HudLayout.WASHES) {
+            WASHES.add(w);
+            index = WASHES.size() - 1;
+        }
+        if (index >= 0) {
+            placed.put("wash:" + state, new int[]{index, 0});
+        }
+    }
+
     private static Baked bake(Path modsDir) throws IOException {
+        WASHES.clear();
         List<Scene> scenes = new ArrayList<>();
         Map<Character, BufferedImage> art = new java.util.LinkedHashMap<>();
         Map<Character, Integer> heights = new HashMap<>();
@@ -654,6 +698,7 @@ public final class ScreenPack {
                             if (over != null) {
                                 covers.put(MOVE_STATE, captureTiles(over, scale, left, top, art2, heights));
                             }
+                            noteWash(placed, MOVE_STATE);
                         }
                     } else if (q[0].equals("press")) {
                         int i = widgets.size();
@@ -682,6 +727,7 @@ public final class ScreenPack {
                             if (over != null) {
                                 covers.put(i, captureTiles(over, scale, left, top, art2, heights));
                             }
+                            noteWash(placed, i);
                         }
                     }
                 }
@@ -898,6 +944,7 @@ public final class ScreenPack {
                                   BufferedImage baseShown, BufferedImage baseFrame, BufferedImage stateFrame,
                                   BufferedImage stateFilled, List<GuiCaptures.Slot> slots, List<int[]> at,
                                   int scale, int left, int top) {
+        lastWash = null;
         if (base.getWidth() != state.getWidth() || base.getHeight() != state.getHeight()
                 || shown.getWidth() != state.getWidth() || shown.getHeight() != state.getHeight()) {
             return null;
@@ -913,6 +960,7 @@ public final class ScreenPack {
         Wash wash = washOf(base, state, slots, at, scale, left, top);
         boolean washable = wash != null && baseShown != null
                 && baseShown.getWidth() == shown.getWidth() && baseShown.getHeight() == shown.getHeight();
+        lastWash = washable ? wash : null;
         BufferedImage out = null;
         for (int i = 0; i < slots.size(); i++) {
             GuiCaptures.Slot slot = slots.get(i);

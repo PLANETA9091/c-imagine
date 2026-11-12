@@ -629,6 +629,22 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
     }
 
+    /** An item under a state's wash: icon and count through the wash, as the real screen draws them. */
+    private void drawItemWashed(HudFrame frame, int x, int y, ItemStack stack, int wash) {
+        if (stack == null || stack.getType().isAir() || glyphs == null) {
+            return;
+        }
+        String id = itemId(stack);
+        String glyph = glyphs.glyph(id);
+        if (glyph != null) {
+            frame.freeWashed(x, y, glyph, glyphs.advance(id), wash);
+        }
+        if (stack.getAmount() > 1) {
+            String n = String.valueOf(stack.getAmount());
+            frame.freeShadowedWashed(x + 17 - HudText.width(n), y + 9, n, wash);
+        }
+    }
+
     /** Player slots run main inventory then hotbar, as vanilla menus add them. */
     private static int playerIndex(int nth) {
         return nth < 27 ? nth + 9 : nth - 27;
@@ -726,7 +742,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                             }
                         }
                     }
-                    drawItem(frame, x, y, item);
+                    int wash = s.scene.captured() == null || s.stateIndex < 0 ? -1
+                            : s.scene.captured().wash(s.stateIndex);
+                    if (wash >= 0) {
+                        drawItemWashed(frame, x, y, item, wash);
+                    } else {
+                        drawItem(frame, x, y, item);
+                    }
                     if (i == hover) {
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }

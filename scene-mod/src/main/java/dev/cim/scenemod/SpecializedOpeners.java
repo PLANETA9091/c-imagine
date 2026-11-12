@@ -64,6 +64,12 @@ public final class SpecializedOpeners {
             "ae2:set_stock_amount"
     );
 
+    /**
+     * The last placement said as a plain opener ({@code place+item:ID#components}) the layer
+     * can replay with the mod's own code, or null.
+     */
+    public static String replay;
+
     private SpecializedOpeners() {
     }
 
@@ -185,6 +191,12 @@ public final class SpecializedOpeners {
                         player.setItemInHand(InteractionHand.MAIN_HAND, held);
                     }
                     LOGGER.info("[cimscene] factory gauge placed: {}", level.getBlockState(rig));
+                    // What a player holds, said plainly, so another server can do the same: the
+                    // tuned item placed, then what it placed right-clicked.
+                    replay = "place+item:" + BuiltInRegistries.ITEM.getKey(gauge.getItem()) + "#"
+                            + net.minecraft.core.component.DataComponentPatch.CODEC.encodeStart(
+                                    level.registryAccess().createSerializationContext(net.minecraft.nbt.NbtOps.INSTANCE),
+                                    gauge.getComponentsPatch()).getOrThrow();
                 }
                 case "ae2:basic_cell_chest", "ae2:craftamount", "ae2:craftconfirm" ->
                     setBlock(level, rig, "ae2:chest");

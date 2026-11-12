@@ -2044,6 +2044,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         String opener = "";
         String sneakOpener = null;
         String menuId = null;
+        String replay = null;
         try {
             for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
@@ -2061,6 +2062,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 ? row[5].replace("opened-by:", "") : null;
                     }
                 }
+                if (line.startsWith("replay\t")) {
+                    // The walk's opener said plainly (a tuned item placed, then clicked): the
+                    // layer replays it with the mod's own code where the walk's own is specialized.
+                    String[] row = line.split("\t", -1);
+                    if (row.length > 5) {
+                        replay = row[5];
+                    }
+                }
                 // header / skip rows (open-failed notes pass through — the
                 // join reads them from the manifest, not from here)
             }
@@ -2076,7 +2085,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         final String heldId = opener.startsWith("item:") ? opener.substring("item:".length()) : null;
         // The live opener keeps the walk's sneak (Create's linked controller opens on a
         // sneaking use only); the held item's id is the same either way.
-        final String harnessOpener = sneakOpener != null ? sneakOpener : opener;
+        final String harnessOpener = replay != null ? replay : sneakOpener != null ? sneakOpener : opener;
         callSync(() -> {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");

@@ -4774,6 +4774,7 @@ public final class CimSceneMod {
             if (opener == null && SpecializedOpeners.isSpecialized(id.toString())) {
                 opener = "specialized:" + id.toString();
             }
+            SpecializedOpeners.replay = null;
             if (opener != null) {
                 guiPlace(level, viewer, rig, opener);
                 // The same race for items: a held-item menu looks up its host in the
@@ -4863,6 +4864,9 @@ public final class CimSceneMod {
             List<String> all = GUI_ALL_OPENERS.getOrDefault(id, opener == null ? List.of() : List.of(opener));
             for (String each : all) {
                 tsv.append("opener\t-\t-\t-\t").append(id).append('\t').append(each).append('\n');
+            }
+            if (SpecializedOpeners.replay != null) {
+                tsv.append("replay\t-\t-\t-\t").append(id).append('\t').append(SpecializedOpeners.replay).append('\n');
             }
             // Slot geometry is server state, so every opened menu documents itself.
             int slotIndex = 0;

@@ -47,6 +47,8 @@ public final class HudPack {
     public static void contribute(Map<String, byte[]> entries) throws IOException {
         entries.put("assets/minecraft/shaders/core/text.vsh",
                 HudLayout.vertexShader().getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/minecraft/shaders/core/text.fsh",
+                HudLayout.fragmentShader().getBytes(StandardCharsets.UTF_8));
         // The carrier: a boss bar colour whose bar draws nothing.
         byte[] clear = png(new BufferedImage(182, 5, BufferedImage.TYPE_INT_ARGB));
         entries.put("assets/minecraft/textures/gui/sprites/boss_bar/yellow_background.png", clear);
@@ -120,7 +122,7 @@ public final class HudPack {
         return font;
     }
 
-    private static JsonObject font(int id) {
+    static JsonObject font(int id) {
         int ascent = HudLayout.ascent(id);
         JsonArray providers = new JsonArray();
 
