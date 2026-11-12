@@ -64,6 +64,37 @@ class Gate(unittest.TestCase):
         self.assertAlmostEqual(ratio, 13.0 / 12.0)
         self.assertEqual(rss, 0.0)
 
+    def test_median_rss_delta_no_longer_hides_behind_a_noisy_bare_sample(self):
+        # The b1302b1 shape (runs 43255194042 vs 43264635188): the max-minus-
+        # max subtraction let ONE hot bare sample (1169 MiB vs 942 MiB
+        # siblings) flatter the delta by ~200 MiB and pass over budget. The
+        # medians see the true ~517 MiB delta and must fail it.
+        KB = 1024
+        bare = [self.boot_dir(f"nb{i}", 11.0, rss)
+                for i, rss in enumerate((942 * KB, 943 * KB, 1169 * KB))]
+        modded = [self.boot_dir(f"nm{i}", 12.0, rss)
+                  for i, rss in enumerate((1472 * KB, 1482 * KB, 1337 * KB))]
+        ratio, rss = gate.compare(*[d for pair in zip(bare, modded) for d in pair])
+        expected = (1472 * KB - 943 * KB) / 1024.0
+        self.assertAlmostEqual(rss, expected, places=3)
+        self.assertGreater(rss, 400, "the honest median delta is over budget")
+
+    def test_median_rss_still_passes_a_tight_pair(self):
+        KB = 1024
+        bare = [self.boot_dir(f"tb{i}", 11.0, 940 * KB) for i in range(3)]
+        modded = [self.boot_dir(f"tm{i}", 12.0, 940 * KB + 300 * KB) for i in range(3)]
+        _, rss = gate.compare(*[d for pair in zip(bare, modded) for d in pair])
+        self.assertAlmostEqual(rss, 300.0, places=3)
+        self.assertLessEqual(rss, 400)
+
+    def test_median_rss_catches_a_real_leak(self):
+        # a leak grows EVERY modded sample: the median moves with it
+        KB = 1024
+        bare = [self.boot_dir(f"lb{i}", 11.0, 940 * KB) for i in range(3)]
+        modded = [self.boot_dir(f"lm{i}", 12.0, 940 * KB + 500 * KB) for i in range(3)]
+        _, rss = gate.compare(*[d for pair in zip(bare, modded) for d in pair])
+        self.assertGreater(rss, 400)
+
     def test_median_gate_still_fails_on_a_real_regression(self):
         # A real slowdown sits IN the medians, not at one extreme: 3/3 modded
         # boots 40% slower must fail exactly like the single-sample gate.

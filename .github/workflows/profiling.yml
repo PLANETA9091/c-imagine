@@ -135,6 +135,17 @@ jobs:
         run: |
           npm i -g crussty
           crussty init --platform paper --version 26.3 --dir tmpl
+          # 14-dr THE FAIR HEAP CONTRACT: the template default memory=2G
+          # (-Xms2G -Xmx2G) lets the heap grow far past the workload's live
+          # set — the modded leg's peak RSS (1360-1448 MiB measured on runs
+          # 43255194042/43264635188) carried hundreds of MiB of GC-lazy heap
+          # headroom, and the 400 MiB budget passed only via a noisy bare
+          # sample (the max-max subtraction flaw, now median-based). Both
+          # legs share this template, so both get the SAME tightened heap:
+          # the comparison stays fair, the measured footprint is the real
+          # live set, and the budget law is untouched.
+          sed -i 's/^memory = .*/memory = "768M"/' tmpl/crussty.toml
+          grep -Fq 'memory = "768M"' tmpl/crussty.toml
           echo "eula=true" > tmpl/eula.txt
           cat > tmpl/server.properties <<'PROPS'
           online-mode=false

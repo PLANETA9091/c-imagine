@@ -7,9 +7,16 @@ merge cannot touch — the bare leg boots plain Paper) and the modded leg swung
 the other way, so the modded/bare ratio crossed the 1.25 limit on runner noise
 alone (0.879 green -> 1.284 red). The limits did not move; the measurement got
 honest: each leg boots N times and the gate compares MEDIANS of the boot times
-(robust to one noisy boot) and the WORST-CASE RSS delta (max of each leg's
-per-boot maxima — conservative, never hides a leak). A single pair keeps the
-legacy behavior (the median of one sample is the sample).
+(robust to one noisy boot) and the MEDIANS of the per-boot RSS maxima (14-dr,
+measured on runs 43255194042 vs 43264635188: the max-minus-max subtraction let
+ONE noisy bare sample — bare-3 at 1169 MiB vs its 942 MiB siblings, a +24%
+swing — flatter the delta by ~200 MiB and pass a run whose true median delta
+(517 MiB) was over budget, while the next run's clean bare legs (941/943/958
+MiB) failed at 424 MiB with a modded peak that had actually SHRUNK by 88 MiB.
+A median on BOTH sides cannot hide a leak: a real leak grows every modded
+sample, so the median moves; one noisy boot on either leg no longer flips the
+verdict). A single pair keeps the legacy behavior (the median of one sample is
+the sample).
 
 CLI (both forms):
   boot-budget.py BARE MODDED
@@ -53,7 +60,7 @@ def compare(*legs):
         mod_times.append(seconds)
         mod_rss.append(rss)
     return statistics.median(mod_times) / statistics.median(bare_times), (
-        max(mod_rss) - max(bare_rss)) / 1024
+        statistics.median(mod_rss) - statistics.median(bare_rss)) / 1024
 
 
 def main():
