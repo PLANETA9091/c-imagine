@@ -1264,12 +1264,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
                 if (line.startsWith("cell\t")) {
                     cells.add(line.split("\t", -1));
-                } else if (line.startsWith("skip\t") && line.endsWith("\tdissolved")
-                        && !line.startsWith("skip\t-1\t")) {
-                    // dissolved on the seed walk only maybe: the truth manifest,
-                    // not this one, decides whether the cell is compared
-                    cells.add(line.split("\t", -1));
                 }
+                // 14-dr THE DISSOLVED-RACE LAW (supersedes the b104a36f
+                // re-placement): a "skip ... dissolved" row means the subject
+                // self-removed before the settle marker — the truth leg's shot
+                // is ALWAYS post-dissolution (the shot waits for the marker),
+                // so the honest replay renders NOTHING at that position. The
+                // old re-placement bet that the truth walk KEPT the subject
+                // (the dynamictrees leaves incident); when both walks dissolve
+                // it — the measured common case (rope_tomatoes, run
+                // 43264497882: 8 rope cells RED at 60-105k ae) — the re-placed
+                // geometry spills into the NEIGHBOURING compared cells and
+                // pollutes them red. The truth-kept case is now the join's
+                // DISSOLVED-RACE diagnostic (gallery-diff --replay-manifests):
+                // reported with its measured ae, never a gate red, because the
+                // replay's only input (the seed manifest) lawfully named the
+                // subject absent.
                 // header row or any other skip row — nothing to spawn
             }
         } catch (IOException ioe) {

@@ -91,5 +91,86 @@ class CommandLine(unittest.TestCase):
                     self.assertEqual(result, status)
 
 
+class DissolvedRace(unittest.TestCase):
+    """14-dr: a truth CELL the replay's own input names dissolved is the walk's
+    self-removal race — RED demotes to DISSOLVED-RACE, never gates."""
+
+    @staticmethod
+    def _pair(root):
+        random = np.random.default_rng(23)
+        truth = random.integers(0, 256, (gd.H, gd.W, 3), dtype=np.uint8)
+        ours = truth.copy()
+        _, (x0, y0, x1, y1) = gd.crop_cell(truth, 0, 0)
+        ours[y0:y1, x0:x1] = random.integers(0, 256, (y1 - y0, x1 - x0, 3), dtype=np.uint8)
+        Image.fromarray(truth).save(root / "truth.png")
+        Image.fromarray(ours).save(root / "ours.png")
+
+    def test_a_dissolved_replay_position_demotes_and_never_gates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tfarmersdelight:rope\t0\t0\n")
+            replay = root / "scenes"
+            replay.mkdir()
+            (replay / "gallery-test-p0.tsv").write_text(
+                "cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                "skip\t-5\t-60\t9\tfarmersdelight:rope_tomatoes\t0\tdissolved\n")
+            arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                         "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                         "--replay-manifests", str(replay), "--gate", "100",
+                         "--out", str(root / "report.json")]
+            with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+                result = gd.main()
+            report = json.loads((root / "report.json").read_text())
+            self.assertEqual(report["rows"][0]["verdict"], "DISSOLVED-RACE")
+            self.assertEqual(report["verdict"], "GREEN")
+            self.assertEqual(report["dissolved_race"], 1)
+            self.assertEqual(result, 0)
+
+    def test_a_non_dissolved_position_stays_red(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tfarmersdelight:rope\t0\t0\n")
+            replay = root / "scenes"
+            replay.mkdir()
+            # the dissolved position is a DIFFERENT cell: this rope cell was
+            # really replayed, its RED is fidelity and must gate
+            (replay / "gallery-test-p0.tsv").write_text(
+                "cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                "skip\t-4\t-60\t9\tsupplementaries:rope_tomatoes\t0\tdissolved\n")
+            arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                         "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                         "--replay-manifests", str(replay), "--gate", "100",
+                         "--out", str(root / "report.json")]
+            with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+                result = gd.main()
+            report = json.loads((root / "report.json").read_text())
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+            self.assertEqual(report["verdict"], "RED")
+            self.assertEqual(report["dissolved_race"], 0)
+            self.assertEqual(result, 2)
+
+    def test_without_the_replay_input_nothing_demotes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tfarmersdelight:rope\t0\t0\n")
+            arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                         "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                         "--gate", "100", "--out", str(root / "report.json")]
+            with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+                result = gd.main()
+            report = json.loads((root / "report.json").read_text())
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+            self.assertEqual(result, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

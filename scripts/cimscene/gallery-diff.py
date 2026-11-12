@@ -269,6 +269,14 @@ def main():
     ap.add_argument("--ours-self",
                     help="the ours leg's second shot (same contract)")
     ap.add_argument("--manifest", action="append", required=True)
+    ap.add_argument("--replay-manifests",
+                    help="dir of the manifests the OURS leg actually replayed "
+                         "(the seed's scenes). A truth CELL whose position the "
+                         "replay input names skip..dissolved is the walk's "
+                         "dissolve race (the subject self-removed on one walk "
+                         "and not the other), not a fidelity failure: the "
+                         "verdict is DISSOLVED-RACE — reported with its "
+                         "measured ae, never a gate red (14-dr)")
     ap.add_argument("--out", required=True)
     ap.add_argument("--diff-dir")
     ap.add_argument("--gate-dyn", action="store_true",
@@ -338,6 +346,7 @@ def main():
     spill = 0
     animated_n = 0
     fam_demoted = 0
+    dissolved_race = 0
     cells = 0
     for mf in args.manifest:
         page = pathlib.Path(mf).stem  # gallery-<ns>-p<p>
@@ -355,6 +364,23 @@ def main():
         # never silently green — their gate is the real-client leg (M5.6).
         page_cells = []
         dyn_grid = {}
+        # 14-dr THE DISSOLVED-RACE MAP: the positions the REPLAY's own input
+        # (the seed manifest) lawfully left empty. The replay renders nothing
+        # there (the re-placement is gone); when the truth manifest still
+        # carries the position as a compared CELL, the two walks disagreed on
+        # a self-removal race — the cell's full-frame ae is the race's
+        # evidence, and the verdict demotes RED -> DISSOLVED-RACE.
+        replay_dissolved = set()
+        if args.replay_manifests:
+            rm = pathlib.Path(args.replay_manifests) / (pathlib.Path(mf).stem + ".tsv")
+            if rm.is_file():
+                for rl in rm.read_text().splitlines()[1:]:
+                    rp = rl.split("\t")
+                    if len(rp) > 6 and rp[0] == "skip" and rp[6].strip() == "dissolved":
+                        try:
+                            replay_dissolved.add((int(rp[1]), int(rp[2]), int(rp[3])))
+                        except ValueError:
+                            continue
         for line in lines:
             parts = line.split("\t")
             if parts[0] == "skip":
@@ -498,15 +524,23 @@ def main():
             if fam:
                 gated_dyn = False
             verdict = classify(v > args.gate, dyn or fam, gated_dyn, air, animated, sn)
+            # 14-dr: the replay's input lawfully named this position dissolved
+            # — an ours-empty crop is the walk race's honest surface, never a
+            # fidelity failure. Only a RED demotes (a clean cell stays clean);
+            # the counter below (the elif chain) owns the tally.
+            if verdict == "RED" and (int(x), int(y), int(z)) in replay_dissolved:
+                verdict = "DISSOLVED-RACE"
             if dyn or air:
                 dynamic += 1
             if verdict == "ANIMATED":
                 animated_n += 1
             elif verdict == "SPILL":
                 spill += 1
+            elif verdict == "DISSOLVED-RACE":
+                dissolved_race += 1
             elif verdict == "RED":
                 red += 1
-            if verdict in ("RED", "SPILL", "DYNAMIC", "AIR", "ANIMATED") and args.diff_dir:
+            if verdict in ("RED", "SPILL", "DYNAMIC", "AIR", "ANIMATED", "DISSOLVED-RACE") and args.diff_dir:
                 dd = pathlib.Path(args.diff_dir)
                 dd.mkdir(parents=True, exist_ok=True)
                 name = f"{page}_c{col}_r{row}.png"
@@ -525,13 +559,14 @@ def main():
     report = {
         "cells": cells, "skipped": skipped, "red": red, "dynamic": dynamic,
         "spill": spill, "animated": animated_n, "family_demoted": fam_demoted,
+        "dissolved_race": dissolved_race,
         "gate": args.gate, "verdict": "GREEN" if red == 0 else "RED",
         "rows": rows,
     }
     pathlib.Path(args.out).write_text(json.dumps(report, indent=1))
     print(f"gallery-diff: {report['verdict']} cells={cells} red={red} "
           f"spill={spill} animated={animated_n} dynamic={dynamic} "
-          f"family_demoted={fam_demoted} "
+          f"family_demoted={fam_demoted} dissolved_race={dissolved_race} "
           f"skipped={skipped} gate={args.gate} -> {args.out}")
     return 0 if red == 0 else 2
 
