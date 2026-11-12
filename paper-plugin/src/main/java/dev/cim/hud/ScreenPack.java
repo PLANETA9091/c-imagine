@@ -128,7 +128,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v18");
+        StringBuilder out = new StringBuilder("v19");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -613,7 +613,9 @@ public final class ScreenPack {
             // slot shows, a slot that only looks different once filled (AE2's placeholder) does not.
             BufferedImage liftedBase = image;
             image = chooseArt(image, filledOf(tsv, ""), vanillaDrawn);
-            List<Piece> pieces = captureTiles(opaque(image, frameOf(tsv, "")), scale, left, top, art2, heights);
+            BufferedImage baseFrame = frameOf(tsv, "");
+            BufferedImage baseShown = opaque(image, baseFrame);
+            List<Piece> pieces = captureTiles(baseShown, scale, left, top, art2, heights);
             if (pieces.isEmpty()) {
                 continue;
             }
@@ -643,10 +645,12 @@ public final class ScreenPack {
                         moveImage = moveImage == null ? null : chooseArt(moveImage, filledOf(tsv, ".move"), vanillaDrawn);
                         if (moveImage != null) {
                             BufferedImage shown = opaque(moveImage, frameOf(tsv, ".move"));
+                            BufferedImage over = coverArt(liftedBase, liftedMove, shown, baseShown, baseFrame,
+                                    frameOf(tsv, ".move"), filledOf(tsv, ".move"), slots,
+                                    statePositions(slots, placed, MOVE_STATE, null), scale, left, top);
                             states.put(MOVE_STATE, captureTiles(shown, scale, left, top, art2, heights));
                             addFills(fills, MOVE_STATE, moveImage, filledOf(tsv, ".move"), slots, vanillaDrawn, scale,
                                     left, top, art2, heights);
-                            BufferedImage over = coverArt(liftedBase, liftedMove, shown, slots, scale, left, top);
                             if (over != null) {
                                 covers.put(MOVE_STATE, captureTiles(over, scale, left, top, art2, heights));
                             }
@@ -669,10 +673,12 @@ public final class ScreenPack {
                         stateImage = stateImage == null ? null : chooseArt(stateImage, filledOf(tsv, ".w" + q[1]), vanillaDrawn);
                         if (stateImage != null) {
                             BufferedImage shown = opaque(stateImage, frameOf(tsv, ".w" + q[1]));
+                            BufferedImage over = coverArt(liftedBase, liftedState, shown, baseShown, baseFrame,
+                                    frameOf(tsv, ".w" + q[1]), filledOf(tsv, ".w" + q[1]), slots,
+                                    statePositions(slots, placed, i, shifts.get(i)), scale, left, top);
                             states.put(i, captureTiles(shown, scale, left, top, art2, heights));
                             addFills(fills, i, stateImage, filledOf(tsv, ".w" + q[1]), slots, vanillaDrawn, scale,
                                     left, top, art2, heights);
-                            BufferedImage over = coverArt(liftedBase, liftedState, shown, slots, scale, left, top);
                             if (over != null) {
                                 covers.put(i, captureTiles(over, scale, left, top, art2, heights));
                             }
@@ -697,16 +703,8 @@ public final class ScreenPack {
     }
 
     /**
-     * What a press state draws over the slots: the state's pixels, in each slot's item and count
-     * square, where they differ from the base art (both captured with the inventory lifted, so
-     * only the screen itself differs), or null. Drawn after the items, it hides what a window
-     * covers and leaves what it does not (measured: Mekanism's Upgrades window hides the slots
-     * beneath it; its side configuration leaves a diamond's count showing below its edge).
-     */
-    /**
      * Whether a state draws something else there, not just a shade of the same: a window or a
-     * popup changes a slot's pixels outright; a faint shade a state casts over the whole screen
-     * (Mekanism's open window) leaves the items the real screen draws over it in view.
+     * popup changes a slot's pixels outright.
      */
     private static boolean visiblyDifferent(int a, int b) {
         int da = Math.abs((a >>> 24) - (b >>> 24));
@@ -716,33 +714,308 @@ public final class ScreenPack {
         return Math.max(da, Math.max(dr, Math.max(dg, db))) > 24;
     }
 
+    /**
+     * A translucent wash a state lays over the whole screen, the items in the slots included
+     * (measured: Mekanism's robit rename window tints everything behind it, 139 grey to
+     * 120,120,136): one colour blended at one alpha, as the real fill blends it.
+     */
+    record Wash(int alpha, int r, int g, int b) {
+        static int blend(int c, int a, int d) {
+            return (int) Math.round((c * a + d * (255 - a)) / 255.0);
+        }
+
+        int over(int base) {
+            return 0xFF000000 | blend(r, alpha, (base >> 16) & 0xFF) << 16
+                    | blend(g, alpha, (base >> 8) & 0xFF) << 8 | blend(b, alpha, base & 0xFF);
+        }
+
+        boolean fits(int base, int state) {
+            return base >>> 24 == 0xFF && state >>> 24 == 0xFF && over(base) == state;
+        }
+
+        int argb() {
+            return alpha << 24 | r << 16 | g << 8 | b;
+        }
+    }
+
+    /**
+     * The wash a state casts over the slots, or null: fitted to the slot pixels that changed,
+     * kept only when one colour at one alpha reproduces most of them exactly across most slots.
+     */
+    static Wash washOf(BufferedImage base, BufferedImage state, List<GuiCaptures.Slot> slots, List<int[]> at,
+                       int scale, int left, int top) {
+        Map<Long, Integer> pairs = new HashMap<>();
+        int changed = 0;
+        int squares = 0;
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            squares++;
+            int x0 = (left + slot.x()) * scale;
+            int y0 = (top + slot.y()) * scale;
+            int dx = (at.get(i)[0] - slot.x()) * scale;
+            int dy = (at.get(i)[1] - slot.y()) * scale;
+            for (int y = y0; y < y0 + 18 * scale; y++) {
+                for (int x = x0; x < x0 + 18 * scale; x++) {
+                    if (!inside(base, x, y) || !inside(state, x + dx, y + dy)) {
+                        continue;
+                    }
+                    int b = base.getRGB(x, y);
+                    int s = state.getRGB(x + dx, y + dy);
+                    if (b != s && b >>> 24 == 0xFF && s >>> 24 == 0xFF) {
+                        pairs.merge((long) (b & 0xFFFFFF) << 24 | (s & 0xFFFFFF), 1, Integer::sum);
+                        changed++;
+                    }
+                }
+            }
+        }
+        if (squares == 0 || pairs.size() < 2) {
+            return null;
+        }
+        // The slope from the most common change of each base shade, robust to a window's pixels.
+        double sw = 0, sb = 0, ss = 0, sbb = 0, sbs = 0;
+        Map<Integer, int[]> modes = new HashMap<>();
+        for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+            int b = (int) (e.getKey() >>> 24);
+            int[] best = modes.get(b);
+            if (best == null || e.getValue() > best[1]) {
+                modes.put(b, new int[]{(int) (e.getKey() & 0xFFFFFF), e.getValue()});
+            }
+        }
+        for (Map.Entry<Integer, int[]> e : modes.entrySet()) {
+            double w = e.getValue()[1];
+            for (int sh = 0; sh <= 16; sh += 8) {
+                double b = (e.getKey() >> sh) & 0xFF;
+                double s = (e.getValue()[0] >> sh) & 0xFF;
+                sw += w;
+                sb += w * b;
+                ss += w * s;
+                sbb += w * b * b;
+                sbs += w * b * s;
+            }
+        }
+        double var = sbb - sb * sb / sw;
+        if (var < 1) {
+            return null;
+        }
+        double k = (sbs - sb * ss / sw) / var;
+        int a0 = (int) Math.round(255 * (1 - k));
+        Wash best = null;
+        int bestHits = 0;
+        for (int a = Math.max(8, a0 - 4); a <= Math.min(247, a0 + 4); a++) {
+            int[] c = new int[3];
+            for (int ch = 0; ch < 3; ch++) {
+                int sh = 16 - 8 * ch;
+                int[] votes = new int[256];
+                for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+                    int b = (int) (e.getKey() >>> (24 + sh)) & 0xFF;
+                    int s = (int) (e.getKey() >>> sh) & 0xFF;
+                    // The colours that blend to s: a short run around (s*255 - b*(255-a)) / a.
+                    double mid = (s * 255.0 - b * (255.0 - a)) / a;
+                    int span = 255 / a + 2;
+                    for (int cc = Math.max(0, (int) mid - span); cc <= Math.min(255, (int) mid + span); cc++) {
+                        if (Wash.blend(cc, a, b) == s) {
+                            votes[cc] += e.getValue();
+                        }
+                    }
+                }
+                for (int cc = 1; cc < 256; cc++) {
+                    if (votes[cc] > votes[c[ch]]) {
+                        c[ch] = cc;
+                    }
+                }
+            }
+            Wash w = new Wash(a, c[0], c[1], c[2]);
+            int hits = 0;
+            for (Map.Entry<Long, Integer> e : pairs.entrySet()) {
+                if (w.over((int) (e.getKey() >>> 24)) == (0xFF000000 | (int) (e.getKey() & 0xFFFFFF))) {
+                    hits += e.getValue();
+                }
+            }
+            if (hits > bestHits) {
+                bestHits = hits;
+                best = w;
+            }
+        }
+        if (best == null || bestHits * 5 < changed * 3) {
+            return null;
+        }
+        // Screen-wide: the wash changed most slots, not a shadow along one window's edge.
+        int washed = 0;
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
+            if (slot.x() <= -1000) {
+                continue;
+            }
+            int cx = (left + slot.x()) * scale + 8 * scale;
+            int cy = (top + slot.y()) * scale + 8 * scale;
+            int sx = (left + at.get(i)[0]) * scale + 8 * scale;
+            int sy = (top + at.get(i)[1]) * scale + 8 * scale;
+            if (inside(base, cx, cy) && inside(state, sx, sy)) {
+                int b = base.getRGB(cx, cy);
+                int s = state.getRGB(sx, sy);
+                if (b != s && best.fits(b, s)) {
+                    washed++;
+                }
+            }
+        }
+        return washed * 2 >= squares ? best : null;
+    }
+
+    /**
+     * What a press state draws over the slots, or null; drawn after the items. Both arts are
+     * captured with the inventory lifted, so only the screen itself differs.
+     * <ul>
+     * <li>A slot a window or popup reaches (some pixel visibly different): every pixel the
+     * state changed there, opaque, hides what lies under the window and leaves what does not
+     * (measured: Mekanism's Upgrades window hides the slots beneath it, its grey list within a
+     * few levels of the slot's own grey; its side configuration leaves a diamond's count
+     * showing below its edge).</li>
+     * <li>A wash over the whole screen ({@link #washOf}): its colour at its alpha over every
+     * slot pixel it explains, with the state's tile showing the base there, so an item in the
+     * slot is washed as the real screen washes it.</li>
+     * <li>A faint change no wash explains covers nothing.</li>
+     * <li>Where the base's real frame shows an item (it differs from the lifted art), the
+     * state's real frame tells: showing the state's own art there, the state hides the item
+     * (measured: the robit's skin window draws cells of the slot's own grey over the
+     * inventory, so no colour tells the cell from the slot); showing something over the art,
+     * the item stays in view.</li>
+     * </ul>
+     * {@code shown}: the state's tiles, {@code baseShown}: the base's; washed pixels of
+     * {@code shown} take the base's pixel. {@code at}: where each slot sits in the state (a
+     * press that lays the screen out again moves them): the state's square there is judged
+     * against the base's square where the slot opened, so a moved screen is not a window.
+     */
     static BufferedImage coverArt(BufferedImage base, BufferedImage state, BufferedImage shown,
-                                  List<GuiCaptures.Slot> slots, int scale, int left, int top) {
+                                  BufferedImage baseShown, List<GuiCaptures.Slot> slots, List<int[]> at,
+                                  int scale, int left, int top) {
+        return coverArt(base, state, shown, baseShown, null, null, null, slots, at, scale, left, top);
+    }
+
+    static BufferedImage coverArt(BufferedImage base, BufferedImage state, BufferedImage shown,
+                                  BufferedImage baseShown, BufferedImage baseFrame, BufferedImage stateFrame,
+                                  BufferedImage stateFilled, List<GuiCaptures.Slot> slots, List<int[]> at,
+                                  int scale, int left, int top) {
         if (base.getWidth() != state.getWidth() || base.getHeight() != state.getHeight()
                 || shown.getWidth() != state.getWidth() || shown.getHeight() != state.getHeight()) {
             return null;
         }
+        boolean frames = baseFrame != null && stateFrame != null
+                && baseFrame.getWidth() == base.getWidth() && baseFrame.getHeight() == base.getHeight()
+                && stateFrame.getWidth() == state.getWidth() && stateFrame.getHeight() == state.getHeight();
+        boolean filled = frames && stateFilled != null
+                && stateFilled.getWidth() == state.getWidth() && stateFilled.getHeight() == state.getHeight();
+        Wash wash = washOf(base, state, slots, at, scale, left, top);
+        boolean washable = wash != null && baseShown != null
+                && baseShown.getWidth() == shown.getWidth() && baseShown.getHeight() == shown.getHeight();
         BufferedImage out = null;
-        for (GuiCaptures.Slot slot : slots) {
+        for (int i = 0; i < slots.size(); i++) {
+            GuiCaptures.Slot slot = slots.get(i);
             if (slot.x() <= -1000) {
                 continue;
             }
             // The item and its count: 16 pixels, the count's shadow one more past the 17th.
             int x0 = (left + slot.x()) * scale;
             int y0 = (top + slot.y()) * scale;
+            int dx = (at.get(i)[0] - slot.x()) * scale;
+            int dy = (at.get(i)[1] - slot.y()) * scale;
             int size = 18 * scale;
-            for (int y = Math.max(0, y0); y < Math.min(base.getHeight(), y0 + size); y++) {
-                for (int x = Math.max(0, x0); x < Math.min(base.getWidth(), x0 + size); x++) {
-                    if (visiblyDifferent(base.getRGB(x, y), state.getRGB(x, y))) {
-                        if (out == null) {
-                            out = new BufferedImage(base.getWidth(), base.getHeight(), BufferedImage.TYPE_INT_ARGB);
-                        }
-                        out.setRGB(x, y, shown.getRGB(x, y));
+            boolean reached = false;
+            for (int y = y0; y < y0 + size && !reached; y++) {
+                for (int x = x0; x < x0 + size && !reached; x++) {
+                    if (inside(base, x, y) && inside(state, x + dx, y + dy)) {
+                        int b = base.getRGB(x, y);
+                        int s = state.getRGB(x + dx, y + dy);
+                        reached = visiblyDifferent(b, s) && !(washable && wash.fits(b, s));
                     }
+                }
+            }
+            for (int y = y0; y < y0 + size; y++) {
+                for (int x = x0; x < x0 + size; x++) {
+                    if (!inside(base, x, y) || !inside(state, x + dx, y + dy)) {
+                        continue;
+                    }
+                    int b = base.getRGB(x, y);
+                    int s = state.getRGB(x + dx, y + dy);
+                    int pixel;
+                    int item = frames ? itemShown(base, baseFrame, x, y) : 0;
+                    if (filled && drawnOverItem(state, stateFilled, stateFrame, x + dx, y + dy)) {
+                        // What the screen draws once the slot holds something, in view on the real
+                        // frame (Create's requester writes the amount over its filter items).
+                        pixel = 0xFF000000 | stateFilled.getRGB(x + dx, y + dy);
+                    } else if (washable && wash.fits(b, s)) {
+                        pixel = wash.argb();
+                        shown.setRGB(x + dx, y + dy, baseShown.getRGB(x, y));
+                    } else if (item > 0 && itemShown(state, stateFrame, x + dx, y + dy) == 0) {
+                        // The base's frame drew an item here; the state's frame shows its own art.
+                        pixel = shown.getRGB(x + dx, y + dy);
+                    } else if (item > 0) {
+                        continue;
+                    } else if (reached && b != s) {
+                        pixel = shown.getRGB(x + dx, y + dy);
+                    } else {
+                        continue;
+                    }
+                    if (out == null) {
+                        out = new BufferedImage(base.getWidth(), base.getHeight(), BufferedImage.TYPE_INT_ARGB);
+                    }
+                    out.setRGB(x + dx, y + dy, pixel);
                 }
             }
         }
         return out;
+    }
+
+    /**
+     * Whether the real frame shows something over the art at this pixel: 1 it does (an item),
+     * 0 it shows the art itself, -1 the art lets the world through there (no evidence).
+     */
+    private static int itemShown(BufferedImage art, BufferedImage frame, int x, int y) {
+        int a = art.getRGB(x, y);
+        int alpha = a >>> 24;
+        // Colour with zero alpha is solid in a real framebuffer (see opaque()).
+        if (alpha != 0xFF && !(alpha == 0 && (a & 0xFFFFFF) != 0)) {
+            return -1;
+        }
+        return (frame.getRGB(x, y) & 0xFFFFFF) != (a & 0xFFFFFF) ? 1 : 0;
+    }
+
+    /**
+     * The filled pass (items in their slots, only their pixels skipped) draws something the
+     * lifted pass does not, and the real frame shows it: drawn by the screen over the item.
+     * A placeholder an empty slot shows is the other way round: the item hides it.
+     */
+    private static boolean drawnOverItem(BufferedImage lifted, BufferedImage filled, BufferedImage frame, int x, int y) {
+        int f = filled.getRGB(x, y);
+        int fa = f >>> 24;
+        if (fa != 0xFF && !(fa == 0 && (f & 0xFFFFFF) != 0)) {
+            return false;
+        }
+        int l = lifted.getRGB(x, y);
+        boolean liftedSolid = l >>> 24 == 0xFF || (l >>> 24 == 0 && (l & 0xFFFFFF) != 0);
+        if (liftedSolid && (l & 0xFFFFFF) == (f & 0xFFFFFF)) {
+            return false;
+        }
+        return (frame.getRGB(x, y) & 0xFFFFFF) == (f & 0xFFFFFF);
+    }
+
+    private static boolean inside(BufferedImage image, int x, int y) {
+        return x >= 0 && y >= 0 && x < image.getWidth() && y < image.getHeight();
+    }
+
+    /** Where each slot sits in a state: its placed position there, moved by the state's shift. */
+    private static List<int[]> statePositions(List<GuiCaptures.Slot> slots, Map<String, int[]> placed, int state,
+                                              int[] shift) {
+        List<int[]> at = new ArrayList<>();
+        for (GuiCaptures.Slot slot : slots) {
+            int[] p = placed.get(state + ":" + slot.menuIndex());
+            int x = p != null ? p[0] : slot.x();
+            int y = p != null ? p[1] : slot.y();
+            at.add(shift == null ? new int[]{x, y} : new int[]{x + shift[0], y + shift[1]});
+        }
+        return at;
     }
 
     /**

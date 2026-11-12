@@ -19,6 +19,7 @@ import argparse
 import glob
 import json
 import os
+import shutil
 import re
 
 from PIL import Image, ImageChops, ImageDraw
@@ -138,17 +139,19 @@ def compare(truth_path, ours_path, slots, scale, art=None):
                 diff = ImageChops.subtract(diff, anim)
         box = mask.getbbox()
         total = sum(1 for v in mask.crop(box).getdata() if v)
-        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box), animated
+        return sum(1 for v in diff.crop(box).getdata() if v), total, diff.crop(box), animated, box[:2]
     box = menu_box(truth.size, slots, scale)
     # Per channel: converting to grey would round a one-step difference away.
     r, g, b = ImageChops.difference(truth.crop(box), ours.crop(box)).split()
     diff = ImageChops.lighter(ImageChops.lighter(r, g), b).point(lambda v: 255 if v else 0)
     red = sum(1 for v in diff.getdata() if v)
-    return red, diff.size[0] * diff.size[1], diff, 0
+    return red, diff.size[0] * diff.size[1], diff, 0, box[:2]
 
 
-def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
-    """Full-resolution truth | ours | diff around where they differ, so a RED is readable."""
+def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96, result=None):
+    """Full-resolution truth | ours | diff around where they differ, so a RED is readable.
+    With the verdict's result, around the pixels it counted (a screen-wide shade differs
+    everywhere by less than the verdict judges, and would pull the crop to the corner)."""
     if not (os.path.isfile(truth_path) and os.path.isfile(ours_path)):
         return
     truth = Image.open(truth_path).convert("RGB")
@@ -161,6 +164,10 @@ def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
     if mask is not None and mask.getbbox():
         diff = ImageChops.multiply(diff, mask)
     box = diff.getbbox()
+    if result is not None and result[2].getbbox():
+        counted = result[2].getbbox()
+        ox, oy = result[4]
+        box = (counted[0] + ox, counted[1] + oy, counted[2] + ox, counted[3] + oy)
     if not box:
         return
     x0, y0 = max(0, box[0] - pad), max(0, box[1] - pad)
@@ -174,6 +181,15 @@ def zoom(truth_path, ours_path, art, out_path, pad=4, limit=96):
     for i, im in enumerate(parts):
         out.paste(im, (i * (parts[0].width + 4), LABEL))
     out.save(out_path)
+
+
+def keep_raw(out, name, truth, ours, art):
+    """A RED's full frames and the art it was judged by, for reading the numbers later."""
+    raw = os.path.join(out, "raw")
+    os.makedirs(raw, exist_ok=True)
+    for path, tag in ((truth, "truth"), (ours, "ours"), (art, "art")):
+        if path and os.path.isfile(path):
+            shutil.copyfile(path, os.path.join(raw, f"{name}.{tag}.png"))
 
 
 def panel(image, title, size):
@@ -195,7 +211,7 @@ def judge(menu, opened, note, result):
         return "RED", f"not opened: {note}"
     if result is None:
         return "RED", "frame missing"
-    red, total, _, animated = result
+    red, total, animated = result[0], result[1], result[3]
     moving = f" ({animated} animated pixels judged apart)" if animated else ""
     return ("GREEN", "pixel identical" + moving) if red == 0 else ("RED", f"{red} of {total} pixels differ" + moving)
 
@@ -236,7 +252,8 @@ def main():
             sheet.paste(panel(result[2] if result else None, why, SHEET), (SHEET[0] * 2 + 8, 0))
             sheet.save(os.path.join(a.out, f"{name}.png"))
             if verdict == "RED" and result:
-                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"))
+                zoom(truth, ours, art, os.path.join(a.out, f"{name}.zoom.png"), result=result)
+                keep_raw(a.out, name, truth, ours, art)
             with open(os.path.join(a.report, f"join-menu-{name}.json"), "w", encoding="utf-8") as f:
                 json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
                            "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
@@ -261,7 +278,8 @@ def main():
                     sheet.paste(panel(res[2] if res else None, w2, SHEET), (SHEET[0] * 2 + 8, 0))
                     sheet.save(os.path.join(a.out, f"{name}-{tag}.png"))
                     if res:
-                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"))
+                        zoom(t, o, state, os.path.join(a.out, f"{name}-{tag}.zoom.png"), result=res)
+                        keep_raw(a.out, f"{name}-{tag}", t, o, state)
                 with open(os.path.join(a.report, f"join-menu-{name}-{tag}.json"), "w", encoding="utf-8") as f:
                     json.dump({"verdict": v, "cells": 1, "red": int(v == "RED"), "dynamic": 0, "skipped": 0,
                                "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)
