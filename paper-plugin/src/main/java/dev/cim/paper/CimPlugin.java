@@ -1279,6 +1279,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return;
         }
         try {
+            int placed = 0;
             for (int[] row : parseLightFile(lightMf)) {
                 try {
                     org.bukkit.block.Block b = w.getBlockAt(row[0], row[1], row[2]);
@@ -1286,12 +1287,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         continue;   // the floor/wall blocks stay; they light from their lit neighbours
                     }
                     b.setBlockData(org.bukkit.Bukkit.createBlockData(
-                            "minecraft:light[level=" + row[3] + "]"), false);
+                            "minecraft:light[level=" + row[3] + "]"), true);
                     placedLightBlocks.add(new int[]{row[0], row[1], row[2]});
+                    placed++;
                 } catch (Exception placeFail) {
                     // unloaded corner: never abort the page
                 }
             }
+            log().info(LOG_PREFIX + "f2v gallery: 14-du light field: " + placed
+                    + " light block(s) placed from " + lightMf.getFileName()
+                    + " (applyPhysics=true — the false flag suppressed the light"
+                    + " engine on 26.3: run 43287562510 measured byte-identical crops)");
         } catch (IOException readFail) {
             log().warning(LOG_PREFIX + "f2v gallery: 14-du light file read failed " + lightMf + ": " + readFail);
         }
