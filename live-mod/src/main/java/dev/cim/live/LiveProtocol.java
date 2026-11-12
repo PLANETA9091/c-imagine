@@ -343,6 +343,14 @@ public final class LiveProtocol {
                                 net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(net.minecraft.core.Direction.UP, 0.5),
                                 net.minecraft.core.Direction.UP, pos, false);
                         net.minecraft.world.level.block.state.BlockState st = level.getBlockState(pos);
+                        if (opener.startsWith("settle+")) {
+                            // As the walk does it: the server's own right-click handling (NeoForge's
+                            // onItemUseFirst first: AE2's network tool on a node).
+                            player.gameMode.useItemOn(player, level, stack, net.minecraft.world.InteractionHand.MAIN_HAND, hit);
+                            player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND,
+                                    net.minecraft.world.item.ItemStack.EMPTY);
+                            yield state(player, player.opened());
+                        }
                         net.minecraft.world.ItemInteractionResult r = st.useItemOn(stack, level, player,
                                 net.minecraft.world.InteractionHand.MAIN_HAND, hit);
                         if (r == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
