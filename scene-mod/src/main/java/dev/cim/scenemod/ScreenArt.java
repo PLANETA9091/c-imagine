@@ -254,7 +254,7 @@ public final class ScreenArt {
             Slot slot = shown.get(i);
             // ...and drawn: a player cannot put anything into a slot the screen does not show.
             if (slot.container != mc.player.getInventory() && !slot.hasItem() && slot.mayPlace(moving)
-                    && (DRAWN.isEmpty() || DRAWN.contains(slot))) {
+                    && drawn(screen, slot)) {
                 to = i;
             }
         }
@@ -502,7 +502,7 @@ public final class ScreenArt {
             tsv.append("slot\t").append(slot.x).append('\t').append(slot.y).append('\t')
                     .append(slot.container == mc.player.getInventory() ? "player" : "menu").append('\t')
                     .append(slot.getContainerSlot()).append('\t').append(slot.index).append('\t')
-                    .append(DRAWN.contains(slot) ? 1 : 0).append('\n');
+                    .append(drawn(screen, slot) ? 1 : 0).append('\n');
         }
         Files.writeString(dir.resolve(name + ".tsv"), tsv.toString(), StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] screen art captured {}", id);
@@ -646,6 +646,22 @@ public final class ScreenArt {
             }
         }
         sent = out.toString();
+    }
+
+    /**
+     * Whether the screen drew this slot in its last frame. A screen that draws its slots its own
+     * way (Sophisticated Backpacks overrides renderSlot without the vanilla body) records none:
+     * then nothing is known and every active slot counts as drawn.
+     */
+    private static boolean drawn(AbstractContainerScreen<?> screen, Slot slot) {
+        boolean known = false;
+        for (Slot each : screen.getMenu().slots) {
+            if (DRAWN.contains(each)) {
+                known = true;
+                break;
+            }
+        }
+        return !known || DRAWN.contains(slot);
     }
 
     /** Called by the slot-render mixin for every slot a screen draws. */
