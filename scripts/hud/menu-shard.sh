@@ -187,8 +187,9 @@ if [ -n "${OURS_CRUSSTY:-}" ]; then
   # recorded screen, every other mod keeps its own code. Each one is an open layer blocker.
   for x in ${LAYER_EXCLUDE:-}; do rm -f srv-ours/mods/"$x"*.jar; done
   cp scripts/log4j2-layer.xml srv-ours/
-  ( cd srv-ours && PATH="$J25/bin:$PATH" JAVA_HOME="$J25" CIM_F2V_PORT=$PACK_PORT CIM_F2V_FASTBOOT=true \
-      setsid bash -c "crussty run >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
+  boot_ours() { ( cd srv-ours && PATH="$J25/bin:$PATH" JAVA_HOME="$J25" CIM_F2V_PORT=$PACK_PORT CIM_F2V_FASTBOOT=true \
+      setsid bash -c "crussty run >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & ) ; }
+  boot_ours
 else
   ( cd srv-ours && setsid bash -c "$J25/bin/java -Xmx3G -Dcim.f2v.port=$PACK_PORT -Dcim.f2v.fastBoot=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 & )
 fi
@@ -206,8 +207,29 @@ fi
 $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
 ARGS=$(sed 's/^java //' visual-client/launch.txt)
 export SDL_VIDEODRIVER=x11
-setsid bash -c "cd visual-client && $J25/bin/java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
-wait_viewer || { tail -30 visual-client/client.out; exit 2; }
+ours_client() { setsid bash -c "cd visual-client && $J25/bin/java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 & }
+ours_client
+if ! wait_viewer; then
+  # The engine sometimes leaves a class of Paper's networking unverifiable for one boot
+  # (CRUSSTY: VerifyError in ServerHandshakePacketListenerImpl.handleIntention, every join
+  # refused): one fresh boot of the ours server, then the client again.
+  grep -m1 -A2 'VerifyError' srv-ours/boot.log | head -3 || true
+  if [ -n "${OURS_CRUSSTY:-}" ]; then
+    stamp "ours join refused, booting the ours server again"
+    pkill -f 'visual-client' || true
+    $RC stop >/dev/null 2>&1 || true
+    for i in $(seq 1 60); do pgrep -f onload.pidFile >/dev/null || break; sleep 2; done
+    pgrep -f onload.pidFile >/dev/null && pkill -9 -f onload.pidFile
+    boot_ours
+    wait_rcon || { tail -40 srv-ours/boot.log; exit 2; }
+    for i in $(seq 1 240); do [ "$(grep -c 'live scan:' srv-ours/boot.log)" -ge 2 ] && break; sleep 1; done
+    $RC 'gamerule advance_time false' 'time set noon' 'gamerule advance_weather false' 'weather clear' 'gamerule spawn_mobs false' >/dev/null
+    ours_client
+    wait_viewer || { tail -30 visual-client/client.out; exit 2; }
+  else
+    tail -30 visual-client/client.out; exit 2
+  fi
+fi
 for i in $(seq 1 40); do [ "$(grep -c 'Reloading ResourceManager' visual-client/client.out)" -ge 2 ] && break; sleep 1; done
 sleep 10   # the join toasts pass
 stamp ours joined
