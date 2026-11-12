@@ -455,7 +455,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // terminal showed the next press's state).
         ScreenPack.Widget w = null;
         for (ScreenPack.Widget each : s.scene.widgets()) {
-            if (("press " + i).equals(each.label())) {
+            if (each.label() != null && (each.label().equals("press " + i) || each.label().startsWith("press " + i + " sent="))) {
                 w = each;
                 break;
             }
@@ -1079,6 +1079,22 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (b.menuClass().equals(menu)) {
                 mine.add(b);
             }
+        }
+        // A crawl press names what the real client sent: the button that sends the same payload
+        // (and the same enum constant, when the payload carries one).
+        int at = label == null ? -1 : label.indexOf(" sent=");
+        if (at >= 0) {
+            String[] sent = label.substring(at + " sent=".length()).split("#", 2);
+            String payload = sent[0].replace('.', '/');
+            for (LiveButtons.Button b : mine) {
+                if (!b.payload().equals(payload)) {
+                    continue;
+                }
+                if (sent.length == 1 || b.args().stream().anyMatch(arg -> arg.endsWith("." + sent[1]))) {
+                    return b;
+                }
+            }
+            return null;
         }
         if (label != null) {
             for (LiveButtons.Button b : mine) {

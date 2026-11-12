@@ -96,6 +96,16 @@ final class LivePayloads {
         AbstractContainerMenu menu = player.opened();
         ClassLoader loader = menu != null ? menu.getClass().getClassLoader() : LivePayloads.class.getClassLoader();
         Class<?> type = load(payloadClass, loader);
+        if (constructorDesc.startsWith("static:")) {
+            // A stateless payload sent as its singleton (Create's ClearMenuPacket.INSTANCE).
+            String member = constructorDesc.substring("static:".length());
+            int dot = member.lastIndexOf('.');
+            Field single = load(member.substring(0, dot), loader).getDeclaredField(member.substring(dot + 1));
+            single.setAccessible(true);
+            Object payload = single.get(null);
+            return payload instanceof CustomPacketPayload custom ? dispatch(player, custom)
+                    : "not a payload: " + type.getName();
+        }
         Constructor<?> ctor = constructor(type, constructorDesc);
         Class<?>[] params = ctor.getParameterTypes();
         ctor.setAccessible(true);

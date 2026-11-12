@@ -6172,6 +6172,25 @@ public final class ClientSurfaceScanner {
             MethodNode method = findMethod(current, name, desc);
             if (method != null) return new ResolvedMethod(current.name, method);
         }
+        // An interface's default method, as the JVM resolves one no class declares (Create's
+        // IClearableMenu.sendClearPacket, called on the filter menu by the reset button).
+        java.util.ArrayDeque<String> interfaces = new java.util.ArrayDeque<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (ClassNode current = concrete; current != null; current = nodes == null
+                ? null : nodes.get(current.superName)) {
+            if (current.interfaces != null) interfaces.addAll(current.interfaces);
+        }
+        while (!interfaces.isEmpty() && nodes != null) {
+            String next = interfaces.poll();
+            if (!seen.add(next)) continue;
+            ClassNode iface = nodes.get(next);
+            if (iface == null) continue;
+            MethodNode method = findMethod(iface, name, desc);
+            if (method != null && (method.access & Opcodes.ACC_ABSTRACT) == 0) {
+                return new ResolvedMethod(iface.name, method);
+            }
+            if (iface.interfaces != null) interfaces.addAll(iface.interfaces);
+        }
         return null;
     }
 
@@ -8441,6 +8460,16 @@ public final class ClientSurfaceScanner {
             if (previous instanceof TypeInsnNode type && type.getOpcode() == Opcodes.NEW
                     && isPayloadCandidate(type.desc, nodes)) {
                 return new PacketFact(type.desc, null, null, null, List.of(), null, null, null);
+            }
+            // A payload with no state, sent as its singleton (Create's ClearMenuPacket.INSTANCE):
+            // the instance is the static field, so the "constructor" is that field.
+            if (previous instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+                    && field.desc.startsWith("L") && field.desc.endsWith(";")) {
+                String type = field.desc.substring(1, field.desc.length() - 1);
+                if (isPayloadCandidate(type, nodes)) {
+                    return new PacketFact(type, "static:" + field.owner + "." + field.name, null, null,
+                            List.of(), null, null, null);
+                }
             }
             if (previous == floorInclusive) break;
         }

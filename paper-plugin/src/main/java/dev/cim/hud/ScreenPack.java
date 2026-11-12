@@ -583,8 +583,11 @@ public final class ScreenPack {
                         move = java.util.Arrays.stream(q).skip(1).mapToInt(Integer::parseInt).toArray();
                     } else if (q[0].equals("press")) {
                         int i = widgets.size();
+                        // What the real press sent rides the label: the HUD presses the scanned
+                        // button that sends the same payload.
+                        String sent = q.length > 8 && !q[8].equals("-") ? " sent=" + q[8] : "";
                         widgets.add(new Widget(Integer.parseInt(q[2]), Integer.parseInt(q[3]), Integer.parseInt(q[4]),
-                                Integer.parseInt(q[5]), "press " + q[1]));
+                                Integer.parseInt(q[5]), "press " + q[1] + sent));
                         if (q.length > 7 && (Integer.parseInt(q[6]) != 0 || Integer.parseInt(q[7]) != 0)) {
                             shifts.put(i, new int[]{Integer.parseInt(q[6]), Integer.parseInt(q[7])});
                         }

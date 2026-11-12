@@ -375,7 +375,8 @@ public final class ScreenArt {
                         int dx = crawl.parent instanceof AbstractContainerScreen<?> s ? s.getGuiLeft() - crawl.left : 0;
                         int dy = crawl.parent instanceof AbstractContainerScreen<?> s ? s.getGuiTop() - crawl.top : 0;
                         record(crawl, "press\t" + crawl.pressed + "\t" + (at[2] - crawl.left) + "\t"
-                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5] + "\t" + dx + "\t" + dy);
+                                + (at[3] - crawl.top) + "\t" + at[4] + "\t" + at[5] + "\t" + dx + "\t" + dy
+                                + "\t" + (sent == null ? "-" : sent));
                     }
                     crawl.pressed = -1;
                 } else {
@@ -406,11 +407,13 @@ public final class ScreenArt {
         int[] at = crawl.targets.get(index);
         crawl.wait = 0;
         crawl.closed = 0;
+        sent = null;
+        // Pressed before the click: the payload it sends is recorded as this press's.
+        crawl.pressed = index;
+        crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
         try {
             crawl.parent.mouseClicked(at[0], at[1], 0);
             crawl.parent.mouseReleased(at[0], at[1], 0);
-            crawl.pressed = index;
-            crawl.settleAt = crawlTicks + CRAWL_SETTLE_TICKS;
         } catch (Throwable t) {
             LOGGER.info("[cimscene] crawl press threw {}", t.toString());
         }
@@ -614,6 +617,32 @@ public final class ScreenArt {
     /** The slots the screen drew in its last frame (a slot can be active and never drawn). */
     private static final java.util.Set<Slot> DRAWN =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /** The first payload the current press sent, as "class" or "class#ENUM". */
+    private static String sent;
+
+    /** Called by the payload-send mixin for every custom payload the client sends. */
+    public static void payloadSent(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+        if (crawl == null || crawl.pressed < 0 || sent != null) {
+            return;
+        }
+        StringBuilder out = new StringBuilder(payload.getClass().getName());
+        for (java.lang.reflect.Field f : payload.getClass().getDeclaredFields()) {
+            if (f.getType().isEnum() && !java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(payload);
+                    if (v != null) {
+                        out.append('#').append(((Enum<?>) v).name());
+                    }
+                } catch (ReflectiveOperationException | RuntimeException e) {
+                    // the class alone still names the button's action
+                }
+                break;
+            }
+        }
+        sent = out.toString();
+    }
 
     /** Called by the slot-render mixin for every slot a screen draws. */
     public static void slotDrawn(Slot slot) {
