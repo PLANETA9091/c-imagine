@@ -713,14 +713,14 @@ impl ClassFile {
         out.extend_from_slice(&self.major_version.to_be_bytes());
         // cp_count is written after the body (see below).
 
-        for slot in 1..self.entries.len() {
+        for (slot, entry) in self.entries.iter().enumerate().skip(1) {
             match rewritten.get(&(slot as u16)) {
                 Some(e) => {
                     pool.push(e.tag);
                     pool.extend_from_slice(&e.data);
                 }
                 None => {
-                    if let Some(e) = &self.entries[slot] {
+                    if let Some(e) = entry {
                         pool.push(e.tag);
                         if e.tag == TAG_UTF8 {
                             // Parsed utf8 payload is the raw content; the
