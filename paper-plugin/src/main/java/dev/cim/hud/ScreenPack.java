@@ -67,11 +67,17 @@ public final class ScreenPack {
      */
     public record Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                            Map<Integer, List<Piece>> states, int[] move, Map<Integer, List<Piece>> covers,
-                           Map<Integer, int[]> shifts, java.util.Set<Integer> hidden, Map<String, List<Piece>> fills) {
+                           Map<Integer, int[]> shifts, java.util.Set<Integer> hidden, Map<String, List<Piece>> fills,
+                           Map<String, int[]> placed) {
         public Captured(int originX, int originY, List<GuiCaptures.Slot> slots,
                         Map<Integer, List<Piece>> states, int[] move) {
             this(originX, originY, slots, states, move, new HashMap<>(), new HashMap<>(), new java.util.HashSet<>(),
-                    new HashMap<>());
+                    new HashMap<>(), new HashMap<>());
+        }
+
+        /** Where a slot sits in a press state that laid the screen out again, or null. */
+        public int[] placed(int state, int menuIndex) {
+            return placed.get(state + ":" + menuIndex);
         }
 
         /** A filled slot's background in a state (-1: as opened), drawn before its item, or null. */
@@ -122,7 +128,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v17");
+        StringBuilder out = new StringBuilder("v18");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -164,6 +170,10 @@ public final class ScreenPack {
                                 .append(q.x()).append('\t').append(q.y()).append('\t').append(q.w()).append('\t')
                                 .append(q.h()).append('\n');
                     }
+                }
+                for (var pl : s.captured().placed().entrySet()) {
+                    out.append("placed\t").append(pl.getKey()).append('\t').append(pl.getValue()[0]).append('\t')
+                            .append(pl.getValue()[1]).append('\n');
                 }
                 for (int h : s.captured().hidden()) {
                     out.append("hidden\t").append(h).append('\n');
@@ -219,11 +229,14 @@ public final class ScreenPack {
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden(), c.fills())));
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden(), c.fills(), c.placed())));
             } else if (p[0].equals("fill")) {
                 out.get(out.size() - 1).captured().fills().computeIfAbsent(p[1], k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
                                 Integer.parseInt(p[5]), Integer.parseInt(p[6]), false));
+            } else if (p[0].equals("placed")) {
+                out.get(out.size() - 1).captured().placed().put(p[1],
+                        new int[]{Integer.parseInt(p[2]), Integer.parseInt(p[3])});
             } else if (p[0].equals("hidden")) {
                 out.get(out.size() - 1).captured().hidden().add(Integer.parseInt(p[1]));
             } else if (p[0].equals("shift")) {
@@ -551,6 +564,7 @@ public final class ScreenPack {
             // filled pass show a filled slot's own background.
             java.util.Set<Integer> vanillaDrawn = new java.util.HashSet<>();
             Map<String, List<Piece>> fills = new HashMap<>();
+            Map<String, int[]> placed = new HashMap<>();
             for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
                 String[] p = line.split("\t");
                 switch (p[0]) {
@@ -643,6 +657,8 @@ public final class ScreenPack {
                         if (q.length > 7 && (Integer.parseInt(q[6]) != 0 || Integer.parseInt(q[7]) != 0)) {
                             shifts.put(i, new int[]{Integer.parseInt(q[6]), Integer.parseInt(q[7])});
                         }
+                        readPlaced(placed, i, tsv.resolveSibling(tsv.getFileName().toString()
+                                .replaceAll("\\.tsv$", ".w" + q[1] + ".slots")), slots);
                         Path art = tsv.resolveSibling(tsv.getFileName().toString().replaceAll("\\.tsv$", ".w" + q[1] + ".png"));
                         BufferedImage stateImage = Files.isRegularFile(art) ? ImageIO.read(art.toFile()) : null;
                         stateImage = stateImage == null ? null : chooseArt(stateImage, filledOf(tsv, ".w" + q[1]), vanillaDrawn);
@@ -670,7 +686,8 @@ public final class ScreenPack {
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
-                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts, hidden, fills)));
+                    new Captured(left - guiW / 2, top - guiH / 2, slots, states, move, covers, shifts, hidden, fills,
+                            placed)));
         }
     }
 
@@ -772,6 +789,31 @@ public final class ScreenPack {
         return Math.abs(((a >> 16) & 0xFF) - ((b >> 16) & 0xFF)) <= 1
                 && Math.abs(((a >> 8) & 0xFF) - ((b >> 8) & 0xFF)) <= 1
                 && Math.abs((a & 0xFF) - (b & 0xFF)) <= 1;
+    }
+
+    /** A state's slot positions where they differ from the screen as opened. */
+    private static void readPlaced(Map<String, int[]> placed, int state, Path file, List<GuiCaptures.Slot> slots)
+            throws IOException {
+        if (!Files.isRegularFile(file)) {
+            return;
+        }
+        Map<Integer, GuiCaptures.Slot> opened = new HashMap<>();
+        for (GuiCaptures.Slot s : slots) {
+            opened.put(s.menuIndex(), s);
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String[] p = line.split("\t");
+            if (p.length < 3) {
+                continue;
+            }
+            int index = Integer.parseInt(p[0]);
+            int x = Integer.parseInt(p[1]);
+            int y = Integer.parseInt(p[2]);
+            GuiCaptures.Slot was = opened.get(index);
+            if (was != null && (was.x() != x || was.y() != y)) {
+                placed.put(state + ":" + index, new int[]{x, y});
+            }
+        }
     }
 
     private static BufferedImage chooseArt(BufferedImage lifted, BufferedImage filled, java.util.Set<Integer> vanillaDrawn) {

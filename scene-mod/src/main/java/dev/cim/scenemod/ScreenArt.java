@@ -460,6 +460,15 @@ public final class ScreenArt {
         try (NativeImage frame = Screenshot.takeScreenshot(mc.getMainRenderTarget())) {
             frame.writeToFile(dir.resolve(base + ".frame"));
         }
+        // Where each slot sits in this state: a press may lay the screen out again (AE2's
+        // terminal style moves the inventory), and the HUD draws the items there.
+        StringBuilder at = new StringBuilder();
+        for (Slot slot : screen.getMenu().slots) {
+            if (slot.isActive()) {
+                at.append(slot.index).append('\t').append(slot.x).append('\t').append(slot.y).append('\n');
+            }
+        }
+        Files.writeString(dir.resolve(base + ".slots"), at.toString(), StandardCharsets.UTF_8);
         TextureTarget target = new TextureTarget(w, h, true, Minecraft.ON_OSX);
         target.setClearColor(0f, 0f, 0f, 0f);
         target.clear(Minecraft.ON_OSX);

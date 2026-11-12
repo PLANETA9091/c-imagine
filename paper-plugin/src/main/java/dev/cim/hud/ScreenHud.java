@@ -170,6 +170,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
 
         /** The slot under the pointer, or -1. */
+        /** Where a slot is drawn in the current state (a press may lay the screen out again). */
+        int[] slotAt(GuiCaptures.Slot slot) {
+            int[] moved = stateIndex >= 0 && scene.captured() != null ? scene.captured().placed(stateIndex, slot.menuIndex()) : null;
+            return moved != null ? moved : new int[]{slot.x(), slot.y()};
+        }
+
         /** Where the slots sit in the current press state, against where the menu opened. */
         int[] slotShift() {
             return stateIndex >= 0 && scene.captured() != null ? scene.captured().shift(stateIndex) : new int[]{0, 0};
@@ -184,7 +190,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             int y = pointer.y() - originY - shift[1];
             for (int i = 0; i < capture.slots().size(); i++) {
                 GuiCaptures.Slot s = capture.slots().get(i);
-                if (x >= s.x() - 1 && x < s.x() + 17 && y >= s.y() - 1 && y < s.y() + 17) {
+                int[] at = slotAt(s);
+                if (x >= at[0] - 1 && x < at[0] + 17 && y >= at[1] - 1 && y < at[1] + 17) {
                     return i;
                 }
             }
@@ -696,8 +703,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             int[] shift = s.slotShift();
             for (int i = 0; i < s.capture.slots().size(); i++) {
                 GuiCaptures.Slot slot = s.capture.slots().get(i);
-                int x = s.originX + slot.x() + shift[0];
-                int y = s.originY + slot.y() + shift[1];
+                int[] moved = s.slotAt(slot);
+                int x = s.originX + moved[0] + shift[0];
+                int y = s.originY + moved[1] + shift[1];
                 // A slot the real screen never draws shows nothing here either.
                 boolean drawn = s.scene.captured() == null || !s.scene.captured().hidden().contains(slot.menuIndex());
                 if (slot.x() > -1000 && drawn) {
