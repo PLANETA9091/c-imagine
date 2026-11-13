@@ -27,6 +27,7 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -59,6 +60,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.JukeboxSong;
 import net.minecraft.world.item.armortrim.ArmorTrim;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
@@ -69,6 +71,7 @@ import net.minecraft.world.level.block.entity.BannerPatternLayers;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.entity.DecoratedPotBlockEntity;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.block.entity.DecoratedPotPatterns;
 import net.minecraft.world.level.block.entity.JukeboxBlockEntity;
 import net.minecraft.world.level.block.entity.PotDecorations;
@@ -333,6 +336,12 @@ public final class CimSceneMod {
                                     false);
                             return placed ? 1 : 0;
                         }))
+                        .then(Commands.literal("lightpoke")
+                                .then(Commands.argument("x", IntegerArgumentType.integer())
+                                        .then(Commands.argument("z", IntegerArgumentType.integer())
+                                                .executes(ctx -> lightPoke(ctx.getSource(),
+                                                        IntegerArgumentType.getInteger(ctx, "x"),
+                                                        IntegerArgumentType.getInteger(ctx, "z"))))))
                         .then(Commands.literal("gallery")
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .executes(ctx -> gallery(ctx.getSource(),
@@ -500,6 +509,46 @@ public final class CimSceneMod {
     static final int FLUID_ROWS = 3;
     static final int FLUID_CELLS = FLUID_COLS * FLUID_ROWS; // 18
     static final int FLUID_PITCH = 2;
+
+    /**
+     * 14-dz THE LIGHT POKE (the dark-cell instrument; run 43468177851
+     * measured 86% of shard 5's red rows as the lightmap-starvation class:
+     * the crop diff shows the SAME geometry rendering near-black on the ours
+     * leg — the client's light data for the page's sections was empty at
+     * shot time, and the settle loop's two-identical-md5s law passes a
+     * STABLE dark frame as happily as a lit one). The poke rebuilds the
+     * vanilla light packet for the 3x3 chunk neighborhood (the same shape
+     * ChunkMap.playerLoadedChunk sends: full-chunk data, no sky/block masks)
+     * and re-sends it to every player in the level. If the
+     * client was already lit, the packet is idempotent and the next frame is
+     * IDENTICAL — the settle loop's re-verify accepts it. If the client was
+     * starved, the re-send integrates the light and the frame CHANGES — the
+     * re-verify rejects the fake settle and the loop re-runs on live data.
+     * Report-only on the server side: the poke never mutates the world.
+     */
+    private static int lightPoke(CommandSourceStack src, int x, int z) {
+        ServerLevel level = src.getLevel();
+        LevelLightEngine engine = level.getLightEngine();
+        int cx = x >> 4;
+        int cz = z >> 4;
+        int packets = 0;
+        for (ServerPlayer p : level.players()) {
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    ChunkPos cp = new ChunkPos(cx + dx, cz + dz);
+                    p.connection.send(new ClientboundLightUpdatePacket(
+                            cp, engine, null, null));
+                    packets++;
+                }
+            }
+        }
+        int viewers = level.players().size();
+        final int n = packets;
+        src.sendSuccess(() -> Component.literal(
+                "[cimscene] lightpoke " + n + " packets -> " + viewers
+                        + " viewer(s) at chunk " + cx + "," + cz), false);
+        return packets;
+    }
 
     /**
      * The universal content gallery: EVERY block (and then EVERY blockstate

@@ -1456,12 +1456,33 @@ jobs:
               # shots = the frame is settled; bounded to 8 tries; the camera
               # is re-pinned before every attempt (14-i law).
               PREV=""
-              for i in $(seq 1 8); do
-                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                bash scripts/visual/shot.sh "truth-shots/.settle-$NS-p$p.png"
-                CUR=$(md5sum "truth-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
-                if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
-                PREV="$CUR"
+              SETTLE_ROUNDS=0
+              while [ "$SETTLE_ROUNDS" -lt 3 ]; do
+                SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
+                for i in $(seq 1 8); do
+                  rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                  bash scripts/visual/shot.sh "truth-shots/.settle-$NS-p$p.png"
+                  CUR=$(md5sum "truth-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
+                  if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+                  PREV="$CUR"
+                done
+                # 14-dz LIGHT POKE + RE-VERIFY: a stable frame can be a
+                # STARVED one — the light packets never integrated and the
+                # dark frame is as stable as a lit one, so the
+                # two-identical law cannot tell (run 43468177851 measured
+                # 86% of shard 5's red rows as exactly this class). The
+                # poke re-sends the page chunks' light packets (cimscene
+                # lightpoke, the vanilla constructor path) and the re-verify
+                # demands the SAME frame again: already-lit = idempotent
+                # packet = identical frame (accept); starved = the re-send
+                # integrates light = the frame CHANGES (the fake settle is
+                # rejected and the loop re-runs on the now-live data).
+                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "truth-shots/.settle-post-$NS-p$p.png"
+                POST=$(md5sum "truth-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
+                rm -f "truth-shots/.settle-post-$NS-p$p.png"
+                if [ "$POST" = "$CUR" ]; then break; fi
+                PREV="$POST"
               done
               rm -f "truth-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p.png"
@@ -2524,12 +2545,33 @@ jobs:
               # = settled; bounded 8 (animated cells never converge and
               # still proceed).
               PREV=""
-              for i in $(seq 1 8); do
-                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-                bash scripts/visual/shot.sh "ours-shots/.settle-$NS-p$p.png"
-                CUR=$(md5sum "ours-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
-                if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
-                PREV="$CUR"
+              SETTLE_ROUNDS=0
+              while [ "$SETTLE_ROUNDS" -lt 3 ]; do
+                SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
+                for i in $(seq 1 8); do
+                  rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                  bash scripts/visual/shot.sh "ours-shots/.settle-$NS-p$p.png"
+                  CUR=$(md5sum "ours-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
+                  if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+                  PREV="$CUR"
+                done
+                # 14-dz LIGHT POKE + RE-VERIFY: a stable frame can be a
+                # STARVED one — the light packets never integrated and the
+                # dark frame is as stable as a lit one, so the
+                # two-identical law cannot tell (run 43468177851 measured
+                # 86% of shard 5's red rows as exactly this class). The
+                # poke re-sends the page chunks' light packets (cimscene
+                # lightpoke, the vanilla constructor path) and the re-verify
+                # demands the SAME frame again: already-lit = idempotent
+                # packet = identical frame (accept); starved = the re-send
+                # integrates light = the frame CHANGES (the fake settle is
+                # rejected and the loop re-runs on the now-live data).
+                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "ours-shots/.settle-post-$NS-p$p.png"
+                POST=$(md5sum "ours-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
+                rm -f "ours-shots/.settle-post-$NS-p$p.png"
+                if [ "$POST" = "$CUR" ]; then break; fi
+                PREV="$POST"
               done
               rm -f "ours-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p.png"
