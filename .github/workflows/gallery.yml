@@ -530,7 +530,7 @@ jobs:
               sleep 1
             done
             grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
-              || { echo "attempt $ATTEMPT: dump client failed to join"; tail -20 truth-client/client-dump.out; continue; }
+              || { echo "attempt $ATTEMPT: dump client failed to join"; tail -80 truth-client/client-dump.out; continue; }
             sleep 8   # first chunk render on llvmpipe (mirror of camera-pins)
             rcon "gamerule randomTickSpeed 0" "gamerule doMobSpawning false" "tick rate 1000" >/dev/null
             # the join's initial-spawn pass may have placed animals near the
@@ -561,7 +561,7 @@ jobs:
             rcon "tick rate 20" >/dev/null
             if grep -qiE "disconnected|connection lost" truth-client/client-dump.out; then
               echo "attempt $ATTEMPT: the client disconnected mid-walk — the block parity voided, redoing on a fresh client"
-              tail -20 truth-client/client-dump.out || true
+              tail -80 truth-client/client-dump.out || true
               continue
             fi
             WALK_OK=1
@@ -648,7 +648,7 @@ jobs:
               sleep 1
             done
             grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
-              || { echo "relaunched particle-walk viewer failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
+              || { echo "relaunched particle-walk viewer failed to join"; tail -80 truth-client/client-dump.out; exit 1; }
             sleep 5
           fi
           # PARTICLE walk (per ladder ns, to exhaustion)
@@ -805,7 +805,7 @@ jobs:
               sleep 1
             done
             grep -qE "Loaded [0-9]+ advancements" truth-client/client-dump.out \
-              || { echo "relaunched dump client failed to join"; tail -40 truth-client/client-dump.out; exit 1; }
+              || { echo "relaunched dump client failed to join"; tail -80 truth-client/client-dump.out; exit 1; }
             sleep 5
           fi
           # SCREEN CAPTURE: the live client opens every menu the scan found, and
@@ -829,7 +829,7 @@ jobs:
             grep -q "quad dump done" truth-client/client-dump.out 2>/dev/null && break
             sleep 1
           done
-          grep "quad dump done" truth-client/client-dump.out || { tail -40 truth-client/client-dump.out; exit 1; }
+          grep "quad dump done" truth-client/client-dump.out || { tail -80 truth-client/client-dump.out; exit 1; }
           test -f "$SCENES/quads/done"
 
       - name: build plugin (maven) + F2vPack pack (cache miss)
@@ -1297,7 +1297,7 @@ jobs:
             sleep 1
           done
           case "$L" in *cimviewer*) echo "truth client joined: $L";;
-            *) tail -30 truth-client/client.out; exit 1;; esac
+            *) tail -80 truth-client/client.out; exit 1;; esac
           for i in $(seq 1 30); do
             grep -qE "Loaded [0-9]+ advancements" truth-client/client.out 2>/dev/null && break
             sleep 1
