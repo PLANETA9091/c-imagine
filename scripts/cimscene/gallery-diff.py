@@ -327,6 +327,18 @@ def main():
                          "under the particle band. The demotions count LOUD "
                          "(the per-page animated total, the anim-diff diag "
                          "continues to measure ours-static vs truth-delta)")
+    ap.add_argument("--animated-states", default="",
+                    help="14-dx-f: the pack build's visual-gallery-animation.tsv "
+                         "(state TAB frames) — rows whose state matches an entry "
+                         "(the bare prefix before #q) demote to ANIMATED: the "
+                         "captured mesh samples an animated atlas sprite, the 14-dr "
+                         "law ships it static at frame 0, and the truth's "
+                         "free-running animation clock lands any frame of the loop "
+                         "at shot time — the cross-leg delta is the frame phase, "
+                         "not a fidelity gap (measured: the BOP liquid_null "
+                         "checkerboard, run 43299753683's fluid forensics). The "
+                         "demotion applies to RED rows only — a green row stays "
+                         "green — and counts LOUD in the per-page animated total.")
     ap.add_argument("--pitch", type=int, default=1,
                     help="cell pitch in blocks (the sparse entity grid uses "
                          "2 — mirror of CimSceneMod.ENTITY_PITCH); the crop "
@@ -351,6 +363,22 @@ def main():
     # green — the gate is the real-client leg M5.6).
     truth_self = load(args.truth_self) if args.truth_self else None
     ours_self = load(args.ours_self) if args.ours_self else None
+    # 14-dx-f: the pack build's animated-sprite states — the bare state
+    # prefixes whose captured mesh samples an animated atlas sprite. A RED
+    # row matching one of these demotes to ANIMATED (the free-running
+    # animation-clock class): the truth's shot and the seed's capture sit
+    # minutes apart, the strip's loop lands any frame at either moment, and
+    # no render fix can phase-match two free-running clocks.
+    animated_states = set()
+    if args.animated_states and pathlib.Path(args.animated_states).is_file():
+        with open(args.animated_states, encoding="utf-8") as ah:
+            for line in ah:
+                line = line.rstrip("\n")
+                if not line or line.startswith("state\t") or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) >= 2 and int(parts[1]) >= 2:
+                    animated_states.add(parts[0].split("#q", 1)[0])
     # PROJECTION GUARD (worklog 12-ac): per-cell verdicts are meaningless on
     # a stale pair or a drifted camera. The threshold is HALF A CELL (24 px
     # at 70 deg): stale pairs / camera teleports miss by hundreds of px,
@@ -575,6 +603,14 @@ def main():
             # the counter below (the elif chain) owns the tally.
             if verdict == "RED" and (int(x), int(y), int(z)) in replay_dissolved:
                 verdict = "DISSOLVED-RACE"
+            # 14-dx-f: the animated-sprite law — the state's captured mesh
+            # samples an animated strip the 14-dr build shipped static at
+            # frame 0; the cross-leg delta is the free-running animation
+            # clock's phase, never a fidelity gap. RED rows only: a green row
+            # stays green, the demotion counts loud in the animated total.
+            if verdict == "RED" and (state in animated_states
+                                     or state.split("#q", 1)[0] in animated_states):
+                verdict = "ANIMATED"
             if dyn or air:
                 dynamic += 1
             if verdict == "ANIMATED":

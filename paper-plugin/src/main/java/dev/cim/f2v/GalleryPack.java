@@ -396,6 +396,7 @@ public final class GalleryPack {
         // build (the r1/r2 determinism builds must never see each other's
         // fallbacks)
         PLACEHOLDER_USES.clear();
+        ANIMATED_STATES.clear();
         for (Input in : seen.values()) {
             String state = in.stateId();
             // 14-dy: the placeholder ledger attributes every fallback to the
@@ -2841,6 +2842,12 @@ public final class GalleryPack {
         if (total <= 1 && first == 0) {
             return png; // single frame: static already
         }
+        // 14-dx-f: the animation receipt rides the state the build is baking
+        // (the placeholder context) — the join's ANIMATED demotion law.
+        String ctx = PLACEHOLDER_CONTEXT.get();
+        if (ctx != null) {
+            ANIMATED_STATES.merge(ctx, total, Math::max);
+        }
         int bx = (first % cols) * frameW;
         int by = (first / cols) * frameH;
         try {
@@ -2931,6 +2938,17 @@ public final class GalleryPack {
      */
     private static final java.util.List<String[]> PLACEHOLDER_USES = new java.util.ArrayList<>();
     private static final ThreadLocal<String> PLACEHOLDER_CONTEXT = new ThreadLocal<>();
+    /** 14-dx-f: the states whose baked composite samples an ANIMATED atlas
+     *  sprite (the strip's frame count, the build's own data). The 14-dr law
+     *  ships the captured strip static at its first frame — deterministic
+     *  ours — but the truth's free-running animation clock lands any frame
+     *  of the loop at shot time: the cross-leg delta is the frame phase, not
+     *  a fidelity gap (measured: biomesoplenty:liquid_null_still, frametime
+     *  4, the 26-entry loop puts frame 0 at entries 0 AND 13-14 — the
+     *  truth's own 2s-apart pair coincides, self_ae [0,0], while the capture
+     *  and the shot sit minutes apart). The join demotes these rows to the
+     *  ANIMATED class; the anim instrument keeps measuring them. */
+    private static final java.util.Map<String, Integer> ANIMATED_STATES = new java.util.HashMap<>();
 
     /** Sets the attribution context for placeholder fallbacks (the state or
      *  item id whose model graph is baking right now). */
@@ -2953,6 +2971,19 @@ public final class GalleryPack {
         PLACEHOLDER_USES.clear();
         java.util.List<String[]> out = new java.util.ArrayList<>(merged.values());
         out.sort(java.util.Comparator.comparing((String[] r) -> r[0]).thenComparing(r -> r[1]));
+        return out;
+    }
+
+    /** Snapshot + clear; rows of {state, frames}, sorted, frames >= 2. */
+    static java.util.List<String[]> drainAnimatedStates() {
+        java.util.List<String[]> out = new java.util.ArrayList<>();
+        for (var e : ANIMATED_STATES.entrySet()) {
+            if (e.getValue() >= 2) {
+                out.add(new String[]{e.getKey(), String.valueOf(e.getValue())});
+            }
+        }
+        ANIMATED_STATES.clear();
+        out.sort(java.util.Comparator.comparing((String[] r) -> r[0]));
         return out;
     }
 

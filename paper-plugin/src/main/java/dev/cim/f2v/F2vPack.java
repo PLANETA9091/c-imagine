@@ -1421,6 +1421,23 @@ public final class F2vPack {
                 }
                 GalleryPack.writeResolvedManifest(
                         outDir.resolve("visual-gallery.resolved.tsv"), gallery);
+                // 14-dx-f: the animated-sprite states the build baked (the
+                // 14-dr static-frame law's missing demotion half) — the join
+                // reads this file and demotes the matching rows to ANIMATED
+                // (the free-running animation clocks can never phase-match
+                // across boots; the delta is the frame phase, not fidelity).
+                java.util.List<String[]> animated = GalleryPack.drainAnimatedStates();
+                if (!animated.isEmpty()) {
+                    StringBuilder sb = new StringBuilder("state\tframes\n");
+                    for (String[] row : animated) {
+                        sb.append(row[0]).append('\t').append(row[1]).append('\n');
+                    }
+                    Files.writeString(outDir.resolve("visual-gallery-animation.tsv"),
+                            sb.toString(), StandardCharsets.UTF_8);
+                    warnings.add("14-dx-f: " + animated.size()
+                            + " state(s) sample animated atlas sprites — the join"
+                            + " demotes their rows to ANIMATED (visual-gallery-animation.tsv)");
+                }
                 if (!gallery.isEmpty()) {
                     List<Map.Entry<Float, String>> paperEntries =
                             new ArrayList<>(paperFloatEntries);

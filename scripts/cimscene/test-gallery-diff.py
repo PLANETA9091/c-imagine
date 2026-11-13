@@ -210,5 +210,93 @@ class DissolvedRace(unittest.TestCase):
             self.assertEqual(result, 2)
 
 
+class AnimatedStates(unittest.TestCase):
+    """14-dx-f: a RED row whose captured mesh samples an animated atlas sprite
+    (the pack build's visual-gallery-animation.tsv) demotes to ANIMATED — the
+    free-running animation-clock class. A green row stays green; a state the
+    manifest does not list stays RED; a missing file is the empty law."""
+
+    @staticmethod
+    def _pair(root):
+        random = np.random.default_rng(31)
+        truth = random.integers(0, 256, (gd.H, gd.W, 3), dtype=np.uint8)
+        ours = truth.copy()
+        _, (x0, y0, x1, y1) = gd.crop_cell(truth, 0, 0)
+        ours[y0:y1, x0:x1] = random.integers(0, 256, (y1 - y0, x1 - x0, 3), dtype=np.uint8)
+        Image.fromarray(truth).save(root / "truth.png")
+        Image.fromarray(ours).save(root / "ours.png")
+
+    @staticmethod
+    def _run(root, manifest, extra=()):
+        # the real joins run --gate-dyn (the fluid/block join calls) — the
+        # dyn=1 modded rows gate, so the animated-sprite law is reachable
+        arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                     "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                     "--gate-dyn", "--gate", "100", "--out", str(root / "report.json"),
+                     *extra]
+        with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+            gd.main()
+        return json.loads((root / "report.json").read_text())
+
+    def test_the_listed_state_demotes_and_counts_loud(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tbiomesoplenty:liquid_null[level=0]\t1\t0\n")
+            anim = root / "visual-gallery-animation.tsv"
+            anim.write_text("state\tframes\n"
+                            "biomesoplenty:liquid_null[level=0]#q7c3cb98e72f85f9d\t9\n")
+            report = self._run(root, manifest, ["--animated-states", str(anim)])
+            self.assertEqual(report["rows"][0]["verdict"], "ANIMATED")
+            self.assertEqual(report["verdict"], "GREEN")
+            self.assertEqual(report["animated"], 1)
+
+    def test_a_state_outside_the_list_stays_red(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tbiomesoplenty:liquid_null[level=0]\t1\t0\n")
+            anim = root / "visual-gallery-animation.tsv"
+            # a DIFFERENT state, and a single-frame row (frames=1 never demotes)
+            anim.write_text("state\tframes\n"
+                            "biomesoplenty:blood[level=0]\t20\n"
+                            "biomesoplenty:liquid_null[level=0]#qstatic\t1\n")
+            report = self._run(root, manifest, ["--animated-states", str(anim)])
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+            self.assertEqual(report["verdict"], "RED")
+
+    def test_a_green_row_never_flips(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            random = np.random.default_rng(37)
+            truth = random.integers(0, 256, (gd.H, gd.W, 3), dtype=np.uint8)
+            Image.fromarray(truth).save(root / "truth.png")
+            Image.fromarray(truth).save(root / "ours.png")
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tbiomesoplenty:liquid_null[level=0]\t1\t0\n")
+            anim = root / "visual-gallery-animation.tsv"
+            anim.write_text("state\tframes\n"
+                            "biomesoplenty:liquid_null[level=0]\t9\n")
+            report = self._run(root, manifest, ["--animated-states", str(anim)])
+            self.assertEqual(report["rows"][0]["verdict"], "GREEN")
+            self.assertEqual(report["animated"], 0)
+
+    def test_a_missing_file_is_the_empty_law(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tlight\n"
+                                "cell\t-5\t-60\t9\tbiomesoplenty:liquid_null[level=0]\t1\t0\n")
+            report = self._run(root, manifest,
+                               ["--animated-states", str(root / "absent.tsv")])
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+
+
 if __name__ == "__main__":
     unittest.main()

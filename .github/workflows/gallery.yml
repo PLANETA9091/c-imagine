@@ -921,6 +921,11 @@ jobs:
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
+          # 14-dx-f: the animated-sprite states manifest rides the build (the
+          # file is ABSENT, not empty, when no animated sprite was baked — the
+          # join treats a missing file as the empty law)
+          ls seed-pack/f2v/ | grep -q "visual-gallery-animation.tsv" \
+            || echo "14-dx-f: no animated-sprite states this build"
           # 14-bi LOADER-UNBAKED demotion (the DT surface_root class): a
           # blockstate whose model chain rides a custom loader the pack
           # cannot bake (dynamictrees:surface_root — the roots' geometry is
@@ -1025,6 +1030,7 @@ jobs:
             seed-pack/f2v/pack.sha1
             seed-pack/f2v/inputs.sha1
             seed-pack/f2v/visual-gallery.resolved.tsv
+            seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
           if-no-files-found: error
 
@@ -1042,6 +1048,7 @@ jobs:
             seed-pack/scenes/*.light
             srv-wall/c-imagine/scenes/*.light
             seed-pack/f2v/visual-gallery.resolved.tsv
+            seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
             seed-pack/f2v/pack.sha1
             seed-pack/f2v/inputs.sha1
@@ -2926,6 +2933,7 @@ jobs:
                 --out "gallery-report/join-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn \
                 --anim-floor 1000 \
+                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
                 --demote-family '^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)' \
                 --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
                 $SELF_T $SELF_O || GATE=1
@@ -3068,6 +3076,8 @@ jobs:
               python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-fluid-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-fluid-$NS-p$p" \
+                --anim-floor 1000 \
+                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
                 $ST $SO --pitch 2 --gate 240000 || GATE=1
             done
           done
