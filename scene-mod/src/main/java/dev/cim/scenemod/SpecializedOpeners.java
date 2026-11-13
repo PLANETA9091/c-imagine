@@ -46,6 +46,13 @@ public final class SpecializedOpeners {
             "mekanism:thermoelectric_boiler",
             "mekanism:thermal_evaporation_controller",
             "mekanism:sps_casing",
+            // 14-eb4 the multiblock force-form family (the f414ec3d menus
+            // census: the last OPEN-FAILED rows — the empty-buffer last-resort
+            // open throws UOE inside the mod's own container factory)
+            "mekanism:dynamic_tank",
+            "mekanism:induction_matrix",
+            "mekanism:matrix_stats",
+            "mekanism:qio_frequency_select_tile",
             // Mekanism items
             "mekanism:seismic_reader",
             "mekanism:qio_frequency_select_item",
@@ -135,6 +142,26 @@ public final class SpecializedOpeners {
                             } catch (Throwable ignored) {}
                         } catch (Throwable ignored) {}
                     }
+                }
+                case "mekanism:dynamic_tank" -> {
+                    // 14-eb4 THE MULTIBLOCK FORCE-FORM (the measured boiler
+                    // pattern): the valve block hosts the tank's GUI; without
+                    // the formed data the walk's own open threw UOE (the
+                    // f414ec3d menus sheet's last no-opener row).
+                    setBlock(level, rig, "mekanism:dynamic_valve");
+                    forceFormMultiblock(level, rig);
+                }
+                case "mekanism:induction_matrix", "mekanism:matrix_stats" -> {
+                    // The induction port hosts both the matrix's main GUI and
+                    // its stats tab; the force-form lets the menus open.
+                    setBlock(level, rig, "mekanism:induction_port");
+                    forceFormMultiblock(level, rig);
+                }
+                case "mekanism:qio_frequency_select_tile" -> {
+                    // The tile variant opens from a QIO tile's own frequency
+                    // button — the importer hosts it (its main menu measures
+                    // GREEN; the select rides the same BE).
+                    setBlock(level, rig, "mekanism:qio_importer");
                 }
                 case "mekanism:seismic_reader" -> {
                     player.setItemInHand(InteractionHand.MAIN_HAND,
@@ -261,6 +288,29 @@ public final class SpecializedOpeners {
         }
     }
 
+    /**
+     * 14-eb4: the multiblock force-form the boiler/evaporation/SPS cases
+     * ride — getMultiblock -> setFormedForce(true) + the renderLocation
+     * anchored at the rig. Shared by the dynamic tank and the induction
+     * matrix (the walk's open threw UOE on the unformed data).
+     */
+    private static void forceFormMultiblock(ServerLevel level, BlockPos rig) {
+        BlockEntity be = level.getBlockEntity(rig);
+        if (be == null) {
+            return;
+        }
+        try {
+            Method getMultiblock = be.getClass().getMethod("getMultiblock");
+            Object mb = getMultiblock.invoke(be);
+            mb.getClass().getMethod("setFormedForce", boolean.class).invoke(mb, true);
+            try {
+                mb.getClass().getField("renderLocation").set(mb, rig);
+            } catch (Throwable ignored) {
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static boolean act(ServerLevel level, ServerPlayer player, BlockPos rig, String menuId, Entity entity) {
         ClassLoader cl = Block.class.getClassLoader();
@@ -321,6 +371,40 @@ public final class SpecializedOpeners {
                             "mekanism.common.network.to_server.button.PacketTileButtonPress$ClickedTileButton", true, cl);
                     Object btn = Enum.valueOf((Class<Enum>) tileBtnClass.asSubclass(Enum.class), "DIGITAL_MINER_CONFIG");
                     BlockEntity be = level.getBlockEntity(rig);
+                    Method getProvider = tileBtnClass.getMethod("getProvider",
+                            Class.forName("mekanism.common.tile.base.TileEntityMekanism", true, cl));
+                    MenuProvider provider = (MenuProvider) getProvider.invoke(btn, be);
+                    player.openMenu(provider, buf -> buf.writeBlockPos(rig));
+                    return true;
+                }
+                case "mekanism:dynamic_tank", "mekanism:induction_matrix" -> {
+                    // 14-eb4: the formed multiblock's own right-click path —
+                    // the valve/port's onActivate opens the main GUI exactly
+                    // as a player's use does.
+                    BlockEntity be = level.getBlockEntity(rig);
+                    if (be == null) {
+                        return false;
+                    }
+                    Object res = be.getClass().getMethod("onActivate", Player.class,
+                            InteractionHand.class, ItemStack.class).invoke(be, player,
+                            InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+                    boolean opened = (Boolean) res.getClass().getMethod("consumesAction").invoke(res);
+                    LOGGER.info("[cimscene] 14-eb4 multiblock opener {}: onActivate -> {} ({})",
+                            menuId, res, opened);
+                    return opened;
+                }
+                case "mekanism:matrix_stats", "mekanism:qio_frequency_select_tile" -> {
+                    // The tile-button presses: the matrix's stats tab and the
+                    // QIO tile's frequency select (the boiler TAB_STATS
+                    // pattern, measured green).
+                    BlockEntity be = level.getBlockEntity(rig);
+                    if (be == null) {
+                        return false;
+                    }
+                    Class<?> tileBtnClass = Class.forName(
+                            "mekanism.common.network.to_server.button.PacketTileButtonPress$ClickedTileButton", true, cl);
+                    String btnName = menuId.equals("mekanism:matrix_stats") ? "TAB_STATS" : "QIO_FREQUENCY_SELECT";
+                    Object btn = Enum.valueOf((Class<Enum>) tileBtnClass.asSubclass(Enum.class), btnName);
                     Method getProvider = tileBtnClass.getMethod("getProvider",
                             Class.forName("mekanism.common.tile.base.TileEntityMekanism", true, cl));
                     MenuProvider provider = (MenuProvider) getProvider.invoke(btn, be);
