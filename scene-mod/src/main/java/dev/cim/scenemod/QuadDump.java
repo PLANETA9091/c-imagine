@@ -931,7 +931,6 @@ final class QuadDump {
         long foreign;
         private final Map<Object, RecordingBuffer> buffers = new java.util.LinkedHashMap<>();
         private final VertexConsumer discard = new Discard();
-
         ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
             this(sprites, new Vec3(origin, origin, origin));
         }
@@ -960,7 +959,38 @@ final class QuadDump {
         void flush() {
             for (RecordingBuffer buffer : buffers.values()) {
                 buffer.flush();
+                // 14-dv THE ENTITY-TRANSLUCENT NAME: a BER's entity-translucent
+                // buffer rides the pack's translucent layer with its captured
+                // vertex alpha honored (the 40/42 material shapes). The measured
+                // class (run 42899212217's verdict, the supplementaries hourglass
+                // sand — HourGlassBlockTileRenderer.renderSand draws through
+                // ModMaterials buffer(RenderType::entityTranslucentCull)): the
+                // rows rode the legacy encoding, the replay defaulted them on the
+                // BLOCK channel (cutout — binary discard), the per-vertex alpha
+                // was never read, and the sand rendered as the ghost-glass
+                // fidelity class. The name proves the shader (the 14-dr law's
+                // own reading: "only an explicit captured material proves that
+                // alpha was ignored" — named translucent proves the OPPOSITE),
+                // so the pack honors the alpha columns and splits the model's
+                // layers by the named material. Everything else (text/glyph
+                // buffers, custom mod layers, the liquid probe's fake state)
+                // keeps the legacy encoding byte-for-byte.
+                String material = entityMaterial(buffer.state);
+                if (material == null) {
+                    out.append(buffer.own);
+                } else {
+                    out.append(withLiquidMaterial(buffer.own.toString(), material));
+                }
             }
+        }
+
+        /** The replay material for the entity layers the pack can name; null = legacy encoding. */
+        static String entityMaterial(String state) {
+            if ("minecraft:entity_translucent_cull".equals(state)
+                    || "minecraft:entity_translucent".equals(state)) {
+                return "translucent";
+            }
+            return null;
         }
 
         /** 14-dn: the RenderType stream a BER asked for (one string per
@@ -983,6 +1013,10 @@ final class QuadDump {
              *  every buffer the BER asked for, so the where-do-text-quads-go
              *  question is answered per page in the boot log). */
             final String state;
+            /** 14-dv: the buffer's own rows — merged into {@code out} at
+             *  ItemCapture.flush() under the buffer's named material, so the
+             *  per-buffer encoding never mixes inside one stream. */
+            final StringBuilder own = new StringBuilder();
             final float[][] pos = new float[4][3];
             final float[][] uv = new float[4][2];
             final float[][] rgb = new float[4][4];
@@ -1054,10 +1088,10 @@ final class QuadDump {
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
                 if (texture != null) {
-                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
+                    appendRow(own, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
                             texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight);
                 } else {
-                    if (!writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
+                    if (!writeQuad(own, captureAtlasPixels ? null : q.getSprite(), boundSprites,
                             rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight)) {
                         foreign++;
                     }
@@ -1090,9 +1124,9 @@ final class QuadDump {
                         // fullbright companion group — the replay pins them
                         // Brightness(15,15) and the text renders flat-bright like
                         // the truth, at the per-character color the renderer set.
-                        appendRow(out, texture, rawShade, -1, pos, uv, rgb,
+                        appendRow(own, texture, rawShade, -1, pos, uv, rgb,
                                 texture.startsWith("~") ? LightTexture.FULL_BRIGHT : packedLight);
-                    } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb,
+                    } else if (!writeQuad(own, null, boundSprites, rawShade, -1, pos, uv, rgb,
                             captureAtlasPixels, packedLight)) {
                         foreign++;
                     }
