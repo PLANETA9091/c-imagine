@@ -2925,6 +2925,7 @@ jobs:
                 --replay-manifests srv-wall/c-imagine/scenes \
                 --out "gallery-report/join-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-$NS-p$p" --gate-dyn \
+                --anim-floor 1000 \
                 --demote-family '^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)' \
                 --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
                 $SELF_T $SELF_O || GATE=1

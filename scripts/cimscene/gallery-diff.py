@@ -240,6 +240,26 @@ def global_alignment(truth, ours, radius=20, step=2):
     return best[0], best[1], bestv
 
 
+def animated_class(sa_t, sa_o, gate, floor):
+    """14-aj + 14-dw: whether the cell's self-pairs prove animated content.
+
+    The 14-aj law: a leg that disagrees with ITSELF above the gate is
+    animated. The 14-dw sub-gate floor extends the reach to the measured
+    particle classes: the TRUTH self-pair above the floor with the OURS
+    self-pair at/below it means the ours channel is static and the cross-leg
+    delta IS the truth's own animation phase (the lit-candle flame+smoke
+    clouds: sa_t 2887..42939 vs the static band's 44 — the ours leg has no
+    particle engine, sa_o=0). Both legs varying sub-gate stays False: ours
+    carries its own mismatching animation channel, the red is honest.
+    """
+    if sa_t is not None and sa_t > gate:
+        return True
+    if sa_o is not None and sa_o > gate:
+        return True
+    return (sa_t is not None and sa_t > floor
+            and (sa_o is None or sa_o <= floor))
+
+
 def classify(over, dyn, gated_dyn, air, animated, spill_near):
     """One cell's verdict. over = its AE exceeds the gate. A gated dyn cell is
     not excused by a dyn neighbour: those neighbours are the same unmeasured
@@ -294,6 +314,19 @@ def main():
                     help="per-cell AE datum after alignment + luminance "
                          "normalisation (calibrated on the run-9 identity "
                          "sample: p0 median 60.8k, p90 210k — see worklog)")
+    ap.add_argument("--anim-floor", type=int, default=1000,
+                    help="14-dw THE SUB-GATE ANIMATION FLOOR: a truth self-pair "
+                         "above this floor (with OURS self-pair at/below it) "
+                         "demotes to ANIMATED even under the gate — the truth "
+                         "cell moves against itself while the ours channel is "
+                         "static, so the cross-leg delta IS the truth's own "
+                         "animation phase. Measured separation (run 43299753683, "
+                         "the supplementaries lit-candle particle class): static "
+                         "light rows sa_t=44, the particle rows sa_t=2887..42939 "
+                         "— floor 1000 sits 23x over the static band and 2.9x "
+                         "under the particle band. The demotions count LOUD "
+                         "(the per-page animated total, the anim-diff diag "
+                         "continues to measure ours-static vs truth-delta)")
     ap.add_argument("--pitch", type=int, default=1,
                     help="cell pitch in blocks (the sparse entity grid uses "
                          "2 — mirror of CimSceneMod.ENTITY_PITCH); the crop "
@@ -485,8 +518,20 @@ def main():
                 cn3 = normalize_luma(co, so)[0]
                 v2, _, _ = aligned_ae(co, cn3)
                 sa_o = min(v1, v2)
-            animated = ((sa_t is not None and sa_t > args.gate)
-                        or (sa_o is not None and sa_o > args.gate))
+            # 14-dw THE SUB-GATE FLOOR: the 14-aj threshold reused the gate
+            # (60000), but the measured particle classes (the lit-candle
+            # flame+smoke clouds, run 43299753683's supplementaries pages)
+            # vary at sa_t 2887..42939 — REAL animation the gate-shaped
+            # threshold never reached, so the rows stayed RED while the ours
+            # channel carried NO animation at all (sa_o=0: the pack channel
+            # has no particle engine). The law: the truth self-pair above the
+            # floor WITH the ours self-pair at/below it = the cross-leg delta
+            # is the truth's own phase — ANIMATED, counted loud. Both legs
+            # varying sub-gate stays RED (ours carries its own mismatching
+            # animation channel — the red is honest), and the static light
+            # rows (sa_t=44) stay RED for the fidelity lanes (the 14-dv2
+            # light calibration owns them).
+            animated = animated_class(sa_t, sa_o, args.gate, args.anim_floor)
             # 14-ag: spill = a dyn neighbour within its measured reach
             # (manifest-derived, zero pixel heuristics). Only a RED verdict is
             # demoted — a spill neighbour never turns a clean cell RED, and

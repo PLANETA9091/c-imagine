@@ -1286,8 +1286,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     if (b.getType() != Material.AIR) {
                         continue;   // the floor/wall blocks stay; they light from their lit neighbours
                     }
+                    // 14-dv2 THE PROPAGATION COMPENSATION (measured, run
+                    // 43299753683): the file records the light the TRUTH world
+                    // HELD at each position; a source placed at level L yields
+                    // L-1 at its neighbours — the replayed field lands one
+                    // step BELOW the measured field everywhere except the
+                    // sources themselves. The mekanism glow class closed under
+                    // that bias, but the supplementaries lit-candle wall rows
+                    // measured ae 72195 against the gate 60000 (the crop's
+                    // cool-vs-warm residual: luma_fit corrected the -3%
+                    // brightness, the hue stayed). level=measured+1 makes the
+                    // PLACED sources' neighbours carry the measured value —
+                    // the field the client computes matches the file. The
+                    // dark positions (measured 0) keep nothing: a level-1
+                    // source where the truth had no block light would be a
+                    // fabricated glow.
+                    int level = row[3] > 0 ? Math.min(15, row[3] + 1) : 0;
+                    if (level == 0) {
+                        continue;
+                    }
                     b.setBlockData(org.bukkit.Bukkit.createBlockData(
-                            "minecraft:light[level=" + row[3] + "]"), true);
+                            "minecraft:light[level=" + level + "]"), true);
                     placedLightBlocks.add(new int[]{row[0], row[1], row[2]});
                     placed++;
                 } catch (Exception placeFail) {
@@ -1297,7 +1316,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             log().info(LOG_PREFIX + "f2v gallery: 14-du light field: " + placed
                     + " light block(s) placed from " + lightMf.getFileName()
                     + " (applyPhysics=true — the false flag suppressed the light"
-                    + " engine on 26.3: run 43287562510 measured byte-identical crops)");
+                    + " engine on 26.3: run 43287562510 measured byte-identical"
+                    + " crops; 14-dv2 level=measured+1 — the propagation step"
+                    + " landed the field one below the truth's measured values,"
+                    + " the lit-candle wall rows rode that bias over the gate)");
         } catch (IOException readFail) {
             log().warning(LOG_PREFIX + "f2v gallery: 14-du light file read failed " + lightMf + ": " + readFail);
         }

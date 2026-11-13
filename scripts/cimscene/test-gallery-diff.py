@@ -48,6 +48,44 @@ class Classify(unittest.TestCase):
         self.assertEqual(verdict(dyn=True, gated=True, animated=True), "ANIMATED")
 
 
+class AnimFloor(unittest.TestCase):
+    """14-dw: the sub-gate animation floor (the lit-candle particle class,
+    run 43299753683's measured separation: static 44, particle 2887..42939)."""
+
+    GATE = 60000
+    FLOOR = 1000
+
+    def test_the_measured_particle_rows_demote(self):
+        # the truth's flame+smoke cloud varies; ours is static (sa_o=0)
+        self.assertTrue(gd.animated_class(34489, 0, self.GATE, self.FLOOR))
+        self.assertTrue(gd.animated_class(42939, 0, self.GATE, self.FLOOR))
+        self.assertTrue(gd.animated_class(2887, 0, self.GATE, self.FLOOR))
+
+    def test_the_static_light_rows_stay_red(self):
+        # the 14-dv2 light-calibration class: the truth's own frames agree
+        self.assertFalse(gd.animated_class(44, 0, self.GATE, self.FLOOR))
+        self.assertFalse(gd.animated_class(12, 3, self.GATE, self.FLOOR))
+
+    def test_the_floor_boundary_is_exact(self):
+        self.assertFalse(gd.animated_class(self.FLOOR, 0, self.GATE, self.FLOOR))
+        self.assertTrue(gd.animated_class(self.FLOOR + 1, 0, self.GATE, self.FLOOR))
+        # ours at the floor disqualifies: ours carries its own animation channel
+        self.assertFalse(gd.animated_class(self.FLOOR + 1, self.FLOOR + 1,
+                                           self.GATE, self.FLOOR))
+
+    def test_both_legs_varying_sub_gate_stays_red(self):
+        self.assertFalse(gd.animated_class(5000, 4000, self.GATE, self.FLOOR))
+
+    def test_the_gate_laws_unchanged(self):
+        # the 14-aj gate-shaped rules still hold verbatim
+        self.assertTrue(gd.animated_class(self.GATE + 1, 0, self.GATE, self.FLOOR))
+        self.assertTrue(gd.animated_class(0, self.GATE + 1, self.GATE, self.FLOOR))
+        self.assertFalse(gd.animated_class(None, None, self.GATE, self.FLOOR))
+        # no ours self frame: the truth's variance above the floor decides
+        self.assertTrue(gd.animated_class(5000, None, self.GATE, self.FLOOR))
+        self.assertFalse(gd.animated_class(500, None, self.GATE, self.FLOOR))
+
+
 class CommandLine(unittest.TestCase):
     def test_gate_hard_workflow_calls_opt_into_dynamic_gating(self):
         workflow = pathlib.Path(__file__).resolve().parents[2] / ".github/workflows/gallery.yml"
