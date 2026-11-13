@@ -3033,7 +3033,9 @@ jobs:
               test -f "$O" || { echo "missing $NS ours item shot p$p"; GATE=1; continue; }
               python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-item-$NS-p$p.json" \
-                --diff-dir "gallery-report/diff-item-$NS-p$p" || GATE=1
+                --diff-dir "gallery-report/diff-item-$NS-p$p" \
+                --anim-floor 1000 \
+                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv || GATE=1
             done
           done
           echo "=== PARTICLE pages: diagnostic join (dyn class, fixed 1s shot window) ==="

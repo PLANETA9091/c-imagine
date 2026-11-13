@@ -256,7 +256,16 @@ public final class GalleryPack {
               .append('\t').append(r.modelRef())
               .append('\t').append(r.xRot())
               .append('\t').append(r.yRot())
-              .append('\t').append(r.composite()).append('\n');
+              .append('\t').append(r.composite());
+            // 14-dz: the captured scene light rides the manifest when the
+            // mesh carried it (lightBlock >= 0) — the 9-column shape the
+            // reader parses back into the 14-cy consumer. Legacy rows keep
+            // the 6-column shape byte-for-byte (the reader defaults them).
+            if (r.lightBlock() >= 0 && r.lightSky() >= 0) {
+                sb.append('\t').append(r.lightBlock())
+                  .append('\t').append(r.lightSky());
+            }
+            sb.append('\n');
         }
         Files.createDirectories(tsv.getParent());
         Files.writeString(tsv, sb.toString(), StandardCharsets.UTF_8);
@@ -303,7 +312,21 @@ public final class GalleryPack {
             } catch (NumberFormatException bad) {
                 // rotations stay 0/0 — the composite defaults
             }
-            rows.add(new Resolved(parts[0].trim(), cmd, ref, xRot, yRot, composite));
+            // 14-dz: the 8-column shape carries the captured scene light the
+            // build synthesized for this mesh (the 14-cy consumer pins the
+            // display to it); absent columns keep the legacy pin (-1/-1).
+            int lightBlock = -1, lightSky = -1;
+            if (parts.length >= 8) {
+                try {
+                    lightBlock = Integer.parseInt(parts[6].trim());
+                    lightSky = Integer.parseInt(parts[7].trim());
+                } catch (NumberFormatException bad) {
+                    lightBlock = -1;
+                    lightSky = -1;
+                }
+            }
+            rows.add(new Resolved(parts[0].trim(), cmd, ref, xRot, yRot, composite,
+                    lightBlock, lightSky, 0f));
         }
         return rows;
     }
@@ -447,7 +470,24 @@ public final class GalleryPack {
                         continue;
                     }
                     compositeIdx++;
-                    out.add(new Resolved(state, cmd, quadRef, 0, 0, true));
+                    // 14-dz THE CAPTURED-LIGHT RIDE-THROUGH: the census on run
+                    // 43391147872 (4f690419, the 171-fidelity class) measured
+                    // the 72-state hourglass class uniformly darker in ours —
+                    // the mesh rows carry the truth renderer's OWN packed
+                    // light (block=15, sky=13/14 at the quads) while the
+                    // replay pinned the display to (emission, 15): the build
+                    // computed the 14-cy captured pair into {@code light} and
+                    // then DROPPED it — the 6-arg Resolved constructor pins
+                    // lightBlock=-1, the manifest writer emitted 6 columns,
+                    // and the plugin's capturedLight branch could never fire.
+                    // The pair IS what the truth shader multiplied — pass it
+                    // through and the 14-cy consumer (already live in
+                    // CimPlugin.galleryPage) pins Brightness(block, sky)
+                    // exactly. A row with no lit quads keeps the legacy pin
+                    // (-1/-1): zero behavior change for legacy meshes.
+                    out.add(light[0] >= 0 && light[1] >= 0
+                            ? new Resolved(state, cmd, quadRef, 0, 0, true, light[0], light[1], 0f)
+                            : new Resolved(state, cmd, quadRef, 0, 0, true));
                     cmd += 1.0f;
                     continue;
                 }

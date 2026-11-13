@@ -3511,6 +3511,7 @@ public final class F2vPack {
         capturedSpriteSelftest(failures);
         compositeBoundsSelftest(failures);
         captureFirstPickSelftest(failures);
+        capturedLightSelftest(failures);
         placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
@@ -3913,6 +3914,74 @@ public final class F2vPack {
             }
         }
         return false;
+    }
+
+    /** 14-dz THE CAPTURED-LIGHT RIDE-THROUGH: build -> manifest -> read, end to end. */
+    private static void capturedLightSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-captured-light");
+        try {
+            var image = new java.awt.image.BufferedImage(2, 2, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 2; y++) {
+                for (int x = 0; x < 2; x++) image.setRGB(x, y, 0xFFC8C8C8);
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", png);
+            Path jar = root.resolve("fixture.jar");
+            writeJar(jar, new TreeMap<>(Map.of("assets/fixture/textures/block/glass.png", png.toByteArray())));
+            String face = "fixture:block/glass\t1\t-1"
+                    + "\t0\t0\t0\t0\t0\t16\t0\t0\t16\t0"
+                    + "\t16\t16\t0\t16\t16\t0\t16\t0\t0\t16";
+            String rgb = "\t1\t1\t1".repeat(4);
+            String alpha = "\t1".repeat(4);
+            // The 42-col shape the hourglass capture emits: material tag +
+            // the packed light tail (block=13, sky=15 — the .light field's
+            // own pair, never (15,15) so the fullbright census stays off).
+            String lit = face + rgb + alpha + "\tcutout\t13\t15";
+            // A legacy 39-col row (no material, no light) keeps the old pin.
+            String legacy = face + rgb + alpha;
+            ObjMesh.resetBaker();
+            GalleryPack.resetJarCache();
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(root);
+            Files.writeString(root.resolve("litmesh.tsv"), lit + "\n" + legacy + "\n");
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            var rows = GalleryPack.build(List.of(jar),
+                    List.of(new GalleryPack.Input("fixture:lit#qlitmesh")), entries, warnings);
+            expect(failures, rows.size() == 1, "captured light: the mesh resolves one row");
+            expect(failures, rows.get(0).lightBlock() == 13 && rows.get(0).lightSky() == 15,
+                    "captured light: the build passes the mesh's dominant pair to the row (was dropped)");
+            Path manifest = root.resolve("visual-gallery.resolved.tsv");
+            GalleryPack.writeResolvedManifest(manifest, rows);
+            List<String> lines = Files.readAllLines(manifest, StandardCharsets.UTF_8).stream()
+                    .filter(l -> !l.startsWith("#")).toList();
+            expect(failures, lines.size() == 1 && lines.get(0).split("\t", -1).length == 8,
+                    "captured light: the manifest row carries the 8-column shape");
+            var back = GalleryPack.readResolvedManifest(manifest);
+            expect(failures, back.size() == 1
+                            && back.get(0).lightBlock() == 13 && back.get(0).lightSky() == 15,
+                    "captured light: the manifest round-trips the pair (the 14-cy pin fires)");
+            // A light-free mesh keeps the legacy 6-column manifest byte shape.
+            Files.writeString(root.resolve("darkmesh.tsv"), legacy + "\n");
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            var dark = GalleryPack.build(List.of(jar),
+                    List.of(new GalleryPack.Input("fixture:dark#qdarkmesh")), new TreeMap<>(), new ArrayList<>());
+            expect(failures, dark.size() == 1
+                            && dark.get(0).lightBlock() == -1 && dark.get(0).lightSky() == -1,
+                    "captured light: a mesh without lit rows keeps the legacy pin");
+            GalleryPack.writeResolvedManifest(manifest, dark);
+            List<String> darkLines = Files.readAllLines(manifest, StandardCharsets.UTF_8).stream()
+                    .filter(l -> !l.startsWith("#")).toList();
+            expect(failures, darkLines.size() == 1 && darkLines.get(0).split("\t", -1).length == 6,
+                    "captured light: the legacy manifest stays 6 columns");
+            expect(failures, GalleryPack.readResolvedManifest(manifest).get(0).lightBlock() == -1,
+                    "captured light: the legacy manifest reads back the legacy pin");
+        } finally {
+            GalleryPack.setQuadDir(null);
+            GalleryPack.resetModelScales();
+            deleteRecursively(root);
+        }
     }
 
     /**
