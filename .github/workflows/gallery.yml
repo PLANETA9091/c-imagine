@@ -762,7 +762,14 @@ jobs:
                   with open(out, 'w', encoding='utf-8') as f:
                       f.write('slot\titem\n')
                       for i, item in enumerate(ordered[pi:pi + chunk]):
-                          slot = f'hotbar.{i}' if i < 9 else f'inventory.{i}'
+                          # 14-eb the relabeled vanilla semantics (the #302
+                          # law): 0..8 = hotbar.N, 9..35 = the vanilla main
+                          # slots inventory.(i-9) — the raw-Bukkit
+                          # inventory.9..35 names overflowed the plugin's
+                          # Bukkit range (9 dropped slots, placed=27 of 36)
+                          # AND the truth's vanilla `item replace` rejects
+                          # inventory.27+ (the main slots are 0..26)
+                          slot = f'hotbar.{i}' if i < 9 else f'inventory.{i - 9}'
                           f.write(f'{slot}\t{item}\n')
                   n += 1
               print(f'inv {ns}: {len(ordered)} items')
