@@ -39,6 +39,7 @@ jobs:
           python3 scripts/cimscene/test-gallery-diff.py
           python3 scripts/cimscene/test-coverage-gate.py
           python3 scripts/cimscene/test-fidelity-forensics.py
+          python3 scripts/cimscene/test-mesh-diff.py
           python3 scripts/cimscene/test-wait-scene-marker.py
           python3 scripts/cimscene/test-parity-channels.py
       - name: client download recovery
