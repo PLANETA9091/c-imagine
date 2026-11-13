@@ -417,9 +417,11 @@ public final class GalleryPack {
         float cmd = CMD_BASE;
         // 14-dy: a build owns its WHOLE placeholder ledger — fresh each
         // build (the r1/r2 determinism builds must never see each other's
-        // fallbacks)
+        // fallbacks). 14-dz2: the ANIMATED ledger reset moved to
+        // resetAnimatedStates() (the F2vPack build start) — the item quad
+        // section records before this build runs, the fluid scan records
+        // after it; a clear here wiped both.
         PLACEHOLDER_USES.clear();
-        ANIMATED_STATES.clear();
         for (Input in : seen.values()) {
             String state = in.stateId();
             // 14-dy: the placeholder ledger attributes every fallback to the
@@ -3012,6 +3014,25 @@ public final class GalleryPack {
         java.util.List<String[]> out = new java.util.ArrayList<>(merged.values());
         out.sort(java.util.Comparator.comparing((String[] r) -> r[0]).thenComparing(r -> r[1]));
         return out;
+    }
+
+    /** 14-dz2: records an animated-sprite receipt from OUTSIDE the gallery
+     *  build's own model-graph bake — the fluid scan (the still strips the
+     *  fluid channel crops at bake time) and any later producer. The frame
+     *  count the strip's own metadata proves (the mcmeta), never pixels. */
+    public static void recordAnimatedState(String state, int frames) {
+        if (state != null && frames >= 2) {
+            ANIMATED_STATES.merge(state, frames, Math::max);
+        }
+    }
+
+    /** 14-dz2: the ONE reset point for the animated-sprite ledger — the
+     *  F2vPack build start. The item quad section records BEFORE the gallery
+     *  build and the fluid scan records AFTER it; a clear inside the gallery
+     *  build wiped the item receipts (measured: the animation tsv carried
+     *  gallery states only, the item/fluid joins had nothing to match). */
+    public static void resetAnimatedStates() {
+        ANIMATED_STATES.clear();
     }
 
     /** Snapshot + clear; rows of {state, frames}, sorted, frames >= 2. */

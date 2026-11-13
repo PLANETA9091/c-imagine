@@ -165,6 +165,32 @@ public final class F2vPack {
                         continue;
                     }
                     paths.add(ns + ":" + file);
+                    boolean animatedStrip = false;
+                    int frames = 1;
+                    // 14-dz2 THE FLUID ANIMATED RECEIPT: the still strips are
+                    // animated (the 14-cf crop ships frame 0) and the fluid
+                    // joins read the animation tsv (the 14-dx-f law) — but
+                    // the fluid scan never recorded, so the bop/create/
+                    // mekanism free-running-clock reds (liquid_null 439702
+                    // on run 43395239790: above the gate this boot, 166594
+                    // below it the boot before — the frame phase, not
+                    // fidelity) stayed gated. A sibling .mcmeta IS the
+                    // animation proof (zero pixel heuristics); the frame
+                    // count rides the strip's own layout (16px frames).
+                    try {
+                        if (zf.getEntry(n + ".mcmeta") != null) {
+                            java.awt.image.BufferedImage strip = javax.imageio.ImageIO.read(
+                                    new java.io.ByteArrayInputStream(zf.getInputStream(e).readAllBytes()));
+                            if (strip != null) {
+                                int across = strip.getWidth() / 16;
+                                int down = strip.getHeight() / 16;
+                                frames = Math.max(across, down);
+                                animatedStrip = frames >= 2;
+                            }
+                        }
+                    } catch (Exception badStrip) {
+                        animatedStrip = false; // an unreadable strip keeps the silent crop
+                    }
                     if (!entries.containsKey(n)) {
                         // 14-cf: the strip NEVER enters the atlas raw. The
                         // still textures are animated strips (16xN: the
@@ -179,6 +205,10 @@ public final class F2vPack {
                         // 16x16 frame 0 under the SAME sprite id — the
                         // deterministic surface, the atlas keeps its size.
                         entries.put(n, stillFramePng(zf.getInputStream(e).readAllBytes()));
+                    }
+                    if (animatedStrip) {
+                        GalleryPack.recordAnimatedState(
+                                fluidIdFromTexture(ns, file.substring(file.lastIndexOf('/') + 1)), frames);
                     }
                 }
             }
@@ -1176,6 +1206,11 @@ public final class F2vPack {
         GalleryPack.resetJarCache();
         ObjMesh.resetBaker();
         GalleryPack.setQuadDir(outDir.resolve("quads"));
+        // 14-dz2: the animated-sprite ledger's ONE reset — the build start.
+        // The item quad section records before the gallery build runs, the
+        // fluid scan records after it; the old clear inside the gallery
+        // build wiped both (the animation tsv carried gallery states only).
+        GalleryPack.resetAnimatedStates();
         List<VisualItem> baseResolved = assignCmds(manifestRows);
 
         // PALETTE variant rows (M6 palette channel): one synthetic VisualItem
@@ -1426,18 +1461,11 @@ public final class F2vPack {
                 // reads this file and demotes the matching rows to ANIMATED
                 // (the free-running animation clocks can never phase-match
                 // across boots; the delta is the frame phase, not fidelity).
-                java.util.List<String[]> animated = GalleryPack.drainAnimatedStates();
-                if (!animated.isEmpty()) {
-                    StringBuilder sb = new StringBuilder("state\tframes\n");
-                    for (String[] row : animated) {
-                        sb.append(row[0]).append('\t').append(row[1]).append('\n');
-                    }
-                    Files.writeString(outDir.resolve("visual-gallery-animation.tsv"),
-                            sb.toString(), StandardCharsets.UTF_8);
-                    warnings.add("14-dx-f: " + animated.size()
-                            + " state(s) sample animated atlas sprites — the join"
-                            + " demotes their rows to ANIMATED (visual-gallery-animation.tsv)");
-                }
+                // 14-dz2: the DRAIN moved below the fluid scan — the fluid
+                // strip receipts (and any later producer) join the same
+                // tsv; draining here lost them (the scan runs after this
+                // line and the gallery build's own clear ran before the
+                // item section's records ever landed).
                 if (!gallery.isEmpty()) {
                     List<Map.Entry<Float, String>> paperEntries =
                             new ArrayList<>(paperFloatEntries);
@@ -1484,6 +1512,26 @@ public final class F2vPack {
             }
             Files.writeString(outDir.resolve("visual-gallery-fluids.tsv"),
                     fl.toString(), StandardCharsets.UTF_8);
+        }
+
+        // 14-dx-f + 14-dz2: the animated-sprite states — the gallery build's
+        // model-graph bakes, the item quad section's item meshes (the item
+        // id context rides placeholderContext) and the fluid scan's strips
+        // (the mcmeta-proven frame counts) — ONE ledger drained ONCE at the
+        // end. The join reads this file and demotes the matching rows to
+        // ANIMATED (the free-running animation clocks can never phase-match
+        // across boots; the delta is the frame phase, not fidelity).
+        java.util.List<String[]> animated = GalleryPack.drainAnimatedStates();
+        if (!animated.isEmpty()) {
+            StringBuilder sb = new StringBuilder("state\tframes\n");
+            for (String[] row : animated) {
+                sb.append(row[0]).append('\t').append(row[1]).append('\n');
+            }
+            Files.writeString(outDir.resolve("visual-gallery-animation.tsv"),
+                    sb.toString(), StandardCharsets.UTF_8);
+            warnings.add("14-dx-f: " + animated.size()
+                    + " state(s) sample animated atlas sprites — the join"
+                    + " demotes their rows to ANIMATED (visual-gallery-animation.tsv)");
         }
 
         // 14-cd FLUID CUBE channel: the ours leg's visible surface for the
@@ -3512,6 +3560,7 @@ public final class F2vPack {
         compositeBoundsSelftest(failures);
         captureFirstPickSelftest(failures);
         capturedLightSelftest(failures);
+        fluidAnimatedReceiptSelftest(failures);
         placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
@@ -3984,11 +4033,47 @@ public final class F2vPack {
         }
     }
 
-    /**
-     * 14-dy: the placeholder ledger — the fallback NAMES its source sprite
-     * and build context, the drain merges + sorts + clears, the writer
-     * emits the TSV with the exact header contract.
-     */
+    /** 14-dz2 THE FLUID ANIMATED RECEIPT: the scan records the still strips
+     *  the fluid channel crops (the mcmeta proves the animation), the drain
+     *  carries the fluid ids the join's 14-dx-f law matches. */
+    private static void fluidAnimatedReceiptSelftest(List<String> failures) throws IOException {
+        Path root = Files.createTempDirectory("f2v-fluid-anim");
+        try {
+            // A 16x48 vertical strip = 3 frames; the mcmeta sibling IS the
+            // animation proof. A second 16x48 strip WITHOUT the mcmeta must
+            // stay unrecorded (zero pixel heuristics).
+            var strip = new java.awt.image.BufferedImage(16, 48,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 48; y++) {
+                for (int x = 0; x < 16; x++) strip.setRGB(x, y, 0xFF204080);
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(strip, "png", png);
+            Path jar = root.resolve("fixture.jar");
+            writeJar(jar, new TreeMap<>(Map.of(
+                    "assets/fixture/textures/fluid/goo_still.png", png.toByteArray(),
+                    "assets/fixture/textures/fluid/goo_still.png.mcmeta",
+                    "{\"animation\":{\"frametime\":4}}".getBytes(StandardCharsets.UTF_8),
+                    "assets/fixture/textures/fluid/calm_still.png", png.toByteArray())));
+            GalleryPack.resetAnimatedStates();
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<FluidTexture> textures = scanFluidTextures(List.of(jar), entries, new ArrayList<>());
+            expect(failures, textures.stream().anyMatch(t -> t.fluidId().equals("fixture:goo")),
+                    "fluid anim: the strip's fluid id joins the texture channel");
+            var drained = new java.util.LinkedHashMap<String, Integer>();
+            for (String[] row : GalleryPack.drainAnimatedStates()) {
+                drained.put(row[0], Integer.parseInt(row[1]));
+            }
+            expect(failures, Integer.valueOf(3).equals(drained.get("fixture:goo")),
+                    "fluid anim: the mcmeta-proven strip records 3 frames (was silent)");
+            expect(failures, !drained.containsKey("fixture:calm"),
+                    "fluid anim: a strip without the mcmeta stays unrecorded");
+        } finally {
+            GalleryPack.resetAnimatedStates();
+            deleteRecursively(root);
+        }
+    }
+
     private static void placeholderLedgerSelftest(List<String> failures) throws IOException {
         Path quads = Files.createTempDirectory("f2v-ph-selftest");
         try {
