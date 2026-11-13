@@ -832,6 +832,48 @@ jobs:
           grep "quad dump done" truth-client/client-dump.out || { tail -80 truth-client/client-dump.out; exit 1; }
           test -f "$SCENES/quads/done"
 
+      - name: 14-ea fluid face sample (the previous run's truth renders)
+        if: steps.seed-verify.outputs.hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The pack (built ONCE here, cache-miss only) must carry the
+          # truth-measured fluidcube faces - but this job runs BEFORE this
+          # run's truth shards exist. The truth fluid surface is STATIC once
+          # the 14-dl pin holds (the 14-dm law), so the faces sample from
+          # the PREVIOUS successful gallery run's wall-truth-* artifacts:
+          # one run of lag, self-healing, and the faces ride the seed cache
+          # afterward (this step re-downloads only on a cache miss, which is
+          # exactly when the faces must be re-derived anyway).
+          PREV=$(GITHUB_RUN_ID="$GITHUB_RUN_ID" python3 scripts/f2v/find-sample-run.py \
+            "$GITHUB_API_URL" "$GITHUB_REPOSITORY" "$GH_TOKEN")
+          if [ -z "$PREV" ]; then
+            echo "no previous successful gallery run - the faces land next run (canvas cubes)"
+            exit 0
+          fi
+          echo "sampling faces from run $PREV"
+          python3 -m pip install -q pillow numpy
+          ARTS=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/$PREV/artifacts?per_page=100")
+          for S in 0 1 2 3 4 5 6 7; do
+            for KIND in meta shots; do
+              AID=$(echo "$ARTS" | python3 scripts/f2v/find-artifact.py "$KIND" "$S")
+              [ -n "$AID" ] || { echo "run $PREV has no wall-truth-$KIND-$S"; continue; }
+              curl -sfL -H "Authorization: Bearer $GH_TOKEN" \
+                "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/artifacts/$AID/zip" \
+                -o "prev-$KIND-$S.zip"
+              mkdir -p "prev-$KIND-$S"
+              unzip -o -q "prev-$KIND-$S.zip" -d "prev-$KIND-$S"
+              rm -f "prev-$KIND-$S.zip"
+            done
+          done
+          python3 scripts/f2v/fluid-face-sample.py \
+            --meta prev-meta-* --shots prev-shots-* \
+            --out seed-pack/f2v --receipt seed-pack/f2v/fluidfaces/sample-receipt.tsv
+          test -f seed-pack/f2v/fluidfaces/index.tsv \
+            && echo "fluid faces: $(wc -l < seed-pack/f2v/fluidfaces/index.tsv) line(s)"
+
       - name: build plugin (maven) + F2vPack pack (cache miss)
         if: steps.seed-verify.outputs.hit != 'true'
         env:

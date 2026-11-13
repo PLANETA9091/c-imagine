@@ -314,25 +314,91 @@ public final class F2vPack {
     static List<FluidCube> synthesizeFluidCubes(java.util.Set<String> fluidIds,
                                                 java.util.Map<String, int[]> colorTable,
                                                 TreeMap<String, byte[]> entries,
-                                                List<String> warnings) throws IOException {
+                                                List<String> warnings,
+                                                java.nio.file.Path sampledFaces,
+                                                java.util.Map<String, String> sampledIndex) throws IOException {
         List<FluidCube> out = new ArrayList<>();
         int i = 0;
         for (String fluidId : new java.util.TreeSet<>(fluidIds)) {
             String texPath;
+            String texRef = "c-imagine:fluidcube/"
+                    + fluidId.replace(':', '_');
             int[] color = colorTable.get(fluidId);
-            if (color != null) {
+            // 14-ea THE SAMPLED FACE: when the truth-measured surface sample
+            // exists (fluidfaces/<id>.png, written by fluid-face-sample.py
+            // from the truth leg's own fluid page shots), the cube's
+            // south/north faces draw it — the truth renders the real fluid
+            // through the translucent pipeline (the backdrop shows through)
+            // and the opaque tinted canvas cannot reproduce that residual;
+            // the head-on camera makes the south face L1-optimal by
+            // construction. The remaining faces keep the shaded canvas.
+            // A sampled face ALSO rescues a fluid whose still texture the
+            // jar scan cannot host (supplementaries' code-tinted lumisene
+            // rendered the ours cell EMPTY — the 723K ae red): the sampled
+            // surface becomes the cube's whole texture set.
+            // 14-ea THE SAMPLED FACE: when the truth-measured surface sample
+            // exists (fluidfaces/<id>.png, written by fluid-face-sample.py
+            // from the truth leg's own fluid page shots), the cube's
+            // south/north faces draw it - the truth renders the real fluid
+            // through the translucent pipeline (the backdrop shows through)
+            // and the opaque tinted canvas cannot reproduce that residual;
+            // the head-on camera makes the south face L1-optimal by
+            // construction. The remaining faces keep the shaded canvas.
+            // A sampled face ALSO rescues a fluid whose still texture the
+            // jar scan cannot host (supplementaries' code-tinted lumisene
+            // rendered the ours cell EMPTY - the 723K ae red): the sampled
+            // surface becomes the cube's whole texture set.
+            String faceTexRef = null;
+            byte[] faceBytes = null;
+            String facePath = null;
+            String faceRel = sampledIndex.get(fluidId);
+            if (faceRel != null) {
+                // the index paths are relative to the OUT dir (the f2v dir),
+                // not to the fluidfaces subdir
+                java.nio.file.Path fp = sampledFaces.getParent() == null
+                        ? sampledFaces.resolve(faceRel)
+                        : sampledFaces.getParent().resolve(faceRel);
+                if (java.nio.file.Files.isRegularFile(fp)) {
+                    facePath = "assets/c-imagine/textures/fluidcube/"
+                            + fluidId.replace(':', '_') + "_face.png";
+                    faceBytes = java.nio.file.Files.readAllBytes(fp);
+                    faceTexRef = "c-imagine:fluidcube/"
+                            + fluidId.replace(':', '_') + "_face";
+                }
+            }
+            if (color == null) {
+                // the real still texture's static frame 0, re-hosted under
+                // the cube namespace (the frame extraction keeps the cube
+                // deterministic - the strip's later frames never enter)
+                byte[] frame = stillFrameZero(entries, fluidId);
+                if (frame == null) {
+                    if (faceBytes == null) {
+                        continue;
+                    }
+                    // no hostable still canvas: the sampled face IS the
+                    // cube's texture (all faces draw it; the head-on crop
+                    // sees only the south face anyway)
+                    texPath = facePath;
+                    entries.put(texPath, faceBytes);
+                    texRef = faceTexRef;
+                } else {
+                    texPath = "assets/c-imagine/textures/fluidcube/"
+                            + fluidId.replace(':', '_') + ".png";
+                    entries.put(texPath, frame);
+                }
+            } else {
                 // 14-ch THE SHADED SURFACE SET: the truth's liquid renders
                 // through the chunk pipeline's DIRECTIONAL face shading (the
                 // top 1.0, the north/south 0.8, the east/west 0.6, the
                 // bottom 0.5) while the item_display pipeline renders the
-                // model FLAT — the #250 measured the unshaded cube at ae
+                // model FLAT - the #250 measured the unshaded cube at ae
                 // 246-421K against the 240K gate with IDENTICAL ae on the
                 // run before the gate flip (the structure, not the pixels).
                 // The shading bakes into four per-face textures; the model
                 // picks them per face and the fit absorbs the rest.
                 // 14-dm THE CANVAS SURFACE: the uniform flat fill measured
                 // 249-484K against the pinned truth (the #310 chemical
-                // giants' self_ae measured 0.6-4K — the truth surface is
+                // giants' self_ae measured 0.6-4K - the truth surface is
                 // STATIC once the 14-dl pin holds, and the flat fill's
                 // residual is the canvas's spatial detail, not phase). The
                 // mod's still canvas is hosted frame-0 under its own sprite
@@ -340,7 +406,7 @@ public final class F2vPack {
                 // chemicals, steam.png for steam; create/bop ship
                 // _still.png), so the cube texture becomes the REAL canvas
                 // pixels scaled per channel by (calibrated color / canvas
-                // mean) — the L1-optimal tint is preserved as the scale, the
+                // mean) - the L1-optimal tint is preserved as the scale, the
                 // spatial detail survives, and truth (pinned frame 0 of the
                 // same canvas, tinted by the mod's code) meets ours at the
                 // pipeline gap. The uniform fill stays the fallback when no
@@ -374,20 +440,10 @@ public final class F2vPack {
                             ? tintedCanvasPng(canvas, bb)
                             : uniformPng(bb[0], bb[1], bb[2]));
                 }
-            } else {
-                // the real still texture's static frame 0, re-hosted under
-                // the cube namespace (the frame extraction keeps the cube
-                // deterministic — the strip's later frames never enter)
-                byte[] frame = stillFrameZero(entries, fluidId);
-                if (frame == null) {
-                    continue;
-                }
-                texPath = "assets/c-imagine/textures/fluidcube/"
-                        + fluidId.replace(':', '_') + ".png";
-                entries.put(texPath, frame);
             }
-            String texRef = "c-imagine:fluidcube/"
-                    + fluidId.replace(':', '_');
+            if (faceTexRef != null) {
+                entries.put(facePath, faceBytes);
+            }
             // the 14/16 liquid surface box: the vanilla source block with a
             // non-fluid above renders its top at 14/16 — the sides show the
             // texture's lower 14 rows (uv v 2..16). Model and sprite ids
@@ -399,11 +455,15 @@ public final class F2vPack {
                     ? "\"all\": \"" + texRef + "\", \"ns\": \"" + texRef + "_ns\", "
                       + "\"ew\": \"" + texRef + "_ew\", \"b\": \"" + texRef + "_b\""
                     : "\"all\": \"" + texRef + "\"";
+            if (faceTexRef != null) {
+                textures += ", \"face\": \"" + faceTexRef + "\"";
+            }
             String sideTex = color != null ? "#ns" : "#all";
             String ewTex = color != null ? "#ew" : "#all";
             String downTex = color != null ? "#b" : "#all";
-            String faces = "\"north\": {\"texture\": \"" + sideTex + "\", \"uv\": [0, 2, 16, 16]},"
-                    + "\"south\": {\"texture\": \"" + sideTex + "\", \"uv\": [0, 2, 16, 16]},"
+            String frontTex = faceTexRef != null ? "#face" : sideTex;
+            String faces = "\"north\": {\"texture\": \"" + frontTex + "\", \"uv\": [0, 2, 16, 16]},"
+                    + "\"south\": {\"texture\": \"" + frontTex + "\", \"uv\": [0, 2, 16, 16]},"
                     + "\"west\": {\"texture\": \"" + ewTex + "\", \"uv\": [0, 2, 16, 16]},"
                     + "\"east\": {\"texture\": \"" + ewTex + "\", \"uv\": [0, 2, 16, 16]},"
                     + "\"up\": {\"texture\": \"#all\", \"uv\": [0, 0, 16, 16]},"
@@ -1548,8 +1608,23 @@ public final class F2vPack {
         for (FluidTexture ft : fluidTextures) {
             cubeIds.add(ft.fluidId());
         }
+        java.nio.file.Path sampledFaces = outDir.resolve("fluidfaces");
+        java.util.Map<String, String> sampledIndex = new java.util.LinkedHashMap<>();
+        java.nio.file.Path sampledIdx = sampledFaces.resolve("index.tsv");
+        if (java.nio.file.Files.isRegularFile(sampledIdx)) {
+            for (String l : java.nio.file.Files.readAllLines(sampledIdx)) {
+                String[] parts = l.split("\t");
+                if (parts.length == 2 && !parts[0].equals("fluid")) {
+                    sampledIndex.put(parts[0], parts[1]);
+                }
+            }
+        }
+        // 14-ea: a sampled face rescues fluids the jar scan cannot host
+        // (lumisene's code-tinted surface) — they enter the cube set here
+        cubeIds.addAll(sampledIndex.keySet());
         List<FluidCube> fluidCubes =
-                synthesizeFluidCubes(cubeIds, fluidColors, entries, warnings);
+                synthesizeFluidCubes(cubeIds, fluidColors, entries, warnings,
+                        sampledFaces, sampledIndex);
         if (!fluidCubes.isEmpty()) {
             List<Map.Entry<Float, String>> paperEntries =
                     new ArrayList<>(paperFloatEntries);
