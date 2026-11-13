@@ -126,7 +126,9 @@ def crush_ratio(out, top):
             ae = r.get("ae", 0)
             if ae < 60000:
                 continue
-            page = j.get("page") or ""
+            # the page id rides the ROW (the join top level carries no
+            # 'page' key — the wall rows are 'cell' rows with page/col/row)
+            page = r.get("page") or ""
             if not page.startswith("gallery-") or "-p" not in page:
                 continue  # the non-wall joins (items/inv/sound) have no crops
             # gallery-supplementaries-p237 -> ns "supplementaries", page 237;
