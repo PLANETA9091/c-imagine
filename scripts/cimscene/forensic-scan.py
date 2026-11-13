@@ -30,13 +30,20 @@ _spec.loader.exec_module(gd)
 _shot_cache = {}
 
 
-def page_png(shot_dir, ns, page, ours):
+def page_png(shot_dir, ns, page, ours, page_kind="wall"):
     key = (shot_dir, ns, page, ours)
     if key in _shot_cache:
         return _shot_cache[key]
     pref = "ours-" if ours else ""
     found = None
-    for tag in ("gal-p-", "gal-b-"):
+    tags = ("gal-p-", "gal-b-")
+    if page_kind == "emobs":
+        tags = ("gal-emobs-",)
+    elif page_kind == "edyn":
+        tags = ("gal-edyn-",)
+    elif page_kind == "elarge":
+        tags = ("gal-elarge-",)
+    for tag in tags:
         name = pref + tag + ns + str(page) + ".png"
         p = os.path.join(shot_dir, name)
         if os.path.exists(p):
@@ -73,6 +80,22 @@ def best_shift_diff(t, o):
     return base, best
 
 
+
+def _crop_pitch2(im, col, row):
+    """The entity grid's crop: the same wall origin, ENTITY_PITCH=2 — the
+    sparse cell centers land 2 blocks apart, the crop half scales with the
+    pitch so the neighbours never bleed."""
+    import math
+    F = gd.F
+    x = gd.GALLERY_X0 + col * 2
+    y = gd.GALLERY_Y0 + row * 2
+    sx = gd.W / 2.0 - F * (x + 0.5 - gd.CAM_X) / gd.DIST
+    sy = gd.H / 2.0 - F * (y + 0.5 - gd.EYE_Y) / gd.DIST
+    half = gd.CELL_PX * 0.92 * 2 / 2.0
+    b = (int(sx - half), int(sy - half), int(sx + half), int(sy + half))
+    return im[b[1]:b[3], b[0]:b[2]]
+
+
 def classify(t, o):
     lt, lo = content_luma(t), content_luma(o)
     if lt > 8 and lo < 0.45 * lt:
@@ -107,16 +130,32 @@ def main():
                 if key in seen:
                     continue
                 seen.add(key)
-                ns = page.split("-")[1]
+                # the entity pages carry an extra segment:
+                # gallery-entity-<ns>-p<p> (the wall pages are
+                # gallery-<ns>-p<p>); the entity grid rides the pitch-2
+                # sparse geometry (ENTITY_PITCH), the wall grid pitch 1
+                parts = page.split("-")
+                if parts[1] == "entity":
+                    ns = parts[2]
+                    pitch = 2
+                    series = ("mobs" if "-emobs" in page or True else "mobs")
+                else:
+                    ns = parts[1]
+                    pitch = 1
                 pnum = page.rsplit("p", 1)[1]
-                tp = page_png(args.truth_shots, ns, pnum, False)
-                op = page_png(args.ours_shots, ns, pnum, True)
+                kind = ("emobs" if "/join-e-" in f or "join-e-" in os.path.basename(f) else "wall")
+                tp = page_png(args.truth_shots, ns, pnum, False, kind)
+                op = page_png(args.ours_shots, ns, pnum, True, kind)
                 if not tp or not op:
                     continue
                 t_im = gd.load(tp)
                 o_im = gd.load(op)
-                t, _ = gd.crop_cell(t_im, r["col"], r["row"])
-                o, _ = gd.crop_cell(o_im, r["col"], r["row"])
+                if pitch == 2:
+                    t = _crop_pitch2(t_im, r["col"], r["row"])
+                    o = _crop_pitch2(o_im, r["col"], r["row"])
+                else:
+                    t, _ = gd.crop_cell(t_im, r["col"], r["row"])
+                    o, _ = gd.crop_cell(o_im, r["col"], r["row"])
                 cls, lt, lo, base, best = classify(t, o)
                 # family = the mod's id path stem
                 m = re.match(r"[a-z0-9_]+:([a-z0-9_/]+?)[\[]|$",
