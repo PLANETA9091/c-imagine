@@ -635,6 +635,12 @@ final class QuadDump {
     private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
                                      boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
                                      boolean capturePixels, int packedLight) {
+        return writeQuad(sb, hint, sprites, shade, tint, pos, uv, rgb, capturePixels, packedLight, null);
+    }
+
+    private static boolean writeQuad(StringBuilder sb, TextureAtlasSprite hint, List<TextureAtlasSprite> sprites,
+                                     boolean shade, int tint, float[][] pos, float[][] uv, float[][] rgb,
+                                     boolean capturePixels, int packedLight, String material) {
         float cu = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) / 4;
         float cv = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) / 4;
         // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
@@ -661,7 +667,7 @@ final class QuadDump {
         // Preserve its semantic name; the replay can use these native pixels
         // when no physical PNG exists in the supplied jars.
         if (!capturePixels) spriteAliases.put(name, decoded);
-        appendRow(sb, capturePixels ? decoded : name, shade, tint, pos, local, rgb, packedLight);
+        appendRow(sb, capturePixels ? decoded : name, shade, tint, pos, local, rgb, packedLight, material);
         return true;
     }
 
@@ -813,6 +819,19 @@ final class QuadDump {
 
     private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
                                   float[][] pos, float[][] uv, float[][] rgb, int packedLight) {
+        appendRow(sb, sprite, shade, tint, pos, uv, rgb, packedLight, null);
+    }
+
+    /**
+     * One quad row with the 14-dv material tag: {@code material} != null writes
+     * the named-chunk-shape column BEFORE the optional light tail (the native
+     * 40/42 layout — the pack reader reads the material at c[39] and the light
+     * pair at the last two columns on every shape). The tag rides AT EMIT TIME
+     * — the streaming contract keeps every row landing in its stream in order.
+     */
+    private static void appendRow(StringBuilder sb, String sprite, boolean shade, int tint,
+                                  float[][] pos, float[][] uv, float[][] rgb, int packedLight,
+                                  String material) {
         sb.append(sprite).append('\t').append(shade ? 1 : 0).append('\t').append(tint);
         for (int i = 0; i < 4; i++) {
             sb.append(String.format(Locale.ROOT, "\t%.4f\t%.4f\t%.4f\t%.4f\t%.4f",
@@ -825,6 +844,9 @@ final class QuadDump {
             for (int i = 0; i < 4; i++) {
                 sb.append(String.format(Locale.ROOT, "\t%.6f", rgb[i][3]));
             }
+        }
+        if (material != null) {
+            sb.append('\t').append(material);
         }
         if (packedLight >= 0) {
             // 14-cy: the captured scene light — block and sky nibbles of the
@@ -959,32 +981,18 @@ final class QuadDump {
         void flush() {
             for (RecordingBuffer buffer : buffers.values()) {
                 buffer.flush();
-                // 14-dv THE ENTITY-TRANSLUCENT NAME: a BER's entity-translucent
-                // buffer rides the pack's translucent layer with its captured
-                // vertex alpha honored (the 40/42 material shapes). The measured
-                // class (run 42899212217's verdict, the supplementaries hourglass
-                // sand — HourGlassBlockTileRenderer.renderSand draws through
-                // ModMaterials buffer(RenderType::entityTranslucentCull)): the
-                // rows rode the legacy encoding, the replay defaulted them on the
-                // BLOCK channel (cutout — binary discard), the per-vertex alpha
-                // was never read, and the sand rendered as the ghost-glass
-                // fidelity class. The name proves the shader (the 14-dr law's
-                // own reading: "only an explicit captured material proves that
-                // alpha was ignored" — named translucent proves the OPPOSITE),
-                // so the pack honors the alpha columns and splits the model's
-                // layers by the named material. Everything else (text/glyph
-                // buffers, custom mod layers, the liquid probe's fake state)
-                // keeps the legacy encoding byte-for-byte.
-                String material = entityMaterial(buffer.state);
-                if (material == null) {
-                    out.append(buffer.own);
-                } else {
-                    out.append(withLiquidMaterial(buffer.own.toString(), material));
-                }
             }
         }
 
-        /** The replay material for the entity layers the pack can name; null = legacy encoding. */
+        /** The replay material for the entity layers the pack can name; null = legacy encoding.
+         *  14-dv: minecraft:entity_translucent_cull / minecraft:entity_translucent name the
+         *  translucent layer — the 40/42 material shapes the pack reader already honors (the
+         *  14-dr law's own reading: an explicit captured material proves the alpha semantics).
+         *  The measured class: the supplementaries hourglass sand (renderSand draws through
+         *  ModMaterials buffer(RenderType::entityTranslucentCull)) rode the legacy encoding,
+         *  the replay defaulted it on the BLOCK channel and never read the per-vertex alpha
+         *  — the ghost-glass fidelity red. Text/glyph buffers, custom mod layers and the
+         *  liquid probe's fake state keep the legacy encoding byte-for-byte. */
         static String entityMaterial(String state) {
             if ("minecraft:entity_translucent_cull".equals(state)
                     || "minecraft:entity_translucent".equals(state)) {
@@ -1013,10 +1021,12 @@ final class QuadDump {
              *  every buffer the BER asked for, so the where-do-text-quads-go
              *  question is answered per page in the boot log). */
             final String state;
-            /** 14-dv: the buffer's own rows — merged into {@code out} at
-             *  ItemCapture.flush() under the buffer's named material, so the
-             *  per-buffer encoding never mixes inside one stream. */
-            final StringBuilder own = new StringBuilder();
+            /** 14-dv: the buffer's replay material, tagged AT EMIT TIME (the
+             *  streaming contract: rows land in {@code out} as they are
+             *  emitted — the CaptureBufferTest pins a putBulkData after a
+             *  flush landing in the same stream; a per-buffer re-merge would
+             *  lose it and reorder interleaved batches). */
+            final String material;
             final float[][] pos = new float[4][3];
             final float[][] uv = new float[4][2];
             final float[][] rgb = new float[4][4];
@@ -1025,6 +1035,7 @@ final class QuadDump {
 
             RecordingBuffer(String state, boolean shaderDiffuse) {
                 this.state = state;
+                this.material = entityMaterial(state);
                 rawShade = shaderDiffuse;
                 String direct = CaptureTexture.fromRenderState(state);
                 List<TextureAtlasSprite> atlasSprites = sprites;
@@ -1088,11 +1099,12 @@ final class QuadDump {
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
                 if (texture != null) {
-                    appendRow(own, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
-                            texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight);
+                    appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
+                            texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight, material);
                 } else {
-                    if (!writeQuad(own, captureAtlasPixels ? null : q.getSprite(), boundSprites,
-                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight)) {
+                    if (!writeQuad(out, captureAtlasPixels ? null : q.getSprite(), boundSprites,
+                            rawShade && q.isShade(), q.getTintIndex(), p, t, c, captureAtlasPixels, quadLight,
+                            material)) {
                         foreign++;
                     }
                 }
@@ -1124,10 +1136,10 @@ final class QuadDump {
                         // fullbright companion group — the replay pins them
                         // Brightness(15,15) and the text renders flat-bright like
                         // the truth, at the per-character color the renderer set.
-                        appendRow(own, texture, rawShade, -1, pos, uv, rgb,
-                                texture.startsWith("~") ? LightTexture.FULL_BRIGHT : packedLight);
-                    } else if (!writeQuad(own, null, boundSprites, rawShade, -1, pos, uv, rgb,
-                            captureAtlasPixels, packedLight)) {
+                        appendRow(out, texture, rawShade, -1, pos, uv, rgb,
+                                texture.startsWith("~") ? LightTexture.FULL_BRIGHT : packedLight, material);
+                    } else if (!writeQuad(out, null, boundSprites, rawShade, -1, pos, uv, rgb,
+                            captureAtlasPixels, packedLight, material)) {
                         foreign++;
                     }
                     n = -1;

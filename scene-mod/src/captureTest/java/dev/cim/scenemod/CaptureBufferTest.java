@@ -62,7 +62,60 @@ public final class CaptureBufferTest {
         }
         checkNativeLighting();
         checkRecordedLight(type, ctor, getBuffer, flush, state);
+        checkNamedEntityMaterial(type, ctor, getBuffer, flush);
         System.out.println("capture retained/interleaved buffer and native lighting tests: ALL OK");
+    }
+
+    /** 14-dv: the entity-translucent buffers name their material AT EMIT TIME
+     *  (the 40/42 shapes the pack reader honors), every other buffer state
+     *  keeps the legacy encoding, and the streaming contract holds — a row
+     *  emitted after a flush still lands in the same stream, in order. */
+    private static void checkNamedEntityMaterial(Class<?> type,
+                                                 java.lang.reflect.Constructor<?> ctor,
+                                                 java.lang.reflect.Method getBuffer,
+                                                 java.lang.reflect.Method flush) throws Exception {
+        Object capture = ctor.newInstance(List.of(), 0f);
+        VertexConsumer sand = (VertexConsumer) getBuffer.invoke(capture, new Object(),
+                "minecraft:entity_translucent_cull", true);
+        field(sand.getClass(), "texture").set(sand, "fixture:textures/sand.png");
+        for (int v = 0; v < 4; v++) {
+            vertex(sand, v & 1, v >> 1, 255, 255);
+        }
+        flush.invoke(capture);
+        // the streaming contract: a putBulkData row AFTER the flush lands too
+        int[] baked = new int[32];
+        for (int v = 0; v < 4; v++) {
+            baked[v * 8 + 3] = -1;
+            baked[v * 8 + 6] = (7 << 4) | (4 << 20);
+        }
+        sand.putBulkData(new com.mojang.blaze3d.vertex.PoseStack().last(),
+                new net.minecraft.client.renderer.block.model.BakedQuad(
+                        baked, -1, net.minecraft.core.Direction.UP, null, false),
+                new float[]{1, 1, 1, 1}, 1, 1, 1, 1,
+                new int[]{(3 << 4) | (12 << 20), 0, 0, 0}, 0, false);
+        String[] rows = field(type, "out").get(capture).toString().split("\n");
+        if (rows.length != 2
+                || !rows[0].endsWith("\ttranslucent") || rows[0].split("\t").length != 40
+                || !rows[1].endsWith("\ttranslucent\t7\t12") || rows[1].split("\t").length != 42) {
+            throw new AssertionError("the entity-translucent buffer did not name its "
+                    + "material at emit time (the 40/42 shapes, the streaming order): "
+                    + Arrays.toString(rows));
+        }
+        // a legacy-state buffer (the liquid probe's fake state, the text types)
+        // keeps the row byte-identical to the pre-14-dv encoding
+        Object legacy = ctor.newInstance(List.of(), 0f);
+        VertexConsumer text = (VertexConsumer) getBuffer.invoke(legacy, new Object(),
+                "minecraft:text", true);
+        field(text.getClass(), "texture").set(text, "fixture:textures/glyph.png");
+        for (int v = 0; v < 4; v++) {
+            vertex(text, v & 1, v >> 1, 255, 255);
+        }
+        flush.invoke(legacy);
+        String[] legacyRows = field(type, "out").get(legacy).toString().split("\n");
+        if (legacyRows.length != 1 || legacyRows[0].split("\t").length != 39) {
+            throw new AssertionError("a legacy-state buffer row changed shape: "
+                    + Arrays.toString(legacyRows));
+        }
     }
 
     private static void checkRecordedLight(Class<?> type, java.lang.reflect.Constructor<?> ctor,
