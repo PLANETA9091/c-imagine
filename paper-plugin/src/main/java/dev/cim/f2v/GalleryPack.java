@@ -1208,7 +1208,7 @@ public final class GalleryPack {
     }
 
     /** {@code ns:path} -> {@code assets/ns/textures/path.png}. */
-    private static String spritePathPng(String sprite) {
+    static String spritePathPng(String sprite) {
         // Captured direct bindings can live anywhere in assets/, e.g.
         // Mekanism's render/jetpack.png. @ distinguishes exact resources
         // from atlas sprite IDs, which omit textures/ and .png.
@@ -1450,7 +1450,11 @@ public final class GalleryPack {
         String rawPng = spritePathPng(sprite);
         String bakedPng = rawPng.substring(0, rawPng.length() - 4) + suffix + ".png";
         try {
-            byte[] raw = readPngFromJars(jars, rawPng);
+            // 14-ea5: the hosted sprites live in entries (the re-hosted and
+            // the generated ones never exist in any jar) — entries first,
+            // the jar lookup keeps serving the physical sprites
+            byte[] raw = entries.containsKey(rawPng)
+                    ? entries.get(rawPng) : readPngFromJars(jars, rawPng);
             if (raw == null) {
                 return null;
             }
@@ -2094,6 +2098,7 @@ public final class GalleryPack {
         List<ObjMesh.Face> faces = new ArrayList<>();
         List<int[]> flags = new ArrayList<>();
         List<String> faceMaterials = new ArrayList<>();
+        List<String> rowKeys = new ArrayList<>();
         String material = null;
         Map<String, String> textures = new LinkedHashMap<>();
         Map<String, String> keyOf = new LinkedHashMap<>();
@@ -2249,6 +2254,7 @@ public final class GalleryPack {
                 }
             }
             faces.add(new ObjMesh.Face(verts, "#" + key, colors));
+            rowKeys.add(key);
             // 14-cz.1: the row's captured light pair rides the flags — the
             // tint gate needs it (block light > 0 = the lightmap was active
             // in truth; (15,15) = the mod light-override quads the truth
@@ -2347,6 +2353,63 @@ public final class GalleryPack {
                 }
             }
         }
+        // 14-ea5 THE INTERNAL-CONTRAST TINT (the ae2 storage/workbench/port
+        // family, run 43410920600): a CONSTANT dark-cell mesh (block == 0,
+        // one light pair) whose captured rows are FLAT pure multipliers with
+        // DIFFERENT means carries the directional shade table in the means
+        // (the measured 1k_crafting_storage capture: two (0,15) rows at
+        // 0.8 and 0.478 = the north/south vs east/west constants) — the raw
+        // replay renders both rows at ONE corridor light, the internal face
+        // contrast the truth has is missing, and no single luma scale can
+        // map uniform to non-uniform: luma_fit=false at ae 330-580k. A flat
+        // row is a pure multiplier (the rowShadeTint flatness refusal guards
+        // the art rows), so differing flat means are shade, not sprite
+        // brightness. Fire when >= 2 flat tailed rows spread more than the
+        // wobble band. THE FLAG IS SEPARATE from meshShaded on purpose: the
+        // constant branch keeps its machine-glow band law (rb > 6 — the
+        // measured nixie (5,15) casing exemption, whose meshSceneLit is
+        // already true and must NOT leak into a tint), and internalContrast
+        // ORs into exactly that branch. The uniform-mean class (the green
+        // wall/webbing replay) stays raw; the (15,15) art and the legacy
+        // no-tail rows never tint.
+        boolean internalContrast = false;
+        if (!meshSceneLit && meshConstant && constBlock == 0) {
+            double mn = 2.0;
+            double mx = -1.0;
+            int flatRows = 0;
+            for (int i = 0; i < flags.size(); i++) {
+                if (flags.get(i)[2] < 0 || (flags.get(i)[2] == 15 && flags.get(i)[3] == 15)
+                        || flags.get(i)[1] >= 0) {
+                    continue;
+                }
+                float[][] cs = faces.get(i).colors();
+                if (cs == null || cs.length < 4 || cs[0].length < 3) {
+                    continue;
+                }
+                double[] mean = rowMeanOf(faces.get(i));
+                if (mean == null) {
+                    continue;
+                }
+                double m = (mean[0] + mean[1] + mean[2]) / 3;
+                flatRows++;
+                mn = Math.min(mn, m);
+                mx = Math.max(mx, m);
+            }
+            // THE SHADE-TABLE SIGNATURE (the measured captures: the ae2
+            // crafting storage 0.8/0.478, the cell workbench 1.0/0.8/0.8,
+            // the bop black_sandstone_wall 0.498/1.0/0.8 — every dark-cell
+            // (0,15) capture carries the vanilla directional table and the
+            // raw replay's missing internal contrast measured RED at
+            // ae 63-580k on run 43410920600): >= 2 tailed rows whose means
+            // spread beyond the wobble band = the directional shade. The
+            // replay: FLAT rows ride their captured constant tints (the
+            // identity rows stay raw by the rowShadeTint refusal), the
+            // per-vertex gradient rows bake their means into the sprite
+            // siblings. A UNIFORM-mean mesh stays raw (the luma's job).
+            if (flatRows >= 2 && mx - mn > 0.02) {
+                internalContrast = true;
+            }
+        }
         JsonArray elements = new JsonArray();
         // 14-cz: the captured per-quad RGB (the truth's final shaded color —
         // the vanilla block shade constants, flat per row) rides the matching
@@ -2362,8 +2425,22 @@ public final class GalleryPack {
             int rb = rowFlags[2];
             int rs = rowFlags[3];
             boolean tintRow = rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15)
-                    && (meshConstant ? rb > 6 : meshShaded);
+                    && (meshConstant ? (rb > 6 || internalContrast) : meshShaded);
             double[] rowTint = tintRow ? rowShadeTint(faces.get(i)) : null;
+            // 14-ea5 THE MEAN-BAKE FALLBACK: a firing row whose captured
+            // colors are NON-flat (the chunk pipeline bakes shade+AO per
+            // VERTEX — the measured 1k_crafting_storage capture mixes 0.8
+            // and 0.478 inside one quad) cannot ride the constant node tint
+            // (one ARGB per node; the flatness refusal rejects the mean).
+            // The vertex colors are still pure shading multipliers (the art
+            // rides the sprite; the biome rows are excluded by the tintindex
+            // gate), so the row's mean replays through the TINT-BAKE channel:
+            // the sprite re-hosts as its _cimtint_m<hex-mean> sibling
+            // premultiplied by the mean and THIS row's faces rebind. The
+            // intra-quad gradient collapses to its mean — the per-face
+            // contrast lands exact, the residual stays inside the wobble
+            // band. Skipped when the sprite already rides a tint sibling
+            // (one multiply per pixel, never two) or the mean is identity.
             // 14-df CORRIDOR RING ROUTE (visual-rings.tsv): the captured
             // shade constants were recorded under the seed scene's light
             // pair; the gallery corridor renders the same ambient-lit rows
@@ -2379,6 +2456,48 @@ public final class GalleryPack {
             if (ring != null) {
                 rowTint = ringTint(faces.get(i), rowFlags, ring, rowTint);
             }
+            // 14-ea5 the mean-bake fallback (see the census comment): a firing
+            // row the constant-tint refusal rejected (non-flat chunk-baked
+            // shade) replays its mean through the tint-bake sibling instead.
+            // THE WITHIN-ROW GRADIENT trigger: a row whose OWN vertex colors
+            // spread carries the chunk-baked shade+AO across the quad's
+            // corners (the measured crafting-storage capture mixes 0.8/0.478
+            // inside ONE quad — the between-row spread is ZERO there) — no
+            // mesh-level gate can see it and no luma scale can map it, so
+            // the row fires its own bake. The fullbright art, the biome
+            // rows and the legacy no-tail rows stay raw.
+            boolean rowGradient = false;
+            if (rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15) && rowFlags[0] == 0) {
+                float[][] cs = faces.get(i).colors();
+                if (cs != null && cs.length >= 4 && cs[0].length >= 3) {
+                    float cmn = 2f;
+                    float cmx = -1f;
+                    for (float[] cv : cs) {
+                        for (float cval : cv) {
+                            cmn = Math.min(cmn, cval);
+                            cmx = Math.max(cmx, cval);
+                        }
+                    }
+                    rowGradient = cmx - cmn > 0.02f;
+                }
+            }
+            String meanKey = null;
+            if ((tintRow || rowGradient) && rowTint == null && rowFlags[1] == -1 && rowFlags[0] == 0) {
+                double[] mean = rowMeanOf(faces.get(i));
+                String hosted = rowKeys.get(i) == null ? null : textures.get(rowKeys.get(i));
+                if (mean != null && hosted != null && !hosted.contains(TINT_SUFFIX)
+                        && (mean[0] < 0.995 || mean[1] < 0.995 || mean[2] < 0.995)) {
+                    String suffix = TINT_SUFFIX + "_m" + Integer.toHexString(
+                            (Math.max(0, Math.min(255, (int) Math.round(mean[0] * 255))) << 16)
+                                    | (Math.max(0, Math.min(255, (int) Math.round(mean[1] * 255))) << 8)
+                                    | Math.max(0, Math.min(255, (int) Math.round(mean[2] * 255))));
+                    String sib = bakeTintedSprite(jars, hosted, mean, suffix, entries, null);
+                    if (sib != null) {
+                        meanKey = "m" + textures.size();
+                        textures.put(meanKey, sib);
+                    }
+                }
+            }
             for (var value : ObjMesh.toElements(List.of(faces.get(i)), k)) {
                 JsonObject el = value.getAsJsonObject();
                 if (flags.get(i)[0] == 0) {
@@ -2389,6 +2508,14 @@ public final class GalleryPack {
                 if (flags.get(i)[1] >= 0 && el.has("faces")) {
                     el.getAsJsonObject("faces").getAsJsonObject("south")
                             .addProperty("tintindex", flags.get(i)[1]);
+                }
+                if (meanKey != null && el.has("faces")) {
+                    for (var fe2 : el.getAsJsonObject("faces").entrySet()) {
+                        JsonObject f2 = fe2.getValue().getAsJsonObject();
+                        if (f2.has("texture") && f2.get("texture").getAsString().equals("#" + rowKeys.get(i))) {
+                            f2.addProperty("texture", "#" + meanKey);
+                        }
+                    }
                 }
                 elements.add(el);
                 elementTints.add(rowTint);
@@ -2531,6 +2658,31 @@ public final class GalleryPack {
      * item node cannot express) or sits at identity 1.0 (the green classes
      * keep byte-identical packs).
      */
+    /**
+     * The row's RAW mean RGB — the shading multiplier the captured vertex
+     * colors carry. The chunk pipeline bakes the directional shade and the
+     * ambient occlusion into the vertices (the art rides the sprite, the
+     * biome rows carry the tintindex and are excluded upstream), so the
+     * mean is a pure multiplier even when the row is NON-flat. Null when
+     * the row has no colors (the legacy 23-col shape).
+     */
+    private static double[] rowMeanOf(ObjMesh.Face face) {
+        float[][] colors = face.colors();
+        if (colors == null || colors.length < 4 || colors[0].length < 3) {
+            return null;
+        }
+        double[] mean = new double[3];
+        for (int v = 0; v < 4; v++) {
+            for (int ch = 0; ch < 3; ch++) {
+                mean[ch] += colors[v][ch];
+            }
+        }
+        for (int ch = 0; ch < 3; ch++) {
+            mean[ch] = Math.min(1.0, Math.max(0.0, mean[ch] / 4));
+        }
+        return mean;
+    }
+
     private static double[] rowShadeTint(ObjMesh.Face face) {
         float[][] colors = face.colors();
         if (colors == null || colors.length < 4 || colors[0].length < 3) {
