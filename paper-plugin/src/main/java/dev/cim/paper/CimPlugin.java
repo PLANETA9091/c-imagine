@@ -1263,6 +1263,57 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return out;
     }
 
+    /**
+     * 14-ea3 THE SHOT-TIME LIGHT FIELD: the whole measured field as
+     * {@code "x,y,z" -> {block, sky}}, every row kept (the dark rows pin
+     * too — a cell the truth held at block-light 0 must not render at the
+     * walk-time capture's pair). The parseLightFile rows (block >= 1) feed
+     * the placed-light engine; THIS map feeds the display pins — the shot
+     * is what the gate compares, and the capture-time light tail (the
+     * 14-cy pair) is the walk-time approximation: the walk captures each
+     * cell in isolation while the shot happens with the whole page (and
+     * its neighbours' light) in place. Measured: the same door state GREEN
+     * at luma_scale 0.925 on one cell and RED at 0.6 on the next
+     * (create-p16 c6r0/c7r0, run 43391147872) — the per-cell environment
+     * the field records and the per-state pin cannot.
+     */
+    public static java.util.Map<String, int[]> parseLightField(Path file) throws IOException {
+        java.util.Map<String, int[]> out = new java.util.HashMap<>();
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (line.isBlank() || line.startsWith("#")) {
+                continue;
+            }
+            String[] p = line.trim().split("\\s+");
+            if (p.length < 5) {
+                continue;
+            }
+            try {
+                int x = Integer.parseInt(p[0]), y = Integer.parseInt(p[1]), z = Integer.parseInt(p[2]);
+                int block = Integer.parseInt(p[3]);
+                int sky = Integer.parseInt(p[4]);
+                if (block >= 0 && block <= 15 && sky >= 0 && sky <= 15) {
+                    out.putIfAbsent(x + "," + y + "," + z, new int[]{block, sky});
+                }
+            } catch (NumberFormatException malformed) {
+                // the header or a partial trailing row: skip, never abort the page
+            }
+        }
+        return out;
+    }
+
+    /** 14-ea3: the never-throwing wrapper — a missing OR unreadable field
+     *  file means the 14-cy captured pairs ride (the page never aborts). */
+    private static java.util.Map<String, int[]> lightFieldOrEmpty(Path file) {
+        try {
+            return parseLightField(file);
+        } catch (IOException readFail) {
+            return java.util.Map.of();
+        }
+    }
+
     private void clearPlacedLights(World w) {
         for (int[] pos : placedLightBlocks) {
             try {
@@ -1443,6 +1494,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
         }
         final java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> map = byState;
+        // 14-ea3: the page's shot-time light field (the same file the placed-
+        // light engine consumes) — the per-cell pin source, loaded once.
+        final String lightPath = (mfName.endsWith(".tsv")
+                ? mfName.substring(0, mfName.length() - 4) : mfName) + ".light";
+        final java.util.Map<String, int[]> lightField = lightFieldOrEmpty(mf.resolveSibling(lightPath));
         Integer placed = callSync(() -> {
             int n = 0;
             // 14-du: the previous page's light blocks go first, then this
@@ -1543,8 +1599,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 // ~0.52 warm at the walk; the legacy pin rendered them
                 // fullbright). Legacy rows (light < 0) keep the 14-bk pin.
                 final boolean capturedLight = r.lightBlock() >= 0 && r.lightSky() >= 0;
-                final int pinBlock = capturedLight ? Math.min(15, Math.max(0, r.lightBlock())) : fEmission;
-                final int pinSky = capturedLight ? Math.min(15, Math.max(0, r.lightSky())) : 15;
+                // 14-ea3 THE SHOT-TIME PIN: the field's value AT THIS CELL is
+                // what the truth shot rendered with (the whole page in place);
+                // the captured pair (the walk-time capture tail) is the
+                // fallback, the legacy (emission, 15) pin the last resort.
+                final int[] fieldLight = lightField.get(row[1] + "," + row[2] + "," + row[3]);
+                final int pinBlock = fieldLight != null ? fieldLight[0]
+                        : capturedLight ? Math.min(15, Math.max(0, r.lightBlock())) : fEmission;
+                final int pinSky = fieldLight != null ? fieldLight[1]
+                        : capturedLight ? Math.min(15, Math.max(0, r.lightSky())) : 15;
                 org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
@@ -1600,9 +1663,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             meta.setCustomModelDataComponent(cmd);
                         });
                         final boolean xCaptured = xr.lightBlock() >= 0 && xr.lightSky() >= 0;
-                        final int xPinBlock = xCaptured
+                        // 14-ea3: the extras ride the SAME per-cell field pin.
+                        final int[] xFieldLight = lightField.get(row[1] + "," + row[2] + "," + row[3]);
+                        final int xPinBlock = xFieldLight != null ? xFieldLight[0]
+                                : xCaptured
                                 ? Math.min(15, Math.max(0, xr.lightBlock())) : fEmission;
-                        final int xPinSky = xCaptured
+                        final int xPinSky = xFieldLight != null ? xFieldLight[1]
+                                : xCaptured
                                 ? Math.min(15, Math.max(0, xr.lightSky())) : 15;
                         org.bukkit.entity.ItemDisplay xDisplay = world(worldName()).spawn(at,
                                 org.bukkit.entity.ItemDisplay.class, e -> {
