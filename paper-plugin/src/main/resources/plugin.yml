@@ -9,6 +9,10 @@ commands:
   cim:
     description: c-imagine module status
     usage: /cim
+    # 14-e7: the walk's light poke arrives as `cimscene lightpoke` (the
+    # truth-leg command spelling, shared by both legs' workflows) — the
+    # alias routes it into this dispatcher.
+    aliases: [cimscene]
   keyboard:
     description: Toggle the virtual keyboard for mod keybindings
     usage: /keyboard

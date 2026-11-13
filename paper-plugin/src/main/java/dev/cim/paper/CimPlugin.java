@@ -3395,6 +3395,26 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             sender.sendMessage(LOG_PREFIX + "galleryclear -> removed=" + removed);
             return true;
         }
+        // 14-e7 the OURS leg's light poke — the mirror of the truth leg's
+        // `cimscene lightpoke` (CimSceneMod.lightPoke). A starved client never
+        // integrated the wall sections' light packets, and its dark frame is
+        // as stable as a lit one — the settle loop's two-identical law cannot
+        // tell (run 43498973328 measured 1008 such reds across 47 pages). The
+        // poke re-sends the full-chunk light packets for the 3x3 chunk
+        // neighborhood (the vanilla constructor path, null masks) to every
+        // viewer: idempotent when already lit, integrating when starved —
+        // exactly the re-verify contract the walk expects. Report-only: the
+        // poke never mutates the world.
+        if (args.length == 3 && args[0].equalsIgnoreCase("lightpoke")) {
+            try {
+                int[] xz = parsePokeArgs(args[1], args[2]);
+                sender.sendMessage(LOG_PREFIX + callSync(() -> lightPoke(xz[0], xz[1])));
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "lightpoke: bad coordinates: "
+                        + args[1] + " " + args[2]);
+            }
+            return true;
+        }
         sender.sendMessage(LOG_PREFIX + "c-imagine 0.1.0 (M3.3)");
         sender.sendMessage(LOG_PREFIX + "kernel: Paper 26.3 | layer: mini NeoForge 1.21.1");
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
@@ -3416,6 +3436,106 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             sender.sendMessage(LOG_PREFIX + line);
         }
         return true;
+    }
+
+    /**
+     * 14-e7 — the light poke, the Paper mirror of the truth leg's
+     * CimSceneMod.lightPoke: re-send the full-chunk light packets for the
+     * 3x3 chunk neighborhood of (x,z) to every online viewer. The packet
+     * ctor (ChunkPos, LevelLightEngine, BitSet, BitSet) with null masks is
+     * the vanilla ChunkMap.playerLoadedChunk shape — idempotent for a lit
+     * client, integrating for a starved one. The plugin compiles against
+     * paper-api only, so the NMS chain resolves by name through reflection
+     * (the Paper 26.3 runtime is Mojang-mapped; the packet ctor signature
+     * verified against the 26.3 client jar with javap). Every failure
+     * degrades to a logged message — the poke must never break the walk;
+     * the rcon response is the receipt.
+     */
+    private String lightPoke(int x, int z) {
+        int cx = x >> 4;
+        int cz = z >> 4;
+        int packets = 0;
+        int viewers = 0;
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        try {
+            Class<?> packetClass = Class.forName(
+                    "net.minecraft.network.protocol.game.ClientboundLightUpdatePacket");
+            Class<?> chunkPosClass = Class.forName("net.minecraft.world.level.ChunkPos");
+            Class<?> packetIface = Class.forName("net.minecraft.network.protocol.Packet");
+            var ctor = packetClass.getConstructor(chunkPosClass,
+                    Class.forName("net.minecraft.world.level.lighting.LevelLightEngine"),
+                    java.util.BitSet.class, java.util.BitSet.class);
+            var chunkCtor = chunkPosClass.getConstructor(int.class, int.class);
+            for (var player : getServer().getOnlinePlayers()) {
+                viewers++;
+                Object handle;
+                try {
+                    handle = player.getClass().getMethod("getHandle").invoke(player);
+                } catch (ReflectiveOperationException e) {
+                    problems.add(player.getName() + ": no handle ("
+                            + e.getClass().getSimpleName() + ")");
+                    continue;
+                }
+                Object level;
+                Object engine;
+                Object conn;
+                java.lang.reflect.Method send;
+                try {
+                    level = handle.getClass().getMethod("level").invoke(handle);
+                    engine = level.getClass().getMethod("getLightEngine").invoke(level);
+                    conn = instanceField(handle, "connection");
+                    send = conn.getClass().getMethod("send", packetIface);
+                } catch (ReflectiveOperationException e) {
+                    problems.add(player.getName() + ": no chain ("
+                            + e.getClass().getSimpleName() + ": " + e.getMessage() + ")");
+                    continue;
+                }
+                for (int dx = -1; dx <= 1; dx++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        try {
+                            Object cp = chunkCtor.newInstance(cx + dx, cz + dz);
+                            Object pkt = ctor.newInstance(cp, engine, null, null);
+                            send.invoke(conn, pkt);
+                            packets++;
+                        } catch (ReflectiveOperationException e) {
+                            problems.add((cx + dx) + "," + (cz + dz) + ": "
+                                    + e.getClass().getSimpleName()
+                                    + (e.getCause() == null ? "" : (": " + e.getCause())));
+                        }
+                    }
+                }
+            }
+        } catch (ClassNotFoundException e) {
+            return "lightpoke: server classes absent (" + e.getMessage()
+                    + ") — no packets sent";
+        } catch (ReflectiveOperationException e) {
+            return "lightpoke: reflection failed (" + e.getClass().getSimpleName()
+                    + ": " + e.getMessage() + ") — no packets sent";
+        }
+        String base = "lightpoke " + packets + " packets -> " + viewers
+                + " viewer(s) at chunk " + cx + "," + cz;
+        return problems.isEmpty() ? base : base + " | " + String.join("; ", problems);
+    }
+
+    /** The declared field walk up the class chain (the connection field
+     * lives on the packet listener holder's superclass in some mappings). */
+    private static Object instanceField(Object owner, String name)
+            throws ReflectiveOperationException {
+        for (Class<?> c = owner.getClass(); c != null; c = c.getSuperclass()) {
+            try {
+                var f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f.get(owner);
+            } catch (NoSuchFieldException ignored) {
+                // walk up
+            }
+        }
+        throw new NoSuchFieldException(name);
+    }
+
+    /** The poke argument parse, split out for the offline selftest. */
+    static int[] parsePokeArgs(String xs, String zs) {
+        return new int[]{Integer.parseInt(xs.trim()), Integer.parseInt(zs.trim())};
     }
 
     /**
