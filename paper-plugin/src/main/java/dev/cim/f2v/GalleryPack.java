@@ -2325,6 +2325,28 @@ public final class GalleryPack {
                 meshConstant = false;
             }
         }
+        // 14-ea4 THE AMBIENT-SHADE TINT GATE: a NON-constant mesh with NO
+        // scene-lit row still carries the truth's shading in its captured
+        // RGB — the directional block shade constants (the measured vault
+        // class: create:item_vault[axis=z,large=true], the capture rows sit
+        // at block-light 0 with sky 11-15 and carry bottom/top 0.498,
+        // north/south 0.8, east/west 0.478) ride the capture while the raw
+        // unlit planes render fullbright — luma_fit=false at ae 474822
+        // (create-p207 c4r1). The old discriminator demanded a block > 0
+        // row; the dark-cell class has none. A non-constant mesh with ANY
+        // tailed non-fullbright row now shades its tailed non-fullbright
+        // rows by their captured RGB. The constant (0,15) wall/webbing
+        // class (measured green raw) is untouched — its light pairs don't
+        // vary; the (15,15) art and the legacy no-tail rows stay raw.
+        boolean meshShaded = meshSceneLit;
+        if (!meshShaded && !meshConstant) {
+            for (int[] f : flags) {
+                if (f[2] >= 0 && !(f[2] == 15 && f[3] == 15)) {
+                    meshShaded = true;
+                    break;
+                }
+            }
+        }
         JsonArray elements = new JsonArray();
         // 14-cz: the captured per-quad RGB (the truth's final shaded color —
         // the vanilla block shade constants, flat per row) rides the matching
@@ -2340,7 +2362,7 @@ public final class GalleryPack {
             int rb = rowFlags[2];
             int rs = rowFlags[3];
             boolean tintRow = rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15)
-                    && (meshConstant ? rb > 6 : meshSceneLit);
+                    && (meshConstant ? rb > 6 : meshShaded);
             double[] rowTint = tintRow ? rowShadeTint(faces.get(i)) : null;
             // 14-df CORRIDOR RING ROUTE (visual-rings.tsv): the captured
             // shade constants were recorded under the seed scene's light

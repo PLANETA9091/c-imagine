@@ -4337,6 +4337,49 @@ public final class F2vPack {
                 expect(failures, machTinted == 2,
                         "tint v2: mixed mesh tints its (0,15) rows too (the (1.0) row skips by identity)");
             }
+            // (e) 14-ea4 AMBIENT-SHADE mesh: NON-constant light pairs
+            // ((0,14)/(0,15) — the vault class), NO scene-lit row. The
+            // 0.6 row rides the captured tint; the 1.0 row skips by
+            // identity; the raw-fullbright vault render (luma_fit=false at
+            // ae 474822) is the measured defect this closes.
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("vault.tsv"), String.format(shade06, "0", "14")
+                    + String.format(shade10, "0", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:vault#qvault")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint ea4: ambient-shade mesh resolves");
+            if (rows.size() == 1) {
+                JsonObject vaultNode = GalleryPack.itemNode(rows.get(0).modelRef());
+                int vaultTinted = 0;
+                if (vaultNode != null && vaultNode.has("models")) {
+                    for (var m : vaultNode.getAsJsonArray("models")) {
+                        if (m.getAsJsonObject().has("tints")) {
+                            vaultTinted++;
+                            JsonObject t = m.getAsJsonObject().getAsJsonArray("tints").get(0).getAsJsonObject();
+                            expect(failures, t.get("type").getAsString().equals("minecraft:constant")
+                                            && t.get("value").getAsInt() == ((255 << 24) | (153 << 16) | (153 << 8) | 153),
+                                    "tint ea4: the (0,14) 0.6 row rides the captured constant tint");
+                        }
+                    }
+                }
+                expect(failures, vaultTinted == 1,
+                        "tint ea4: the dark-cell mesh shades without a scene-lit row (identity row raw)");
+            }
+            // (f) 14-ea4 boundary: a CONSTANT (0,15) mesh (light pairs equal)
+            // stays untinted even though its rows carry tails — the measured
+            // green wall/webbing replay must not move.
+            GalleryPack.resetModelScales();
+            Files.writeString(quads.resolve("wall.tsv"), String.format(shade06, "0", "15")
+                    + String.format(shade10, "0", "15"));
+            entries.clear();
+            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:wall#qwall")),
+                    entries, warnings, Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "tint ea4: constant (0,15) mesh resolves");
+            if (rows.size() == 1) {
+                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
+                        "tint ea4: the constant (0,15) wall class stays raw");
+            }
             // Equal planes across different meshes share model bytes while
             // both draw nodes and their exact transforms remain present.
             GalleryPack.resetModelScales();
