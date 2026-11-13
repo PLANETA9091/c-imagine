@@ -15,7 +15,13 @@ import java.nio.file.Path;
  * <ol>
  *   <li>the {@code cim.layerServer=false} gate logs its honest marker and
  *       never touches the plugin object;</li>
- *   <li>a failed start (no shadow classes in this bare JVM) is HONEST: the
+ *   <li>ticks BEFORE the mod load ends are a silent wait (Paper ticks while
+ *       the mods still load — a start now would find every mod holder
+ *       unbound, the measured Create AddPackFindersEvent failure), so no
+ *       start is attempted and no marker is synthesized;</li>
+ *   <li>once the load has ended (the no-manifest law: {@link FmlHost#markLoadEnded()},
+ *       the exact call Bootstrap.loadMods makes when no manifest arrives),
+ *       a failed start (no shadow classes in this bare JVM) is HONEST: the
  *       {@code start FAILED} marker prints, no exception escapes into
  *       Paper's tick loop, and the driver stops looping the failure
  *       (fail-fast, never a silent retry storm);</li>
@@ -47,7 +53,33 @@ public final class LayerServerHostTest {
         expect(!out.contains("armed"), "the disabled gate never arms");
         System.clearProperty("cim.layerServer");
 
-        // 2) a failed start is honest and fail-fast (no shadow classes here)
+        // 2) ticks before the mod load ends are a SILENT WAIT (no start attempt:
+        //    the bare JVM's FmlHost has seen no load, the wait law holds)
+        out = capture(() -> {
+            Method runTick;
+            try {
+                runTick = LayerServerHost.class.getDeclaredMethod("runTick");
+                runTick.setAccessible(true);
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+            try {
+                runTick.invoke(null);
+                runTick.invoke(null);
+                runTick.invoke(null);
+            } catch (Exception e) {
+                throw new AssertionError("runTick leaked an exception into the tick", e);
+            }
+        });
+        expect(!out.contains("start FAILED:"),
+                "a tick before the mod load ends never attempts a start");
+        expect(!out.contains("layer server: started"),
+                "a tick before the mod load ends never claims to be started");
+
+        // 3) the no-manifest law (Bootstrap.loadMods with no manifest calls
+        //    FmlHost.markLoadEnded): the next tick attempts the start, and a
+        //    failed start is honest and fail-fast (no shadow classes here)
+        FmlHost.markLoadEnded();
         out = capture(() -> {
             Method runTick;
             try {
@@ -61,7 +93,7 @@ public final class LayerServerHostTest {
             } catch (Exception e) {
                 throw new AssertionError("runTick leaked an exception into the tick", e);
             }
-            // 3) the second tick after a failed start must be a silent no-op
+            // 4) the second tick after a failed start must be a silent no-op
             try {
                 runTick.invoke(null);
             } catch (Exception e) {
