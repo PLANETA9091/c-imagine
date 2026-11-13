@@ -17,6 +17,7 @@ on:
       - "paper-plugin/**"
       - "test-mods/**"
       - "scripts/**"
+      - "scene-mod/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/integration.yml"

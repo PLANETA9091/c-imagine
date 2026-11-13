@@ -14,6 +14,7 @@ on:
       - "test-mods/**"
       - "tools/**"
       - "scripts/cimscene/**"
+      - "scene-mod/**"
       - "scripts/fetch-visual-client.py"
       - "scripts/visual/**"
       - "scripts/perf/**"
