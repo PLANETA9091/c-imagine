@@ -8,6 +8,22 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # 14-dx THE REAL HEAP CONTRACT (discovered 2026-11-14, run 43468198981 vs
+  # 43426371543): the launcher HARD-CODES -Xms512M -Xmx2G (CRUSSTY
+  # launcher/src/main/java/dev/dist/launcher/Main.java:174) and never read
+  # the toml memory key — the 14-dr fair-heap sed rewrote a DEAD key, both
+  # legs actually booted a 2G ceiling, and the RSS noise (bare 941..1173
+  # cross-run) is the GC-lazy touch of that unpinned heap. The launcher's
+  # documented override channel is the DIST_JAVA_OPTS env (Main.java:168:
+  # it REPLACES the defaults, so UseG1GC/encoding ride along). Both legs
+  # get the identical pinned contract: Xms=Xmx=768M + AlwaysPreTouch makes
+  # RSS = committed heap + native, killing the touch-timing variance that
+  # flipped the 400 MiB delta budget (99.9 green -> 430.7 red with only
+  # reverts between the two SHAs). MALLOC_ARENA_MAX=2 caps glibc arena
+  # growth on the many-thread JVM (same hygiene the gallery truth leg
+  # already runs under). Budgets stay 1.25 / 400 MiB — untouched.
+  DIST_JAVA_OPTS: "-Xms768M -Xmx768M -XX:+UseG1GC -XX:+AlwaysPreTouch -Dfile.encoding=UTF-8"
+  MALLOC_ARENA_MAX: "2"
 
 jobs:
   bench:
@@ -135,17 +151,11 @@ jobs:
         run: |
           npm i -g crussty
           crussty init --platform paper --version 26.3 --dir tmpl
-          # 14-dr THE FAIR HEAP CONTRACT: the template default memory=2G
-          # (-Xms2G -Xmx2G) lets the heap grow far past the workload's live
-          # set — the modded leg's peak RSS (1360-1448 MiB measured on runs
-          # 43255194042/43264635188) carried hundreds of MiB of GC-lazy heap
-          # headroom, and the 400 MiB budget passed only via a noisy bare
-          # sample (the max-max subtraction flaw, now median-based). Both
-          # legs share this template, so both get the SAME tightened heap:
-          # the comparison stays fair, the measured footprint is the real
-          # live set, and the budget law is untouched.
-          sed -i 's/^memory = .*/memory = "768M"/' tmpl/crussty.toml
-          grep -Fq 'memory = "768M"' tmpl/crussty.toml
+          # 14-dr (superseded): the toml memory key is DEAD — the launcher
+          # never parses it (hardcoded 512M/2G defaults; the exec lines of
+          # every run to date prove it). The contract now rides DIST_JAVA_OPTS
+          # (workflow env) and is ASSERTED against the boot.log exec receipt
+          # below — a contract that cannot fail loudly is not a contract.
           echo "eula=true" > tmpl/eula.txt
           cat > tmpl/server.properties <<'PROPS'
           online-mode=false
@@ -231,6 +241,15 @@ jobs:
             # them, and a missing completion still fails tick-budget unchanged.
             grep -Fq '[c-imagine] layer server: started' modded-$i/boot.log
             grep -Fq '[cimtest_heavy] load armed' modded-$i/boot.log
+          done
+          # 14-dx THE CONTRACT RECEIPT: every boot.log must carry the pinned
+          # heap flags in its [launcher] exec line — this is the assertion
+          # the 14-dr sed never had (the key was dead and nothing noticed).
+          for i in 1 2 3; do
+            grep -Fq -- '-Xms768M -Xmx768M' bare-$i/boot.log
+            grep -Fq -- '-Xms768M -Xmx768M' modded-$i/boot.log
+            grep -Fq -- '-XX:+AlwaysPreTouch' bare-$i/boot.log
+            grep -Fq -- '-XX:+AlwaysPreTouch' modded-$i/boot.log
           done
           BARE_ARGS=""
           MODDED_ARGS=""
