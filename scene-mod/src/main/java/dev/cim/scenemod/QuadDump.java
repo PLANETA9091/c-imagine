@@ -644,7 +644,34 @@ final class QuadDump {
         float cu = (uv[0][0] + uv[1][0] + uv[2][0] + uv[3][0]) / 4;
         float cv = (uv[0][1] + uv[1][1] + uv[2][1] + uv[3][1]) / 4;
         // a sprite-shifted quad keeps its original sprite field: find the real owner of its UVs
+        // 14-ea1 THE WHOLE-ATLAS HINT: a baked quad whose sprite field is a
+        // FAKE whole-atlas sprite (the moonlight BakedQuadBuilder contract —
+        // supplementaries' book piles bake every book quad with
+        // DummySprite.INSTANCE and setUv(sprite.getU(...)) passes the atlas
+        // coordinates straight through) "contains" every UV by construction,
+        // so the hint short-circuits the owner scan and the rows recorded
+        // atlas coordinates labeled with a fully transparent 1x1 sprite —
+        // the pack baked them into the dummy's empty pixels and the whole
+        // book-pile family (19 cells on supplementaries-p21, run
+        // 43391147872) rendered EMPTY in ours while the truth showed the
+        // books. A hint that spans the atlas is not an owner: fall through
+        // to the window scan, which resolves the REAL book sprite the UVs
+        // land in (the same law the null-hint path already runs); when no
+        // other sprite contains the UVs the hint keeps the row (zero
+        // behavior change for every normal capture).
         TextureAtlasSprite sprite = hint;
+        if (sprite != null && coversWholeAtlas(sprite)) {
+            TextureAtlasSprite owner = null;
+            for (TextureAtlasSprite s : sprites) {
+                if (contains(s, cu, cv)) {
+                    owner = s;
+                    break;
+                }
+            }
+            if (owner != null) {
+                sprite = owner;
+            }
+        }
         if (sprite == null || !contains(sprite, cu, cv)) {
             for (TextureAtlasSprite s : sprites) {
                 if (contains(s, cu, cv)) {
@@ -1186,6 +1213,13 @@ final class QuadDump {
 
     private static boolean contains(TextureAtlasSprite s, float u, float v) {
         return u >= s.getU0() && u <= s.getU1() && v >= s.getV0() && v <= s.getV1();
+    }
+
+    /** 14-ea1: the fake whole-atlas sprite shape (the moonlight DummySprite
+     *  contract: u0=v0=0, u1=v1=1 — a "window" equal to the entire atlas).
+     *  A sprite this size owns no pixels; its quads carry atlas coordinates. */
+    private static boolean coversWholeAtlas(TextureAtlasSprite s) {
+        return (s.getU1() - s.getU0()) >= 0.999f && (s.getV1() - s.getV0()) >= 0.999f;
     }
 
     private static String sha(String s) throws Exception {
