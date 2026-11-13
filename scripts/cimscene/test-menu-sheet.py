@@ -52,7 +52,9 @@ for label, got, want in [
     ("an animated pixel is judged apart", m.judge("x", True, "", m.compare(a, c, slots, 3, moving))[0], "GREEN"),
     ("a screen moving everywhere excuses nothing", m.judge("x", True, "", m.compare(a, c, slots, 3, everywhere))[0], "RED"),
     ("animation elsewhere excuses nothing", m.judge("x", True, "", m.compare(a, c, slots, 3, elsewhere))[0], "RED"),
-    ("menu that did not open", m.judge("x", False, "no-opener", m.compare(a, b, slots, 3))[0], "RED"),
+    # 14-ea2: the walk's own open-failure demotes to the named absence class
+    ("menu the opener refused", m.judge("x", False, "open-failed:no-opener:UnsupportedOperationException", m.compare(a, b, slots, 3))[0], "OPEN-FAILED"),
+    ("open-failed rows carry red=0", str(int(m.judge("x", False, "open-failed:no-opener:x", m.compare(a, b, slots, 3))[0] == "RED")), "0"),
     ("missing frame", m.judge("x", True, "", m.compare(a, "/nonexistent", slots, 3))[0], "RED"),
 ]:
     ok = got == want

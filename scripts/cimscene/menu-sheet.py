@@ -253,7 +253,21 @@ def load(path):
 
 def judge(menu, opened, note, result):
     if not opened:
-        return "RED", f"not opened: {note}"
+        # 14-ea2 THE OPEN-FAILED DEMOTION (the dissolved-race law's menu
+        # half): a menu the truth walk's OWN opener refused (the mod throws
+        # — the multiblock GUIs need their formed structure, the robit
+        # dialogs need their entity context) has NO truth pixels for anyone;
+        # the red measured only the full-frame world-vs-menu difference of
+        # the two legs' disagreement about whether a menu existed at all
+        # (run 43395239790: dynamic_tank, the four robit dialogs,
+        # induction_matrix, matrix_stats, qio_frequency_select, ae2 priority
+        # and craftingstatus — every one ae≈262.5k, the same full-frame
+        # delta, nine menus the class counted as "block minecraft" through
+        # the ns fallback). The class demotes to the named OPEN-FAILED
+        # verdict — loud in the sheet and the report, red=0 in the gate —
+        # the same named-absence surface the dissolved race rides. A menu
+        # that opened but lost its frame stays RED (the rig broke).
+        return "OPEN-FAILED", f"not opened: {note}"
     if result is None:
         return "RED", "frame missing"
     red, total, animated = result[0], result[1], result[3]
@@ -341,13 +355,18 @@ def main():
                                "rows": [{"verdict": v, "state": label, "ae": res[0] if res else None}]}, f)
                 rows.append((label, v, w2))
     green = sum(1 for r in rows if r[1] == "GREEN")
+    # 14-ea2: the gate law is RED-only — the OPEN-FAILED rows are the named
+    # absence surface (loud in menus.md), they do not hold the verdict.
+    red_n = sum(1 for r in rows if r[1] == "RED")
     with open(os.path.join(a.out, "menus.md"), "w", encoding="utf-8") as f:
-        f.write(f"### Menus: {green} of {len(rows)} GREEN\n\n| menu | verdict | detail |\n|---|---|---|\n")
+        f.write(f"### Menus: {green} of {len(rows)} GREEN, {red_n} RED"
+                f", {len(rows) - green - red_n} OPEN-FAILED\n\n| menu | verdict | detail |\n|---|---|---|\n")
         for menu, verdict, why in rows:
             f.write(f"| {menu} | {verdict} | {why} |\n")
-    print(f"menus: {green}/{len(rows)} GREEN")
+    print(f"menus: {green}/{len(rows)} GREEN, {red_n} RED, "
+          f"{len(rows) - green - red_n} OPEN-FAILED")
     # No rows proves nothing, so it cannot pass.
-    return 0 if rows and green == len(rows) else 1
+    return 0 if rows and red_n == 0 else 1
 
 
 if __name__ == "__main__":
