@@ -15,6 +15,10 @@
     "MouseParkMixin",
     "EditBoxBlinkMixin",
     "SlotRenderMixin",
-    "PayloadSendMixin"
+    "PayloadSendMixin",
+    "TickingStatePinMixin",
+    "TextureAtlasAccessor",
+    "TextureSpriteTickerAccessor",
+    "SpriteContentsTickerAccessor"
   ]
 }
