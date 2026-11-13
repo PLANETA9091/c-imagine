@@ -2601,6 +2601,25 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 cmdByItem.putIfAbsent(r.moddedId(), r.cmd());
             }
         }
+        // 14-eb THE SLOT-FORMAT DETECTOR: the manifests crossed eras — the
+        // pre-relabel writer emitted the RAW Bukkit indices (inventory.9..35)
+        // and the relabeled writer names the vanilla main slots
+        // (inventory.0..26, the #302 law). The raw rows >= 27 overflowed the
+        // Bukkit range check and 9 slots dropped silently (the run
+        // 43468177851 receipt: placed=27 nochannel=0 cells=36 — exactly the
+        // 9 overflow rows). Detect the format from the rows themselves and
+        // map both: the vanilla names map N -> Bukkit N+9, the raw rows
+        // pass through unchanged.
+        final boolean rawBukkit = slots.stream().anyMatch(r -> {
+            if (r.length < 1 || !r[0].startsWith("inventory.")) {
+                return false;
+            }
+            try {
+                return Integer.parseInt(r[0].substring("inventory.".length())) > 26;
+            } catch (NumberFormatException nfe) {
+                return false;
+            }
+        });
         int[] counts = callSync(() -> {
             int placed = 0, nochannel = 0;
             org.bukkit.entity.Player viewer =
@@ -2631,10 +2650,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     // manifest's inventory.N names the vanilla MAIN slot N
                     // (0..26) — the truth's rcon `item replace` passes it
                     // raw — and Bukkit numbers the same slot N+9 (0..8
-                    // hotbar, 9..35 main). The old direct parse filled the
-                    // main row N-9 while the truth filled row N: the 9-slot
-                    // permutation the join measured.
-                    bukkitSlot = Integer.parseInt(slotName.substring("inventory.".length())) + 9;
+                    // hotbar, 9..35 main). The 14-eb detector accepts the
+                    // pre-relabel raw-Bukkit rows (9..35) unchanged.
+                    int n = Integer.parseInt(slotName.substring("inventory.".length()));
+                    bukkitSlot = rawBukkit ? n : n + 9;
                 } else {
                     continue;
                 }
