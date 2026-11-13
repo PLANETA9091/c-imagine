@@ -1608,6 +1608,13 @@ jobs:
               "cimscene gallery entity mobs minecraft $p"
             sleep 2   # + the 2s settle before done = ~4s spawn->shot: section rebuild (wall -> air) + entity render under llvmpipe
             rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            # 14-dz the entity pages shoot a fixed window with no settle
+            # loop — the same lightmap starvation can strand a dark mob
+            # frame (the e lane's 1.18M/839K reds ride luma_fit=false).
+            # Poke the light packets before the shot: the integration
+            # lands inside the window, the self-pair still names any
+            # residual time-varying cells honestly.
+            rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
             bash scripts/visual/shot.sh "truth-shots/gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair: a second shot ~2s later
             bash scripts/visual/shot.sh "truth-shots/gal-e$p-self.png"
@@ -1628,6 +1635,13 @@ jobs:
                 "cimscene gallery entity $SERIES minecraft $p"
               sleep 2   # + the 2s settle before done (14-an: the settle rides wait_done)
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              # 14-dz the entity pages shoot a fixed window with no settle
+              # loop — the same lightmap starvation can strand a dark mob
+              # frame (the e lane's 1.18M/839K reds ride luma_fit=false).
+              # Poke the light packets before the shot: the integration
+              # lands inside the window, the self-pair still names any
+              # residual time-varying cells honestly.
+              rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the mob-page 14-aj pattern): the vanilla dyn/large rows now gate and boats/arrows/camels MOVE — the second shot names the time-varying cells (ANIMATED) instead of red-gating an animation phase
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p-self.png"
@@ -1658,6 +1672,13 @@ jobs:
                   "cimscene cleanup-assemblies" "kill @e[type=!player]" "cimscene gallery entity $SERIES $NS $p"
                 sleep 2   # 14-an: the settle pass rides a real tick delay inside wait_done
                 rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                # 14-dz the entity pages shoot a fixed window with no settle
+                # loop — the same lightmap starvation can strand a dark mob
+                # frame (the e lane's 1.18M/839K reds ride luma_fit=false).
+                # Poke the light packets before the shot: the integration
+                # lands inside the window, the self-pair still names any
+                # residual time-varying cells honestly.
+                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
                 echo "shot $NS $SERIES page $p"
               done
@@ -2681,6 +2702,13 @@ jobs:
             ours_alive || { echo "ours client died on mob page $p — the ours leg must never die"; exit 1; }
             sleep 5   # section rebuild + entity render under llvmpipe
             rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+            # 14-dz the entity pages shoot a fixed window with no settle
+            # loop — the same lightmap starvation can strand a dark mob
+            # frame (the e lane's 1.18M/839K reds ride luma_fit=false).
+            # Poke the light packets before the shot: the integration
+            # lands inside the window, the self-pair still names any
+            # residual time-varying cells honestly.
+            rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror)
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p-self.png"
@@ -2697,6 +2725,13 @@ jobs:
               ours_alive || { echo "ours client died on $SERIES page $p — the ours leg must never die"; exit 1; }
               sleep 5
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              # 14-dz the entity pages shoot a fixed window with no settle
+              # loop — the same lightmap starvation can strand a dark mob
+              # frame (the e lane's 1.18M/839K reds ride luma_fit=false).
+              # Poke the light packets before the shot: the integration
+              # lands inside the window, the self-pair still names any
+              # residual time-varying cells honestly.
+              rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the truth-leg mirror): the ANIMATED class needs BOTH legs' second shots
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p-self.png"
@@ -2728,6 +2763,13 @@ jobs:
                 ours_alive || { echo "ours client died on $NS $SERIES page $p — the ours leg must never die"; exit 1; }
                 sleep 4
                 rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                # 14-dz the entity pages shoot a fixed window with no settle
+                # loop — the same lightmap starvation can strand a dark mob
+                # frame (the e lane's 1.18M/839K reds ride luma_fit=false).
+                # Poke the light packets before the shot: the integration
+                # lands inside the window, the self-pair still names any
+                # residual time-varying cells honestly.
+                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 test -s "ours-shots/ours-gal-e$SERIES-$NS$p.png" || { echo "$NS $SERIES page $p shot missing"; exit 1; }
                 echo "shot $NS $SERIES page $p"
