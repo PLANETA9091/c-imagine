@@ -379,6 +379,48 @@ final class LiveBridge {
         return new Broken(removed, spilled, state);
     }
 
+    /** A block's destroy time (-1 unbreakable, 0 instant) and whether its drops need the right tool. */
+    record BlockInfo(float hardness, boolean requiresTool) {
+    }
+
+    /** The layer's answers per block id: static for the id, so asked once. */
+    private final java.util.Map<String, BlockInfo> blockInfos = new java.util.HashMap<>();
+
+    /** The layer's block info for {@code blockId}, or null when it cannot answer (nothing is kept then). */
+    BlockInfo blockInfo(String blockId) {
+        BlockInfo known = blockInfos.get(blockId);
+        if (known != null) {
+            return known;
+        }
+        for (String line : call("blockinfo\t" + blockId).split("\n")) {
+            String[] p = line.split("\t");
+            if (p.length == 3 && p[0].equals("block")) {
+                BlockInfo info = new BlockInfo(Float.parseFloat(p[1]), p[2].equals("1"));
+                blockInfos.put(blockId, info);
+                return info;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * What the held stack does against a mod block and a reference block: its destroy speed on the mod
+     * block, whether it is a correct tool for the mod block's drops, and its destroy speed on the reference.
+     */
+    record Dig(float speed, boolean correct, float refSpeed) {
+    }
+
+    /** The layer's {@link Dig} for the held stack, or null when the layer cannot answer. */
+    Dig digSpeed(ItemStack held, String blockId, String refBlockId) {
+        for (String line : call("digspeed\t" + blockId + "\t" + refBlockId + "\t" + toLayer(held)).split("\n")) {
+            String[] p = line.split("\t");
+            if (p.length == 4 && p[0].equals("digspeed")) {
+                return new Dig(Float.parseFloat(p[1]), p[2].equals("1"), Float.parseFloat(p[3]));
+            }
+        }
+        return null;
+    }
+
     /** A record payload rebuilt from the plain values the real client's press sent. */
     State payload(Player player, String payloadClass, String values) {
         return parse(call("payload\t" + player.getUniqueId() + "\t" + payloadClass + "\t" + values));

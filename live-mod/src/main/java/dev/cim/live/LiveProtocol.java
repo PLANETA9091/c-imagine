@@ -63,6 +63,13 @@ public final class LiveProtocol {
             if (head[0].equals("save")) {
                 return save(head);
             }
+            // Stateless answers about blocks and tools: no player, so no uuid.
+            if (head[0].equals("blockinfo")) {
+                return blockInfo(head);
+            }
+            if (head[0].equals("digspeed")) {
+                return digSpeed(head);
+            }
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
@@ -533,6 +540,38 @@ public final class LiveProtocol {
             level.removeBlockEntity(pos);
         }
         return out.append("released\t").append(TICKING.size()).append('\n').toString();
+    }
+
+    /** A block id's default state, or an error for an id the layer does not know (the registry would answer air). */
+    private static net.minecraft.world.level.block.state.BlockState blockState(String id) {
+        net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.parse(id);
+        if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(rl)) {
+            throw new IllegalArgumentException("unknown block " + id);
+        }
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(rl).defaultBlockState();
+    }
+
+    /**
+     * blockinfo TAB blockId: "block TAB hardness TAB requiresTool" (1 or 0). The hardness is the
+     * block's destroy time as the game has it (-1 unbreakable, 0 instant); cached on Paper per id.
+     */
+    private static String blockInfo(String[] head) {
+        net.minecraft.world.level.block.state.BlockState st = blockState(head[1]);
+        return "block\t" + st.getDestroySpeed(LiveMenus.level(), net.minecraft.core.BlockPos.ZERO) + "\t"
+                + (st.requiresCorrectToolForDrops() ? 1 : 0) + "\n";
+    }
+
+    /**
+     * digspeed TAB modBlockId TAB refBlockId TAB heldStack: "digspeed TAB speed TAB correct TAB refSpeed",
+     * the held stack's destroy speed on the mod block, whether it is a correct tool for the mod block's
+     * drops, and its destroy speed on the reference block. The held stack is its JSON ("-" for none).
+     */
+    private static String digSpeed(String[] head) {
+        ItemStack held = decode(head[3]);
+        net.minecraft.world.level.block.state.BlockState mod = blockState(head[1]);
+        net.minecraft.world.level.block.state.BlockState ref = blockState(head[2]);
+        return "digspeed\t" + held.getDestroySpeed(mod) + "\t" + (held.isCorrectToolForDrops(mod) ? 1 : 0) + "\t"
+                + held.getDestroySpeed(ref) + "\n";
     }
 
     /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */
