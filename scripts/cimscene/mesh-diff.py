@@ -183,7 +183,7 @@ def main():
           "render_type:", report["composite"]["render_type"])
     if a.out_json:
         with open(a.out_json, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=1)
+            json.dump(report, f, indent=1, default=str)
     return 0
 
 
