@@ -2415,6 +2415,15 @@ public final class GalleryPack {
         // the vanilla block shade constants, flat per row) rides the matching
         // composite child as a `minecraft:constant` node tint.
         List<double[]> elementTints = new ArrayList<>();
+        // 14-e19 THE PER-QUAD LIGHT RATIO: the residual's owner after the e17
+        // (the ae2 quartz walls' luma 1.52, the machines' 1.6 — the display's
+        // FLAT pin vs the truth's SMOOTH per-face light). The captured light
+        // tail is per-quad (the flags' rowBlock/rowSky); the ratio against
+        // the mesh's own dominant pair approximates the per-face light the
+        // truth rendered, and the unlit child's constant tint multiplies it
+        // onto the pinned display. Conservative: only where no shade tint
+        // already owns the row.
+        List<double[]> elementLightTints = new ArrayList<>();
         List<String> elementMaterials = new ArrayList<>();
         for (int i = 0; i < faces.size(); i++) {
             // A non-planar source quad emits multiple triangles. All pieces
@@ -2519,6 +2528,15 @@ public final class GalleryPack {
                 }
                 elements.add(el);
                 elementTints.add(rowTint);
+                if (rowTint == null && rb >= 0 && rs >= 0 && litBlock >= 0 && litSky >= 0
+                        && !(rb == litBlock && rs == litSky)) {
+                    int pinSum = Math.max(1, litBlock + litSky);
+                    double ratio = Math.max(0.0, Math.min(1.0, (rb + rs) / (double) pinSum));
+                    double v = Math.round(ratio * 255.0) / 255.0;
+                    elementLightTints.add(new double[]{v, v, v});
+                } else {
+                    elementLightTints.add(null);
+                }
                 elementMaterials.add(faceMaterials.get(i));
             }
         }
@@ -2581,7 +2599,7 @@ public final class GalleryPack {
         recordScale(ref, k);
         entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         if (block) {
-            registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints, elementMaterials);
+            registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints, elementMaterials, elementLightTints);
         }
         return ref;
     }
@@ -2749,7 +2767,8 @@ public final class GalleryPack {
     private static void registerUnlitBlockLayers(JsonObject wrapper, String ref, double scale,
                                                  TreeMap<String, byte[]> entries,
                                                  List<double[]> elementTints,
-                                                 List<String> elementMaterials) {
+                                                 List<String> elementMaterials,
+                                                 List<double[]> elementLightTints) {
         Map<String, JsonArray> ordinary = new LinkedHashMap<>();
         JsonArray children = new JsonArray();
         int elementIdx = -1;
@@ -2779,6 +2798,13 @@ public final class GalleryPack {
             node.add("transformation", unlit.transformation());
             if (tint != null) {
                 applyShadeTint(node, tint);
+            } else if (elementLightTints != null) {
+                // 14-e19: the per-quad light ratio rides the same constant-tint
+                // channel where no shade tint owns the row.
+                double[] lightTint = elementLightTints.get(elementIdx);
+                if (lightTint != null) {
+                    applyShadeTint(node, lightTint);
+                }
             }
             children.add(node);
         }

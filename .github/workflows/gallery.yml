@@ -223,6 +223,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 14-e20 THE SEED-SCOPE REFINEMENT: scripts/cimscene/** pulled the test
+      # suites into the key (the e18's 28-test edit re-walked the 45-minute
+      # seed for zero pack change). The seed's REAL inputs = the f2v tree +
+      # the shell drivers + the rcon/walk tools + mods.lock; the join/verdict
+      # tools and the tests are post-seed and stay out. BOTH hash sites stay
+      # byte-identical (the ours shard's integrity check = the same key).
       # ONE fingerprint for the cache key AND the payload stamp (hashFiles is
       # not allowed in job-level env — measured #48 startup rejection — so a
       # step computes it; steps context IS allowed in `with`). The prefix
@@ -232,7 +238,7 @@ jobs:
       # f2v/inputs.sha1 and every consumer compares it against this hash.
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -1994,7 +2000,7 @@ jobs:
       # hashFiles lives in a step — job-level env rejects it, measured #48)
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         id: jdk25
