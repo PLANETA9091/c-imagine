@@ -182,8 +182,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                         base.resolve("visual-items.resolved.tsv"))
                                 : List.of();
                 List<dev.cim.f2v.F2vPack.VisualBlock> fastBlocks =
-                        dev.cim.f2v.F2vPack.readBlockManifest(
-                                base.resolve("visual-blocks.tsv"));
+                        dev.cim.f2v.F2vPack.readEffectiveBlocks(base);
                 List<dev.cim.f2v.GalleryPack.Resolved> fastGallery =
                         Files.isRegularFile(base.resolve("visual-gallery.resolved.tsv"))
                                 ? dev.cim.f2v.GalleryPack.readResolvedManifest(
@@ -1121,13 +1120,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
             String verified = callSync(() -> {
-                org.bukkit.block.data.type.NoteBlock data;
+                // the vanilla serialized names (harp, trumpet_exposed, ...) parse as a
+                // state string; Bukkit's Instrument enum names differ for some of them
+                org.bukkit.block.data.BlockData data;
                 try {
-                    data = (org.bukkit.block.data.type.NoteBlock)
-                            Material.NOTE_BLOCK.createBlockData();
-                    data.setInstrument(org.bukkit.Instrument.valueOf(
-                            visual.instrument().toUpperCase(Locale.ROOT)));
-                    data.setNote(new org.bukkit.Note(visual.note()));
+                    data = org.bukkit.Bukkit.createBlockData("minecraft:note_block[instrument="
+                            + visual.instrument() + ",note=" + visual.note() + "]");
                 } catch (Throwable t) {
                     return "component-failed: " + t;
                 }
@@ -1149,10 +1147,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             d.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
                         });
                 // verify: the entity exists and carries exactly that state
-                if (disp.isValid() && disp.getBlock() instanceof org.bukkit.block.data.type.NoteBlock nb
-                        && nb.getInstrument() == org.bukkit.Instrument.valueOf(
-                                visual.instrument().toUpperCase(Locale.ROOT))
-                        && nb.getNote().getId() == visual.note()) {
+                String shown = disp.isValid() ? disp.getBlock().getAsString() : "";
+                if (shown.contains("instrument=" + visual.instrument() + ",")
+                        && shown.contains(",note=" + visual.note() + ",")) {
                     org.bukkit.Location l = disp.getLocation();
                     return "verified @" + l.getBlockX() + "," + l.getBlockY() + "," + l.getBlockZ();
                 }

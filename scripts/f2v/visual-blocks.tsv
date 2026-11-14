@@ -12,5 +12,8 @@
 #     block elsewhere can never collide with the slot).
 #   - graceful degradation: clients WITHOUT the pack see a normal note
 #     block (all instruments share one vanilla model).
-#   - only rows listed here enter the pack (manifest-driven allocation).
+#   - rows listed here are authoritative. Every other mod block found in the
+#     jars gets a deterministic carrier at pack build (Create first, then by id),
+#     recorded in c-imagine/f2v/carriers.tsv and never reassigned. Notes 1-24
+#     only; note 0 stays vanilla's placed default. 648 slots in total.
 cimtest:test_block	creeper	13

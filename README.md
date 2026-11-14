@@ -148,8 +148,10 @@ this section is the short, honest summary (2026-11-14).
   and clicking a mod menu run the mod's own code.
 
 **Not yet survival-playable out of the box.** Known gaps:
-- A mod block can only be placed when it has a note-block carrier; carriers come
-  from the gallery's real-client dumps, not from a plain install.
+- A mod block can only be placed when it has a note-block carrier. Boot allocates one
+  per mod blockstate (Create first) over 27 instruments x notes 1-24 = 648 render slots,
+  kept in `c-imagine/f2v/carriers.tsv`; blocks past 648 stay unplaceable until a second
+  carrier family exists. Blocks without a blockstate JSON are not discovered.
 - Placed mod block entities tick only while their menu is open.
 - No mod world generation in the Paper world and no mod recipes in Paper's crafting.
 - Mod block hardness, tool and collision are the note block's.

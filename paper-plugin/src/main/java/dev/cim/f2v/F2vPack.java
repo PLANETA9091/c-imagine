@@ -10,12 +10,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -817,9 +822,13 @@ public final class F2vPack {
      */
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows)
             throws IOException {
-        return build(modsDir, outDir, manifestRows,
+        CarrierPlan plan = carrierPlan(outDir, modsDir,
+                readBlockManifest(outDir.resolve("visual-blocks.tsv")), true);
+        Result r = withNotes(build(modsDir, outDir, manifestRows,
                 readEquipmentManifest(outDir.resolve("visual-equipment.tsv")),
-                readBlockManifest(outDir.resolve("visual-blocks.tsv")));
+                plan.effective()), plan.notes());
+        writeResolvedBlocks(outDir, r.blocks());
+        return r;
     }
 
     /**
@@ -873,9 +882,10 @@ public final class F2vPack {
                 }
             }
             Path items = base.resolve("visual-items.tsv");
+            // the same carrier plan the pre-boot build persisted (read-only here)
             return build(mods, scratch, Files.isRegularFile(items) ? readManifest(items) : List.of(),
                     readEquipmentManifest(base.resolve("visual-equipment.tsv")),
-                    readBlockManifest(base.resolve("visual-blocks.tsv")),
+                    carrierPlan(base, mods, readBlockManifest(base.resolve("visual-blocks.tsv")), false).effective(),
                     readPaletteManifest(base.resolve("visual-palettes.tsv")), assets);
         } finally {
             deleteRecursively(scratch);
@@ -917,6 +927,337 @@ public final class F2vPack {
                 .thenComparing(VisualBlock::instrument)
                 .thenComparingInt(VisualBlock::note));
         return rows;
+    }
+
+    // ---- carrier allocation (boot-time fallback for every mod block) --------------
+
+    /**
+     * The 27 NoteBlockInstrument serialized names in the vanilla 26.3 enum order
+     * (the 23 1.21.x instruments plus the trumpet family). The slot order is this
+     * list, instrument-major, so the allocation is a pure function of the inputs.
+     */
+    static final List<String> CARRIER_INSTRUMENTS = List.of("harp", "basedrum", "snare", "hat", "bass",
+            "flute", "bell", "guitar", "chime", "xylophone", "iron_xylophone", "cow_bell", "didgeridoo",
+            "bit", "banjo", "pling", "trumpet", "trumpet_exposed", "trumpet_oxidized", "trumpet_weathered",
+            "zombie", "skeleton", "creeper", "dragon", "wither_skeleton", "piglin", "custom_head");
+    /**
+     * Note 0 is vanilla's placed default: never handed out, so a freshly placed vanilla
+     * note block can never read as a carrier. The pack variant key pins instrument +
+     * note and leaves powered a wildcard, so 27 x 24 = 648 slots is the render space.
+     */
+    static final int CARRIER_NOTE_MIN = 1;
+    static final int CARRIER_NOTE_MAX = 24;
+    /** The allocation ledger: every auto-allocated carrier, kept across restarts. */
+    static final String CARRIER_LEDGER = "carriers.tsv";
+    /** The rows the last build used (manifest + allocation); the HUD reads these. */
+    static final String RESOLVED_BLOCKS = "visual-blocks.resolved.tsv";
+    static final int CARRIER_CAPACITY = CARRIER_INSTRUMENTS.size()
+            * (CARRIER_NOTE_MAX - CARRIER_NOTE_MIN + 1);
+    private static final String LEDGER_HEADER = "# c-imagine F2V carrier ledger (auto-allocated; never reassigned)\n"
+            + "# modded_block_id <TAB> instrument <TAB> note — written by the pack build, do not edit\n";
+    private static final String RESOLVED_HEADER = "# c-imagine F2V resolved block carriers (manifest + allocation)\n"
+            + "# written by the pack build; the HUD and the pack read the same rows\n";
+
+    /** The planner's output: the rows the pack emits, the ledger to keep, notes for the build log. */
+    public record CarrierPlan(List<VisualBlock> effective, List<VisualBlock> ledger, List<String> notes) {
+    }
+
+    /**
+     * Pure carrier planner. The manifest is authoritative: its rows keep their slots and
+     * block their ids from auto allocation. A ledger row keeps its slot across restarts;
+     * it only moves when a manifest row now holds that slot (logged). Every other
+     * discovered mod block takes the lowest free slot in sorted id order. Ledger rows
+     * of blocks no jar carries any more are reserved, never reissued, and not emitted.
+     */
+    static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
+                                    List<VisualBlock> ledgerRows) {
+        Set<String> found = new TreeSet<>(discovered);
+        List<String> notes = new ArrayList<>();
+        Set<String> used = new HashSet<>();
+        Set<String> placed = new HashSet<>();
+        Set<String> manifestIds = new HashSet<>();
+        List<VisualBlock> effective = new ArrayList<>(manifest);
+        for (VisualBlock row : manifest) {
+            used.add(slotKey(row));
+            placed.add(row.moddedBlockId());
+            manifestIds.add(row.moddedBlockId());
+        }
+        List<VisualBlock> ledger = new ArrayList<>();
+        Set<String> ledgerIds = new HashSet<>();
+        for (VisualBlock row : ledgerRows) {
+            String id = row.moddedBlockId();
+            if (!validSlot(row)) {
+                notes.add("carrier ledger: dropped malformed row " + id + " " + slotKey(row));
+                continue;
+            }
+            if (!ledgerIds.add(id)) {
+                continue; // duplicate ledger row: the first one owns the id
+            }
+            if (manifestIds.contains(id)) {
+                ledger.add(row); // reserved while the manifest owns the id
+                used.add(slotKey(row));
+                continue;
+            }
+            if (used.contains(slotKey(row))) {
+                notes.add("carrier " + id + " lost " + slotKey(row) + " to another row: reallocated");
+                continue;
+            }
+            used.add(slotKey(row));
+            ledger.add(row);
+            if (found.contains(id)) {
+                effective.add(row);
+                placed.add(id);
+            }
+        }
+        int overflow = 0;
+        int cursor = 0;
+        List<String> order = new ArrayList<>(found);
+        order.sort(Comparator.comparingInt(F2vPack::carrierRank).thenComparing(Comparator.naturalOrder()));
+        for (String id : order) {
+            if (placed.contains(id)) {
+                continue;
+            }
+            while (cursor < CARRIER_CAPACITY && used.contains(slotKey(slotAt(cursor)))) {
+                cursor++;
+            }
+            if (cursor >= CARRIER_CAPACITY) {
+                overflow++;
+                continue;
+            }
+            VisualBlock slot = slotAt(cursor);
+            VisualBlock row = new VisualBlock(id, slot.instrument(), slot.note());
+            used.add(slotKey(slot));
+            effective.add(row);
+            ledger.add(row);
+            placed.add(id);
+        }
+        if (overflow > 0) {
+            notes.add(overflow + " mod block(s) have no free note_block carrier slot ("
+                    + CARRIER_CAPACITY + " slots in use): not placeable in this pack");
+        }
+        effective.sort(BLOCK_ORDER);
+        ledger.sort(BLOCK_ORDER);
+        return new CarrierPlan(effective, ledger, notes);
+    }
+
+    /**
+     * Fresh allocations favour the owner's Tier 0 mods (docs/MODPACK.md, the parity law:
+     * Create first), then the rest by id. Plain alphabetical order would starve create:
+     * behind ae2 and alexsmobs in a full pack. Ledger rows are never re-ranked.
+     */
+    static final List<String> CARRIER_PRIORITY = List.of("create", "biomesoplenty", "dynamictrees", "combat_roll");
+
+    static int carrierRank(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        int rank = colon > 0 ? CARRIER_PRIORITY.indexOf(moddedId.substring(0, colon)) : -1;
+        return rank < 0 ? CARRIER_PRIORITY.size() : rank;
+    }
+
+    private static final Comparator<VisualBlock> BLOCK_ORDER = Comparator
+            .comparing(VisualBlock::moddedBlockId)
+            .thenComparing(VisualBlock::instrument)
+            .thenComparingInt(VisualBlock::note);
+
+    /** The slot at a dense index: instrument-major over CARRIER_INSTRUMENTS, notes 1..24. */
+    static VisualBlock slotAt(int index) {
+        int notes = CARRIER_NOTE_MAX - CARRIER_NOTE_MIN + 1;
+        return new VisualBlock("", CARRIER_INSTRUMENTS.get(index / notes), CARRIER_NOTE_MIN + index % notes);
+    }
+
+    private static String slotKey(VisualBlock row) {
+        return row.instrument() + ":" + row.note();
+    }
+
+    private static boolean validSlot(VisualBlock row) {
+        return CARRIER_INSTRUMENTS.contains(row.instrument()) && row.note() >= 0 && row.note() <= CARRIER_NOTE_MAX;
+    }
+
+    /**
+     * Every mod block a jar ships a blockstate for, as {@code ns:path}. The minecraft
+     * namespace is vanilla, never a carrier candidate. A block with no blockstate JSON
+     * cannot be discovered this way (documented limit).
+     */
+    static Set<String> discoverBlockIds(List<Path> jars) throws IOException {
+        Set<String> out = new TreeSet<>();
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                var entries = zf.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    if (!name.startsWith("assets/") || !name.endsWith(".json")) {
+                        continue;
+                    }
+                    int slash = name.indexOf('/', "assets/".length());
+                    if (slash < 0) {
+                        continue;
+                    }
+                    String ns = name.substring("assets/".length(), slash);
+                    String prefix = "assets/" + ns + "/blockstates/";
+                    if (ns.equals("minecraft") || !name.startsWith(prefix)) {
+                        continue;
+                    }
+                    String path = name.substring(prefix.length(), name.length() - ".json".length());
+                    if (!path.isEmpty()) {
+                        out.add(ns + ":" + path);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Plans the carriers over the mod jars in {@code modsDir}. With {@code persist}, writes
+     * the ledger ({@code carriers.tsv}, kept across restarts) into {@code f2vDir}; it is
+     * rewritten only when its content changes.
+     */
+    static CarrierPlan carrierPlan(Path f2vDir, Path modsDir, List<VisualBlock> manifest,
+                                   boolean persist) throws IOException {
+        Path ledgerFile = f2vDir.resolve(CARRIER_LEDGER);
+        CarrierPlan plan = planCarriers(discoverBlockIds(listJars(modsDir)), manifest,
+                readBlockManifest(ledgerFile));
+        if (persist) {
+            Files.createDirectories(f2vDir);
+            writeIfChanged(ledgerFile, blockRowsText(LEDGER_HEADER, plan.ledger()));
+        }
+        return plan;
+    }
+
+    /** Writes the rows a build emitted ({@link Result#blocks()}) for the HUD to read. */
+    static void writeResolvedBlocks(Path f2vDir, List<VisualBlock> emitted) throws IOException {
+        Files.createDirectories(f2vDir);
+        writeIfChanged(f2vDir.resolve(RESOLVED_BLOCKS), blockRowsText(RESOLVED_HEADER, emitted));
+    }
+
+    /**
+     * The block rows the running pack was built from: the resolved plan when a build wrote
+     * it, else the manifest. The HUD and the boot fast path read through this.
+     */
+    public static List<VisualBlock> readEffectiveBlocks(Path f2vDir) throws IOException {
+        Path resolved = f2vDir.resolve(RESOLVED_BLOCKS);
+        return Files.isRegularFile(resolved)
+                ? readBlockManifest(resolved)
+                : readBlockManifest(f2vDir.resolve("visual-blocks.tsv"));
+    }
+
+    private static String blockRowsText(String header, List<VisualBlock> rows) {
+        StringBuilder sb = new StringBuilder(header);
+        for (VisualBlock r : rows) {
+            sb.append(r.moddedBlockId()).append('\t').append(r.instrument())
+                    .append('\t').append(r.note()).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static void writeIfChanged(Path file, String text) throws IOException {
+        if (Files.isRegularFile(file) && Files.readString(file, StandardCharsets.UTF_8).equals(text)) {
+            return;
+        }
+        Files.writeString(file, text, StandardCharsets.UTF_8);
+    }
+
+    private static Result withNotes(Result r, List<String> notes) {
+        if (notes.isEmpty()) {
+            return r;
+        }
+        List<String> warnings = new ArrayList<>(r.warnings());
+        warnings.addAll(notes);
+        return new Result(r.items(), r.blocks(), r.sha1(), r.entryCount(), warnings, r.gallery(), r.placeholders());
+    }
+
+    /**
+     * The block model a note-block carrier renders: the mod's own blockstate DEFAULT
+     * variant (the "" key, else the first sorted key; a multipart's first part), copied
+     * with its parent graph. A block without a usable blockstate falls back to the
+     * models/block/&lt;path&gt; probe that manifest rows always used.
+     */
+    private static String resolveBlockModel(JarCache cache, List<Path> jars, String moddedId,
+                                            TreeMap<String, byte[]> entries, List<String> warnings)
+            throws IOException {
+        int colon = moddedId.indexOf(':');
+        if (colon > 0) {
+            byte[] bs = cache.read("assets/" + moddedId.substring(0, colon) + "/blockstates/"
+                    + moddedId.substring(colon + 1) + ".json");
+            String model = bs == null ? null : defaultBlockstateModel(new String(bs, StandardCharsets.UTF_8));
+            if (model != null) {
+                String ref = copyModelRef(cache, model, entries, warnings);
+                if (ref != null) {
+                    return ref;
+                }
+                warnings.add("blockstate model missing in jars: " + model + " (" + moddedId + ")");
+            }
+        }
+        return resolveAndCopyBlockGraph(jars, moddedId, entries, warnings);
+    }
+
+    /** Copies a {@code ns:path} model's parent graph from the first jar carrying it; vanilla refs pass through. */
+    private static String copyModelRef(JarCache cache, String ref, TreeMap<String, byte[]> entries,
+                                       List<String> warnings) throws IOException {
+        int colon = ref.indexOf(':');
+        String ns = colon > 0 ? ref.substring(0, colon) : "minecraft";
+        String path = colon > 0 ? ref.substring(colon + 1) : ref;
+        if (ns.equals("minecraft")) {
+            return ref; // vanilla model: the client carries it
+        }
+        String file = "assets/" + ns + "/models/" + path + ".json";
+        for (Path jar : cache.paths()) {
+            ZipFile zf = cache.zip(jar);
+            ZipEntry e = zf.getEntry(file);
+            if (e != null) {
+                byte[] bytes = zf.getInputStream(e).readAllBytes();
+                entries.putIfAbsent(file, bytes);
+                copyParentGraph(zf, file, bytes, entries, warnings, 0);
+                return ref;
+            }
+        }
+        return null;
+    }
+
+    /** The default state's model ref in a blockstate JSON, or null when there is none or it does not parse. */
+    static String defaultBlockstateModel(String json) {
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            if (obj.has("variants") && obj.get("variants").isJsonObject()) {
+                JsonObject variants = obj.getAsJsonObject("variants");
+                JsonElement pick = variants.get("");
+                if (pick == null) {
+                    List<String> keys = new ArrayList<>(variants.keySet());
+                    if (keys.isEmpty()) {
+                        return null;
+                    }
+                    Collections.sort(keys);
+                    pick = variants.get(keys.get(0));
+                }
+                return modelOf(pick);
+            }
+            if (obj.has("multipart") && obj.get("multipart").isJsonArray()) {
+                for (JsonElement part : obj.getAsJsonArray("multipart")) {
+                    if (part.isJsonObject() && part.getAsJsonObject().has("apply")) {
+                        String model = modelOf(part.getAsJsonObject().get("apply"));
+                        if (model != null) {
+                            return model;
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (RuntimeException e) {
+            return null; // malformed JSON or wrong shape: the caller falls back
+        }
+    }
+
+    private static String modelOf(JsonElement e) {
+        if (e == null) {
+            return null;
+        }
+        if (e.isJsonArray()) {
+            return e.getAsJsonArray().isEmpty() ? null : modelOf(e.getAsJsonArray().get(0));
+        }
+        if (e.isJsonObject() && e.getAsJsonObject().has("model")
+                && e.getAsJsonObject().get("model").isJsonPrimitive()) {
+            return e.getAsJsonObject().get("model").getAsString();
+        }
+        return null;
     }
 
     /**
@@ -1168,8 +1509,11 @@ public final class F2vPack {
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
                                List<EquipmentAsset> equipmentRows)
             throws IOException {
-        return build(modsDir, outDir, manifestRows, equipmentRows,
-                readBlockManifest(outDir.resolve("visual-blocks.tsv")));
+        CarrierPlan plan = carrierPlan(outDir, modsDir,
+                readBlockManifest(outDir.resolve("visual-blocks.tsv")), true);
+        Result r = withNotes(build(modsDir, outDir, manifestRows, equipmentRows, plan.effective()), plan.notes());
+        writeResolvedBlocks(outDir, r.blocks());
+        return r;
     }
 
     /** Full build with explicit equipment + block rows (selftest seam). */
@@ -1577,16 +1921,20 @@ public final class F2vPack {
         // note_block stand-in slots -> the modded block models, ONE merged
         // blockstates override, manifest-driven slot allocation
         List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
-        for (VisualBlock block : blockRows) {
-            String ref = resolveAndCopyBlockGraph(jars, block.moddedBlockId(),
-                    entries, warnings);
-            if (ref != null) {
-                blockVariants.add(Map.entry(
-                        "instrument=" + block.instrument() + ",note=" + block.note(),
-                        ref));
-            } else {
-                warnings.add("no block model found for " + block.moddedBlockId()
-                        + " in any mod jar — block row dropped");
+        List<VisualBlock> emittedBlocks = new ArrayList<>();
+        try (JarCache blockJars = new JarCache(jars)) {
+            for (VisualBlock block : blockRows) {
+                String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(),
+                        entries, warnings);
+                if (ref != null) {
+                    blockVariants.add(Map.entry(
+                            "instrument=" + block.instrument() + ",note=" + block.note(),
+                            ref));
+                    emittedBlocks.add(block);
+                } else {
+                    warnings.add("no block model found for " + block.moddedBlockId()
+                            + " in any mod jar — block row dropped");
+                }
             }
         }
         blockVariants.sort(Map.Entry.comparingByKey());
@@ -1675,7 +2023,8 @@ public final class F2vPack {
         }
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
-        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery, placeholders);
+        // only rows the pack emits: a carrier without a model would render as a plain note block
+        return new Result(rows, emittedBlocks, sha1, entries.size(), warnings, gallery, placeholders);
     }
 
     /** Any element-face uv array in a model json, 4 numbers. */
@@ -2376,11 +2725,14 @@ public final class F2vPack {
             }
             List<VisualItem> rows = Files.isRegularFile(manifest)
                     ? readManifest(manifest) : List.of();
-            Result r = build(modsDir, outDir, rows,
+            CarrierPlan plan = carrierPlan(outDir, modsDir,
+                    readBlockManifest(outDir.resolve("visual-blocks.tsv")), true);
+            Result r = withNotes(build(modsDir, outDir, rows,
                     readEquipmentManifest(outDir.resolve("visual-equipment.tsv")),
-                    readBlockManifest(outDir.resolve("visual-blocks.tsv")),
+                    plan.effective(),
                     readPaletteManifest(outDir.resolve("visual-palettes.tsv")),
-                    extraAssets);
+                    extraAssets), plan.notes());
+            writeResolvedBlocks(outDir, r.blocks());
             System.out.println("f2v pack: built (" + r.items().size() + " item(s), "
                     + r.gallery().size() + " gallery state(s), "
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
@@ -2668,12 +3020,15 @@ public final class F2vPack {
                     "textures/models/armor/shiny_layer_2.png"));
             Files.writeString(out.resolve("visual-equipment.tsv"), "fakemod:shiny\t"
                     + "textures/models/armor/shiny_layer_1.png\ttextures/models/armor/shiny_layer_2.png\n");
+            // the carrier plan rides both builds exactly as the verification rebuild does
+            List<VisualBlock> blockPlan = carrierPlan(out, mods,
+                    readBlockManifest(out.resolve("visual-blocks.tsv")), true).effective();
             Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
-                    equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
+                    equipment, blockPlan,
                     readPaletteManifest(out.resolve("visual-palettes.tsv")),
                     List.of(vanillaJar));
             Result r2 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
-                    equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
+                    equipment, blockPlan,
                     readPaletteManifest(out.resolve("visual-palettes.tsv")),
                     List.of(vanillaJar));
             if (!r1.sha1().equals(r2.sha1())) {
@@ -2686,11 +3041,12 @@ public final class F2vPack {
                 failures.add("expected 5 resolved rows (4 manifest + 1 palette variant), got "
                         + r1.items().size() + ": " + r1.items());
             }
-            if (r1.blocks().size() != 1
-                    || !"fakemod:rock".equals(r1.blocks().get(0).moddedBlockId())
-                    || !"creeper".equals(r1.blocks().get(0).instrument())
-                    || r1.blocks().get(0).note() != 13) {
-                failures.add("block row not resolved: " + r1.blocks());
+            // the manifest row keeps its slot; every other fixture blockstate gets a distinct carrier
+            boolean rockKept = r1.blocks().stream().anyMatch(b -> "fakemod:rock".equals(b.moddedBlockId())
+                    && "creeper".equals(b.instrument()) && b.note() == 13);
+            long distinctSlots = r1.blocks().stream().map(F2vPack::slotKey).distinct().count();
+            if (!rockKept || distinctSlots != r1.blocks().size() || r1.blocks().isEmpty()) {
+                failures.add("block rows not resolved: " + r1.blocks());
             }
             // auto cmd must be CMD_BASE for the first sorted row
             if (r1.items().get(0).cmd() != CMD_BASE
@@ -3553,6 +3909,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        carrierSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
         capturedEmptyMeshSelftest(failures);
@@ -4114,6 +4471,56 @@ public final class F2vPack {
             GalleryPack.resetModelScales();
             deleteRecursively(quads);
         }
+    }
+
+    /** Carrier allocation: the pure planner, stability, manifest precedence, overflow, blockstate default. */
+    private static void carrierSelftest(List<String> failures) {
+        VisualBlock manifestRock = new VisualBlock("fakemod:rock", "creeper", 13);
+        // an earlier boot's ledger: old keeps harp:5; gone is in no jar any more
+        List<VisualBlock> ledger = List.of(new VisualBlock("fakemod:old", "harp", 5),
+                new VisualBlock("fakemod:gone", "trumpet", 3));
+        List<String> found = List.of("fakemod:rock", "fakemod:new", "fakemod:old");
+        CarrierPlan p = planCarriers(found, List.of(manifestRock), ledger);
+        expect(failures, p.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:rock")
+                && slotKey(b).equals("creeper:13")), "manifest row keeps its slot");
+        expect(failures, p.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:old")
+                && slotKey(b).equals("harp:5")), "ledger slot survives a restart");
+        expect(failures, p.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:new")
+                && slotKey(b).equals("harp:1")), "a new block takes the lowest free slot");
+        expect(failures, p.effective().size() == 3, "a block no jar carries is reserved, not emitted");
+        expect(failures, p.ledger().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:gone")
+                && slotKey(b).equals("trumpet:3")), "a vanished block keeps its reservation");
+        CarrierPlan again = planCarriers(found, List.of(manifestRock), p.ledger());
+        expect(failures, again.effective().equals(p.effective()) && again.ledger().equals(p.ledger()),
+                "a second plan from the written ledger is identical");
+        CarrierPlan taken = planCarriers(List.of("fakemod:y"), List.of(new VisualBlock("fakemod:x", "harp", 1)),
+                List.of(new VisualBlock("fakemod:y", "harp", 1)));
+        expect(failures, taken.effective().size() == 2 && taken.effective().stream()
+                .filter(b -> b.moddedBlockId().equals("fakemod:y")).allMatch(b -> !slotKey(b).equals("harp:1")),
+                "a manifest row takes a ledger slot and the ledger block moves");
+        expect(failures, taken.notes().stream().anyMatch(n -> n.contains("reallocated")), "the move is logged");
+        CarrierPlan tier0 = planCarriers(List.of("ae2:a_block", "create:z_block"), List.of(), List.of());
+        expect(failures, tier0.effective().stream().anyMatch(b -> b.moddedBlockId().equals("create:z_block")
+                && slotKey(b).equals("harp:1")), "a Tier 0 mod takes the first slot ahead of ae2");
+        List<String> many = new ArrayList<>();
+        for (int i = 0; i < CARRIER_CAPACITY + 5; i++) {
+            many.add(String.format("fakemod:b%04d", i));
+        }
+        CarrierPlan full = planCarriers(many, List.of(), List.of());
+        expect(failures, full.effective().size() == CARRIER_CAPACITY, "allocation stops at the render capacity");
+        expect(failures, full.effective().stream().noneMatch(b -> b.note() == 0), "note 0 is never handed out");
+        expect(failures, full.notes().stream().anyMatch(n -> n.contains("no free")), "overflow is reported");
+        expect(failures, "c:d".equals(defaultBlockstateModel(
+                "{\"variants\":{\"facing=north\":{\"model\":\"a:b\"},\"\":{\"model\":\"c:d\"}}}")),
+                "the empty variant key is the default state");
+        expect(failures, "e:f".equals(defaultBlockstateModel(
+                "{\"variants\":{\"facing=west\":[{\"model\":\"a:b\"}],\"facing=north\":{\"model\":\"e:f\"}}}")),
+                "without an empty key the first sorted variant wins, arrays take their first entry");
+        expect(failures, "x:y".equals(defaultBlockstateModel(
+                "{\"multipart\":[{\"apply\":[{\"model\":\"x:y\"},{\"model\":\"z:w\"}]}]}")),
+                "multipart takes the first part's model");
+        expect(failures, defaultBlockstateModel("{") == null && defaultBlockstateModel("[]") == null,
+                "malformed blockstates resolve to no model");
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
