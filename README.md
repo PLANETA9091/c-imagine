@@ -84,13 +84,19 @@ docs/runtime-analysis/  deep upstream analysis: vanilla MC 26.3 (+client), Paper
 ## Quick start (module authors / server admins)
 
 ```bash
-# CI produces module-imagine.zip — drop it into the server:
-unzip module-imagine.zip -d <server>/modules/imagine
+# CI produces module-imagine.zip — extract it into the server's modules dir
+# (the archive's top folder is imagine/, so this creates <server>/modules/imagine):
+unzip module-imagine.zip -d <server>/modules
 # put NeoForge 1.21.1 mods in the usual place:
 cp mymod-1.21.1.jar <server>/mods/
 # start (CRUSSTY launcher boots Paper + runtime + module):
 cd <server> && crussty run
 ```
+
+The zip also carries `cimlive-1.0.0.jar` (live menus and block place/break). When a
+layer is configured (`crus/c-imagine.json` with `layerDir`), the loader copies it into
+`<server>/mods/` before the mods scan, and only rewrites it when the bytes differ.
+To keep it out of the server, set `"bundledMods": false` in `crus/c-imagine.json`.
 
 Boot log markers to look for:
 
@@ -102,6 +108,7 @@ Boot log markers to look for:
 ```bash
 cargo test --workspace          # unit tests for every crate
 cargo clippy --workspace --all-targets -- -D warnings
+gradle build --no-daemon -p live-mod   # cimlive jar, required by the packager
 ./scripts/package-module.sh     # build the installable module zip (CI-equivalent)
 ```
 
@@ -156,6 +163,6 @@ this section is the short, honest summary (2026-11-14).
 - No mod world generation in the Paper world and no mod recipes in Paper's crafting.
 - Mod block hardness, tool and collision are the note block's.
 - The F2V pack server listens on loopback only and is not offered on join;
-  `cimlive` is not part of the module zip.
+  `cimlive` ships in the module zip and is installed into `mods/` at boot (see Quick start).
 
 Work on these is tracked on the `feat/survival` branch and in `docs/ROADMAP.md`.

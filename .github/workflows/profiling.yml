@@ -136,6 +136,7 @@ jobs:
       - name: build artifacts
         run: |
           bash scripts/build-bootstrap.sh
+          JAVA_HOME="$JAVA_HOME_21_X64" gradle build --no-daemon -p live-mod
           CIM_BOOTSTRAP_JAR="$PWD/java/cim-bootstrap/build/cim-bootstrap.jar" \
             bash scripts/package-module.sh
           # THE TICK-LOAD PROBE needs the cimtest multi-mod jar (the
@@ -204,7 +205,7 @@ jobs:
             unzip -o dist/module-imagine.zip -d modded-$i/modules/
             cp java/cim-bootstrap/build/cim-bootstrap.jar modded-$i/modules/imagine/cim-bootstrap.jar
             mkdir -p modded-$i/crus modded-$i/plugins
-            printf '%s\n' '{"layerDir":"../layer1211/libraries"}' > modded-$i/crus/c-imagine.json
+            printf '%s\n' '{"layerDir":"../layer1211/libraries","bundledMods":false}' > modded-$i/crus/c-imagine.json
             cp paper-plugin/target/cim-paper-plugin.jar modded-$i/plugins/
             cp scripts/log4j2-layer.xml modded-$i/
             # THE TICK-LOAD PROBE (cimtest-heavy, Tier-1): the selfarm marker
