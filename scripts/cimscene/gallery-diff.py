@@ -379,6 +379,7 @@ def main():
                 parts = line.split("\t")
                 if len(parts) >= 2 and int(parts[1]) >= 2:
                     animated_states.add(parts[0].split("#q", 1)[0])
+    animated_bare_ids = {a.split("[", 1)[0].split("#q", 1)[0] for a in animated_states}
     # PROJECTION GUARD (worklog 12-ac): per-cell verdicts are meaningless on
     # a stale pair or a drifted camera. The threshold is HALF A CELL (24 px
     # at 70 deg): stale pairs / camera teleports miss by hundreds of px,
@@ -608,8 +609,18 @@ def main():
             # frame 0; the cross-leg delta is the free-running animation
             # clock's phase, never a fidelity gap. RED rows only: a green row
             # stays green, the demotion counts loud in the animated total.
+            # 14-e16: the bare-id match — the block-lane manifest carries the
+            # bare chemical id ("mekanism:sulfur_dioxide", no properties) while
+            # the animation table carries the baked per-state variant
+            # ("mekanism:sulfur_dioxide[level=0]#q<hash>", 32 frames); the
+            # exact-string check missed the whole mekanism chemical family
+            # (the 20 same-lit-content survivors of the e8 census). The bare
+            # id (before "[" / "#q") must match on BOTH sides; the bucket
+            # forms ("..._bucket") are distinct bare ids and never match.
+            bare_state = state.split("[", 1)[0].split("#q", 1)[0]
             if verdict == "RED" and (state in animated_states
-                                     or state.split("#q", 1)[0] in animated_states):
+                                     or state.split("#q", 1)[0] in animated_states
+                                     or bare_state in animated_bare_ids):
                 verdict = "ANIMATED"
             if dyn or air:
                 dynamic += 1

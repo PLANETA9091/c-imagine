@@ -4861,14 +4861,17 @@ public final class F2vPack {
                 det += normal[r] * matrix.get(r * 4 + 2).getAsDouble();
                 length += normal[r] * normal[r];
             }
-            double[] light = {.2, 1, -.7};
+            // 14-e17: the light-bake tilt is retired - the matrix's normal is
+            // the SOURCE'S OWN normal (the variant rotation's third column,
+            // sign-corrected), not the up-ish LIGHT vector. The lighting
+            // contract = the pinned display brightness (14-ea3/14-bk/14-cy).
             for (int r = 0; r < 3; r++) {
                 maxNormal = Math.max(maxNormal, Math.abs(normal[r] / Math.sqrt(length)
-                        * Math.signum(det) - light[r] / Math.sqrt(1.53)));
+                        * Math.signum(det) - before[2][r]));
             }
         }
         expect(failures, maxCorner < 1e-9, "unlit: arbitrary planes/oversized scale preserve all corners");
-        expect(failures, maxNormal < 1e-9, "unlit: native layer normal preserves fully lit source pass");
+        expect(failures, maxNormal < 1e-9, "unlit: native layer normal preserves the source's own orientation (14-e17: no light-bake tilt; the display pin owns the lighting)");
     }
 
     /** A real w x h PNG (opaque, one gray shade) — the animation sanitizer reads IHDR. */

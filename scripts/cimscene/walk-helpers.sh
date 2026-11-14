@@ -4,6 +4,10 @@
 # wrapper stay per-step (the coproc must live at step level); these
 # functions only CALL rcon / read the marker files at call time.
 # Keep in sync with the seed job's inline copies (they predate the split).
+# 14-e15 THE COPROC LAW: every rcon() caller must stay OUT of pipeline
+# elements and command substitutions — a subshell cannot reach the coproc
+# fd and the send dies (three runs x 16 shards). Route printed output
+# through a file; $() only on plain files (cat), never on rcon itself.
 
 base_of() { # $1 = stem -> V0D/V0E baselines; MUST run BEFORE the RCON
   # command: the scene writes the marker INSIDE the command's
@@ -45,8 +49,11 @@ wait_done() { # $1 = stem $2 = V0D $3 = V0E; rc0 done | rc1 exhausted | rc2 time
 # is not modded-entity spawns — item_display rigs are vanilla
 # types — so no ban is expected, but the rejoin + re-run applies).
 client_alive() {
+  # 14-e15 THE COPROC LAW: command substitution = a subshell = the coproc
+  # fd unreachable (the send dies — the walk-killer x3 runs). The file route.
   local L
-  L=$(rcon "list" 2>/dev/null) || return 1
+  rcon "list" > list-receipt.log 2>/dev/null || return 1
+  L=$(cat list-receipt.log)
   case "$L" in *cimviewer*) return 0;; *) return 1;; esac
 }
 DEATHS=0
@@ -65,7 +72,8 @@ truth_rejoin() {
   setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
   local L=""
   for i in $(seq 1 90); do
-    L=$(rcon "list" 2>/dev/null || true)
+    rcon "list" > list-receipt.log 2>/dev/null || true
+    L=$(cat list-receipt.log 2>/dev/null || true)
     case "$L" in *cimviewer*) break;; esac
     sleep 1
   done

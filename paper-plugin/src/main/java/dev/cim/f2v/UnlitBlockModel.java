@@ -27,36 +27,21 @@ final class UnlitBlockModel {
         double[][] original = old == null ? identity()
                 : transpose(ObjMesh.columnsOf(angle(old, "x"), angle(old, "y"), angle(old, "z")));
         double[] origin = old == null ? new double[]{.5, .5, .5} : vector(old, "origin", 1.0 / 16);
-        double[] desired = apply(transpose(original), LIGHT);
-        double magnitude = Math.hypot(desired[0], desired[1]);
+        // 14-e17 THE LIGHT-BAKE TILT IS RETIRED. The pre-pin era needed the
+        // normal re-oriented to the up-ish LIGHT vector so the client's own
+        // shading rendered the shade:false planes fullbright; the measured
+        // cost = the foreshortening (the camera-facing tall planes tilted
+        // toward horizontal: the calcite-wall posts rendered 35/56 px = the
+        // cos of the tilt, run 43512429489's create-p240 c2r1). Since the
+        // 14-ea3 front-air pin + 14-bk/14-cy every display carries an
+        // EXPLICIT local brightness, so the geometry no longer pays for the
+        // lighting: the transformation keeps ONLY the original placement
+        // (linear = original, the bake/shear = identity), the element's own
+        // variant rotation rides the matrix unchanged, and the lighting
+        // contract = the pinned display brightness. Any future consumer that
+        // renders without a pin must restore the bake with the receipt.
         double[][] bake = identity();
         double[][] shear = identity();
-        if (magnitude < 1e-10) {
-            shear[2][2] = Math.copySign(1, desired[2]);
-        } else {
-            double tx = desired[0] / magnitude;
-            double ty = desired[1] / magnitude;
-            // Near a parallel normal use bounded depth scaling, not a huge
-            // shear. All tangents in the source surface remain untouched.
-            double sine = magnitude < .1 ? magnitude * .5 : .5;
-            double cosine = Math.sqrt(1 - sine * sine);
-            double[] axis = {ty, -tx, 0};
-            double[][] cross = {{0, 0, -tx}, {0, 0, -ty}, {tx, ty, 0}};
-            for (int r = 0; r < 3; r++) {
-                for (int c = 0; c < 3; c++) {
-                    bake[r][c] = (r == c ? cosine : 0)
-                            + (1 - cosine) * axis[r] * axis[c] + sine * cross[r][c];
-                }
-            }
-            double lambda = sine / magnitude;
-            if (magnitude < .1) {
-                shear[2][2] = cosine / (lambda * desired[2]);
-            } else {
-                double v = (cosine - lambda * desired[2]) / sine;
-                shear[0][2] = v * tx;
-                shear[1][2] = v * ty;
-            }
-        }
         double[] from = vector(source, "from", 1.0 / 16);
         double[] to = vector(source, "to", 1.0 / 16);
         double[] center = {(from[0] + to[0]) / 2, (from[1] + to[1]) / 2, to[2]};

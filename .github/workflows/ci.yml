@@ -38,6 +38,7 @@ jobs:
         run: |
           pip install -q numpy pillow
           python3 scripts/cimscene/test-gallery-diff.py
+          python3 scripts/cimscene/test-coproc-law.py
           python3 scripts/cimscene/test-coverage-gate.py
           python3 scripts/cimscene/test-fidelity-forensics.py
           python3 scripts/cimscene/test-mesh-diff.py
