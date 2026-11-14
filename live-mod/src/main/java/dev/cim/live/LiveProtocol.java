@@ -53,6 +53,16 @@ public final class LiveProtocol {
             if (head[0].equals("tick")) {
                 return tick();
             }
+            // Placed mod blocks of loaded Paper chunks: no player, so no uuid.
+            if (head[0].equals("adopt")) {
+                return adopt(head, lines);
+            }
+            if (head[0].equals("release")) {
+                return release(head);
+            }
+            if (head[0].equals("save")) {
+                return save(head);
+            }
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
@@ -465,27 +475,82 @@ public final class LiveProtocol {
         return ticks;
     }
 
+    /**
+     * The placed mod block entities of Paper's loaded chunks: each ticks every server tick
+     * while it is adopted, with or without a menu open. Keyed by position, valued by block id.
+     * {@link #tickList} is the same set as an array, rebuilt on change, so the tick allocates
+     * nothing for it.
+     */
+    private static final java.util.Map<net.minecraft.core.BlockPos, String> TICKING = new java.util.HashMap<>();
+    private static net.minecraft.core.BlockPos[] tickList = new net.minecraft.core.BlockPos[0];
+
+    private static void refreshTickList() {
+        tickList = TICKING.keySet().toArray(new net.minecraft.core.BlockPos[0]);
+    }
+
+    private static net.minecraft.core.BlockPos pos(String[] head, int at) {
+        return new net.minecraft.core.BlockPos(Integer.parseInt(head[at]), Integer.parseInt(head[at + 1]),
+                Integer.parseInt(head[at + 2]));
+    }
+
+    /** adopt TAB x TAB y TAB z TAB blockId, then an optional "be TAB snbt" line: a placed block starts ticking. */
+    private static String adopt(String[] head, String[] lines) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        net.minecraft.core.BlockPos pos = pos(head, 1);
+        FacadeServerLevel level = LiveMenus.level();
+        net.minecraft.world.level.block.state.BlockState wanted =
+                net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                        net.minecraft.resources.ResourceLocation.parse(head[4])).defaultBlockState();
+        if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
+            level.setBlock(pos, wanted, 3);
+        }
+        for (int i = 1; i < lines.length; i++) {
+            if (lines[i].startsWith("be\t")) {
+                loadKept(level, pos, lines[i].substring(3));
+            }
+        }
+        TICKING.put(pos, head[4]);
+        refreshTickList();
+        return "adopted\t" + TICKING.size() + "\n";
+    }
+
+    /**
+     * release TAB x TAB y TAB z: the block leaves the ticking set (its chunk unloaded, or it was
+     * broken). Its data goes back as a "be" line, unless a menu holds it open.
+     */
+    private static String release(String[] head) {
+        net.minecraft.core.BlockPos pos = pos(head, 1);
+        FacadeServerLevel level = LiveMenus.level();
+        StringBuilder out = new StringBuilder(save(head));
+        if (TICKING.remove(pos) != null) {
+            refreshTickList();
+        }
+        if (!BLOCKS.containsValue(pos)) {
+            // removeBlockEntity only: no onRemove, so nothing a mod drops is spilled into the facade.
+            level.removeBlockEntity(pos);
+        }
+        return out.append("released\t").append(TICKING.size()).append('\n').toString();
+    }
+
+    /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */
+    private static String save(String[] head) {
+        net.minecraft.world.level.block.entity.BlockEntity be = LiveMenus.level().getBlockEntity(pos(head, 1));
+        return be == null ? "" : "be\t" + be.saveWithoutMetadata(LiveMenus.level().registryAccess()) + "\n";
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static String tick() {
         ticks++;
         FacadeServerLevel level = LiveMenus.level();
         int ticked = 0;
-        for (net.minecraft.core.BlockPos pos : new java.util.HashSet<>(BLOCKS.values())) {
-            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
-            if (be == null) {
-                continue;
-            }
-            net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
-            net.minecraft.world.level.block.entity.BlockEntityTicker ticker =
-                    state.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType) be.getType());
-            if (ticker == null) {
-                continue;
-            }
-            try {
-                ticker.tick(level, pos, state, be);
+        // Menu-open block entities first; a placed one that a menu also holds ticks once, here.
+        for (net.minecraft.core.BlockPos pos : BLOCKS.values()) {
+            if (tickAt(level, pos)) {
                 ticked++;
-            } catch (Throwable t) {
-                // A machine that cannot run here stops ticking; its menu stays as it is.
+            }
+        }
+        for (net.minecraft.core.BlockPos pos : tickList) {
+            if (!BLOCKS.containsValue(pos) && tickAt(level, pos)) {
+                ticked++;
             }
         }
         for (SessionServerPlayer p : LiveMenus.openSessions()) {
@@ -494,6 +559,27 @@ public final class LiveProtocol {
             }
         }
         return "ticked\t" + ticked;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static boolean tickAt(FacadeServerLevel level, net.minecraft.core.BlockPos pos) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be == null) {
+            return false;
+        }
+        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+        net.minecraft.world.level.block.entity.BlockEntityTicker ticker =
+                state.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType) be.getType());
+        if (ticker == null) {
+            return false;
+        }
+        try {
+            ticker.tick(level, pos, state, be);
+            return true;
+        } catch (Throwable t) {
+            // A machine that cannot run here stops ticking; its menu stays as it is.
+            return false;
+        }
     }
 
     private static void readInventory(SessionServerPlayer player, String[] lines) {

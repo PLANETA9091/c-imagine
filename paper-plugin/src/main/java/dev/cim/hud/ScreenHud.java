@@ -306,8 +306,59 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             live = new LiveBridge(plugin, this::carrier, this::itemId);
             startLiveTick();
             log.info("[cim-screen] live menus: the layer's cimlive answers, mod menus run their own code");
+            // Chunks loaded before this plugin listened: their placed mod blocks start ticking now.
+            boolean grew = false;
+            for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
+                for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+                    grew |= live.adoptChunk(chunk, this::carried);
+                }
+            }
+            if (grew) {
+                logTicking();
+            }
         }
         return live;
+    }
+
+    /** The one line that says how many placed mod block entities tick in the layer now. */
+    private void logTicking() {
+        log.info("[c-imagine] live: ticking " + live.tickingCount() + " placed block entities");
+    }
+
+    /** A chunk loads: its placed mod blocks, kept in its PDC, tick in the layer from now on. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkLoad(org.bukkit.event.world.ChunkLoadEvent event) {
+        if (!LiveBridge.available()) {
+            return;
+        }
+        LiveBridge bridge = live();
+        if (bridge != null && bridge.adoptChunk(event.getChunk(), this::carried)) {
+            logTicking();
+        }
+    }
+
+    /** A chunk unloads: its placed mod blocks stop ticking and keep their data in the chunk. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkUnload(org.bukkit.event.world.ChunkUnloadEvent event) {
+        if (live != null && live.releaseChunk(event.getChunk())) {
+            logTicking();
+        }
+    }
+
+    /** The world saves: the ticking blocks' data goes into their chunks first. */
+    @EventHandler
+    public void onWorldSave(org.bukkit.event.world.WorldSaveEvent event) {
+        if (live != null) {
+            live.saveAll();
+        }
+    }
+
+    /** The plugin disables: the ticking blocks' data is kept before the server stops. */
+    @EventHandler
+    public void onPluginDisable(org.bukkit.event.server.PluginDisableEvent event) {
+        if (live != null && event.getPlugin() == plugin) {
+            live.saveAll();
+        }
     }
 
     private boolean ticking;
@@ -327,12 +378,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             for (Session s : open.values()) {
                 any |= s.live;
             }
-            if (!any) {
+            // Placed block entities of loaded chunks tick with or without a menu open.
+            if (!any && !live.hasTicking()) {
                 return;
             }
             LiveBridge.tick();
+            // Every 200 ticks the placed block entities' data is kept in their chunks.
+            if (++liveTicks % 200 == 0) {
+                live.saveAll();
+            }
             // Every 4 ticks the screens show what the ticks did (a machine's slots, its output).
-            if (++liveTicks % 4 == 0) {
+            if (any && liveTicks % 4 == 0) {
                 for (Map.Entry<UUID, Session> e : new ArrayList<>(open.entrySet())) {
                     Player p = org.bukkit.Bukkit.getPlayer(e.getKey());
                     if (p != null && e.getValue().live) {
@@ -1400,6 +1456,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[cim-screen] live break failed: " + broken.state().error());
             return;
         }
+        if (bridge.release(block, false)) {
+            logTicking();
+        }
         event.setDropItems(false);
         org.bukkit.Location at = block.getLocation().add(0.5, 0.5, 0.5);
         for (ItemStack stack : broken.spilled()) {
@@ -1540,6 +1599,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 at.setBlockData(org.bukkit.Bukkit.createBlockData("minecraft:note_block[instrument=" + row.instrument()
                         + ",note=" + row.note() + "]"), false);
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
+                if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
+                    logTicking();
+                }
                 log.info("[cim-screen] " + player.getName() + " placed " + result.placedId() + " at "
                         + at.getX() + "," + at.getY() + "," + at.getZ());
                 did = true;
