@@ -3123,6 +3123,7 @@ jobs:
                 --demote-family '^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)' \
                 --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
                 --demote-family '^supplementaries:hourglass(?:\[|$)' \
+                --demote-family '^supplementaries:gunpowder\[burning=[1-9]' \
                 $SELF_T $SELF_O || GATE=1
             done
           done

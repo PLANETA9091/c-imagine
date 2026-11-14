@@ -422,5 +422,55 @@ class AnimatedBareIdChemicals(unittest.TestCase):
             self.assertEqual(status, 2)
 
 
+class DemoteFamilyGunpowderFlame(unittest.TestCase):
+    """14-e18: the burning gunpowder trail renders the LIVE flame (the fire
+    overlay the GunpowderBlockColor-tinted trail carries at runtime) — the
+    static composite bakes the trail only, the crop measured the flame's
+    pixels as the whole diff (the pin-run c0r0 receipt: diffpx=239 = the
+    flame region). The burning>=1 states demote to DYNAMIC; burning=0 (the
+    unlit trail) stays gated."""
+
+    @staticmethod
+    def _pair(root):
+        random = np.random.default_rng(101)
+        truth = random.integers(0, 256, (gd.H, gd.W, 3), dtype=np.uint8)
+        ours = truth.copy()
+        _, (x0, y0, x1, y1) = gd.crop_cell(truth, 0, 0)
+        ours[y0:y1, x0:x1] = random.integers(0, 256, (y1 - y0, x1 - x0, 3), dtype=np.uint8)
+        Image.fromarray(truth).save(root / "truth.png")
+        Image.fromarray(ours).save(root / "ours.png")
+
+    def _run(self, root, state):
+        manifest = root / "gallery-test-p0.tsv"
+        manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tnote\n"
+                            f"cell\t-5\t-60\t9\t{state}\t0\tok\n")
+        arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                     "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                     "--out", str(root / "report.json"),
+                     "--demote-family", r"^supplementaries:gunpowder\[burning=[1-9]"]
+        with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+            status = gd.main()
+        return json.loads((root / "report.json").read_text()), status
+
+    def test_burning_states_demote_and_never_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            report, status = self._run(
+                root, "supplementaries:gunpowder[burning=6,east=side,north=none,south=none,west=side]")
+            self.assertEqual(report["rows"][0]["verdict"], "DYNAMIC")
+            self.assertEqual(report["family_demoted"], 1)
+            self.assertEqual(status, 0)
+
+    def test_unlit_trail_stays_gated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            report, status = self._run(
+                root, "supplementaries:gunpowder[burning=0,east=side,north=none,south=none,west=side]")
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+            self.assertEqual(status, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
