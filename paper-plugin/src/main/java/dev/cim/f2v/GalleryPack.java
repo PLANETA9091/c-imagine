@@ -2599,7 +2599,7 @@ public final class GalleryPack {
         recordScale(ref, k);
         entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         if (block) {
-            registerUnlitBlockLayers(wrapper, ref, k, entries, elementTints, elementMaterials, elementLightTints);
+            registerUnlitBlockLayers(jars, wrapper, ref, k, entries, elementTints, elementMaterials, elementLightTints);
         }
         return ref;
     }
@@ -2764,7 +2764,7 @@ public final class GalleryPack {
         node.add("tints", tints);
     }
 
-    private static void registerUnlitBlockLayers(JsonObject wrapper, String ref, double scale,
+    private static void registerUnlitBlockLayers(List<Path> jars, JsonObject wrapper, String ref, double scale,
                                                  TreeMap<String, byte[]> entries,
                                                  List<double[]> elementTints,
                                                  List<String> elementMaterials,
@@ -2797,13 +2797,38 @@ public final class GalleryPack {
             if (tint != null || lightTint != null) {
                 shadeTintIndex(unlit.element());
             }
+            if (tint == null && lightTint != null) {
+                // 14-e19.2 THE TEXTURE-BAKE ROUTE: the 14-e19.1 run measured
+                // the node-level tints INERT on the composite's sub-nodes
+                // (the pack bytes carried the varying ratios, the render's
+                // luma stayed bit-identical) — the 26.3 client ignores tint
+                // nodes inside minecraft:composite children. The light ratio
+                // therefore bakes into a suffixed texture sibling per
+                // (sprite, ratio) — the same calibrated-bake law the 14-cy
+                // shade tints ride — and the child's texture ref swaps to it.
+                JsonObject textures = child.getAsJsonObject("textures");
+                for (var tex : textures.entrySet()) {
+                    String hosted = tex.getValue().getAsString();
+                    if (!hosted.startsWith("c-imagine:")) {
+                        continue;
+                    }
+                    String sprite = hosted;
+                    String hex = Integer.toHexString(
+                            (Math.max(0, Math.min(255, (int) Math.round(lightTint[0] * 255))) << 16)
+                                    | (Math.max(0, Math.min(255, (int) Math.round(lightTint[1] * 255))) << 8)
+                                    | Math.max(0, Math.min(255, (int) Math.round(lightTint[2] * 255))));
+                    String suffix = TINT_SUFFIX + "_l" + hex;
+                    String sib = bakeTintedSprite(jars, sprite, lightTint, suffix, entries, null);
+                    if (sib != null) {
+                        tex.setValue(new com.google.gson.JsonPrimitive(sib));
+                    }
+                }
+            }
             String childRef = sharedUnlitModel(child, entries);
             JsonObject node = modelNode(childRef);
             node.add("transformation", unlit.transformation());
             if (tint != null) {
                 applyShadeTint(node, tint);
-            } else if (lightTint != null) {
-                applyShadeTint(node, lightTint);
             }
             children.add(node);
         }
