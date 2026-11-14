@@ -500,6 +500,10 @@ public final class LiveProtocol {
         net.minecraft.world.level.block.state.BlockState wanted =
                 net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                         net.minecraft.resources.ResourceLocation.parse(head[4])).defaultBlockState();
+        // The registry answers air for an id it does not know: a block the layer lacks never ticks.
+        if (wanted.isAir() && !head[4].equals("minecraft:air")) {
+            return "error\tunknown block " + head[4];
+        }
         if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
             level.setBlock(pos, wanted, 3);
         }
@@ -542,15 +546,25 @@ public final class LiveProtocol {
         ticks++;
         FacadeServerLevel level = LiveMenus.level();
         int ticked = 0;
-        // Menu-open block entities first; a placed one that a menu also holds ticks once, here.
+        SPILLS.setLength(0);
+        StringBuilder spills = SPILLS;
+        // Menu-open block entities first, each once however many sessions hold it open; a placed one
+        // that a menu also holds ticks once, here.
+        int held = 0;
         for (net.minecraft.core.BlockPos pos : BLOCKS.values()) {
-            if (tickAt(level, pos)) {
-                ticked++;
+            if (!earlierHolder(pos, held++)) {
+                if (tickAt(level, pos)) {
+                    ticked++;
+                }
+                drainSpills(spills, pos);
             }
         }
         for (net.minecraft.core.BlockPos pos : tickList) {
-            if (!BLOCKS.containsValue(pos) && tickAt(level, pos)) {
-                ticked++;
+            if (!BLOCKS.containsValue(pos)) {
+                if (tickAt(level, pos)) {
+                    ticked++;
+                }
+                drainSpills(spills, pos);
             }
         }
         for (SessionServerPlayer p : LiveMenus.openSessions()) {
@@ -558,7 +572,35 @@ public final class LiveProtocol {
                 p.opened().broadcastChanges();
             }
         }
-        return "ticked\t" + ticked;
+        return "ticked\t" + ticked + spills;
+    }
+
+    /** What the tick spilled, reused across ticks: the common tick allocates no buffer. */
+    private static final StringBuilder SPILLS = new StringBuilder();
+
+    /** True when one of the first {@code n} menu-held positions is {@code pos}: it already ticked. */
+    private static boolean earlierHolder(net.minecraft.core.BlockPos pos, int n) {
+        int i = 0;
+        for (net.minecraft.core.BlockPos earlier : BLOCKS.values()) {
+            if (i++ >= n) {
+                break;
+            }
+            if (earlier.equals(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** What a tick spilled at {@code pos} goes out as "spill" lines, for Paper to drop there. */
+    private static void drainSpills(StringBuilder out, net.minecraft.core.BlockPos pos) {
+        if (!FacadeServerLevel.hasSpilled()) {
+            return;
+        }
+        for (net.minecraft.world.item.ItemStack stack : FacadeServerLevel.takeSpilled()) {
+            out.append("\nspill\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
+                    .append(pos.getZ()).append('\t').append(encode(stack));
+        }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})

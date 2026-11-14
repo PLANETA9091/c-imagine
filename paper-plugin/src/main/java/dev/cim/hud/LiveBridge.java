@@ -150,6 +150,13 @@ final class LiveBridge {
      */
     boolean track(org.bukkit.block.Block block, String blockId, String blockEntity) {
         String at = where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
+        // The layer keys its block entities by position alone: another world's block there would share it.
+        for (Tracked t : ticking.values()) {
+            if (t.x() == block.getX() && t.y() == block.getY() && t.z() == block.getZ()
+                    && !t.world().equals(block.getWorld().getName())) {
+                return false;
+            }
+        }
         String in = "adopt\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ() + "\t" + blockId
                 + (blockEntity == null ? "" : "\nbe\t" + blockEntity);
         if (parse(call(in)).error() != null) {
@@ -160,18 +167,18 @@ final class LiveBridge {
     }
 
     /**
-     * The block at {@code block} stops ticking. Its data is kept in its chunk when {@code keep}
-     * (a chunk unload), else the block is gone (broken). True when the set shrank.
+     * The block at {@code block} stops ticking. Its data is kept in {@code keepIn} when given (a
+     * chunk unload), else the block is gone (broken). True when the set shrank.
      */
-    boolean release(org.bukkit.block.Block block, boolean keep) {
+    boolean release(org.bukkit.block.Block block, org.bukkit.Chunk keepIn) {
         String at = where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
         Tracked t = ticking.get(at);
         if (t == null) {
             return false;
         }
         State state = parse(call("release\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()));
-        if (keep && state.blockEntity() != null) {
-            keepPlaced(block, t.blockId(), state.blockEntity());
+        if (keepIn != null && state.blockEntity() != null) {
+            put(keepIn.getPersistentDataContainer(), block, t.blockId(), state.blockEntity());
         }
         ticking.remove(at);
         return true;
@@ -212,7 +219,7 @@ final class LiveBridge {
         boolean shrank = false;
         for (Tracked t : new ArrayList<>(ticking.values())) {
             if (t.world().equals(chunk.getWorld().getName()) && t.chunkX() == chunk.getX() && t.chunkZ() == chunk.getZ()) {
-                shrank |= release(chunk.getWorld().getBlockAt(t.x(), t.y(), t.z()), true);
+                shrank |= release(chunk.getWorld().getBlockAt(t.x(), t.y(), t.z()), chunk);
             }
         }
         return shrank;
@@ -220,7 +227,9 @@ final class LiveBridge {
 
     /** A ticking block's data as it is now, kept in its chunk, before a menu or a break reads the chunk. */
     private void saveFresh(org.bukkit.block.Block block, String blockId) {
-        if (ticking.containsKey(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()))) {
+        Tracked t = ticking.get(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()));
+        // Only the block that ticking is for: a stale entry's data must not be kept under another id.
+        if (t != null && t.blockId().equals(blockId)) {
             State state = parse(call("save\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()));
             if (state.blockEntity() != null) {
                 keepPlaced(block, blockId, state.blockEntity());
@@ -228,18 +237,30 @@ final class LiveBridge {
         }
     }
 
-    /** Every ticking block's data as it is now, kept in its chunk: the periodic and world-save write. */
-    void saveAll() {
+    /**
+     * Every ticking block's data as it is now, kept in its chunk: the periodic and world-save write.
+     * A ticking block whose carrier no longer stands (an explosion, a piston, a set by a command)
+     * stops ticking and its kept data goes with it. True when the set shrank.
+     */
+    boolean saveAll(java.util.function.Function<org.bukkit.block.Block, String> carriedId) {
+        boolean shrank = false;
         for (Tracked t : new ArrayList<>(ticking.values())) {
             org.bukkit.World world = org.bukkit.Bukkit.getWorld(t.world());
             if (world == null || !world.isChunkLoaded(t.chunkX(), t.chunkZ())) {
                 continue;
             }
+            org.bukkit.block.Block block = world.getBlockAt(t.x(), t.y(), t.z());
+            if (!t.blockId().equals(carriedId.apply(block))) {
+                block.getChunk().getPersistentDataContainer().remove(blockKey(block, t.blockId()));
+                shrank |= release(block, null);
+                continue;
+            }
             State state = parse(call("save\t" + t.x() + "\t" + t.y() + "\t" + t.z()));
             if (state.blockEntity() != null) {
-                keepPlaced(world.getBlockAt(t.x(), t.y(), t.z()), t.blockId(), state.blockEntity());
+                keepPlaced(block, t.blockId(), state.blockEntity());
             }
         }
+        return shrank;
     }
 
     /** The block entity's data the close handed back, stored for the next opening. */
@@ -370,9 +391,13 @@ final class LiveBridge {
 
     /** A mod block Paper now holds: its block entity's data, kept for its first opening. */
     void keepPlaced(org.bukkit.block.Block block, String blockId, String blockEntity) {
+        put(block.getChunk().getPersistentDataContainer(), block, blockId, blockEntity);
+    }
+
+    private void put(org.bukkit.persistence.PersistentDataContainer pdc, org.bukkit.block.Block block, String blockId,
+                     String blockEntity) {
         if (blockEntity != null) {
-            block.getChunk().getPersistentDataContainer().set(blockKey(block, blockId), PersistentDataType.STRING,
-                    blockEntity);
+            pdc.set(blockKey(block, blockId), PersistentDataType.STRING, blockEntity);
         }
     }
 
@@ -430,10 +455,46 @@ final class LiveBridge {
     }
 
     /** One tick of the open live block menus, once per Paper tick. */
-    static void tick() {
+    /**
+     * One server tick of the layer's menus and placed block entities. What they spilled drops in
+     * Paper's world at the block that spilled it; nothing is kept for a later break to hand out.
+     */
+    void tick() {
         Function<String, String> fn = entry();
-        if (fn != null) {
-            fn.apply("tick\t-");
+        if (fn == null) {
+            return;
+        }
+        String answer = fn.apply("tick\t-");
+        if (answer.indexOf('\n') < 0) {
+            return; // nothing spilled: the common tick splits nothing
+        }
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("spill\t")) {
+                drop(line);
+            }
+        }
+    }
+
+    private void drop(String line) {
+        String[] p = line.split("\t", 5);
+        int x = Integer.parseInt(p[1]);
+        int y = Integer.parseInt(p[2]);
+        int z = Integer.parseInt(p[3]);
+        org.bukkit.World world = null;
+        for (Tracked t : ticking.values()) {
+            if (t.x() == x && t.y() == y && t.z() == z) {
+                world = org.bukkit.Bukkit.getWorld(t.world());
+                break;
+            }
+        }
+        for (org.bukkit.block.Block b : openBlocks.values()) {
+            if (world == null && b.getX() == x && b.getY() == y && b.getZ() == z) {
+                world = b.getWorld();
+            }
+        }
+        ItemStack stack = toPaper(p[4]);
+        if (world != null && stack != null) {
+            world.dropItemNaturally(new org.bukkit.Location(world, x + 0.5, y + 0.5, z + 0.5), stack);
         }
     }
 

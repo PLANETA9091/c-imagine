@@ -348,8 +348,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** The world saves: the ticking blocks' data goes into their chunks first. */
     @EventHandler
     public void onWorldSave(org.bukkit.event.world.WorldSaveEvent event) {
-        if (live != null) {
-            live.saveAll();
+        if (live != null && live.saveAll(this::carried)) {
+            logTicking();
         }
     }
 
@@ -357,7 +357,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler
     public void onPluginDisable(org.bukkit.event.server.PluginDisableEvent event) {
         if (live != null && event.getPlugin() == plugin) {
-            live.saveAll();
+            live.saveAll(this::carried);
         }
     }
 
@@ -382,10 +382,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (!any && !live.hasTicking()) {
                 return;
             }
-            LiveBridge.tick();
-            // Every 200 ticks the placed block entities' data is kept in their chunks.
-            if (++liveTicks % 200 == 0) {
-                live.saveAll();
+            live.tick();
+            // Every 200 ticks the placed block entities' data is kept in their chunks; a block whose carrier is gone stops.
+            if (++liveTicks % 200 == 0 && live.saveAll(this::carried)) {
+                logTicking();
             }
             // Every 4 ticks the screens show what the ticks did (a machine's slots, its output).
             if (any && liveTicks % 4 == 0) {
@@ -1456,7 +1456,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[cim-screen] live break failed: " + broken.state().error());
             return;
         }
-        if (bridge.release(block, false)) {
+        if (bridge.release(block, null)) {
             logTicking();
         }
         event.setDropItems(false);
