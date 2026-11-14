@@ -1982,7 +1982,7 @@ public final class F2vPack {
             }
             sb.append("    {\"type\": \"minecraft:paletted_permutations\", ")
               .append("\"textures\": [\"").append(pr.baseSprite()).append("\"], ")
-              .append("\"palette_key\": \"").append(spritePath(pr.paletteKey())).append("\", ")
+              .append("\"palette_key\": \"").append(paletteSpritePath(pr.paletteKey())).append("\", ")
               .append("\"permutations\": {");
             boolean first = true;
             for (Map.Entry<String, String> v : pr.variants().entrySet()) {
@@ -1991,7 +1991,7 @@ public final class F2vPack {
                 }
                 first = false;
                 sb.append("\"").append(v.getKey()).append("\": \"")
-                  .append(spritePath(v.getValue())).append("\"");
+                  .append(paletteSpritePath(v.getValue())).append("\"");
             }
             sb.append("}, \"separator\": \"").append(pr.separator()).append("\"}");
             sb.append(i + 1 < paletteRows.size() ? ",\n" : "\n");
@@ -2015,6 +2015,33 @@ public final class F2vPack {
             rest = rest.substring(0, rest.length() - ".png".length());
         }
         return fullResourcePath.substring(0, c) + ":" + rest;
+    }
+
+    /**
+     * The 26.3 palette ATLAS reference ({@code ns:<name>}) from the manifest's
+     * full jar path ({@code ns:textures/palettes/x.png}). 14-e26: the 26.3
+     * client resolves paletted_permutations palette ids through the NEW
+     * {@code Palette.ID_CONVERTER} — prefix {@code textures/palettes} — so the
+     * reference must carry the path WITHOUT the palettes/ segment (the
+     * vanilla 26.3 convention: {@code minecraft:trim_base}, file
+     * textures/palettes/trim_base.png). The old 1.21.1 readImage used the
+     * generic textures/ prefix and wanted {@code ns:palettes/x}; the old emit
+     * produced that form, the 26.3 converter doubled it to
+     * textures/palettes/palettes/x.png = the resource never found =
+     * "Failed to load palette image" on every run since M6 (measured 26.3
+     * client.jar bytecode + the vanilla items.json reference shape).
+     */
+    static String paletteSpritePath(String fullResourcePath) {
+        String s = spritePath(fullResourcePath);
+        int c = s.indexOf(':');
+        if (c <= 0) {
+            return s;
+        }
+        String rest = s.substring(c + 1);
+        if (rest.startsWith("palettes/")) {
+            return s.substring(0, c + 1) + rest.substring("palettes/".length());
+        }
+        return s;
     }
 
     /** Append one atlas-source JSON object's sources into the pack's existing
@@ -3328,10 +3355,10 @@ public final class F2vPack {
                     "atlas carries the paletted_permutations source");
             expect(failures, atlas.contains("\"textures\": [\"fakemod:item/gem_tex\"]"),
                     "atlas source recolors the base sprite");
-            expect(failures, atlas.contains("\"palette_key\": \"fakemod:palettes/gem_key\""),
-                    "atlas source palette_key in sprite space");
-            expect(failures, atlas.contains("\"red\": \"fakemod:palettes/gem_red\""),
-                    "atlas source permutation entry");
+            expect(failures, atlas.contains("\"palette_key\": \"fakemod:gem_key\""),
+                    "atlas source palette_key in the 26.3 converter space (no palettes/ segment)");
+            expect(failures, atlas.contains("\"red\": \"fakemod:gem_red\""),
+                    "atlas source permutation entry (26.3 converter space)");
             expect(failures, atlas.contains("\"separator\": \"_\""),
                     "atlas source separator");
             expect(failures, entries.containsKey(
