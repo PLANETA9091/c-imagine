@@ -134,10 +134,26 @@ inside a single JVM.
 
 ## Status
 
-M0 — foundation: repository, architecture, core crates, CRUSSTY module skeleton,
-CI/integration/profiling pipelines. ✅
-M1 — embedded 1.21.1 layer boots: `cim-reloc` (shadow-namespace relocation of the
-real MC 1.21.1 + NeoForge 21.1.265 stack), shadow classloader, layer boot inside
-Paper JVM with vanilla registry snapshot; ground-truth CI jobs. ✅ (matrix green)
-M2 — mod execution: real FML discovery pipeline + mod relocation, `cimtest`
-registration through the layer. ⏳ next
+Milestone detail and the open blockers live in [`docs/ROADMAP.md`](docs/ROADMAP.md);
+this section is the short, honest summary (2026-11-14).
+
+**Works (CI-proven on `main`):**
+- M0/M1 — CRUSSTY module boots the relocated NeoForge 1.21.1 layer inside Paper 26.3.
+- M2/M3 — real FML discovery, mod construction and registration (Tier 0 mods:
+  Create, Biomes O' Plenty, Dynamic Trees, Combat Roll); a real 1.21.1
+  `DedicatedServer` runs inside the layer, ticked from Paper's tick end.
+- M4/M5 — vanilla 26.3 clients see mod items, blocks, entities and fluids through
+  the F2V resource pack; the gallery compares them against a real NeoForge client.
+- M6.2/M6.3 — with the `cimlive` mod, using a mod item, placing/breaking a mod block
+  and clicking a mod menu run the mod's own code.
+
+**Not yet survival-playable out of the box.** Known gaps:
+- A mod block can only be placed when it has a note-block carrier; carriers come
+  from the gallery's real-client dumps, not from a plain install.
+- Placed mod block entities tick only while their menu is open.
+- No mod world generation in the Paper world and no mod recipes in Paper's crafting.
+- Mod block hardness, tool and collision are the note block's.
+- The F2V pack server listens on loopback only and is not offered on join;
+  `cimlive` is not part of the module zip.
+
+Work on these is tracked on the `feat/survival` branch and in `docs/ROADMAP.md`.
