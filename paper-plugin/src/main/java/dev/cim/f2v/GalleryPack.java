@@ -2794,35 +2794,72 @@ public final class GalleryPack {
             // shared content). Mark BEFORE serialization when either tint
             // rides the node.
             double[] lightTint = elementLightTints == null ? null : elementLightTints.get(elementIdx);
-            if (tint != null || lightTint != null) {
-                shadeTintIndex(unlit.element());
-            }
-            if (tint == null && lightTint != null) {
-                // 14-e19.2 THE TEXTURE-BAKE ROUTE: the 14-e19.1 run measured
-                // the node-level tints INERT on the composite's sub-nodes
-                // (the pack bytes carried the varying ratios, the render's
-                // luma stayed bit-identical) — the 26.3 client ignores tint
-                // nodes inside minecraft:composite children. The light ratio
-                // therefore bakes into a suffixed texture sibling per
-                // (sprite, ratio) — the same calibrated-bake law the 14-cy
-                // shade tints ride — and the child's texture ref swaps to it.
+            // 14-e23 THE SHADE-BAKE UNIFICATION: the 14-e19.2 run measured the
+            // node-level tints INERT on the composite's sub-nodes (the pack
+            // bytes carried the varying ratios, the render's luma stayed
+            // bit-identical) — the 26.3 client ignores tint nodes inside
+            // minecraft:composite children — yet the 14-cz shade route kept
+            // applying the captured flat RGB as a NODE tint while the
+            // guaranteed texture-bake route fired only for lightTint rows
+            // (tint == null). The wall/stair class (the ae2 quartz walls, the
+            // bop brimstone stairs — the flat 0.8/0.6/0.498 vanilla
+            // directional-shade rows, run 43611950455's 1607-row
+            // luma 1.3-1.8 un-fit mass) took exactly that dead branch: the
+            // captured shade rode an inert node, the replay rendered
+            // fullbright. UNIFY: every node tint (shade or light ratio)
+            // bakes into the suffixed texture sibling instead — one multiply
+            // per pixel, never two — and the node tint stays ONLY as the
+            // bake-failure fallback (the raw sprite unavailable = the honest
+            // partial render keeps the inert tint rather than nothing).
+            double[] nodeTint = tint != null ? tint : lightTint;
+            String tintHex = nodeTint == null ? null : Integer.toHexString(
+                    (Math.max(0, Math.min(255, (int) Math.round(nodeTint[0] * 255))) << 16)
+                            | (Math.max(0, Math.min(255, (int) Math.round(nodeTint[1] * 255))) << 8)
+                            | Math.max(0, Math.min(255, (int) Math.round(nodeTint[2] * 255))));
+            boolean bakeLanded = false;
+            if (nodeTint != null) {
+                // The guaranteed route: the ratio bakes into a suffixed
+                // texture sibling per (sprite, ratio) — the same
+                // calibrated-bake law the 14-cy shade tints and the 14-ea5
+                // mean bakes ride — and the child's texture ref swaps to it.
+                // ALL-OR-NOTHING per child: a child whose textures mix a
+                // landed bake with a failed one would double-multiply the
+                // landed half (the sibling AND the node tint fallback) —
+                // collect first, apply only when every c-imagine ref baked.
                 JsonObject textures = child.getAsJsonObject("textures");
-                for (var tex : textures.entrySet()) {
-                    String hosted = tex.getValue().getAsString();
-                    if (!hosted.startsWith("c-imagine:")) {
-                        continue;
+                if (textures != null && !textures.isEmpty()) {
+                    String suffix = TINT_SUFFIX + "_l" + tintHex;
+                    java.util.List<String[]> landed = new java.util.ArrayList<>();
+                    boolean all = true;
+                    boolean any = false;
+                    for (var tex : textures.entrySet()) {
+                        String hosted = tex.getValue().getAsString();
+                        if (!hosted.startsWith("c-imagine:")) {
+                            continue;
+                        }
+                        any = true;
+                        String sib = bakeTintedSprite(jars, hosted, nodeTint, suffix, entries, null);
+                        if (sib != null) {
+                            landed.add(new String[]{tex.getKey(), sib});
+                        } else {
+                            all = false;
+                            break;
+                        }
                     }
-                    String sprite = hosted;
-                    String hex = Integer.toHexString(
-                            (Math.max(0, Math.min(255, (int) Math.round(lightTint[0] * 255))) << 16)
-                                    | (Math.max(0, Math.min(255, (int) Math.round(lightTint[1] * 255))) << 8)
-                                    | Math.max(0, Math.min(255, (int) Math.round(lightTint[2] * 255))));
-                    String suffix = TINT_SUFFIX + "_l" + hex;
-                    String sib = bakeTintedSprite(jars, sprite, lightTint, suffix, entries, null);
-                    if (sib != null) {
-                        tex.setValue(new com.google.gson.JsonPrimitive(sib));
+                    bakeLanded = any && all;
+                    if (bakeLanded) {
+                        for (String[] l : landed) {
+                            textures.addProperty(l[0], l[1]);
+                        }
                     }
                 }
+            }
+            if (bakeLanded) {
+                // One multiply per pixel: the sibling carries it, the node
+                // tint must not (it is inert here anyway — measured).
+                tint = null;
+            } else if (tint != null || lightTint != null) {
+                shadeTintIndex(unlit.element());
             }
             String childRef = sharedUnlitModel(child, entries);
             JsonObject node = modelNode(childRef);
