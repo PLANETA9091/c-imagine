@@ -42,6 +42,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     private static final Pattern STATE = Pattern.compile("(\\w+)=(\\w+)");
 
+    /** The highest vanilla note value (25 notes, 0..24). */
+    private static final int NOTE_MAX = 24;
+
     /** Where AbstractContainerScreen puts its labels. */
     private static final int TITLE_X = 8;
     private static final int TITLE_Y = 6;
@@ -290,12 +293,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 carrierRows.put(row.moddedId(), row);
             }
         }
-        Path blocks = f2v.resolve("visual-blocks.tsv");
-        if (Files.isRegularFile(blocks)) {
-            for (F2vPack.VisualBlock row : F2vPack.readBlockManifest(blocks)) {
-                blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
-                blockCarrierRows.put(row.moddedBlockId(), row);
-            }
+        // the rows the pack was built from: the manifest plus the boot-time allocation
+        for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
+            blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
+            blockCarrierRows.put(row.moddedBlockId(), row);
         }
     }
 
@@ -1438,11 +1439,40 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
     }
 
-    /** Either hand's right-click on a carrier: the item may still be used, the note block may not. */
+    /**
+     * Either hand's right-click on a carrier: the item may still be used, the note block may
+     * not. A vanilla note block one step below a carrier must not be tuned onto it either:
+     * the right-click would turn it into a mod block's look.
+     */
     @EventHandler(priority = EventPriority.LOWEST)
     public void onCarrierUse(PlayerInteractEvent event) {
-        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && carried(event.getClickedBlock()) != null) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
+            return;
+        }
+        Block block = event.getClickedBlock();
+        if (carried(block) != null || tunesOntoCarrier(block)) {
             event.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
+        }
+    }
+
+    /** True when one vanilla right-click (note + 1, wrapping at 24 to 0) would land a plain note block on a carrier. */
+    private boolean tunesOntoCarrier(Block block) {
+        if (block == null || block.getType() != Material.NOTE_BLOCK || blockCarriers.isEmpty()) {
+            return false;
+        }
+        String next = steppedKey(block.getBlockData().getAsString());
+        return next != null && blockCarriers.containsKey(next);
+    }
+
+    /** {@code harp:5} of a note-block state, with the note one vanilla step up; null when unreadable. */
+    static String steppedKey(String state) {
+        String key = carrierKey(state);
+        int colon = key.lastIndexOf(':');
+        try {
+            int note = Integer.parseInt(key.substring(colon + 1));
+            return key.substring(0, colon + 1) + ((note + 1) % (NOTE_MAX + 1));
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 
@@ -1611,6 +1641,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(p.y() == -10, "it leaves the edge as soon as the look reverses: " + p.y());
         bad += check(carrierKey("minecraft:note_block[instrument=trumpet_exposed,note=12,powered=false]")
                 .equals("trumpet_exposed:12"), "carrier key reads a real state string");
+        bad += check("harp:6".equals(steppedKey("minecraft:note_block[instrument=harp,note=5,powered=true]")),
+                "a right-click steps the note up by one");
+        bad += check("harp:0".equals(steppedKey("minecraft:note_block[instrument=harp,note=24,powered=false]")),
+                "the note wraps from 24 to 0 as vanilla does");
+        bad += check(steppedKey("minecraft:note_block") == null, "an unreadable state steps to nothing");
         GuiCaptures.Capture c = GuiCaptures.parse(List.of(
                 "cell\tx\ty\tz\tmenu\tnote",
                 "cell\t1\t2\t3\tcreate:filter\topened-by:item:create:filter\tcom.simibubi.FilterMenu",
