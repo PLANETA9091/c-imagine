@@ -1410,6 +1410,42 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 + " stack(s) dropped");
     }
 
+    /** The mod block id a note-block carrier stands for, or null for a plain note block. */
+    private String carried(Block block) {
+        if (block == null || block.getType() != Material.NOTE_BLOCK || blockCarriers.isEmpty()) {
+            return null;
+        }
+        return blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
+    }
+
+    /**
+     * Survival guard: a carrier is a note-block state the pack draws as a mod block, so a
+     * vanilla note change would silently turn it into a different mod block. A carrier
+     * never plays a note and never takes vanilla's right-click note cycling.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onCarrierNote(org.bukkit.event.block.NotePlayEvent event) {
+        if (carried(event.getBlock()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Neighbor updates (redstone, a block set below) must not re-tune a carrier. */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onCarrierPhysics(org.bukkit.event.block.BlockPhysicsEvent event) {
+        if (event.getChangedType() == Material.NOTE_BLOCK && carried(event.getBlock()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Either hand's right-click on a carrier: the item may still be used, the note block may not. */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onCarrierUse(PlayerInteractEvent event) {
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK && carried(event.getClickedBlock()) != null) {
+            event.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
+        }
+    }
+
     @EventHandler
     public void onSwing(PlayerAnimationEvent event) {
         if (!busy.test(event.getPlayer()) && open.containsKey(event.getPlayer().getUniqueId())) {
