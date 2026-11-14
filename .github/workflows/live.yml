@@ -277,6 +277,8 @@ jobs:
           # ...and a mod item set down in the world by its own code, then opened as that block.
           CIM_LIVETEST_PLACE: sophisticatedbackpacks:backpack
           CIM_LIVE_SELFTEST: ''
+          # The protocol bot (cimbot) is not a pack client: no join offer here.
+          CIM_F2V_AUTO_OFFER: 'false'
         run: |
           set +e
           (
