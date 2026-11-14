@@ -3491,8 +3491,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             try {
                 chunkPacketClass = Class.forName(
                         "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket");
+                // the LevelChunk package = net.minecraft.world.level.chunk on
+                // BOTH 1.21.1 and 26.3 (javap-verified; the server.level guess
+                // was the 14-e8.1 wrong-package bug)
                 Class<?> levelChunkClass = Class.forName(
-                        "net.minecraft.server.level.LevelChunk");
+                        "net.minecraft.world.level.chunk.LevelChunk");
                 for (Constructor<?> c : chunkPacketClass.getConstructors()) {
                     Class<?>[] pt = c.getParameterTypes();
                     if (pt.length >= 2 && pt[0].isAssignableFrom(levelChunkClass)
@@ -3598,28 +3601,20 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return problems.isEmpty() ? base : base + " | " + String.join("; ", problems);
     }
 
-    /** 14-e8: the loaded full chunk at (cx,cz) via the mojmap chain
-     * ServerLevel.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, true);
-     * both ChunkStatus package layouts are tried (the class moved from
-     * net.minecraft.world.level.chunk to ...chunk.status across versions).
-     * Returns null when the chunk is absent from the map (skipped, never
-     * loaded on demand — the poke stays report-only). */
+    /** 14-e8.2: the loaded full chunk at (cx,cz) via the mojmap chain
+     * ServerLevel.getChunkSource().getChunkNow(cx, cz) — the SAME overload
+     * both 1.21.1 and 26.3 carry (javap-verified against the 26.3 client
+     * jar: ServerChunkCache.getChunkNow(int,int) -> LevelChunk, and the
+     * packet's LevelChunk lives in net.minecraft.world.level.chunk — the
+     * 14-e8 first draft's net.minecraft.server.level.LevelChunk lookup was
+     * a wrong-package miss that would have degraded every poke to the
+     * light-only fallback). Returns null when the chunk is absent from the
+     * map (skipped, never loaded on demand — the poke stays report-only). */
     private static Object getLoadedChunk(Object level, int cx, int cz)
             throws ReflectiveOperationException {
-        Object status;
-        try {
-            status = Class.forName(
-                    "net.minecraft.world.level.chunk.status.ChunkStatus")
-                    .getField("FULL").get(null);
-        } catch (ClassNotFoundException | NoSuchFieldException e) {
-            status = Class.forName("net.minecraft.world.level.chunk.ChunkStatus")
-                    .getField("FULL").get(null);
-        }
         Object src = level.getClass().getMethod("getChunkSource").invoke(level);
-        return src.getClass()
-                .getMethod("getChunk", int.class, int.class,
-                        status.getClass(), boolean.class)
-                .invoke(src, cx, cz, status, false);
+        return src.getClass().getMethod("getChunkNow", int.class, int.class)
+                .invoke(src, cx, cz);
     }
 
     /** The declared field walk up the class chain (the connection field

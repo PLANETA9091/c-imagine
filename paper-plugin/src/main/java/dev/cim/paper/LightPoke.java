@@ -93,15 +93,15 @@ public final class LightPoke {
         check(chunkAbsent, "chunk-packet class absent on the test classpath (the chunk poke degrades to the light-only fallback by name)");
         boolean statusAbsent = false;
         try {
-            Class.forName("net.minecraft.world.level.chunk.status.ChunkStatus");
+            // 14-e8.2 the chunk fetch chain = ServerChunkCache.getChunkNow
+            // (javap-verified on both 1.21.1 and 26.3); the runtime class is
+            // absent on this paper-api-only classpath — the degradation
+            // path this selftest lives on.
+            Class.forName("net.minecraft.server.level.ServerChunkCache");
         } catch (ClassNotFoundException expected) {
-            try {
-                Class.forName("net.minecraft.world.level.chunk.ChunkStatus");
-            } catch (ClassNotFoundException expectedToo) {
-                statusAbsent = true;
-            }
+            statusAbsent = true;
         }
-        check(statusAbsent, "both ChunkStatus layouts absent on the test classpath (the dual-package lookup degrades cleanly)");
+        check(statusAbsent, "ServerChunkCache absent on the test classpath (the getChunkNow chain degrades to the light-only fallback by name)");
 
         System.out.println(failures == 0 ? "SELFTESTS ALL PASS" : failures + " FAILURES");
         if (failures > 0) {
