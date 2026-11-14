@@ -1315,6 +1315,32 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
     }
 
+    /**
+     * 14-e10 THE FRONT-AIR PIN: the snapshot samples the light AT the wall
+     * blocks' own positions (CaptureLightData.snapshot centers each cell and
+     * carries a +-2 margin), and a SOLID BLOCK holds no light inside — the
+     * cell's own row reads (block=neighbors' glow, sky=0) even in a fully
+     * sunlit world (measured p34: the cell (-5,-60,9) = (10, 0) while the
+     * air one block toward the camera = (9, 15)). The truth leg renders the
+     * REAL blocks whose faces sample THE FRONT AIR, so the display pin must
+     * read the SAME sample: (x, y, z-1) — the camera side of the wall (the
+     * locked camera looks +z at the wall plane z=9, so the front air = z-1;
+     * the margin guarantees the row exists). Falls back to the cell's own
+     * row, then to the caller's legacy chain, so partial snapshots keep
+     * working.
+     */
+    static int[] frontAirLight(java.util.Map<String, int[]> field, String x, String y, String z) {
+        int[] hit = field.get(x + "," + y + "," + z);
+        try {
+            int zi = Integer.parseInt(z.trim()) - 1;
+            int[] front = field.get(x + "," + y + "," + zi);
+            if (front != null) return front;
+        } catch (NumberFormatException badFront) {
+            // non-numeric z: keep the cell's own row
+        }
+        return hit;
+    }
+
     private void clearPlacedLights(World w) {
         for (int[] pos : placedLightBlocks) {
             try {
@@ -1604,7 +1630,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 // what the truth shot rendered with (the whole page in place);
                 // the captured pair (the walk-time capture tail) is the
                 // fallback, the legacy (emission, 15) pin the last resort.
-                final int[] fieldLight = lightField.get(row[1] + "," + row[2] + "," + row[3]);
+                final int[] fieldLight = frontAirLight(lightField, row[1], row[2], row[3]); // 14-e10 the front-air pin
                 final int pinBlock = fieldLight != null ? fieldLight[0]
                         : capturedLight ? Math.min(15, Math.max(0, r.lightBlock())) : fEmission;
                 final int pinSky = fieldLight != null ? fieldLight[1]
@@ -1665,7 +1691,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         });
                         final boolean xCaptured = xr.lightBlock() >= 0 && xr.lightSky() >= 0;
                         // 14-ea3: the extras ride the SAME per-cell field pin.
-                        final int[] xFieldLight = lightField.get(row[1] + "," + row[2] + "," + row[3]);
+                        final int[] xFieldLight = frontAirLight(lightField, row[1], row[2], row[3]); // 14-e10
                         final int xPinBlock = xFieldLight != null ? xFieldLight[0]
                                 : xCaptured
                                 ? Math.min(15, Math.max(0, xr.lightBlock())) : fEmission;
