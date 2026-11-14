@@ -116,11 +116,16 @@ on:
   workflow_dispatch: {}
 
 concurrency:
-  group: gallery-${{ github.ref }}-${{ github.sha }}
-  # Validate distinct source revisions concurrently. A branch-wide queue
-  # replaced pending proofs on each push. Started runs still finish, and
-  # duplicate runs of the same revision remain grouped.
-  cancel-in-progress: false
+  group: gallery-${{ github.ref }}
+  # 14-e11 THE MINUTES ECONOMY (the owner directive 2026-10-26: minutes
+  # nearly exhausted — sparing use): one gallery at a time per ref, the
+  # newest push wins. The per-sha group let every scripts-only push pile a
+  # full 4-hour run behind the in-flight one (measured this session: three
+  # script-only pushes queued three galleries while the measurement run
+  # walked). cancel-in-progress: true = the supersede is automatic; the
+  # batch discipline stays the same (hold functionally-relevant commits
+  # until the in-flight verdict, push docs/tests freely).
+  cancel-in-progress: true
 
 env:
   MAXP: "460"  # exhaustive-walk safety cap (create measured 31,389 block
