@@ -141,7 +141,10 @@ def main():
             "bounds": bounds_of([q["bounds"] for q in quads]),
             "sprites": census(quads, "sprite"),
             "materials": census(quads, "material"),
-            "lights": census(quads, "light"),
+            # the light pairs serialize as "block/sky" strings (tuples are
+            # not JSON keys)
+            "lights": {f"{k[0]}/{k[1]}" if isinstance(k, tuple) else str(k): v
+                       for k, v in census(quads, "light").items()},
         },
         "composite": {
             "path": a.model,
