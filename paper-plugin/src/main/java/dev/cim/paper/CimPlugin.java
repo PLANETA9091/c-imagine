@@ -1572,10 +1572,50 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     cmd.setFloats(List.of(r.cmd()));
                     meta.setCustomModelDataComponent(cmd);
                 });
+                // 14-bk: pin the display's light to the state's own emission —
+                // the truth leg renders an emissive block at its block light
+                // (the lit lumaloop, the blaze burner, the nixie tubes), while
+                // the display's default local light is (sky 15, block 0) and
+                // the crop measured the glow ~0.85x dimmer with the warm R/G
+                // shift of the missing block-light component. The 7th manifest
+                // column (the scene walk's getLightEmission) carries it; the
+                // non-emissive rows pin (0, 15) = the same local light they
+                // already rode, so nothing but the glow changes.
+                int emission = 0;
+                if (row.length > 6) {
+                    try {
+                        emission = Integer.parseInt(row[6].trim());
+                    } catch (NumberFormatException bad) {
+                        emission = 0;
+                    }
+                }
+                final int fEmission = Math.min(15, Math.max(0, emission));
+                // 14-e24 THE FRONT-AIR RIG: the display's Brightness override is
+                // a MEASURED no-op on the 26.3 client for these composites (the
+                // 14-cy receipt), so the render's lightmap = the display's
+                // POSITIONAL light — and the spawn sat INSIDE the solid wall
+                // cell (sky 0), dimming every lit-front-air row to ~0.66x (the
+                // wall darks: the truth brick 64.3 luma vs ours 42.7, run
+                // 43611950455's 1607-row class). Rows whose own pin IS the
+                // lit front air (block 0, sky >= 14 — the whole wall class)
+                // spawn ONE block into that air (z-1, toward the camera) with
+                // the model translated +1z back — the pixels land exactly
+                // where they did, the positional light becomes the pin's own
+                // value, and the ignored override stops mattering. The glow
+                // rows (block light > 0: their light lives at the cell itself)
+                // and the captured walk-lit rows keep the legacy rig.
+                final int[] faFieldLight = frontAirLight(lightField, row[1], row[2], row[3]); // 14-e10
+                final boolean faCaptured = r.lightBlock() >= 0 && r.lightSky() >= 0;
+                final int faPinBlock = faFieldLight != null ? faFieldLight[0]
+                        : faCaptured ? Math.min(15, Math.max(0, r.lightBlock())) : fEmission;
+                final int faPinSky = faFieldLight != null ? faFieldLight[1]
+                        : faCaptured ? Math.min(15, Math.max(0, r.lightSky())) : 15;
+                final boolean frontAirRig = faPinBlock == 0 && faPinSky >= 14;
+                final float rigShift = frontAirRig ? 1.0f : 0.0f;
                 org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
-                        x + 0.5, y + 0.5, z + 0.5);
+                        x + 0.5, y + 0.5, z + 0.5 - rigShift);
                 org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
-                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
+                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ + rigShift),
                         // MEASURED (run 9 vs the truth leg): vanilla blockstate
                         // x=90 is R_x(-90) — joml rotationXYZ applies +angles,
                         // so the variant rotations ride NEGATED (a positive
@@ -1600,24 +1640,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 .rotateY((float) Math.PI),
                         new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                         new org.joml.Quaternionf());
-                // 14-bk: pin the display's light to the state's own emission —
-                // the truth leg renders an emissive block at its block light
-                // (the lit lumaloop, the blaze burner, the nixie tubes), while
-                // the display's default local light is (sky 15, block 0) and
-                // the crop measured the glow ~0.85x dimmer with the warm R/G
-                // shift of the missing block-light component. The 7th manifest
-                // column (the scene walk's getLightEmission) carries it; the
-                // non-emissive rows pin (0, 15) = the same local light they
-                // already rode, so nothing but the glow changes.
-                int emission = 0;
-                if (row.length > 6) {
-                    try {
-                        emission = Integer.parseInt(row[6].trim());
-                    } catch (NumberFormatException bad) {
-                        emission = 0;
-                    }
-                }
-                final int fEmission = Math.min(15, Math.max(0, emission));
                 // 14-cy CAPTURED LIGHT: a quad-route row carries the captured
                 // scene light its scene-lit quads rendered with — the replay
                 // pins the display to THAT light instead of (emission, 15),
