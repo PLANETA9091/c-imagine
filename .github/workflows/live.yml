@@ -227,19 +227,12 @@ jobs:
         run: |
           npm i -g crussty
           crussty init --platform paper --version 26.3 --dir srv 2>&1 | tee init.log
-          # init only warns when a release download fails (measured 2026-11-08: GitHub
-          # answered 504 on the direct asset URL twice in a row, while the API endpoint
-          # served the same file). Whatever it missed comes through the API.
-          TAG=$(grep -oE 'releases/download/v[0-9.]+' init.log | head -1 | sed 's#releases/download/##')
-          [ -n "$TAG" ] || { echo "no CRUSSTY release tag in the init log"; exit 1; }
-          if [ ! -s srv/launcher/launcher.jar ]; then
-            mkdir -p srv/launcher
-            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p launcher.jar -D srv/launcher --clobber
-          fi
-          if [ ! -s srv/libcrussty_runtime.so ]; then
-            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p libcrussty_runtime.so -D srv --clobber
-          fi
-          ls -la srv/launcher/launcher.jar srv/libcrussty_runtime.so
+          # 14-e22: the CLI's silent v2.2.5 fallback (GitHub API unreachable)
+          # carries a broken handleIntention tableswitch patch → VerifyError at
+          # the first bot channel init (measured run 43611950326). The guard
+          # below only covered MISSING artifacts — a fully-downloaded but
+          # BROKEN v2.2.5 launcher passed it. Pin instead.
+          bash scripts/ci-crussty-pin.sh srv init.log
       - name: restore NeoForge 1.21.1 layer (cache)
         id: layer-cache
         uses: actions/cache@v4

@@ -148,9 +148,15 @@ jobs:
 
 
       - name: scaffold Paper 26.3 (shared template)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm i -g crussty
-          crussty init --platform paper --version 26.3 --dir tmpl
+          crussty init --platform paper --version 26.3 --dir tmpl 2>&1 | tee init.log
+          # 14-e22: pin the launcher — the CLI's silent v2.2.5 fallback (GitHub
+          # API unreachable) carries a broken handleIntention tableswitch patch
+          # → VerifyError at the first channel init (measured run 43611950326).
+          bash scripts/ci-crussty-pin.sh tmpl init.log
           # 14-dr (superseded): the toml memory key is DEAD — the launcher
           # never parses it (hardcoded 512M/2G defaults; the exec lines of
           # every run to date prove it). The contract now rides DIST_JAVA_OPTS

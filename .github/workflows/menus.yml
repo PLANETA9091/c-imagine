@@ -229,12 +229,11 @@ jobs:
         run: |
           npm i -g crussty
           crussty init --platform paper --version 26.3 --dir srv-crus 2>&1 | tee init.log
-          # init only warns when a release download fails (GitHub 504 on the direct asset
-          # URL, measured); whatever it missed comes through the API.
-          TAG=$(grep -oE 'releases/download/v[0-9.]+' init.log | head -1 | sed 's#releases/download/##')
-          [ -s srv-crus/launcher/launcher.jar ] || { mkdir -p srv-crus/launcher; gh release download "$TAG" -R PLANETA9091/CRUSSTY -p launcher.jar -D srv-crus/launcher --clobber; }
-          [ -s srv-crus/libcrussty_runtime.so ] || gh release download "$TAG" -R PLANETA9091/CRUSSTY -p libcrussty_runtime.so -D srv-crus --clobber
-          ls -la srv-crus/launcher/launcher.jar srv-crus/libcrussty_runtime.so
+          # 14-e22: pin the launcher — the CLI's silent v2.2.5 fallback carries a
+          # broken handleIntention tableswitch patch (VerifyError at the first
+          # bot channel init, measured run 43611950326); the old guard only
+          # covered MISSING artifacts, a fully-downloaded BROKEN launcher passed.
+          bash scripts/ci-crussty-pin.sh srv-crus init.log
       - name: truth, ours and the pixel verdict
         env:
           J21: ${{ steps.jdk21.outputs.path }}

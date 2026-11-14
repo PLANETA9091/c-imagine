@@ -83,9 +83,18 @@ jobs:
 
       # --- server directory ------------------------------------------------
       - name: install CRUSSTY CLI and scaffold Paper 26.3
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm i -g crussty
-          crussty init --platform paper --version 26.3 --dir srv
+          crussty init --platform paper --version 26.3 --dir srv 2>&1 | tee init.log
+          # 14-e22: the CLI silently falls back to v2.2.5 when the GitHub API is
+          # rate-limited; that launcher's JVMTI rewriter mis-patches Paper 26.3's
+          # ServerHandshakePacketListenerImpl.handleIntention (misaligned
+          # tableswitch) → VerifyError: Bad instruction at the first bot channel
+          # init → the M4 wire contract dies with `Connection reset by peer`
+          # (measured run 43611950326). Pin the measured-good launcher.
+          bash scripts/ci-crussty-pin.sh srv init.log
 
       # --- M1: embedded 1.21.1 layer --------------------------------------
       - name: restore NeoForge 1.21.1 layer (cache)
