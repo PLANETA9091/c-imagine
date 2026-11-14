@@ -16,14 +16,14 @@ huge ae is a CONTENT class (different pixels, same brightness) — the
 mesh-diff/census lanes own those.
 
 Usage:
-  verdict-pull.py <run_id|local> [--out DIR] [--kinds verdict,reports,seed]
+  verdict-pull.py <run_id|local> [--out DIR] [--kinds verdict,reports,meshes]
                   [--forensics] [--ratio] [--top N]
 
   <run_id>   the GitHub Actions run id (the gallery run); the literal
              "local" skips the pull and operates on --out as-is (the
              selftest's mode)
   --kinds    which artifacts to pull (default: verdict,reports)
-             seed = seed-captured-meshes (the quads/ tree)
+             meshes = seed-captured-meshes (the quads/ tree)
   --forensics  run fidelity-forensics.py over the pulled reports
   --ratio    run the crush detector (needs the pulled reports and both
              legs' shots in the out dir, pulled with --kinds shots)

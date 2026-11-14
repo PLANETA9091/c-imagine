@@ -298,5 +298,78 @@ class AnimatedStates(unittest.TestCase):
             self.assertEqual(report["rows"][0]["verdict"], "RED")
 
 
+class DemoteFamilyHourGlass(unittest.TestCase):
+    """14-e14: the state-synced BE-dust layer (supplementaries:hourglass — the
+    light_level property is the glowstone dust's light; the real mod's tile
+    auto-syncs the dust and the BE renderer draws the flowing column the
+    static composite structurally cannot carry). The family demotes to
+    DYNAMIC — reported, never gated, the demotion counts loud."""
+
+    @staticmethod
+    def _pair(root):
+        random = np.random.default_rng(77)
+        truth = random.integers(0, 256, (gd.H, gd.W, 3), dtype=np.uint8)
+        ours = truth.copy()
+        _, (x0, y0, x1, y1) = gd.crop_cell(truth, 0, 0)
+        ours[y0:y1, x0:x1] = random.integers(0, 256, (y1 - y0, x1 - x0, 3), dtype=np.uint8)
+        Image.fromarray(truth).save(root / "truth.png")
+        Image.fromarray(ours).save(root / "ours.png")
+
+    @staticmethod
+    def _manifest(root):
+        manifest = root / "gallery-test-p0.tsv"
+        manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tnote\n"
+                            "cell\t-5\t-60\t9\tsupplementaries:hourglass[facing=down,light_level=10,waterlogged=false]\t0\tok\n")
+        return manifest
+
+    def _run(self, root, extra):
+        arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                     "--ours", str(root / "ours.png"), "--manifest", str(self._manifest(root)),
+                     "--out", str(root / "report.json"), *extra]
+        with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+            status = gd.main()
+        return json.loads((root / "report.json").read_text()), status
+
+    def test_the_dust_family_demotes_and_never_gates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            report, status = self._run(
+                root, ["--demote-family", r"^supplementaries:hourglass(?:\[|$)"])
+            self.assertEqual(report["rows"][0]["verdict"], "DYNAMIC")
+            self.assertEqual(report["rows"][0]["dyn_family"], True)
+            self.assertEqual(report["family_demoted"], 1)
+            self.assertEqual(status, 0)
+
+    def test_without_the_flag_the_row_gates_red(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            report, status = self._run(root, [])
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+            self.assertEqual(report["rows"][0]["dyn_family"], False)
+            self.assertEqual(status, 2)
+
+    def test_a_similar_family_stays_gated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            self._pair(root)
+            manifest = root / "gallery-test-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tnote\n"
+                                "cell\t-5\t-60\t9\tsupplementaries:hourglass_redstone[facing=down,light_level=10]\t0\tok\n")
+            arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                         "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                         "--out", str(root / "report.json"),
+                         "--demote-family", r"^supplementaries:hourglass(?:\[|$)"]
+            with patch.object(sys, "argv", arguments), contextlib.redirect_stdout(io.StringIO()):
+                status = gd.main()
+            report = json.loads((root / "report.json").read_text())
+            # the (?:\[|$) anchor refuses the _redstone suffix family: the
+            # redstone dust rides the same tile but the demotion is NAMED —
+            # it opens only with the family's own receipt
+            self.assertEqual(report["rows"][0]["verdict"], "RED")
+            self.assertEqual(status, 2)
+
+
 if __name__ == "__main__":
     unittest.main()

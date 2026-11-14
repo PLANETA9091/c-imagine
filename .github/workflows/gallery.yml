@@ -460,6 +460,12 @@ jobs:
           # the #39 mtime law — then wait_done). A dead driver fails the
           # step the same way a failed per-call rcon did.
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          # 14-e15 THE COPROC LAW: rcon() must NEVER run inside a pipeline
+          # element or command substitution — a subshell cannot reach the
+          # coproc fd and the send dies ("rcon driver died (send: ...)").
+          # The measured walk-killer (runs 43579201630, fe59c8c3-era,
+          # 43584748689: all 16 shards each). Route the output through a
+          # file when the receipt needs printing.
           rcon() { # one command per argument; prints "> cmd" + response per command
             local c line out ok
             for c in "$@"; do
@@ -1374,6 +1380,12 @@ jobs:
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          # 14-e15 THE COPROC LAW: rcon() must NEVER run inside a pipeline
+          # element or command substitution — a subshell cannot reach the
+          # coproc fd and the send dies ("rcon driver died (send: ...)").
+          # The measured walk-killer (runs 43579201630, fe59c8c3-era,
+          # 43584748689: all 16 shards each). Route the output through a
+          # file when the receipt needs printing.
           rcon() { # one command per argument; prints "> cmd" + response per command
             local c line out ok
             for c in "$@"; do
@@ -1451,6 +1463,12 @@ jobs:
           # bash between the sends (base_of BEFORE the send — the #39 mtime
           # law — then wait_done); the settle protocol below is untouched.
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          # 14-e15 THE COPROC LAW: rcon() must NEVER run inside a pipeline
+          # element or command substitution — a subshell cannot reach the
+          # coproc fd and the send dies ("rcon driver died (send: ...)").
+          # The measured walk-killer (runs 43579201630, fe59c8c3-era,
+          # 43584748689: all 16 shards each). Route the output through a
+          # file when the receipt needs printing.
           rcon() { # one command per argument; prints "> cmd" + response per command
             local c line out ok
             for c in "$@"; do
@@ -1531,7 +1549,8 @@ jobs:
                 # packet = identical frame (accept); starved = the re-send
                 # integrates light = the frame CHANGES (the fake settle is
                 # rejected and the loop re-runs on the now-live data).
-                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+                rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                                tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
                 bash scripts/visual/shot.sh "truth-shots/.settle-post-$NS-p$p.png"
                 POST=$(md5sum "truth-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
                 rm -f "truth-shots/.settle-post-$NS-p$p.png"
@@ -1581,6 +1600,12 @@ jobs:
           # marker waits / settle windows / shot sequences stay in bash
           # between the sends, byte-for-byte the same protocol.
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          # 14-e15 THE COPROC LAW: rcon() must NEVER run inside a pipeline
+          # element or command substitution — a subshell cannot reach the
+          # coproc fd and the send dies ("rcon driver died (send: ...)").
+          # The measured walk-killer (runs 43579201630, fe59c8c3-era,
+          # 43584748689: all 16 shards each). Route the output through a
+          # file when the receipt needs printing.
           rcon() { # one command per argument; prints "> cmd" + response per command
             local c line out ok
             for c in "$@"; do
@@ -1626,7 +1651,8 @@ jobs:
             # Poke the light packets before the shot: the integration
             # lands inside the window, the self-pair still names any
             # residual time-varying cells honestly.
-            rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+            rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                        tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
             bash scripts/visual/shot.sh "truth-shots/gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair: a second shot ~2s later
             bash scripts/visual/shot.sh "truth-shots/gal-e$p-self.png"
@@ -1653,7 +1679,8 @@ jobs:
               # Poke the light packets before the shot: the integration
               # lands inside the window, the self-pair still names any
               # residual time-varying cells honestly.
-              rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+              rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                            tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the mob-page 14-aj pattern): the vanilla dyn/large rows now gate and boats/arrows/camels MOVE — the second shot names the time-varying cells (ANIMATED) instead of red-gating an animation phase
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p-self.png"
@@ -1690,7 +1717,8 @@ jobs:
                 # Poke the light packets before the shot: the integration
                 # lands inside the window, the self-pair still names any
                 # residual time-varying cells honestly.
-                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+                rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                                tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
                 bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
                 echo "shot $NS $SERIES page $p"
               done
@@ -2338,6 +2366,12 @@ jobs:
           # per-call invocations printed. A dead driver fails the step the
           # same way a failed per-call rcon did.
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          # 14-e15 THE COPROC LAW: rcon() must NEVER run inside a pipeline
+          # element or command substitution — a subshell cannot reach the
+          # coproc fd and the send dies ("rcon driver died (send: ...)").
+          # The measured walk-killer (runs 43579201630, fe59c8c3-era,
+          # 43584748689: all 16 shards each). Route the output through a
+          # file when the receipt needs printing.
           rcon() { # one command per argument; prints "> cmd" + response per command
             local c line out ok
             for c in "$@"; do
@@ -2596,7 +2630,8 @@ jobs:
           # and the shard fails loudly instead of shooting garbage.
           ours_alive() {
             local L
-            L=$(rcon "list" 2>/dev/null) || return 1
+            rcon "list" > list-receipt.log 2>/dev/null || return 1
+            L=$(cat list-receipt.log)
             case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
           EXHAUSTED=0
@@ -2643,7 +2678,8 @@ jobs:
                 # packet = identical frame (accept); starved = the re-send
                 # integrates light = the frame CHANGES (the fake settle is
                 # rejected and the loop re-runs on the now-live data).
-                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+                rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                                tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
                 bash scripts/visual/shot.sh "ours-shots/.settle-post-$NS-p$p.png"
                 POST=$(md5sum "ours-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
                 rm -f "ours-shots/.settle-post-$NS-p$p.png"
@@ -2679,6 +2715,12 @@ jobs:
           # --batch process carries every replay command of this step; the
           # placed-marker asserts consume the SAME per-command responses.
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          # 14-e15 THE COPROC LAW: rcon() must NEVER run inside a pipeline
+          # element or command substitution — a subshell cannot reach the
+          # coproc fd and the send dies ("rcon driver died (send: ...)").
+          # The measured walk-killer (runs 43579201630, fe59c8c3-era,
+          # 43584748689: all 16 shards each). Route the output through a
+          # file when the receipt needs printing.
           rcon() { # one command per argument; prints "> cmd" + response per command
             local c line out ok
             for c in "$@"; do
@@ -2700,7 +2742,8 @@ jobs:
           # means the harness itself broke and the shard fails loudly.
           ours_alive() {
             local L
-            L=$(rcon "list" 2>/dev/null) || return 1
+            rcon "list" > list-receipt.log 2>/dev/null || return 1
+            L=$(cat list-receipt.log)
             case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
           # SAME difficulty pin as the truth leg (hostile mobs must survive)
@@ -2722,7 +2765,8 @@ jobs:
             # Poke the light packets before the shot: the integration
             # lands inside the window, the self-pair still names any
             # residual time-varying cells honestly.
-            rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+            rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                        tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror)
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p-self.png"
@@ -2745,7 +2789,8 @@ jobs:
               # Poke the light packets before the shot: the integration
               # lands inside the window, the self-pair still names any
               # residual time-varying cells honestly.
-              rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+              rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                            tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the truth-leg mirror): the ANIMATED class needs BOTH legs' second shots
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p-self.png"
@@ -2783,7 +2828,8 @@ jobs:
                 # Poke the light packets before the shot: the integration
                 # lands inside the window, the self-pair still names any
                 # residual time-varying cells honestly.
-                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
+                rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+                                tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 test -s "ours-shots/ours-gal-e$SERIES-$NS$p.png" || { echo "$NS $SERIES page $p shot missing"; exit 1; }
                 echo "shot $NS $SERIES page $p"
@@ -3076,6 +3122,7 @@ jobs:
                 --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
                 --demote-family '^dynamictrees:[a-z_0-9]*(leaves|branch|root|trunk|sapling|pod|cocoa)[a-z_0-9]*(?:\[|$)' \
                 --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
+                --demote-family '^supplementaries:hourglass(?:\[|$)' \
                 $SELF_T $SELF_O || GATE=1
             done
           done
