@@ -135,6 +135,7 @@ public final class HudBootstrap {
         hud.register(screens);
         screens.busyWhen(keyboard::isOpen);
         screens.useCamera(camera, plugin);
+        LiveRecipes.start(plugin, screens::liveBridge, screens::carrier);
         HudBootstrap.hud = hud;
         PluginCommand screen = plugin.getCommand("modscreen");
         if (screen != null) {

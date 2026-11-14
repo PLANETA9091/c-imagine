@@ -53,6 +53,10 @@ public final class LiveProtocol {
             if (head[0].equals("tick")) {
                 return tick();
             }
+            // The mod recipes of the real server, once its data is loaded (no player, no uuid).
+            if (head[0].equals("recipes")) {
+                return recipes();
+            }
             // Placed mod blocks of loaded Paper chunks: no player, so no uuid.
             if (head[0].equals("adopt")) {
                 return adopt(head, lines);
@@ -533,6 +537,100 @@ public final class LiveProtocol {
             level.removeBlockEntity(pos);
         }
         return out.append("released\t").append(TICKING.size()).append('\n').toString();
+    }
+
+    /**
+     * recipes: the mod recipes of the real server (namespace other than minecraft), one line each:
+     * <pre>
+     * recipe TAB shaped TAB id TAB result TAB w TAB h TAB token...      (w*h tokens, row by row)
+     * recipe TAB shapeless TAB id TAB result TAB token...
+     * recipe TAB smelting|blasting|smoking|campfire TAB id TAB result TAB ticks TAB xp TAB token
+     * skip TAB type TAB id TAB reason                                    (the layer's other recipes)
+     * </pre>
+     * A token is "-" for an empty slot, or "[!]id,id,..." listing the items an ingredient takes;
+     * "!" marks an ingredient whose items carry components of their own (not expressible on Paper),
+     * "?" one that takes no item at all. Answers "wait" until the real server has loaded its data.
+     */
+    private static String recipes() {
+        net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (real == null || real instanceof FacadeServer) {
+            return "wait\n";
+        }
+        java.util.Collection<net.minecraft.world.item.crafting.RecipeHolder<?>> all = real.getRecipeManager().getRecipes();
+        if (all.isEmpty()) {
+            return "wait\n";
+        }
+        StringBuilder out = new StringBuilder();
+        net.minecraft.core.HolderLookup.Provider access = real.registryAccess();
+        for (net.minecraft.world.item.crafting.RecipeHolder<?> holder : all) {
+            if (holder.id().getNamespace().equals("minecraft")) {
+                continue;
+            }
+            // One recipe that fails to read is a skip line, never the whole export's error.
+            try {
+                recipe(out, holder, access);
+            } catch (RuntimeException e) {
+                out.append("skip\tunreadable\t").append(holder.id())
+                        .append("\tfailed: ").append(e.getClass().getSimpleName()).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    private static void recipe(StringBuilder out, net.minecraft.world.item.crafting.RecipeHolder<?> holder,
+                               net.minecraft.core.HolderLookup.Provider access) {
+        net.minecraft.world.item.crafting.Recipe<?> r = holder.value();
+        net.minecraft.resources.ResourceLocation id = holder.id();
+        String type = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()).toString();
+        String result = encode(r.getResultItem(access));
+        if (r instanceof net.minecraft.world.item.crafting.ShapedRecipe shaped) {
+            out.append("recipe\tshaped\t").append(id).append('\t').append(result)
+                    .append('\t').append(shaped.getWidth()).append('\t').append(shaped.getHeight());
+            for (net.minecraft.world.item.crafting.Ingredient ing : shaped.getIngredients()) {
+                out.append('\t').append(token(ing));
+            }
+            out.append('\n');
+        } else if (r instanceof net.minecraft.world.item.crafting.ShapelessRecipe shapeless) {
+            out.append("recipe\tshapeless\t").append(id).append('\t').append(result);
+            for (net.minecraft.world.item.crafting.Ingredient ing : shapeless.getIngredients()) {
+                out.append('\t').append(token(ing));
+            }
+            out.append('\n');
+        } else if (r instanceof net.minecraft.world.item.crafting.AbstractCookingRecipe cooking) {
+            String kind = r instanceof net.minecraft.world.item.crafting.SmeltingRecipe ? "smelting"
+                    : r instanceof net.minecraft.world.item.crafting.BlastingRecipe ? "blasting"
+                    : r instanceof net.minecraft.world.item.crafting.SmokingRecipe ? "smoking"
+                    : r instanceof net.minecraft.world.item.crafting.CampfireCookingRecipe ? "campfire" : null;
+            if (kind == null) {
+                out.append("skip\t").append(type).append('\t').append(id).append("\tunknown cooking\n");
+                return;
+            }
+            out.append("recipe\t").append(kind).append('\t').append(id).append('\t').append(result)
+                    .append('\t').append(cooking.getCookingTime()).append('\t').append(cooking.getExperience())
+                    .append('\t').append(token(cooking.getIngredients().get(0))).append('\n');
+        } else {
+            out.append("skip\t").append(type).append('\t').append(id).append("\tnot expressible\n");
+        }
+    }
+
+    private static String token(net.minecraft.world.item.crafting.Ingredient ing) {
+        if (ing.isEmpty()) {
+            return "-";
+        }
+        net.minecraft.world.item.ItemStack[] items = ing.getItems();
+        if (items.length == 0) {
+            return "?";
+        }
+        StringBuilder sb = new StringBuilder();
+        boolean data = false;
+        for (net.minecraft.world.item.ItemStack s : items) {
+            data |= !s.getComponentsPatch().isEmpty();
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()));
+        }
+        return (data ? "!" : "") + sb;
     }
 
     /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */
