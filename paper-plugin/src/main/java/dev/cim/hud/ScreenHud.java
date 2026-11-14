@@ -1122,6 +1122,105 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return out;
     }
 
+    /** Survival smoke ground: a stone block 5 west and 5 north of the spawn, the carrier stands above it. */
+    private static Block survivalGround() {
+        return org.bukkit.Bukkit.getWorlds().get(0).getSpawnLocation().getBlock().getRelative(-5, -1, -5);
+    }
+
+    /**
+     * Survival smoke (CIM_SURVIVAL_ITEM, first boot): a carrier item clicked onto a stone block
+     * through the held-item path a survival player takes ({@link #placeOrUse}), then a redstone
+     * block beside it. Lines are asserted by survival.yml.
+     */
+    public List<String> survivalPlace(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: survival unavailable");
+            return out;
+        }
+        Block ground = survivalGround();
+        ground.setType(Material.STONE, false);
+        Block at = ground.getRelative(org.bukkit.block.BlockFace.UP);
+        at.setType(Material.AIR, false);
+        player.teleport(at.getLocation().add(2.5, 0, 0.5));
+        player.getInventory().clear();
+        player.getInventory().setItemInMainHand(bridge.stackOf(itemId, 1));
+        boolean did = placeOrUse(player, bridge, ground, org.bukkit.block.BlockFace.UP, null);
+        if (!did || carried(at) == null) {
+            out.add("place " + itemId + " -> refused (carried " + carried(at) + ", block "
+                    + at.getBlockData().getAsString() + ")");
+            return out;
+        }
+        String placed = at.getBlockData().getAsString();
+        out.add("place " + itemId + " -> carrier key " + carrierKey(placed) + " state " + placed
+                + " at " + at.getX() + "," + at.getY() + "," + at.getZ());
+        out.add("ticking after place: " + bridge.tickingCount());
+        Block beside = at.getRelative(org.bukkit.block.BlockFace.EAST);
+        beside.setType(Material.AIR, false);
+        beside.setType(Material.REDSTONE_BLOCK, true);
+        String pulsed = at.getBlockData().getAsString();
+        out.add("redstone beside -> carried " + carried(at) + " key " + carrierKey(pulsed) + " state " + pulsed);
+        beside.setType(Material.AIR, true);
+        return out;
+    }
+
+    /** Survival smoke, first boot, after 40 server ticks with no menu open: still ticking, world saved. */
+    public List<String> survivalKeep(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
+        if (bridge == null) {
+            out.add("no layer: survival unavailable");
+            return out;
+        }
+        out.add("ticking after 40 ticks: " + bridge.tickingCount() + " carried " + carried(at));
+        // The same write onWorldSave makes: the ticking data goes into the chunk before the world saves.
+        if (bridge.saveAll(this::carried)) {
+            logTicking();
+        }
+        at.getWorld().save();
+        out.add("saved: world written with the placed block entity kept, ticking " + bridge.tickingCount());
+        return out;
+    }
+
+    /** Survival smoke, second boot: the chunk loads, the layer adopts the kept block entity again. */
+    public List<String> survivalResume(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
+        // Loading the chunk (if it is not loaded yet) fires ChunkLoadEvent; live() adopts every loaded chunk.
+        at.getChunk();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: survival unavailable");
+            return out;
+        }
+        String state = at.getBlockData().getAsString();
+        out.add("resume: carried " + carried(at) + " key " + carrierKey(state) + " state " + state);
+        out.add("resume: ticking " + bridge.tickingCount());
+        return out;
+    }
+
+    /** Survival smoke, second boot: broken by a survival player through Bukkit's own break, the mod's drop. */
+    public List<String> survivalBreak(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
+        player.teleport(at.getLocation().add(2.5, 0, 0.5));
+        player.getInventory().clear();
+        player.getInventory().setItemInMainHand(null);
+        out.add("ticking before break: " + (bridge == null ? -1 : bridge.tickingCount()));
+        boolean broke = player.breakBlock(at);
+        out.add("break " + itemId + " -> broke " + broke + " block now " + at.getType());
+        out.add("ticking after break: " + (bridge == null ? -1 : bridge.tickingCount()));
+        for (org.bukkit.entity.Entity e : at.getWorld().getNearbyEntities(at.getLocation().add(0.5, 0.5, 0.5), 2, 2, 2)) {
+            if (e instanceof org.bukkit.entity.Item item) {
+                out.add("dropped " + item.getItemStack().getType() + " x" + item.getItemStack().getAmount());
+            }
+        }
+        return out;
+    }
+
     private String firstOwn(LiveBridge bridge, LiveBridge.State state) {
         return state.slots().stream().filter(sl -> !sl.player()).findFirst()
                 .map(sl -> paperName(bridge.toPaper(sl.stack()))).orElse("none");

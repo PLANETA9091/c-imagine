@@ -697,6 +697,31 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().info("[cim-live] paper " + line);
                 }
             }
+            // Survival smoke (survival.yml): a carrier placed by the held-item path, saved and
+            // restarted, adopted again and broken. The first boot places it; the second one (phase
+            // "resume") adopts it and breaks it. Off unless CIM_SURVIVAL_ITEM names the block.
+            String survivalItem = System.getenv("CIM_SURVIVAL_ITEM");
+            if (survivalItem != null && !survivalItem.isBlank()) {
+                Player target = bot;
+                String item = survivalItem.trim();
+                if ("resume".equals(System.getenv("CIM_SURVIVAL_PHASE"))) {
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalResume(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                    Thread.sleep(2000); // 40 server ticks: the adopted block entity ticks with no menu open
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalBreak(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                } else {
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalPlace(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                    Thread.sleep(2000); // 40 server ticks: the placed block entity ticks with no menu open
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalKeep(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                }
+            }
             // Attach the outbound net watch HERE, not via PlayerJoinEvent: the
             // join event did not fire on the CI wire order (measured — census
             // stayed empty), and a missed attach silently blinds the watch.

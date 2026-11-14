@@ -1,0 +1,266 @@
+name: survival
+
+# Survival smoke for the live layer on Paper 26.3: the module zip (cimlive included, installed
+# by the loader itself, never copied by this job) boots next to Create and Sophisticated
+# Backpacks. A survival player's path is driven through the harness hooks, all in Paper's
+# overworld: a Create block gets an auto-allocated carrier, is placed through the held-item
+# path, ticks with no menu open, ignores a redstone neighbour, survives a save and a restart,
+# and is broken into its own drop. Every assertion is a deterministic grep; a regression fails.
+
+on:
+  push:
+    branches: [feat/survival, main]
+    paths:
+      - 'live-mod/**'
+      - 'java/**'
+      - 'crates/**'
+      - 'paper-plugin/**'
+      - 'scripts/package-module.sh'
+      - 'scripts/build-bootstrap.sh'
+      - 'scripts/cimscene/mods.lock'
+      - 'scripts/cimscene/fetch-ladder.sh'
+      - '.github/workflows/survival.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: survival-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The Create block under test: a block entity (ticks in the layer) with a note-block carrier.
+  SURVIVAL_ITEM: create:depot
+  # The auto-offer is left at its default: the join offer line must be logged on the way.
+
+jobs:
+  survival:
+    name: survival smoke (Paper 26.3 + module + Create + Sophisticated Backpacks, two boots)
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: gradle/actions/setup-gradle@v4
+      - name: build cimlive
+        run: gradle build --no-daemon -p live-mod
+      - name: build java bootstrap
+        run: bash scripts/build-bootstrap.sh
+      - name: build paper plugin jar
+        working-directory: paper-plugin
+        run: mvn -q -B package
+      - name: build + package module (cimlive included, no manual copy later)
+        env:
+          CIM_BOOTSTRAP_JAR: ${{ github.workspace }}/java/cim-bootstrap/build/cim-bootstrap.jar
+        run: bash scripts/package-module.sh
+      - name: build cimbot (protocol bot)
+        run: cargo build --release --bin cimbot --quiet
+      - name: scaffold Paper 26.3 with CRUSSTY
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm i -g crussty
+          crussty init --platform paper --version 26.3 --dir srv 2>&1 | tee init.log
+          TAG=$(grep -oE 'releases/download/v[0-9.]+' init.log | head -1 | sed 's#releases/download/##')
+          [ -n "$TAG" ] || { echo "no CRUSSTY release tag in the init log"; exit 1; }
+          if [ ! -s srv/launcher/launcher.jar ]; then
+            mkdir -p srv/launcher
+            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p launcher.jar -D srv/launcher --clobber
+          fi
+          if [ ! -s srv/libcrussty_runtime.so ]; then
+            gh release download "$TAG" -R PLANETA9091/CRUSSTY -p libcrussty_runtime.so -D srv --clobber
+          fi
+          ls -la srv/launcher/launcher.jar srv/libcrussty_runtime.so
+      - name: restore NeoForge 1.21.1 layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: srv/layer1211
+          key: neoforge-layer-21.1.265
+      - name: install NeoForge 1.21.1 layer (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          JAVA_HOME="$JAVA_HOME_21_X64" java -jar nf-installer.jar --installServer srv/layer1211
+      - name: fetch Create and Sophisticated Backpacks (the lock's pins)
+        run: bash scripts/cimscene/fetch-ladder.sh mods-create create sophisticated-backpacks sophisticated-core
+      - name: install module, plugin and mods (no cimlive copy, the module installs it)
+        run: |
+          mkdir -p srv/crus
+          printf '{"layerDir": "layer1211/libraries"}\n' > srv/crus/c-imagine.json
+          sed -i 's/memory = "2G"/memory = "6G"/' srv/crussty.toml
+          unzip -o dist/module-imagine.zip -d srv/modules/
+          test -f srv/modules/imagine/cimlive-1.0.0.jar || { echo "ASSERTION FAILED: the module zip carries no cimlive jar"; exit 1; }
+          mkdir -p srv/plugins srv/mods
+          cp paper-plugin/target/cim-paper-plugin.jar srv/plugins/
+          cp mods-create/*.jar srv/mods/
+          cp scripts/log4j2-layer.xml srv/
+          echo "eula=true" > srv/eula.txt
+          printf 'online-mode=false\nwhite-list=false\nlevel-type=minecraft:flat\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\n' > srv/server.properties
+          ls srv/mods
+      - name: boot 1, the player places the Create block, the redstone neighbour, the save
+        env:
+          CIM_SURVIVAL_ITEM: ${{ env.SURVIVAL_ITEM }}
+          CIM_SURVIVAL_PHASE: place
+        run: |
+          set +e
+          (
+            for i in $(seq 1 120); do grep -q "Done (" srv/boot.log 2>/dev/null && break; sleep 2; done
+            ./target/release/cimbot --host 127.0.0.1 --port 25565 --name cimbot --timeout 60 --no-expect-block \
+              --report cimbot-report-1.json > cimbot-1.log 2>&1
+            echo $? > cimbot-exit-1
+          ) &
+          cd srv
+          crussty run > boot.log 2>&1 &
+          SRV=$!
+          for i in $(seq 1 150); do
+            grep -q "\[cim-survival\] saved:" boot.log 2>/dev/null && { sleep 3; break; }
+            grep -q "\[cim-survival\] place .* refused" boot.log 2>/dev/null && break
+            kill -0 "$SRV" 2>/dev/null || break
+            sleep 2
+          done
+          timeout 90 crussty stop || true
+          for i in $(seq 1 60); do pgrep -f onload.pidFile >/dev/null || break; sleep 2; done
+          pgrep -f onload.pidFile >/dev/null && pkill -9 -f onload.pidFile
+          cd ..
+          wait
+          mv srv/boot.log survival-boot-1.log
+          grep -E '\[cim-survival\]|\[cim-screen\]|\[c-imagine\]' survival-boot-1.log | tee survival-1.txt | tail -80
+      - name: boot 2, the restart adopts the block again, the player breaks it
+        env:
+          CIM_SURVIVAL_ITEM: ${{ env.SURVIVAL_ITEM }}
+          CIM_SURVIVAL_PHASE: resume
+        run: |
+          set +e
+          (
+            for i in $(seq 1 120); do grep -q "Done (" srv/boot.log 2>/dev/null && break; sleep 2; done
+            ./target/release/cimbot --host 127.0.0.1 --port 25565 --name cimbot --timeout 60 --no-expect-block \
+              --report cimbot-report-2.json > cimbot-2.log 2>&1
+            echo $? > cimbot-exit-2
+          ) &
+          cd srv
+          crussty run > boot.log 2>&1 &
+          SRV=$!
+          for i in $(seq 1 150); do
+            grep -q "\[cim-survival\] break .* block now" boot.log 2>/dev/null && { sleep 3; break; }
+            kill -0 "$SRV" 2>/dev/null || break
+            sleep 2
+          done
+          timeout 90 crussty stop || true
+          for i in $(seq 1 60); do pgrep -f onload.pidFile >/dev/null || break; sleep 2; done
+          pgrep -f onload.pidFile >/dev/null && pkill -9 -f onload.pidFile
+          cd ..
+          wait
+          mv srv/boot.log survival-boot-2.log
+          grep -E '\[cim-survival\]|\[cim-screen\]|\[c-imagine\]' survival-boot-2.log | tee survival-2.txt | tail -80
+      - name: the survival assertions
+        run: |
+          B1=survival-boot-1.log
+          B2=survival-boot-2.log
+          fail() {
+            echo "ASSERTION FAILED: $1"
+            echo "--- survival lines, boot 1:"; grep -E '\[cim-survival\]|\[cim-screen\]' "$B1" | tail -40 || true
+            echo "--- survival lines, boot 2:"; grep -E '\[cim-survival\]|\[cim-screen\]' "$B2" | tail -40 || true
+            exit 1
+          }
+          # Both boots must reach the world.
+          grep -q "Done (" "$B1" || fail "boot 1 never finished starting (no 'Done (')"
+          grep -q "Done (" "$B2" || fail "boot 2 never finished starting (no 'Done (')"
+
+          # 1. The module zip carries cimlive, the loader installed it, nothing copied it by hand.
+          grep -qE "\[c-imagine\] bundled mod installed: .*cimlive-1\.0\.0\.jar" "$B1" \
+            || fail "the loader did not install the bundled cimlive jar into mods/"
+          test -s srv/mods/cimlive-1.0.0.jar || fail "srv/mods/cimlive-1.0.0.jar is missing after boot"
+          MODS_LINE=$(grep -E '\[c-imagine\] mods \([0-9]+\):' "$B1" | head -1)
+          [ -n "$MODS_LINE" ] || fail "no '[c-imagine] mods (N):' line in boot 1"
+          for m in cimlive create sophisticatedbackpacks; do
+            grep -qE "\b$m\b" <<<"$MODS_LINE" || fail "the mods line does not list $m: $MODS_LINE"
+          done
+          echo "$MODS_LINE"
+
+          # The pack side: the join offer is on (the default), and the line says so.
+          grep -q "\[c-imagine\] f2v pack: auto-offer on join" "$B1" \
+            || fail "no '[c-imagine] f2v pack: auto-offer' line in boot 1 (the join offer is off or not logged)"
+
+          # 2. A Create block gets an auto-allocated carrier: the ledger and the resolved rows.
+          LEDGER=srv/c-imagine/f2v/carriers.tsv
+          RESOLVED=srv/c-imagine/f2v/visual-blocks.resolved.tsv
+          test -f "$LEDGER" || fail "no carrier ledger was written ($LEDGER)"
+          ROW=$(awk -F'\t' -v id="$SURVIVAL_ITEM" '$1 == id {print; exit}' "$LEDGER")
+          [ -n "$ROW" ] || fail "carriers.tsv has no $SURVIVAL_ITEM row: the Create block was not auto-allocated"
+          INSTR=$(cut -f2 <<<"$ROW")
+          NOTE=$(cut -f3 <<<"$ROW")
+          KEY="$INSTR:$NOTE"
+          awk -F'\t' -v id="$SURVIVAL_ITEM" -v i="$INSTR" -v n="$NOTE" \
+            '$1 == id && $2 == i && $3 == n {found=1} END {exit !found}' "$RESOLVED" \
+            || fail "visual-blocks.resolved.tsv has no $SURVIVAL_ITEM $INSTR $NOTE row (the HUD would not place it)"
+          echo "carrier for $SURVIVAL_ITEM: $KEY"
+
+          # 3. Placed through the held-item path: the carrier note_block stands at the position.
+          PLACE=$(grep -m1 "\[cim-survival\] place $SURVIVAL_ITEM -> carrier key" "$B1") \
+            || fail "the held Create block was not placed as a carrier (no place line)"
+          GOT=$(sed -n 's/.*carrier key \([^ ]*\) state.*/\1/p' <<<"$PLACE")
+          [ "$GOT" = "$KEY" ] || fail "the placed carrier is $GOT, the ledger says $KEY"
+          grep -q "state minecraft:note_block\[" <<<"$PLACE" || fail "the placed block is not a note_block carrier: $PLACE"
+
+          # 3b. Its block entity is in the ticking set with no menu open (the layer's adopt).
+          grep -qE "\[c-imagine\] live: ticking [1-9][0-9]* placed block entities" "$B1" \
+            || fail "the placed block entity did not join the ticking set (no 'live: ticking N' with N>=1)"
+          grep -qE "\[cim-survival\] ticking after 40 ticks: [1-9][0-9]* carried $SURVIVAL_ITEM" "$B1" \
+            || fail "after 40 server ticks the placed block is not still ticking"
+          grep -q "\[cim-screen\] .* placed $SURVIVAL_ITEM at " "$B1" \
+            || fail "the HUD did not log the placement (placeOrUse path not taken)"
+
+          # 4. A redstone block beside it: the carrier keeps its instrument and note.
+          PULSE=$(grep -m1 "\[cim-survival\] redstone beside -> carried $SURVIVAL_ITEM key" "$B1") \
+            || fail "no redstone-neighbour line"
+          GOT=$(sed -n 's/.*carried [^ ]* key \([^ ]*\) state.*/\1/p' <<<"$PULSE")
+          [ "$GOT" = "$KEY" ] || fail "a redstone neighbour re-tuned the carrier: $KEY became $GOT"
+
+          # 5. Saved, restarted, adopted again, still at its position.
+          grep -q "\[cim-survival\] saved: world written" "$B1" || fail "the world save did not complete"
+          grep -q "\[cim-survival\] resume: carried $SURVIVAL_ITEM key $KEY " "$B2" \
+            || fail "after the restart the carrier of $SURVIVAL_ITEM is not at its position with key $KEY"
+          grep -qE "\[c-imagine\] live: ticking [1-9][0-9]* placed block entities" "$B2" \
+            || fail "after the restart the saved block entity was not adopted into the ticking set"
+          grep -qE "\[cim-survival\] ticking before break: [1-9][0-9]*" "$B2" \
+            || fail "after the restart the adopted block is not ticking before the break"
+
+          # 6. Broken by a survival player: the block's own drop, and no ticking left behind.
+          grep -qE "\[cim-screen\] cimbot broke $SURVIVAL_ITEM: [1-9][0-9]* stack\(s\) dropped" "$B2" \
+            || fail "breaking the placed $SURVIVAL_ITEM did not drop its own item"
+          grep -q "\[cim-survival\] break $SURVIVAL_ITEM -> broke true block now AIR" "$B2" \
+            || fail "the broken block did not become air"
+          grep -q "\[cim-survival\] ticking after break: 0" "$B2" \
+            || fail "a broken placed block is still in the ticking set"
+
+          # The live path never reported an error while it ran.
+          if grep -qE "\[cim-screen\] live (use-on|break|open|close) failed|\[cim-survival\] place .* refused" "$B1" "$B2"; then
+            fail "the live path reported an error (see the cim-screen lines)"
+          fi
+          echo "survival smoke: every assertion held for $SURVIVAL_ITEM (carrier $KEY, restart, break)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: survival-smoke
+          path: |
+            survival-boot-1.log
+            survival-boot-2.log
+            survival-1.txt
+            survival-2.txt
+            cimbot-1.log
+            cimbot-2.log
+            srv/c-imagine/f2v/carriers.tsv
+            srv/c-imagine/f2v/visual-blocks.resolved.tsv
+            srv/logs/latest.log
