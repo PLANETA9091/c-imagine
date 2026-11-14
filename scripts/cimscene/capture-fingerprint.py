@@ -199,29 +199,38 @@ def main(argv=None):
                                      "class": "DIM", "q": qhash,
                                      "scale": round(scale, 3)})
                     continue
-                foreign = "UNMATCHED"
+                # 14-e9.1 the honest semantics: the expected here is the RAW
+                # capture mean, while the pack's composite multiplies it by
+                # the bake's per-face cimtints (0.5-0.8 per channel) and the
+                # display pin's lightmap — a tint-only delta lands here too.
+                # This class = "the ours crop matches neither the raw capture
+                # nor a uniform dim" = TINT-OR-FOREIGN: the per-model audit
+                # (the composite's texture set vs the state's own capture)
+                # separates the two before any fix lane is named.
+                nearest = "UNMATCHED"
                 if len(cap_mat):
                     d = np.abs(cap_mat - ours).mean(axis=1)
                     i = int(np.argmin(d))
                     if d[i] / max(ours.mean(), 8.0) <= args.tolerance:
-                        foreign = cap_ids[i]
-                census["FOREIGN" if foreign != "UNMATCHED" else "UNMATCHED"] += 1
+                        nearest = cap_ids[i]
+                cls = "TINT-OR-FOREIGN"
+                census[cls] += 1
                 rows_out.append({"page": page, "col": r["col"],
                                  "row": r["row"], "state": r.get("state", ""),
-                                 "class": "FOREIGN" if foreign != "UNMATCHED" else "UNMATCHED",
-                                 "q": qhash, "nearest": foreign})
+                                 "class": cls,
+                                 "q": qhash, "nearest": nearest})
 
     total = sum(census.values())
     print(f"red rows audited: {total}")
     for k, v in census.most_common():
         print(f"  {k:14s} {v:5d} ({100.0 * v / max(total, 1):.1f}%)")
-    fam_foreign = collections.Counter(
-        (row["state"].split("[")[0], row.get("nearest", ""))
-        for row in rows_out if row["class"] in ("FOREIGN",))
-    if fam_foreign:
-        print("\nforeign-content families (state family -> the capture ours actually renders):")
-        for (fam, cap), v in fam_foreign.most_common(args.top):
-            print(f"  {fam:52s} {cap[:16]:18s} x{v}")
+    fam_tof = collections.Counter(
+        row["state"].split("[")[0]
+        for row in rows_out if row["class"] == "TINT-OR-FOREIGN")
+    if fam_tof:
+        print("\ntint-or-foreign families (the bake-transform audit separates the two):")
+        for fam, v in fam_tof.most_common(args.top):
+            print(f"  {fam:52s} x{v}")
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump({"census": dict(census), "rows": rows_out}, fh, indent=1)
     print(f"\n-> {args.out}")
