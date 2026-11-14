@@ -103,6 +103,21 @@ public final class LightPoke {
         }
         check(statusAbsent, "ServerChunkCache absent on the test classpath (the getChunkNow chain degrades to the light-only fallback by name)");
 
+        // 14-e10 THE FRONT-AIR PIN CONTRACT: the display pin must read the
+        // light field's AIR row one block toward the camera (z-1), not the
+        // wall block's own row (a solid block holds no light inside — the
+        // measured p34 field: the cell = (10, 0), the front air = (9, 15)).
+        java.util.Map<String, int[]> field = new java.util.HashMap<>();
+        field.put("-5,-60,9", new int[]{10, 0});   // the wall block's own row
+        field.put("-5,-60,8", new int[]{9, 15});   // the front air
+        field.put("-3,-60,9", new int[]{10, 0});   // a cell with no front row in the field
+        int[] pin = CimPlugin.frontAirLight(field, "-5", "-60", "9");
+        check(pin[0] == 9 && pin[1] == 15, "front-air pin reads (x,y,z-1)");
+        int[] own = CimPlugin.frontAirLight(field, "-3", "-60", "9");
+        check(own != null && own[0] == 10 && own[1] == 0, "missing front row falls back to the cell's own row");
+        int[] garbage = CimPlugin.frontAirLight(field, "-5", "-60", "zz");
+        check(garbage == null, "non-numeric z yields null (the caller's legacy chain takes over)");
+
         System.out.println(failures == 0 ? "SELFTESTS ALL PASS" : failures + " FAILURES");
         if (failures > 0) {
             System.exit(1);
