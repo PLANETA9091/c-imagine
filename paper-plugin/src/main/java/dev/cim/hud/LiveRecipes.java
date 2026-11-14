@@ -63,9 +63,11 @@ public final class LiveRecipes {
     private static void fetch(Plugin plugin, Supplier<LiveBridge> bridge, Function<String, ItemStack> carrier) {
         long deadline = System.currentTimeMillis() + WAIT_MS;
         String answer = null;
+        boolean layerSeen = false;
         while (answer == null && System.currentTimeMillis() < deadline) {
             Function<String, String> layer = LiveBridge.entry();
             if (layer != null) {
+                layerSeen = true;
                 String said = layer.apply("recipes");
                 if (!said.startsWith("wait")) {
                     answer = said;
@@ -81,7 +83,10 @@ public final class LiveRecipes {
             }
         }
         if (answer == null) {
-            plugin.getLogger().warning("[c-imagine] recipes: the layer had no recipes after " + WAIT_MS / 1000 + "s");
+            // Plain Paper (no layer) is the normal case: only a layer that never answered is news.
+            if (layerSeen) {
+                plugin.getLogger().warning("[c-imagine] recipes: the layer had no recipes after " + WAIT_MS / 1000 + "s");
+            }
             return;
         }
         if (answer.startsWith("error")) {
@@ -102,6 +107,10 @@ public final class LiveRecipes {
     }
 
     private static void register(Plugin plugin, LiveBridge bridge, Function<String, ItemStack> carrier, String text) {
+        if (bridge == null) {
+            plugin.getLogger().warning("[c-imagine] recipes: no live bridge, no recipes registered");
+            return;
+        }
         List<NamespacedKey> keys = new ArrayList<>();
         Map<String, Integer> skipped = new TreeMap<>();
         int ok = 0;
@@ -111,21 +120,23 @@ public final class LiveRecipes {
                 skipped.merge(f[1], 1, Integer::sum);
                 continue;
             }
-            if (!f[0].equals("recipe")) {
+            if (!f[0].equals("recipe") || f.length < 3) {
                 continue;
             }
             String kind = f[1];
-            String id = f[2];
-            NamespacedKey key = keyOf(id);
+            // One bad recipe is a skip, never the end of the batch.
             try {
+                NamespacedKey key = keyOf(f[2]);
                 Recipe recipe = build(bridge, carrier, key, f);
                 if (!Bukkit.addRecipe(recipe)) {
                     throw new Skip("rejected");
                 }
                 keys.add(key);
                 ok++;
-            } catch (Skip | IllegalArgumentException e) {
-                skipped.merge(kind + " (" + e.getMessage() + ")", 1, Integer::sum);
+            } catch (RuntimeException e) {
+                String reason = e instanceof Skip || e instanceof IllegalArgumentException
+                        ? String.valueOf(e.getMessage()) : "failed " + e.getClass().getSimpleName();
+                skipped.merge(kind + " (" + reason + ")", 1, Integer::sum);
             }
         }
         registered = List.copyOf(keys);
@@ -186,7 +197,11 @@ public final class LiveRecipes {
             case "shapeless": {
                 ShapelessRecipe recipe = new ShapelessRecipe(key, result(bridge, f[3]));
                 for (int i = 4; i < f.length; i++) {
-                    recipe.addIngredient(choice(bridge, carrier, f[i]));
+                    RecipeChoice c = choice(bridge, carrier, f[i]);
+                    if (c == null) {
+                        throw new Skip("empty ingredient");
+                    }
+                    recipe.addIngredient(c);
                 }
                 return recipe;
             }
