@@ -538,45 +538,39 @@ public final class CimSceneMod {
      * (report-only on the server side: the poke never mutates the world).
      */
     private static int lightPoke(CommandSourceStack src, int x, int z) {
+        // 14-e12 THE ROLLBACK: the chunk-packet poke killed the truth shards
+        // TWICE with an identical silent signature (runs 43579201630 +
+        // 43582966242 — "rcon driver died (send: cimscene lightpoke 0 0)",
+        // the server log ends mid-stream, no crash report, no hs_err, no
+        // System.exit trace). The local probe (the layer2121 real server +
+        // the exact construction, 9 chunks, no player) SURVIVED — the death
+        // needs the live dump client's connection on the other end, which
+        // the sandbox cannot reproduce without the full visual client.
+        // With no client-side repro available the poke returns to the
+        // MEASURED-SAFE light-only instrument (14-dz: the 86%-DARK census
+        // fix, the integration receipts across five runs), the chunk path
+        // parks as the named lane 14-e8 (the analysis in the worklog: the
+        // light-only packet cannot re-mesh the client sections — the wall
+        // darks belong to the 14-e10 front-air pin anyway, which this
+        // build carries), and the whole command keeps the 14-e8.1 guard so
+        // ANY future poke failure degrades to a receipt instead of a dead
+        // walk.
         ServerLevel level = src.getLevel();
         LevelLightEngine engine = level.getLightEngine();
         int cx = x >> 4;
         int cz = z >> 4;
         int packets = 0;
-        int missed = 0;
-        int fallback = 0;
-        // 14-e8.1 THE GUARD: run 43579201630 measured the first chunk-poke
-        // attempt KILLING the walk — the truth shards died at the very first
-        // poke send ("rcon driver died (send: cimscene lightpoke 0 0)", the
-        // server log ends mid-stream with no crash report and no lightpoke
-        // receipt), so the chunk path is wrapped per-chunk in catch
-        // Throwable: a failed chunk packet degrades to the 14-dz light-only
-        // packet for that chunk (better than nothing, named in the receipt),
-        // and the whole command degrades to a reply instead of a dead walk.
         try {
             for (ServerPlayer p : level.players()) {
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dz = -1; dz <= 1; dz++) {
-                        LevelChunk chunk = level.getChunkSource().getChunkNow(cx + dx, cz + dz);
-                        if (chunk == null) {
-                            missed++;
-                            continue;
-                        }
                         try {
-                            p.connection.send(new ClientboundLevelChunkWithLightPacket(
-                                    chunk, engine, null, null));
+                            p.connection.send(new ClientboundLightUpdatePacket(
+                                    new ChunkPos(cx + dx, cz + dz), engine, null, null));
                             packets++;
                         } catch (Throwable t) {
-                            LOGGER.warn("[cimscene] lightpoke chunk packet failed at chunk {},{}: {}",
+                            LOGGER.warn("[cimscene] lightpoke packet failed at chunk {},{}: {}",
                                     cx + dx, cz + dz, t.toString());
-                            try {
-                                p.connection.send(new ClientboundLightUpdatePacket(
-                                        new ChunkPos(cx + dx, cz + dz), engine, null, null));
-                                fallback++;
-                            } catch (Throwable t2) {
-                                LOGGER.warn("[cimscene] lightpoke light-only fallback failed too: {}",
-                                        t2.toString());
-                            }
                         }
                     }
                 }
@@ -586,13 +580,10 @@ public final class CimSceneMod {
         }
         int viewers = level.players().size();
         final int n = packets;
-        final int m = missed;
-        final int fb = fallback;
         src.sendSuccess(() -> Component.literal(
-                "[cimscene] lightpoke " + n + " chunk packets -> " + viewers
+                "[cimscene] lightpoke " + n + " packets -> " + viewers
                         + " viewer(s) at chunk " + cx + "," + cz
-                        + (m == 0 ? "" : (" | unloaded-skipped=" + m))
-                        + (fb == 0 ? "" : (" | light-only-fallback=" + fb))), false);
+                        + " (14-e12 light-only; the chunk path parked)"), false);
         return packets;
     }
 
