@@ -2025,7 +2025,11 @@ jobs:
           # play-phase offer pins the same SHA1 for the client's hash check).
           # Measured cost of
           # the rebuild: 4.8 min of every ours boot (#35).
-          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          # -Dcim.f2v.autoOffer=false: the join offer is OFF here — the
+          # explicit 'cim pack cimviewer' below is the one offer this shard
+          # measures (a join offer would double it). publicUrl pins the
+          # loopback URL the same way the server.properties pins did before.
+          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -Dcim.f2v.autoOffer=false -Dcim.f2v.publicUrl=http://127.0.0.1:25580/cim-f2v-pack.zip -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
           # MEASURED (run 42250969085, all 8 ours shards): the client died

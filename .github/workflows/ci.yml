@@ -147,6 +147,7 @@ jobs:
                                        if not Path(p).name.startswith('asm-analysis-')))
           PY
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
+          java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.PackOffer --selftest
       - name: menu verdict test
         run: |
           python3 -m pip install -q pillow
