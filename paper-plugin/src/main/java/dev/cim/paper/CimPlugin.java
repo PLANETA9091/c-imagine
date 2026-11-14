@@ -697,7 +697,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().info("[cim-live] paper " + line);
                 }
             }
-            // Survival smoke (survival.yml): a carrier placed by the held-item path, saved and
+            // Survival smoke (survival.yml): a carrier placed by the mod item's own use, saved and
             // restarted, adopted again and broken. The first boot places it; the second one (phase
             // "resume") adopts it and breaks it. Off unless CIM_SURVIVAL_ITEM names the block.
             String survivalItem = System.getenv("CIM_SURVIVAL_ITEM");
@@ -708,7 +708,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalResume(target, item))) {
                         log().info("[cim-survival] " + line);
                     }
-                    Thread.sleep(2000); // 40 server ticks: the adopted block entity ticks with no menu open
+                    Thread.sleep(2000); // about 40 server ticks (2 s at 20 TPS): the adopted block entity ticks with no menu open
                     for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalBreak(target, item))) {
                         log().info("[cim-survival] " + line);
                     }
@@ -716,7 +716,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalPlace(target, item))) {
                         log().info("[cim-survival] " + line);
                     }
-                    Thread.sleep(2000); // 40 server ticks: the placed block entity ticks with no menu open
+                    Thread.sleep(2000); // about 40 server ticks (2 s at 20 TPS): the placed block entity ticks with no menu open
                     for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalKeep(target, item))) {
                         log().info("[cim-survival] " + line);
                     }

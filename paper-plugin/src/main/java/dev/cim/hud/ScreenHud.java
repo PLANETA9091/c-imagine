@@ -1129,8 +1129,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     /**
      * Survival smoke (CIM_SURVIVAL_ITEM, first boot): a carrier item clicked onto a stone block
-     * through the held-item path a survival player takes ({@link #placeOrUse}), then a redstone
-     * block beside it. Lines are asserted by survival.yml.
+     * through {@link #placeOrUse}, the call onUse makes for a mod item on a block. The smoke calls it
+     * directly, not through a PlayerInteractEvent, so onUse's own item-id gate is not exercised.
+     * Then a redstone block beside it. Lines are asserted by survival.yml.
      */
     public List<String> survivalPlace(Player player, String itemId) {
         List<String> out = new ArrayList<>();

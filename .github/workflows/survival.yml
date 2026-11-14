@@ -3,8 +3,8 @@ name: survival
 # Survival smoke for the live layer on Paper 26.3: the module zip (cimlive included, installed
 # by the loader itself, never copied by this job) boots next to Create and Sophisticated
 # Backpacks. A survival player's path is driven through the harness hooks, all in Paper's
-# overworld: a Create block gets an auto-allocated carrier, is placed through the held-item
-# path, ticks with no menu open, ignores a redstone neighbour, survives a save and a restart,
+# overworld: a Create block gets an auto-allocated carrier, is placed by the mod item's own use
+# (placeOrUse, called directly rather than through a PlayerInteractEvent), ticks with no menu open, ignores a redstone neighbour, survives a save and a restart,
 # and is broken into its own drop. Every assertion is a deterministic grep; a regression fails.
 
 on:
@@ -207,7 +207,7 @@ jobs:
             || fail "visual-blocks.resolved.tsv has no $SURVIVAL_ITEM $INSTR $NOTE row (the HUD would not place it)"
           echo "carrier for $SURVIVAL_ITEM: $KEY"
 
-          # 3. Placed through the held-item path: the carrier note_block stands at the position.
+          # 3. Placed by the mod item's own use (placeOrUse): the carrier note_block stands at the position.
           PLACE=$(grep -m1 "\[cim-survival\] place $SURVIVAL_ITEM -> carrier key" "$B1") \
             || fail "the held Create block was not placed as a carrier (no place line)"
           GOT=$(sed -n 's/.*carrier key \([^ ]*\) state.*/\1/p' <<<"$PLACE")
