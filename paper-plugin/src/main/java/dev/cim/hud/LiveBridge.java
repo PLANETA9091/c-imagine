@@ -410,9 +410,15 @@ final class LiveBridge {
     record Dig(float speed, boolean correct, float refSpeed) {
     }
 
-    /** The layer's {@link Dig} for the held stack, or null when the layer cannot answer. */
+    /**
+     * The layer's {@link Dig} for the held stack, or null when the layer cannot answer. The reference speed
+     * is taken for the host item Paper holds (a mod item is a vanilla carrier item): Paper's own note-block
+     * progress runs at the host's speed, not the mod item's.
+     */
     Dig digSpeed(ItemStack held, String blockId, String refBlockId) {
-        for (String line : call("digspeed\t" + blockId + "\t" + refBlockId + "\t" + toLayer(held)).split("\n")) {
+        String host = held.getType().isAir() ? "-" : toLayer(new ItemStack(held.getType()));
+        for (String line : call("digspeed\t" + blockId + "\t" + refBlockId + "\t" + toLayer(held) + "\t" + host)
+                .split("\n")) {
             String[] p = line.split("\t");
             if (p.length == 4 && p[0].equals("digspeed")) {
                 return new Dig(Float.parseFloat(p[1]), p[2].equals("1"), Float.parseFloat(p[3]));

@@ -562,16 +562,18 @@ public final class LiveProtocol {
     }
 
     /**
-     * digspeed TAB modBlockId TAB refBlockId TAB heldStack: "digspeed TAB speed TAB correct TAB refSpeed",
-     * the held stack's destroy speed on the mod block, whether it is a correct tool for the mod block's
-     * drops, and its destroy speed on the reference block. The held stack is its JSON ("-" for none).
+     * digspeed TAB modBlockId TAB refBlockId TAB heldStack TAB refStack: "digspeed TAB speed TAB correct TAB refSpeed".
+     * The held stack's destroy speed on the mod block and whether it is a correct tool for the mod block's
+     * drops; the ref stack (what Paper actually holds: a mod item's host vanilla item) gives the speed on the
+     * reference block, the one Paper's own break progress runs at. Stacks are their JSON ("-" for none).
      */
     private static String digSpeed(String[] head) {
         ItemStack held = decode(head[3]);
+        ItemStack refHeld = decode(head[4]);
         net.minecraft.world.level.block.state.BlockState mod = blockState(head[1]);
         net.minecraft.world.level.block.state.BlockState ref = blockState(head[2]);
         return "digspeed\t" + held.getDestroySpeed(mod) + "\t" + (held.isCorrectToolForDrops(mod) ? 1 : 0) + "\t"
-                + held.getDestroySpeed(ref) + "\n";
+                + refHeld.getDestroySpeed(ref) + "\n";
     }
 
     /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */

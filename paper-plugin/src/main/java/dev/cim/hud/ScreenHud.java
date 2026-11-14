@@ -1491,10 +1491,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * and adventure only: creative breaks at once, as the game does. A mod block the game never
      * breaks (-1) is not dug at all; a hardness of 0 breaks at once.
      */
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGH)
     public void onCarrierDamage(org.bukkit.event.block.BlockDamageEvent event) {
         Player player = event.getPlayer();
         endDigging(player);
+        if (event.isCancelled()) {
+            return; // no dig starts, so no modifier is kept
+        }
         String modded = carried(event.getBlock());
         LiveBridge bridge = modded == null ? null : live();
         org.bukkit.GameMode mode = player.getGameMode();
@@ -1523,12 +1526,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * or the multiplier cannot be had.
      */
     private void applyBreakSpeed(Player player, LiveBridge bridge, String modded, LiveBridge.BlockInfo info) {
+        org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
+        if (speed == null) {
+            return;
+        }
+        // The previous tool's multiplier goes first: a re-measure that cannot answer leaves the player's own speed.
+        speed.removeModifier(BREAK_SPEED);
         LiveBridge.BlockInfo note = bridge.blockInfo(NOTE);
         LiveBridge.Dig dig = bridge.digSpeed(player.getInventory().getItemInMainHand(), modded, NOTE);
-        org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
         org.bukkit.attribute.AttributeInstance efficiency = player.getAttribute(org.bukkit.attribute.Attribute.MINING_EFFICIENCY);
-        if (note == null || note.hardness() <= 0 || dig == null || dig.refSpeed() <= 0 || speed == null
-                || efficiency == null) {
+        if (note == null || note.hardness() <= 0 || dig == null || dig.refSpeed() <= 0 || efficiency == null) {
             return;
         }
         double m = BreakSpeed.multiplier(info.hardness(), info.requiresTool(), dig.correct(), dig.speed(),
@@ -1536,7 +1543,6 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (!Double.isFinite(m) || m <= 0) {
             return;
         }
-        speed.removeModifier(BREAK_SPEED);
         speed.addTransientModifier(new org.bukkit.attribute.AttributeModifier(BREAK_SPEED,
                 BreakSpeed.modifierAmount(m), org.bukkit.attribute.AttributeModifier.Operation.MULTIPLY_SCALAR_1));
     }
