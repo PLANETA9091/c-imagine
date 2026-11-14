@@ -1,6 +1,7 @@
 package dev.cim.paper;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -3439,17 +3440,32 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
-     * 14-e7 — the light poke, the Paper mirror of the truth leg's
-     * CimSceneMod.lightPoke: re-send the full-chunk light packets for the
-     * 3x3 chunk neighborhood of (x,z) to every online viewer. The packet
-     * ctor (ChunkPos, LevelLightEngine, BitSet, BitSet) with null masks is
-     * the vanilla ChunkMap.playerLoadedChunk shape — idempotent for a lit
-     * client, integrating for a starved one. The plugin compiles against
+     * 14-e8 — the light poke, SECOND GENERATION (the chunk poke). The
+     * first-generation poke (14-e7) re-sent light-ONLY packets and the
+     * d0d59983 run measured it as a RENDER no-op (the batch->e7 gate reds
+     * are bit-identical, 391/397): decompile-proven on 1.21.1, the light
+     * packet's client path (applyLightData) integrates the data into the
+     * light engine but NEVER marks the render sections dirty, so the
+     * section meshes keep the lightmap they sampled at build time — a
+     * mesh built starved stays black forever, and only the CHUNK packet's
+     * enableChunkLight path forces the re-mesh. THE FIX: re-send the
+     * vanilla (re)load shape — ClientboundLevelChunkWithLightPacket
+     * (loaded chunk, engine [, masks]) for the 3x3 chunk neighborhood of
+     * (x,z) to every online viewer. The packet carries the chunk's blocks,
+     * block-entity tags AND the full light data; the client rebuilds every
+     * affected section mesh with the integrated light. Idempotent for a
+     * converged client (the rebuild is byte-identical — the settle loop's
+     * re-verify accepts), integrating for a starved one (the frame CHANGES
+     * — the fake settle is rejected). The plugin compiles against
      * paper-api only, so the NMS chain resolves by name through reflection
-     * (the Paper 26.3 runtime is Mojang-mapped; the packet ctor signature
-     * verified against the 26.3 client jar with javap). Every failure
-     * degrades to a logged message — the poke must never break the walk;
-     * the rcon response is the receipt.
+     * (the Paper 26.3 runtime is Mojang-mapped); the chunk packet ctor is
+     * picked SHAPE-agnostically (any ctor whose first two params accept
+     * (LevelChunk, LevelLightEngine), null-padded to the arity) because
+     * the 26.3 mask-parameter shape is unverified on this classpath. If
+     * the chunk path degrades, the poke falls back to the 14-e7 light-only
+     * packets (better than nothing; the receipt names the degradation).
+     * Every failure degrades to a logged message — the poke must never
+     * break the walk; the rcon response is the receipt.
      */
     private String lightPoke(int x, int z) {
         int cx = x >> 4;
@@ -3458,14 +3474,34 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         int viewers = 0;
         java.util.List<String> problems = new java.util.ArrayList<>();
         try {
-            Class<?> packetClass = Class.forName(
-                    "net.minecraft.network.protocol.game.ClientboundLightUpdatePacket");
-            Class<?> chunkPosClass = Class.forName("net.minecraft.world.level.ChunkPos");
             Class<?> packetIface = Class.forName("net.minecraft.network.protocol.Packet");
-            var ctor = packetClass.getConstructor(chunkPosClass,
-                    Class.forName("net.minecraft.world.level.lighting.LevelLightEngine"),
-                    java.util.BitSet.class, java.util.BitSet.class);
-            var chunkCtor = chunkPosClass.getConstructor(int.class, int.class);
+            Class<?> engineClass = Class.forName(
+                    "net.minecraft.world.level.lighting.LevelLightEngine");
+            // 14-e8: the chunk-with-light packet, shape-agnostic ctor pick.
+            Class<?> chunkPacketClass = null;
+            Constructor<?> chunkPacketCtor = null;
+            Throwable chunkPathProblem = null;
+            try {
+                chunkPacketClass = Class.forName(
+                        "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket");
+                Class<?> levelChunkClass = Class.forName(
+                        "net.minecraft.server.level.LevelChunk");
+                for (Constructor<?> c : chunkPacketClass.getConstructors()) {
+                    Class<?>[] pt = c.getParameterTypes();
+                    if (pt.length >= 2 && pt[0].isAssignableFrom(levelChunkClass)
+                            && pt[1] == engineClass) {
+                        chunkPacketCtor = c;
+                        break;
+                    }
+                }
+                if (chunkPacketCtor == null) {
+                    chunkPathProblem = new NoSuchMethodException(
+                            "no (LevelChunk, LevelLightEngine, ...) ctor on "
+                                    + chunkPacketClass.getName());
+                }
+            } catch (ClassNotFoundException | NoClassDefFoundError e) {
+                chunkPathProblem = e;
+            }
             for (var player : getServer().getOnlinePlayers()) {
                 viewers++;
                 Object handle;
@@ -3490,6 +3526,44 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             + e.getClass().getSimpleName() + ": " + e.getMessage() + ")");
                     continue;
                 }
+                if (chunkPacketCtor != null) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        for (int dz = -1; dz <= 1; dz++) {
+                            try {
+                                Object chunk = getLoadedChunk(level, cx + dx, cz + dz);
+                                if (chunk == null) {
+                                    problems.add((cx + dx) + "," + (cz + dz)
+                                            + ": chunk not loaded, skipped");
+                                    continue;
+                                }
+                                Class<?>[] pt = chunkPacketCtor.getParameterTypes();
+                                Object[] args = new Object[pt.length];
+                                args[0] = chunk;
+                                args[1] = engine;
+                                for (int i = 2; i < pt.length; i++) {
+                                    args[i] = null; // nullable BitSet masks
+                                }
+                                send.invoke(conn, chunkPacketCtor.newInstance(args));
+                                packets++;
+                            } catch (ReflectiveOperationException e) {
+                                problems.add((cx + dx) + "," + (cz + dz) + ": "
+                                        + e.getClass().getSimpleName()
+                                        + (e.getCause() == null ? "" : (": " + e.getCause())));
+                            }
+                        }
+                    }
+                    continue;
+                }
+                // 14-e7 FALLBACK: the light-only packets (they integrate the
+                // engine data; they just cannot force the section re-mesh).
+                problems.add("chunk-poke unavailable ("
+                        + chunkPathProblem + ") — light-only fallback");
+                Class<?> packetClass = Class.forName(
+                        "net.minecraft.network.protocol.game.ClientboundLightUpdatePacket");
+                Class<?> chunkPosClass = Class.forName("net.minecraft.world.level.ChunkPos");
+                var ctor = packetClass.getConstructor(chunkPosClass, engineClass,
+                        java.util.BitSet.class, java.util.BitSet.class);
+                var chunkCtor = chunkPosClass.getConstructor(int.class, int.class);
                 for (int dx = -1; dx <= 1; dx++) {
                     for (int dz = -1; dz <= 1; dz++) {
                         try {
@@ -3512,9 +3586,33 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return "lightpoke: reflection failed (" + e.getClass().getSimpleName()
                     + ": " + e.getMessage() + ") — no packets sent";
         }
-        String base = "lightpoke " + packets + " packets -> " + viewers
+        String base = "lightpoke " + packets + " chunk packets -> " + viewers
                 + " viewer(s) at chunk " + cx + "," + cz;
         return problems.isEmpty() ? base : base + " | " + String.join("; ", problems);
+    }
+
+    /** 14-e8: the loaded full chunk at (cx,cz) via the mojmap chain
+     * ServerLevel.getChunkSource().getChunk(cx, cz, ChunkStatus.FULL, true);
+     * both ChunkStatus package layouts are tried (the class moved from
+     * net.minecraft.world.level.chunk to ...chunk.status across versions).
+     * Returns null when the chunk is absent from the map (skipped, never
+     * loaded on demand — the poke stays report-only). */
+    private static Object getLoadedChunk(Object level, int cx, int cz)
+            throws ReflectiveOperationException {
+        Object status;
+        try {
+            status = Class.forName(
+                    "net.minecraft.world.level.chunk.status.ChunkStatus")
+                    .getField("FULL").get(null);
+        } catch (ClassNotFoundException | NoSuchFieldException e) {
+            status = Class.forName("net.minecraft.world.level.chunk.ChunkStatus")
+                    .getField("FULL").get(null);
+        }
+        Object src = level.getClass().getMethod("getChunkSource").invoke(level);
+        return src.getClass()
+                .getMethod("getChunk", int.class, int.class,
+                        status.getClass(), boolean.class)
+                .invoke(src, cx, cz, status, false);
     }
 
     /** The declared field walk up the class chain (the connection field

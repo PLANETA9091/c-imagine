@@ -71,6 +71,38 @@ public final class LightPoke {
         }
         check(absent, "no NMS on the test classpath (the degradation path is the live path)");
 
+        // 14-e8 the CHUNK poke contract: the primary path re-sends
+        // ClientboundLevelChunkWithLightPacket (the vanilla (re)load shape —
+        // the packet carries blocks + block-entity tags + the full light
+        // data, and the client's enableChunkLight dirties every section and
+        // forces the re-mesh; the light-ONLY packet's applyLightData never
+        // does — the d0d59983 run measured the light-only poke as a render
+        // no-op, 391/397 bit-identical gate reds). The ctor is picked
+        // shape-agnostically at runtime; here we pin the CONTRACT: the
+        // chunk-path classes are absent on this classpath too (the plugin
+        // must degrade to the light-only fallback, never crash), and the
+        // neighborhood/coverage math is unchanged from 14-e7.
+        boolean chunkAbsent;
+        try {
+            Class.forName(
+                    "net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket");
+            chunkAbsent = false;
+        } catch (ClassNotFoundException expected) {
+            chunkAbsent = true;
+        }
+        check(chunkAbsent, "chunk-packet class absent on the test classpath (the chunk poke degrades to the light-only fallback by name)");
+        boolean statusAbsent = false;
+        try {
+            Class.forName("net.minecraft.world.level.chunk.status.ChunkStatus");
+        } catch (ClassNotFoundException expected) {
+            try {
+                Class.forName("net.minecraft.world.level.chunk.ChunkStatus");
+            } catch (ClassNotFoundException expectedToo) {
+                statusAbsent = true;
+            }
+        }
+        check(statusAbsent, "both ChunkStatus layouts absent on the test classpath (the dual-package lookup degrades cleanly)");
+
         System.out.println(failures == 0 ? "SELFTESTS ALL PASS" : failures + " FAILURES");
         if (failures > 0) {
             System.exit(1);

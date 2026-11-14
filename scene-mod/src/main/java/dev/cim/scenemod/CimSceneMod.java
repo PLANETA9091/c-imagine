@@ -27,7 +27,7 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundLightUpdatePacket;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -62,6 +62,7 @@ import net.minecraft.world.item.armortrim.ArmorTrim;
 import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.EntityBlock;
@@ -511,20 +512,29 @@ public final class CimSceneMod {
     static final int FLUID_PITCH = 2;
 
     /**
-     * 14-dz THE LIGHT POKE (the dark-cell instrument; run 43468177851
-     * measured 86% of shard 5's red rows as the lightmap-starvation class:
-     * the crop diff shows the SAME geometry rendering near-black on the ours
-     * leg — the client's light data for the page's sections was empty at
-     * shot time, and the settle loop's two-identical-md5s law passes a
-     * STABLE dark frame as happily as a lit one). The poke rebuilds the
-     * vanilla light packet for the 3x3 chunk neighborhood (the same shape
-     * ChunkMap.playerLoadedChunk sends: full-chunk data, no sky/block masks)
-     * and re-sends it to every player in the level. If the
-     * client was already lit, the packet is idempotent and the next frame is
-     * IDENTICAL — the settle loop's re-verify accepts it. If the client was
-     * starved, the re-send integrates the light and the frame CHANGES — the
-     * re-verify rejects the fake settle and the loop re-runs on live data.
-     * Report-only on the server side: the poke never mutates the world.
+     * 14-e8 THE CHUNK POKE (the dark-cell instrument, second generation).
+     * The first-generation poke (14-dz) re-sent light-ONLY packets and the
+     * e7 run measured it as a RENDER no-op: the batch->e7 comparison shows
+     * 391/397 gate reds BIT-IDENTICAL across the two runs. Root cause,
+     * decompile-proven (1.21.1 ClientPacketListener): applyLightData — the
+     * light packet's whole client path — integrates the data into the
+     * client's light engine and NEVER calls setSectionDirty, so the section
+     * MESHES keep the lightmap coords they sampled at build time (a mesh
+     * built during the starved window stays lightmap-(0,0) black forever);
+     * only the chunk packet's enableChunkLight path dirties every section
+     * (setSectionDirtyWithNeighbors) and forces the re-mesh. THE FIX: the
+     * poke re-sends the vanilla (re)load shape —
+     * ClientboundLevelChunkWithLightPacket(loaded chunk, engine, null,
+     * null) for the 3x3 chunk neighborhood (the same shape
+     * ChunkMap.playerLoadedChunk sends) — the packet carries the chunk's
+     * blocks, block-entity tags AND the full light data, and the client
+     * rebuilds every affected section mesh with the integrated light. If
+     * the client was already converged, the rebuild is byte-identical and
+     * the next frame is IDENTICAL — the settle loop's re-verify accepts it.
+     * If the client was starved, the frame CHANGES — the re-verify rejects
+     * the fake settle and the loop re-runs on live data. Unloaded chunks in
+     * the neighborhood are counted and reported, never loaded on demand
+     * (report-only on the server side: the poke never mutates the world).
      */
     private static int lightPoke(CommandSourceStack src, int x, int z) {
         ServerLevel level = src.getLevel();
@@ -532,21 +542,28 @@ public final class CimSceneMod {
         int cx = x >> 4;
         int cz = z >> 4;
         int packets = 0;
+        int missed = 0;
         for (ServerPlayer p : level.players()) {
             for (int dx = -1; dx <= 1; dx++) {
                 for (int dz = -1; dz <= 1; dz++) {
-                    ChunkPos cp = new ChunkPos(cx + dx, cz + dz);
-                    p.connection.send(new ClientboundLightUpdatePacket(
-                            cp, engine, null, null));
+                    LevelChunk chunk = level.getChunkSource().getChunkNow(cx + dx, cz + dz);
+                    if (chunk == null) {
+                        missed++;
+                        continue;
+                    }
+                    p.connection.send(new ClientboundLevelChunkWithLightPacket(
+                            chunk, engine, null, null));
                     packets++;
                 }
             }
         }
         int viewers = level.players().size();
         final int n = packets;
+        final int m = missed;
         src.sendSuccess(() -> Component.literal(
-                "[cimscene] lightpoke " + n + " packets -> " + viewers
-                        + " viewer(s) at chunk " + cx + "," + cz), false);
+                "[cimscene] lightpoke " + n + " chunk packets -> " + viewers
+                        + " viewer(s) at chunk " + cx + "," + cz
+                        + (m == 0 ? "" : (" | unloaded-skipped=" + m))), false);
         return packets;
     }
 

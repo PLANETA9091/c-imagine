@@ -1526,7 +1526,7 @@ jobs:
                 # packet = identical frame (accept); starved = the re-send
                 # integrates light = the frame CHANGES (the fake settle is
                 # rejected and the loop re-runs on the now-live data).
-                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
                 bash scripts/visual/shot.sh "truth-shots/.settle-post-$NS-p$p.png"
                 POST=$(md5sum "truth-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
                 rm -f "truth-shots/.settle-post-$NS-p$p.png"
@@ -1621,7 +1621,7 @@ jobs:
             # Poke the light packets before the shot: the integration
             # lands inside the window, the self-pair still names any
             # residual time-varying cells honestly.
-            rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+            rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
             bash scripts/visual/shot.sh "truth-shots/gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair: a second shot ~2s later
             bash scripts/visual/shot.sh "truth-shots/gal-e$p-self.png"
@@ -1648,7 +1648,7 @@ jobs:
               # Poke the light packets before the shot: the integration
               # lands inside the window, the self-pair still names any
               # residual time-varying cells honestly.
-              rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+              rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the mob-page 14-aj pattern): the vanilla dyn/large rows now gate and boats/arrows/camels MOVE — the second shot names the time-varying cells (ANIMATED) instead of red-gating an animation phase
               bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES$p-self.png"
@@ -1685,7 +1685,7 @@ jobs:
                 # Poke the light packets before the shot: the integration
                 # lands inside the window, the self-pair still names any
                 # residual time-varying cells honestly.
-                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
                 bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
                 echo "shot $NS $SERIES page $p"
               done
@@ -2636,7 +2636,7 @@ jobs:
                 # packet = identical frame (accept); starved = the re-send
                 # integrates light = the frame CHANGES (the fake settle is
                 # rejected and the loop re-runs on the now-live data).
-                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
                 bash scripts/visual/shot.sh "ours-shots/.settle-post-$NS-p$p.png"
                 POST=$(md5sum "ours-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
                 rm -f "ours-shots/.settle-post-$NS-p$p.png"
@@ -2715,7 +2715,7 @@ jobs:
             # Poke the light packets before the shot: the integration
             # lands inside the window, the self-pair still names any
             # residual time-varying cells honestly.
-            rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+            rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p.png"
             sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror)
             bash scripts/visual/shot.sh "ours-shots/ours-gal-e$p-self.png"
@@ -2738,7 +2738,7 @@ jobs:
               # Poke the light packets before the shot: the integration
               # lands inside the window, the self-pair still names any
               # residual time-varying cells honestly.
-              rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+              rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p.png"
               sleep 2   # 14-bf the self-consistency pair (the truth-leg mirror): the ANIMATED class needs BOTH legs' second shots
               bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES$p-self.png"
@@ -2776,7 +2776,7 @@ jobs:
                 # Poke the light packets before the shot: the integration
                 # lands inside the window, the self-pair still names any
                 # residual time-varying cells honestly.
-                rcon "cimscene lightpoke 0 0" >/dev/null 2>&1
+                rcon "cimscene lightpoke 0 0" 2>&1 | tail -1   # 14-e8 the poke receipt lives in the job log now
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 test -s "ours-shots/ours-gal-e$SERIES-$NS$p.png" || { echo "$NS $SERIES page $p shot missing"; exit 1; }
                 echo "shot $NS $SERIES page $p"
