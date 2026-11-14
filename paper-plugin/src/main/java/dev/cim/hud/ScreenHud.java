@@ -1575,6 +1575,124 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 + " stack(s) dropped");
     }
 
+    /** The note block a carrier is in Paper: the reference its break time is measured against. */
+    private static final String NOTE = "minecraft:note_block";
+
+    /**
+     * The transient BLOCK_BREAK_SPEED modifier a carrier's dig carries. Transient: a crash mid-dig
+     * leaves nothing in the player's saved data.
+     */
+    private static final org.bukkit.NamespacedKey BREAK_SPEED = new org.bukkit.NamespacedKey("cim", "carrier_break_speed");
+
+    /** Per player: the carrier being dug, while its break speed is the mod block's. */
+    private final Map<UUID, Digging> digging = new HashMap<>();
+
+    private record Digging(String blockId) {
+    }
+
+    /**
+     * A carrier's break time is the mod block's, not the note block's: Paper scales the player's
+     * break progress by the time ratio (see {@link BreakSpeed}) while the carrier is dug. Survival
+     * and adventure only: creative breaks at once, as the game does. A mod block the game never
+     * breaks (-1) is not dug at all; a hardness of 0 breaks at once.
+     */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onCarrierDamage(org.bukkit.event.block.BlockDamageEvent event) {
+        Player player = event.getPlayer();
+        endDigging(player);
+        if (event.isCancelled()) {
+            return; // no dig starts, so no modifier is kept
+        }
+        String modded = carried(event.getBlock());
+        LiveBridge bridge = modded == null ? null : live();
+        org.bukkit.GameMode mode = player.getGameMode();
+        if (bridge == null || (mode != org.bukkit.GameMode.SURVIVAL && mode != org.bukkit.GameMode.ADVENTURE)) {
+            return;
+        }
+        LiveBridge.BlockInfo info = bridge.blockInfo(modded);
+        if (info == null) {
+            return; // the layer cannot say: the note block's own time stands
+        }
+        if (info.hardness() < 0) {
+            event.setCancelled(true);
+            return;
+        }
+        if (info.hardness() == 0) {
+            event.setInstaBreak(true);
+            return;
+        }
+        digging.put(player.getUniqueId(), new Digging(modded));
+        applyBreakSpeed(player, bridge, modded, info);
+    }
+
+    /**
+     * Sets the carrier's break speed for the player's held item: the multiplier that turns the note
+     * block's progress per tick into the mod block's. Leaves the player's own speed when the layer
+     * or the multiplier cannot be had.
+     */
+    private void applyBreakSpeed(Player player, LiveBridge bridge, String modded, LiveBridge.BlockInfo info) {
+        org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
+        if (speed == null) {
+            return;
+        }
+        // The previous tool's multiplier goes first: a re-measure that cannot answer leaves the player's own speed.
+        speed.removeModifier(BREAK_SPEED);
+        LiveBridge.BlockInfo note = bridge.blockInfo(NOTE);
+        LiveBridge.Dig dig = bridge.digSpeed(player.getInventory().getItemInMainHand(), modded, NOTE);
+        org.bukkit.attribute.AttributeInstance efficiency = player.getAttribute(org.bukkit.attribute.Attribute.MINING_EFFICIENCY);
+        if (note == null || note.hardness() <= 0 || dig == null || dig.refSpeed() <= 0 || efficiency == null) {
+            return;
+        }
+        double m = BreakSpeed.multiplier(info.hardness(), info.requiresTool(), dig.correct(), dig.speed(),
+                note.hardness(), dig.refSpeed(), efficiency.getValue());
+        if (!Double.isFinite(m) || m <= 0) {
+            return;
+        }
+        speed.addTransientModifier(new org.bukkit.attribute.AttributeModifier(BREAK_SPEED,
+                BreakSpeed.modifierAmount(m), org.bukkit.attribute.AttributeModifier.Operation.MULTIPLY_SCALAR_1));
+    }
+
+    /** A dig ends (a break, an abort, the quit, or the next dig): the player's own break speed comes back. */
+    private void endDigging(Player player) {
+        digging.remove(player.getUniqueId());
+        org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
+        if (speed != null) {
+            speed.removeModifier(BREAK_SPEED);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onCarrierDigEnd(org.bukkit.event.block.BlockDamageAbortEvent event) {
+        endDigging(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onCarrierBroken(org.bukkit.event.block.BlockBreakEvent event) {
+        endDigging(event.getPlayer());
+    }
+
+    /**
+     * The held item changes a dig's tool mid-dig: the break speed is measured again on the next tick,
+     * when the new item is in hand and its attributes have applied.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onCarrierHeld(org.bukkit.event.player.PlayerItemHeldEvent event) {
+        Player player = event.getPlayer();
+        Digging dig = digging.get(player.getUniqueId());
+        if (dig == null || plugin == null) {
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+            LiveBridge bridge = live();
+            if (bridge != null && digging.get(player.getUniqueId()) == dig) {
+                LiveBridge.BlockInfo info = bridge.blockInfo(dig.blockId());
+                if (info != null) {
+                    applyBreakSpeed(player, bridge, dig.blockId(), info);
+                }
+            }
+        });
+    }
+
     /** The mod block id a note-block carrier stands for, or null for a plain note block. */
     private String carried(Block block) {
         if (block == null || block.getType() != Material.NOTE_BLOCK || blockCarriers.isEmpty()) {
@@ -1786,6 +1904,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         close(event.getPlayer());
+        endDigging(event.getPlayer());
     }
 
     private static int check(boolean ok, String what) {
