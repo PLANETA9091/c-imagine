@@ -347,6 +347,8 @@ def crop_pairs(artifacts: pathlib.Path, gate: float):
         for row in data.get("rows", []):
             if row.get("verdict") != "RED":
                 continue
+            if "page" not in row or "col" not in row or "row" not in row:
+                continue  # skip-marker rows carry no cell coordinates
             if row.get("ae", 0) is None or row.get("ae", 0) < gate:
                 continue
             page = row["page"]

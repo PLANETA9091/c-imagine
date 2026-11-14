@@ -1924,6 +1924,8 @@ jobs:
           path: |
             srv-wall/c-imagine/scenes/
             srv-wall/boot.log
+            srv-wall/crash-reports/
+            srv-wall/hs_err_pid*.log
             truth-pins.log
             ground-fill.log
             truth-client-mods.sha256
@@ -3386,6 +3388,8 @@ jobs:
           name: wall-ours-meta-${{ matrix.shard }}
           path: |
             srv-wall/boot.log
+            srv-wall/crash-reports/
+            srv-wall/hs_err_pid*.log
             ours-pins.log
             ground-fill.log
             visual-client/client.out

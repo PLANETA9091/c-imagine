@@ -3407,12 +3407,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // exactly the re-verify contract the walk expects. Report-only: the
         // poke never mutates the world.
         if (args.length == 3 && args[0].equalsIgnoreCase("lightpoke")) {
+            // 14-e8.1 the poke must ANSWER, never throw: a silent dead rcon
+            // (run 43579201630: the mod-side poke killed the truth shards'
+            // walk mid-settle) is exactly the failure mode this handler is
+            // written against. catch Throwable — Errors included — and put
+            // the reason on the wire.
             try {
                 int[] xz = parsePokeArgs(args[1], args[2]);
                 sender.sendMessage(LOG_PREFIX + callSync(() -> lightPoke(xz[0], xz[1])));
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "lightpoke: bad coordinates: "
                         + args[1] + " " + args[2]);
+            } catch (Throwable t) {
+                sender.sendMessage(LOG_PREFIX + "lightpoke: degraded (" + t + ")");
             }
             return true;
         }
