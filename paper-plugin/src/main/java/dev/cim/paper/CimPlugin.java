@@ -298,8 +298,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private void f2vAutoOfferInit() {
         boolean knob = dev.cim.f2v.PackOffer.flag("cim.f2v.autoOffer",
                 System.getenv("CIM_F2V_AUTO_OFFER"), true);
+        // Required only when the operator named a reachable address: a guessed host
+        // address that a remote client cannot reach would kick every player.
+        boolean named = dev.cim.f2v.PackOffer.text("cim.f2v.publicUrl",
+                System.getenv("CIM_F2V_PUBLIC_URL"), null) != null
+                || !dev.cim.f2v.PackOffer.isAnyLocal(serverProperties().getProperty("server-ip"));
         packAutoOfferRequired = dev.cim.f2v.PackOffer.flag("cim.f2v.autoOfferRequired",
-                System.getenv("CIM_F2V_AUTO_OFFER_REQUIRED"), true);
+                System.getenv("CIM_F2V_AUTO_OFFER_REQUIRED"), named);
         String skip = dev.cim.f2v.PackOffer.autoOfferSkipReason(knob, serverProperties());
         packAutoOffer = skip == null;
         log().info(LOG_PREFIX + (packAutoOffer

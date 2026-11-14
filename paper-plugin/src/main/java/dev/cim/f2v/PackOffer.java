@@ -26,7 +26,7 @@ import java.util.Properties;
  *       PlayerJoinEvent (default true). Skipped when server.properties already
  *       sets {@code resource-pack}: the server offers it in the config phase.</li>
  *   <li>{@code cim.f2v.autoOfferRequired} / {@code CIM_F2V_AUTO_OFFER_REQUIRED}
- *       — the {@code required} flag of the join offer (default true).</li>
+ *       — the {@code required} flag of the join offer (default true only when publicUrl or server-ip names the address).</li>
  * </ul>
  */
 public final class PackOffer {

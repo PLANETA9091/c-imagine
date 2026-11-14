@@ -100,6 +100,13 @@ To keep it out of the server, set `"bundledMods": false` in `crus/c-imagine.json
 delete `<server>/mods/cimlive-1.0.0.jar`: the loader never removes a jar it installed, and
 while bundled mods stay on it reinstalls the jar on every boot.
 
+Resource pack for players: the module serves the F2V pack on port 25580 on all
+interfaces and offers it on join. Set `CIM_F2V_PUBLIC_URL` (or `-Dcim.f2v.publicUrl`)
+to the address players reach (or `server-ip` in `server.properties`); the offer is
+then required. `CIM_F2V_BIND`, `CIM_F2V_PORT`, `CIM_F2V_AUTO_OFFER=false` and
+`CIM_F2V_AUTO_OFFER_REQUIRED` override the defaults. A `resource-pack=` line in
+`server.properties` turns the module's own offer off.
+
 Boot log markers to look for:
 
 ``[c-imagine] module init`` → `[c-imagine] bootstrap ready` →
