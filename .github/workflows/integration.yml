@@ -16,6 +16,7 @@ on:
       - "java/**"
       - "paper-plugin/**"
       - "test-mods/**"
+      - "live-mod/**"
       - "scripts/**"
       - "scene-mod/**"
       - "Cargo.toml"

@@ -96,7 +96,9 @@ cd <server> && crussty run
 The zip also carries `cimlive-1.0.0.jar` (live menus and block place/break). When a
 layer is configured (`crus/c-imagine.json` with `layerDir`), the loader copies it into
 `<server>/mods/` before the mods scan, and only rewrites it when the bytes differ.
-To keep it out of the server, set `"bundledMods": false` in `crus/c-imagine.json`.
+To keep it out of the server, set `"bundledMods": false` in `crus/c-imagine.json` and
+delete `<server>/mods/cimlive-1.0.0.jar`: the loader never removes a jar it installed, and
+while bundled mods stay on it reinstalls the jar on every boot.
 
 Boot log markers to look for:
 
