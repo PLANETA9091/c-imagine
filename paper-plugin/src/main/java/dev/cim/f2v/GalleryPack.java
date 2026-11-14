@@ -2787,10 +2787,14 @@ public final class GalleryPack {
             one.add(unlit.element());
             child.add("elements", one);
             double[] tint = elementTints == null ? null : elementTints.get(elementIdx);
-            if (tint != null) {
-                // The node tint reaches a quad only through its tintindex
-                // (an untinted face skips tinting entirely) — mark the shared
-                // content BEFORE it serializes.
+            // 14-e19.1: BOTH tint channels reach a quad only through its
+            // tintindex (an untinted face skips tinting entirely) — the e19
+            // run proved the ratio was baked into the pack but INERT (the
+            // verdict unchanged: the light-tint branch never marked the
+            // shared content). Mark BEFORE serialization when either tint
+            // rides the node.
+            double[] lightTint = elementLightTints == null ? null : elementLightTints.get(elementIdx);
+            if (tint != null || lightTint != null) {
                 shadeTintIndex(unlit.element());
             }
             String childRef = sharedUnlitModel(child, entries);
@@ -2798,13 +2802,8 @@ public final class GalleryPack {
             node.add("transformation", unlit.transformation());
             if (tint != null) {
                 applyShadeTint(node, tint);
-            } else if (elementLightTints != null) {
-                // 14-e19: the per-quad light ratio rides the same constant-tint
-                // channel where no shade tint owns the row.
-                double[] lightTint = elementLightTints.get(elementIdx);
-                if (lightTint != null) {
-                    applyShadeTint(node, lightTint);
-                }
+            } else if (lightTint != null) {
+                applyShadeTint(node, lightTint);
             }
             children.add(node);
         }
