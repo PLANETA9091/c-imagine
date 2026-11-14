@@ -232,7 +232,7 @@ jobs:
       # f2v/inputs.sha1 and every consumer compares it against this hash.
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('.github/workflows/gallery.yml', 'scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -1966,7 +1966,7 @@ jobs:
       # hashFiles lives in a step — job-level env rejects it, measured #48)
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('.github/workflows/gallery.yml', 'scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         id: jdk25
