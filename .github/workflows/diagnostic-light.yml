@@ -1,0 +1,117 @@
+name: diagnostic-light
+
+# 14-e30(b') — THE DISPLAY-LIGHT DIAGNOSTIC SHARD.
+# Manual dispatch only (the workflow_dispatch group = separate from the
+# gallery's concurrency group; this run NEVER supersedes a gallery).
+#
+# The question it settles on the EXACT production stack (the runner's mesa 26
+# GLX, the 26.3 vanilla client): for an item_display carrying the pack's
+# block-model route, which light source reaches the shader —
+#   (1) the Brightness override (the bytecode says the client consumes it via
+#       DisplayRenderer.get{Block,Sky}LightLevel),
+#   (2) the entity's positional light (the e24 front-air rig's premise), or
+#   (3) neither (the e25 census measured the wall-class rows at the sky-0
+#       ambient band ~0.46 with the pin (0,15) AND the rig in place).
+#
+# The matrix: four item_display entities (the same flat white paper item),
+#   A = inside an opaque calcite cell, no override
+#   B = inside the same cell, override (0,15)      <- the pin as the CI pins it
+#   C = inside the same cell, override (15,15)     <- fullbright override
+#   D = one block into the front air, override (0,15)  <- the e24 rig
+# The crop luma of A vs B vs C vs D decides: A==B => the override is a no-op;
+# B==C => the override IS consumed (and the e25 census lightmap = the sky-0
+# means the POSITION is the boss, so D must go fullbright); A==D => the
+# position does not matter either and the light = something else entirely.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  display-light:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install display stack
+        run: |
+          set -euo pipefail
+          echo "[apt_retry] 2 attempts"; for i in 1 2; do
+            sudo apt-get update -qq && break || sleep 20
+          done
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 mesa-utils imagemagick > /dev/null
+          glxinfo -display :99 2>/dev/null | head -3 || true
+
+      - name: boot server + client
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset < /dev/null > xvfb.log 2>&1 &
+          sleep 2
+          glxinfo -display :99 | head -4 || echo "GLX probe FAILED"
+
+      - name: fetch client runtime
+        run: |
+          set -euo pipefail
+          python3 scripts/fetch-visual-client.py 26.3 /tmp/rig/client --assets 2>&1 | tail -2
+
+      - name: local server boot
+        run: |
+          set -euo pipefail
+          curl -s -m 240 https://piston-data.mojang.com/v1/objects/33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c/server.jar -o /tmp/server.jar
+          mkdir -p /tmp/srv && cp /tmp/server.jar /tmp/srv/server.jar
+          cd /tmp/srv
+          echo "eula=true" > eula.txt
+          printf 'online-mode=false\nlevel-type=minecraft:flat\nspawn-protection=0\nview-distance=4\nsimulation-distance=4\nmotd=diag\n' > server.properties
+          mkfifo cmd.fifo
+          java -Xmx1G -jar server.jar nogui < cmd.fifo > boot.log 2>&1 &
+          exec 3<> cmd.fifo
+          for _ in $(seq 1 120); do grep -q "Done (" boot.log && break; sleep 1; done
+          grep "Done (" boot.log
+
+      - name: client join + scene + crops
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/rig/client/game
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\n' > /tmp/rig/client/game/options.txt
+          cd /tmp/rig/client
+          setsid bash -c 'cd /tmp/rig/client && DISPLAY=:99 bash launch.txt > client.out 2>&1' < /dev/null > /dev/null 2>&1 &
+          for _ in $(seq 1 240); do grep -q "joined the game" /tmp/srv/boot.log && break; sleep 1; done
+          grep -q "joined the game" /tmp/srv/boot.log || { tail -20 client.out; exit 1; }
+          # the scene: the opaque wall at y=-60; the four displays at x=-1..2
+          # A(-1) B(0) C(1) inside the wall cell column, D(2) in the front air
+          exec 3<> /tmp/srv/cmd.fifo
+          printf '%s\n' \
+            "setblock -1 -60 0 minecraft:calcite" \
+            "setblock 0 -60 0 minecraft:calcite" \
+            "setblock 1 -60 0 minecraft:calcite" \
+            "summon item_display -0.5 -59.5 0.5 {brightness:{sky:15b,block:0b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
+            "summon item_display 0.5 -59.5 0.5 {brightness:{sky:15b,block:0b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
+            "summon item_display 1.5 -59.5 0.5 {brightness:{sky:15b,block:15b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
+            "summon item_display 2.5 -59.5 0.5 {brightness:{sky:15b,block:0b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
+            "tp @a -0.0 -58.5 12.0 0 8" \
+            "time set noon" \
+            "gamerule doDaylightCycle false" >&3
+          sleep 6
+          java -cp vtools Shot /tmp/rig/shot.png || true
+          ls -la /tmp/rig/shot.png
+
+      - name: the luma receipt
+        run: |
+          set -euo pipefail
+          python3 - << 'PY'
+          from PIL import Image
+          import statistics
+          img = Image.open('/tmp/rig/shot.png').convert('RGB')
+          w, h = img.size
+          px = img.load()
+          # scan for the four paper quads: the brightest flat white regions
+          print("shot:", w, "x", h)
+          # crude receipt: the whole-frame luma histogram + the row bands
+          rows = []
+          for y in range(0, h, 8):
+              vals = [sum(px[x, y])/3 for x in range(0, w, 8)]
+              rows.append((y, round(statistics.mean(vals),1)))
+          for y, m in rows:
+              if m > 30: print(y, m)
+          PY
