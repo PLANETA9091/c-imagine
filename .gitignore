@@ -77,3 +77,13 @@ paper-plugin/src/main/resources/assets/
 
 # local GH credentials (never commit)
 /.secrets/
+
+# Session working artifacts (the e-era strays, the AGENTS.md law: artifacts only, never committed)
+/*.zip
+/entity_pair.png
+/truth-shots/
+/ours-shots/
+/visual-client/
+/srv-wall/
+/vtools/
+/*.log
