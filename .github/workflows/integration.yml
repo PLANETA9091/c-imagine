@@ -16,6 +16,7 @@ on:
       - "java/**"
       - "paper-plugin/**"
       - "test-mods/**"
+      - "live-mod/**"
       - "scripts/**"
       - "scene-mod/**"
       - "Cargo.toml"
@@ -72,6 +73,10 @@ jobs:
         working-directory: paper-plugin
         run: mvn -q -B package
 
+      - name: build cimlive (the module zip ships it)
+        working-directory: live-mod
+        run: gradle build --no-daemon
+
       - name: build + package module
         env:
           CIM_BOOTSTRAP_JAR: ${{ github.workspace }}/java/cim-bootstrap/build/cim-bootstrap.jar
@@ -106,8 +111,10 @@ jobs:
       - name: configure c-imagine layer
         run: |
           mkdir -p srv/crus
+          # bundledMods=false: the module zip ships cimlive, but this boot keeps its
+          # proven mod set (cimlive is installed only where live menus are tested)
           cat > srv/crus/c-imagine.json <<'JSON'
-          {"layerDir": "layer1211/libraries"}
+          {"layerDir": "layer1211/libraries", "bundledMods": false}
           JSON
           # layer boot needs headroom alongside Paper (M0 budget stays in place
           # for bare boots; this boot runs Paper + relocated 1.21.1 stack)

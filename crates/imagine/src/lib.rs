@@ -13,6 +13,7 @@ use std::path::PathBuf;
 
 use cplug_abi::{CPluginApi, JavaVmPtr};
 
+mod bundled;
 mod kernel_bridge;
 mod layerconfig;
 mod modwatch;
@@ -172,13 +173,25 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
         );
     }
 
-    // 3) Scan mods/ (static, no class loading) and build the manifest.
-    //    Runs before the Java call: the manifest travels inside the same JNI
-    //    session (registerMods + loadMods consume it on the Java side).
     let mods_dir = opts
         .mods_dir
         .clone()
         .unwrap_or_else(|| PathBuf::from("mods"));
+
+    // 3) Bundled mods (cimlive) ride in the module dir; the layer only sees
+    //    mods/, so install them there first. Only with a layer configured: the
+    //    jars need the layer, and the M0 boot (no layer) must not change.
+    //    Opt out with `"bundledMods": false` in crus/c-imagine.json.
+    let bundled_enabled = !layer_cfg.layer_dir.is_empty() && !layer_cfg.bundled_mods_disabled;
+    if let Some(module_dir) =
+        bundled::module_dir(&module_lib, opts.modules_dir.as_deref()).filter(|_| bundled_enabled)
+    {
+        bundled::install_bundled_mods(&module_dir, &mods_dir, bundled::BUNDLED_MODS);
+    }
+
+    // 4) Scan mods/ (static, no class loading) and build the manifest.
+    //    Runs before the Java call: the manifest travels inside the same JNI
+    //    session (registerMods + loadMods consume it on the Java side).
     let (manifest, count) = modwatch::scan_and_build_manifest(&mods_dir);
     eprintln!(
         "{} loader: scanned {} jar(s) in {}",
@@ -187,7 +200,7 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
         mods_dir.display()
     );
 
-    // 4) Drive the Java side through JNI: layer boot, then mod execution.
+    // 5) Drive the Java side through JNI: layer boot, then mod execution.
     let status = run_bootstrap(
         vm,
         &jar_path,

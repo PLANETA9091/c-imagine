@@ -221,8 +221,8 @@ jobs:
           JAVA_HOME: ${{ steps.jdk21.outputs.path }}
         run: |
           bash scripts/build-bootstrap.sh
-          CIM_BOOTSTRAP_JAR="$PWD/java/cim-bootstrap/build/cim-bootstrap.jar" bash scripts/package-module.sh
           gradle build --no-daemon -p live-mod
+          CIM_BOOTSTRAP_JAR="$PWD/java/cim-bootstrap/build/cim-bootstrap.jar" bash scripts/package-module.sh
       - name: scaffold Paper 26.3 with CRUSSTY
         env:
           GH_TOKEN: ${{ github.token }}
