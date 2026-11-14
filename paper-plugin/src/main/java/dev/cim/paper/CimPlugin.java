@@ -360,6 +360,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
         netWatch.attach(event.getPlayer());
+        dev.cim.hud.LiveRecipes.discover(event.getPlayer());
         if (packAutoOffer && visualPack != null) {
             try {
                 offerVisualPack(event.getPlayer(), packAutoOfferRequired);

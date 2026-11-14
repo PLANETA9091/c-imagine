@@ -302,6 +302,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     private LiveBridge live;
 
+    /** The live bridge for the layer's recipe export at boot; null without the layer. */
+    LiveBridge liveBridge() {
+        return live();
+    }
+
     private LiveBridge live() {
         if (live == null && plugin != null && LiveBridge.available()) {
             live = new LiveBridge(plugin, this::carrier, this::itemId);
