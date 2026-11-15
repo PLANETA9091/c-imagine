@@ -42,6 +42,7 @@ jobs:
           python3 scripts/cimscene/test-coverage-gate.py
           python3 scripts/cimscene/test-fidelity-forensics.py
           python3 scripts/cimscene/test-verdict-pull.py
+          python3 scripts/visual/test-probe-client.py
           python3 scripts/cimscene/test-mesh-diff.py
           python3 scripts/cimscene/test-wait-scene-marker.py
           python3 scripts/cimscene/test-parity-channels.py
