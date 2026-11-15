@@ -343,9 +343,32 @@ def main():
                     help="cell pitch in blocks (the sparse entity grid uses "
                          "2 — mirror of CimSceneMod.ENTITY_PITCH); the crop "
                          "geometry scales with it")
+    ap.add_argument("--cam-x", type=float, default=None,
+                    help="14-e32 the isolation lane: the camera's world x "
+                         "(default: the pitch-1 pin 0.5). The iso pin sits at "
+                         "the pitch-2 wall's centre (GALLERY_X0 + pitch*10/2 "
+                         "+ 0.5 = 5.5) and the walk's tp MUST match it — the "
+                         "projection is the pinhole law over (x - cam_x)/dist")
+    ap.add_argument("--eye-y", type=float, default=None,
+                    help="14-e32 the isolation lane: the camera's world eye y "
+                         "(default: the pitch-1 pin -58.38 = tp_y + 1.62 eye "
+                         "height). The iso pin frames the 7-row pitch-2 wall "
+                         "centred: -53.5 (tp y -55.12)")
+    ap.add_argument("--dist", type=float, default=None,
+                    help="14-e32 the isolation lane: the camera-to-wall "
+                         "distance (default: the pitch-1 pin 8.5 = wall z 9 - "
+                         "camera z 0.5). The iso pin needs the vertical "
+                         "half-height >= 7.25 blocks: dist 11 (camera z -2)")
     args = ap.parse_args()
-    global PITCH
+    global PITCH, CAM_X, EYE_Y, DIST, CELL_PX
     PITCH = max(1, args.pitch)
+    if args.cam_x is not None:
+        CAM_X = args.cam_x
+    if args.eye_y is not None:
+        EYE_Y = args.eye_y
+    if args.dist is not None:
+        DIST = args.dist
+    CELL_PX = F / DIST
     import re as _re
     demote_rx = [_re.compile(rx) for rx in args.demote_family]
 

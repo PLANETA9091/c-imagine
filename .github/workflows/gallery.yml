@@ -1586,6 +1586,53 @@ jobs:
             done
             [ "$EXHAUSTED" = "1" ] || { echo "$NS block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
           done
+
+          # 14-e32 THE ISOLATION PROBE (ae2, DIAGNOSTIC-first): the pitch-2
+          # wall — every state in a one-block AIR MOAT (the mod's isopage
+          # walk), the ISO camera (centre x 5.5, dist 11, tp y = eye -53.5
+          # - 1.62 = -55.12, tp z = wall 9 - dist 11 = -2). The 14-dg
+          # receipt measured the per-cell join structurally under-measuring
+          # the cross-cell families (the walls' neighbour arms = the
+          # NO-PAIR mass, the translucent jars/doors): the moat kills the
+          # leak at the source. The ae2 quartz walls are the probe target.
+          ISO_EXH=0
+          for p in $(seq $SI $K $MAXP); do
+            base_of "gallery-blockiso-ae2-p$p"
+            rcon "cimscene gallery isopage ae2 $p"
+            RC=0; wait_done "gallery-blockiso-ae2-p$p" "$V0D" "$V0E" || RC=$?
+            [ "$RC" = "2" ] && { echo "ae2 iso page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+            if [ "$RC" = "1" ]; then echo "ae2 iso walk exhausted at page $p"; ISO_EXH=1; break; fi
+            grep "gallery-iso done ns=ae2 page=$p " srv-wall/boot.log | tail -1 || true
+            sleep 1
+            PREV=""; SETTLE_ROUNDS=0
+            while [ "$SETTLE_ROUNDS" -lt 3 ]; do
+              SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
+              for i in $(seq 1 8); do
+                rcon "tp cimviewer 5.5 -55.12 -2 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "truth-shots/.isettle-ae2-p$p.png"
+                CUR=$(md5sum "truth-shots/.isettle-ae2-p$p.png" | cut -d' ' -f1)
+                if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+                PREV="$CUR"
+              done
+              rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+              tail -1 poke-receipt.log
+              bash scripts/visual/shot.sh "truth-shots/.isettle-post-ae2-p$p.png"
+              POST=$(md5sum "truth-shots/.isettle-post-ae2-p$p.png" | cut -d' ' -f1)
+              rm -f "truth-shots/.isettle-post-ae2-p$p.png"
+              if [ "$POST" = "$CUR" ]; then break; fi
+              PREV="$POST"
+            done
+            rm -f "truth-shots/.isettle-ae2-p$p.png"
+            bash scripts/visual/shot.sh "truth-shots/gal-iso-ae2$p.png"
+            DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "srv-wall/c-imagine/scenes/gallery-blockiso-ae2-p$p.tsv" 2>/dev/null || echo 0)
+            if [ "${DYNC:-0}" -gt 0 ]; then
+              bash scripts/visual/shot.sh "truth-shots/gal-iso-ae2$p-t0.png"
+              sleep 2
+              bash scripts/visual/shot.sh "truth-shots/gal-iso-ae2$p-t1.png"
+            fi
+            echo "iso shot ae2 page $p"
+          done
+          [ "$ISO_EXH" = "1" ] || { echo "ae2 iso walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
           # determinism probe: re-place page 0, shoot again (diagnostic,
           # not gated) — shard 0 owns page 0 (0 = 0 mod K)
           if [ "$SI" = "0" ]; then
@@ -2719,6 +2766,52 @@ jobs:
           done
 
 
+          # 14-e32 THE ISOLATION PROBE ours leg (ae2): the pitch-2 replay —
+          # the plugin's galleryisopage reads the blockiso manifest and
+          # spawns the displays at the manifest's own pitch-2 x/y/z; the
+          # settle protocol + the ISO camera mirror the truth leg 1:1.
+          ISO_EXH=0
+          for p in $(seq $SI $K $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-blockiso-ae2-p$p.tsv"
+            [ -f "$M" ] || { echo "no iso manifest for ae2 page $p — ours iso replay exhausted"; ISO_EXH=1; break; }
+            OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
+              "cim galleryisopage ae2 $p")
+            echo "$OUT" | tee "ours-rcon-iso-ae2-p$p.log"
+            echo "$OUT" | grep -q "galleryisopage ae2 p$p -> placed=" \
+              || { echo "ae2 iso page $p no placed marker in the RCON response"; exit 1; }
+            ours_alive || { echo "ours client died on ae2 iso page $p — the ours leg must never die"; exit 1; }
+            sleep 1
+            PREV=""; SETTLE_ROUNDS=0
+            while [ "$SETTLE_ROUNDS" -lt 3 ]; do
+              SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
+              for i in $(seq 1 8); do
+                rcon "tp cimviewer 5.5 -55.12 -2 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "ours-shots/.isettle-ae2-p$p.png"
+                CUR=$(md5sum "ours-shots/.isettle-ae2-p$p.png" | cut -d' ' -f1)
+                if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+                PREV="$CUR"
+              done
+              rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+              tail -1 poke-receipt.log
+              bash scripts/visual/shot.sh "ours-shots/.isettle-post-ae2-p$p.png"
+              POST=$(md5sum "ours-shots/.isettle-post-ae2-p$p.png" | cut -d' ' -f1)
+              rm -f "ours-shots/.isettle-post-ae2-p$p.png"
+              if [ "$POST" = "$CUR" ]; then break; fi
+              PREV="$POST"
+            done
+            rm -f "ours-shots/.isettle-ae2-p$p.png"
+            bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p.png"
+            DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "$M" 2>/dev/null || echo 0)
+            if [ "${DYNC:-0}" -gt 0 ]; then
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p-t0.png"
+              sleep 2
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p-t1.png"
+            fi
+            test -s "ours-shots/ours-gal-iso-ae2$p.png" || { echo "ae2 iso page $p shot empty/missing"; exit 1; }
+            echo "ours iso shot ae2 page $p"
+          done
+          [ "$ISO_EXH" = "1" ] || { echo "ours ae2 iso replay hit the MAXP cap — staged iso manifest set incomplete"; exit 1; }
+
       - name: entity replay — STRIDE (MOB gate + dyn/large diagnostic + every ladder ns)
         run: |
           set -euo pipefail
@@ -3141,6 +3234,27 @@ jobs:
                 --demote-family '^supplementaries:gunpowder\[burning=[1-9]' \
                 $SELF_T $SELF_O || GATE=1
             done
+          done
+
+          echo "=== ISO pages (14-e32, DIAGNOSTIC — the pitch-2 moat wall, ae2 probe): join-iso files are diag-iso-*.json, the gate reads them report-only ==="
+          for p in $(seq $SI $K $MAXP); do
+            T="truth-shots/gal-iso-ae2$p.png"
+            O="ours-shots/ours-gal-iso-ae2$p.png"
+            M="truth-meta/srv-wall/c-imagine/scenes/gallery-blockiso-ae2-p$p.tsv"
+            if [ ! -f "$M" ]; then echo "ae2 iso page $p: no iso manifest — stride exhausted here"; break; fi
+            if [ ! -f "$T" ] || [ ! -f "$O" ]; then echo "missing ae2 iso shot p$p (diagnostic lane — reported, not gated)"; continue; fi
+            SELF_T=""; SELF_O=""
+            [ -f "truth-shots/gal-iso-ae2$p-t1.png" ] && SELF_T="--truth-self truth-shots/gal-iso-ae2$p-t1.png"
+            [ -f "ours-shots/ours-gal-iso-ae2$p-t1.png" ] && SELF_O="--ours-self ours-shots/ours-gal-iso-ae2$p-t1.png"
+            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              --manifest "$M" \
+              --out "gallery-report/diag-iso-ae2-p$p.json" \
+              --diff-dir "gallery-report/diff-iso-ae2-p$p" --gate-dyn \
+              --anim-floor 1000 \
+              --pitch 2 --cam-x 5.5 --eye-y -53.5 --dist 11 \
+              --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
+              $SELF_T $SELF_O || true
+            echo "iso join ae2 page $p done (diagnostic)"
           done
           echo "=== ENTITY pages: the same gate, no channel excuses ==="
           for p in $(seq $SI $K $((EPAGES-1))); do

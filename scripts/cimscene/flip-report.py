@@ -44,7 +44,7 @@ def ns_of(name):
     # Entity pages use -N; block/item and diagnostic pages use -pN.
     m = re.fullmatch(
         r'(?:join-(?:(?:item|fluid|particle|e(?:-(?:dyn|large))?)-)?'
-        r'|diag-(?:sound|pstream|held|gui|biome|inv)-)'
+        r'|diag-(?:sound|pstream|held|gui|biome|inv|iso)-)'
         r'([a-z0-9_.-]+?)-p?\d+\.json', name)
     return m.group(1) if m else "minecraft"
 
@@ -64,8 +64,11 @@ def main():
             if d is None:
                 continue
             name = os.path.basename(f)
-            match = re.match(r'join-(item|fluid|particle|e)(?:-|\d)', name)
-            cls = match.group(1) if match else "block"
+            if name.startswith("diag-iso-"):
+                cls = "blockiso"   # 14-e32 the isolation lane (diagnostic)
+            else:
+                match = re.match(r'join-(item|fluid|particle|e)(?:-|\d)', name)
+                cls = match.group(1) if match else "block"
             # The dyn/large entity series are diagnostic, separate from mobs.
             if cls == "e" and re.search(r'-(dyn|large)-', name):
                 cls = "e-" + re.search(r'-(dyn|large)-', name).group(1)

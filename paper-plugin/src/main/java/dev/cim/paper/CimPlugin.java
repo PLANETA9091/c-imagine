@@ -1413,6 +1413,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * Returns the placed count.
      */
     private int galleryPage(String ns, int page) {
+        return galleryPage(ns, page, "gallery-" + ns + "-p" + page + ".tsv");
+    }
+
+    /**
+     * 14-e32: the manifest NAME is a parameter — the isolation lane rides
+     * {@code gallery-blockiso-<ns>-p<page>.tsv} (the pitch-2 manifests the
+     * truth walk writes) through the exact same replay; every sibling file
+     * (.ctx.tsv, .light, .benbt) resolves off the manifest name, so the
+     * pitch-2 page's light field and CT indices ride with it unchanged.
+     */
+    private int galleryPage(String ns, int page, String manifestName) {
         if (f2v == null || f2v.gallery().isEmpty()) {
             log().warning(LOG_PREFIX + "f2v gallery: no gallery rows in the pack "
                     + "(build the pack with visual-gallery.tsv)");
@@ -1459,7 +1470,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
         }
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
-                "gallery-" + ns + "-p" + page + ".tsv");
+                manifestName);
         if (!Files.isRegularFile(mf)) {
             log().warning(LOG_PREFIX + "f2v gallery: manifest missing: " + mf);
             return 0;
@@ -3255,11 +3266,31 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         if (args.length >= 3 && args[0].equalsIgnoreCase("gallerypage")) {
             try {
                 int page = Integer.parseInt(args[2]);
-                int placed = galleryPage(args[1], page);
+                int placed = galleryPage(args[1], page,
+                        "gallery-" + args[1] + "-p" + page + ".tsv");
                 sender.sendMessage(LOG_PREFIX + "gallerypage " + args[1]
                         + " p" + page + " -> placed=" + placed);
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim galleryisopage <ns> <page> — the 14-e32 ISOLATION ours-leg
+        // surface: the same replay over the PITCH-2 manifest
+        // (gallery-blockiso-<ns>-p<page>.tsv) — the displays spawn at the
+        // manifest's own pitch-2 x/y/z (one block of air moat around every
+        // state), so the ours leg's crop edges see the same air the truth
+        // leg's do. The .light/.ctx siblings resolve off the manifest name
+        // exactly like the pitch-1 lane.
+        if (args.length >= 3 && args[0].equalsIgnoreCase("galleryisopage")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int placed = galleryPage(args[1], page,
+                        "gallery-blockiso-" + args[1] + "-p" + page + ".tsv");
+                sender.sendMessage(LOG_PREFIX + "galleryisopage " + args[1]
+                        + " p" + page + " -> placed=" + placed);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "galleryisopage: bad page number: " + args[2]);
             }
             return true;
         }

@@ -134,6 +134,13 @@ import sys
 CLASSES = {
     "block": ("gallery-{ns}-p{p}.tsv", "gal-p", "ours-gal-p",
               "gallery done ns={ns} page={p} cells=0"),
+    # 14-e32 THE ISOLATION LANE: the SAME block states walked at pitch 2
+    # (one block of air moat around every state — the 14-dg attribution
+    # lane's instrument against the cross-cell crop-edge leak). The walk's
+    # boot line is "gallery-iso done ns=..." (the -iso infix), the manifests
+    # ride the gallery-blockiso- stem. DIAGNOSTIC-first (see below).
+    "blockiso": ("gallery-blockiso-{ns}-p{p}.tsv", "gal-iso", "ours-gal-iso",
+                 "gallery-iso done ns={ns} page={p} cells=0"),
     "entity-mobs": ("gallery-entity-{ns}-p{p}.tsv", "gal-e", "ours-gal-e",
                     "gallery-entity done ns={ns} page={p} cells=0"),
     "entity-dyn": ("gallery-entitydyn-{ns}-p{p}.tsv", "gal-e", "ours-gal-e",
@@ -225,6 +232,7 @@ CLASSES = {
 # channel and runs DIAGNOSTICALLY per its own docstring until measured
 # stable; the pixel gal-pa shots stay diagnostic until that flip.
 DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "inv", "particle",
+                      "blockiso",
                       "variant-painting", "variant-wolf", "variant-cat",
                       "variant-frog", "variant-villager", "variant-effect",
                       "variant-trimmaterial", "variant-trimpattern",

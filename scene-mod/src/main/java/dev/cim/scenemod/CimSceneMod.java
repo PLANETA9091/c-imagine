@@ -354,6 +354,12 @@ public final class CimSceneMod {
                                                         .executes(ctx -> gallery(ctx.getSource(),
                                                                 StringArgumentType.getString(ctx, "namespace"),
                                                                 IntegerArgumentType.getInteger(ctx, "page"))))))
+                                .then(Commands.literal("isopage")
+                                        .then(Commands.argument("namespace", StringArgumentType.word())
+                                                .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                        .executes(ctx -> gallery(ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "namespace"),
+                                                                IntegerArgumentType.getInteger(ctx, "page"), 2)))))
                                 .then(Commands.literal("entity")
                                         .then(Commands.literal("mobs")
                                                 .then(Commands.argument("namespace", StringArgumentType.word())
@@ -605,11 +611,30 @@ public final class CimSceneMod {
      * coordinates, so one bad block names itself.
      */
     private static int gallery(CommandSourceStack src, String namespace, int page) {
+        return gallery(src, namespace, page, 1);
+    }
+
+    /**
+     * THE ISOLATION PITCH (14-e32, the 14-dg attribution lane): pitch=2
+     * places the SAME states on the SAME 11x7 grid but at DOUBLE spacing —
+     * every state sits in a one-block AIR MOAT, so no neighbour's geometry,
+     * translucency or light can leak across the crop edge. The 14-dg receipt
+     * measured the per-cell join structurally under-measuring the cross-cell
+     * families (the doors 139 REDs, the jars 61, the bells/whistles 55, the
+     * hanging plants 80): a state whose model touches the cell boundary
+     * bilinear-samples the neighbour's pixels, and a neighbour that renders
+     * differently between the stacks leaks the diff into MY crop. The moat
+     * kills the leak at the source. Manifests/markers ride the
+     * {@code gallery-blockiso-} stem (the two lanes never collide); the
+     * camera and the join ride the pitch-2 contract CI-side.
+     */
+    private static int gallery(CommandSourceStack src, String namespace, int page, int pitch) {
         ServerLevel level = src.getLevel();
         setGalleryFrozen(level.getServer(), false, "block page entry");
         writeGalleryIndex(level, namespace);
-        String blockStem = "gallery-" + namespace + "-p" + page;
-        int swept = sweepGalleryDrops(level);
+        String blockStem = (pitch == 1 ? "gallery-" : "gallery-blockiso-")
+                + namespace + "-p" + page;
+        int swept = sweepGalleryDrops(level, pitch);
         if (swept > 0) {
             LOGGER.info("[cimscene] gallery drop-sweep ns={} page={} removed={}", namespace, page, swept);
         }
@@ -624,8 +649,8 @@ public final class CimSceneMod {
             entries.addAll(BuiltInRegistries.BLOCK.get(id).getStateDefinition().getPossibleStates());
         }
 
-        LOGGER.info("[cimscene] gallery begin ns={} page={} states={} cellsPerPage={}",
-                namespace, page, entries.size(), GALLERY_CELLS);
+        LOGGER.info("[cimscene] gallery{} begin ns={} page={} states={} cellsPerPage={} pitch={}",
+                pitch == 1 ? "" : "-iso", namespace, page, entries.size(), GALLERY_CELLS, pitch);
 
         int from = page * GALLERY_CELLS;
         if (from >= entries.size()) {
@@ -641,7 +666,7 @@ public final class CimSceneMod {
         // top block lives at y=-61 (measured: feet rest at y=-60) — filling
         // one lower would punch a hole in the floor; the wall's own bottom
         // row y=-60 is still cleared, the floor under it stays intact)
-        clearWall(level);
+        clearWall(level, pitch);
 
         // place + manifest. THE MANIFEST IS THE SETTLED CONTRACT: blocks
         // whose models depend on their NEIGHBOURS (panes, bars — PaneBlock/
@@ -678,7 +703,7 @@ public final class CimSceneMod {
                         namespace, page, from + i, stateStr);
                 continue;
             }
-            BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+            BlockPos pos = new BlockPos(GALLERY_X0 + col * pitch, GALLERY_Y0 + row * pitch, GALLERY_Z);
             // no shape updates: a door half, a belt or a link has no support here and
             // would pop, leaving a cell nothing compares. The wall shows every state as given
             level.setBlock(pos, st, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
@@ -726,7 +751,7 @@ public final class CimSceneMod {
         final int fMutated = mutated;
         final int fSkipFluid = skipFluid;
         final int fSkipInvisible = skipInvisible;
-        runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, slice,
+        runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, pitch, slice,
                 rowStr, blockStem, fPlaced, fMutated, fSkipFluid, fSkipInvisible, 0));
         return placed;
     }
@@ -761,14 +786,15 @@ public final class CimSceneMod {
      * falling block can land on a cell that was empty. A cell the world emptied
      * becomes a named skip; a cell the world filled becomes a cell.
      */
-    private static void settleBlockPage(ServerLevel level, String namespace, int page, List<BlockState> slice,
+    private static void settleBlockPage(ServerLevel level, String namespace, int page, int pitch, List<BlockState> slice,
                                         String[] rowStr, String blockStem, int placed, int mutated,
                                         int skipFluid, int skipInvisible, int tries) {
         AABB wall = new AABB(GALLERY_X0 - 1, GALLERY_Y0 - 1, GALLERY_Z - 1,
-                GALLERY_X0 + GALLERY_COLS + 1, GALLERY_Y0 + GALLERY_ROWS + 3, GALLERY_Z + 2);
+                GALLERY_X0 + pitch * (GALLERY_COLS - 1) + 2,
+                GALLERY_Y0 + pitch * (GALLERY_ROWS - 1) + 4, GALLERY_Z + 2);
         if (tries < BLOCK_SETTLE_RETRIES
                 && !level.getEntitiesOfClass(net.minecraft.world.entity.item.FallingBlockEntity.class, wall).isEmpty()) {
-            runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, slice,
+            runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, pitch, slice,
                     rowStr, blockStem, placed, mutated, skipFluid, skipInvisible, tries + 1));
             return;
         }
@@ -787,7 +813,7 @@ public final class CimSceneMod {
         int benbtRows = 0;
         for (int i = 0; i < GALLERY_CELLS; i++) {
             int col = i % GALLERY_COLS, row = i / GALLERY_COLS;
-            BlockPos pos = new BlockPos(GALLERY_X0 + col, GALLERY_Y0 + row, GALLERY_Z);
+            BlockPos pos = new BlockPos(GALLERY_X0 + col * pitch, GALLERY_Y0 + row * pitch, GALLERY_Z);
             BlockState now = level.getBlockState(pos);
             String was = i < rowStr.length ? rowStr[i] : null;
             boolean cell = was != null && was.startsWith("cell\t");
@@ -830,13 +856,14 @@ public final class CimSceneMod {
         }
 
         // drops from the settle window are not page content
-        int sweptEnd = sweepGalleryDrops(level);
+        int sweptEnd = sweepGalleryDrops(level, pitch);
         if (sweptEnd > 0) {
             LOGGER.info("[cimscene] gallery drop-sweep end ns={} page={} removed={}",
                     namespace, page, sweptEnd);
         }
 
-        String manifest = "gallery-" + namespace + "-p" + page + ".tsv";
+        String manifest = (pitch == 1 ? "gallery-" : "gallery-blockiso-")
+                + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
             Files.createDirectories(parent);
@@ -844,19 +871,21 @@ public final class CimSceneMod {
             Files.writeString(parent.resolve(manifest.replace(".tsv", ".light")),
                     CaptureLightData.snapshot(level, tsv.toString()), StandardCharsets.UTF_8);
             if (benbtRows > 0) {
-                String benbtFile = "gallery-" + namespace + "-p" + page + ".benbt";
+                String benbtFile = (pitch == 1 ? "gallery-" : "gallery-blockiso-")
+                        + namespace + "-p" + page + ".benbt";
                 Files.writeString(parent.resolve(benbtFile), benbt.toString(), StandardCharsets.UTF_8);
             }
         } catch (IOException ioe) {
             LOGGER.error("[cimscene] gallery manifest write failed {}: {}", manifest, ioe.toString());
         }
 
-        LOGGER.info("[cimscene] gallery done ns={} page={} cells={} mutated={} dissolved={} skipped_fluid={} "
-                        + "skipped_invisible={} first={} last={}",
-                namespace, page, placed, mutated, dissolved, skipFluid, skipInvisible,
+        LOGGER.info("[cimscene] gallery{} done ns={} page={} cells={} mutated={} dissolved={} skipped_fluid={} "
+                        + "skipped_invisible={} first={} last={} pitch={}",
+                pitch == 1 ? "" : "-iso", namespace, page, placed, mutated, dissolved, skipFluid, skipInvisible,
                 stateString(slice.get(0), BuiltInRegistries.BLOCK.getKey(slice.get(0).getBlock())),
                 stateString(slice.get(slice.size() - 1),
-                        BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())));
+                        BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())),
+                pitch);
         writeDoneMarkerFile(blockStem, false);
         // 14-di THE SETTLE FREEZE: the world stops HERE, at the settle frame,
         // before the walk's settle-shot loop fires a single md5 attempt — the
@@ -2080,6 +2109,10 @@ public final class CimSceneMod {
         long potPatterns = staticCount(BuiltInRegistries.DECORATED_POT_PATTERN, namespace);
         StringBuilder tsv = new StringBuilder("class\ttotal\tcellsPerPage\n")
                 .append("block\t").append(states).append('\t').append(GALLERY_CELLS).append('\n')
+                // 14-e32 the isolation lane: the SAME block states on the
+                // pitch-2 wall — the same totals/cells, the blockiso class
+                // walks them at double spacing for the moat isolation
+                .append("blockiso\t").append(states).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("entity\t").append(entities).append('\t').append(ENTITY_CELLS).append('\n')
                 .append("item\t").append(items).append('\t').append(GALLERY_CELLS).append('\n')
                 .append("particle\t").append(particles).append('\t').append(GALLERY_CELLS).append('\n')
@@ -2249,11 +2282,17 @@ public final class CimSceneMod {
         return (state.getBlock() instanceof EntityBlock || state.getLightEmission() > 0) ? 1 : 0;
     }
 
-    /** The shared wall sweep (identical coordinates on every gallery leg). */
+    /** The shared wall sweep (identical coordinates on every gallery leg).
+     *  14-e32: the isolation pitch extends the sweep to the pitch-2 extent
+     *  (the moat positions must start air; the pitch-1 law is bit-identical). */
     private static void clearWall(ServerLevel level) {
+        clearWall(level, 1);
+    }
+
+    private static void clearWall(ServerLevel level, int pitch) {
         closeGalleryAssemblies();
-        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + GALLERY_COLS; x++) {
-            for (int y = GALLERY_Y0; y <= GALLERY_Y0 + GALLERY_ROWS; y++) {
+        for (int x = GALLERY_X0 - 1; x <= GALLERY_X0 + pitch * (GALLERY_COLS - 1) + 1; x++) {
+            for (int y = GALLERY_Y0; y <= GALLERY_Y0 + pitch * (GALLERY_ROWS - 1) + 1; y++) {
                 for (int z = GALLERY_Z - 1; z <= GALLERY_Z + 1; z++) {
                     level.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState(), 3);
                 }
@@ -2281,7 +2320,17 @@ public final class CimSceneMod {
      * @return the number of entities discarded (logged by the caller)
      */
     private static int sweepGalleryDrops(ServerLevel level) {
-        List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, GALLERY_DROP_BOX);
+        return sweepGalleryDrops(level, 1);
+    }
+
+    /** 14-e32: the isolation pitch widens the drop box to the pitch-2 wall
+     *  extent so the iso pages' pops sweep like the pitch-1 pages' do. */
+    private static int sweepGalleryDrops(ServerLevel level, int pitch) {
+        AABB box = pitch == 1 ? GALLERY_DROP_BOX
+                : new AABB(GALLERY_X0 - 3, GALLERY_Y0 - 2, GALLERY_Z - 5,
+                        GALLERY_X0 + pitch * (GALLERY_COLS - 1) + 3,
+                        GALLERY_Y0 + pitch * (GALLERY_ROWS - 1) + 2, GALLERY_Z + 5);
+        List<ItemEntity> items = level.getEntitiesOfClass(ItemEntity.class, box);
         for (ItemEntity item : items) {
             item.discard();
         }
