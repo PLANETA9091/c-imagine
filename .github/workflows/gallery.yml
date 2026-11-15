@@ -2765,53 +2765,6 @@ jobs:
             [ "$EXHAUSTED" = "1" ] || { echo "ours $NS block replay hit the MAXP cap — staged manifest set incomplete"; exit 1; }
           done
 
-
-          # 14-e32 THE ISOLATION PROBE ours leg (ae2): the pitch-2 replay —
-          # the plugin's galleryisopage reads the blockiso manifest and
-          # spawns the displays at the manifest's own pitch-2 x/y/z; the
-          # settle protocol + the ISO camera mirror the truth leg 1:1.
-          ISO_EXH=0
-          for p in $(seq $SI $K $MAXP); do
-            M="srv-wall/c-imagine/scenes/gallery-blockiso-ae2-p$p.tsv"
-            [ -f "$M" ] || { echo "no iso manifest for ae2 page $p — ours iso replay exhausted"; ISO_EXH=1; break; }
-            OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
-              "cim galleryisopage ae2 $p")
-            echo "$OUT" | tee "ours-rcon-iso-ae2-p$p.log"
-            echo "$OUT" | grep -q "galleryisopage ae2 p$p -> placed=" \
-              || { echo "ae2 iso page $p no placed marker in the RCON response"; exit 1; }
-            ours_alive || { echo "ours client died on ae2 iso page $p — the ours leg must never die"; exit 1; }
-            sleep 1
-            PREV=""; SETTLE_ROUNDS=0
-            while [ "$SETTLE_ROUNDS" -lt 3 ]; do
-              SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
-              for i in $(seq 1 8); do
-                rcon "tp cimviewer 5.5 -55.12 -2 0 0" >/dev/null 2>&1
-                bash scripts/visual/shot.sh "ours-shots/.isettle-ae2-p$p.png"
-                CUR=$(md5sum "ours-shots/.isettle-ae2-p$p.png" | cut -d' ' -f1)
-                if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
-                PREV="$CUR"
-              done
-              rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
-              tail -1 poke-receipt.log
-              bash scripts/visual/shot.sh "ours-shots/.isettle-post-ae2-p$p.png"
-              POST=$(md5sum "ours-shots/.isettle-post-ae2-p$p.png" | cut -d' ' -f1)
-              rm -f "ours-shots/.isettle-post-ae2-p$p.png"
-              if [ "$POST" = "$CUR" ]; then break; fi
-              PREV="$POST"
-            done
-            rm -f "ours-shots/.isettle-ae2-p$p.png"
-            bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p.png"
-            DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "$M" 2>/dev/null || echo 0)
-            if [ "${DYNC:-0}" -gt 0 ]; then
-              bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p-t0.png"
-              sleep 2
-              bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p-t1.png"
-            fi
-            test -s "ours-shots/ours-gal-iso-ae2$p.png" || { echo "ae2 iso page $p shot empty/missing"; exit 1; }
-            echo "ours iso shot ae2 page $p"
-          done
-          [ "$ISO_EXH" = "1" ] || { echo "ours ae2 iso replay hit the MAXP cap — staged iso manifest set incomplete"; exit 1; }
-
       - name: entity replay — STRIDE (MOB gate + dyn/large diagnostic + every ladder ns)
         run: |
           set -euo pipefail
@@ -3211,6 +3164,88 @@ jobs:
           done
           # the gate joins the LISTING (13-b) — regenerate it with the
           # variant shots included
+          (cd ours-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
+          wc -l ours-shots/shots.txt
+
+      - name: iso replay — the pitch-2 moat (14-e39, post-truth-download)
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export LP_NUM_THREADS=4
+          # 14-e39 THE ISO TRANSPORT FIX (the 4524dedc gallery's measured
+          # hole): the blockiso manifests are the TRUTH walk's products —
+          # the seed is built before the truth job, so the ours walk step
+          # found none ("no iso manifest for ae2 page 0 — ours iso replay
+          # exhausted", run 43702352662 shard 0, 10:50:24Z) and the whole
+          # isolation probe silently degraded to its diagnostic-tolerated
+          # skip. The manifests ride wall-truth-meta (uploaded with the
+          # scenes dir); the replay moves AFTER the truth-meta download and
+          # copies them in — the probe runs on EVERY future gallery.
+          find truth-meta -name 'gallery-blockiso-ae2-*.tsv' -exec cp {} srv-wall/c-imagine/scenes/ \;
+          ls srv-wall/c-imagine/scenes/ | grep -c "gallery-blockiso-ae2" || true
+          # THE COPROC LAW (14-e15): rcon() never inside a pipeline element
+          # or command substitution — the 14-e32 section's OUT=$(rcon ...)
+          # form is retired with the move; the responses ride files.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() {
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
+          ISO_EXH=0
+          for p in $(seq $SI $K $MAXP); do
+            M="srv-wall/c-imagine/scenes/gallery-blockiso-ae2-p$p.tsv"
+            [ -f "$M" ] || { echo "no iso manifest for ae2 page $p — ours iso replay exhausted"; ISO_EXH=1; break; }
+            rcon "kill @e[type=!player]" "cim galleryclear" \
+              "cim galleryisopage ae2 $p" > "ours-rcon-iso-ae2-p$p.log" 2>&1
+            grep -q "galleryisopage ae2 p$p -> placed=" "ours-rcon-iso-ae2-p$p.log" \
+              || { echo "ae2 iso page $p no placed marker in the RCON response"; cat "ours-rcon-iso-ae2-p$p.log"; exit 1; }
+            tail -1 "ours-rcon-iso-ae2-p$p.log"
+            ours_alive || { echo "ours client died on ae2 iso page $p — the ours leg must never die"; exit 1; }
+            sleep 1
+            PREV=""; SETTLE_ROUNDS=0
+            while [ "$SETTLE_ROUNDS" -lt 3 ]; do
+              SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
+              for i in $(seq 1 8); do
+                rcon "tp cimviewer 5.5 -55.12 -2 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "ours-shots/.isettle-ae2-p$p.png"
+                CUR=$(md5sum "ours-shots/.isettle-ae2-p$p.png" | cut -d' ' -f1)
+                if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+                PREV="$CUR"
+              done
+              rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
+              tail -1 poke-receipt.log
+              bash scripts/visual/shot.sh "ours-shots/.isettle-post-ae2-p$p.png"
+              POST=$(md5sum "ours-shots/.isettle-post-ae2-p$p.png" | cut -d' ' -f1)
+              rm -f "ours-shots/.isettle-post-ae2-p$p.png"
+              if [ "$POST" = "$CUR" ]; then break; fi
+              PREV="$POST"
+            done
+            rm -f "ours-shots/.isettle-ae2-p$p.png"
+            bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p.png"
+            DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "$M" 2>/dev/null || echo 0)
+            if [ "${DYNC:-0}" -gt 0 ]; then
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p-t0.png"
+              sleep 2
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-iso-ae2$p-t1.png"
+            fi
+            test -s "ours-shots/ours-gal-iso-ae2$p.png" || { echo "ae2 iso page $p shot empty/missing"; exit 1; }
+            echo "ours iso shot ae2 page $p"
+          done
+          [ "$ISO_EXH" = "1" ] || { echo "ours ae2 iso replay hit the MAXP cap — staged iso manifest set incomplete"; exit 1; }
           (cd ours-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
           wc -l ours-shots/shots.txt
 
