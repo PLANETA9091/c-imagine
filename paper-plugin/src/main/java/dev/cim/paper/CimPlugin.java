@@ -2459,6 +2459,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer != null) {
+                // Skip/failed rows must not retain the previous custom screen.
+                dev.cim.hud.HudBootstrap.closeForHarness(viewer);
                 viewer.closeInventory();
                 if (hudId != null) {
                     dev.cim.hud.HudBootstrap.openForHarness(viewer, hudId, hudClass, heldId, harnessOpener);

@@ -1457,6 +1457,16 @@ jobs:
           rcon "cimscene gallery gui-clear"
           grep -q 'gallery-gui-clear done .*remaining=0 held_empty=true' srv-wall/boot.log
 
+      - name: pair this run's GUI manifests with its early screen art
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          manifests=(srv-wall/c-imagine/scenes/gallery-gui-*.tsv)
+          [ "${#manifests[@]}" -gt 0 ] || { echo "No native GUI manifests for early art"; exit 1; }
+          mkdir -p truth-screens/_gui-manifests
+          cp "${manifests[@]}" truth-screens/_gui-manifests/
+          echo "Current-run GUI manifests staged: ${#manifests[@]}"
+
       - name: upload truth screens s${{ matrix.shard }} (14-di early art — the ours sibling waits for exactly this)
         if: always()
         uses: actions/upload-artifact@v4
@@ -2163,7 +2173,14 @@ jobs:
           # landed this shard's truth ScreenArt dump; the plugin merges it
           # into the served pack + the replay's scene list at boot.
           mkdir -p srv-wall/c-imagine/screens
-          if [ -d truth-meta-screens ]; then cp -r truth-meta-screens/. srv-wall/c-imagine/screens/; fi
+          if [ -d truth-meta-screens ]; then
+            cp -r truth-meta-screens/. srv-wall/c-imagine/screens/
+            shopt -s nullglob
+            manifests=(truth-meta-screens/_gui-manifests/gallery-gui-*.tsv)
+            [ "${#manifests[@]}" -gt 0 ] || { echo "Early art lacks its native GUI manifests"; exit 1; }
+            cp "${manifests[@]}" srv-wall/c-imagine/scenes/
+            echo "Current-run GUI manifests applied before Paper boot: ${#manifests[@]}"
+          fi
           echo "14-di run captures: $(ls srv-wall/c-imagine/screens 2>/dev/null | wc -l)"
           echo "eula=true" > srv-wall/eula.txt
           cat > srv-wall/server.properties <<PROPS
