@@ -5,18 +5,21 @@
 #   (2) the iso census (the isolation premise's arbiter);
 #   (3) the pin receipts joined with the wall-class RED cells;
 #   (4) the verdict pipeline vs the e21 baseline (when --baseline given).
-# Usage: read-landed-gallery.sh <run-id> [--out DIR] [--baseline DIR] [--ns NS]
+# Usage: read-landed-gallery.sh <run-id> [--out DIR] [--baseline DIR] [--ns NS] [--local]
+# --local reads an existing tree and explicitly leaves run identity unverified.
 set -euo pipefail
 RUN=${1:?usage: read-landed-gallery.sh <run-id> [--out DIR] [--baseline DIR] [--ns NS]}
 shift || true
 OUT=/tmp/vp_landed
 BASELINE=
 NS=ae2
+LOCAL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT=$2; shift 2 ;;
     --baseline) BASELINE=$2; shift 2 ;;
     --ns) NS=$2; shift 2 ;;
+    --local) LOCAL=1; shift ;;
     *) echo "unknown arg $1" >&2; exit 1 ;;
   esac
 done
@@ -24,19 +27,44 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$OUT"
 
 echo "== (1) pulling verdict+reports+meta from run $RUN"
-if [ ! -d "$OUT/verdict" ]; then
+if [ "$LOCAL" = 1 ]; then
+  echo "OFFLINE evidence tree: run identity is unverified"
+else
+  python3 - "$RUN" <<'PY_PREFLIGHT'
+import json, subprocess, sys
+run_id = sys.argv[1]
+run = json.loads(subprocess.check_output(["gh", "run", "view", run_id, "--json", "status,conclusion,headSha"]))
+if run["status"] != "completed" or run["conclusion"] not in ("success", "failure"):
+    raise SystemExit("incomplete gallery: run did not finish with a measured verdict")
+pages = json.loads(subprocess.check_output(["gh", "api",
+    f"repos/PLANETA9091/c-imagine/actions/runs/{run_id}/artifacts?per_page=100", "--paginate", "--slurp"]))
+names = {a["name"] for page in pages for a in page["artifacts"] if not a.get("expired")}
+expected = {"gallery-verdict"} | {f"{stem}{i}" for stem in
+    ("gallery-report-", "wall-ours-meta-", "wall-truth-meta-") for i in range(8)}
+if expected - names:
+    raise SystemExit("incomplete gallery artifacts: " + ", ".join(sorted(expected - names)))
+print("Measured source:", run["headSha"], "run:", run_id)
+PY_PREFLIGHT
   python3 "$HERE/verdict-pull.py" "$RUN" --out "$OUT" --kinds verdict,reports,meta
 fi
+REPORTS=()
+for dir in "$OUT"/gallery-report-*; do
+  [ ! -d "$dir" ] || REPORTS+=("$dir")
+done
+[ "${#REPORTS[@]}" -eq 8 ] || { echo "incomplete gallery: expected eight report directories" >&2; exit 1; }
 
 echo "== (2) the iso census (LEAK-CLEARED / TRUE-DEFECT / ISO-ONLY-RED / GREEN-BOTH)"
-python3 "$HERE/iso-census.py" "$OUT"/reports/gallery-report-* 2>&1 | tail -40 || true
+python3 "$HERE/iso-census.py" "${REPORTS[@]}" --ns "$NS" --top 5
 
 echo "== (3) the pin receipts: ours boot logs -> the per-cell pin= lines"
 PINLOG=$(mktemp)
-find "$OUT/meta" -path '*ours*' -name 'boot.log' -type f -exec cat {} \; > "$PINLOG" 2>/dev/null || true
-if [ ! -s "$PINLOG" ]; then
-  find "$OUT/meta" -name 'boot.log' -type f -exec cat {} \; > "$PINLOG" 2>/dev/null || true
-fi
+trap 'rm -f "$PINLOG"' EXIT
+META=()
+for dir in "$OUT"/wall-ours-meta-*; do
+  [ ! -d "$dir" ] || META+=("$dir")
+done
+[ "${#META[@]}" -eq 8 ] || { echo "incomplete gallery: expected eight ours metadata directories" >&2; exit 1; }
+find "${META[@]}" -name 'boot.log' -type f -exec cat {} \; > "$PINLOG"
 PINS=$(grep -c "pin=" "$PINLOG" || true)
 echo "pin= lines total: $PINS"
 if [ "$PINS" -gt 0 ]; then
@@ -54,7 +82,7 @@ for m in re.finditer(r'state=(\S+) .*? pin=(\d+)/(\d+) src=([a-z-]+)', open(pinl
     pins[m.group(1)].append((m.group(2), m.group(3), m.group(4)))
 reds = collections.Counter()
 unmatched = 0
-for f in glob.glob(os.path.join(out, 'reports', 'gallery-report-*', f'join-{ns}-p*.json')):
+for f in glob.glob(os.path.join(out, 'gallery-report-*', f'join-{ns}-p*.json')):
     d = json.load(open(f))
     for r in d.get('rows', []):
         if r.get('verdict') != 'RED':
@@ -75,11 +103,12 @@ print('RED rows with no pin line at all:', unmatched)
 PY
 else
   echo "NO pin= lines found — the run predates 4524dedc or the boot logs are missing"
+  exit 1
 fi
 
 echo "== (4) the verdict pipeline vs the baseline"
 if [ -n "$BASELINE" ]; then
-  bash "$HERE/verdict_pipeline.sh" "$RUN" --baseline "$BASELINE" --out "$OUT/pipe" || true
+  bash "$HERE/verdict_pipeline.sh" "$RUN" --baseline "$BASELINE" --out "$OUT/pipe"
 else
   echo "no --baseline given — the pipeline step skipped"
 fi

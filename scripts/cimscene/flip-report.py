@@ -43,10 +43,19 @@ def load_all(dirs, pattern):
 # `|| GATE=1` (the run reds on their failure) — block walls, item walls,
 # fluid walls and the mob pages. Every other class with content is
 # diagnostic-first (graduates only via a measured stable-x2 flip).
-GATED_CLASSES = {"block", "item", "fluid", "e"}
+GATED_CLASSES = {"block", "item", "fluid", "e", "menu"}
 
 
-def ns_of(name):
+def ns_of(name, report=None):
+    if name.startswith("join-menu-"):
+        # The filename joins namespace/path with underscores, which are
+        # legal in both. The producer's registered menu ID is authoritative.
+        namespaces = set()
+        for row in (report or {}).get("rows", []):
+            match = re.match(r"^([a-z0-9_.-]+):", str(row.get("state", "")))
+            if match:
+                namespaces.add(match.group(1))
+        return next(iter(namespaces)) if len(namespaces) == 1 else "unknown"
     # Read the producer's filename contract, not a fixed mod allowlist.
     # Entity pages use -N; block/item and diagnostic pages use -pN.
     m = re.fullmatch(
@@ -79,7 +88,9 @@ def main():
             # The dyn/large entity series are diagnostic, separate from mobs.
             if cls == "e" and re.search(r'-(dyn|large)-', name):
                 cls = "e-" + re.search(r'-(dyn|large)-', name).group(1)
-            ns = ns_of(name)
+            if name.startswith("join-menu-"):
+                cls = "menu"
+            ns = ns_of(name, d)
             counts = Counter(r["verdict"] for r in d.get("rows", []))
             if d.get("verdict") == "GLOBAL-MISALIGNED":
                 counts["RED"] += 1

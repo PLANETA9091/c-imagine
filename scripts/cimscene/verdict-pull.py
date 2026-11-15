@@ -34,21 +34,13 @@ Report-only: never gates, never edits a verdict.
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import zipfile
 
-REPO = os.environ.get("CIM_REPO", "/home/z/my-project/work/c-imagine")
-
-
-def _token():
-    url = subprocess.run(["git", "-C", REPO, "remote", "get-url", "origin"],
-                         capture_output=True, text=True).stdout.strip()
-    return url.split("://")[1].split("@")[0].split(":", 1)[1]
-
-
-def _base():
-    return "https://api.github.com/repos/PLANETA9091/c-imagine"
+API_REPO = "repos/PLANETA9091/c-imagine"
 
 
 ARTIFACT_NAMES = {
@@ -62,12 +54,15 @@ ARTIFACT_NAMES = {
 
 
 def list_artifacts(run_id):
+    # gh owns authentication (credential store or GH_TOKEN). Never extract a
+    # secret from a remote URL or put an Authorization header in process argv.
     r = subprocess.run(
-        ["curl", "-s", "-m", "60", "-H", f"Authorization: token {_token()}",
-         f"{_base()}/actions/runs/{run_id}/artifacts?per_page=100"],
-        capture_output=True, text=True, timeout=90)
-    d = json.loads(r.stdout)
-    return [(a["id"], a["name"], a["size_in_bytes"]) for a in d.get("artifacts", [])]
+        ["gh", "api", f"{API_REPO}/actions/runs/{run_id}/artifacts?per_page=100",
+         "--paginate", "--slurp"],
+        capture_output=True, text=True, timeout=90, check=True)
+    pages = json.loads(r.stdout)
+    return [(a["id"], a["name"], a["size_in_bytes"])
+            for page in pages for a in page["artifacts"]]
 
 
 def pull(run_id, kinds, out):
@@ -75,23 +70,48 @@ def pull(run_id, kinds, out):
     for k in kinds:
         want += ARTIFACT_NAMES[k]
     got = []
-    for aid, name, size in list_artifacts(run_id):
+    artifacts = list_artifacts(run_id)
+    for kind in kinds:
+        if not any(any(name.startswith(prefix) for prefix in ARTIFACT_NAMES[kind])
+                   for _, name, _ in artifacts):
+            raise RuntimeError(f"run {run_id}: no {kind} artifacts; evidence is incomplete")
+    for aid, name, size in artifacts:
         if any(name.startswith(w) for w in want):
-            z = os.path.join(out, name + ".zip")
+            # Names repeat across runs. The immutable artifact ID is the
+            # cache identity; a new revision must never inherit old evidence.
+            z = os.path.join(out, f"{name}-{aid}.zip")
             if not os.path.exists(z):
-                code = subprocess.run(
-                    ["curl", "-sL", "-m", "600", "-o", z, "-w", "%{http_code}",
-                     "-H", f"Authorization: token {_token()}",
-                     f"{_base()}/actions/artifacts/{aid}/zip"],
-                    capture_output=True, text=True).stdout
-                if code != "200":
-                    print(f"pull {name}: HTTP {code}", file=sys.stderr)
-                    continue
+                # A failed HTTP transfer must not poison the next run's ZIP
+                # cache or leave an extracted directory that looks complete.
+                with tempfile.NamedTemporaryFile(dir=out, suffix=".part", delete=False) as f:
+                    partial = f.name
+                    try:
+                        subprocess.run(
+                            ["gh", "api", f"{API_REPO}/actions/artifacts/{aid}/zip"],
+                            stdout=f, stderr=subprocess.PIPE, timeout=600, check=True)
+                        f.flush()
+                        with zipfile.ZipFile(partial) as zf:
+                            bad = zf.testzip()
+                            if bad is not None:
+                                raise zipfile.BadZipFile(f"{name}: corrupt member {bad}")
+                        os.replace(partial, z)
+                    finally:
+                        if os.path.exists(partial):
+                            os.unlink(partial)
             d = os.path.join(out, name)
-            if not os.path.isdir(d):
+            receipt = os.path.join(d, ".artifact-id")
+            cached_id = None
+            if os.path.isfile(receipt):
+                with open(receipt, encoding="utf-8") as f:
+                    cached_id = f.read().strip()
+            if cached_id != str(aid):
+                if os.path.isdir(d):
+                    shutil.rmtree(d)
                 os.makedirs(d, exist_ok=True)
                 with zipfile.ZipFile(z) as zf:
                     zf.extractall(d)
+                with open(receipt, "w", encoding="utf-8") as f:
+                    f.write(str(aid) + "\n")
             got.append(d)
             print(f"pulled {name} ({size/1e6:.1f} MB)")
     return got
@@ -195,17 +215,21 @@ def main():
         if os.path.isdir(sdir):
             seed = sdir
         dirs = [os.path.join(a.out, d) for d in sorted(os.listdir(a.out))
-                if d.startswith("gallery-report-")]
+                if d.startswith("gallery-report-") and os.path.isdir(os.path.join(a.out, d))]
         cmd = [sys.executable, os.path.join(os.path.dirname(__file__),
                 "fidelity-forensics.py"), *dirs, "--top", str(a.top)]
         if seed:
             cmd += ["--seed", seed]
         print("+", " ".join(cmd))
-        subprocess.run(cmd, check=False)
+        subprocess.run(cmd, check=True)
     if a.ratio:
         crush_ratio(a.out, a.top)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, RuntimeError, zipfile.BadZipFile, subprocess.SubprocessError) as exc:
+        print(f"verdict-pull: {exc}", file=sys.stderr)
+        sys.exit(1)

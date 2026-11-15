@@ -86,6 +86,20 @@ def main():
         assert h["red"] == 1 and h["luma_norm"] == 0 and h["ae_max"] == 300000
         assert h["mesh"]["quads"] == 4 and h["mesh"]["sprites"] == 2
 
+        menus = os.path.join(tmp, "menus")
+        write(os.path.join(menus, "join-menu-mod_with_underscore_screen_path.json"), json.dumps({
+            "gate": 0, "rows": [{"state": "mod_with_underscore:screen_path",
+                                    "verdict": "RED", "ae": 1, "self_ae": [0, 0]}]}))
+        menu_out = os.path.join(tmp, "menu-report.json")
+        r = subprocess.run([sys.executable, TOOL, menus, "--json", menu_out],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+        menu = json.load(open(menu_out))
+        assert menu["buckets"] == {"FIDELITY": 1}, menu
+        entry = menu["fidelity_states"][0]
+        assert (entry["class"], entry["ns"], entry["red"]) == (
+            "menu", "mod_with_underscore", 1), entry
+
         print("PASS fidelity-forensics (bucketing, aggregation, mesh)")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
