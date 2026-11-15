@@ -10,6 +10,8 @@ the SAME states:
   TRUE-DEFECT   RED at both pitches                — the state itself renders
                 differently between the stacks (the real fidelity work)
   GREEN-BOTH    — the state was always fine
+  INCOMPLETE    — at least one lane has no explicit RED/GREEN observation;
+                missing or skipped evidence does not prove parity
   ISO-ONLY-RED  GREEN at pitch 1, RED in the moat  — the moat changed the
                 render (the neighbour was PART of the expected picture —
                 e.g. a wall whose arms need neighbours; the moat wall shows
@@ -58,17 +60,19 @@ def main():
         i = iso.get(st, collections.Counter())
         b_red = b["red"] > 0
         i_red = i["red"] > 0
-        if b_red and not i_red and i["green"] > 0:
+        if not (b["red"] + b["green"]) or not (i["red"] + i["green"]):
+            classes["INCOMPLETE"].append((st,))
+        elif b_red and not i_red and i["green"] > 0:
             classes["LEAK-CLEARED"].append((st, b["red"]))
         elif b_red and i_red:
             classes["TRUE-DEFECT"].append((st, b["red"], i["red"]))
         elif not b_red and i_red:
             classes["ISO-ONLY-RED"].append((st, b["green"], i["red"]))
-        elif not b_red:
+        elif b["green"] > 0 and i["green"] > 0:
             classes["GREEN-BOTH"].append((st,))
 
     print(f"states compared: {len(block)} (block) / {len(iso)} (iso)")
-    for k in ("LEAK-CLEARED", "TRUE-DEFECT", "ISO-ONLY-RED"):
+    for k in ("LEAK-CLEARED", "TRUE-DEFECT", "ISO-ONLY-RED", "INCOMPLETE"):
         rows = classes.get(k, [])
         print(f"\n{k}: {len(rows)}")
         for row in rows[: args.top]:
