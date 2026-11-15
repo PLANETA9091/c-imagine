@@ -4839,6 +4839,14 @@ public final class F2vPack {
             JsonObject rotation = source.getAsJsonObject("rotation");
             double[] angles = {random.nextDouble() * 360, random.nextDouble() * 360,
                     random.nextDouble() * 360};
+            if (i < 6) {
+                angles = new double[][]{{0, 0, 0}, {90, 0, 0}, {0, 90, 0},
+                        {180, 0, 0}, {0, 180, 0}, {0, 0, 90}}[i];
+            } else if (i < 9) {
+                // The native light lies in the source plane; include both
+                // sides of the determinant-sign boundary as well.
+                angles = new double[]{Math.toDegrees(Math.atan(-.7)) + (i - 7) * 1e-9, 0, 0};
+            }
             rotation.addProperty("x", angles[0]);
             rotation.addProperty("y", angles[1]);
             rotation.addProperty("z", angles[2]);
@@ -4888,17 +4896,19 @@ public final class F2vPack {
                 det += normal[r] * matrix.get(r * 4 + 2).getAsDouble();
                 length += normal[r] * normal[r];
             }
-            // 14-e17: the light-bake tilt is retired - the matrix's normal is
-            // the SOURCE'S OWN normal (the variant rotation's third column,
-            // sign-corrected), not the up-ish LIGHT vector. The lighting
-            // contract = the pinned display brightness (14-ea3/14-bk/14-cy).
+            expect(failures, Math.abs(det) > 1e-9 && length > 1e-9,
+                    "unlit: restoration remains invertible at cardinal and arbitrary angles");
+            // Native item.vsh applies directional light independently of
+            // the display's packed lightmap override. Captured block shade
+            // is already baked into these tiles, so the item normal must
+            // receive a unit diffuse multiplier while all corners stay put.
             for (int r = 0; r < 3; r++) {
                 maxNormal = Math.max(maxNormal, Math.abs(normal[r] / Math.sqrt(length)
-                        * Math.signum(det) - before[2][r]));
+                        * Math.signum(det) - new double[]{.2, 1, -.7}[r] / Math.sqrt(1.53)));
             }
         }
         expect(failures, maxCorner < 1e-9, "unlit: arbitrary planes/oversized scale preserve all corners");
-        expect(failures, maxNormal < 1e-9, "unlit: native layer normal preserves the source's own orientation (14-e17: no light-bake tilt; the display pin owns the lighting)");
+        expect(failures, maxNormal < 1e-9, "unlit: native item diffuse is neutral independently of the lightmap pin");
     }
 
     /** A real w x h PNG (opaque, one gray shade) — the animation sanitizer reads IHDR. */
