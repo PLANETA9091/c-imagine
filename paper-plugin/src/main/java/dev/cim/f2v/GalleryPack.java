@@ -2433,7 +2433,11 @@ public final class GalleryPack {
             int[] rowFlags = flags.get(i);
             int rb = rowFlags[2];
             int rs = rowFlags[3];
-            boolean tintRow = rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15)
+            // ObjMesh.toElements routes every colored face through Cell.render,
+            // which already bakes its per-vertex RGB. Native composite node
+            // tints are active (43712291665): repeating that RGB darkens twice.
+            boolean capturedColorsBaked = faces.get(i).colored();
+            boolean tintRow = !capturedColorsBaked && rowFlags[1] == -1 && rb >= 0 && !(rb == 15 && rs == 15)
                     && (meshConstant ? (rb > 6 || internalContrast) : meshShaded);
             double[] rowTint = tintRow ? rowShadeTint(faces.get(i)) : null;
             // 14-ea5 THE MEAN-BAKE FALLBACK: a firing row whose captured
@@ -2491,7 +2495,7 @@ public final class GalleryPack {
                 }
             }
             String meanKey = null;
-            if ((tintRow || rowGradient) && rowTint == null && rowFlags[1] == -1 && rowFlags[0] == 0) {
+            if (!capturedColorsBaked && (tintRow || rowGradient) && rowTint == null && rowFlags[1] == -1 && rowFlags[0] == 0) {
                 double[] mean = rowMeanOf(faces.get(i));
                 String hosted = rowKeys.get(i) == null ? null : textures.get(rowKeys.get(i));
                 if (mean != null && hosted != null && !hosted.contains(TINT_SUFFIX)
