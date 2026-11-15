@@ -85,6 +85,15 @@ move a class out of DIAGNOSTIC_CLASSES once its channel is measured
 stable — the honest-RED semantics then apply unchanged. The anim liveness
 probe is NOT a ledger class (no pages of its own — its two-frame delta
 join runs per shard in the inline join step, outside this gate).
+THE BIOME FLIP LANDED (14-e31, 2026-11-15): the biome walk-completeness
+channel left DIAGNOSTIC_CLASSES — the tint walk measured stable across two
+full galleries (the e21 baseline 43611950455 and the e26 arbiter
+43645299155: 69/69 BOP pages green on BOTH legs, pixel diag-biome framediff
+all green both runs, DIAG-OK both runs) — the honest-RED semantics apply:
+a crashed/incomplete biome walk now REDS the run. The diag-biome pixel
+framediff stays report-only (the full-frame no-per-cell-contract channel —
+the per-cell tint contract is the named next lane, the same shape the
+sound/g classes keep).
 
 VARIANT CLASSES (14-dx, 2026-11-11): the 12 no-walk classes (paintings,
 wolf/cat/frog variants, villager types, effects, trim materials/patterns,
@@ -202,15 +211,20 @@ CLASSES = {
 # the verdict is never red — THE FLIP is moving a class out of this set
 # once its channel is measured stable (sound needs the packet-capture
 # channel measured, gui the menu-translation channel, held the
-# first-person item channel, biome the tint channel, inv the GUI crop
-# geometry — first-run-unmeasured, computed from scale-3 GUI math).
+# first-person item channel, inv the GUI crop geometry —
+# first-run-unmeasured, computed from scale-3 GUI math).
+# 14-e31 (2026-11-15): BIOME FLIPPED OUT — the tint walk stable x2 full
+# galleries (e21 43611950455 + e26 43645299155: 69/69 BOP pages, both
+# legs, pixel diag-biome green both runs); the walk-completeness channel
+# is now gate-hard (the honest-RED semantics), the diag-biome framediff
+# stays report-only until the per-cell tint contract ships.
 # particle joined (2026-11-08, 14-cs): the pixel join compares data-carrying
 # particles the vanilla spawn command rejected bare (no-simple-options,
 # measured #30: ALL 13 create particles) — the stream join
 # (particle-diff.py, the visual-particles.tsv rewrite) is the honest
 # channel and runs DIAGNOSTICALLY per its own docstring until measured
 # stable; the pixel gal-pa shots stay diagnostic until that flip.
-DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "biome", "inv", "particle",
+DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "inv", "particle",
                       "variant-painting", "variant-wolf", "variant-cat",
                       "variant-frog", "variant-villager", "variant-effect",
                       "variant-trimmaterial", "variant-trimpattern",

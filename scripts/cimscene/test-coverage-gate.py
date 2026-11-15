@@ -534,10 +534,11 @@ def main():
         print("P2 shard shot list hole RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # Q: the biome walk (multi-ns law): a walked diagnostic class reports
-    # DIAG-OK and the run stays GREEN — the 2026-11-04 diagnostic-first
-    # contract (the biome-tint channel is the P1 BOP proof surface, not
-    # measured stable yet)
+    # Q: the biome walk (multi-ns law) POST-FLIP (14-e31, 2026-11-15): a
+    # COMPLETE walked biome run reports the hard OK and stays GREEN — the
+    # tint walk measured stable x2 full galleries (e21 43611950455 + e26
+    # 43645299155: 69/69 BOP pages, both legs, diag-biome green both), so
+    # the honest-RED semantics apply unchanged
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -554,14 +555,15 @@ def main():
             f.write("gallery-biome done ns=create page=3 cells=0 failed=0 "
                     "exhausted=1\n")
         r = run_gate(root)
-        ok = r.returncode == 0 and "DIAG-OK\tbiome\ttotal=3" in r.stdout
-        print("Q walked biome diagnostic DIAG-OK GREEN:",
+        ok = r.returncode == 0 and "OK\tbiome\ttotal=3" in r.stdout
+        print("Q walked biome post-flip OK GREEN:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # R: a diagnostic walk that CRASHED (missing biome manifest) is
-    # VISIBLE (DIAG-INCOMPLETE) but never reds the run — the honest hole
-    # is printed, the flip law keeps the verdict green until measured
+    # R: a biome walk that CRASHED (missing biome manifests) POST-FLIP
+    # (14-e31, 2026-11-15) is RED — the honest-RED semantics: the hole is
+    # printed (COVERAGE-INCOMPLETE) and the run fails (the pre-flip law
+    # kept it visible-not-red until the channel measured stable x2)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -572,8 +574,8 @@ def main():
         (root / "scenes" / "gallery-biome-create-p0.tsv").write_text(
             "cell\tx\ty\tz\tbiome\tnote\n", encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 0 and "DIAG-INCOMPLETE\tbiome" in r.stdout
-        print("R crashed diagnostic walk visible-not-red:",
+        ok = r.returncode == 1 and "COVERAGE-INCOMPLETE\tbiome" in r.stdout
+        print("R crashed biome walk post-flip RED:",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
