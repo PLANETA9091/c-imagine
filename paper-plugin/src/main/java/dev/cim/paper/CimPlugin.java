@@ -1839,6 +1839,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 : org.bukkit.Registry.WOLF_VARIANT.get(key);
                         if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
                         w.spawn(at, org.bukkit.entity.Wolf.class, e -> {
+                            e.addScoreboardTag("cimgallery");
                             e.setVariant(v);
                             freezeVariantDisplay(e);
                         });
@@ -1848,6 +1849,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 : org.bukkit.Registry.CAT_VARIANT.get(key);
                         if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
                         w.spawn(at, org.bukkit.entity.Cat.class, e -> {
+                            e.addScoreboardTag("cimgallery");
                             e.setCatType(v);
                             freezeVariantDisplay(e);
                         });
@@ -1857,6 +1859,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 : org.bukkit.Registry.FROG_VARIANT.get(key);
                         if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
                         w.spawn(at, org.bukkit.entity.Frog.class, e -> {
+                            e.addScoreboardTag("cimgallery");
                             e.setVariant(v);
                             freezeVariantDisplay(e);
                         });
@@ -1866,6 +1869,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 : org.bukkit.Registry.VILLAGER_TYPE.get(key);
                         if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
                         w.spawn(at, org.bukkit.entity.Villager.class, e -> {
+                            e.addScoreboardTag("cimgallery");
                             e.setVillagerType(v);
                             e.setProfession(org.bukkit.entity.Villager.Profession.NONE);
                             freezeVariantDisplay(e);
@@ -1895,6 +1899,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         e.setInvulnerable(true);
         e.setRemoveWhenFarAway(false);
         e.setRotation(180f, 0f);
+        e.addScoreboardTag("cimgallery");
     }
 
     private void logVariantMissing(String kind, String ns, int page, String subject) {
@@ -1980,6 +1985,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             e.setInvulnerable(true);
                             e.setRemoveWhenFarAway(false);
                             e.setRotation(180f, 0f);
+                            e.addScoreboardTag("cimgallery");
                             e.addPotionEffect(new org.bukkit.potion.PotionEffect(
                                     t, VARIANT_EFFECT_DURATION_TICKS, 0, false, true));
                         });
@@ -2010,6 +2016,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             e.setInvulnerable(true);
                             e.setRemoveWhenFarAway(false);
                             e.setRotation(180f, 0f);
+                            e.addScoreboardTag("cimgallery");
                             org.bukkit.inventory.ItemStack chest =
                                     new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_CHESTPLATE);
                             org.bukkit.inventory.meta.ArmorMeta meta =
@@ -2029,6 +2036,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             e.setInvulnerable(true);
                             e.setRemoveWhenFarAway(false);
                             e.setRotation(180f, 0f);
+                            e.addScoreboardTag("cimgallery");
                             org.bukkit.inventory.ItemStack sword =
                                     new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
                             org.bukkit.inventory.meta.ItemMeta meta = sword.getItemMeta();
@@ -2282,6 +2290,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     e.setFacingDirection(org.bukkit.block.BlockFace.NORTH, true);
                     e.setArt(art, true);
                     e.setInvulnerable(true);
+                    e.addScoreboardTag("cimgallery");
                 });
                 placed++;
             } catch (Throwable spawnFail) {
