@@ -47,7 +47,7 @@ jobs:
           xdpyinfo -display :99 >/dev/null
           python3 scripts/fetch-visual-client.py 26.3 /tmp/rig/client --assets
           mkdir -p /tmp/rig/client/game
-          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\nmipmapLevels:0\nfov:0.0\n' > /tmp/rig/client/game/options.txt
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\nmipmapLevels:0\nfov:0.0\nfovEffectScale:0.0\nbobView:false\n' > /tmp/rig/client/game/options.txt
           found=0
           for backend in opengl vulkan; do
             if bash scripts/visual/probe-client.sh /tmp/rig/client/launch.txt "$backend" "/tmp/rig/probe-$backend.out"; then
@@ -82,7 +82,7 @@ jobs:
           set -euo pipefail
           backend=$(cat /tmp/rig/glbackend.txt)
           sed -E "s/--graphicsBackend (opengl|vulkan)/--graphicsBackend $backend/g" /tmp/rig/client/launch.txt > /tmp/rig/client/launch-run.txt
-          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\npreferredGraphicsBackend:%s\n' "$backend" > /tmp/rig/client/game/options.txt
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\nfovEffectScale:0.0\nbobView:false\npreferredGraphicsBackend:%s\n' "$backend" > /tmp/rig/client/game/options.txt
           setsid bash -c 'cd /tmp/rig/client && bash launch-run.txt > client.out 2>&1' < /dev/null > /dev/null 2>&1 &
           client_pid=$!
           joined=0
@@ -101,15 +101,27 @@ jobs:
             'fill -7 -61 -1 -5 -59 1 minecraft:calcite' \
             'fill -3 -61 -1 -1 -59 1 minecraft:calcite' \
             'fill 1 -61 -1 3 -59 1 minecraft:calcite' \
-            'summon minecraft:item_display -5.5 -59.5 0.5 {Tags:["light_A"],item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f]}}' \
-            'summon minecraft:item_display -1.5 -59.5 0.5 {Tags:["light_B"],brightness:{sky:15,block:0},item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f]}}' \
-            'summon minecraft:item_display 2.5 -59.5 0.5 {Tags:["light_C"],brightness:{sky:15,block:15},item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f]}}' \
+            'summon minecraft:item_display -5.5 -59.5 0.5 {Tags:["light_A"],item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}}' \
+            'summon minecraft:item_display -1.5 -59.5 0.5 {Tags:["light_B"],brightness:{sky:15,block:0},item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}}' \
+            'summon minecraft:item_display 2.5 -59.5 0.5 {Tags:["light_C"],brightness:{sky:15,block:15},item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}}' \
             'summon minecraft:item_display 6.5 -59.5 3.5 {Tags:["light_D"],brightness:{sky:15,block:0},item:{id:"minecraft:white_concrete",count:1}}' \
             'tp @a 0.5 -60 14.5 180 6' \
             'data get entity @e[type=minecraft:item_display,tag=light_A,limit=1]' \
             'data get entity @e[type=minecraft:item_display,tag=light_B,limit=1]' \
             'data get entity @e[type=minecraft:item_display,tag=light_C,limit=1]' \
-            'data get entity @e[type=minecraft:item_display,tag=light_D,limit=1]' >&3
+            'data get entity @e[type=minecraft:item_display,tag=light_D,limit=1]' \
+            'data get entity @a[limit=1] Pos' \
+            'data get entity @a[limit=1] Rotation' \
+            'execute if data entity @e[tag=light_A,limit=1] transformation{translation:[0f,0f,3f]} run say CIM_LIGHT_A_TRANSFORM_OK' \
+            'execute if data entity @e[tag=light_B,limit=1] transformation{translation:[0f,0f,3f]} run say CIM_LIGHT_B_TRANSFORM_OK' \
+            'execute if data entity @e[tag=light_C,limit=1] transformation{translation:[0f,0f,3f]} run say CIM_LIGHT_C_TRANSFORM_OK' >&3
+          for _ in $(seq 1 20); do
+            if grep -q 'CIM_LIGHT_C_TRANSFORM_OK' /tmp/srv/boot.log; then break; fi
+            sleep 0.5
+          done
+          for label in A B C; do
+            grep -q "CIM_LIGHT_${label}_TRANSFORM_OK" /tmp/srv/boot.log
+          done
           sleep 6
           java -cp /tmp/rig/vtools Key F1
           sleep 1
@@ -130,6 +142,7 @@ jobs:
             /tmp/rig/shot.png
             /tmp/rig/light-receipt
             /tmp/rig/client/client.out
+            /tmp/rig/client/game/options.txt
             /tmp/srv/boot.log
             /tmp/srv/server.properties
             /tmp/rig/glbackend.txt
