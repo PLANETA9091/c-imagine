@@ -27,25 +27,43 @@ final class UnlitBlockModel {
         double[][] original = old == null ? identity()
                 : transpose(ObjMesh.columnsOf(angle(old, "x"), angle(old, "y"), angle(old, "z")));
         double[] origin = old == null ? new double[]{.5, .5, .5} : vector(old, "origin", 1.0 / 16);
-        // 14-e17 THE LIGHT-BAKE TILT IS RETIRED. The pre-pin era needed the
-        // normal re-oriented to the up-ish LIGHT vector so the client's own
-        // shading rendered the shade:false planes fullbright; the measured
-        // cost = the foreshortening (the camera-facing tall planes tilted
-        // toward horizontal: the calcite-wall posts rendered 35/56 px = the
-        // cos of the tilt, run 43512429489's create-p240 c2r1). Since the
-        // 14-ea3 front-air pin + 14-bk/14-cy every display carries an
-        // EXPLICIT local brightness, so the geometry no longer pays for the
-        // lighting: the transformation keeps ONLY the original placement
-        // (linear = original, the bake/shear = identity), the element's own
-        // variant rotation rides the matrix unchanged, and the lighting
-        // contract = the pinned display brightness. Any future consumer that
-        // renders without a pin must restore the bake with the receipt.
-        double[][] bake = identity();
-        double[][] shear = identity();
+        // FaceBakery quantizes the baked plane's normal to a cardinal
+        // direction; VertexConsumer then inverse-transposes that direction.
+        // Keep the bake within 30 degrees of south, so the native normal is
+        // Z. Choose its tilt and the affine transform together: tangents
+        // land exactly at the source tangents, while M^T * LIGHT = 2 * Z.
+        // Thus inverse-transpose(Z) points at LIGHT without moving a corner.
+        // Brightness controls the separate lightmap, not item diffuse.
+        double[] localLight = new double[3];
+        for (int col = 0; col < 3; col++) {
+            for (int row = 0; row < 3; row++) {
+                localLight[col] += original[row][col] * LIGHT[row];
+            }
+        }
+        double a = localLight[0] / 2;
+        double b = localLight[1] / 2;
+        double c = Math.sqrt(1 - a * a - b * b);
+        double[][] bake = {
+                {1 - a * a / (1 + c), -a * b / (1 + c), -a},
+                {-a * b / (1 + c), 1 - b * b / (1 + c), -b},
+                {a, b, c}
+        };
+        double[][] restored = new double[3][3];
+        double sign = localLight[2] < 0 ? -1 : 1;
+        for (int row = 0; row < 3; row++) {
+            restored[row][0] = original[row][0];
+            restored[row][1] = original[row][1];
+            // The quad has constant local Z, so this column is free after
+            // restoring its center. Its LIGHT component fixes the shader
+            // normal; its orthogonal component keeps M nonsingular even
+            // when LIGHT lies in the source plane.
+            restored[row][2] = 2 * c * LIGHT[row]
+                    + sign * (original[row][2] - localLight[2] * LIGHT[row]);
+        }
         double[] from = vector(source, "from", 1.0 / 16);
         double[] to = vector(source, "to", 1.0 / 16);
         double[] center = {(from[0] + to[0]) / 2, (from[1] + to[1]) / 2, to[2]};
-        double[][] linear = multiply(multiply(original, shear), transpose(bake));
+        double[][] linear = multiply(restored, transpose(bake));
         double[] relative = new double[3];
         for (int i = 0; i < 3; i++) {
             relative[i] = center[i] - origin[i];

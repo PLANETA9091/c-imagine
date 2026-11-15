@@ -3213,13 +3213,9 @@ public final class F2vPack {
                     "state tint: no state-suffixed sibling when the texture row covers the sprite");
 
             // -- 14-df CORRIDOR RING route asserts -----------------------------------
-            // The visual-rings.tsv row scales the state's ambient-lit captured
-            // rows by the solved corridor factor: the shaded rows ride
-            // current x k (the gate's captured tint where the gate applied
-            // one, 1.0 on the non-flat rows the gradient refusal kept raw),
-            // the identity rows (the fullbright frame/LED art) and the
-            // (15,15) mod-light rows stay untinted, and an absent rings file
-            // leaves the 14-da gate behavior exactly as it was.
+            // Ring compensation is independent of captured vertex RGB. The
+            // latter is already in tile pixels; only the additional ratio
+            // belongs in a node tint. No ratio file means no node multiplier.
             Path outRing = tmp.resolve("out-ring");
             Files.createDirectories(outRing);
             Files.createDirectories(outRing.resolve("quads"));
@@ -3271,11 +3267,8 @@ public final class F2vPack {
                         }
                         return vals;
                     };
-            // 0.7f parses to 0.699999988079071 — x255 = 178.4999... rounds to 178
-            int gateArgb = (255 << 24) | (153 << 16) | (153 << 8) | 178;
-            expect(failures, tintValues.apply(plainComposite).size() == 1
-                            && tintValues.apply(plainComposite).get(0) == gateArgb,
-                    "ring: absent rings file = the 14-da gate tint only (0.6/0.6/0.7)");
+            expect(failures, tintValues.apply(plainComposite).isEmpty(),
+                    "ring: absent compensation leaves captured RGB in pixels only");
             Files.writeString(outRing.resolve("visual-rings.tsv"),
                     "# 14-df ring fixture\n"
                     + "fixture:ringblock\t0.5\t0.5\t0.5\tfixture@gallery-fake-p0:c0,r0"
@@ -3284,13 +3277,11 @@ public final class F2vPack {
             Result rRing = build(mods, outRing, List.of(), List.of(), List.of(),
                     List.of(), List.of());
             JsonObject ringComposite = GalleryPack.itemNode(ringRef);
-            int ringShadedArgb = (255 << 24) | (77 << 16) | (77 << 8) | 89;
             int ringRawArgb = (255 << 24) | (128 << 16) | (128 << 8) | 128;
             java.util.List<Integer> ringTints = tintValues.apply(ringComposite);
-            expect(failures, ringTints.size() == 2 && ringTints.contains(ringShadedArgb)
-                            && ringTints.contains(ringRawArgb),
-                    "ring: shaded rows ride current x k (0.3/0.3/0.35 gate-tinted, "
-                    + "0.5/0.5/0.5 on the gradient refusal class), got " + ringTints);
+            expect(failures, ringTints.size() == 2
+                            && ringTints.stream().allMatch(value -> value == ringRawArgb),
+                    "ring: flat and gradient pixels receive only the independent 0.5 ratio, got " + ringTints);
 
             // -- zip contents -------------------------------------------------------
             TreeMap<String, byte[]> entries = readZip(out.resolve("pack.zip"));
@@ -3762,9 +3753,10 @@ public final class F2vPack {
                     rgba + "\tcutout\t15\t15", rgba + "\ttranslucent", zero};
             // 14-dr: only the explicit translucent material honors the vertex
             // alpha (0.3 x the texture's 128 = 38); every legacy row and the
-            // explicit solid/cutout rows keep the texture's 128 — including
-            // the zero-alpha legacy row (the huge_lily_pad trap signature).
-            int[] blockAlpha = {128, 128, 128, 128, 38, 128};
+            // explicit solid/cutout rows now also preserve native chunk texture
+            // alpha semantics: 128 is opaque in both materials. Legacy rows
+            // retain their known behavior without guessing a source material.
+            int[] blockAlpha = {128, 128, 255, 255, 38, 128};
             for (int i = 0; i < blockRows.length; i++) {
                 ObjMesh.resetBaker();
                 GalleryPack.resetModelScales();
@@ -4218,8 +4210,78 @@ public final class F2vPack {
         }
     }
 
+    private static void capturedMaterialAlphaSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-material-alpha");
+        try {
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(quads);
+            var entries = new TreeMap<String, byte[]>();
+            var image = new java.awt.image.BufferedImage(16, 16,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            int[] alphas = {0, 25, 26, 128, 255};
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    image.setRGB(x, y, (alphas[Math.min(4, x / 3)] << 24) | 0x123456);
+                }
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", png);
+            String sprite = "fixture:block/shared_alpha";
+            entries.put(GalleryPack.spritePathPng(sprite), png.toByteArray());
+            String geometry = sprite + "\t0\t-1"
+                    + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
+                    + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0"
+                    + "\t1".repeat(12) + "\t1".repeat(4);
+            StringBuilder mesh = new StringBuilder();
+            String[] materials = {"solid", "cutout", "translucent"};
+            for (String material : materials) mesh.append(geometry).append('\t').append(material)
+                    .append("\t0\t15\n");
+            Files.writeString(quads.resolve("alpha.tsv"), mesh.toString());
+            var rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:alpha#qalpha")),
+                    entries, new ArrayList<>(), Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "material alpha: shared-sprite fixture resolves");
+            if (rows.isEmpty()) return;
+            ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+            JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+            expect(failures, node.getAsJsonArray("models").size() == 3,
+                    "material alpha: each native material retains its face");
+            for (int i = 0; i < materials.length; i++) {
+                JsonObject draw = node.getAsJsonArray("models").get(i).getAsJsonObject();
+                JsonObject model = JsonParser.parseString(new String(entries.get("assets/"
+                        + draw.get("model").getAsString().replace(":", "/models/") + ".json"),
+                        StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject face = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").getAsJsonObject("south");
+                String texture = model.getAsJsonObject("textures")
+                        .get(face.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get(GalleryPack.spritePathPng(texture)));
+                JsonArray uv = face.getAsJsonArray("uv");
+                double u0 = uv.get(0).getAsDouble(), u1 = uv.get(2).getAsDouble();
+                double v0 = uv.get(1).getAsDouble(), v1 = uv.get(3).getAsDouble();
+                for (int j = 0; j < alphas.length; j++) {
+                    int x = (int) Math.floor((u0 + (j * 3 + 1.5) / 16 * (u1 - u0)) * sheet.getWidth() / 16);
+                    int y = (int) Math.floor((v0 + v1) * .5 * sheet.getHeight() / 16);
+                    int pixel = sheet.getRGB(x, y);
+                    int expected = i == 0 ? 255 : i == 1 ? (alphas[j] >= 26 ? 255 : 0) : alphas[j];
+                    expect(failures, (pixel >>> 24) == expected && (pixel & 0x00ffffff) == 0x123456,
+                            "material alpha: native " + materials[i] + " alpha=" + alphas[j]
+                                    + " preserves RGB and effective opacity, got " + Integer.toHexString(pixel));
+                }
+            }
+            expect(failures, java.util.Arrays.equals(entries.get(GalleryPack.spritePathPng(sprite)), png.toByteArray()),
+                    "material alpha: shared raw sprite is not modified");
+        } finally {
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(null);
+            deleteRecursively(quads);
+        }
+    }
+
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
         unlitPlaneSelftest(failures);
+        capturedMaterialAlphaSelftest(failures);
         Path quads = Files.createTempDirectory("f2v-unlit-selftest");
         try {
             String face = "fakemod:block/glow_tex\t0\t-1"
@@ -4334,277 +4396,76 @@ public final class F2vPack {
                                 "minecraft:translucent")) && elements == 3,
                         "mixed block materials: every face retained once on its material mode=" + mode);
             }
-            // 14-cz captured-shade tint: the composite children carry the
-            // captured per-quad RGB as `minecraft:constant` node tints (the
-            // measured machine-wall class — ours rendered the raw texture
-            // fullbright, ours/truth ≈ 2.0). Identity rows (1.0) stay
-            // untinted; the 14-cy fullbright split is gone — one LIGHT_ALL
-            // composite per mesh (the (15,15) rows carry shaded RGB too).
-            GalleryPack.resetModelScales();
-            // 14-cz.1 tint gate: both rows shade:false; the 1.0 identity row
-            // and the (15,15) mod-light-override row stay untinted, only the
-            // (8,15) scene-lit 0.6 row rides the constant ARGB tint.
-            String litA = face.strip() + "\t1\t1\t1".repeat(4) + "\t1".repeat(4) + "\t8\t15\n";
-            String litB = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t8\t15\n";
-            String litFb = face.strip() + "\t0.5".repeat(12) + "\t1".repeat(4) + "\t15\t15\n";
-            Files.writeString(quads.resolve("lit.tsv"), litA + litB + litFb);
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:lit#qlit")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "captured shade: one LIGHT_ALL composite per mesh");
-            if (rows.size() == 1) {
-                JsonObject shadeNode = GalleryPack.itemNode(rows.get(0).modelRef());
-                expect(failures, shadeNode != null
-                                && shadeNode.get("type").getAsString().equals("minecraft:composite")
-                                && shadeNode.getAsJsonArray("models").size() == 3,
-                        "captured shade: composite carries all three quads");
-                if (shadeNode != null) {
-                    int tinted = 0;
-                    for (var m : shadeNode.getAsJsonArray("models")) {
-                        JsonObject child = m.getAsJsonObject();
-                        if (child.has("tints")) {
-                            tinted++;
-                            JsonObject t = child.getAsJsonArray("tints").get(0).getAsJsonObject();
-                            expect(failures, t.get("type").getAsString().equals("minecraft:constant")
-                                            && t.get("value").getAsInt() == ((255 << 24) | (153 << 16) | (153 << 8) | 153),
-                                    "captured shade: the 0.6 quad rides a constant ARGB tint");
-                        }
-                    }
-                    expect(failures, tinted == 1,
-                            "captured shade: identity and (15,15) override rows stay untinted");
+            // Real native run43712291665 proves composite node tints are active.
+            // Captured RGB belongs in the polygon tile exactly once, regardless
+            // of light-pair policy. Opaque pixels detect squared flat shading and
+            // the old extra mean bake, which transparent fixtures could not.
+            String colorFace = face.replace("fakemod:block/glow_tex", "fixture:block/captured_rgb");
+            String flatRgb = "\t0.6".repeat(12);
+            String gradientRgb = "\t0.8\t0.8\t0.8\t0.4\t0.4\t0.4"
+                    + "\t0.8\t0.8\t0.8\t0.4\t0.4\t0.4";
+            for (int mode = 0; mode < 6; mode++) {
+                GalleryPack.resetModelScales();
+                ObjMesh.resetBaker();
+                entries.clear();
+                var opaque = new java.awt.image.BufferedImage(16, 16,
+                        java.awt.image.BufferedImage.TYPE_INT_ARGB);
+                for (int y = 0; y < 16; y++) {
+                    for (int x = 0; x < 16; x++) opaque.setRGB(x, y, 0xffc8a064);
                 }
-            }
-            // 14-da TINT GATE v2 fixtures: the tint is a MESH-level decision.
-            // (a) constant (5,15) mesh (the nixie casing class) — untinted;
-            // (b) constant (8,15) mesh (the isotopic centrifuge class) — tinted;
-            // (c) constant (0,15) mesh (the wall/webbing class) — untinted;
-            // (d) mixed (0,15)+(8,15) mesh (the machine class) — the (0,15)
-            //     rows ride the tint too (the truth shaded the whole mesh).
-            String shade06 = face.strip() + "\t0.6".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
-            String shade10 = face.strip() + "\t1".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
-            // (a) nixie-like constant (5,15): shaded rows stay fullbright
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("nixie.tsv"), String.format(shade06, "5", "15")
-                    + String.format(shade10, "5", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:nixie#qnixie")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint v2: constant (5,15) mesh resolves");
-            if (rows.size() == 1) {
-                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
-                        "tint v2: constant (5,15) nixie casing replays fullbright");
-            }
-            // (b) centrifuge-like constant (8,15): shaded rows ride the tint
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("cent.tsv"), String.format(shade06, "8", "15")
-                    + String.format(shade10, "8", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:cent#qcent")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint v2: constant (8,15) mesh resolves");
-            if (rows.size() == 1) {
-                expect(failures, nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
-                        "tint v2: constant (8,15) machine glow rides the tint");
-            }
-            // (c) webbing-like constant (0,15): the 14-ea5 measured law —
-            // the flat means SPREAD (0.6 vs 1.0), so the 0.6 row rides the
-            // captured tint and the 1.0 row stays raw by identity (the
-            // 14-da-era «green raw» receipt was re-measured RED on run
-            // 43410920600: the missing internal contrast IS the defect)
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("webb.tsv"), String.format(shade06, "0", "15")
-                    + String.format(shade10, "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:webb#qwebb")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint v2: constant (0,15) mesh resolves");
-            if (rows.size() == 1) {
-                expect(failures, nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
-                        "tint v2/ea5: the (0,15) shade-table spread tints its sub-identity rows");
-            }
-            // (d) machine-like mixed mesh: the (0,15) rows inherit the scene-lit tint
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("mach.tsv"), String.format(shade06, "8", "15")
-                    + String.format(shade06, "0", "15") + String.format(shade10, "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:mach#qmach")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint v2: mixed machine mesh resolves");
-            if (rows.size() == 1) {
-                JsonObject machNode = GalleryPack.itemNode(rows.get(0).modelRef());
-                int machTinted = 0;
-                if (machNode != null && machNode.has("models")) {
-                    for (var m : machNode.getAsJsonArray("models")) {
-                        if (m.getAsJsonObject().has("tints")) {
-                            machTinted++;
+                var png = new java.io.ByteArrayOutputStream();
+                javax.imageio.ImageIO.write(opaque, "png", png);
+                entries.put(GalleryPack.spritePathPng("fixture:block/captured_rgb"), png.toByteArray());
+                String rgb = mode == 4 ? gradientRgb : flatRgb;
+                int block = mode == 1 ? 5 : mode == 2 ? 8 : mode == 3 ? 15 : 0;
+                String base = mode == 5 ? colorFace.replace("\t0\t-1", "\t0\t0") : colorFace;
+                Files.writeString(quads.resolve("rgb.tsv"), base.strip() + rgb
+                        + "\t1".repeat(4) + "\t" + block + "\t15\n");
+                rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:rgb#qrgb")),
+                        entries, warnings, Map.of(), new ArrayList<>());
+                expect(failures, rows.size() == 1, "captured RGB: fixture resolves mode=" + mode);
+                if (rows.isEmpty()) continue;
+                JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+                expect(failures, !nodeHasConstantTint(node),
+                        "captured RGB: no second node multiplier mode=" + mode);
+                expect(failures, entries.keySet().stream().noneMatch(k -> k.contains("_cimtint_m")),
+                        "captured RGB: no second mean bake mode=" + mode);
+                ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+                JsonObject draw = node.getAsJsonArray("models").get(0).getAsJsonObject();
+                JsonObject model = JsonParser.parseString(new String(entries.get("assets/"
+                        + draw.get("model").getAsString().replace(":", "/models/") + ".json"),
+                        StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject sampled = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").getAsJsonObject("south");
+                String texture = model.getAsJsonObject("textures")
+                        .get(sampled.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get(GalleryPack.spritePathPng(texture)));
+                JsonArray uv = sampled.getAsJsonArray("uv");
+                int x0 = (int) Math.round(uv.get(0).getAsDouble() * sheet.getWidth() / 16);
+                int y0 = (int) Math.round(uv.get(1).getAsDouble() * sheet.getHeight() / 16);
+                int x1 = (int) Math.round(uv.get(2).getAsDouble() * sheet.getWidth() / 16);
+                int y1 = (int) Math.round(uv.get(3).getAsDouble() * sheet.getHeight() / 16);
+                int min = 255, max = 0;
+                boolean correct = true;
+                for (int y = Math.min(y0, y1); y < Math.max(y0, y1); y++) {
+                    for (int x = Math.min(x0, x1); x < Math.max(x0, x1); x++) {
+                        int pixel = sheet.getRGB(x, y);
+                        int red = (pixel >>> 16) & 255;
+                        min = Math.min(min, red);
+                        max = Math.max(max, red);
+                        correct &= (pixel >>> 24) == 255;
+                        if (mode != 4) {
+                            correct &= Math.abs(red - 120) <= 1
+                                    && Math.abs(((pixel >>> 8) & 255) - 96) <= 1
+                                    && Math.abs((pixel & 255) - 60) <= 1;
                         }
                     }
                 }
-                expect(failures, machTinted == 2,
-                        "tint v2: mixed mesh tints its (0,15) rows too (the (1.0) row skips by identity)");
+                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min > 60;
+                expect(failures, correct && min <= max,
+                        "captured RGB: opaque source times captured color exactly once mode=" + mode);
             }
-            // (e) 14-ea4 AMBIENT-SHADE mesh: NON-constant light pairs
-            // ((0,14)/(0,15) — the vault class), NO scene-lit row. The
-            // 0.6 row rides the captured tint; the 1.0 row skips by
-            // identity; the raw-fullbright vault render (luma_fit=false at
-            // ae 474822) is the measured defect this closes.
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("vault.tsv"), String.format(shade06, "0", "14")
-                    + String.format(shade10, "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:vault#qvault")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint ea4: ambient-shade mesh resolves");
-            if (rows.size() == 1) {
-                JsonObject vaultNode = GalleryPack.itemNode(rows.get(0).modelRef());
-                int vaultTinted = 0;
-                if (vaultNode != null && vaultNode.has("models")) {
-                    for (var m : vaultNode.getAsJsonArray("models")) {
-                        if (m.getAsJsonObject().has("tints")) {
-                            vaultTinted++;
-                            JsonObject t = m.getAsJsonObject().getAsJsonArray("tints").get(0).getAsJsonObject();
-                            expect(failures, t.get("type").getAsString().equals("minecraft:constant")
-                                            && t.get("value").getAsInt() == ((255 << 24) | (153 << 16) | (153 << 8) | 153),
-                                    "tint ea4: the (0,14) 0.6 row rides the captured constant tint");
-                        }
-                    }
-                }
-                expect(failures, vaultTinted == 1,
-                        "tint ea4: the dark-cell mesh shades without a scene-lit row (identity row raw)");
-            }
-            // (f) 14-ea4 boundary: the same constant (0,15) spread shape —
-            // the tint fires (see (c)); the identity 1.0 row stays untinted
-            // inside it (asserted by the ea5 wall fixture below)
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("wall.tsv"), String.format(shade06, "0", "15")
-                    + String.format(shade10, "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:wall#qwall")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint ea4: constant (0,15) mesh resolves");
-            if (rows.size() == 1) {
-                expect(failures, nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
-                        "tint ea4/ea5: the constant (0,15) spread rides the tint");
-            }
-            // (j) 14-ea5 THE REAL WALL SHAPE (biomesoplenty:black_sandstone_wall
-            // #q3f0c16787d9614ac, read from the seed): 0.498 down + 1.0 up +
-            // 0.8 north/south — the vanilla directional table. The 0.498 and
-            // 0.8 rows ride their constants (127/204), the 1.0 row stays raw.
-            GalleryPack.resetModelScales();
-            String shade0498 = face.strip() + "\t0.498".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
-            String shade08j = face.strip() + "\t0.8".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
-            Files.writeString(quads.resolve("sandwall.tsv"), String.format(shade0498, "0", "15")
-                    + String.format(shade10, "0", "15") + String.format(shade08j, "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:sandwall#qsandwall")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint ea5: the real wall table resolves");
-            if (rows.size() == 1) {
-                JsonObject swNode = GalleryPack.itemNode(rows.get(0).modelRef());
-                java.util.Set<Integer> swVals = new java.util.HashSet<>();
-                if (swNode != null && swNode.has("models")) {
-                    for (var m : swNode.getAsJsonArray("models")) {
-                        if (m.getAsJsonObject().has("tints")) {
-                            swVals.add(m.getAsJsonObject().getAsJsonArray("tints")
-                                    .get(0).getAsJsonObject().get("value").getAsInt() & 0xFFFFFF);
-                        }
-                    }
-                }
-                expect(failures, swVals.contains((int) Math.round(0.498 * 255) * 0x10101)
-                                && swVals.contains(204 * 0x10101) && swVals.size() == 2,
-                        "tint ea5: the wall table tints 0.498+0.8 and leaves the 1.0 row raw");
-            }
-            // (g) 14-ea5 INTERNAL-CONTRAST mesh: CONSTANT (0,15) light pairs,
-            // two FLAT rows at 0.8 and 0.478 (the measured 1k_crafting_storage
-            // capture — the directional shade table in the means). Both rows
-            // ride their own captured tint (204 and ~122 ARGB); the raw replay
-            // measured luma_fit=false at ae 330-580k on this exact shape.
-            GalleryPack.resetModelScales();
-            String shade08 = face.strip() + "\t0.8".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
-            String shade0478 = face.strip() + "\t0.478".repeat(12) + "\t1".repeat(4) + "\t%s\t%s\n";
-            Files.writeString(quads.resolve("storage.tsv"), String.format(shade08, "0", "15")
-                    + String.format(shade0478, "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:storage#qstorage")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint ea5: internal-contrast mesh resolves");
-            if (rows.size() == 1) {
-                JsonObject stNode = GalleryPack.itemNode(rows.get(0).modelRef());
-                int stTinted = 0;
-                java.util.Set<Integer> stVals = new java.util.HashSet<>();
-                if (stNode != null && stNode.has("models")) {
-                    for (var m : stNode.getAsJsonArray("models")) {
-                        if (m.getAsJsonObject().has("tints")) {
-                            stTinted++;
-                            stVals.add(m.getAsJsonObject().getAsJsonArray("tints")
-                                    .get(0).getAsJsonObject().get("value").getAsInt() & 0xFFFFFF);
-                        }
-                    }
-                }
-                expect(failures, stTinted == 2 && stVals.contains(204 * 0x10101)
-                                && stVals.contains(((int) Math.round(0.478 * 255)) * 0x10101),
-                        "tint ea5: both flat rows ride their captured constants (0.8 / 0.478)");
-            }
-            // (h) 14-ea5 boundary: a CONSTANT (0,15) mesh with UNIFORM flat
-            // means stays raw — the luma normalization absorbs a uniform
-            // delta (the measured green wall class shape).
-            GalleryPack.resetModelScales();
-            Files.writeString(quads.resolve("uniform.tsv"), String.format(shade08, "0", "15")
-                    + String.format(shade0478.replace("0.478", "0.8"), "0", "15"));
-            entries.clear();
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:uniform#quniform")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint ea5: uniform-mean mesh resolves");
-            if (rows.size() == 1) {
-                expect(failures, !nodeHasConstantTint(GalleryPack.itemNode(rows.get(0).modelRef())),
-                        "tint ea5: the uniform-mean dark-cell class stays raw");
-            }
-            // (i) 14-ea5 THE MEAN-BAKE: the REAL crafting-storage shape —
-            // constant (0,15) light, one row with PER-VERTEX mixed colors
-            // (0.8 and 0.478 inside one quad — the chunk-baked shade+AO the
-            // constant node tint cannot express). The mean-bake rehosts the
-            // sprite as the _cimtint_m<hex> sibling (mean 204+122+204+122
-            // over 4 = ~163) and rebinds the row's faces; NO node tint.
-            GalleryPack.resetModelScales();
-            String mixedRow = face.strip()
-                    + "\t0.8\t0.8\t0.8\t0.478\t0.478\t0.478\t0.8\t0.8\t0.8\t0.478\t0.478\t0.478"
-                    + "\t1".repeat(4) + "\t0\t15\n";
-            String mixRow2 = face.strip()
-                    + "\t0.8".repeat(12) + "\t1".repeat(4) + "\t0\t15\n";
-            Files.writeString(quads.resolve("mixed.tsv"), mixedRow + mixRow2);
-            entries.clear();
-            // the mean-bake reads the sprite PNG: host a real 16x16 for the
-            // fixture sprite (the ghost-sprite mesh would skip the bake)
-            java.awt.image.BufferedImage fixImg = new java.awt.image.BufferedImage(16, 16,
-                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
-            java.io.ByteArrayOutputStream fixBo = new java.io.ByteArrayOutputStream();
-            javax.imageio.ImageIO.write(fixImg, "png", fixBo);
-            entries.put(GalleryPack.spritePathPng("fakemod:block/glow_tex"), fixBo.toByteArray());
-            rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:mixed#qmixed")),
-                    entries, warnings, Map.of(), new ArrayList<>());
-            expect(failures, rows.size() == 1, "tint ea5: per-vertex mixed mesh resolves");
-            if (rows.size() == 1) {
-                JsonObject mxNode = GalleryPack.itemNode(rows.get(0).modelRef());
-                int mxTinted = 0;
-                boolean mxBaked = false;
-                if (mxNode != null && mxNode.has("models")) {
-                    for (var m : mxNode.getAsJsonArray("models")) {
-                        if (m.getAsJsonObject().has("tints")) {
-                            mxTinted++;
-                        }
-                    }
-                }
-                // the sibling lands in the entries map under the baked png name
-                for (String k : entries.keySet()) {
-                    if (k.contains("_cimtint_m")) {
-                        mxBaked = true;
-                    }
-                }
-                expect(failures, mxTinted == 1,
-                        "tint ea5: the flat sibling row rides the constant tint, the mixed row cannot");
-                expect(failures, mxBaked,
-                        "tint ea5: the non-flat row's mean baked into the _cimtint_m sibling");
-            }
+            ObjMesh.resetBaker();
             // Equal planes across different meshes share model bytes while
             // both draw nodes and their exact transforms remain present.
             GalleryPack.resetModelScales();
@@ -4839,6 +4700,14 @@ public final class F2vPack {
             JsonObject rotation = source.getAsJsonObject("rotation");
             double[] angles = {random.nextDouble() * 360, random.nextDouble() * 360,
                     random.nextDouble() * 360};
+            if (i < 6) {
+                angles = new double[][]{{0, 0, 0}, {90, 0, 0}, {0, 90, 0},
+                        {180, 0, 0}, {0, 180, 0}, {0, 0, 90}}[i];
+            } else if (i < 9) {
+                // The native light lies in the source plane; include both
+                // sides of the determinant-sign boundary as well.
+                angles = new double[]{Math.toDegrees(Math.atan(-.7)) + (i - 7) * 1e-9, 0, 0};
+            }
             rotation.addProperty("x", angles[0]);
             rotation.addProperty("y", angles[1]);
             rotation.addProperty("z", angles[2]);
@@ -4888,17 +4757,19 @@ public final class F2vPack {
                 det += normal[r] * matrix.get(r * 4 + 2).getAsDouble();
                 length += normal[r] * normal[r];
             }
-            // 14-e17: the light-bake tilt is retired - the matrix's normal is
-            // the SOURCE'S OWN normal (the variant rotation's third column,
-            // sign-corrected), not the up-ish LIGHT vector. The lighting
-            // contract = the pinned display brightness (14-ea3/14-bk/14-cy).
+            expect(failures, Math.abs(det) > 1e-9 && length > 1e-9,
+                    "unlit: restoration remains invertible at cardinal and arbitrary angles");
+            // Native item.vsh applies directional light independently of
+            // the display's packed lightmap override. Captured block shade
+            // is already baked into these tiles, so the item normal must
+            // receive a unit diffuse multiplier while all corners stay put.
             for (int r = 0; r < 3; r++) {
                 maxNormal = Math.max(maxNormal, Math.abs(normal[r] / Math.sqrt(length)
-                        * Math.signum(det) - before[2][r]));
+                        * Math.signum(det) - new double[]{.2, 1, -.7}[r] / Math.sqrt(1.53)));
             }
         }
         expect(failures, maxCorner < 1e-9, "unlit: arbitrary planes/oversized scale preserve all corners");
-        expect(failures, maxNormal < 1e-9, "unlit: native layer normal preserves the source's own orientation (14-e17: no light-bake tilt; the display pin owns the lighting)");
+        expect(failures, maxNormal < 1e-9, "unlit: native item diffuse is neutral independently of the lightmap pin");
     }
 
     /** A real w x h PNG (opaque, one gray shade) — the animation sanitizer reads IHDR. */

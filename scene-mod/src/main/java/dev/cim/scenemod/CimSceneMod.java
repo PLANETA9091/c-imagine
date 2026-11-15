@@ -425,6 +425,8 @@ public final class CimSceneMod {
                                     }
                                     return viewer == null ? 0 : 1;
                                 }))
+                        .then(Commands.literal("gui-clear")
+                                .executes(ctx -> clearGuiScene(ctx.getSource())))
                         .then(Commands.literal("gui")
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
@@ -4872,6 +4874,32 @@ public final class CimSceneMod {
         } finally {
             GUI_CLEARING = false;
         }
+    }
+
+    /** End the GUI pass before another scene uses the same camera/world. */
+    private static int clearGuiScene(CommandSourceStack src) {
+        ServerPlayer viewer = src.getServer().getPlayerList().getPlayerByName("cimviewer");
+        if (viewer == null) {
+            LOGGER.error("[cimscene] gallery-gui-clear failed reason=no-viewer");
+            return 0;
+        }
+        ServerLevel level = src.getLevel();
+        BlockPos rig = guiRigPos(viewer);
+        java.util.Set<BlockPos> checked = new java.util.HashSet<>(GUI_CUBE_BLOCKS);
+        for (BlockPos pos : BlockPos.betweenClosed(rig.offset(-1, 0, -1), rig.offset(1, 2, 1))) {
+            checked.add(pos.immutable());
+        }
+        viewer.closeContainer();
+        guiClearRig(level, viewer, rig);
+        long remaining = checked.stream().filter(pos -> !level.getBlockState(pos).isAir()).count();
+        boolean heldEmpty = viewer.getMainHandItem().isEmpty();
+        if (remaining != 0 || !heldEmpty) {
+            throw new IllegalStateException("GUI rig cleanup incomplete: remaining=" + remaining
+                    + " held_empty=" + heldEmpty);
+        }
+        LOGGER.info("[cimscene] gallery-gui-clear done rig={} checked={} remaining={} held_empty={}",
+                rig, checked.size(), remaining, heldEmpty);
+        return 1;
     }
 
     private static void guiClearRigBlocks(ServerLevel level, ServerPlayer player, BlockPos rig) {

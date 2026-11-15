@@ -492,7 +492,7 @@ final class QuadDump {
                 }
                 return;
             }
-            ItemCapture capture = new ItemCapture(sprites, 0);
+            ItemCapture capture = new ItemCapture(sprites, 0, true);
             renderer.render(be, 0, new PoseStack(), capture,
                     net.minecraft.client.renderer.LevelRenderer.getLightColor(page, pos), OverlayTexture.NO_OVERLAY);
             capture.flush();
@@ -977,16 +977,26 @@ final class QuadDump {
         final StringBuilder out = new StringBuilder();
         final List<TextureAtlasSprite> sprites;
         final Vec3 origin;
+        final boolean blockEntity;
         long foreign;
         private final Map<Object, RecordingBuffer> buffers = new java.util.LinkedHashMap<>();
         private final VertexConsumer discard = new Discard();
         ItemCapture(List<TextureAtlasSprite> sprites, float origin) {
-            this(sprites, new Vec3(origin, origin, origin));
+            this(sprites, origin, false);
+        }
+
+        ItemCapture(List<TextureAtlasSprite> sprites, float origin, boolean blockEntity) {
+            this(sprites, new Vec3(origin, origin, origin), blockEntity);
         }
 
         ItemCapture(List<TextureAtlasSprite> sprites, Vec3 origin) {
+            this(sprites, origin, false);
+        }
+
+        ItemCapture(List<TextureAtlasSprite> sprites, Vec3 origin, boolean blockEntity) {
             this.sprites = sprites;
             this.origin = origin;
+            this.blockEntity = blockEntity;
         }
 
         @Override
@@ -995,14 +1005,25 @@ final class QuadDump {
             // their native shaders do not call minecraft_mix_light.
             boolean shaderDiffuse = type != RenderType.solid() && type != RenderType.cutout()
                     && type != RenderType.cutoutMipped() && type != RenderType.translucent();
-            return bufferFor(type, type.toString(), shaderDiffuse);
+            String material = null;
+            if (blockEntity) {
+                if (type == RenderType.solid()) material = "solid";
+                else if (type == RenderType.cutout() || type == RenderType.cutoutMipped()) material = "cutout";
+                else if (type == RenderType.translucent()) material = "translucent";
+            }
+            String state = type.toString();
+            return bufferFor(type, state, shaderDiffuse, material != null ? material : entityMaterial(state));
         }
 
         private VertexConsumer bufferFor(Object key, String state, boolean shaderDiffuse) {
+            return bufferFor(key, state, shaderDiffuse, entityMaterial(state));
+        }
+
+        private VertexConsumer bufferFor(Object key, String state, boolean shaderDiffuse, String material) {
             if (state.contains("glint")) {
                 return discard;
             }
-            return buffers.computeIfAbsent(key, ignored -> new RecordingBuffer(state, shaderDiffuse));
+            return buffers.computeIfAbsent(key, ignored -> new RecordingBuffer(state, shaderDiffuse, material));
         }
 
         void flush() {
@@ -1021,8 +1042,18 @@ final class QuadDump {
          *  — the ghost-glass fidelity red. Text/glyph buffers, custom mod layers and the
          *  liquid probe's fake state keep the legacy encoding byte-for-byte. */
         static String entityMaterial(String state) {
-            if ("minecraft:entity_translucent_cull".equals(state)
-                    || "minecraft:entity_translucent".equals(state)) {
+            // Native 1.21.1 CompositeRenderType includes its pipeline state.
+            String name = state;
+            if (state.startsWith("RenderType[")) {
+                int end = state.indexOf(':', 11);
+                if (end < 0 || !state.startsWith("CompositeState[", end + 1)) return null;
+                name = state.substring(11, end);
+            } else if (state.startsWith("minecraft:")) {
+                name = state.substring(10); // retained fixture/legacy spelling
+            } else {
+                return null; // unknown/custom render-state grammar
+            }
+            if ("entity_translucent_cull".equals(name) || "entity_translucent".equals(name)) {
                 return "translucent";
             }
             return null;
@@ -1060,9 +1091,9 @@ final class QuadDump {
             int n = -1;
             int packedLight = -1;
 
-            RecordingBuffer(String state, boolean shaderDiffuse) {
+            RecordingBuffer(String state, boolean shaderDiffuse, String material) {
                 this.state = state;
-                this.material = entityMaterial(state);
+                this.material = material;
                 rawShade = shaderDiffuse;
                 String direct = CaptureTexture.fromRenderState(state);
                 List<TextureAtlasSprite> atlasSprites = sprites;
