@@ -93,21 +93,20 @@ jobs:
             timeout 90 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
               $(cat /tmp/rig/client/launch.txt) > "$OUT" 2>&1 || true
             cp "$OUT" /tmp/rig/probe-last.log || true
-            if grep -qE "Game crashed!|Unable to initialize SDL" "$OUT" \
-               && ! grep -q "Sound engine started" "$OUT"; then
-              echo "PROBE: CLIENT-CRASH on $1 (a crash is a refusal, never inconclusive)"
-              grep -E "IllegalStateException|BackendCreationException|Exception" "$OUT" | head -3 | sed 's/^/PROBE: /'
-              rm -f "$OUT"; return 3
-            fi
-            if grep -qE "opengl_missing|Couldn't find matching GLX visual|BackendCreationException" "$OUT" \
-               && ! grep -q "Sound engine started" "$OUT"; then
-              echo "PROBE: backend-refused on $1"
-              grep -E "BackendCreationException|opengl_missing|GLX visual|Vulkan is not supported" "$OUT" | head -3 | sed 's/^/PROBE: /'
-              rm -f "$OUT"; return 3
-            fi
-            if grep -qE "Sound engine started|Created: .*atlas|Backend:" "$OUT"; then
+            # THE WINDOW LINE IS THE VERDICT (the 4th dispatch's log law):
+            # "Created window using SDL video driver: x11" fires ONLY after a
+            # backend actually opened a window — the 26.3 client may print the
+            # OpenGL refusal FIRST and then self-fall-back to Vulkan; the
+            # exception alone is NOT a refusal when the window line follows
+            if grep -qE "Created window using SDL video driver|Sound engine started" "$OUT"; then
+              grep -oE "Using graphics backend [A-Za-z]+" "$OUT" | tail -1 | sed 's/^/PROBE: /'
               echo "PROBE: window up on $1"
               rm -f "$OUT"; return 0
+            fi
+            if grep -qE "Game crashed!|Unable to initialize SDL|opengl_missing|Couldn't find matching GLX visual|BackendCreationException" "$OUT"; then
+              echo "PROBE: backend-refused on $1"
+              grep -E "IllegalStateException|BackendCreationException|opengl_missing|GLX visual|Vulkan is not supported" "$OUT" | head -3 | sed 's/^/PROBE: /'
+              rm -f "$OUT"; return 3
             fi
             echo "PROBE: inconclusive on $1 (no verdict in 90s) — keeping the current backend"
             tail -4 "$OUT" | sed 's/^/PROBE: /'
@@ -143,6 +142,18 @@ jobs:
           else
             echo "GLPROBE: the opengl pin stands (the client's window came up)"
           fi
+          # 14-e30(b''') THE MEASURED SELF-FALLBACK LAW: the 4th dispatch's
+          # probe log carries the full chain — the OpenGL GLX refusal
+          # (BackendCreationException) FIRST, then "Using graphics backend
+          # Vulkan, using drivers: 1.4.335 llvmpipe", then "Created window
+          # using SDL video driver: x11", the atlases, the connect attempt.
+          # THE 26.3 CLIENT FALLS BACK AUTOMATICALLY AND DETERMINISTICALLY —
+          # no sed of launch.txt, no options flip needed: every launch re-runs
+          # opengl-first, refuses, and lands on vulkan by itself. Parse the
+          # backend the client ACTUALLY took and record it for the receipt.
+          ACTUAL=$(grep -oE "Using graphics backend [A-Za-z]+" /tmp/rig/probe-last.log 2>/dev/null | tail -1 | awk '{print tolower($4)}')
+          [ -n "$ACTUAL" ] && GLBACKEND="$ACTUAL"
+          echo "GLPROBE: the client's actual backend = $GLBACKEND (the auto-fallback is the deterministic launch law)"
           echo "$GLBACKEND" > /tmp/rig/glbackend.txt
           cat /tmp/rig/glbackend.txt
 
