@@ -579,6 +579,47 @@ def main():
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
+    # Y1 (14-e32): the ISOLATION lane walked COMPLETE reports DIAG-OK and
+    # stays GREEN — the blockiso class is DIAGNOSTIC-first (the ae2 probe's
+    # census = the isolation premise's arbiter before any flip)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "block\t154\t77\n", "block\t154\t77\nblockiso\t154\t77\n")
+        idx.write_text(txt, encoding="utf-8")
+        for p in (0, 1, 2):
+            (root / "scenes" / f"gallery-blockiso-create-p{p}.tsv").write_text(
+                "cell\tx\ty\tz\tstate\tdyn\tlight\n", encoding="utf-8")
+            for d, prefix in (("truth-shots", ""), ("ours-shots", "ours-")):
+                (root / d / f"{prefix}gal-iso-create{p}.png").write_bytes(b"x")
+        with open(root / "boot.log", "a", encoding="utf-8") as f:
+            f.write("gallery-iso done ns=create page=2 cells=0 failed=0 "
+                    "exhausted=1\n")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-OK\tblockiso\ttotal=154" in r.stdout
+        print("Y1 walked blockiso diagnostic DIAG-OK GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # Y2 (14-e32): a CRASHED blockiso walk is DIAG-INCOMPLETE, visible and
+    # never red (the diagnostic-first law until the probe measures stable)
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        idx = root / "scenes" / "gallery-create-index.tsv"
+        txt = idx.read_text(encoding="utf-8").replace(
+            "block\t154\t77\n", "block\t154\t77\nblockiso\t154\t77\n")
+        idx.write_text(txt, encoding="utf-8")
+        (root / "scenes" / "gallery-blockiso-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tstate\tdyn\tlight\n", encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "DIAG-INCOMPLETE\tblockiso" in r.stdout
+        print("Y2 crashed blockiso walk visible-not-red:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
     # S: held rides the item pages — a missing held shot is DIAG-INCOMPLETE
     # (diagnostic), never COVERAGE-INCOMPLETE
     with tempfile.TemporaryDirectory() as td:
