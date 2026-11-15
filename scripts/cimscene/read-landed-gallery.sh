@@ -77,7 +77,47 @@ else
   echo "NO pin= lines found — the run predates 4524dedc or the boot logs are missing"
 fi
 
-echo "== (4) the verdict pipeline vs the baseline"
+echo "== (4b) the variant-replay census (the 14-e38 NAMED holes)"
+if grep -q "galleryvariant" "$PINLOG" 2>/dev/null; then
+  echo "-- per kind/page summary (placed/cells/variant-missing/failed):"
+  grep -o "galleryvariant: kind=[a-z]* ns=[a-z]* page=[0-9]* placed=[0-9]* cells=[0-9-]* variant-missing=[0-9]* failed=[0-9]*" \
+    "$PINLOG" | sort | uniq -c | sort -k2 || true
+  echo "-- variant-missing subjects (top 16):"
+  grep -o "variant-missing kind=[a-z]* ns=[a-z]* page=[0-9]* subject=[^ ]*" \
+    "$PINLOG" | sort | uniq -c | sort -rn | head -16 || true
+  echo "-- spawn failures:"
+  grep -c "galleryvariant: spawn failed" "$PINLOG" || true
+  echo "-- the v-kind shots carried by this run's artifacts (13 kinds expected):"
+  python3 - "$RUN" "$HERE" << 'PY'
+import json, os, re, subprocess, sys
+run, here = sys.argv[1], sys.argv[2]
+tok = subprocess.run(["git", "-C", os.environ.get("CIM_REPO", here + "/../.."),
+                      "remote", "get-url", "origin"], capture_output=True, text=True).stdout
+token = tok.split("://")[1].split("@")[0].split(":", 1)[1]
+r = subprocess.run(["curl", "-s", "-m", "60", "-H", f"Authorization: token {token}",
+                    f"https://api.github.com/repos/PLANETA9091/c-imagine/actions/runs/{run}/artifacts?per_page=100"],
+                   capture_output=True, text=True)
+d = json.loads(r.stdout)
+import collections
+kinds = collections.Counter()
+while True:
+    for a in d.get("artifacts", []):
+        for m in re.finditer(r"ours-gal-v([a-z]+)-", a["name"]):
+            kinds[m.group(1)] += 1
+    nxt = d.get("pagination", {}).get("next") if isinstance(d.get("pagination"), dict) else None
+    if not nxt:
+        break
+    r = subprocess.run(["curl", "-s", "-m", "60", "-H", f"Authorization: token {token}",
+                        f"https://api.github.com/repos/PLANETA9091/c-imagine/actions/runs/{run}/artifacts?per_page=100&page={nxt}"],
+                       capture_output=True, text=True)
+    d = json.loads(r.stdout)
+print("  artifact kinds carrying v-shots:", dict(sorted(kinds.items())) or "NONE")
+PY
+else
+  echo "NO galleryvariant lines — the variant kinds did not replay on this run (or the logs are missing)"
+fi
+
+echo "== (5) the verdict pipeline vs the baseline"
 if [ -n "$BASELINE" ]; then
   bash "$HERE/verdict_pipeline.sh" "$RUN" --baseline "$BASELINE" --out "$OUT/pipe" || true
 else
