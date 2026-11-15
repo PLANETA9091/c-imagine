@@ -3849,6 +3849,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // ours-leg replay surface (the first of the 12 variant kinds): the
         // truth walk's manifest (gallery-variant-painting-<ns>-p<page>.tsv)
         // replayed as REAL paintings through the Bukkit Art registry.
+        // /cim galleryvariantblockentity <ns> <page> — the 14-e40 BE-kind
+        // replay: the variant-blockentity manifest through the PACK composites
+        // (the same galleryPage machinery — the modded BE types exist on the
+        // ours leg only as their captured composites; the pack carries them).
+        if (args.length >= 3 && args[0].equalsIgnoreCase("galleryvariantblockentity")) {
+            try {
+                int page = Integer.parseInt(args[2]);
+                int placed = galleryPage(args[1], page,
+                        "gallery-variant-blockentity-" + args[1] + "-p" + page + ".tsv");
+                sender.sendMessage(LOG_PREFIX + "galleryvariantblockentity " + args[1]
+                        + " p" + page + " -> placed=" + placed);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "galleryvariantblockentity: bad page number: " + args[2]);
+            }
+            return true;
+        }
         if (args.length >= 4 && args[0].equalsIgnoreCase("galleryvariant")) {
             String vkind = args[1].toLowerCase(java.util.Locale.ROOT);
             try {

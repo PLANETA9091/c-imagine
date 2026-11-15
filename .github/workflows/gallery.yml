@@ -3128,6 +3128,9 @@ jobs:
           for KIND in painting wolf cat frog villager effect trimmaterial trimpattern enchant banner pot jukebox; do
             find truth-meta -name "gallery-variant-$KIND-*.tsv" -exec cp {} srv-wall/c-imagine/scenes/ \;
           done
+          # 14-e40 the BE kind rides the composite replay: the modded BE
+          # types exist on the ours leg only as their captured composites
+          find truth-meta -name 'gallery-variant-blockentity-*.tsv' -exec cp {} srv-wall/c-imagine/scenes/ \;
           ls srv-wall/c-imagine/scenes/ | grep -c "gallery-variant-" || true
           # THE COPROC LAW (14-e15): rcon() never inside a pipeline element
           # or command substitution — the outputs ride files.
@@ -3160,6 +3163,23 @@ jobs:
                   || echo "$NS $KIND variant ours shot failed (diagnostic tolerated)"
                 echo "shot ours $NS $KIND page $p"
               done
+            done
+          done
+          # 14-e40 the blockentity kind = the composite replay (the pack
+          # carries the modded BEs; the manifest rides the parameterized
+          # galleryPage). Block-grid pages: no entity kill between pages.
+          for NS in $LADDER_NS; do
+            for p in $(seq $SI $K $MAXP); do
+              M="srv-wall/c-imagine/scenes/gallery-variant-blockentity-$NS-p$p.tsv"
+              [ -f "$M" ] || break
+              rcon "cim galleryvariantblockentity $NS $p" > vbe-receipt.log 2>&1 || { echo "blockentity replay rcon failed at $NS p$p"; exit 1; }
+              tail -1 vbe-receipt.log
+              grep -q "galleryvariantblockentity" vbe-receipt.log || { echo "blockentity replay failed at $NS p$p"; cat vbe-receipt.log; exit 1; }
+              sleep 2
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-vblockentity-$NS$p.png" \
+                || echo "$NS blockentity variant ours shot failed (diagnostic tolerated)"
+              echo "shot ours $NS blockentity page $p"
             done
           done
           # the gate joins the LISTING (13-b) — regenerate it with the
