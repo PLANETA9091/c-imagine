@@ -124,12 +124,24 @@ jobs:
             sleep 1
           done
           [ "$joined" = 1 ] || { tail -25 /tmp/srv/boot.log; tail -35 /tmp/rig/client/client.out; exit 1; }
+          # Paper reports status for a real play-phase offer, not the
+          # configuration-phase server.properties pack (gallery contract).
+          exec 3<> /tmp/srv/cmd.fifo
+          printf '%s\n' 'cim pack cimviewer' >&3
           for _ in $(seq 1 120); do
             if grep -q '=SUCCESSFULLY_LOADED' /tmp/srv/boot.log; then break; fi
+            if grep -qE 'status cimviewer=(DECLINED|FAILED_DOWNLOAD|FAILED_RELOAD|INVALID_URL|DISCARDED)' /tmp/srv/boot.log; then
+              tail -30 /tmp/srv/boot.log
+              tail -35 /tmp/rig/client/client.out
+              exit 1
+            fi
             sleep 1
           done
-          grep -q '=SUCCESSFULLY_LOADED' /tmp/srv/boot.log
-          exec 3<> /tmp/srv/cmd.fifo
+          grep -q '=SUCCESSFULLY_LOADED' /tmp/srv/boot.log || {
+            tail -30 /tmp/srv/boot.log
+            tail -35 /tmp/rig/client/client.out
+            exit 1
+          }
           printf '%s\n' \
             'difficulty peaceful' \
             'gamerule advance_time false' \
