@@ -3162,6 +3162,55 @@ jobs:
           name: wall-truth-meta-${{ matrix.shard }}
           path: truth-meta
 
+      - name: variant replay — painting (14-e38, the first variant kind)
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export LP_NUM_THREADS=4
+          # The truth's variant manifests ride the truth meta (the scenes
+          # dir copy) — the plugin reads them from the server's scenes dir,
+          # so copy them in before the replay.
+          find truth-meta -name 'gallery-variant-painting-*.tsv' -exec cp {} srv-wall/c-imagine/scenes/ \;
+          ls srv-wall/c-imagine/scenes/ | grep -c variant-painting || true
+          # THE COPROC LAW (14-e15): rcon() never inside a pipeline element
+          # or command substitution — the outputs ride files.
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() {
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
+          for NS in $LADDER_NS; do
+            EX=0
+            for p in $(seq $SI $K $MAXP); do
+              rcon "cim cleanup-assemblies" "kill @e[type=!player]" "cim galleryvariant painting $NS $p" > vpaint-receipt.log 2>&1 || { echo "painting replay rcon failed at $NS p$p"; exit 1; }
+              tail -1 vpaint-receipt.log
+              grep -q "galleryvariant painting" vpaint-receipt.log || { echo "painting replay failed at $NS p$p"; cat vpaint-receipt.log; exit 1; }
+              sleep 2
+              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-vpainting-$NS$p.png" \
+                || echo "$NS painting variant ours shot failed (diagnostic tolerated)"
+              echo "shot ours $NS painting page $p"
+            done
+          done
+          # the gate joins the LISTING (13-b) — regenerate it with the
+          # variant shots included
+          (cd ours-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
+          wc -l ours-shots/shots.txt
+
       - name: INLINE pixel join — this shard's stride, gate-hard
         run: |
           set -euo pipefail

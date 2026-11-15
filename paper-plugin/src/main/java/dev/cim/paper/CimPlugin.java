@@ -1778,6 +1778,104 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * two states that must never collapse into the same {0,0} again
      * (measured #34 forensics).
      */
+    /**
+     * 14-e38 THE PAINTING VARIANT REPLAY — the ours leg's FIRST variant-kind
+     * channel. The truth walk hangs real {@code Painting} entities on the
+     * support wall (the manifest carries the surviving cells with their
+     * explicit x/y/z and the painting-variant registry id); this replay
+     * spawns the SAME subjects through the Paper 26.3 Bukkit API: the same
+     * smooth-stone support fill behind the wall plane (the north-facing
+     * paintings attach south = z+1, the {@code HangingEntity#survives()}
+     * contract), one painting per manifest cell row, the art resolved from
+     * {@link org.bukkit.Registry#ART} by the manifest's own namespaced id.
+     * A subject whose art does not exist on the 26.3 registry (the
+     * cross-version gap) is a NAMED skip in the command response — the same
+     * honesty channel the mod's walk prints. The gate reads the resulting
+     * {@code ours-gal-vpainting-*} shots as the walked-completeness channel;
+     * the pixel framediff stays report-only until the per-cell contract.
+     *
+     * @return the number of paintings placed
+     */
+    private int galleryVariantPainting(String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-variant-painting-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest missing: " + mf);
+            return -1;
+        }
+        World w = world(worldName());
+        // THE SUPPORT WALL (the mod's fillPaintingSupport formula verbatim):
+        // x [X0-1 .. X0+COLS], y [Y0-1 .. Y0+ROWS], z = Z+1 smooth stone —
+        // every hung painting passes survives() on both stacks.
+        for (int x = -6; x <= 6; x++) {
+            for (int y = -61; y <= -51; y++) {
+                try {
+                    w.getBlockAt(x, y, 10).setBlockData(
+                            org.bukkit.Material.SMOOTH_STONE.createBlockData(), false);
+                } catch (Throwable fillFail) {
+                    // a support fill failure cannot matter more than the
+                    // spawn's own survives check naming the cell
+                }
+            }
+        }
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                }
+                // header / skip rows — nothing to spawn (the dissolved-race
+                // law: the truth's shot is post-settlement, the skip row
+                // names the absence, replaying it would spill)
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest read failed "
+                    + mf + ": " + ioe);
+            return -1;
+        }
+        int placed = 0, artMissing = 0, failed = 0;
+        for (String[] row : cells) {
+            if (row.length < 5) {
+                continue;
+            }
+            int x, y, z;
+            try {
+                x = Integer.parseInt(row[1]);
+                y = Integer.parseInt(row[2]);
+                z = Integer.parseInt(row[3]);
+            } catch (NumberFormatException badCell) {
+                continue;
+            }
+            String subject = row[4];
+            org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(subject);
+            org.bukkit.Art art = key == null ? null : org.bukkit.Registry.ART.get(key);
+            if (art == null) {
+                artMissing++;
+                log().warning(LOG_PREFIX + "f2v galleryvariant: art-missing ns=" + ns
+                        + " page=" + page + " subject=" + subject
+                        + " (the 26.3 registry has no such painting variant)");
+                continue;
+            }
+            try {
+                org.bukkit.Location at = new org.bukkit.Location(w, x, y, z);
+                w.spawn(at, org.bukkit.entity.Painting.class, e -> {
+                    e.setFacingDirection(org.bukkit.block.BlockFace.NORTH, true);
+                    e.setArt(art, true);
+                    e.setInvulnerable(true);
+                });
+                placed++;
+            } catch (Throwable spawnFail) {
+                failed++;
+                log().warning(LOG_PREFIX + "f2v galleryvariant: spawn failed ns=" + ns
+                        + " page=" + page + " subject=" + subject + " err=" + spawnFail);
+            }
+        }
+        log().info(LOG_PREFIX + "f2v galleryvariant: kind=painting ns=" + ns + " page=" + page
+                + " placed=" + placed + " cells=" + cells.size()
+                + " art-missing=" + artMissing + " failed=" + failed);
+        return placed;
+    }
+
     private int[] galleryPageEntity(String ns, int page, String series) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
                 "gallery-entity" + (series.equals("mobs") ? "" : series)
@@ -3330,6 +3428,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + " p" + page + " -> placed=" + placed);
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "galleryisopage: bad page number: " + args[2]);
+            }
+            return true;
+        }
+        // /cim galleryvariant painting <ns> <page> — the 14-e38 VARIANT
+        // ours-leg replay surface (the first of the 12 variant kinds): the
+        // truth walk's manifest (gallery-variant-painting-<ns>-p<page>.tsv)
+        // replayed as REAL paintings through the Bukkit Art registry.
+        if (args.length >= 4 && args[0].equalsIgnoreCase("galleryvariant")
+                && args[1].equalsIgnoreCase("painting")) {
+            try {
+                int page = Integer.parseInt(args[3]);
+                int placed = galleryVariantPainting(args[2], page);
+                sender.sendMessage(LOG_PREFIX + "galleryvariant painting " + args[2]
+                        + " p" + page + " -> placed=" + placed);
+            } catch (NumberFormatException nfe) {
+                sender.sendMessage(LOG_PREFIX + "galleryvariant: bad page number: " + args[3]);
             }
             return true;
         }
