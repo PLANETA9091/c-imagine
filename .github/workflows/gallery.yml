@@ -3162,7 +3162,7 @@ jobs:
           name: wall-truth-meta-${{ matrix.shard }}
           path: truth-meta
 
-      - name: variant replay — painting (14-e38, the first variant kind)
+      - name: variant replay — painting wolf cat frog villager (14-e38)
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -3172,8 +3172,10 @@ jobs:
           # The truth's variant manifests ride the truth meta (the scenes
           # dir copy) — the plugin reads them from the server's scenes dir,
           # so copy them in before the replay.
-          find truth-meta -name 'gallery-variant-painting-*.tsv' -exec cp {} srv-wall/c-imagine/scenes/ \;
-          ls srv-wall/c-imagine/scenes/ | grep -c variant-painting || true
+          for KIND in painting wolf cat frog villager; do
+            find truth-meta -name "gallery-variant-$KIND-*.tsv" -exec cp {} srv-wall/c-imagine/scenes/ \;
+          done
+          ls srv-wall/c-imagine/scenes/ | grep -c "gallery-variant-" || true
           # THE COPROC LAW (14-e15): rcon() never inside a pipeline element
           # or command substitution — the outputs ride files.
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
@@ -3193,17 +3195,18 @@ jobs:
           }
           read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
           [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
-          for NS in $LADDER_NS; do
-            EX=0
-            for p in $(seq $SI $K $MAXP); do
-              rcon "cim cleanup-assemblies" "kill @e[type=!player]" "cim galleryvariant painting $NS $p" > vpaint-receipt.log 2>&1 || { echo "painting replay rcon failed at $NS p$p"; exit 1; }
-              tail -1 vpaint-receipt.log
-              grep -q "galleryvariant painting" vpaint-receipt.log || { echo "painting replay failed at $NS p$p"; cat vpaint-receipt.log; exit 1; }
-              sleep 2
-              rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
-              bash scripts/visual/shot.sh "ours-shots/ours-gal-vpainting-$NS$p.png" \
-                || echo "$NS painting variant ours shot failed (diagnostic tolerated)"
-              echo "shot ours $NS painting page $p"
+          for KIND in painting wolf cat frog villager; do
+            for NS in $LADDER_NS; do
+              for p in $(seq $SI $K $MAXP); do
+                rcon "cim cleanup-assemblies" "kill @e[type=!player]" "cim galleryvariant $KIND $NS $p" > vpaint-receipt.log 2>&1 || { echo "$KIND replay rcon failed at $NS p$p"; exit 1; }
+                tail -1 vpaint-receipt.log
+                grep -q "galleryvariant $KIND" vpaint-receipt.log || { echo "$KIND replay failed at $NS p$p"; cat vpaint-receipt.log; exit 1; }
+                sleep 2
+                rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-v$KIND-$NS$p.png" \
+                  || echo "$NS $KIND variant ours shot failed (diagnostic tolerated)"
+                echo "shot ours $NS $KIND page $p"
+              done
             done
           done
           # the gate joins the LISTING (13-b) — regenerate it with the

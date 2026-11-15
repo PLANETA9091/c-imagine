@@ -1779,6 +1779,131 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * (measured #34 forensics).
      */
     /**
+     * 14-e38 THE MOB-VARIANT REPLAYS (wolf / cat / frog / villager) — the
+     * second increment of the variant-kind channel. The truth walk spawns
+     * the REAL variant mob frozen on the shared grid (NoAI + NoGravity +
+     * invulnerable, yaw 180 = facing the camera); this replay spawns the
+     * SAME subject through the Paper 26.3 Bukkit API: the variant resolved
+     * from the manifest's namespaced id against the kind's own registry
+     * ({@link org.bukkit.Registry#WOLF_VARIANT}, {@link
+     * org.bukkit.Registry#CAT_VARIANT}, {@link org.bukkit.Registry#FROG_VARIANT},
+     * {@link org.bukkit.Registry#VILLAGER_TYPE}), the mob frozen with
+     * setAI(false) + invulnerable + no despawn, yaw 180. A subject the 26.3
+     * registry does not carry = a NAMED variant-missing skip (the honest
+     * cross-version gap channel). The gate reads the resulting
+     * {@code ours-gal-v<kind>-*} shots as the walked-completeness channel.
+     *
+     * @return the number of subjects placed
+     */
+    private int galleryVariantMob(String kind, String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-variant-" + kind + "-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest missing: " + mf);
+            return -1;
+        }
+        World w = world(worldName());
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                }
+                // header / skip rows — nothing to spawn
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest read failed "
+                    + mf + ": " + ioe);
+            return -1;
+        }
+        int placed = 0, variantMissing = 0, failed = 0;
+        for (String[] row : cells) {
+            if (row.length < 5) {
+                continue;
+            }
+            double x, y, z;
+            try {
+                x = Double.parseDouble(row[1]) + 0.5;
+                y = Double.parseDouble(row[2]);
+                z = Double.parseDouble(row[3]) + 0.5;
+            } catch (NumberFormatException badCell) {
+                continue;
+            }
+            String subject = row[4];
+            org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(subject);
+            final org.bukkit.Location at = new org.bukkit.Location(w, x, y, z);
+            try {
+                switch (kind) {
+                    case "wolf" -> {
+                        org.bukkit.entity.Wolf.Variant v = key == null ? null
+                                : org.bukkit.Registry.WOLF_VARIANT.get(key);
+                        if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        w.spawn(at, org.bukkit.entity.Wolf.class, e -> {
+                            e.setVariant(v);
+                            freezeVariantDisplay(e);
+                        });
+                    }
+                    case "cat" -> {
+                        org.bukkit.entity.Cat.Type v = key == null ? null
+                                : org.bukkit.Registry.CAT_VARIANT.get(key);
+                        if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        w.spawn(at, org.bukkit.entity.Cat.class, e -> {
+                            e.setCatType(v);
+                            freezeVariantDisplay(e);
+                        });
+                    }
+                    case "frog" -> {
+                        org.bukkit.entity.Frog.Variant v = key == null ? null
+                                : org.bukkit.Registry.FROG_VARIANT.get(key);
+                        if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        w.spawn(at, org.bukkit.entity.Frog.class, e -> {
+                            e.setVariant(v);
+                            freezeVariantDisplay(e);
+                        });
+                    }
+                    case "villager" -> {
+                        org.bukkit.entity.Villager.Type v = key == null ? null
+                                : org.bukkit.Registry.VILLAGER_TYPE.get(key);
+                        if (v == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        w.spawn(at, org.bukkit.entity.Villager.class, e -> {
+                            e.setVillagerType(v);
+                            e.setProfession(org.bukkit.entity.Villager.Profession.NONE);
+                            freezeVariantDisplay(e);
+                        });
+                    }
+                    default -> {
+                        return placed;
+                    }
+                }
+                placed++;
+            } catch (Throwable spawnFail) {
+                failed++;
+                log().warning(LOG_PREFIX + "f2v galleryvariant: spawn failed kind=" + kind
+                        + " ns=" + ns + " page=" + page + " subject=" + subject
+                        + " err=" + spawnFail);
+            }
+        }
+        log().info(LOG_PREFIX + "f2v galleryvariant: kind=" + kind + " ns=" + ns + " page=" + page
+                + " placed=" + placed + " cells=" + cells.size()
+                + " variant-missing=" + variantMissing + " failed=" + failed);
+        return placed;
+    }
+
+    /** The variant-replay freeze contract: NoAI, invulnerable, no despawn, yaw 180 (the camera). */
+    private void freezeVariantDisplay(org.bukkit.entity.Mob e) {
+        e.setAI(false);
+        e.setInvulnerable(true);
+        e.setRemoveWhenFarAway(false);
+        e.setRotation(180f, 0f);
+    }
+
+    private void logVariantMissing(String kind, String ns, int page, String subject) {
+        log().warning(LOG_PREFIX + "f2v galleryvariant: variant-missing kind=" + kind
+                + " ns=" + ns + " page=" + page + " subject=" + subject
+                + " (the 26.3 registry has no such variant)");
+    }
+
+    /**
      * 14-e38 THE PAINTING VARIANT REPLAY — the ours leg's FIRST variant-kind
      * channel. The truth walk hangs real {@code Painting} entities on the
      * support wall (the manifest carries the surviving cells with their
@@ -3435,12 +3560,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // ours-leg replay surface (the first of the 12 variant kinds): the
         // truth walk's manifest (gallery-variant-painting-<ns>-p<page>.tsv)
         // replayed as REAL paintings through the Bukkit Art registry.
-        if (args.length >= 4 && args[0].equalsIgnoreCase("galleryvariant")
-                && args[1].equalsIgnoreCase("painting")) {
+        if (args.length >= 4 && args[0].equalsIgnoreCase("galleryvariant")) {
+            String vkind = args[1].toLowerCase(java.util.Locale.ROOT);
             try {
                 int page = Integer.parseInt(args[3]);
-                int placed = galleryVariantPainting(args[2], page);
-                sender.sendMessage(LOG_PREFIX + "galleryvariant painting " + args[2]
+                int placed = switch (vkind) {
+                    case "painting" -> galleryVariantPainting(args[2], page);
+                    case "wolf", "cat", "frog", "villager" -> galleryVariantMob(vkind, args[2], page);
+                    default -> Integer.MIN_VALUE;
+                };
+                if (placed == Integer.MIN_VALUE) {
+                    sender.sendMessage(LOG_PREFIX + "galleryvariant: unknown kind " + vkind
+                            + " (known: painting, wolf, cat, frog, villager)");
+                    return true;
+                }
+                sender.sendMessage(LOG_PREFIX + "galleryvariant " + vkind + " " + args[2]
                         + " p" + page + " -> placed=" + placed);
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "galleryvariant: bad page number: " + args[3]);
