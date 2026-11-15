@@ -423,7 +423,35 @@ final class QuadDump {
         }
         // Native SectionCompiler only submits static geometry for MODEL states.
         // ENTITYBLOCK_ANIMATED still reaches its BER, without a phantom static panel.
-        if (state.getRenderShape() == net.minecraft.world.level.block.RenderShape.MODEL) {
+        // 14-e41 THE LIQUID-BLOCK SUBCLASS EXCEPTION (the rope knot rows): a
+        // modded block that extends WaterBlock/LiquidBlock inherits
+        // LiquidBlock.getRenderShape() == INVISIBLE with no override (the
+        // supplementaries RopeBlock decompile carries none), so the native
+        // section compiler skips its static multipart — yet the walk's truth
+        // leg renders the knot and the connections (the blockstate JSON =
+        // plain multipart elements: the knot cube + the per-direction bars).
+        // The predicate = "invisible shape, liquid-block subclass, and the
+        // baked model actually carries quads": the vanilla LiquidBlock's own
+        // baked model is empty (the fluid path owns it), so real water stays
+        // on the fluid branch byte-for-byte, while the rope's multipart
+        // tesselates exactly like a MODEL state. Without this branch the
+        // capture lands "# cimscene native empty mesh v1" for the knot cells
+        // (measured: the four supplementaries:rope[knot=true] rows, 78k-117k
+        // ae each, the truth-renders slice of the 220-empty class).
+        boolean staticGeometry = state.getRenderShape() == net.minecraft.world.level.block.RenderShape.MODEL;
+        if (!staticGeometry && state.getRenderShape() == net.minecraft.world.level.block.RenderShape.INVISIBLE
+                && state.getBlock() instanceof net.minecraft.world.level.block.LiquidBlock
+                && state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.WATERLOGGED)) {
+            // The WATERLOGGED property = the redefined state definition (the
+            // vanilla water carries LEVEL, not WATERLOGGED) and the missing
+            // model guard keeps an undefined mapping from tesselating the
+            // magenta placeholder over the fluid branch.
+            BakedModel probe = mc.getBlockRenderer().getBlockModel(state);
+            RandomSource probeRandom = RandomSource.create();
+            staticGeometry = probe != mc.getModelManager().getMissingModel()
+                    && !probe.getQuads(state, null, probeRandom).isEmpty();
+        }
+        if (staticGeometry) {
             BakedModel model = mc.getBlockRenderer().getBlockModel(state);
             ModelData data = captureModelData(model, page, pos, state);
             RandomSource random = RandomSource.create();
