@@ -1,38 +1,11 @@
 name: diagnostic-light
 
-# 14-e30(b') — THE DISPLAY-LIGHT DIAGNOSTIC SHARD.
-# Manual dispatch only (the workflow_dispatch group = separate from the
-# gallery's concurrency group; this run NEVER supersedes a gallery).
-#
-# The question it settles on the EXACT production stack (the runner's mesa 26
-# GL stack, the 26.3 vanilla client): for an item_display carrying the pack's
-# block-model route, which light source reaches the shader —
-#   (1) the Brightness override (the bytecode says the client consumes it via
-#       DisplayRenderer.get{Block,Sky}LightLevel),
-#   (2) the entity's positional light (the e24 front-air rig's premise), or
-#   (3) neither (the e25 census measured the wall-class rows at the sky-0
-#       ambient band ~0.46 with the pin (0,15) AND the rig in place).
-#
-# The matrix: four item_display entities (the same flat white paper item),
-#   A = inside an opaque calcite cell, no override
-#   B = inside the same cell, override (0,15)      <- the pin as the CI pins it
-#   C = inside the same cell, override (15,15)     <- fullbright override
-#   D = one block into the front air, override (0,15)  <- the e24 rig
-# The crop luma of A vs B vs C vs D decides: A==B => the override is a no-op;
-# B==C => the override IS consumed (and the e25 census lightmap = the sky-0
-# means the POSITION is the boss, so D must go fullbright); A==D => the
-# position does not matter either and the light = something else entirely.
-#
-# 14-e30(b'') THE WINDOW LADDER (the first dispatch, run 43697680168, died at
-# the GL wall: "Couldn't find matching GLX visual" on OpenGL + "VK_KHR_surface
-# not implemented" on Vulkan — the same measured signature the gallery's ours
-# leg hit and solved in 14-bo; the gallery's GLPROBE ladder is the working
-# recipe and rides here now): opengl/24bit -> opengl/32bit (RGBA visuals) ->
-# vulkan/32bit (lavapipe, mesa-vulkan-drivers) — every step probed with the
-# client's OWN verdict (opengl_missing is instant; "Sound engine started"
-# fires only post-window), never an external GL probe (run #192 measured
-# glxinfo green while the client died).
-
+# Paper26.3 / real c-imagine plugin display-light control; not mod parity.
+# Native-NBT B is then recreated via /cim brightdisplay at sky15 and sky0.
+# A/B/C sample inside opaque enclosures while their identical block-model
+# geometry is translated into view. D samples front air at the same rendered
+# depth. A has no override; B=(block0,sky15); C=(15,15); D=(0,15).
+# Manual-only, isolated from the gallery's concurrency group.
 on:
   workflow_dispatch: {}
 
@@ -40,210 +13,180 @@ jobs:
   display-light:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      DISPLAY: ':99'
+      SDL_VIDEO_DRIVER: x11
+      SDL_VIDEO_FORCE_EGL: '1'
+      EGL_PLATFORM: x11
+      LIBGL_ALWAYS_SOFTWARE: '1'
+      GALLIUM_DRIVER: llvmpipe
     steps:
       - uses: actions/checkout@v4
-
-      - name: install display stack
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: install display stack and verify probe contracts
         run: |
           set -euo pipefail
-          echo "[apt_retry] 2 attempts"; for i in 1 2; do
-            sudo apt-get update -qq && break || sleep 20
+          sudo apt-get -o Acquire::Retries=5 update -qq
+          sudo apt-get -o Acquire::Retries=5 install -y -qq xvfb libgl1-mesa-dri \
+            mesa-vulkan-drivers libglx-mesa0 libegl1 libegl-mesa0 libxtst6 x11-utils
+          python3 -m pip install pillow
+          python3 scripts/visual/test-probe-client.py
+          mkdir -p /tmp/rig/vtools
+          javac --release 21 -d /tmp/rig/vtools scripts/visual/Shot.java scripts/visual/Key.java
+
+      - name: verify a real client window on the supported 24-bit display
+        run: |
+          set -euo pipefail
+          setsid Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset \
+            < /dev/null > /tmp/rig/xvfb.log 2>&1 &
+          for _ in $(seq 1 40); do
+            if xdpyinfo -display :99 >/dev/null 2>&1; then break; fi
+            sleep 0.25
           done
-          sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-vulkan-drivers \
-            libglx-mesa0 libxtst6 mesa-utils imagemagick vulkan-tools x11-utils > /dev/null
-          ls /usr/share/vulkan/icd.d/ || true
+          xdpyinfo -display :99 >/dev/null
+          python3 scripts/fetch-visual-client.py 26.3 /tmp/rig/client --assets
+          mkdir -p /tmp/rig/client/game
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nrenderClouds:false\nmipmapLevels:0\nfov:0.0\nfovEffectScale:0.0\nbobView:false\n' > /tmp/rig/client/game/options.txt
+          found=0
+          for backend in opengl vulkan; do
+            if bash scripts/visual/probe-client.sh /tmp/rig/client/launch.txt "$backend" "/tmp/rig/probe-$backend.out"; then
+              echo "$backend" > /tmp/rig/glbackend.txt
+              found=1
+              break
+            fi
+          done
+          [ "$found" = 1 ] || { echo "No backend produced a native post-window receipt"; exit 1; }
 
-      - name: THE WINDOW LADDER (GLPROBE, ported from the gallery's ours leg)
-        run: |
-          set -uo pipefail
-          # THE GALLERY'S OURS-STEP ENV, 1:1 (the e26 run measured "window up
-          # on opengl/24bit" with exactly this export set; the first two
-          # dispatches rode per-process env only and the client refused the
-          # GLX visual the gallery's client accepts — the step-level export
-          # is the measured difference, Xvfb's GLX included)
-          export DISPLAY=:99
-          export LIBGL_ALWAYS_SOFTWARE=1
-          export GALLIUM_DRIVER=llvmpipe
-          export LP_NUM_THREADS=4
-          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset < /dev/null > xvfb.log 2>&1 &
-          # the X must be UP before any probe: xdpyinfo-verified (the second
-          # dispatch measured the 32-bit restart racing the client — "Unable
-          # to initialize SDL: No available video device" = the dead X)
-          xwait() {
-            for i in $(seq 1 15); do
-              # glxinfo first (mesa-utils = always installed here); xdpyinfo
-              # as the fallback (x11-utils) — the third dispatch measured the
-              # xwait false-alarm: xdpyinfo was MISSING and a healthy Xvfb
-              # was pronounced dead
-              if glxinfo -display "${1:-:99}" >/dev/null 2>&1; then return 0; fi
-              if command -v xdpyinfo >/dev/null 2>&1 \
-                 && xdpyinfo -display "${1:-:99}" >/dev/null 2>&1; then return 0; fi
-              sleep 1
-            done
-            return 1
-          }
-          xwait :99 || { echo "Xvfb :99 never came up"; cat xvfb.log; exit 1; }
-          glxinfo -display :99 | head -4 || echo "GLX probe FAILED"
-          python3 scripts/fetch-visual-client.py 26.3 /tmp/rig/client --assets 2>&1 | tail -2
-          grep -oE "\-\-graphicsBackend [a-z]*" /tmp/rig/client/launch.txt || true
-          mkdir -p /tmp/rig/client/game /tmp/rig/client/game/crash-reports
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > /tmp/rig/client/game/options.txt
-          probe_client() {
-            OUT=$(mktemp)
-            timeout 90 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
-              $(cat /tmp/rig/client/launch.txt) > "$OUT" 2>&1 || true
-            cp "$OUT" /tmp/rig/probe-last.log || true
-            # THE WINDOW LINE IS THE VERDICT (the 4th dispatch's log law):
-            # "Created window using SDL video driver: x11" fires ONLY after a
-            # backend actually opened a window — the 26.3 client may print the
-            # OpenGL refusal FIRST and then self-fall-back to Vulkan; the
-            # exception alone is NOT a refusal when the window line follows
-            if grep -qE "Created window using SDL video driver|Sound engine started" "$OUT"; then
-              grep -oE "Using graphics backend [A-Za-z]+" "$OUT" | tail -1 | sed 's/^/PROBE: /'
-              echo "PROBE: window up on $1"
-              rm -f "$OUT"; return 0
-            fi
-            if grep -qE "Game crashed!|Unable to initialize SDL|opengl_missing|Couldn't find matching GLX visual|BackendCreationException" "$OUT"; then
-              echo "PROBE: backend-refused on $1"
-              grep -E "IllegalStateException|BackendCreationException|opengl_missing|GLX visual|Vulkan is not supported" "$OUT" | head -3 | sed 's/^/PROBE: /'
-              rm -f "$OUT"; return 3
-            fi
-            echo "PROBE: inconclusive on $1 (no verdict in 90s) — keeping the current backend"
-            tail -4 "$OUT" | sed 's/^/PROBE: /'
-            rm -f "$OUT"; return 0
-          }
-          xrestart() { # xrestart <depth> — kill :99, start at <depth>, VERIFY it serves
-            pkill -f "Xvfb :99" 2>/dev/null || true
-            sleep 1
-            Xvfb :99 -screen 0 1280x720x$1 +extension GLX +render -noreset < /dev/null > xvfb$1.log 2>&1 &
-            if ! xwait :99; then
-              echo "Xvfb :99 depth $1 NEVER CAME UP:"; cat xvfb$1.log || true
-              return 1
-            fi
-            return 0
-          }
-          GLBACKEND=opengl
-          if ! probe_client "opengl/24bit"; then
-            if xrestart 32 && probe_client "opengl/32bit"; then
-              echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
-            else
-              # fallback 2: the vulkan backend — lavapipe, no GLX involved;
-              # if the 32-bit X died, the 24-bit screen serves the vulkan probe
-              if ! xwait :99; then xrestart 24 || { echo "no X at all"; exit 1; }; fi
-              printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > /tmp/rig/client/game/options.txt
-              if probe_client "vulkan/xr"; then
-                GLBACKEND=vulkan
-                echo "GLPROBE: FLIPPED to vulkan and verified — the shard rides lavapipe"
-              else
-                echo "GLPROBE: neither backend can start the 26.3 client on this image"
-                exit 1
-              fi
-            fi
-          else
-            echo "GLPROBE: the opengl pin stands (the client's window came up)"
-          fi
-          # 14-e30(b''') THE MEASURED SELF-FALLBACK LAW: the 4th dispatch's
-          # probe log carries the full chain — the OpenGL GLX refusal
-          # (BackendCreationException) FIRST, then "Using graphics backend
-          # Vulkan, using drivers: 1.4.335 llvmpipe", then "Created window
-          # using SDL video driver: x11", the atlases, the connect attempt.
-          # THE 26.3 CLIENT FALLS BACK AUTOMATICALLY AND DETERMINISTICALLY —
-          # no sed of launch.txt, no options flip needed: every launch re-runs
-          # opengl-first, refuses, and lands on vulkan by itself. Parse the
-          # backend the client ACTUALLY took and record it for the receipt.
-          ACTUAL=$(grep -oE "Using graphics backend [A-Za-z]+" /tmp/rig/probe-last.log 2>/dev/null | tail -1 | awk '{print tolower($4)}')
-          [ -n "$ACTUAL" ] && GLBACKEND="$ACTUAL"
-          echo "GLPROBE: the client's actual backend = $GLBACKEND (the auto-fallback is the deterministic launch law)"
-          echo "$GLBACKEND" > /tmp/rig/glbackend.txt
-          cat /tmp/rig/glbackend.txt
+      - name: build the real c-imagine Paper plugin
+        run: mvn -B -f paper-plugin/pom.xml verify
 
-      - name: local server boot
+      - name: local Paper server boot
         run: |
           set -euo pipefail
-          curl -s -m 240 https://piston-data.mojang.com/v1/objects/33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c/server.jar -o /tmp/server.jar
-          mkdir -p /tmp/srv && cp /tmp/server.jar /tmp/srv/server.jar
+          mkdir -p /tmp/srv
+          curl --fail --location --retry 2 --max-time 240 \
+            https://fill-data.papermc.io/v1/objects/1331d9f32c8b605591e6ee0eb9c7e701d191cfae0db080ffc4a1f46d370c0bfd/paper-26.3-252.jar -o /tmp/srv/server.jar
+          echo '1331d9f32c8b605591e6ee0eb9c7e701d191cfae0db080ffc4a1f46d370c0bfd  /tmp/srv/server.jar' | sha256sum --check
+          mkdir -p /tmp/srv/plugins
+          cp paper-plugin/target/cim-paper-plugin.jar /tmp/srv/plugins/
           cd /tmp/srv
-          echo "eula=true" > eula.txt
-          printf 'online-mode=false\nlevel-type=minecraft:flat\nspawn-protection=0\nview-distance=4\nsimulation-distance=4\nmotd=diag\n' > server.properties
+          echo 'eula=true' > eula.txt
+          printf 'online-mode=false\nwhite-list=false\nenforce-whitelist=false\nserver-ip=127.0.0.1\nlevel-type=minecraft:flat\ngamemode=spectator\nspawn-protection=0\nview-distance=4\nsimulation-distance=4\nmotd=diag\n' > server.properties
           mkfifo cmd.fifo
-          java -Xmx1G -jar server.jar nogui < cmd.fifo > boot.log 2>&1 &
-          exec 3<> cmd.fifo
-          for _ in $(seq 1 120); do grep -q "Done (" boot.log && break; sleep 1; done
-          grep "Done (" boot.log
+          # Keep a writer open in the server process across Actions steps:
+          # otherwise console readLine reaches EOF before the scene is sent.
+          (
+            exec 3<> cmd.fifo
+            exec java -Xmx1G -jar server.jar nogui <&3 > boot.log 2>&1
+          ) &
+          for _ in $(seq 1 120); do grep -q 'Done (' boot.log && break; sleep 1; done
+          grep 'Done (' boot.log
+          grep 'paper plugin enabled (bridge lifecycle owner)' boot.log
 
-      - name: client join + scene + crops
+      - name: client join, four distinct controls, and native screenshot
         run: |
-          set -uo pipefail
-          GLBACKEND=$(cat /tmp/rig/glbackend.txt 2>/dev/null || echo opengl)
-          echo "riding backend: $GLBACKEND"
-          if [ "$GLBACKEND" = "vulkan" ]; then
-            sed -i 's/--graphicsBackend opengl/--graphicsBackend vulkan/' /tmp/rig/client/launch.txt
-            printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > /tmp/rig/client/game/options.txt
-          fi
-          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > /tmp/rig/client/game/options.txt
-          setsid bash -c 'cd /tmp/rig/client && DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe bash launch.txt > client.out 2>&1' < /dev/null > /dev/null 2>&1 &
+          set -euo pipefail
+          backend=$(cat /tmp/rig/glbackend.txt)
+          sed -E "s/--graphicsBackend (opengl|vulkan)/--graphicsBackend $backend/g" /tmp/rig/client/launch.txt > /tmp/rig/client/launch-run.txt
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\nfovEffectScale:0.0\nbobView:false\npreferredGraphicsBackend:%s\n' "$backend" > /tmp/rig/client/game/options.txt
+          setsid bash -c 'cd /tmp/rig/client && bash launch-run.txt > client.out 2>&1' < /dev/null > /dev/null 2>&1 &
+          client_pid=$!
           joined=0
           for _ in $(seq 1 240); do
-            if grep -q "joined the game" /tmp/srv/boot.log 2>/dev/null; then joined=1; break; fi
+            if grep -q 'joined the game' /tmp/srv/boot.log; then joined=1; break; fi
+            if grep -qE 'Disconnecting cimviewer|cimviewer.*lost connection' /tmp/srv/boot.log; then break; fi
+            kill -0 "$client_pid" 2>/dev/null || break
             sleep 1
           done
-          if [ "$joined" != "1" ]; then
-            echo "CLIENT DID NOT JOIN — the receipt (the honest wall):"
-            tail -30 /tmp/rig/client/client.out || true
-            exit 1
-          fi
-          # the scene: the opaque wall at y=-60; the four displays at x=-1..2
-          # A(-1) B(0) C(1) inside the wall cell column, D(2) in the front air
+          [ "$joined" = 1 ] || { tail -25 /tmp/srv/boot.log; tail -35 /tmp/rig/client/client.out; exit 1; }
           exec 3<> /tmp/srv/cmd.fifo
           printf '%s\n' \
-            "setblock -1 -60 0 minecraft:calcite" \
-            "setblock 0 -60 0 minecraft:calcite" \
-            "setblock 1 -60 0 minecraft:calcite" \
-            "summon item_display -0.5 -59.5 0.5 {brightness:{sky:15b,block:0b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
-            "summon item_display 0.5 -59.5 0.5 {brightness:{sky:15b,block:0b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
-            "summon item_display 1.5 -59.5 0.5 {brightness:{sky:15b,block:15b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
-            "summon item_display 2.5 -59.5 0.5 {brightness:{sky:15b,block:0b},item:{id:\"minecraft:paper\",count:1b},transformation:{translation:[0f,-0.5f,0f],scale:[4f,4f,4f]}}" \
-            "tp @a -0.0 -58.5 12.0 0 8" \
-            "time set noon" \
-            "gamerule doDaylightCycle false" >&3
+            'difficulty peaceful' \
+            'time set noon' \
+            'weather clear' \
+            'fill -7 -61 -1 -5 -59 1 minecraft:calcite' \
+            'fill -3 -61 -1 -1 -59 1 minecraft:calcite' \
+            'fill 1 -61 -1 3 -59 1 minecraft:calcite' \
+            'summon minecraft:item_display -5.5 -59.5 0.5 {Tags:["light_A"],item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}}' \
+            'summon minecraft:item_display -1.5 -59.5 0.5 {Tags:["light_B"],brightness:{sky:15,block:0},item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}}' \
+            'summon minecraft:item_display 2.5 -59.5 0.5 {Tags:["light_C"],brightness:{sky:15,block:15},item:{id:"minecraft:white_concrete",count:1},transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}}' \
+            'summon minecraft:item_display 6.5 -59.5 3.5 {Tags:["light_D"],brightness:{sky:15,block:0},item:{id:"minecraft:white_concrete",count:1}}' \
+            'tp @a 0.5 -60 14.5 180 6' \
+            'data get entity @e[type=minecraft:item_display,tag=light_A,limit=1]' \
+            'data get entity @e[type=minecraft:item_display,tag=light_B,limit=1]' \
+            'data get entity @e[type=minecraft:item_display,tag=light_C,limit=1]' \
+            'data get entity @e[type=minecraft:item_display,tag=light_D,limit=1]' \
+            'data get entity @a[limit=1] Pos' \
+            'data get entity @a[limit=1] Rotation' \
+            'execute if data entity @e[tag=light_A,limit=1] transformation{translation:[0f,0f,3f]} run say CIM_LIGHT_A_TRANSFORM_OK' \
+            'execute if data entity @e[tag=light_B,limit=1] transformation{translation:[0f,0f,3f]} run say CIM_LIGHT_B_TRANSFORM_OK' \
+            'execute if data entity @e[tag=light_C,limit=1] transformation{translation:[0f,0f,3f]} run say CIM_LIGHT_C_TRANSFORM_OK' >&3
+          for _ in $(seq 1 20); do
+            if grep -q 'CIM_LIGHT_C_TRANSFORM_OK' /tmp/srv/boot.log; then break; fi
+            sleep 0.5
+          done
+          for label in A B C; do
+            grep -q "CIM_LIGHT_${label}_TRANSFORM_OK" /tmp/srv/boot.log
+          done
           sleep 6
-          java -cp /tmp/rig/client/vtools Shot /tmp/rig/shot.png || \
-            java -cp vtools Shot /tmp/rig/shot.png || true
-          ls -la /tmp/rig/shot.png || true
+          java -cp /tmp/rig/vtools Key F1
+          sleep 1
+          java -cp /tmp/rig/vtools Shot /tmp/rig/shot.png
+          test -s /tmp/rig/shot.png
+          # Replace only B through the shipped Bukkit command, retaining
+          # the same material, geometry and sampling position as native B.
+          transform='transformation:{translation:[0f,0f,3f],left_rotation:[0f,0f,0f,1f],scale:[1f,1f,1f],right_rotation:[0f,0f,0f,1f]}'
+          for sky in 15 0; do
+            printf '%s\n' \
+              'kill @e[tag=light_B]' \
+              "cim brightdisplay 0 $sky -1.5 -59.5 0.5 white_concrete" \
+              "data merge entity @e[type=minecraft:item_display,tag=!light_A,tag=!light_C,tag=!light_D,limit=1] {Tags:[\"light_B\"],$transform}" \
+              'data get entity @e[tag=light_B,limit=1]' \
+              "execute if data entity @e[tag=light_B,limit=1] {brightness:{sky:$sky,block:0},transformation:{translation:[0f,0f,3f]}} run say CIM_BUKKIT_B_${sky}_OK" >&3
+            for _ in $(seq 1 20); do
+              if grep -q "CIM_BUKKIT_B_${sky}_OK" /tmp/srv/boot.log; then break; fi
+              sleep 0.5
+            done
+            grep -q "CIM_BUKKIT_B_${sky}_OK" /tmp/srv/boot.log
+            grep -q "readback=0/$sky" /tmp/srv/boot.log
+            sleep 3
+            java -cp /tmp/rig/vtools Shot "/tmp/rig/shot-bukkit-$sky.png"
+            test -s "/tmp/rig/shot-bukkit-$sky.png"
+          done
+          # Retain a directly captured zero-light frame for measurement.
+          test -s /tmp/rig/shot-bukkit-0.png
+          cp /tmp/rig/shot-bukkit-0.png /tmp/rig/shot-zero.png
 
-      - name: the luma receipt
+      - name: labeled luma receipt
         run: |
-          set -uo pipefail
-          python3 - << 'PY'
-          from PIL import Image
-          import statistics, os
-          if not os.path.exists('/tmp/rig/shot.png'):
-              print("NO SHOT — the client never rendered"); raise SystemExit(1)
-          img = Image.open('/tmp/rig/shot.png').convert('RGB')
-          w, h = img.size
-          px = img.load()
-          print("shot:", w, "x", h)
-          rows = []
-          for y in range(0, h, 8):
-              vals = [sum(px[x, y])/3 for x in range(0, w, 8)]
-              rows.append((y, round(statistics.mean(vals),1)))
-          for y, m in rows:
-              if m > 30: print(y, m)
-          PY
+          set -euo pipefail
+          python3 scripts/visual/measure-display-light.py /tmp/rig/shot.png /tmp/rig/light-receipt
+          python3 scripts/visual/measure-display-light.py /tmp/rig/shot-bukkit-15.png /tmp/rig/light-bukkit-receipt
+          python3 scripts/visual/measure-display-light.py /tmp/rig/shot-zero.png /tmp/rig/light-zero-receipt --zero-light
 
-      - name: upload the receipt
+      - name: upload the receipt on every outcome
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: diagnostic-light-receipt
           path: |
             /tmp/rig/shot.png
+            /tmp/rig/shot-zero.png
+            /tmp/rig/shot-bukkit-*.png
+            /tmp/rig/light-receipt
+            /tmp/rig/light-zero-receipt
+            /tmp/rig/light-bukkit-receipt
             /tmp/rig/client/client.out
-            /tmp/rig/client/game/crash-reports/*
-            /tmp/rig/probe-last.log
+            /tmp/rig/client/game/options.txt
             /tmp/srv/boot.log
+            /tmp/srv/server.properties
             /tmp/rig/glbackend.txt
-            xvfb.log
-            xvfb32.log
-            xvfb24.log
-          if-no-files-found: ignore
+            /tmp/rig/probe-*.out
+            /tmp/rig/xvfb.log
+          if-no-files-found: warn
