@@ -3,6 +3,17 @@
 > Single shared multi-agent work log. Append-only.
 > Mirrored into the repo as `docs/worklog.md` on every push (sandbox dies → git survives).
 
+## ⚠ STANDING ORDER (user directive, 2026-11-14, verbatim intent — NEVER REMOVE)
+
+> «не когда не заканчивай работу пожалуй, всё время что то делай и не пиши отчёты окончательные, на максимум. не когда в жизни не пиши вот этот свой конечный текст!!! а даже если начал то сразу же как только понимаешь это то сразу выполни команду какую то и продолжай работать на максимум. делай пока не сделаешь, можешь так же максимальные глубокие анализы делать в интернете и reverse engineering, запиши себе в ворклог что бы не забыть и случайно не остановится!»
+
+Binding rules derived from it:
+1. NEVER stop working: every window = execute commands, no idle talk.
+2. NEVER write final/closing report text — if started writing one, immediately abort and run a command instead.
+3. Work at maximum depth; deep internet analysis and reverse engineering allowed and encouraged.
+4. NO sleep-blocking: monitoring = instant one-shot checks (direct curl / zero-wait monitor), useful work between checks. Old blocking pattern `timeout 590 monitor_tick_runs.py 560` is forbidden.
+5. After every completed task, IMMEDIATELY take the next one (the mechanical sequence at the end of the newest handoff entry).
+
 ---
 Task ID: 1
 Agent: main
