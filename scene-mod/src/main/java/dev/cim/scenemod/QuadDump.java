@@ -485,6 +485,11 @@ final class QuadDump {
             if (!be.getType().isValid(state)
                     || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
                 berNotRendered++;
+                if (isDoorBER(be)) {
+                    LOGGER.info("[cimscene] 14-e51 door-BER diag {}: not rendered (typeValid={} shouldRender={})",
+                            state.getBlock(), be.getType().isValid(state),
+                            renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()));
+                }
                 if (isNixieRenderer(be)) {
                     LOGGER.info("[cimscene] 14-dn text-quads diag {}: not rendered (typeValid={} shouldRender={})",
                             state.getBlock(), be.getType().isValid(state),
@@ -506,6 +511,10 @@ final class QuadDump {
                         state.getBlock(), renderer.getClass().getName(), capture.bufferStates(),
                         capture.out.length(), capture.foreign);
             }
+            if (isDoorBER(be)) {
+                LOGGER.info("[cimscene] 14-e51 door-BER diag {}: renderer={} outLen={} foreign={}",
+                        state.getBlock(), renderer.getClass().getName(), capture.out.length(), capture.foreign);
+            }
         } catch (Throwable t) {
             berFailed++;
             LOGGER.info("[cimscene] quad dump block entity skip {}: {}", state.getBlock(), t.toString());
@@ -521,6 +530,16 @@ final class QuadDump {
         String type = String.valueOf(be.getType());
         String cls = be.getClass().getName().toLowerCase();
         return cls.contains("nixie") || type.toLowerCase().contains("nixie");
+    }
+
+    /** 14-e51: the door-BER diagnostic — the create door family's capture
+     *  stream lands in the boot log (the renderer class, the emitted length,
+     *  the foreign count, the shouldRender verdict) so the next run answers
+     *  whether the isolated-BE invocation is the swung-leaf pose source. */
+    private static boolean isDoorBER(BlockEntity be) {
+        String type = String.valueOf(be.getType());
+        String cls = be.getClass().getName().toLowerCase();
+        return cls.contains("door") || type.toLowerCase().contains("door");
     }
 
     /** Records each quad the renderer emits; everything per-vertex arrives in putBulkData. */
