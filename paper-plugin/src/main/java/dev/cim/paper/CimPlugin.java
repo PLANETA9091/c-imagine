@@ -2161,13 +2161,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         if (b.getState() instanceof org.bukkit.block.Jukebox jb) {
                             jb.setRecord(new org.bukkit.inventory.ItemStack(disc));
                             jb.update();
-                            try {
-                                jb.startPlaying();
-                            } catch (Throwable playFail) {
-                                // a refused play = the record still sits in the
-                                // box; the note-particle content just names it
-                                log().warning(LOG_PREFIX + "f2v galleryvariant: jukebox play refused at "
-                                        + x + "," + y + "," + z + ": " + playFail);
+                            // startPlaying on a FRESH state: the update() call
+                            // invalidates the snapshot — the stale object's
+                            // play would target the detached tile
+                            if (w.getBlockAt(x, y, z).getState()
+                                    instanceof org.bukkit.block.Jukebox live) {
+                                try {
+                                    live.startPlaying();
+                                } catch (Throwable playFail) {
+                                    // a refused play = the record still sits in
+                                    // the box; the note-particle content names it
+                                    log().warning(LOG_PREFIX + "f2v galleryvariant: jukebox play refused at "
+                                            + x + "," + y + "," + z + ": " + playFail);
+                                }
                             }
                         } else {
                             failed++;
