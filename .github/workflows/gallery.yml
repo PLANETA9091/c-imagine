@@ -3185,6 +3185,13 @@ jobs:
               echo "shot ours $NS blockentity page $p"
             done
           done
+          # 14-e40(c) THE WALL PLANE CLEANUP: the banner/pot/jukebox replays
+          # set REAL blocks on the wall plane (z=9) — the isolation replay
+          # spawns its displays at the SAME pitch-2 cells and must meet the
+          # same air the truth's iso meets (the truth leg's own walks clear
+          # the wall per page; the ours variant step owns the cleanup here).
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "fill -6 -61 9 6 -51 9 minecraft:air replace" || true
           # the gate joins the LISTING (13-b) — regenerate it with the
           # variant shots included
           (cd ours-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
