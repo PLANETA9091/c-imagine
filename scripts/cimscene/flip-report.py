@@ -39,7 +39,16 @@ def load_all(dirs, pattern):
     return out
 
 
-def ns_of(name):
+def ns_of(name, report=None):
+    if name.startswith("join-menu-"):
+        # The filename joins namespace/path with underscores, which are
+        # legal in both. The producer's registered menu ID is authoritative.
+        namespaces = set()
+        for row in (report or {}).get("rows", []):
+            match = re.match(r"^([a-z0-9_.-]+):", str(row.get("state", "")))
+            if match:
+                namespaces.add(match.group(1))
+        return next(iter(namespaces)) if len(namespaces) == 1 else "unknown"
     # Read the producer's filename contract, not a fixed mod allowlist.
     # Entity pages use -N; block/item and diagnostic pages use -pN.
     m = re.fullmatch(
@@ -68,11 +77,13 @@ def main():
                 cls = "blockiso"   # 14-e32 the isolation lane (diagnostic)
             else:
                 match = re.match(r'join-(item|fluid|particle|e)(?:-|\d)', name)
-                cls = match.group(1) if match else "block"
+            cls = match.group(1) if match else "block"
+            if name.startswith("join-menu-"):
+                cls = "menu"
             # The dyn/large entity series are diagnostic, separate from mobs.
             if cls == "e" and re.search(r'-(dyn|large)-', name):
                 cls = "e-" + re.search(r'-(dyn|large)-', name).group(1)
-            ns = ns_of(name)
+            ns = ns_of(name, d)
             counts = Counter(r["verdict"] for r in d.get("rows", []))
             if d.get("verdict") == "GLOBAL-MISALIGNED":
                 counts["RED"] += 1

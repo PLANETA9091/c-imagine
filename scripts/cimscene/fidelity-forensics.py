@@ -60,6 +60,8 @@ def load_joins(dirs):
 
 def class_of(join_name):
     """The ledger class a join file belongs to (the flip-report contract)."""
+    if join_name.startswith("join-menu-"):
+        return "menu"
     m = re.match(r"join-(item|fluid|particle|e)(?:-|\d)", join_name)
     if m:
         cls = m.group(1)
@@ -73,7 +75,14 @@ def class_of(join_name):
     return "unknown"
 
 
-def ns_of(join_name):
+def ns_of(join_name, report=None):
+    if join_name.startswith("join-menu-"):
+        namespaces = set()
+        for row in (report or {}).get("rows", []):
+            match = re.match(r"^([a-z0-9_.-]+):", str(row.get("state", "")))
+            if match:
+                namespaces.add(match.group(1))
+        return next(iter(namespaces)) if len(namespaces) == 1 else "unknown"
     m = re.fullmatch(
         r"join-(?:(?:item|fluid|particle|e(?:-(?:dyn|large))?)-)?"
         r"([a-z0-9_.-]+?)-p?\d+\.json", join_name)
@@ -141,7 +150,7 @@ def main():
                                   "luma": 0, "fit": 0, "fam": 0})
     for f, d in joins:
         name = os.path.basename(f)
-        cls, ns = class_of(name), ns_of(name)
+        cls, ns = class_of(name), ns_of(name, d)
         gate = d.get("gate", 60000)
         for row in d.get("rows", []):
             if row.get("verdict") != "RED":

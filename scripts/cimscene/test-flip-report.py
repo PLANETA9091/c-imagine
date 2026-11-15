@@ -94,6 +94,21 @@ class FlipReportTest(unittest.TestCase):
         table = self.report({"join-e0.json": {"rows": [{"verdict": "GREEN"}]}})
         self.assertEqual(set(table), {("e", "minecraft")})
 
+    def test_gated_menus_use_the_registered_menu_namespace(self):
+        table = self.report({
+            "join-menu-create_toolbox.json": {"rows": [
+                {"state": "create:toolbox", "verdict": "RED"}]},
+            "join-menu-mod_with_underscore_screen_path.json": {"rows": [
+                {"state": "mod_with_underscore:screen_path", "verdict": "GREEN"}]},
+            "join-menu-unattributed.json": {"rows": [{"verdict": "RED"}]},
+        })
+        self.assertEqual(set(table), {("menu", "create"),
+                                     ("menu", "mod_with_underscore"),
+                                     ("menu", "unknown")})
+        self.assertEqual(table[("menu", "create")]["red"], 1)
+        self.assertEqual(table[("menu", "unknown")]["red"], 1)
+        self.assertEqual(sum(r["red"] for r in table.values()), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
