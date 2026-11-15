@@ -1904,6 +1904,161 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
+     * 14-e38(c) THE EFFECT / TRIM / ENCHANT REPLAYS — the third increment of
+     * the variant-kind channel. The truth walk's mechanics, mirrored through
+     * the Paper 26.3 Bukkit API:
+     * <ul>
+     * <li>{@code effect} — a Pig carrying the manifest's mob effect
+     * ({@link org.bukkit.Registry#MOB_EFFECT} lookup, duration = the mod's
+     * EFFECT_DURATION, ambient=false, particles=true — the same visual
+     * contract; the kind is dyn=1: the particles are the content).</li>
+     * <li>{@code trimmaterial} — an armor stand wearing an iron chestplate
+     * with {@link org.bukkit.inventory.meta.trim.ArmorTrim}(the manifest's
+     * TRIM_MATERIAL, the first registered TRIM_PATTERN); {@code trimpattern}
+     * mirrors it (the fixed material, the manifest's pattern).</li>
+     * <li>{@code enchant} — an armor stand holding an iron sword with the
+     * manifest's enchantment at level 1 ({@link org.bukkit.Registry#ENCHANTMENT}).</li>
+     * </ul>
+     * A subject the 26.3 registry does not carry = a NAMED
+     * variant-missing skip. The freeze contract = the mod's: yaw 180,
+     * NoAI, invulnerable, no despawn.
+     */
+    private int galleryVariantEntity(String kind, String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-variant-" + kind + "-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest missing: " + mf);
+            return -1;
+        }
+        World w = world(worldName());
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                }
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest read failed "
+                    + mf + ": " + ioe);
+            return -1;
+        }
+        // the fixed half of the trim pair: the FIRST registered entry of the
+        // opposite registry (the mod's firstIdOrThrow law, mirrored)
+        org.bukkit.inventory.meta.trim.TrimMaterial fixedMaterial = null;
+        org.bukkit.inventory.meta.trim.TrimPattern fixedPattern = null;
+        try {
+            fixedMaterial = org.bukkit.Registry.TRIM_MATERIAL.stream().findFirst().orElse(null);
+            fixedPattern = org.bukkit.Registry.TRIM_PATTERN.stream().findFirst().orElse(null);
+        } catch (Throwable registryFail) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: trim registry read failed: " + registryFail);
+        }
+        int placed = 0, variantMissing = 0, failed = 0;
+        for (String[] row : cells) {
+            if (row.length < 5) {
+                continue;
+            }
+            double x, y, z;
+            try {
+                x = Double.parseDouble(row[1]) + 0.5;
+                y = Double.parseDouble(row[2]);
+                z = Double.parseDouble(row[3]) + 0.5;
+            } catch (NumberFormatException badCell) {
+                continue;
+            }
+            String subject = row[4];
+            org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(subject);
+            final org.bukkit.Location at = new org.bukkit.Location(w, x, y, z);
+            try {
+                switch (kind) {
+                    case "effect" -> {
+                        org.bukkit.potion.PotionEffectType t = key == null ? null
+                                : org.bukkit.Registry.MOB_EFFECT.get(key);
+                        if (t == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        w.spawn(at, org.bukkit.entity.Pig.class, e -> {
+                            e.setAI(false);
+                            e.setInvulnerable(true);
+                            e.setRemoveWhenFarAway(false);
+                            e.setRotation(180f, 0f);
+                            e.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                                    t, VARIANT_EFFECT_DURATION_TICKS, 0, false, true));
+                        });
+                    }
+                    case "trimmaterial", "trimpattern" -> {
+                        if (fixedMaterial == null || fixedPattern == null) {
+                            variantMissing++;
+                            log().warning(LOG_PREFIX + "f2v galleryvariant: trim registries empty");
+                            continue;
+                        }
+                        org.bukkit.inventory.meta.trim.TrimMaterial mat = fixedMaterial;
+                        org.bukkit.inventory.meta.trim.TrimPattern pat = fixedPattern;
+                        if ("trimmaterial".equals(kind)) {
+                            org.bukkit.inventory.meta.trim.TrimMaterial m = key == null ? null
+                                    : org.bukkit.Registry.TRIM_MATERIAL.get(key);
+                            if (m == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                            mat = m;
+                        } else {
+                            org.bukkit.inventory.meta.trim.TrimPattern pp = key == null ? null
+                                    : org.bukkit.Registry.TRIM_PATTERN.get(key);
+                            if (pp == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                            pat = pp;
+                        }
+                        final org.bukkit.inventory.meta.trim.TrimMaterial fmat = mat;
+                        final org.bukkit.inventory.meta.trim.TrimPattern fpat = pat;
+                        w.spawn(at, org.bukkit.entity.ArmorStand.class, e -> {
+                            e.setAI(false);
+                            e.setInvulnerable(true);
+                            e.setRemoveWhenFarAway(false);
+                            e.setRotation(180f, 0f);
+                            org.bukkit.inventory.ItemStack chest =
+                                    new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_CHESTPLATE);
+                            org.bukkit.inventory.meta.ArmorMeta meta =
+                                    (org.bukkit.inventory.meta.ArmorMeta) chest.getItemMeta();
+                            meta.setTrim(new org.bukkit.inventory.meta.trim.ArmorTrim(fmat, fpat));
+                            chest.setItemMeta(meta);
+                            e.getEquipment().setChestplate(chest);
+                        });
+                    }
+                    case "enchant" -> {
+                        org.bukkit.enchantments.Enchantment ench = key == null ? null
+                                : org.bukkit.Registry.ENCHANTMENT.get(key);
+                        if (ench == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        final org.bukkit.enchantments.Enchantment fench = ench;
+                        w.spawn(at, org.bukkit.entity.ArmorStand.class, e -> {
+                            e.setAI(false);
+                            e.setInvulnerable(true);
+                            e.setRemoveWhenFarAway(false);
+                            e.setRotation(180f, 0f);
+                            org.bukkit.inventory.ItemStack sword =
+                                    new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
+                            org.bukkit.inventory.meta.ItemMeta meta = sword.getItemMeta();
+                            meta.addEnchant(fench, 1, true);
+                            sword.setItemMeta(meta);
+                            e.getEquipment().setItemInMainHand(sword);
+                        });
+                    }
+                    default -> {
+                        return placed;
+                    }
+                }
+                placed++;
+            } catch (Throwable spawnFail) {
+                failed++;
+                log().warning(LOG_PREFIX + "f2v galleryvariant: spawn failed kind=" + kind
+                        + " ns=" + ns + " page=" + page + " subject=" + subject
+                        + " err=" + spawnFail);
+            }
+        }
+        log().info(LOG_PREFIX + "f2v galleryvariant: kind=" + kind + " ns=" + ns + " page=" + page
+                + " placed=" + placed + " cells=" + cells.size()
+                + " variant-missing=" + variantMissing + " failed=" + failed);
+        return placed;
+    }
+
+    /** The 10-minute visual window the truth's effect walk uses (EFFECT_DURATION = 20*60*10). */
+    static final int VARIANT_EFFECT_DURATION_TICKS = 20 * 60 * 10;
+
+    /**
      * 14-e38 THE PAINTING VARIANT REPLAY — the ours leg's FIRST variant-kind
      * channel. The truth walk hangs real {@code Painting} entities on the
      * support wall (the manifest carries the surviving cells with their
@@ -3567,11 +3722,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 int placed = switch (vkind) {
                     case "painting" -> galleryVariantPainting(args[2], page);
                     case "wolf", "cat", "frog", "villager" -> galleryVariantMob(vkind, args[2], page);
+                    case "effect", "trimmaterial", "trimpattern", "enchant" -> galleryVariantEntity(vkind, args[2], page);
                     default -> Integer.MIN_VALUE;
                 };
                 if (placed == Integer.MIN_VALUE) {
                     sender.sendMessage(LOG_PREFIX + "galleryvariant: unknown kind " + vkind
-                            + " (known: painting, wolf, cat, frog, villager)");
+                            + " (known: painting, wolf, cat, frog, villager, effect, trimmaterial, trimpattern, enchant)");
                     return true;
                 }
                 sender.sendMessage(LOG_PREFIX + "galleryvariant " + vkind + " " + args[2]
