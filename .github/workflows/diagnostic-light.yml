@@ -5,7 +5,7 @@ name: diagnostic-light
 # gallery's concurrency group; this run NEVER supersedes a gallery).
 #
 # The question it settles on the EXACT production stack (the runner's mesa 26
-# GLX, the 26.3 vanilla client): for an item_display carrying the pack's
+# GL stack, the 26.3 vanilla client): for an item_display carrying the pack's
 # block-model route, which light source reaches the shader —
 #   (1) the Brightness override (the bytecode says the client consumes it via
 #       DisplayRenderer.get{Block,Sky}LightLevel),
@@ -22,6 +22,16 @@ name: diagnostic-light
 # B==C => the override IS consumed (and the e25 census lightmap = the sky-0
 # means the POSITION is the boss, so D must go fullbright); A==D => the
 # position does not matter either and the light = something else entirely.
+#
+# 14-e30(b'') THE WINDOW LADDER (the first dispatch, run 43697680168, died at
+# the GL wall: "Couldn't find matching GLX visual" on OpenGL + "VK_KHR_surface
+# not implemented" on Vulkan — the same measured signature the gallery's ours
+# leg hit and solved in 14-bo; the gallery's GLPROBE ladder is the working
+# recipe and rides here now): opengl/24bit -> opengl/32bit (RGBA visuals) ->
+# vulkan/32bit (lavapipe, mesa-vulkan-drivers) — every step probed with the
+# client's OWN verdict (opengl_missing is instant; "Sound engine started"
+# fires only post-window), never an external GL probe (run #192 measured
+# glxinfo green while the client died).
 
 on:
   workflow_dispatch: {}
@@ -29,7 +39,7 @@ on:
 jobs:
   display-light:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -39,21 +49,63 @@ jobs:
           echo "[apt_retry] 2 attempts"; for i in 1 2; do
             sudo apt-get update -qq && break || sleep 20
           done
-          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglx-mesa0 mesa-utils imagemagick > /dev/null
-          glxinfo -display :99 2>/dev/null | head -3 || true
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-vulkan-drivers \
+            libglx-mesa0 libxtst6 mesa-utils imagemagick vulkan-tools > /dev/null
+          ls /usr/share/vulkan/icd.d/ || true
 
-      - name: boot server + client
+      - name: THE WINDOW LADDER (GLPROBE, ported from the gallery's ours leg)
         run: |
-          set -euo pipefail
+          set -uo pipefail
           export DISPLAY=:99
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset < /dev/null > xvfb.log 2>&1 &
           sleep 2
           glxinfo -display :99 | head -4 || echo "GLX probe FAILED"
-
-      - name: fetch client runtime
-        run: |
-          set -euo pipefail
           python3 scripts/fetch-visual-client.py 26.3 /tmp/rig/client --assets 2>&1 | tail -2
+          grep -oE "\-\-graphicsBackend [a-z]*" /tmp/rig/client/launch.txt || true
+          mkdir -p /tmp/rig/client/game
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > /tmp/rig/client/game/options.txt
+          probe_client() {
+            OUT=$(mktemp)
+            timeout 90 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+              $(cat /tmp/rig/client/launch.txt) > "$OUT" 2>&1 || true
+            if grep -qE "opengl_missing|Couldn't find matching GLX visual|BackendCreationException" "$OUT" \
+               && ! grep -q "Sound engine started" "$OUT"; then
+              echo "PROBE: backend-refused on $1"
+              grep -E "BackendCreationException|opengl_missing|GLX visual|Vulkan is not supported" "$OUT" | head -3 | sed 's/^/PROBE: /'
+              rm -f "$OUT"; return 3
+            fi
+            if grep -qE "Sound engine started|Created: .*atlas|Backend:" "$OUT"; then
+              echo "PROBE: window up on $1"
+              rm -f "$OUT"; return 0
+            fi
+            echo "PROBE: inconclusive on $1 (no verdict in 90s) — keeping the current backend"
+            tail -4 "$OUT" | sed 's/^/PROBE: /'
+            rm -f "$OUT"; return 0
+          }
+          GLBACKEND=opengl
+          if ! probe_client "opengl/24bit"; then
+            pkill -f "Xvfb :99" 2>/dev/null || true
+            sleep 1
+            Xvfb :99 -screen 0 1280x720x32 +extension GLX +render -noreset < /dev/null > xvfb32.log 2>&1 &
+            sleep 2
+            if probe_client "opengl/32bit"; then
+              echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
+            else
+              # fallback 2: the vulkan backend — lavapipe, no GLX involved
+              printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > /tmp/rig/client/game/options.txt
+              if probe_client "vulkan/32bit"; then
+                GLBACKEND=vulkan
+                echo "GLPROBE: FLIPPED to vulkan and verified — the shard rides lavapipe"
+              else
+                echo "GLPROBE: neither backend can start the 26.3 client on this image"
+                exit 1
+              fi
+            fi
+          else
+            echo "GLPROBE: the opengl pin stands (the client's window came up)"
+          fi
+          echo "$GLBACKEND" > /tmp/rig/glbackend.txt
+          cat /tmp/rig/glbackend.txt
 
       - name: local server boot
         run: |
@@ -71,13 +123,25 @@ jobs:
 
       - name: client join + scene + crops
         run: |
-          set -euo pipefail
-          mkdir -p /tmp/rig/client/game
-          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\n' > /tmp/rig/client/game/options.txt
-          cd /tmp/rig/client
-          setsid bash -c 'cd /tmp/rig/client && DISPLAY=:99 bash launch.txt > client.out 2>&1' < /dev/null > /dev/null 2>&1 &
-          for _ in $(seq 1 240); do grep -q "joined the game" /tmp/srv/boot.log && break; sleep 1; done
-          grep -q "joined the game" /tmp/srv/boot.log || { tail -20 client.out; exit 1; }
+          set -uo pipefail
+          GLBACKEND=$(cat /tmp/rig/glbackend.txt 2>/dev/null || echo opengl)
+          echo "riding backend: $GLBACKEND"
+          if [ "$GLBACKEND" = "vulkan" ]; then
+            sed -i 's/--graphicsBackend opengl/--graphicsBackend vulkan/' /tmp/rig/client/launch.txt
+            printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > /tmp/rig/client/game/options.txt
+          fi
+          printf 'onboardAccessibility:false\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\nfov:0.0\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > /tmp/rig/client/game/options.txt
+          setsid bash -c 'cd /tmp/rig/client && DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe bash launch.txt > client.out 2>&1' < /dev/null > /dev/null 2>&1 &
+          joined=0
+          for _ in $(seq 1 240); do
+            if grep -q "joined the game" /tmp/srv/boot.log 2>/dev/null; then joined=1; break; fi
+            sleep 1
+          done
+          if [ "$joined" != "1" ]; then
+            echo "CLIENT DID NOT JOIN — the receipt (the honest wall):"
+            tail -30 /tmp/rig/client/client.out || true
+            exit 1
+          fi
           # the scene: the opaque wall at y=-60; the four displays at x=-1..2
           # A(-1) B(0) C(1) inside the wall cell column, D(2) in the front air
           exec 3<> /tmp/srv/cmd.fifo
@@ -93,21 +157,22 @@ jobs:
             "time set noon" \
             "gamerule doDaylightCycle false" >&3
           sleep 6
-          java -cp vtools Shot /tmp/rig/shot.png || true
-          ls -la /tmp/rig/shot.png
+          java -cp /tmp/rig/client/vtools Shot /tmp/rig/shot.png || \
+            java -cp vtools Shot /tmp/rig/shot.png || true
+          ls -la /tmp/rig/shot.png || true
 
       - name: the luma receipt
         run: |
-          set -euo pipefail
+          set -uo pipefail
           python3 - << 'PY'
           from PIL import Image
-          import statistics
+          import statistics, os
+          if not os.path.exists('/tmp/rig/shot.png'):
+              print("NO SHOT — the client never rendered"); raise SystemExit(1)
           img = Image.open('/tmp/rig/shot.png').convert('RGB')
           w, h = img.size
           px = img.load()
-          # scan for the four paper quads: the brightest flat white regions
           print("shot:", w, "x", h)
-          # crude receipt: the whole-frame luma histogram + the row bands
           rows = []
           for y in range(0, h, 8):
               vals = [sum(px[x, y])/3 for x in range(0, w, 8)]
@@ -115,3 +180,15 @@ jobs:
           for y, m in rows:
               if m > 30: print(y, m)
           PY
+
+      - name: upload the receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-light-receipt
+          path: |
+            /tmp/rig/shot.png
+            /tmp/rig/client/client.out
+            /tmp/srv/boot.log
+            /tmp/rig/glbackend.txt
+          if-no-files-found: ignore
