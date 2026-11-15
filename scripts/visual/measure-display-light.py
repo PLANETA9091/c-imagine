@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """Labeled native diagnostic crops; reports measurements, never a parity gate."""
+import argparse
 import json
 import math
 from pathlib import Path
 import statistics
-import sys
 from PIL import Image
 
-source, output = map(Path, sys.argv[1:])
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('source', type=Path)
+parser.add_argument('output', type=Path)
+parser.add_argument('--zero-light', action='store_true',
+                    help='B was changed to block0/sky0 for the second capture')
+args = parser.parse_args()
+source, output = args.source, args.output
 image = Image.open(source).convert('RGB')
 if image.size != (1280, 720):
     raise ValueError(f'Unexpected diagnostic viewport: {image.size}')
@@ -21,7 +27,10 @@ forward = distance * math.cos(pitch) - dy * math.sin(pitch)
 vertical = dy * math.cos(pitch) + distance * math.sin(pitch)
 labels = [('A', -5.5, 'opaque/no override'), ('B', -1.5, 'opaque/block0 sky15'),
           ('C', 2.5, 'opaque/block15 sky15'), ('D', 6.5, 'air/block0 sky15')]
-receipt = {'diagnostic_only': True, 'source': source.name, 'samples': {}}
+if args.zero_light:
+    labels[1] = ('B', -1.5, 'opaque/block0 sky0')
+receipt = {'diagnostic_only': True, 'source': source.name,
+           'zero_light_override': args.zero_light, 'samples': {}}
 for label, x, condition in labels:
     cx = round(640 + focal * (x - .5) / forward)
     cy = round(360 - focal * vertical / forward)

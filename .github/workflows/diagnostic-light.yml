@@ -127,11 +127,24 @@ jobs:
           sleep 1
           java -cp /tmp/rig/vtools Shot /tmp/rig/shot.png
           test -s /tmp/rig/shot.png
+          printf '%s\n' \
+            'data merge entity @e[tag=light_B,limit=1] {brightness:{sky:0,block:0}}' \
+            'data get entity @e[tag=light_B,limit=1] brightness' \
+            'execute if data entity @e[tag=light_B,limit=1] brightness{sky:0,block:0} run say CIM_LIGHT_B_ZERO_OK' >&3
+          for _ in $(seq 1 20); do
+            if grep -q 'CIM_LIGHT_B_ZERO_OK' /tmp/srv/boot.log; then break; fi
+            sleep 0.5
+          done
+          grep -q 'CIM_LIGHT_B_ZERO_OK' /tmp/srv/boot.log
+          sleep 3
+          java -cp /tmp/rig/vtools Shot /tmp/rig/shot-zero.png
+          test -s /tmp/rig/shot-zero.png
 
       - name: labeled luma receipt
         run: |
           set -euo pipefail
           python3 scripts/visual/measure-display-light.py /tmp/rig/shot.png /tmp/rig/light-receipt
+          python3 scripts/visual/measure-display-light.py /tmp/rig/shot-zero.png /tmp/rig/light-zero-receipt --zero-light
 
       - name: upload the receipt on every outcome
         if: always()
@@ -140,7 +153,9 @@ jobs:
           name: diagnostic-light-receipt
           path: |
             /tmp/rig/shot.png
+            /tmp/rig/shot-zero.png
             /tmp/rig/light-receipt
+            /tmp/rig/light-zero-receipt
             /tmp/rig/client/client.out
             /tmp/rig/client/game/options.txt
             /tmp/srv/boot.log
