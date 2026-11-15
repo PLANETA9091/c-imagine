@@ -50,7 +50,7 @@ jobs:
             sudo apt-get update -qq && break || sleep 20
           done
           sudo apt-get install -y -qq xvfb libgl1-mesa-dri mesa-vulkan-drivers \
-            libglx-mesa0 libxtst6 mesa-utils imagemagick vulkan-tools > /dev/null
+            libglx-mesa0 libxtst6 mesa-utils imagemagick vulkan-tools x11-utils > /dev/null
           ls /usr/share/vulkan/icd.d/ || true
 
       - name: THE WINDOW LADDER (GLPROBE, ported from the gallery's ours leg)
@@ -71,7 +71,13 @@ jobs:
           # to initialize SDL: No available video device" = the dead X)
           xwait() {
             for i in $(seq 1 15); do
-              xdpyinfo -display "${1:-:99}" >/dev/null 2>&1 && return 0
+              # glxinfo first (mesa-utils = always installed here); xdpyinfo
+              # as the fallback (x11-utils) — the third dispatch measured the
+              # xwait false-alarm: xdpyinfo was MISSING and a healthy Xvfb
+              # was pronounced dead
+              if glxinfo -display "${1:-:99}" >/dev/null 2>&1; then return 0; fi
+              if command -v xdpyinfo >/dev/null 2>&1 \
+                 && xdpyinfo -display "${1:-:99}" >/dev/null 2>&1; then return 0; fi
               sleep 1
             done
             return 1
@@ -126,7 +132,7 @@ jobs:
               # if the 32-bit X died, the 24-bit screen serves the vulkan probe
               if ! xwait :99; then xrestart 24 || { echo "no X at all"; exit 1; }; fi
               printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > /tmp/rig/client/game/options.txt
-              if probe_client "vulkan/$(xdpyinfo -display :99 >/dev/null 2>&1 && echo 32bit || echo 24bit)"; then
+              if probe_client "vulkan/xr"; then
                 GLBACKEND=vulkan
                 echo "GLPROBE: FLIPPED to vulkan and verified — the shard rides lavapipe"
               else
