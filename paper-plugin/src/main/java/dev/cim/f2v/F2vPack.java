@@ -3753,9 +3753,10 @@ public final class F2vPack {
                     rgba + "\tcutout\t15\t15", rgba + "\ttranslucent", zero};
             // 14-dr: only the explicit translucent material honors the vertex
             // alpha (0.3 x the texture's 128 = 38); every legacy row and the
-            // explicit solid/cutout rows keep the texture's 128 — including
-            // the zero-alpha legacy row (the huge_lily_pad trap signature).
-            int[] blockAlpha = {128, 128, 128, 128, 38, 128};
+            // explicit solid/cutout rows now also preserve native chunk texture
+            // alpha semantics: 128 is opaque in both materials. Legacy rows
+            // retain their known behavior without guessing a source material.
+            int[] blockAlpha = {128, 128, 255, 255, 38, 128};
             for (int i = 0; i < blockRows.length; i++) {
                 ObjMesh.resetBaker();
                 GalleryPack.resetModelScales();
@@ -4209,8 +4210,78 @@ public final class F2vPack {
         }
     }
 
+    private static void capturedMaterialAlphaSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-material-alpha");
+        try {
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(quads);
+            var entries = new TreeMap<String, byte[]>();
+            var image = new java.awt.image.BufferedImage(16, 16,
+                    java.awt.image.BufferedImage.TYPE_INT_ARGB);
+            int[] alphas = {0, 25, 26, 128, 255};
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    image.setRGB(x, y, (alphas[Math.min(4, x / 3)] << 24) | 0x123456);
+                }
+            }
+            var png = new java.io.ByteArrayOutputStream();
+            javax.imageio.ImageIO.write(image, "png", png);
+            String sprite = "fixture:block/shared_alpha";
+            entries.put(GalleryPack.spritePathPng(sprite), png.toByteArray());
+            String geometry = sprite + "\t0\t-1"
+                    + "\t0\t0\t0\t0\t16\t1\t0\t0\t16\t16"
+                    + "\t1\t1\t0\t16\t0\t0\t1\t0\t0\t0"
+                    + "\t1".repeat(12) + "\t1".repeat(4);
+            StringBuilder mesh = new StringBuilder();
+            String[] materials = {"solid", "cutout", "translucent"};
+            for (String material : materials) mesh.append(geometry).append('\t').append(material)
+                    .append("\t0\t15\n");
+            Files.writeString(quads.resolve("alpha.tsv"), mesh.toString());
+            var rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input("fixture:alpha#qalpha")),
+                    entries, new ArrayList<>(), Map.of(), new ArrayList<>());
+            expect(failures, rows.size() == 1, "material alpha: shared-sprite fixture resolves");
+            if (rows.isEmpty()) return;
+            ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+            JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+            expect(failures, node.getAsJsonArray("models").size() == 3,
+                    "material alpha: each native material retains its face");
+            for (int i = 0; i < materials.length; i++) {
+                JsonObject draw = node.getAsJsonArray("models").get(i).getAsJsonObject();
+                JsonObject model = JsonParser.parseString(new String(entries.get("assets/"
+                        + draw.get("model").getAsString().replace(":", "/models/") + ".json"),
+                        StandardCharsets.UTF_8)).getAsJsonObject();
+                JsonObject face = model.getAsJsonArray("elements").get(0).getAsJsonObject()
+                        .getAsJsonObject("faces").getAsJsonObject("south");
+                String texture = model.getAsJsonObject("textures")
+                        .get(face.get("texture").getAsString().substring(1)).getAsString();
+                var sheet = decodePng(entries.get(GalleryPack.spritePathPng(texture)));
+                JsonArray uv = face.getAsJsonArray("uv");
+                double u0 = uv.get(0).getAsDouble(), u1 = uv.get(2).getAsDouble();
+                double v0 = uv.get(1).getAsDouble(), v1 = uv.get(3).getAsDouble();
+                for (int j = 0; j < alphas.length; j++) {
+                    int x = (int) Math.floor((u0 + (j * 3 + 1.5) / 16 * (u1 - u0)) * sheet.getWidth() / 16);
+                    int y = (int) Math.floor((v0 + v1) * .5 * sheet.getHeight() / 16);
+                    int pixel = sheet.getRGB(x, y);
+                    int expected = i == 0 ? 255 : i == 1 ? (alphas[j] >= 26 ? 255 : 0) : alphas[j];
+                    expect(failures, (pixel >>> 24) == expected && (pixel & 0x00ffffff) == 0x123456,
+                            "material alpha: native " + materials[i] + " alpha=" + alphas[j]
+                                    + " preserves RGB and effective opacity, got " + Integer.toHexString(pixel));
+                }
+            }
+            expect(failures, java.util.Arrays.equals(entries.get(GalleryPack.spritePathPng(sprite)), png.toByteArray()),
+                    "material alpha: shared raw sprite is not modified");
+        } finally {
+            ObjMesh.resetBaker();
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(null);
+            deleteRecursively(quads);
+        }
+    }
+
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
         unlitPlaneSelftest(failures);
+        capturedMaterialAlphaSelftest(failures);
         Path quads = Files.createTempDirectory("f2v-unlit-selftest");
         try {
             String face = "fakemod:block/glow_tex\t0\t-1"

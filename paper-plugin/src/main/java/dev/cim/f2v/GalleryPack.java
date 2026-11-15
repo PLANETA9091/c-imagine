@@ -1581,6 +1581,44 @@ public final class GalleryPack {
         return bos.toByteArray();
     }
 
+    /** Match 1.21.1 chunk alpha before baking polygon coverage into a tile. */
+    private static String normalizeMaterialAlpha(List<Path> jars, String sprite, String material,
+                                                  TreeMap<String, byte[]> entries) throws IOException {
+        if (material.equals("translucent")) return sprite;
+        String sibling = sprite + "_cimalpha_" + material;
+        String target = spritePathPng(sibling);
+        if (entries.containsKey(target)) return sibling;
+        byte[] png = entries.get(spritePathPng(sprite));
+        if (png == null) png = readPngFromJars(jars, spritePathPng(sprite));
+        // hostSprite already records missing-source placeholder evidence; retain
+        // that explicit path rather than inventing material pixels here.
+        if (png == null) return sprite;
+        var image = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+        if (image == null) throw new IOException("invalid captured material PNG: " + sprite);
+        var output = new java.awt.image.BufferedImage(image.getWidth(), image.getHeight(),
+                java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        boolean changed = false;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int pixel = image.getRGB(x, y);
+                int alpha = pixel >>> 24;
+                // Solid's blend-disabled pipeline keeps RGB even at alpha zero;
+                // cutout discards alpha<0.1, then writes surviving RGB opaquely.
+                int effective = material.equals("solid") || alpha >= 26 ? 255 : 0;
+                changed |= alpha != effective;
+                output.setRGB(x, y, (pixel & 0x00ffffff) | (effective << 24));
+            }
+        }
+        if (!changed) return sprite;
+        var bytes = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(output, "png", bytes);
+        entries.put(target, bytes.toByteArray());
+        byte[] animation = entries.get(spritePathPng(sprite) + ".mcmeta");
+        if (animation == null) animation = readPngFromJars(jars, spritePathPng(sprite) + ".mcmeta");
+        if (animation != null) entries.put(target + ".mcmeta", animation);
+        return sibling;
+    }
+
     /** Multiply + Math.round + clamp into the 8-bit channel range. */
     private static int clamp255(double v) {
         long r = Math.round(v);
@@ -2160,10 +2198,15 @@ public final class GalleryPack {
             }
             if (material == null) material = faceMaterial;
             faceMaterials.add(faceMaterial);
-            String key = keyOf.get(c[0]);
+            // Only explicit chunk materials establish the native alpha contract.
+            // A sprite shared by solid/cutout/translucent faces needs separate
+            // aliases: vanilla 26.3 derives transparency from the actual pixels.
+            String alphaMaterial = (c.length == 40 || c.length == 42) ? faceMaterial : null;
+            String spriteKey = c[0] + "\0" + (alphaMaterial == null ? "legacy" : alphaMaterial);
+            String key = keyOf.get(spriteKey);
             if (key == null) {
                 key = "q" + keyOf.size();
-                keyOf.put(c[0], key);
+                keyOf.put(spriteKey, key);
                 // TINT-BAKE (scripts/f2v/tint-calibrate.py) reaches the QUAD
                 // channel through the same calibrated-sibling rule the static
                 // composites use (bakeCompositeTextures): a tabled sprite is
@@ -2196,6 +2239,9 @@ public final class GalleryPack {
                             hosted = sib;
                         }
                     }
+                }
+                if (alphaMaterial != null) {
+                    hosted = normalizeMaterialAlpha(jars, hosted, alphaMaterial, entries);
                 }
                 textures.put(key, hosted);
             }
