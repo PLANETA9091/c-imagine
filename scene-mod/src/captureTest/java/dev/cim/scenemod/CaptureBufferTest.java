@@ -63,7 +63,58 @@ public final class CaptureBufferTest {
         checkNativeLighting();
         checkRecordedLight(type, ctor, getBuffer, flush, state);
         checkNamedEntityMaterial(type, ctor, getBuffer, flush);
+        checkNativeMaterialStrings(type);
+        checkChunkMaterialStreams(type, ctor, flush);
         System.out.println("capture retained/interleaved buffer and native lighting tests: ALL OK");
+    }
+
+    private static void checkNativeMaterialStrings(Class<?> type) throws Exception {
+        var method = type.getDeclaredMethod("entityMaterial", String.class);
+        method.setAccessible(true);
+        for (String name : List.of("entity_translucent", "entity_translucent_cull")) {
+            // Exact CompositeRenderType.toString shape from native 1.21.1.
+            String nativeState = "RenderType[" + name
+                    + ":CompositeState[[texture[Optional[minecraft:textures/block/sand.png]]], outlineProperty=none]]";
+            if (!"translucent".equals(method.invoke(null, nativeState))) {
+                throw new AssertionError("native entity material lost: " + nativeState);
+            }
+        }
+        for (String state : List.of("RenderType[custom_entity_translucent:CompositeState[[]]]",
+                "RenderType[entity_translucent:custom_pipeline]", "custom:entity_translucent", "entity_translucent")) {
+            if (method.invoke(null, state) != null) {
+                throw new AssertionError("unknown shader was silently reclassified: " + state);
+            }
+        }
+    }
+
+    private static void checkChunkMaterialStreams(Class<?> type,
+                                                   java.lang.reflect.Constructor<?> ctor,
+                                                   java.lang.reflect.Method flush) throws Exception {
+        var getBuffer = type.getDeclaredMethod("bufferFor", Object.class, String.class,
+                boolean.class, String.class);
+        getBuffer.setAccessible(true);
+        Object capture = ctor.newInstance(List.of(), 0f);
+        for (String material : List.of("solid", "cutout", "translucent")) {
+            String state = "RenderType[" + material
+                    + ":CompositeState[[texture[Optional[minecraft:textures/atlas/blocks.png]]]]]";
+            VertexConsumer buffer = (VertexConsumer) getBuffer.invoke(capture, new Object(), state, false, material);
+            field(buffer.getClass(), "texture").set(buffer, "fixture:textures/shared.png");
+            for (int v = 0; v < 4; v++) {
+                vertex(buffer, v & 1, v >> 1, 255, 255);
+                buffer.setUv2(3 << 4, 12 << 4);
+            }
+            flush.invoke(capture);
+        }
+        String[] rows = field(type, "out").get(capture).toString().split("\n");
+        if (rows.length != 3) throw new AssertionError("chunk BER geometry lost: " + rows.length);
+        int i = 0;
+        for (String material : List.of("solid", "cutout", "translucent")) {
+            String[] columns = rows[i++].split("\t");
+            if (columns.length != 42 || !columns[1].equals("0") || !columns[39].equals(material)
+                    || !columns[40].equals("3") || !columns[41].equals("12")) {
+                throw new AssertionError("chunk BER material/light/shader changed: " + Arrays.toString(columns));
+            }
+        }
     }
 
     /** 14-dv: the entity-translucent buffers name their material AT EMIT TIME
