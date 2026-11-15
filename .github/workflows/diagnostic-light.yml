@@ -56,18 +56,43 @@ jobs:
       - name: THE WINDOW LADDER (GLPROBE, ported from the gallery's ours leg)
         run: |
           set -uo pipefail
+          # THE GALLERY'S OURS-STEP ENV, 1:1 (the e26 run measured "window up
+          # on opengl/24bit" with exactly this export set; the first two
+          # dispatches rode per-process env only and the client refused the
+          # GLX visual the gallery's client accepts — the step-level export
+          # is the measured difference, Xvfb's GLX included)
           export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export LP_NUM_THREADS=4
           Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset < /dev/null > xvfb.log 2>&1 &
-          sleep 2
+          # the X must be UP before any probe: xdpyinfo-verified (the second
+          # dispatch measured the 32-bit restart racing the client — "Unable
+          # to initialize SDL: No available video device" = the dead X)
+          xwait() {
+            for i in $(seq 1 15); do
+              xdpyinfo -display "${1:-:99}" >/dev/null 2>&1 && return 0
+              sleep 1
+            done
+            return 1
+          }
+          xwait :99 || { echo "Xvfb :99 never came up"; cat xvfb.log; exit 1; }
           glxinfo -display :99 | head -4 || echo "GLX probe FAILED"
           python3 scripts/fetch-visual-client.py 26.3 /tmp/rig/client --assets 2>&1 | tail -2
           grep -oE "\-\-graphicsBackend [a-z]*" /tmp/rig/client/launch.txt || true
-          mkdir -p /tmp/rig/client/game
+          mkdir -p /tmp/rig/client/game /tmp/rig/client/game/crash-reports
           printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > /tmp/rig/client/game/options.txt
           probe_client() {
             OUT=$(mktemp)
             timeout 90 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
               $(cat /tmp/rig/client/launch.txt) > "$OUT" 2>&1 || true
+            cp "$OUT" /tmp/rig/probe-last.log || true
+            if grep -qE "Game crashed!|Unable to initialize SDL" "$OUT" \
+               && ! grep -q "Sound engine started" "$OUT"; then
+              echo "PROBE: CLIENT-CRASH on $1 (a crash is a refusal, never inconclusive)"
+              grep -E "IllegalStateException|BackendCreationException|Exception" "$OUT" | head -3 | sed 's/^/PROBE: /'
+              rm -f "$OUT"; return 3
+            fi
             if grep -qE "opengl_missing|Couldn't find matching GLX visual|BackendCreationException" "$OUT" \
                && ! grep -q "Sound engine started" "$OUT"; then
               echo "PROBE: backend-refused on $1"
@@ -82,18 +107,26 @@ jobs:
             tail -4 "$OUT" | sed 's/^/PROBE: /'
             rm -f "$OUT"; return 0
           }
-          GLBACKEND=opengl
-          if ! probe_client "opengl/24bit"; then
+          xrestart() { # xrestart <depth> — kill :99, start at <depth>, VERIFY it serves
             pkill -f "Xvfb :99" 2>/dev/null || true
             sleep 1
-            Xvfb :99 -screen 0 1280x720x32 +extension GLX +render -noreset < /dev/null > xvfb32.log 2>&1 &
-            sleep 2
-            if probe_client "opengl/32bit"; then
+            Xvfb :99 -screen 0 1280x720x$1 +extension GLX +render -noreset < /dev/null > xvfb$1.log 2>&1 &
+            if ! xwait :99; then
+              echo "Xvfb :99 depth $1 NEVER CAME UP:"; cat xvfb$1.log || true
+              return 1
+            fi
+            return 0
+          }
+          GLBACKEND=opengl
+          if ! probe_client "opengl/24bit"; then
+            if xrestart 32 && probe_client "opengl/32bit"; then
               echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
             else
-              # fallback 2: the vulkan backend — lavapipe, no GLX involved
+              # fallback 2: the vulkan backend — lavapipe, no GLX involved;
+              # if the 32-bit X died, the 24-bit screen serves the vulkan probe
+              if ! xwait :99; then xrestart 24 || { echo "no X at all"; exit 1; }; fi
               printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > /tmp/rig/client/game/options.txt
-              if probe_client "vulkan/32bit"; then
+              if probe_client "vulkan/$(xdpyinfo -display :99 >/dev/null 2>&1 && echo 32bit || echo 24bit)"; then
                 GLBACKEND=vulkan
                 echo "GLPROBE: FLIPPED to vulkan and verified — the shard rides lavapipe"
               else
@@ -189,6 +222,11 @@ jobs:
           path: |
             /tmp/rig/shot.png
             /tmp/rig/client/client.out
+            /tmp/rig/client/game/crash-reports/*
+            /tmp/rig/probe-last.log
             /tmp/srv/boot.log
             /tmp/rig/glbackend.txt
+            xvfb.log
+            xvfb32.log
+            xvfb24.log
           if-no-files-found: ignore
