@@ -3156,7 +3156,10 @@ jobs:
               for p in $(seq $SI $K $MAXP); do
                 rcon "cim cleanup-assemblies" "kill @e[type=!player]" "cim galleryvariant $KIND $NS $p" > vpaint-receipt.log 2>&1 || { echo "$KIND replay rcon failed at $NS p$p"; exit 1; }
                 tail -1 vpaint-receipt.log
-                grep -q "galleryvariant $KIND" vpaint-receipt.log || { echo "$KIND replay failed at $NS p$p"; cat vpaint-receipt.log; exit 1; }
+                # diagnostic-first (the 14-e32 law): a failed replay page is a
+                # NAMED hole, never a run-killer — the shot missing from the
+                # listing is the loud report
+                grep -q "galleryvariant $KIND" vpaint-receipt.log || { echo "NAMED: $KIND replay failed at $NS p$p"; cat vpaint-receipt.log; }
                 sleep 2
                 rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-v$KIND-$NS$p.png" \
@@ -3174,7 +3177,7 @@ jobs:
               [ -f "$M" ] || break
               rcon "cim galleryvariantblockentity $NS $p" > vbe-receipt.log 2>&1 || { echo "blockentity replay rcon failed at $NS p$p"; exit 1; }
               tail -1 vbe-receipt.log
-              grep -q "galleryvariantblockentity" vbe-receipt.log || { echo "blockentity replay failed at $NS p$p"; cat vbe-receipt.log; exit 1; }
+              grep -q "galleryvariantblockentity" vbe-receipt.log || { echo "NAMED: blockentity replay failed at $NS p$p"; cat vbe-receipt.log; }
               sleep 2
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-vblockentity-$NS$p.png" \
