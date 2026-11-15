@@ -3154,7 +3154,7 @@ jobs:
           for KIND in painting wolf cat frog villager effect trimmaterial trimpattern enchant banner pot jukebox; do
             for NS in $LADDER_NS; do
               for p in $(seq $SI $K $MAXP); do
-                rcon "cim cleanup-assemblies" "kill @e[type=!player]" "cim galleryvariant $KIND $NS $p" > vpaint-receipt.log 2>&1 || { echo "$KIND replay rcon failed at $NS p$p"; exit 1; }
+                rcon "cim galleryclear" "kill @e[type=!player]" "cim galleryvariant $KIND $NS $p" > vpaint-receipt.log 2>&1 || { echo "$KIND replay rcon failed at $NS p$p"; exit 1; }
                 tail -1 vpaint-receipt.log
                 # diagnostic-first (the 14-e32 law): a failed replay page is a
                 # NAMED hole, never a run-killer — the shot missing from the
