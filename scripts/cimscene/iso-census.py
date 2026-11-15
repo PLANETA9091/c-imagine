@@ -30,9 +30,10 @@ def load_states(dirs, pattern):
     for d in dirs:
         for f in glob.glob(os.path.join(d, pattern)):
             try:
-                data = json.load(open(f))
-            except Exception:
-                continue
+                with open(f, encoding="utf-8") as source:
+                    data = json.load(source)
+            except (OSError, ValueError) as error:
+                raise SystemExit(f"invalid report {f}: {error}") from error
             for r in data.get("rows", []):
                 st = str(r.get("state", ""))
                 if not st:

@@ -52,6 +52,19 @@ class CensusTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("NO ISO DATA", result.stdout)
 
+    def test_corrupt_page_cannot_be_silently_omitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            valid = json.dumps({"rows": [{"state": "ae2:a", "verdict": "GREEN"}]})
+            (root / "join-ae2-p0.json").write_text(valid)
+            (root / "diag-iso-ae2-p0.json").write_text(valid)
+            (root / "join-ae2-p1.json").write_text("{truncated")
+            result = subprocess.run([sys.executable, str(SCRIPT), str(root)],
+                                    capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid report", result.stderr)
+        self.assertNotIn("GREEN-BOTH", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
