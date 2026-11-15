@@ -2059,6 +2059,140 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     static final int VARIANT_EFFECT_DURATION_TICKS = 20 * 60 * 10;
 
     /**
+     * 14-e38(d) THE BLOCK-KIND REPLAYS (banner / pot / jukebox) — the fourth
+     * increment of the variant-kind channel. The truth walk places REAL
+     * blocks with real block-entity state on the block grid (pitch 1); this
+     * replay sets the SAME blocks through the Bukkit block-state API:
+     * <ul>
+     * <li>{@code banner} — a white banner with ONE black layer of the
+     * manifest's {@link org.bukkit.Registry#BANNER_PATTERN} id (the mod's
+     * BannerPatternLayers(former, BLACK) over WHITE).</li>
+     * <li>{@code pot} — a decorated pot with the manifest pattern's pottery
+     * sherd on all four sides (the mod's PotDecorations(sherd x4); the
+     * mapping = the mechanical name transform the vanilla ids share:
+     * {@code <path> -> <PATH>_POTTERY_SHERD}).</li>
+     * <li>{@code jukebox} — a jukebox with the manifest song's disc inserted
+     * and PLAYING ({@code MUSIC_DISC_<PATH>} — the vanilla song ids and the
+     * disc names share the same path; the note particles are the dyn
+     * content).</li>
+     * </ul>
+     * A subject with no matching 26.3 registry entry or material = a NAMED
+     * variant-missing skip.
+     */
+    private int galleryVariantBlock(String kind, String ns, int page) {
+        Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
+                "gallery-variant-" + kind + "-" + ns + "-p" + page + ".tsv");
+        if (!Files.isRegularFile(mf)) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest missing: " + mf);
+            return -1;
+        }
+        World w = world(worldName());
+        final java.util.List<String[]> cells = new java.util.ArrayList<>();
+        try {
+            for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
+                if (line.startsWith("cell\t")) {
+                    cells.add(line.split("\t", -1));
+                }
+            }
+        } catch (IOException ioe) {
+            log().warning(LOG_PREFIX + "f2v galleryvariant: manifest read failed "
+                    + mf + ": " + ioe);
+            return -1;
+        }
+        int placed = 0, variantMissing = 0, failed = 0;
+        for (String[] row : cells) {
+            if (row.length < 5) {
+                continue;
+            }
+            int x, y, z;
+            try {
+                x = Integer.parseInt(row[1]);
+                y = Integer.parseInt(row[2]);
+                z = Integer.parseInt(row[3]);
+            } catch (NumberFormatException badCell) {
+                continue;
+            }
+            String subject = row[4];
+            org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(subject);
+            if (key == null) {
+                variantMissing++;
+                logVariantMissing(kind, ns, page, subject);
+                continue;
+            }
+            try {
+                org.bukkit.block.Block b = w.getBlockAt(x, y, z);
+                switch (kind) {
+                    case "banner" -> {
+                        org.bukkit.block.banner.PatternType pt =
+                                org.bukkit.Registry.BANNER_PATTERN.get(key);
+                        if (pt == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        b.setBlockData(org.bukkit.Material.WHITE_BANNER.createBlockData(), false);
+                        if (b.getState() instanceof org.bukkit.block.Banner banner) {
+                            banner.setBaseColor(org.bukkit.DyeColor.WHITE);
+                            banner.setPatterns(java.util.List.of(
+                                    new org.bukkit.block.banner.Pattern(org.bukkit.DyeColor.BLACK, pt)));
+                            banner.update();
+                        } else {
+                            failed++;
+                            continue;
+                        }
+                    }
+                    case "pot" -> {
+                        String sherdName = key.getKey().toUpperCase(java.util.Locale.ROOT)
+                                + "_POTTERY_SHERD";
+                        org.bukkit.Material sherd = org.bukkit.Material.matchMaterial(sherdName);
+                        if (sherd == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        b.setBlockData(org.bukkit.Material.DECORATED_POT.createBlockData(), false);
+                        if (b.getState() instanceof org.bukkit.block.DecoratedPot pot) {
+                            for (org.bukkit.block.DecoratedPot.Side side : org.bukkit.block.DecoratedPot.Side.values()) {
+                                pot.setSherd(side, sherd);
+                            }
+                            pot.update();
+                        } else {
+                            failed++;
+                            continue;
+                        }
+                    }
+                    case "jukebox" -> {
+                        org.bukkit.Material disc = org.bukkit.Material.matchMaterial(
+                                "MUSIC_DISC_" + key.getKey().toUpperCase(java.util.Locale.ROOT));
+                        if (disc == null) { variantMissing++; logVariantMissing(kind, ns, page, subject); continue; }
+                        b.setBlockData(org.bukkit.Material.JUKEBOX.createBlockData(), false);
+                        if (b.getState() instanceof org.bukkit.block.Jukebox jb) {
+                            jb.setRecord(new org.bukkit.inventory.ItemStack(disc));
+                            jb.update();
+                            try {
+                                jb.startPlaying();
+                            } catch (Throwable playFail) {
+                                // a refused play = the record still sits in the
+                                // box; the note-particle content just names it
+                                log().warning(LOG_PREFIX + "f2v galleryvariant: jukebox play refused at "
+                                        + x + "," + y + "," + z + ": " + playFail);
+                            }
+                        } else {
+                            failed++;
+                            continue;
+                        }
+                    }
+                    default -> {
+                        return placed;
+                    }
+                }
+                placed++;
+            } catch (Throwable placeFail) {
+                failed++;
+                log().warning(LOG_PREFIX + "f2v galleryvariant: block failed kind=" + kind
+                        + " ns=" + ns + " page=" + page + " subject=" + subject
+                        + " err=" + placeFail);
+            }
+        }
+        log().info(LOG_PREFIX + "f2v galleryvariant: kind=" + kind + " ns=" + ns + " page=" + page
+                + " placed=" + placed + " cells=" + cells.size()
+                + " variant-missing=" + variantMissing + " failed=" + failed);
+        return placed;
+    }
+
+    /**
      * 14-e38 THE PAINTING VARIANT REPLAY — the ours leg's FIRST variant-kind
      * channel. The truth walk hangs real {@code Painting} entities on the
      * support wall (the manifest carries the surviving cells with their
@@ -3723,11 +3857,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     case "painting" -> galleryVariantPainting(args[2], page);
                     case "wolf", "cat", "frog", "villager" -> galleryVariantMob(vkind, args[2], page);
                     case "effect", "trimmaterial", "trimpattern", "enchant" -> galleryVariantEntity(vkind, args[2], page);
+                    case "banner", "pot", "jukebox" -> galleryVariantBlock(vkind, args[2], page);
                     default -> Integer.MIN_VALUE;
                 };
                 if (placed == Integer.MIN_VALUE) {
                     sender.sendMessage(LOG_PREFIX + "galleryvariant: unknown kind " + vkind
-                            + " (known: painting, wolf, cat, frog, villager, effect, trimmaterial, trimpattern, enchant)");
+                            + " (known: painting, wolf, cat, frog, villager, effect, trimmaterial, trimpattern, enchant, banner, pot, jukebox)");
                     return true;
                 }
                 sender.sendMessage(LOG_PREFIX + "galleryvariant " + vkind + " " + args[2]

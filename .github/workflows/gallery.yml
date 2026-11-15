@@ -3172,7 +3172,7 @@ jobs:
           # The truth's variant manifests ride the truth meta (the scenes
           # dir copy) — the plugin reads them from the server's scenes dir,
           # so copy them in before the replay.
-          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern enchant; do
+          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern enchant banner pot jukebox; do
             find truth-meta -name "gallery-variant-$KIND-*.tsv" -exec cp {} srv-wall/c-imagine/scenes/ \;
           done
           ls srv-wall/c-imagine/scenes/ | grep -c "gallery-variant-" || true
@@ -3195,7 +3195,7 @@ jobs:
           }
           read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
           [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
-          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern enchant; do
+          for KIND in painting wolf cat frog villager effect trimmaterial trimpattern enchant banner pot jukebox; do
             for NS in $LADDER_NS; do
               for p in $(seq $SI $K $MAXP); do
                 rcon "cim cleanup-assemblies" "kill @e[type=!player]" "cim galleryvariant $KIND $NS $p" > vpaint-receipt.log 2>&1 || { echo "$KIND replay rcon failed at $NS p$p"; exit 1; }
