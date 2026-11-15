@@ -3248,6 +3248,10 @@ jobs:
           # THE COPROC LAW (14-e15): rcon() never inside a pipeline element
           # or command substitution — the 14-e32 section's OUT=$(rcon ...)
           # form is retired with the move; the responses ride files.
+          # 14-e44b: each run block = a fresh shell — ours_alive() MUST be
+          # defined here (the wall step's definition does not carry over;
+          # run 43758116483 measured the hole: "ours_alive: command not
+          # found" killed all 8 shards at the iso step's first page).
           coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
           rcon() {
             local c line out ok
@@ -3262,6 +3266,12 @@ jobs:
               [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
               printf '%s' "$out"
             done
+          }
+          ours_alive() {
+            local L
+            rcon "list" > list-receipt.log 2>/dev/null || return 1
+            L=$(cat list-receipt.log)
+            case "$L" in *cimviewer*) return 0;; *) return 1;; esac
           }
           read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start (auth?)" >&2; exit 1; }
           [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
