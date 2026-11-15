@@ -2415,6 +2415,58 @@ jobs:
           [ "$PACK_LOADED" = 1 ] || { echo "no successful client pack application"; tail -30 visual-client/client.out; exit 1; }
           sleep 8
 
+      - name: wait for this shard's truth artifacts (14-aa race guard)
+        run: |
+          set -euo pipefail
+          # The render-settled truth walk (up to 8 shots per page) can finish
+          # AFTER its ours sibling reaches the join: #73 lost 7 of 8 joins to
+          # "Artifact not found" (the ours leg overtook the truth leg and the
+          # download raced a not-yet-registered artifact). Poll the API until
+          # BOTH artifacts exist, bounded 30 min.
+          for ART in "wall-truth-shots-${{ matrix.shard }}" "wall-truth-meta-${{ matrix.shard }}"; do
+            OK=""
+            for i in $(seq 1 90); do
+              N=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" \
+                    "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+                  | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for a in d['artifacts'] if a['name']=='$ART' and not a['expired']))" || echo 0)
+              if [ "${N:-0}" -ge 1 ]; then OK=1; echo "artifact $ART present"; break; fi
+              sleep 20
+            done
+            [ -n "$OK" ] || { echo "TIMEOUT waiting for artifact $ART"; exit 1; }
+          done
+
+      - name: download this shard's truth artifacts (shots + meta)
+        uses: actions/download-artifact@v4
+        with:
+          name: wall-truth-shots-${{ matrix.shard }}
+          path: truth-shots
+
+      - name: download this shard's truth meta (manifests + boot log)
+        uses: actions/download-artifact@v4
+        with:
+          name: wall-truth-meta-${{ matrix.shard }}
+          path: truth-meta
+
+      - name: stage this shard's native isolation scenes before replay
+        run: |
+          set -euo pipefail
+          source_dir=truth-meta/srv-wall/c-imagine/scenes
+          target_dir=srv-wall/c-imagine/scenes
+          test -d "$source_dir"
+          mkdir -p "$target_dir"
+          count=0
+          for file in "$source_dir"/gallery-blockiso-ae2-p*; do
+            [ -f "$file" ] || continue
+            cp "$file" "$target_dir/"
+            count=$((count + 1))
+          done
+          first="$target_dir/gallery-blockiso-ae2-p$SI"
+          if [ ! -s "$first.tsv" ] && [ ! -s "$first.exhausted" ]; then
+            echo "Missing actual native ISO scene/exhaustion receipt for shard $SI"
+            exit 1
+          fi
+          echo "Staged $count same-run native ISO scene files for shard $SI"
+
       - name: wall replay — STRIDE (blocks + probes + isolated displays)
         run: |
           set -euo pipefail
@@ -2773,7 +2825,15 @@ jobs:
           ISO_EXH=0
           for p in $(seq $SI $K $MAXP); do
             M="srv-wall/c-imagine/scenes/gallery-blockiso-ae2-p$p.tsv"
-            [ -f "$M" ] || { echo "no iso manifest for ae2 page $p — ours iso replay exhausted"; ISO_EXH=1; break; }
+            if [ ! -f "$M" ]; then
+              test -s "${M%.tsv}.exhausted" || {
+                echo "Missing native ISO manifest/exhaustion receipt for ae2 page $p"
+                exit 1
+              }
+              echo "Native ISO exhaustion receipt for ae2 page $p"
+              ISO_EXH=1
+              break
+            fi
             OUT=$(rcon "kill @e[type=!player]" "cim galleryclear" \
               "cim galleryisopage ae2 $p")
             echo "$OUT" | tee "ours-rcon-iso-ae2-p$p.log"
@@ -3129,38 +3189,6 @@ jobs:
         run: |
           (cd ours-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
           wc -l ours-shots/shots.txt
-
-      - name: wait for this shard's truth artifacts (14-aa race guard)
-        run: |
-          set -euo pipefail
-          # The render-settled truth walk (up to 8 shots per page) can finish
-          # AFTER its ours sibling reaches the join: #73 lost 7 of 8 joins to
-          # "Artifact not found" (the ours leg overtook the truth leg and the
-          # download raced a not-yet-registered artifact). Poll the API until
-          # BOTH artifacts exist, bounded 30 min.
-          for ART in "wall-truth-shots-${{ matrix.shard }}" "wall-truth-meta-${{ matrix.shard }}"; do
-            OK=""
-            for i in $(seq 1 90); do
-              N=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" \
-                    "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
-                  | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for a in d['artifacts'] if a['name']=='$ART' and not a['expired']))" || echo 0)
-              if [ "${N:-0}" -ge 1 ]; then OK=1; echo "artifact $ART present"; break; fi
-              sleep 20
-            done
-            [ -n "$OK" ] || { echo "TIMEOUT waiting for artifact $ART"; exit 1; }
-          done
-
-      - name: download this shard's truth artifacts (shots + meta)
-        uses: actions/download-artifact@v4
-        with:
-          name: wall-truth-shots-${{ matrix.shard }}
-          path: truth-shots
-
-      - name: download this shard's truth meta (manifests + boot log)
-        uses: actions/download-artifact@v4
-        with:
-          name: wall-truth-meta-${{ matrix.shard }}
-          path: truth-meta
 
       - name: INLINE pixel join — this shard's stride, gate-hard
         run: |
