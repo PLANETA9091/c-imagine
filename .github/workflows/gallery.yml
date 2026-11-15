@@ -3732,6 +3732,7 @@ jobs:
             ours-pins.log
             ground-fill.log
             visual-client/client.out
+            visual-client/logs/latest.log
             ours-shots/shots.txt
             # the stream logs (sound + particle capture): the census-style
             # joins read them inline, the artifacts keep them inspectable
