@@ -337,9 +337,10 @@ def main():
         print("M no-walk zeros GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # N: particle absence row -> NAMED, run GREEN (14-cs: particle joined
-    # DIAGNOSTIC_CLASSES — the absence is reported, the verdict never reds;
-    # the 12-as red law is retired with the flip)
+    # N: particle absence row -> NAMED, run RED (14-e36 POST-FLIP: the
+    # particle walk-completeness channel measured stable x2 and left
+    # DIAGNOSTIC_CLASSES — the honest-RED semantics apply, the named
+    # absence reds exactly like the fluid's no-channel law)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -348,10 +349,8 @@ def main():
                      "skip\t-1\t-1\t-1\tcreate:rot\t1\tno-simple-options\n",
                      encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
-            and "DIAG-INCOMPLETE\tparticle" in r.stdout \
-            and "create:rot(no-simple-options)" in r.stdout
-        print("N particle absence DIAG named GREEN:",
+        ok = r.returncode == 1 and "create:rot(no-simple-options)" in r.stdout
+        print("N particle absence named RED (post-flip):",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
@@ -476,10 +475,8 @@ def main():
             "skip\t-1\t-1\t-1\tcreate:null\t1\tnull-path-dead-id\n",
             encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
-            and "create:null(null-path-dead-id)" in r.stdout \
-            and "DIAG-INCOMPLETE\tparticle" in r.stdout
-        print("N2 name-based particle exclusion DIAG GREEN:",
+        ok = r.returncode == 1 and "create:null(null-path-dead-id)" in r.stdout
+        print("N2 name-based particle exclusion RED (post-flip):",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
@@ -620,16 +617,17 @@ def main():
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # S: held rides the item pages — a missing held shot is DIAG-INCOMPLETE
-    # (diagnostic), never COVERAGE-INCOMPLETE
+    # S: held rides the item pages — a missing held shot is RED post-flip
+    # (14-e36: the held walk-completeness channel measured stable x2, the
+    # honest-RED semantics apply; the hole stays printed per class)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
         (root / "ours-shots" / "ours-gal-h-create0.png").unlink()
         r = run_gate(root)
-        ok = r.returncode == 0 and "DIAG-INCOMPLETE\theld" in r.stdout \
+        ok = r.returncode == 1 and "held" in r.stdout \
             and "missing_ours_shots=1" in r.stdout
-        print("S held rides item pages diagnostic:",
+        print("S held missing shot RED (post-flip):",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
@@ -687,8 +685,8 @@ def main():
 
     # V: the particle note carries the programmatic-ladder failure detail
     # (no-simple-options:<reason>) — the prefix match must keep NAMING it
-    # (14-cs: the class is diagnostic, so the name surfaces in the DIAG
-    # line and the run stays green)
+    # (14-e36 post-flip: the name surfaces in the RED line, the run fails
+    # with the detail intact)
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
@@ -698,10 +696,8 @@ def main():
                      "no-simple-options:com.mojang.serialization.DynamicOps$1\n",
                      encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
-            and "create:contraption_particle(no-simple-options:" in r.stdout \
-            and "DIAG-INCOMPLETE\tparticle" in r.stdout
-        print("V particle detailed note DIAG named GREEN:",
+        ok = r.returncode == 1 and "create:contraption_particle(no-simple-options:" in r.stdout
+        print("V particle detailed note named RED (post-flip):",
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 

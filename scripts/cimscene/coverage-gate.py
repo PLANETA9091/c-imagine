@@ -231,7 +231,18 @@ CLASSES = {
 # (particle-diff.py, the visual-particles.tsv rewrite) is the honest
 # channel and runs DIAGNOSTICALLY per its own docstring until measured
 # stable; the pixel gal-pa shots stay diagnostic until that flip.
-DIAGNOSTIC_CLASSES = {"sound", "gui", "held", "inv", "particle",
+# 14-e36 (2026-11-15): GUI + HELD + PARTICLE FLIPPED OUT — each channel
+# measured 100% x2 full galleries (e21 43611950455 + e26 43645299155),
+# every namespace, both legs: gui 40/40 ae2, 71/71 mekanism, 14/14 create,
+# 9/9 supplementaries, 2/2 sophisticatedbackpacks, 1/1 farmersdelight;
+# held 10/10 create, 6/6 BOP, 5/5 ae2/mekanism, 4/4 supplementaries,
+# 3/3 farmersdelight, 1/1 dynamictrees/sophisticatedbackpacks; particle
+# 29/29 supplementaries, 15/15 BOP, 13/13 create, 5/5 ae2/mekanism,
+# 3/3 farmersdelight. The walk-completeness channels are gate-hard (the
+# honest-RED semantics, the biome flip's precedent); the pixel framediff
+# joins stay report-only until the per-cell contracts ship. inv STAYS
+# diagnostic (the x2 table has inv reds — dynamictrees inv 0/1).
+DIAGNOSTIC_CLASSES = {"sound", "inv",
                       "blockiso",
                       "variant-painting", "variant-wolf", "variant-cat",
                       "variant-frog", "variant-villager", "variant-effect",
