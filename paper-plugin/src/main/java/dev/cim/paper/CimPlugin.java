@@ -1675,9 +1675,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             e.setTransformation(tr);
                             e.setBrightness(new org.bukkit.entity.Display.Brightness(pinBlock, pinSky));
                         });
+                // 14-e30(c) THE PIN RECEIPT: the census cannot tell a broken
+                // synched-data bridge from a wrong pin VALUE — the log names
+                // both, per cell, with the source chain (front-air = the
+                // (x,y,z-1) row of the truth's .light snapshot, cell = the
+                // cell's own row, legacy = the no-snapshot fallback)
                 log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                         + row[1] + "," + row[2] + "," + row[3] + " state=" + state
-                        + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId());
+                        + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId()
+                        + " pin=" + pinBlock + "/" + pinSky
+                        + " src=" + (fieldLight != null ? "front-air" : capturedLight ? "captured" : "legacy"));
                 n++;
                 // 14-cy FULLBRIGHT COMPANION: the mesh's mod light-override
                 // quads (the LED/window art the truth renders fullbright)
@@ -3257,6 +3264,38 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         if (args.length >= 2 && args[0].equalsIgnoreCase("display")) {
             String modded = args.length >= 3 ? args[2] : "cimtest:test_block";
             spawnDisplayFor(args[1], modded);
+            return true;
+        }
+        // /cim brightdisplay <block> <sky> <x> <y> <z> — the 14-e30(c)
+        // BUKKIT-PATH LIGHT PROBE: the same white quad the diagnostic shard's
+        // NBT-spawned displays render, spawned through the PLUGIN's own
+        // world().spawn + Display#setBrightness — crop E's luma vs the NBT
+        // B's settles whether Paper 26.3's Bukkit Brightness write reaches
+        // the same synched data the client consumes.
+        if (args.length >= 6 && args[0].equalsIgnoreCase("brightdisplay")) {
+            try {
+                int bLight = Integer.parseInt(args[1]);
+                int sLight = Integer.parseInt(args[2]);
+                double dx = Double.parseDouble(args[3]);
+                double dy = Double.parseDouble(args[4]);
+                double dz = Double.parseDouble(args[5]);
+                Material mat = args.length >= 7 ? Material.matchMaterial(args[6]) : Material.WHITE_CONCRETE;
+                if (mat == null) mat = Material.WHITE_CONCRETE;
+                ItemStack stack = new ItemStack(mat);
+                org.bukkit.entity.ItemDisplay d = world(worldName()).spawn(
+                        new org.bukkit.Location(world(worldName()), dx, dy, dz),
+                        org.bukkit.entity.ItemDisplay.class, e -> {
+                            e.setItemStack(stack);
+                            e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(bLight, sLight));
+                        });
+                org.bukkit.entity.Display.Brightness rb = d.getBrightness();
+                sender.sendMessage(LOG_PREFIX + "brightdisplay " + bLight + "/" + sLight
+                        + " @" + dx + "," + dy + "," + dz + " mat=" + mat
+                        + " readback=" + rb.getBlockLight() + "/" + rb.getSkyLight());
+            } catch (Throwable t) {
+                sender.sendMessage(LOG_PREFIX + "brightdisplay failed: " + t);
+            }
             return true;
         }
         // /cim gallerypage <ns> <page> — the M5.5 GALLERY ours-leg surface:
