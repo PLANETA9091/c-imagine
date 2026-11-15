@@ -39,6 +39,13 @@ def load_all(dirs, pattern):
     return out
 
 
+# 14-e33 THE GATED CLASSES: the joins the gallery workflow pairs with
+# `|| GATE=1` (the run reds on their failure) — block walls, item walls,
+# fluid walls and the mob pages. Every other class with content is
+# diagnostic-first (graduates only via a measured stable-x2 flip).
+GATED_CLASSES = {"block", "item", "fluid", "e"}
+
+
 def ns_of(name):
     # Read the producer's filename contract, not a fixed mod allowlist.
     # Entity pages use -N; block/item and diagnostic pages use -pN.
@@ -157,7 +164,17 @@ def main():
             ready = "BROKEN (missing artifact)"
         if pct is not None and m["metrics"] != {"frame"}:
             if m["red"] == 0:
-                ready = "FLIP-CANDIDATE (0 red)"
+                # 14-e33 THE GATED-GREEN LAW (the dynamictrees read, measured
+                # x2): a GATED pixel class (block/item/fluid/e-mobs — the
+                # joins the workflow pairs with || GATE=1) with zero red has
+                # NOTHING TO FLIP — it already hard-gates and it already
+                # passes; the FLIP-CANDIDATE recommendation belongs to the
+                # DIAGNOSTIC classes only (the biome flip's precedent: a
+                # diagnostic channel graduates when measured stable x2).
+                # Calling the walk's own success a "candidate" sent the e31
+                # receipt hunting for a nonexistent gate change.
+                ready = ("GATED-GREEN (0 red)" if cls in GATED_CLASSES
+                         else "FLIP-CANDIDATE (0 red)")
             elif pct >= 90:
                 ready = "NEAR (>=90%)"
         if m["metrics"] == {"frame"}:

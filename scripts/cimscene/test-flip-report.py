@@ -62,6 +62,21 @@ class FlipReportTest(unittest.TestCase):
         r = self.report({"join-e-create-0.json": {"rows": [{"verdict": "skipped"}]}})[("e", "create")]
         self.assertEqual((r["pages"], r["eff"], r["skipped"], r["state"]), (1, 0, 1, "NO-DATA"))
 
+    def test_zero_red_gated_class_is_not_a_flip_candidate(self):
+        # 14-e33: the dynamictrees block read (100% green x2) mislabelled
+        # itself a FLIP-CANDIDATE — a GATED class already hard-gates, there
+        # is nothing to flip; the label belongs to diagnostic classes only.
+        gated = self.report({"join-dynamictrees-p0.json": {
+            "rows": [{"verdict": "GREEN", "ae": 25502}] * 3}})[("block", "dynamictrees")]
+        self.assertEqual(gated["state"], "GATED-GREEN (0 red)")
+        self.assertNotIn("FLIP-CANDIDATE", gated["state"])
+        # the diagnostic sibling keeps the recommendation label
+        diag = self.report({"diag-sound-dynamictrees-p0.json": {
+            "verdict": "GREEN", "truth_count": 11, "ours_count": 11,
+            "mapped_preview": {"expected": 11, "position_hits": 11,
+                               "order_exact": True}}})[("sound", "dynamictrees")]
+        self.assertIn("FLIP-CANDIDATE", diag["state"])
+
     def test_missing_stream_artifact_is_broken(self):
         r = self.report({"diag-pstream-create-p0.json": {"verdict": "ARTIFACT-MISSING"}})[("particle", "create")]
         self.assertEqual(r["state"], "BROKEN (missing artifact)")
