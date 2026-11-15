@@ -1451,6 +1451,11 @@ jobs:
           done
           # the menus lane is done — the client must be alive for the heavy walks
           client_alive || truth_rejoin
+          # Close/remove the final physical menu rig before wall captures.
+          # clearWall clears z8..10; menu holders live two blocks ahead at z2.
+          # Require actual native block-state verification, not just ESC.
+          rcon "cimscene gallery gui-clear"
+          grep -q 'gallery-gui-clear done .*remaining=0 held_empty=true' srv-wall/boot.log
 
       - name: upload truth screens s${{ matrix.shard }} (14-di early art — the ours sibling waits for exactly this)
         if: always()
