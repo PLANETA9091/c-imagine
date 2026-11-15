@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build before/after diagnostics from real e26 Create/AE2 capture artifacts.
 
+Both variants use the corrected normals. Only candidate model-node tints
+are removed; geometry and texture pixels must remain identical.
 This is a small renderer experiment, never a coverage or mod-parity gate.
 The comprehensive dual-stack gallery remains the acceptance test.
 """
@@ -13,7 +15,7 @@ import shutil
 import subprocess
 import zipfile
 
-BASELINE = '719f057074e6f6e5d6670a0da28f64f4fede0c0a'
+BASELINE = 'e05abac5eb3d018c85ee6c0795fe334b64e09803'
 SUBJECTS = [
     'create:polished_cut_calcite_wall[east=tall,north=none,south=tall,up=false,waterlogged=false,west=none]',
     'ae2:quartz_pillar_wall[east=low,north=low,south=tall,up=false,waterlogged=false,west=none]',
@@ -28,6 +30,16 @@ def rename(value):
         return {k: rename(v) for k, v in value.items()}
     if isinstance(value, list):
         return [rename(v) for v in value]
+    return value
+
+
+def remove_model_tints(value):
+    """Remove only model-node tints, preserving every other definition field."""
+    if isinstance(value, dict):
+        return {k: remove_model_tints(v) for k, v in value.items()
+                if not (k == 'tints' and value.get('type') == 'minecraft:model')}
+    if isinstance(value, list):
+        return [remove_model_tints(v) for v in value]
     return value
 
 
@@ -106,11 +118,14 @@ def main():
         before_pixels = {n: v for n, v in entries.items() if n.endswith('.png')}
         candidate_pixels = {n: z.read(n) for n in z.namelist() if n.endswith('.png')}
         if before_pixels != candidate_pixels:
-            raise ValueError('A normal-only repair must not modify texture pixels')
+            raise ValueError('A tint-only experiment must not modify texture pixels')
+        candidate_entries = {n: z.read(n) for n in z.namelist()}
+        if entries != candidate_entries:
+            raise ValueError('Before tint removal, both production packs must be byte-identical')
         after = json.loads(z.read(paper_path))['model']['entries']
         for row in after:
             if row['threshold'] in set(candidate.values()):
-                shifted = rename(copy.deepcopy(row))
+                shifted = remove_model_tints(rename(copy.deepcopy(row)))
                 shifted['threshold'] += 100000
                 dispatch['entries'].append(shifted)
         for name in z.namelist():
@@ -132,7 +147,8 @@ def main():
     provenance = {'diagnostic_only': True, 'capture_run': 43645299155,
                   'capture_artifact': 14133294738,
                   'capture_source': '7264eb58fb1b710de41d3e3389d5144bb2d7f0e4',
-                  'baseline': BASELINE,
+                  'baseline': BASELINE, 'experiment': 'remove-model-node-tints-only',
+                  'production_packs_identical_before_tint_removal': True,
                   'candidate': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo, text=True).strip(),
                   'subjects': before}
     (root / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n')
