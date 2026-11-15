@@ -66,7 +66,7 @@ jobs:
             https://piston-data.mojang.com/v1/objects/33680f5f2ac32864d6d7cf5e56a705fdb3e05f4c/server.jar -o /tmp/srv/server.jar
           cd /tmp/srv
           echo 'eula=true' > eula.txt
-          printf 'online-mode=false\nlevel-type=minecraft:flat\ngamemode=spectator\nspawn-protection=0\nview-distance=4\nsimulation-distance=4\nmotd=diag\n' > server.properties
+          printf 'online-mode=false\nwhite-list=false\nenforce-whitelist=false\nserver-ip=127.0.0.1\nlevel-type=minecraft:flat\ngamemode=spectator\nspawn-protection=0\nview-distance=4\nsimulation-distance=4\nmotd=diag\n' > server.properties
           mkfifo cmd.fifo
           # Keep a writer open in the server process across Actions steps:
           # otherwise console readLine reaches EOF before the scene is sent.
@@ -88,10 +88,11 @@ jobs:
           joined=0
           for _ in $(seq 1 240); do
             if grep -q 'joined the game' /tmp/srv/boot.log; then joined=1; break; fi
+            if grep -qE 'Disconnecting cimviewer|cimviewer.*lost connection' /tmp/srv/boot.log; then break; fi
             kill -0 "$client_pid" 2>/dev/null || break
             sleep 1
           done
-          [ "$joined" = 1 ] || { tail -60 /tmp/rig/client/client.out; exit 1; }
+          [ "$joined" = 1 ] || { tail -25 /tmp/srv/boot.log; tail -35 /tmp/rig/client/client.out; exit 1; }
           exec 3<> /tmp/srv/cmd.fifo
           printf '%s\n' \
             'difficulty peaceful' \
@@ -130,6 +131,7 @@ jobs:
             /tmp/rig/light-receipt
             /tmp/rig/client/client.out
             /tmp/srv/boot.log
+            /tmp/srv/server.properties
             /tmp/rig/glbackend.txt
             /tmp/rig/probe-*.out
             /tmp/rig/xvfb.log
