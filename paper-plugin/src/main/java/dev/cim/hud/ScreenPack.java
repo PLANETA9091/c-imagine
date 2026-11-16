@@ -37,6 +37,7 @@ public final class ScreenPack {
     private static final String CACHE = "screens.tsv";
     private static final String ICONS = "icons.tsv";
     private static final String CAPTURES = "screens";
+    private static final String CACHE_STAMP = "v19";
 
     /**
      * One glyph of a scene, at (x, y) from the screen's top left. A floating
@@ -144,7 +145,7 @@ public final class ScreenPack {
             if (!lines.isEmpty() && !canRebake) {
                 return parse(lines);
             }
-            if (!lines.isEmpty() && stamp.equals("v9")) {
+            if (!lines.isEmpty() && stamp.equals(CACHE_STAMP)) {
                 // 14-di: a no-jars boot cannot rescan the seed's scanned scenes —
                 // keep them and merge the run's captures over the cache instead of
                 // dropping everything the jars (absent here) would have scanned.
@@ -179,19 +180,8 @@ public final class ScreenPack {
         for (int c = GLYPH_BASE; c <= maxUsed; c++) {
             art.put((char) c, new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB));
         }
-        addCaptures(modsDir.resolveSibling("c-imagine").resolve(CAPTURES), scenes, art, heights, capturedMenus(scenes));
+        addCaptures(modsDir.resolveSibling("c-imagine").resolve(CAPTURES), scenes, art, heights);
         return scenes;
-    }
-
-    /** Menus the seed already captured: the run's identical capture adds nothing. */
-    private static java.util.Set<String> capturedMenus(List<Scene> scenes) {
-        java.util.Set<String> out = new java.util.HashSet<>();
-        for (Scene s : scenes) {
-            if (s.captured() != null && s.className() != null) {
-                out.add(s.className());
-            }
-        }
-        return out;
     }
 
     /** One menu's ScreenArt capture: the run art the truth client dumped. */
@@ -275,7 +265,7 @@ public final class ScreenPack {
             art.put((char) c, new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB));
         }
         List<Scene> scenes = parse(lines);
-        addCaptures(captures, scenes, art, heights, capturedMenus(scenes));
+        addCaptures(captures, scenes, art, heights);
         int seedGlyphs = used.size();
         JsonArray providers = fontJson.getAsJsonArray("providers");
         int added = 0;
@@ -304,7 +294,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v19");
+        StringBuilder out = new StringBuilder(CACHE_STAMP);
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -738,21 +728,12 @@ public final class ScreenPack {
     }
 
     /**
-     * Real rendered screens from {@code ScreenArt}. They replace any scanned scene for
-     * the same menu, because they are what the mod actually draws.
+     * Real rendered screens from {@code ScreenArt}. A current capture replaces the
+     * same menu's cached capture as well as its scanned guess. A menu ID does not
+     * establish identical pixels across native runs; missing captures keep the cache.
      */
     private static void addCaptures(Path dir, List<Scene> scenes, Map<Character, BufferedImage> art2,
                                     Map<Character, Integer> heights) throws IOException {
-        addCaptures(dir, scenes, art2, heights, java.util.Set.of());
-    }
-
-    /**
-     * {@code skipMenus} names menus (by ScreenArt id) whose captured scene already
-     * exists — the seed captured them, the run's identical capture must not spend
-     * glyphs on the same pixels again (14-di).
-     */
-    private static void addCaptures(Path dir, List<Scene> scenes, Map<Character, BufferedImage> art2,
-                                    Map<Character, Integer> heights, java.util.Set<String> skipMenus) throws IOException {
         if (!Files.isDirectory(dir)) {
             return;
         }
@@ -824,9 +805,6 @@ public final class ScreenPack {
                     default -> {
                     }
                 }
-            }
-            if (menuId != null && skipMenus.contains(menuId)) {
-                continue;
             }
             BufferedImage image = ImageIO.read(png.toFile());
             if (menu == null || image == null) {
@@ -923,6 +901,8 @@ public final class ScreenPack {
                 }
             }
             scenes.removeIf(s -> s.captured() == null && key.equals(s.menu()));
+            String capturedId = menuId;
+            scenes.removeIf(s -> s.captured() != null && capturedId.equals(s.className()));
             int guiW = (frameW + scale - 1) / scale;
             int guiH = (frameH + scale - 1) / scale;
             scenes.add(new Scene(menuId, menu, xSize, ySize, false, pieces, widgets,
@@ -1688,7 +1668,7 @@ public final class ScreenPack {
         }
         // 14-di the run-capture overlay selftest: a synthetic seed pack, a
         // synthetic ScreenArt dump, the whole merge law offline (numbering,
-        // skip law, font append, the no-jars merge that replaced the rebake).
+        // replacement law, font append, the no-jars merge that replaced the rebake).
         if (args.length > 2 && args[2].equals("overlay")) {
             Path t = Files.createTempDirectory("cim-overlay");
             Path mods = t.resolve("mods");
@@ -1707,10 +1687,13 @@ public final class ScreenPack {
                     "scene\tcreate_fa\tcreate/fa\t176\t166\tfalse",
                     "captured\t-88\t-83",
                     "cslot\t0\t0\tfalse\t-1",
+                    "piece\t57344\t0\t0\t4\t4\tfalse",
+                    "scene\tseed_only\tcreate/fa\t176\t166\tfalse",
+                    "captured\t-88\t-83",
                     "piece\t57344\t0\t0\t4\t4\tfalse");
             Files.write(ci.resolve("f2v").resolve("screens.tsv"), cache, StandardCharsets.UTF_8);
             overlayCapture(ci.resolve("screens"), "new_menu_a");   // new: must ride the overlay
-            overlayCapture(ci.resolve("screens"), "create_fa");    // seed-captured: must be skipped
+            overlayCapture(ci.resolve("screens"), "create_fa");    // current art replaces the seed
             JsonObject font = new JsonObject();
             JsonArray providers = new JsonArray();
             JsonObject p0 = new JsonObject();
@@ -1731,20 +1714,35 @@ public final class ScreenPack {
             bad += check(ov != null, "the overlay pass runs");
             if (ov != null) {
                 bad += check(ov.seedGlyphs() == 1, "one seed glyph counted, got " + ov.seedGlyphs());
-                bad += check(ov.newGlyphs() == 1,
-                        "one new glyph baked (the captured menu's single tile), got " + ov.newGlyphs());
+                bad += check(ov.newGlyphs() == 2,
+                        "new and replacement captures both bake, got " + ov.newGlyphs());
                 bad += check(ov.entries().containsKey("assets/" + HudPack.NS + "/textures/font/screen/58113.png"),
                         "the new glyph rides the next char after the seed's block");
                 JsonObject mergedFont = com.google.gson.JsonParser.parseString(new String(
                         ov.entries().get(ov.fontEntry()), StandardCharsets.UTF_8)).getAsJsonObject();
-                bad += check(mergedFont.getAsJsonArray("providers").size() == 2,
+                bad += check(mergedFont.getAsJsonArray("providers").size() == 3,
                         "the overlay appends its provider to the same font json");
                 Scene nm = ov.scenes().stream().filter(s -> s.className().equals("new_menu_a"))
                         .findFirst().orElse(null);
                 bad += check(nm != null && nm.captured() != null && !nm.pieces().isEmpty(),
                         "the run capture became a captured scene");
                 bad += check(ov.scenes().stream().filter(s -> s.className().equals("create_fa")).count() == 1,
-                        "the seed's captured scene was not duplicated (skip law)");
+                        "the seed's captured scene is replaced, not duplicated");
+                Scene replaced = ov.scenes().stream().filter(s -> s.className().equals("create_fa"))
+                        .findFirst().orElseThrow();
+                char freshGlyph = replaced.pieces().get(0).glyph();
+                byte[] freshPng = ov.entries().get("assets/" + HudPack.NS
+                        + "/textures/font/screen/" + (int) freshGlyph + ".png");
+                bad += check(freshGlyph >= 58113 && freshPng != null
+                                && ImageIO.read(new ByteArrayInputStream(freshPng)).getRGB(0, 0) == 0xFFCC0000,
+                        "replacement scene points at current captured pixels");
+                bad += check(java.util.Arrays.equals(pack.get("assets/" + HudPack.NS
+                                        + "/textures/font/screen/58112.png"), ov.entries().get("assets/" + HudPack.NS
+                                        + "/textures/font/screen/58112.png")),
+                        "existing seed glyph bytes are unchanged");
+                bad += check(ov.scenes().stream().anyMatch(s -> s.className().equals("seed_only")
+                                && s.pieces().get(0).glyph() == 57344),
+                        "missing current capture preserves the same-class seed fallback");
                 bad += check(ov.scenes().stream().anyMatch(s -> s.className().equals("vanilla/chest")),
                         "the seed's scanned guess survives (no run art for it)");
             }
