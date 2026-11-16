@@ -500,7 +500,8 @@ final class QuadDump {
                     diag("14-e51 door-BER diag " + state + " @" + pos.toShortString()
                             + ": not rendered (typeValid="
                             + be.getType().isValid(state) + " shouldRender="
-                            + renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()) + ")");
+                            + renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()) + ")"
+                            + " anim=" + doorAnim(be) + " upper=" + doorUpper(page, pos, state));
                 }
                 if (isNixieRenderer(be)) {
                     diag("14-dn text-quads diag " + state + " @" + pos.toShortString()
@@ -529,7 +530,8 @@ final class QuadDump {
                 diag("14-e51 door-BER diag " + state + " @" + pos.toShortString()
                         + ": renderer=" + renderer.getClass().getName()
                         + " outLen=" + capture.out.length()
-                        + " foreign=" + capture.foreign);
+                        + " foreign=" + capture.foreign
+                        + " anim=" + doorAnim(be) + " upper=" + doorUpper(page, pos, state));
             }
         } catch (Throwable t) {
             berFailed++;
@@ -557,6 +559,45 @@ final class QuadDump {
         String type = String.valueOf(be.getType());
         String cls = be.getClass().getName().toLowerCase();
         return cls.contains("door") || type.toLowerCase().contains("door");
+    }
+
+    /** 14-e56: the door BE's animation field read via reflection (create's
+     *  client classes stay a non-dependency) — the constructor-animation vs
+     *  shot-state discriminator the 14:15Z bytecode guard requires: the field
+     *  starts at OPEN?1:0 in the constructor, so a value disagreeing with the
+     *  blockstate's open property names the capture-side pose bug. A failed
+     *  read costs the field, never the dump (the appendBlockEntity law). */
+    private static String doorAnim(BlockEntity be) {
+        for (Class<?> c = be.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (String name : new String[] {"animation", "anim", "Anim", "animPos"}) {
+                try {
+                    java.lang.reflect.Field f = c.getDeclaredField(name);
+                    f.setAccessible(true);
+                    return name + "=" + f.get(be);
+                } catch (ReflectiveOperationException ignored) {
+                    // try the next name, then the superclass
+                } catch (Throwable t) {
+                    return name + "=ERR(" + t.getClass().getSimpleName() + ")";
+                }
+            }
+        }
+        return "?";
+    }
+
+    /** 14-e56: the blockstate above the door BE — the paired-context receipt
+     *  (the renderer renders both halves from the lower BE; the magnitude
+     *  classes measured type-constant, so the upper presence must be read,
+     *  not inferred). */
+    private static String doorUpper(Page page, BlockPos pos, BlockState state) {
+        try {
+            BlockState above = page.getBlockState(pos.above());
+            if (above.getBlock() == state.getBlock()) {
+                return above.toString().replaceAll("^Block\\{[^}]+\\}\\[", "").replaceAll("]$", "");
+            }
+            return "none(" + above.getBlock() + ")";
+        } catch (Throwable t) {
+            return "ERR(" + t.getClass().getSimpleName() + ")";
+        }
     }
 
     /** 14-e55: the capture-diag sink (both the 14-dn and 14-e51 lanes) — one
