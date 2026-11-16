@@ -260,9 +260,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v3-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v4-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v3-
+            gallery-seed-v4-
 
       - name: seed payload verify (freshness gate)
         id: seed-verify
@@ -975,6 +975,18 @@ jobs:
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets visual-client/client.jar 2>&1 | tee pack-build.log
+          # 14-e78 THE WORLD PAYLOAD: the walk's world = the environment the
+          # truth's shots rendered (the wooden room + the wall's real blocks)
+          # — the ours' fresh-gen world rendered the gray void (the e77
+          # receipt: the doorway = 207k ae of pure environment mismatch).
+          # save-all flushes the region files, the copy rides the seed-pack
+          # artifact + the cache, the wall-ours restores it before the boot.
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "save-all flush" \
+            > save-all-receipt.log 2>&1 || true
+          sleep 5
+          rm -rf seed-pack/world
+          cp -r srv-wall/world seed-pack/world
+          echo "seed world: $(du -sh seed-pack/world | cut -f1), $(find seed-pack/world -name '*.mcr' -o -name '*.mca' | wc -l) region file(s)"
           # 14-dy the placeholder ledger: the texture-fidelity audit's named
           # backlog (source sprite + build context + uses per fallback) —
           # the file exists even when EMPTY (the header-only receipt that
@@ -2087,9 +2099,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v3-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v4-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v3-
+            gallery-seed-v4-
 
       - name: seed payload freshness (stale prefix hit -> the artifact)
         id: seed-verify
@@ -2176,6 +2188,18 @@ jobs:
           cp -r seed-pack/f2v/. srv-wall/c-imagine/f2v/
           cp -r seed-pack/scenes/. srv-wall/c-imagine/scenes/
           ls srv-wall/c-imagine/scenes/ | wc -l
+          # 14-e78 THE WORLD RESTORE: the seed's world = the environment the
+          # truth's shots rendered — the fresh-gen flat world rendered the
+          # gray void in every doorway (the e77 receipt). The restored wall
+          # = the seed's real blocks; the plugin clears the manifest cell
+          # positions to air before the display spawn.
+          if [ -d seed-pack/world ]; then
+            rm -rf srv-wall/world
+            cp -r seed-pack/world srv-wall/world
+            echo "seed world restored: $(find srv-wall/world -name '*.mcr' -o -name '*.mca' | wc -l) region file(s)"
+          else
+            echo "seed-pack/world missing (stale payload) — the fresh-gen flat world rides"
+          fi
           # 14-di THE RUN-CAPTURE OVERLAY's input: the early-art handshake
           # landed this shard's truth ScreenArt dump; the plugin merges it
           # into the served pack + the replay's scene list at boot.
@@ -2211,7 +2235,9 @@ jobs:
           curl -sL --max-time 300 -o srv-wall/paper.jar "$URL"
           wc -c srv-wall/paper.jar
           cd srv-wall
-          rm -rf world world_nether world_the_end
+          # 14-e78: the world = the seed's restored environment — NOT deleted
+          # (the old rm -rf here regenerated the flat world and erased the
+          # wooden room the truth's doorway rendered)
           # -Dcim.f2v.fastBoot=true: serve the seeded pack; the boot-time
           # rebuild is skipped (the same pure function ran in the seed; the
           # play-phase offer pins the same SHA1 for the client's hash check).
