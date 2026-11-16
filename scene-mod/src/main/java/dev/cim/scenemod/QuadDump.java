@@ -56,6 +56,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -64,6 +65,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.time.Instant;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -107,6 +109,12 @@ final class QuadDump {
     private static int berNoLevel;
     private static int waited;
     private static Path capturedTextures;
+    // 14-e55: the capture diagnostics' dedicated sink — the 26.3 dump client's
+    // log4j routes the mod's INFO lines where no artifact reaches (the e54
+    // honest negative: the e53 latest.log upload carried ZERO [cimscene]
+    // lines), so both diag lanes write the file beside the quad dump; the
+    // wall-ours-meta upload already carries srv-wall/c-imagine/scenes/.
+    private static Path diagFile;
     private static final Map<TextureAtlasSprite, String> capturedSpriteNames = new IdentityHashMap<>();
     private static final Map<String, String> spriteAliases = new java.util.TreeMap<>();
     // 14-dg: the runtime-registered textures the replay cannot know (the font
@@ -170,6 +178,8 @@ final class QuadDump {
     }
 
     private static void run(Path scenes) throws Exception {
+        diagFile = scenes.resolve("capture-diag.log");
+        diag("=== capture-diag open at " + Instant.now() + " scenes=" + scenes);
         // Instanced geometry never reaches our VertexConsumer. Require the
         // optional Flywheel backend's supported ordinary-renderer fallback.
         try {
@@ -475,7 +485,7 @@ final class QuadDump {
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
                 if (isNixieRenderer(be)) {
-                    LOGGER.info("[cimscene] 14-dn text-quads diag {}: no renderer registered", state.getBlock());
+                    diag("14-dn text-quads diag " + state.getBlock() + ": no renderer registered");
                 }
                 return;
             }
@@ -486,14 +496,14 @@ final class QuadDump {
                     || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
                 berNotRendered++;
                 if (isDoorBER(be)) {
-                    LOGGER.info("[cimscene] 14-e51 door-BER diag {}: not rendered (typeValid={} shouldRender={})",
-                            state.getBlock(), be.getType().isValid(state),
-                            renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()));
+                    diag("14-e51 door-BER diag " + state.getBlock() + ": not rendered (typeValid="
+                            + be.getType().isValid(state) + " shouldRender="
+                            + renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()) + ")");
                 }
                 if (isNixieRenderer(be)) {
-                    LOGGER.info("[cimscene] 14-dn text-quads diag {}: not rendered (typeValid={} shouldRender={})",
-                            state.getBlock(), be.getType().isValid(state),
-                            renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()));
+                    diag("14-dn text-quads diag " + state.getBlock() + ": not rendered (typeValid="
+                            + be.getType().isValid(state) + " shouldRender="
+                            + renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()) + ")");
                 }
                 return;
             }
@@ -507,13 +517,14 @@ final class QuadDump {
                 berDrawn++;
             }
             if (isNixieRenderer(be)) {
-                LOGGER.info("[cimscene] 14-dn text-quads diag {}: renderer={} buffers={} outLen={} foreign={}",
-                        state.getBlock(), renderer.getClass().getName(), capture.bufferStates(),
-                        capture.out.length(), capture.foreign);
+                diag("14-dn text-quads diag " + state.getBlock() + ": renderer="
+                        + renderer.getClass().getName() + " buffers=" + capture.bufferStates()
+                        + " outLen=" + capture.out.length() + " foreign=" + capture.foreign);
             }
             if (isDoorBER(be)) {
-                LOGGER.info("[cimscene] 14-e51 door-BER diag {}: renderer={} outLen={} foreign={}",
-                        state.getBlock(), renderer.getClass().getName(), capture.out.length(), capture.foreign);
+                diag("14-e51 door-BER diag " + state.getBlock() + ": renderer="
+                        + renderer.getClass().getName() + " outLen=" + capture.out.length()
+                        + " foreign=" + capture.foreign);
             }
         } catch (Throwable t) {
             berFailed++;
@@ -533,13 +544,31 @@ final class QuadDump {
     }
 
     /** 14-e51: the door-BER diagnostic — the create door family's capture
-     *  stream lands in the boot log (the renderer class, the emitted length,
-     *  the foreign count, the shouldRender verdict) so the next run answers
-     *  whether the isolated-BE invocation is the swung-leaf pose source. */
+     *  stream lands in the capture-diag sink (the renderer class, the emitted
+     *  length, the foreign count, the shouldRender verdict) so the next run
+     *  answers whether the isolated-BE invocation is the swung-leaf pose
+     *  source. */
     private static boolean isDoorBER(BlockEntity be) {
         String type = String.valueOf(be.getType());
         String cls = be.getClass().getName().toLowerCase();
         return cls.contains("door") || type.toLowerCase().contains("door");
+    }
+
+    /** 14-e55: the capture-diag sink (both the 14-dn and 14-e51 lanes) — one
+     *  self-contained line appended to {@code <scenes>/capture-diag.log}
+     *  beside the quad dump, the path the wall-ours-meta artifact already
+     *  uploads. A sink failure costs the diag line, never the dump (the
+     *  appendBlockEntity law). */
+    private static void diag(String line) {
+        if (diagFile == null) {
+            return;
+        }
+        try {
+            Files.writeString(diagFile, line + "\n", StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Throwable t) {
+            LOGGER.info("[cimscene] capture-diag sink failed: {}", t.toString());
+        }
     }
 
     /** Records each quad the renderer emits; everything per-vertex arrives in putBulkData. */
