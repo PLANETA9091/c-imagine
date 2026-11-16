@@ -92,10 +92,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * + the group's light pin), the page anchor cell (the display's spawn
      * position = the anchor's center), the represented cell count and the
      * merged element count (the 14-e60b budget receipt).
+     * 14-e71: the composite-of-nodes page = ONE entry per page (the models
+     * = the translated per-cell nodes); the row's ref = the page key
+     * ("page:<base>"), the excluded (ineligible-node) cells ride
+     * perCellKeys for the hybrid spawn.
      */
     private record PageRow(dev.cim.f2v.GalleryPack.Resolved row,
                            int ax, int ay, int az,
-                           int cells, int elements) {
+                           int cells, int elements,
+                           java.util.Set<String> perCellKeys) {
     }
 
     /**
@@ -261,8 +266,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     try {
                         java.util.TreeMap<String, byte[]> pageEntries = readZipEntries(servedZip);
                         java.util.List<String> pageLog = new java.util.ArrayList<>();
+                        java.util.Map<String, String> pageNodes = new java.util.LinkedHashMap<>();
+                        java.util.Map<String, java.util.Set<String>> hybridKeys =
+                                new java.util.LinkedHashMap<>();
                         java.util.Map<String, java.util.List<PageRow>> built =
-                                buildPageCompositeRows(pageEntries, fastGallery, pageSpec, pageLog);
+                                buildPageCompositeRows(pageEntries, fastGallery, pageSpec, pageLog,
+                                        pageNodes, hybridKeys);
                         for (String line : pageLog) {
                             log().info(LOG_PREFIX + "f2v pack: gallerypage " + line);
                         }
@@ -273,10 +282,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             for (java.util.List<PageRow> l : built.values()) {
                                 groupCount += l.size();
                                 for (PageRow pr : l) {
-                                    additions.add(java.util.Map.entry(pr.row().cmd(), pr.row().modelRef()));
+                                    String node = pageNodes.get(pr.row().modelRef());
+                                    if (node == null) {
+                                        pageLog.add("page node missing for " + pr.row().modelRef());
+                                        continue;
+                                    }
+                                    additions.add(java.util.Map.entry(pr.row().cmd(), node));
                                 }
                             }
-                            dev.cim.f2v.F2vPack.mergeItemDefEntries(pageEntries, additions, pageLog);
+                            dev.cim.f2v.F2vPack.mergeItemDefNodes(pageEntries, additions, pageLog);
                             byte[] zipBytes = dev.cim.f2v.F2vPack.zip(pageEntries);
                             dev.cim.f2v.F2vPack.validateDownloadSize(zipBytes.length);
                             Path pageZip = base.resolve("pack-page.zip");
@@ -284,6 +298,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             servedZip = pageZip;
                             servedSha1 = dev.cim.f2v.F2vPack.sha1Hex(zipBytes);
                             pageRows = built;
+                            pagePerCellKeys = hybridKeys;
                             log().info(LOG_PREFIX + "f2v pack: FAST BOOT + 14-e61 PAGE-COMPOSITE OVERLAY — "
                                     + built.size() + " page(s), " + groupCount
                                     + " light-group display(s), " + additions.size()
@@ -1318,6 +1333,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      */
     private volatile java.util.Map<String, java.util.List<PageRow>> pageRows = java.util.Map.of();
 
+    /** 14-e71: the hybrid spawn's per-cell keys per page (the excluded
+     *  cells whose client nodes are not page-eligible). */
+    private volatile java.util.Map<String, java.util.Set<String>> pagePerCellKeys =
+            java.util.Map.of();
+
     /** {@code x y z block sky} per scanned position; block light 1..15 kept. */
     public static java.util.List<int[]> parseLightFile(Path file) throws IOException {
         java.util.List<int[]> out = new java.util.ArrayList<>();
@@ -1548,10 +1568,123 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * @param spec     the pageCompositeSpec() value
      * @param log      the receipt lines (INFO — the caller logs them)
      */
+    /**
+     * 14-e71: insert a per-child translation into a single-model node's
+     * JSON text (after its "model":"..." field). The transformation space =
+     * the item-definition's normalized model space (16 units = 1.0 — the
+     * same space the scaleField compensation rides), so the whole-block
+     * cell offsets ride as the whole numbers.
+     */
+    /**
+     * 14-e71: the page-eligibility detector — the node = a single
+     * minecraft:model node OR a minecraft:composite wrapper (the gson walk
+     * handles both: the plain node takes the transformation, the composite
+     * hands the cell offset to every child, and the captured-quad children
+     * with their own placement matrices take the affine translate-after
+     * compose). The seeded entries mix the two emitter formats (the spaced
+     * plain JSON and the compact node JSON), so the check = the gson type
+     * read, not the text prefix. Missing node, a select/condition node =
+     * the per-cell hybrid.
+     */
+    private static boolean isPageEligibleNode(String node) {
+        if (node == null || node.isBlank()) {
+            return false;
+        }
+        try {
+            var o = com.google.gson.JsonParser.parseString(node).getAsJsonObject();
+            if (!o.has("type")) {
+                return false;
+            }
+            String t = o.get("type").getAsString();
+            return "minecraft:model".equals(t) || "minecraft:composite".equals(t);
+        } catch (Exception bad) {
+            return false;
+        }
+    }
+
+    private static String insertTransformation(String node, double dx, double dy, double dz) {
+        try {
+            var root = com.google.gson.JsonParser.parseString(node).getAsJsonObject();
+            if (insertTransformationInto(root, dx, dy, dz, 0)) {
+                return root.toString();
+            }
+            return node;
+        } catch (Exception bad) {
+            return node;
+        }
+    }
+
+    /** 14-e71: walk the node — a model node takes the transformation
+     *  directly, a composite node hands it to EVERY child (the group node
+     *  itself has no transform field; the children = the same cell offset).
+     *  Returns false when nothing accepted it (the select/condition shapes
+     *  = the per-cell hybrid). */
+    private static boolean insertTransformationInto(com.google.gson.JsonObject node,
+                                                    double dx, double dy, double dz,
+                                                    int depth) {
+        if (depth > 8) {
+            return false;
+        }
+        String type = node.has("type") ? node.get("type").getAsString() : "";
+        if ("minecraft:model".equals(type)) {
+            if (node.has("transformation")) {
+                // 14-e71: the captured-quad nodes carry their OWN placement
+                // matrices (the unlit/<hash> children measured with the
+                // arbitrary rotation+translation matrices) — the cell
+                // offset COMPOSES as the affine translate-after: add
+                // (dx, dy, dz) to the 4th column, the linear part untouched
+                com.google.gson.JsonArray m = node.getAsJsonArray("transformation");
+                if (m.size() < 12) {
+                    return false;
+                }
+                for (int i = 0; i < 3; i++) {
+                    int col = 3 + i * 4;
+                    double v = m.get(col).getAsDouble();
+                    m.set(col, numJson(v + (i == 0 ? dx : i == 1 ? dy : dz)));
+                }
+                return true;
+            }
+            com.google.gson.JsonArray m = new com.google.gson.JsonArray();
+            m.add(1.0); m.add(0.0); m.add(0.0); m.add(numJson(dx));
+            m.add(0.0); m.add(1.0); m.add(0.0); m.add(numJson(dy));
+            m.add(0.0); m.add(0.0); m.add(1.0); m.add(numJson(dz));
+            m.add(0.0); m.add(0.0); m.add(0.0); m.add(1.0);
+            node.add("transformation", m);
+            return true;
+        }
+        if ("minecraft:composite".equals(type) && node.has("models")
+                && node.get("models").isJsonArray()) {
+            boolean all = true;
+            for (var child : node.getAsJsonArray("models")) {
+                if (!child.isJsonObject()
+                        || !insertTransformationInto(child.getAsJsonObject(), dx, dy, dz, depth + 1)) {
+                    all = false;
+                    break;
+                }
+            }
+            return all;
+        }
+        return false;
+    }
+
+    /** The translation entry: whole blocks ride as the clean integers, the
+     *  fractional offsets as the doubles. */
+    private static com.google.gson.JsonElement numJson(double v) {
+        return v == Math.rint(v)
+                ? new com.google.gson.JsonPrimitive((long) v)
+                : new com.google.gson.JsonPrimitive(v);
+    }
+
+    private static String num(double v) {
+        return v == Math.rint(v) ? String.valueOf((long) v) : String.valueOf(v);
+    }
+
     private static java.util.Map<String, java.util.List<PageRow>> buildPageCompositeRows(
             java.util.TreeMap<String, byte[]> entries,
             java.util.List<dev.cim.f2v.GalleryPack.Resolved> gallery,
-            String spec, java.util.List<String> log) {
+            String spec, java.util.List<String> log,
+            java.util.Map<String, String> pageNodes,
+            java.util.Map<String, java.util.Set<String>> hybridKeys) {
         java.util.Map<String, java.util.Set<Integer>> want = new java.util.HashMap<>();
         java.util.Set<String> bareNs = new java.util.HashSet<>();
         boolean wantAll = false;
@@ -1628,6 +1761,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         java.util.Map<String, java.util.List<PageRow>> out = new java.util.LinkedHashMap<>();
         int modelIdx = 0;
         float nextCmd = dev.cim.f2v.GalleryPack.PAGE_CMD_BASE;
+        // 14-e71: the node table = ONE pass over the seeded definition; the
+        // page nodes + the hybrid keys return to the caller through these
+        // caller-owned maps
+        java.util.Map<Float, String> pageNodeTable =
+                dev.cim.f2v.F2vPack.readEntryNodes(entries);
+        log.add("node table: " + pageNodeTable.size() + " entries extracted");
         for (Path mf : manifests) {
             String name = mf.getFileName().toString();
             java.util.regex.Matcher mm = manifestName.matcher(name);
@@ -1746,127 +1885,93 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log.add(base + ": no resolvable cell — the page lane skipped");
                 continue;
             }
-
-            // 14-e67 THE REF-SCALE PARSE: the wrapper k values live in the
-            // served paper.json's per-entry matrices (the build JVM's
-            // MODEL_SCALE is empty here) — one textual pass over the picked
-            // refs, then every spec carries its wrapper's true k.
-            java.util.Set<String> pickedRefs = new java.util.HashSet<>();
+            // 14-e71: the page display's pin = the DOMINANT pair (the wall
+            // pages = uniform (0,15); the glow minority rides the hybrid's
+            // per-cell displays with their own pins)
+            java.util.Map<String, Integer> pinCount = new java.util.LinkedHashMap<>();
             for (ParsedCell c : parsed) {
-                pickedRefs.add(c.pick().modelRef());
-                for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
-                    pickedRefs.add(extra.modelRef());
-                }
-                if (c.fbRef() != null) {
-                    pickedRefs.add(c.fbRef());
-                }
+                pinCount.merge(c.pinBlock() + "/" + c.pinSky(), 1, Integer::sum);
             }
-            // 14-e67: the k source = the build's scale manifest (the
-            // composite-node refs never appear in paper.json — the 496-seed
-            // measurement: 30/43 refs missing); the paper.json parse rides
-            // as the fallback for the plain-node refs the tsv misses.
-            java.util.Map<String, Double> refScales = new java.util.HashMap<>(
-                    dev.cim.f2v.GalleryPack.readScaleManifest(Path.of(
-                            System.getProperty("user.dir"), "c-imagine", "f2v",
-                            "visual-gallery-scales.tsv")));
-            refScales.putAll(dev.cim.f2v.F2vPack.readRefScales(entries, pickedRefs));
-            int overOne = 0;
-            for (String r : pickedRefs) {
-                if (refScales.getOrDefault(r, 1.0) != 1.0) {
-                    overOne++;
-                }
-            }
-            log.add(base + ": ref scales: " + overOne + "/" + pickedRefs.size()
-                    + " picked refs ride k>1 (the build's scale manifest + the paper.json fallback)");
-
-            // PASS 2: group by pin. 14-e62 THE PER-GROUP ANCHOR: the group's
-            // display spawns at the GROUP'S OWN min cell — the group's pixel
-            // placement is unchanged (the anchor move cancels in the shifts)
-            // but the display's POSITIONAL light now samples the group's own
-            // front air, which matches the glow clusters (their light lives
-            // at the cluster, not at the page's far corner).
-            java.util.Map<String, PageGroup> groups = new java.util.LinkedHashMap<>();
-            for (ParsedCell c : parsed) {
-                PageGroup g = groups.computeIfAbsent(c.pinBlock() + "/" + c.pinSky(),
-                        k -> new PageGroup(c.pinBlock(), c.pinSky()));
-                g.cellsRaw.add(c);
-                g.cells++;
-                if (c.fbRef() != null) {
-                    PageGroup fb = groups.computeIfAbsent("15/15", k -> new PageGroup(15, 15));
-                    fb.fbCells.add(c);
-                }
-            }
-
-            // PASS 3: synthesize one page model per group, shifts off the
-            // GROUP'S own anchor (the 14-e62 per-group law)
+            String domKey = java.util.Collections.max(pinCount.entrySet(),
+                    java.util.Map.Entry.comparingByValue()).getKey();
+            int dominantPinB = Integer.parseInt(domKey.split("/")[0]);
+            int dominantPinS = Integer.parseInt(domKey.split("/")[1]);
+            java.util.Map<Float, String> nodeTable = pageNodeTable;
             java.util.List<PageRow> pageRowsBuilt = new java.util.ArrayList<>();
-            int groupNo = 0;
             int totalElements = 0;
-            for (java.util.Map.Entry<String, PageGroup> ge : groups.entrySet()) {
-                PageGroup g = ge.getValue();
-                int gax = Integer.MAX_VALUE, gay = Integer.MAX_VALUE, gaz = Integer.MAX_VALUE;
-                for (ParsedCell c : g.cellsRaw) {
-                    gax = Math.min(gax, c.x());
-                    gay = Math.min(gay, c.y());
-                    gaz = Math.min(gaz, c.z());
-                }
-                for (ParsedCell c : g.cellsRaw) {
-                    double dx = (c.x() - gax) * 16.0;
-                    double dy = (c.y() - gay) * 16.0;
-                    double dz = (c.z() - gaz) * 16.0;
-                    g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                            "c" + c.x() + "_" + c.y(), c.pick().modelRef(), dx, dy, dz,
-                            refScales.getOrDefault(c.pick().modelRef(), 1.0)));
-                    int ei = 0;
-                    for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
-                        g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                                "c" + c.x() + "_" + c.y() + "x" + (ei++), extra.modelRef(),
-                                dx, dy, dz, refScales.getOrDefault(extra.modelRef(), 1.0)));
-                    }
-                }
-                // the fullbright companions ride the 15/15 group's own frame
-                {
-                    int fax = Integer.MAX_VALUE, fay = Integer.MAX_VALUE, faz = Integer.MAX_VALUE;
-                    for (ParsedCell c : g.fbCells) {
-                        fax = Math.min(fax, c.x());
-                        fay = Math.min(fay, c.y());
-                        faz = Math.min(faz, c.z());
-                    }
-                    for (ParsedCell c : g.fbCells) {
-                        double dx = (c.x() - fax) * 16.0;
-                        double dy = (c.y() - fay) * 16.0;
-                        double dz = (c.z() - faz) * 16.0;
-                        g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                                "c" + c.x() + "_" + c.y() + "f", c.fbRef(), dx, dy, dz));
-                    }
-                    if (!g.fbCells.isEmpty()) {
-                        gax = fax;
-                        gay = fay;
-                        gaz = faz;
-                    }
-                }
-                dev.cim.f2v.GalleryPack.PageSynth synth =
-                        dev.cim.f2v.GalleryPack.synthesizePageComposite(
-                                g.specs, modelIdx, entries, log);
-                if (synth == null) {
-                    log.add(base + ": group g" + groupNo + " pin=" + g.pinBlock + "/"
-                            + g.pinSky + " synthesized to NOTHING — the group rides the hole");
-                    groupNo++;
+
+            // 14-e71 THE COMPOSITE-OF-NODES PAGE (supersedes the element
+            // merge): the page entry = ONE minecraft:composite whose
+            // children = THE PER-CELL CLIENT NODES extracted verbatim from
+            // the seeded paper.json, each wrapped with a per-child
+            // translation into the page frame. The node structure survives
+            // byte-for-byte — the 14-cz tint nodes (the captured per-mesh
+            // shades the element merge could not carry: the 500's 37 door
+            // reds rode that hole) and the multi-mesh composite wrappers.
+            // THE ELIGIBILITY: a cell rides the page iff its node = a single
+            // minecraft:model node (the translation inserts cleanly); the
+            // composite/missing-node cells = THE HYBRID SET — they spawn as
+            // their own per-cell displays after the page display (the
+            // per-cell path = the 498-proven rendering).
+            java.util.Set<String> perCellKeys = new java.util.HashSet<>();
+            java.util.List<String> children = new java.util.ArrayList<>();
+            int eligible = 0;
+            for (ParsedCell c : parsed) {
+                String key = c.x() + "," + c.y() + "," + c.z() + "," + c.state();
+                String node = nodeTable.get(c.pick().cmd());
+                boolean single = isPageEligibleNode(node);
+                if (!single) {
+                    perCellKeys.add(key);
                     continue;
                 }
-                log.add(base + ": group g" + groupNo + " pin=" + g.pinBlock + "/" + g.pinSky
-                        + " anchor=" + gax + "," + gay + "," + gaz
-                        + " cells=" + g.cells + " specs=" + g.specs.size()
-                        + " elements=" + synth.elements() + " ref=" + synth.ref());
-                totalElements += synth.elements();
-                pageRowsBuilt.add(new PageRow(
-                        new dev.cim.f2v.GalleryPack.Resolved("page:" + base + "#g" + groupNo,
-                                nextCmd, synth.ref(), 0, 0, true, g.pinBlock, g.pinSky, 0f),
-                        gax, gay, gaz, g.cells, synth.elements()));
-                nextCmd += 1.0f;
-                modelIdx++;
-                groupNo++;
+                double dx = c.x() - ax;
+                double dy = c.y() - ay;
+                // 14-e67: the multi-mesh extras ride their own translated
+                // children at the SAME cell offset (their wrappers = the
+                // cell frame too)
+                int ei = 0;
+                for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
+                    String xnode = nodeTable.get(extra.cmd());
+                    if (!isPageEligibleNode(xnode)) {
+                        perCellKeys.add(key + "#x" + (ei++));
+                        continue;
+                    }
+                    children.add(insertTransformation(xnode, dx, dy, 0.0));
+                    ei++;
+                }
+                children.add(insertTransformation(node, dx, dy, 0.0));
+                eligible++;
             }
+            int cellsRepresented = eligible;
+            if (children.isEmpty()) {
+                log.add(base + ": no page-eligible node — the page lane skipped");
+                continue;
+            }
+            StringBuilder pageNode = new StringBuilder();
+            pageNode.append("{\"type\":\"minecraft:composite\",\"models\":[");
+            for (int i = 0; i < children.size(); i++) {
+                pageNode.append(children.get(i));
+                if (i + 1 < children.size()) {
+                    pageNode.append(',');
+                }
+            }
+            pageNode.append("]}");
+            String pageRef = "page:" + base;
+            dev.cim.f2v.GalleryPack.PageSynth synth =
+                    new dev.cim.f2v.GalleryPack.PageSynth(pageRef, children.size());
+            log.add(base + ": PAGE ASSEMBLED — children=" + children.size()
+                    + " eligible=" + eligible + " hybrid(per-cell)=" + perCellKeys.size()
+                    + " anchor=" + ax + "," + ay + "," + az
+                    + " ref=" + pageRef + " elements~" + synth.elements());
+            totalElements += synth.elements();
+            pageNodes.put(synth.ref(), pageNode.toString());
+            pageRowsBuilt.add(new PageRow(
+                    new dev.cim.f2v.GalleryPack.Resolved("page:" + base + "#g0",
+                            nextCmd, synth.ref(), 0, 0, true, dominantPinB, dominantPinS, 0f),
+                    ax, ay, az, cellsRepresented, synth.elements(), perCellKeys));
+            nextCmd += 1.0f;
+            modelIdx++;
+            hybridKeys.put(base, perCellKeys);
             if (!pageRowsBuilt.isEmpty()) {
                 int totalCells = 0;
                 for (PageRow pr : pageRowsBuilt) {
@@ -2040,11 +2145,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             // per-cell loop below is SKIPPED for a page lane page — the
             // crops' background becomes the page's own context, by
             // construction.
+            java.util.Set<String> pageLaneHybridKeys = null;
             if (!pageRows.isEmpty()) {
                 String pageKey = mfName.endsWith(".tsv")
                         ? mfName.substring(0, mfName.length() - 4) : mfName;
                 java.util.List<PageRow> prows = pageRows.get(pageKey);
                 if (prows != null && !prows.isEmpty()) {
+                    pageLaneHybridKeys = pagePerCellKeys.getOrDefault(pageKey, java.util.Set.of());
                     int groups = 0, cellsRepresented = 0, elementsTotal = 0;
                     for (PageRow pr : prows) {
                         final int pb = Math.min(15, Math.max(0, pr.row().lightBlock()));
@@ -2085,12 +2192,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                     log().info(LOG_PREFIX + "f2v gallery: page " + page + " PAGE-LANE DONE — "
                             + groups + " group display(s), " + cellsRepresented
-                            + " cell(s), " + elementsTotal + " element(s)"
-                            + " (the per-cell loop skipped)");
-                    return cellsRepresented;
+                            + " cell(s), " + elementsTotal + " element(s), "
+                            + pageLaneHybridKeys.size() + " hybrid per-cell display(s) to spawn");
                 }
             }
             for (String[] row : cells) {
+                // 14-e71 THE HYBRID FILTER: on a page-lane page only the
+                // excluded (ineligible-node) cells spawn per-cell
+                if (pageLaneHybridKeys != null) {
+                    String rk = row[1] + "," + row[2] + "," + row[3] + "," + row[4];
+                    boolean isExcluded = pageLaneHybridKeys.contains(rk);
+                    boolean isExtra = pageLaneHybridKeys.contains(rk + "#x0");
+                    if (!isExcluded && !isExtra) {
+                        continue;
+                    }
+                }
                 // cell<TAB>x<TAB>y<TAB>z<TAB>state
                 if (row.length < 5) {
                     continue;

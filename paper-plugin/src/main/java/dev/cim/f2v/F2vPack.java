@@ -2322,10 +2322,10 @@ public final class F2vPack {
      * mismatch = a warning, no merge (the page lane then never spawns — the
      * honest fallback to the per-cell path).
      */
-    public static void mergeItemDefEntries(TreeMap<String, byte[]> entries,
-                                    List<Map.Entry<Float, String>> additions,
+    public static void mergeItemDefNodes(TreeMap<String, byte[]> entries,
+                                    List<Map.Entry<Float, String>> nodeAdditions,
                                     List<String> warnings) throws IOException {
-        if (additions.isEmpty()) {
+        if (nodeAdditions.isEmpty()) {
             return;
         }
         String host = "assets/minecraft/items/paper.json";
@@ -2336,11 +2336,11 @@ public final class F2vPack {
         }
         String body = new String(raw, StandardCharsets.UTF_8);
         StringBuilder rows = new StringBuilder();
-        for (int i = 0; i < additions.size(); i++) {
-            Map.Entry<Float, String> a = additions.get(i);
+        for (int i = 0; i < nodeAdditions.size(); i++) {
+            Map.Entry<Float, String> a = nodeAdditions.get(i);
             rows.append("      {\"threshold\": ").append(a.getKey())
-                .append(", \"model\": ").append(itemModelNode(a.getValue())).append('}');
-            if (i + 1 < additions.size()) {
+                .append(", \"model\": ").append(a.getValue()).append('}');
+            if (i + 1 < nodeAdditions.size()) {
                 rows.append(",\n");
             }
         }
@@ -2353,6 +2353,90 @@ public final class F2vPack {
         }
         String merged = body.substring(0, cut) + ",\n" + rows + body.substring(cut);
         entries.put(host, merged.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 14-e71 THE NODE TABLE FROM THE SERVED PACK: ONE pass over the seeded
+     * {@code paper.json} extracts EVERY entry's model node verbatim
+     * (ref -> the node JSON substring, the 14-cz tint nodes and the
+     * minecraft:composite wrappers included). The page-composite assembly
+     * composes the page entry from THESE nodes — the per-cell tint/complex
+     * node structure survives byte-for-byte (the element-merge path could
+     * not carry the per-mesh node tints: the 500 run's 37 door reds rode
+     * that hole). The node key = the ref the entry dispatches to; a
+     * composite entry's key = the threshold's OWN ref only if it appears as
+     * the entry's "model" — composite refs (the node carries sub-models)
+     * are keyed by their ref too (the entry text names the threshold, the
+     * node carries the children — the caller detects them by the node
+     * shape, not the key).
+     */
+    public static java.util.Map<Float, String> readEntryNodes(
+            TreeMap<String, byte[]> entries) {
+        java.util.Map<Float, String> out = new java.util.HashMap<>();
+        String host = "assets/minecraft/items/paper.json";
+        byte[] raw = entries.get(host);
+        if (raw == null) {
+            return out;
+        }
+        String body = new String(raw, StandardCharsets.UTF_8);
+        int i = body.indexOf("\"entries\": [");
+        if (i < 0) {
+            return out;
+        }
+        int end = body.indexOf("\"fallback\"", i);
+        if (end < 0) {
+            end = body.length();
+        }
+        // walk entry by entry: {"threshold": X, "model": NODE}
+        int pos = i;
+        while (true) {
+            int entryAt = body.indexOf("{\"threshold\":", pos);
+            if (entryAt < 0 || entryAt >= end) {
+                break;
+            }
+            int modelKey = body.indexOf("\"model\":", entryAt);
+            if (modelKey < 0 || modelKey >= end) {
+                break;
+            }
+            int objAt = body.indexOf('{', modelKey);
+            if (objAt < 0) {
+                break;
+            }
+            // the balanced object scan
+            int depth = 0, objEnd = objAt, scan = objAt;
+            boolean inStr = false, esc = false;
+            while (scan < end) {
+                char c = body.charAt(scan);
+                if (inStr) {
+                    if (esc) esc = false;
+                    else if (c == '\\') esc = true;
+                    else if (c == '"') inStr = false;
+                } else if (c == '"') inStr = true;
+                else if (c == '{') depth++;
+                else if (c == '}') {
+                    depth--;
+                    if (depth == 0) { objEnd = scan; break; }
+                }
+                scan++;
+            }
+            String node = body.substring(objAt, objEnd + 1);
+            // 14-e71: THE KEY = THE ENTRY'S THRESHOLD (the cmd float) — the
+            // composite/tint nodes never name their parent ref (the first
+            // "model" field inside = the first CHILD's ref), so the ref-keyed
+            // table missed the whole quad-route class (the 500's 37 door
+            // reds). The cmd = the universal key: the resolved rows carry it,
+            // the entries dispatch by it.
+            int tStart = body.indexOf(':', entryAt) + 1;
+            int tEnd = body.indexOf(',', tStart);
+            try {
+                float threshold = Float.parseFloat(body.substring(tStart, tEnd).trim());
+                out.putIfAbsent(threshold, node);
+            } catch (NumberFormatException bad) {
+                // the malformed entry rides
+            }
+            pos = objEnd + 1;
+        }
+        return out;
     }
 
     /**
