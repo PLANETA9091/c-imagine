@@ -1514,11 +1514,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                               int pinBlock, int pinSky) {
     }
 
-    /** 14-e61: one page light group under synthesis. */
+    /** 14-e61: one page light group under synthesis; 14-e62: the group
+     *  carries its raw cells and builds its specs off ITS OWN anchor. */
     private static final class PageGroup {
         final int pinBlock;
         final int pinSky;
         final java.util.List<dev.cim.f2v.GalleryPack.PageCellSpec> specs = new java.util.ArrayList<>();
+        final java.util.List<ParsedCell> cellsRaw = new java.util.ArrayList<>();
+        final java.util.List<ParsedCell> fbCells = new java.util.ArrayList<>();
         int cells = 0;
 
         PageGroup(int pinBlock, int pinSky) {
@@ -1735,36 +1738,70 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 continue;
             }
 
-            // PASS 2: group by pin, page-frame shifts off the GLOBAL anchor
+            // PASS 2: group by pin. 14-e62 THE PER-GROUP ANCHOR: the group's
+            // display spawns at the GROUP'S OWN min cell — the group's pixel
+            // placement is unchanged (the anchor move cancels in the shifts)
+            // but the display's POSITIONAL light now samples the group's own
+            // front air, which matches the glow clusters (their light lives
+            // at the cluster, not at the page's far corner).
             java.util.Map<String, PageGroup> groups = new java.util.LinkedHashMap<>();
             for (ParsedCell c : parsed) {
-                double dx = (c.x() - ax) * 16.0;
-                double dy = (c.y() - ay) * 16.0;
-                double dz = (c.z() - az) * 16.0;
                 PageGroup g = groups.computeIfAbsent(c.pinBlock() + "/" + c.pinSky(),
                         k -> new PageGroup(c.pinBlock(), c.pinSky()));
-                g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                        "c" + c.x() + "_" + c.y(), c.pick().modelRef(), dx, dy, dz));
+                g.cellsRaw.add(c);
                 g.cells++;
-                int ei = 0;
-                for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
-                    g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                            "c" + c.x() + "_" + c.y() + "x" + (ei++), extra.modelRef(), dx, dy, dz));
-                }
                 if (c.fbRef() != null) {
                     PageGroup fb = groups.computeIfAbsent("15/15", k -> new PageGroup(15, 15));
-                    fb.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                            "c" + c.x() + "_" + c.y() + "f", c.fbRef(), dx, dy, dz));
-                    fb.cells++;
+                    fb.fbCells.add(c);
                 }
             }
 
-            // PASS 3: synthesize one page model per group
+            // PASS 3: synthesize one page model per group, shifts off the
+            // GROUP'S own anchor (the 14-e62 per-group law)
             java.util.List<PageRow> pageRowsBuilt = new java.util.ArrayList<>();
             int groupNo = 0;
             int totalElements = 0;
             for (java.util.Map.Entry<String, PageGroup> ge : groups.entrySet()) {
                 PageGroup g = ge.getValue();
+                int gax = Integer.MAX_VALUE, gay = Integer.MAX_VALUE, gaz = Integer.MAX_VALUE;
+                for (ParsedCell c : g.cellsRaw) {
+                    gax = Math.min(gax, c.x());
+                    gay = Math.min(gay, c.y());
+                    gaz = Math.min(gaz, c.z());
+                }
+                for (ParsedCell c : g.cellsRaw) {
+                    double dx = (c.x() - gax) * 16.0;
+                    double dy = (c.y() - gay) * 16.0;
+                    double dz = (c.z() - gaz) * 16.0;
+                    g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
+                            "c" + c.x() + "_" + c.y(), c.pick().modelRef(), dx, dy, dz));
+                    int ei = 0;
+                    for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
+                        g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
+                                "c" + c.x() + "_" + c.y() + "x" + (ei++), extra.modelRef(), dx, dy, dz));
+                    }
+                }
+                // the fullbright companions ride the 15/15 group's own frame
+                {
+                    int fax = Integer.MAX_VALUE, fay = Integer.MAX_VALUE, faz = Integer.MAX_VALUE;
+                    for (ParsedCell c : g.fbCells) {
+                        fax = Math.min(fax, c.x());
+                        fay = Math.min(fay, c.y());
+                        faz = Math.min(faz, c.z());
+                    }
+                    for (ParsedCell c : g.fbCells) {
+                        double dx = (c.x() - fax) * 16.0;
+                        double dy = (c.y() - fay) * 16.0;
+                        double dz = (c.z() - faz) * 16.0;
+                        g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
+                                "c" + c.x() + "_" + c.y() + "f", c.fbRef(), dx, dy, dz));
+                    }
+                    if (!g.fbCells.isEmpty()) {
+                        gax = fax;
+                        gay = fay;
+                        gaz = faz;
+                    }
+                }
                 dev.cim.f2v.GalleryPack.PageSynth synth =
                         dev.cim.f2v.GalleryPack.synthesizePageComposite(
                                 g.specs, modelIdx, entries, log);
@@ -1775,13 +1812,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
                 log.add(base + ": group g" + groupNo + " pin=" + g.pinBlock + "/" + g.pinSky
+                        + " anchor=" + gax + "," + gay + "," + gaz
                         + " cells=" + g.cells + " specs=" + g.specs.size()
                         + " elements=" + synth.elements() + " ref=" + synth.ref());
                 totalElements += synth.elements();
                 pageRowsBuilt.add(new PageRow(
                         new dev.cim.f2v.GalleryPack.Resolved("page:" + base + "#g" + groupNo,
                                 nextCmd, synth.ref(), 0, 0, true, g.pinBlock, g.pinSky, 0f),
-                        ax, ay, az, g.cells, synth.elements()));
+                        gax, gay, gaz, g.cells, synth.elements()));
                 nextCmd += 1.0f;
                 modelIdx++;
                 groupNo++;
