@@ -1118,6 +1118,13 @@ jobs:
             srv-wall/c-imagine/scenes/*.ctx.tsv
             seed-pack/scenes/*.light
             srv-wall/c-imagine/scenes/*.light
+            # 14-e55b: the walk's INPUT manifests + the restored-BE NBTs — the
+            # diag lines carry state @pos, these carry the same rows; without
+            # them the outLen-vs-state correlation dives into replay metadata
+            # (the e55b receipt's provenance hole)
+            srv-wall/c-imagine/scenes/*.tsv
+            !srv-wall/c-imagine/scenes/*.ctx.tsv
+            srv-wall/c-imagine/scenes/*.benbt
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv

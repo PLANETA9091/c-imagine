@@ -485,7 +485,8 @@ final class QuadDump {
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
                 if (isNixieRenderer(be)) {
-                    diag("14-dn text-quads diag " + state.getBlock() + ": no renderer registered");
+                    diag("14-dn text-quads diag " + state + " @" + pos.toShortString()
+                            + ": no renderer registered");
                 }
                 return;
             }
@@ -496,12 +497,14 @@ final class QuadDump {
                     || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
                 berNotRendered++;
                 if (isDoorBER(be)) {
-                    diag("14-e51 door-BER diag " + state.getBlock() + ": not rendered (typeValid="
+                    diag("14-e51 door-BER diag " + state + " @" + pos.toShortString()
+                            + ": not rendered (typeValid="
                             + be.getType().isValid(state) + " shouldRender="
                             + renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()) + ")");
                 }
                 if (isNixieRenderer(be)) {
-                    diag("14-dn text-quads diag " + state.getBlock() + ": not rendered (typeValid="
+                    diag("14-dn text-quads diag " + state + " @" + pos.toShortString()
+                            + ": not rendered (typeValid="
                             + be.getType().isValid(state) + " shouldRender="
                             + renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()) + ")");
                 }
@@ -517,13 +520,15 @@ final class QuadDump {
                 berDrawn++;
             }
             if (isNixieRenderer(be)) {
-                diag("14-dn text-quads diag " + state.getBlock() + ": renderer="
-                        + renderer.getClass().getName() + " buffers=" + capture.bufferStates()
+                diag("14-dn text-quads diag " + state + " @" + pos.toShortString()
+                        + ": renderer=" + renderer.getClass().getName()
+                        + " buffers=" + capture.bufferStates()
                         + " outLen=" + capture.out.length() + " foreign=" + capture.foreign);
             }
             if (isDoorBER(be)) {
-                diag("14-e51 door-BER diag " + state.getBlock() + ": renderer="
-                        + renderer.getClass().getName() + " outLen=" + capture.out.length()
+                diag("14-e51 door-BER diag " + state + " @" + pos.toShortString()
+                        + ": renderer=" + renderer.getClass().getName()
+                        + " outLen=" + capture.out.length()
                         + " foreign=" + capture.foreign);
             }
         } catch (Throwable t) {
