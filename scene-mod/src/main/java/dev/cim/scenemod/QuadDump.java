@@ -480,6 +480,21 @@ final class QuadDump {
             // Static model data and the BER observe the same restored BE.
             BlockEntity be = page.getBlockEntity(pos);
             if (be == null) {
+                // 14-e57: the door-head receipt — the upper door halves carry
+                // no BE (the bytecode read: SlidingDoorBlock.newBlockEntity
+                // returns null for upper), so the BER walk exits here
+                // silently and the pair ledger's upper side (the 44
+                // upper-only heads at y=-60, the e57 global ledger) stays
+                // unseen. The below= read receipts the head's partner
+                // presence from the head cell itself (below=none(air block)
+                // = the no-pair head class, the lower state = the paired
+                // class), completing what the e56 upper= read (lower side
+                // only) cannot see. A failed read costs the line, never the
+                // dump (the appendBlockEntity law).
+                if (isDoorState(state)) {
+                    diag("14-e57 door-head diag " + state + " @" + pos.toShortString()
+                            + ": below=" + doorBelow(page, pos, state));
+                }
                 return;
             }
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
@@ -582,6 +597,36 @@ final class QuadDump {
             }
         }
         return "?";
+    }
+
+    /** 14-e57: the blockstate below the door cell — the upper halves carry
+     *  no BE, so the e56 upper= read (which fires only from the lower BEs)
+     *  cannot see them; the below= read receipts the head's partner presence
+     *  from the head cell itself (the e57 pair ledger: below=none(air block)
+     *  = the no-pair head class at the grid floor, the lower state = the
+     *  paired class). Mirrors doorUpper(). */
+    private static String doorBelow(Page page, BlockPos pos, BlockState state) {
+        try {
+            BlockState below = page.getBlockState(pos.below());
+            if (below.getBlock() == state.getBlock()) {
+                return below.toString().replaceAll("^Block\\{[^}]+\\}\\[", "").replaceAll("]$", "");
+            }
+            return "none(" + below.getBlock() + ")";
+        } catch (Throwable t) {
+            return "ERR(" + t.getClass().getSimpleName() + ")";
+        }
+    }
+
+    /** 14-e57: the state-side door check — the head cells have no BE, so
+     *  isDoorBER's type/class read cannot fire; the registry path's _door
+     *  suffix is the state-side twin (create's five door families, no
+     *  doormat — the doormat rides a different block id). */
+    private static boolean isDoorState(BlockState state) {
+        try {
+            return BuiltInRegistries.BLOCK.getKey(state.getBlock()).getPath().endsWith("_door");
+        } catch (Throwable t) {
+            return false;
+        }
     }
 
     /** 14-e56: the blockstate above the door BE — the paired-context receipt
