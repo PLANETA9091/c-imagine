@@ -1488,9 +1488,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /**
      * 14-e61: the page-composite lane spec — env {@code
      * CIM_GALLERY_PAGE_COMPOSITE} or {@code -Dcim.gallery.pageComposite}.
-     * Value: {@code all} or a comma list of {@code <ns>:<page>} tokens
-     * ({@code create:16}). null/blank = OFF (the per-cell path, the
-     * unchanged default until the arbiter proves the page lane).
+     * Value: {@code all}, a comma list of {@code <ns>:<page>} tokens
+     * ({@code create:16}), or a bare {@code <ns>} = ALL that namespace's
+     * wall pages ({@code create} — the 14-e63 second-wave token). null/blank
+     * = OFF (the per-cell path, the unchanged default until the arbiter
+     * proves the page lane).
      */
     private static String pageCompositeSpec() {
         String v = System.getenv("CIM_GALLERY_PAGE_COMPOSITE");
@@ -1554,6 +1556,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             java.util.List<dev.cim.f2v.GalleryPack.Resolved> gallery,
             String spec, java.util.List<String> log) {
         java.util.Map<String, java.util.Set<Integer>> want = new java.util.HashMap<>();
+        java.util.Set<String> bareNs = new java.util.HashSet<>();
         boolean wantAll = false;
         for (String tok : spec.split(",")) {
             String t = tok.trim();
@@ -1565,8 +1568,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 continue;
             }
             int c = t.indexOf(':');
-            if (c <= 0) {
-                log.add("spec token is not <ns>:<page>: " + t);
+            if (c < 0) {
+                // 14-e63 THE BARE-NS TOKEN: a namespace with no page list =
+                // ALL its wall pages (the second A/B wave: create). NB:
+                // computeIfAbsent records NOTHING on a null mapping — the
+                // bare namespaces ride bareNs alone.
+                bareNs.add(t);
+                continue;
+            }
+            if (c == 0) {
+                log.add("spec token is not <ns>, <ns>:<page> or all: " + t);
                 continue;
             }
             try {
@@ -1576,7 +1587,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log.add("spec page is not a number: " + t);
             }
         }
-        if (!wantAll && want.isEmpty()) {
+        if (!wantAll && want.isEmpty() && bareNs.isEmpty()) {
             return java.util.Map.of();
         }
 
@@ -1629,7 +1640,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             String ns = mm.group(1);
             int page = Integer.parseInt(mm.group(2));
             java.util.Set<Integer> pages = want.get(ns);
-            if (!wantAll && (pages == null || !pages.contains(page))) {
+            if (!wantAll && !bareNs.contains(ns)
+                    && (pages == null || !pages.contains(page))) {
                 continue;
             }
             String base = name.substring(0, name.length() - 4);
