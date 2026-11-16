@@ -84,8 +84,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             List<dev.cim.f2v.GalleryPack.Resolved> gallery,
                             java.util.Map<String, Float> fluids,
                             java.util.Map<String, Float> fluidCubes,
-                            String sha1,
-                            java.util.Map<String, java.util.List<PageRow>> pageRows) {
+                            String sha1) {
     }
 
     /**
@@ -203,8 +202,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                         base.resolve("visual-gallery.resolved.tsv"))
                                 : List.of();
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
-                        readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1,
-                        java.util.Map.of());
+                        readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
                 int fastPort = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
                 dev.cim.f2v.PackHttp fastHttp = null;
                 // 14-di THE RUN-CAPTURE OVERLAY: the captures dir carries the truth
@@ -251,7 +249,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 // render law) instead of the flat sky backdrop. Default OFF: without
                 // CIM_GALLERY_PAGE_COMPOSITE nothing changes (the per-cell path, the
                 // 614/614 frame contract). Any failure = the plain pack, per-cell rides.
-                java.util.Map<String, java.util.List<PageRow>> pageRows = java.util.Map.of();
+                // 14-e67 THE FIELD ASSIGNMENT FIX: the 499 run receipted the
+                // overlay building + serving pack-page.zip while the replay
+                // spawned the PER-CELL path (zero PAGE-LANE lines in s0's
+                // boot.log, the p16 crops pixel-identical to 498) — the
+                // overlay result sat in a LOCAL while galleryPage reads THIS
+                // volatile field. The field is the single source of truth.
+                pageRows = java.util.Map.of();
                 String pageSpec = pageCompositeSpec();
                 if (pageSpec != null) {
                     try {
@@ -295,12 +299,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 fastHttp = dev.cim.f2v.PackHttp.start(servedZip, fastPort, servedSha1);
                 visualPack = fastHttp;
-                if (!pageRows.isEmpty()) {
-                    // the overlay state REPLACES the fast state's page rows (the
-                    // record built above carried Map.of() — rebuild with them)
-                    f2v = new F2vState(fastItems, fastBlocks, fastGallery,
-                            readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1, pageRows);
-                }
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
                         + "serving " + servedZip.getFileName() + ", sha1=" + visualPack.sha1()
                         + ", " + fastGallery.size() + " gallery row(s), "
@@ -331,8 +329,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
             }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
-                    readFluidTextureMap(base), readFluidCubeMap(base), result.sha1(),
-                    java.util.Map.of());
+                    readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
             int port = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
