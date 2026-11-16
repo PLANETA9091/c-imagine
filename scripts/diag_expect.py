@@ -41,8 +41,11 @@ def page_key(name):
 def load_pages():
     pages = {}
     seen_dup = collections.Counter()
-    for path in sorted(glob.glob(f"{scenes_glob}/gallery-create-p*.tsv")):
-        name = re.search(r"(gallery-create-p\d+)\.tsv$", path).group(1)
+    for path in sorted(glob.glob(f"{scenes_glob}/gallery-*-p*.tsv")):
+        m = re.search(r"(gallery-[a-z-]+-p\d+)\.tsv$", path)
+        if m is None:
+            continue  # the .ctx.tsv siblings etc.
+        name = m.group(1)
         cells = {}
         with open(path) as f:
             for line in f:
@@ -74,6 +77,14 @@ def strip_props(state):
     return ""
 
 
+def block_tostring(state):
+    """The none() branch prints Block.toString() — the bare block id, no
+    properties (doorBelow reads above.getBlock(), the Block object)."""
+    if state.startswith("Block{"):
+        return f"Block{{{state[6:].rstrip('}').split('[', 1)[0]}}}"
+    return f"Block{{{block_id(state)}}}"
+
+
 def main():
     pages, dups = load_pages()
     rows = []
@@ -81,15 +92,41 @@ def main():
     for name in sorted(pages, key=page_key):
         cells = pages[name]
         for pos, state in sorted(cells.items()):
-            if not block_id(state).endswith("_door"):
-                continue  # isDoorState = the registry path's _door suffix
+            bid = block_id(state)
+            # THE EMPIRICAL DUMP-WALK LAW (the 496 shard-1 log, 614 door lines
+            # reconciled exactly): the dump walk covers the create +
+            # supplementaries (+ ae2/mekanism, no door cells there) page
+            # families; the biomesoplenty family = shot but NOT dump-walked
+            # (0 door lines from 832 BOP rows); within the walked families:
+            # create door lowers fire the e51 line (the SlidingDoorBE + the
+            # isDoorBER class-name law), create uppers fire e57 (newBlockEntity
+            # null); supplementaries netherite_door uppers fire e57, gold_door
+            # uppers stay silent (the BE exists, the class name lacks "door"),
+            # ALL supplementaries door lowers stay silent; the doormat fires
+            # the e51 line via its "door"-bearing BE class with anim=? (the
+            # reflection finds no animation field).
+            if name.startswith("gallery-biomesoplenty") or name.startswith("gallery-item-"):
+                continue  # the BOP family + the item pages = shot but NOT
+                          # dump-walked (832 BOP door rows + the bare
+                          # item-page doormat emit zero door lines)
+            is_create = bid.startswith("create:")
+            is_supp_netherite = bid == "supplementaries:netherite_door"
+            is_doormat = bid == "supplementaries:doormat"
+            if not (is_create or is_supp_netherite or is_doormat):
+                continue
             x, y, z = pos
             half = None
             m = re.search(r"(^|,)half=(lower|upper)", state)
             if m:
                 half = m.group(2)
-            st = f"Block{{{state}}}"  # BlockState.toString() form
+            # the diag's state form: Block{id}[props] — the braces close
+            # BEFORE the property bracket (BlockState.toString())
+            ident = bid
+            props = state[len(bid):]
+            st = f"Block{{{ident}}}{props}" if props else f"Block{{{ident}}}"
             if half == "upper":
+                if not (is_create or is_supp_netherite):
+                    continue  # the gold_door uppers stay silent
                 # the head cell: page.getBlockEntity -> null -> the e57 line
                 below = cells.get((x, y - 1, z))
                 if below is None:
@@ -97,14 +134,18 @@ def main():
                 if block_id(below) == block_id(state):
                     val = strip_props(below)
                 else:
-                    val = f"none({below})"
+                    # the diag prints none(Block.toString()) — the BLOCK, no
+                    # properties (doorBelow's none branch: above.getBlock())
+                    val = f"none({block_tostring(below)})"
                 rows.append(f"14-e57 door-head diag {st} @{x},{y},{z}: below={val}")
                 counts["below"] += 1
                 if val.startswith("none("):
                     counts[f"below none={val[5:-1]}"] += 1
                 else:
                     counts["below same-block"] += 1
-            else:
+            elif half == "lower":
+                if not is_create:
+                    continue  # the supp door lowers stay silent
                 # the base cell: the BE path -> the e51 line (upper= receipt)
                 above = cells.get((x, y + 1, z))
                 if above is None:
@@ -112,13 +153,24 @@ def main():
                 if block_id(above) == block_id(state):
                     val = strip_props(above)
                 else:
-                    val = f"none({above})"
+                    # doorUpper's none branch: none(Block.toString()) — the
+                    # BLOCK, no properties
+                    val = f"none({block_tostring(above)})"
                 rows.append(f"14-e51 door-BER diag {st} @{x},{y},{z}: upper={val}")
                 counts["upper"] += 1
                 if val.startswith("none("):
                     counts[f"upper none={val[5:-1]}"] += 1
                 else:
                     counts["upper same-block"] += 1
+            elif is_doormat:
+                # the doormat's e51 line: the "door"-bearing BE class, no
+                # animation field (anim=?) + the above cell's none-form
+                above = cells.get((x, y + 1, z))
+                if above is None:
+                    above = SMOOTH if y + 1 == FLOOR_Y else AIR
+                val = f"none({block_tostring(above)})"
+                rows.append(f"14-e51 door-BER diag {st} @{x},{y},{z}: anim=? upper={val}")
+                counts["doormat"] += 1
 
     out = pathlib.Path(out_file)
     out.parent.mkdir(parents=True, exist_ok=True)

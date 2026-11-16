@@ -21,8 +21,8 @@ import pathlib
 import re
 import sys
 
-E51 = re.compile(r"14-e51 door-BER diag (\S+) @([-\d,]+): (.*)$")
-E57 = re.compile(r"14-e57 door-head diag (\S+) @([-\d,]+): below=(.*)$")
+E51 = re.compile(r"14-e51 door-BER diag (\S+) @([\-\d, ]+?): (.*)$")
+E57 = re.compile(r"14-e57 door-head diag (\S+) @([\-\d, ]+?): below=(.*)$")
 ANIM = re.compile(r"anim=(\S+)")
 UPPER = re.compile(r"upper=(.*)$")
 OPEN = re.compile(r"(^|,)open=(true|false)")
@@ -35,8 +35,12 @@ def norm_state(s):
 
 
 def parse_anim(v):
-    """The %.3f hop, the raw toString garbage, the v<value> fallback."""
+    """The doorAnim form is anim=<field>=<value> (the e56 entry named the
+    <field>= prefix explicitly; e57f fixed only the value format) — the hop
+    %.3f form, the v<value> fallback, the raw toString garbage."""
     v = v.strip()
+    if "=" in v:
+        v = v.rsplit("=", 1)[1]
     if v.startswith("v"):
         v = v[1:]
     m = re.match(r"^(\d+\.\d+)", v)
@@ -65,7 +69,7 @@ def load_actual(path):
     for line in pathlib.Path(path).read_text().splitlines():
         m = E51.match(line)
         if m:
-            st, pos, rest = m.group(1), m.group(2), m.group(3)
+            st, pos, rest = m.group(1), m.group(2).replace(" ", ""), m.group(3)
             am = ANIM.search(rest)
             um = UPPER.search(rest)
             if am:
@@ -75,7 +79,7 @@ def load_actual(path):
             continue
         m = E57.match(line)
         if m:
-            rows.append((norm_state(m.group(1)), m.group(2), "below",
+            rows.append((norm_state(m.group(1)), m.group(2).replace(" ", ""), "below",
                          m.group(3).strip()))
     return rows, anims
 
