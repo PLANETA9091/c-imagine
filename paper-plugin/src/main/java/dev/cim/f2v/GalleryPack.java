@@ -1985,7 +1985,12 @@ public final class GalleryPack {
      * offsets — the same convention {@link #translateCompositeElements}
      * rides with the door slides).
      */
-    public record PageCellSpec(String key, String modelRef, double dx, double dy, double dz) {
+    public record PageCellSpec(String key, String modelRef, double dx, double dy, double dz,
+                               double scale) {
+        /** The k=1 convenience for the plain composites (the selftests). */
+        public PageCellSpec(String key, String modelRef, double dx, double dy, double dz) {
+            this(key, modelRef, dx, dy, dz, 1.0);
+        }
     }
 
     /** The synthesis receipt: the model ref + the merged element count (the
@@ -2020,7 +2025,13 @@ public final class GalleryPack {
                 textures.put(prefix + t.getKey(), t.getValue());
             }
             JsonArray els = model.getAsJsonArray("elements").deepCopy();
-            double kc = modelScale(c.modelRef());
+            // 14-e67: the k rides THE SPEC — the overlay JVM's MODEL_SCALE
+            // map is empty (it never ran the build), the served paper.json's
+            // per-entry matrix is the only k table that exists there, and
+            // the caller parses it into the specs (the 500 run receipted the
+            // k>1 wrappers merged unscaled: the door/window cells with
+            // normalize factors 2-4 landed at quarter positions, 37 reds).
+            double kc = c.scale();
             if (kc != 1) {
                 // the per-cell normalize shrank this wrapper: restore true
                 // model units (the center-8 inverse of normalizeCompositeBounds)
@@ -3876,6 +3887,65 @@ public final class GalleryPack {
      */
     private static final Map<String, Double> MODEL_SCALE = new java.util.concurrent.ConcurrentHashMap<>();
     private static final Map<String, JsonObject> ITEM_NODES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * 14-e67 THE SCALE MANIFEST: drain the MODEL_SCALE table (the k>1
+     * normalize compensations) to a side manifest next to the resolved rows.
+     * THE OVERLAY JVM NEEDS IT: it never ran the build, its MODEL_SCALE map
+     * is empty, and the served paper.json cannot serve as the k table for
+     * the composite-node refs (the 14-cz/14-cy wrappers whose client node =
+     * a minecraft:composite of sub-models — the parent ref never appears in
+     * the definition, measured on the 496 seed: 30 of the 43 picked refs
+     * missing). The replay/overlay reads it back with readScaleManifest.
+     */
+    static void writeScaleManifest(Path tsv) throws IOException {
+        List<Map.Entry<String, Double>> rows = new ArrayList<>();
+        for (Map.Entry<String, Double> e : MODEL_SCALE.entrySet()) {
+            if (e.getValue() != 1.0) {
+                rows.add(Map.entry(e.getKey(), e.getValue()));
+            }
+        }
+        rows.sort(Map.Entry.comparingByKey());
+        StringBuilder sb = new StringBuilder("# model normalize compensations "
+                + "(ref\tk) — the page-composite overlay's unscale table\n");
+        for (Map.Entry<String, Double> e : rows) {
+            sb.append(e.getKey()).append('\t').append(e.getValue()).append('\n');
+        }
+        Files.createDirectories(tsv.getParent());
+        Files.writeString(tsv, sb.toString(), StandardCharsets.UTF_8);
+    }
+
+    /** Read a scale manifest written by {@link #writeScaleManifest};
+     *  missing file = empty (every ref rides k=1 — the honest legacy). */
+    public static Map<String, Double> readScaleManifest(Path tsv) {
+        Map<String, Double> out = new TreeMap<>();
+        if (!Files.isRegularFile(tsv)) {
+            return out;
+        }
+        for (String line : ioSafe(tsv)) {
+            if (line.isBlank() || line.startsWith("#")) {
+                continue;
+            }
+            String[] parts = line.split("\t", -1);
+            if (parts.length < 2) {
+                continue;
+            }
+            try {
+                out.put(parts[0].trim(), Double.parseDouble(parts[1].trim()));
+            } catch (NumberFormatException bad) {
+                // the malformed row rides k=1
+            }
+        }
+        return out;
+    }
+
+    private static List<String> ioSafe(Path tsv) {
+        try {
+            return Files.readAllLines(tsv, StandardCharsets.UTF_8);
+        } catch (IOException readFail) {
+            return List.of();
+        }
+    }
 
     static void resetModelScales() {
         MODEL_SCALE.clear();

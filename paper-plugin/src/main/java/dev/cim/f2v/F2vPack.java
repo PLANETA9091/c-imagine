@@ -1516,6 +1516,12 @@ public final class F2vPack {
                 }
                 GalleryPack.writeResolvedManifest(
                         outDir.resolve("visual-gallery.resolved.tsv"), gallery);
+                // 14-e67: the page-composite overlay's unscale table (the
+                // k>1 normalize compensations; the overlay JVM has no
+                // MODEL_SCALE map and the composite-node refs never appear
+                // in paper.json — this tsv is the only k source there)
+                GalleryPack.writeScaleManifest(
+                        outDir.resolve("visual-gallery-scales.tsv"));
                 // 14-dx-f: the animated-sprite states the build baked (the
                 // 14-dr static-frame law's missing demotion half) — the join
                 // reads this file and demotes the matching rows to ANIMATED
@@ -2347,6 +2353,66 @@ public final class F2vPack {
         }
         String merged = body.substring(0, cut) + ",\n" + rows + body.substring(cut);
         entries.put(host, merged.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 14-e67 THE REF-SCALE TABLE FROM THE SERVED PACK: extract the
+     * normalize-compensation factor per model ref from the seeded
+     * {@code paper.json}'s per-entry transformation matrices. The overlay
+     * JVM never ran the pack build, so GalleryPack's MODEL_SCALE map is
+     * EMPTY there and the page merge cannot ask it — the served definition
+     * IS the client's own k table (the seed build baked the matrix into
+     * every oversized ref's entry), so the overlay reads it back textually.
+     * A ref with no entry or no transformation = 1.0 (the plain composite).
+     * The needle carries the closing quote so a prefix ref (g21) never
+     * matches g210's entry.
+     */
+    public static java.util.Map<String, Double> readRefScales(
+            TreeMap<String, byte[]> entries, java.util.Collection<String> refs) {
+        java.util.Map<String, Double> out = new java.util.HashMap<>();
+        String host = "assets/minecraft/items/paper.json";
+        byte[] raw = entries.get(host);
+        if (raw == null || refs.isEmpty()) {
+            return out;
+        }
+        String body = new String(raw, StandardCharsets.UTF_8);
+        for (String ref : refs) {
+            // the seeded entries mix TWO emitter formats: the plain branch
+            // writes spaced JSON, the itemNode branch writes compact JSON —
+            // match both or the gallery refs (the compact node entries, the
+            // bulk of the picks) are missed (the 14-e67 lesson: the first
+            // parse found 13/43 refs, k>1: 0, and the harness's own cell
+            // check stayed empty)
+            int at = body.indexOf("\"model\": \"" + ref + "\"");
+            if (at < 0) {
+                at = body.indexOf("\"model\":\"" + ref + "\"");
+            }
+            if (at < 0) {
+                continue;
+            }
+            int tAt = body.indexOf("\"transformation\": [", at);
+            if (tAt < 0) {
+                tAt = body.indexOf("\"transformation\":[", at);
+            }
+            int entryEnd = body.indexOf("}}", at);
+            if (tAt < 0 || (entryEnd >= 0 && tAt > entryEnd)) {
+                out.put(ref, 1.0);
+                continue;
+            }
+            int start = body.indexOf('[', tAt) + 1;
+            int end = body.indexOf(']', start);
+            if (end < 0) {
+                out.put(ref, 1.0);
+                continue;
+            }
+            try {
+                String[] nums = body.substring(start, end).split(",");
+                out.put(ref, Double.parseDouble(nums[0].trim()));
+            } catch (NumberFormatException bad) {
+                out.put(ref, 1.0);
+            }
+        }
+        return out;
     }
 
     static JsonObject itemModelNode(String ref) {

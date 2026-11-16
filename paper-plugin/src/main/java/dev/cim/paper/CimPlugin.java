@@ -1747,6 +1747,38 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 continue;
             }
 
+            // 14-e67 THE REF-SCALE PARSE: the wrapper k values live in the
+            // served paper.json's per-entry matrices (the build JVM's
+            // MODEL_SCALE is empty here) — one textual pass over the picked
+            // refs, then every spec carries its wrapper's true k.
+            java.util.Set<String> pickedRefs = new java.util.HashSet<>();
+            for (ParsedCell c : parsed) {
+                pickedRefs.add(c.pick().modelRef());
+                for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
+                    pickedRefs.add(extra.modelRef());
+                }
+                if (c.fbRef() != null) {
+                    pickedRefs.add(c.fbRef());
+                }
+            }
+            // 14-e67: the k source = the build's scale manifest (the
+            // composite-node refs never appear in paper.json — the 496-seed
+            // measurement: 30/43 refs missing); the paper.json parse rides
+            // as the fallback for the plain-node refs the tsv misses.
+            java.util.Map<String, Double> refScales = new java.util.HashMap<>(
+                    dev.cim.f2v.GalleryPack.readScaleManifest(Path.of(
+                            System.getProperty("user.dir"), "c-imagine", "f2v",
+                            "visual-gallery-scales.tsv")));
+            refScales.putAll(dev.cim.f2v.F2vPack.readRefScales(entries, pickedRefs));
+            int overOne = 0;
+            for (String r : pickedRefs) {
+                if (refScales.getOrDefault(r, 1.0) != 1.0) {
+                    overOne++;
+                }
+            }
+            log.add(base + ": ref scales: " + overOne + "/" + pickedRefs.size()
+                    + " picked refs ride k>1 (the build's scale manifest + the paper.json fallback)");
+
             // PASS 2: group by pin. 14-e62 THE PER-GROUP ANCHOR: the group's
             // display spawns at the GROUP'S OWN min cell — the group's pixel
             // placement is unchanged (the anchor move cancels in the shifts)
@@ -1783,11 +1815,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     double dy = (c.y() - gay) * 16.0;
                     double dz = (c.z() - gaz) * 16.0;
                     g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                            "c" + c.x() + "_" + c.y(), c.pick().modelRef(), dx, dy, dz));
+                            "c" + c.x() + "_" + c.y(), c.pick().modelRef(), dx, dy, dz,
+                            refScales.getOrDefault(c.pick().modelRef(), 1.0)));
                     int ei = 0;
                     for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
                         g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
-                                "c" + c.x() + "_" + c.y() + "x" + (ei++), extra.modelRef(), dx, dy, dz));
+                                "c" + c.x() + "_" + c.y() + "x" + (ei++), extra.modelRef(),
+                                dx, dy, dz, refScales.getOrDefault(extra.modelRef(), 1.0)));
                     }
                 }
                 // the fullbright companions ride the 15/15 group's own frame
