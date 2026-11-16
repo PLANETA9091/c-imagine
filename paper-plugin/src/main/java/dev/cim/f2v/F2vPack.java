@@ -3876,7 +3876,7 @@ public final class F2vPack {
                 "fakemod:block/globe", CMD_BASE, "g0", 0, 0, true);
         GalleryPack.Resolved capture = new GalleryPack.Resolved(
                 "fakemod:block/globe#qabc123", CMD_BASE + 1, "g1", 0, 0, true, 3, 15, 0f);
-        GalleryPack.Resolved doorWindow = new GalleryPack.Resolved(
+        GalleryPack.Resolved doorCapture = new GalleryPack.Resolved(
                 "fakemod:block/door#qdef456", CMD_BASE + 4, "g4", 0, 0, true, 3, 15, 0f);
         GalleryPack.Resolved ct = new GalleryPack.Resolved(
                 "fakemod:block/globe#i0,i1", CMD_BASE + 2, "g2", 0, 0, true);
@@ -3913,29 +3913,26 @@ public final class F2vPack {
                         "fakemod:block/plain", null) == plain,
                 "14-dh: a sibling state without its own capture rides the plain composite");
 
-        // 14-dt THE MULTI-MESH LAW: a state with several captured meshes
-        // (the door's panel + window) replays ALL of them — the pick serves
-        // the first, remainingCapturedMeshes returns the rest, in order,
-        // excluded by identity (a CT/ctx pick of the same row adds nothing).
-        java.util.Map<String, java.util.List<GalleryPack.Resolved>> byQuadStateAll =
-                new java.util.HashMap<>();
-        byQuadStateAll.put("fakemod:block/door", java.util.List.of(capture, doorWindow));
+        // Native .ctx.tsv encodes q<hash>, including when one complete mesh
+        // serves a different state alias. It must beat a plain-model fallback.
+        byQuadHash.put("def456", doorCapture);
+        byState.put("fakemod:block/door_alias", plain);
         expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, capture,
-                        "fakemod:block/door").equals(java.util.List.of(doorWindow)),
-                "14-dt: the state's second captured mesh rides as the extra display");
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/door_alias", "qdef456") == doorCapture,
+                "native capture: q-prefixed context selects the complete mesh for a state alias");
         expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, doorWindow,
-                        "fakemod:block/door").equals(java.util.List.of(capture)),
-                "14-dt: whichever mesh the pick served, the others ride");
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/globe", "qabc123") == capture,
+                "native capture: context may select the canonical object without adding alternatives");
+        GalleryPack.Resolved emptyCapture = new GalleryPack.Resolved(
+                "fixture:door[half=upper,visible=false]#qa6b018eb65daa308", CMD_BASE + 5, "g5", 0, 0, true);
+        byQuadHash.put("a6b018eb65daa308", emptyCapture);
+        byState.put("fixture:other_empty_door", plain);
         expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, ct,
-                        "fakemod:block/globe").isEmpty(),
-                "14-dt: a state with one captured mesh has no extras");
-        expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, plain,
-                        "fakemod:block/plain").isEmpty(),
-                "14-dt: a state with no captures has no extras");
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fixture:other_empty_door", "qa6b018eb65daa308") == emptyCapture,
+                "native capture: observed empty context outranks a phantom plain model");
     }
 
     private static void capturedSpriteSelftest(List<String> failures) throws IOException {
