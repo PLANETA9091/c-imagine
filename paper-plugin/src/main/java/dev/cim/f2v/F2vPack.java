@@ -2300,6 +2300,55 @@ public final class F2vPack {
         return sb.toString();
     }
 
+    /**
+     * 14-e61 THE PAGE-COMPOSITE OVERLAY MERGE: append the page rows to the
+     * SERVED pack's {@code paper.json} in place. The merge is TEXTUAL on
+     * purpose: the seeded definition carries ~96k rows (315 MB measured on
+     * the run-496 seed) and a gson DOM would inflate it past every boot
+     * heap — while the emitter's layout is byte-stable (the same writer
+     * produced it), so the additions insert before the entries array's
+     * closing marker. The page thresholds (900000+) sit ABOVE every
+     * existing row (the gallery 100000+, the items 1798+, the fluids
+     * 400000+, the fluid cubes 410000+), so appending keeps the ascending
+     * order the range_dispatch semantics need. The emitter's per-entry model
+     * nodes are untouched verbatim (the 14-cz tint nodes and the
+     * transformation-carrying nodes keep their seed-baked shapes). A layout
+     * mismatch = a warning, no merge (the page lane then never spawns — the
+     * honest fallback to the per-cell path).
+     */
+    public static void mergeItemDefEntries(TreeMap<String, byte[]> entries,
+                                    List<Map.Entry<Float, String>> additions,
+                                    List<String> warnings) throws IOException {
+        if (additions.isEmpty()) {
+            return;
+        }
+        String host = "assets/minecraft/items/paper.json";
+        byte[] raw = entries.get(host);
+        if (raw == null) {
+            warnings.add("gallerypage: no paper.json in the served pack — page rows dropped");
+            return;
+        }
+        String body = new String(raw, StandardCharsets.UTF_8);
+        StringBuilder rows = new StringBuilder();
+        for (int i = 0; i < additions.size(); i++) {
+            Map.Entry<Float, String> a = additions.get(i);
+            rows.append("      {\"threshold\": ").append(a.getKey())
+                .append(", \"model\": ").append(itemModelNode(a.getValue())).append('}');
+            if (i + 1 < additions.size()) {
+                rows.append(",\n");
+            }
+        }
+        String marker = "\n    ],\n    \"fallback\"";
+        int cut = body.lastIndexOf(marker);
+        if (cut < 0 || !body.contains("\"entries\": [")) {
+            warnings.add("gallerypage: paper.json is not the emitter's layout — "
+                    + "the page rows dropped (the per-cell path rides)");
+            return;
+        }
+        String merged = body.substring(0, cut) + ",\n" + rows + body.substring(cut);
+        entries.put(host, merged.getBytes(StandardCharsets.UTF_8));
+    }
+
     static JsonObject itemModelNode(String ref) {
         return JsonParser.parseString("{\"type\":\"minecraft:model\",\"model\":\"" + ref
                 + "\"" + scaleField(ref) + "}").getAsJsonObject();

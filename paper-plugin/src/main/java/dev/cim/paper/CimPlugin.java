@@ -84,7 +84,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             List<dev.cim.f2v.GalleryPack.Resolved> gallery,
                             java.util.Map<String, Float> fluids,
                             java.util.Map<String, Float> fluidCubes,
-                            String sha1) {
+                            String sha1,
+                            java.util.Map<String, java.util.List<PageRow>> pageRows) {
+    }
+
+    /**
+     * 14-e61: one page-composite display row — the Resolved (cmd + model ref
+     * + the group's light pin), the page anchor cell (the display's spawn
+     * position = the anchor's center), the represented cell count and the
+     * merged element count (the 14-e60b budget receipt).
+     */
+    private record PageRow(dev.cim.f2v.GalleryPack.Resolved row,
+                           int ax, int ay, int az,
+                           int cells, int elements) {
     }
 
     /**
@@ -191,16 +203,20 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                         base.resolve("visual-gallery.resolved.tsv"))
                                 : List.of();
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
-                        readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
+                        readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1,
+                        java.util.Map.of());
                 int fastPort = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
                 dev.cim.f2v.PackHttp fastHttp = null;
                 // 14-di THE RUN-CAPTURE OVERLAY: the captures dir carries the truth
                 // client's ScreenArt dump for THIS run's menus; scenes the seed's
                 // walk never captured (the generic-screen class ceiling, the opener
                 // asymmetry) get real art here. One pass allocates the glyph numbers
-                // the pack and the replay agree on; the overlay zip is served at ITS
-                // sha1 and the play-phase offer pins that. Any failure falls back to
+                // the pack and the replay agree on. Any failure falls back to
                 // the plain seed pack — the named scene-gap reds stay, nothing crashes.
+                // 14-e61: the PackHttp.start moved BELOW the page-composite overlay
+                // so both overlays compose onto ONE served zip (servedZip/servedSha1).
+                Path servedZip = packZip;
+                String servedSha1 = cachedSha1;
                 if (Boolean.getBoolean("cim.f2v.screenOverlay")) {
                     try {
                         dev.cim.hud.ScreenPack.RunOverlay ov = dev.cim.hud.ScreenPack.mergeRunCaptures(
@@ -210,27 +226,83 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             dev.cim.f2v.F2vPack.validateDownloadSize(zipBytes.length);
                             Path overlayZip = base.resolve("pack-overlay.zip");
                             Files.write(overlayZip, zipBytes);
-                            String overlaySha1 = dev.cim.f2v.F2vPack.sha1Hex(zipBytes);
-                            fastHttp = dev.cim.f2v.PackHttp.start(overlayZip, fastPort, overlaySha1);
-                            visualPack = fastHttp;
+                            servedZip = overlayZip;
+                            servedSha1 = dev.cim.f2v.F2vPack.sha1Hex(zipBytes);
                             log().info(LOG_PREFIX + "f2v pack: FAST BOOT + 14-di RUN-CAPTURE OVERLAY — "
                                     + ov.newGlyphs() + " new glyph(s) over " + ov.seedGlyphs()
                                     + " seed glyph(s), scenes=" + ov.scenes().size()
                                     + ", font=" + ov.fontEntry()
-                                    + ", serving pack-overlay.zip sha1=" + overlaySha1);
+                                    + ", overlay staged sha1=" + servedSha1);
                         } else {
                             log().info(LOG_PREFIX + "f2v pack: 14-di overlay: no new run captures to serve");
                         }
                     } catch (Throwable t) {
                         log().warning(LOG_PREFIX + "f2v pack: 14-di overlay FAILED (serving the plain seed pack): " + t);
+                        servedZip = packZip;
+                        servedSha1 = cachedSha1;
                     }
                 }
-                if (fastHttp == null) {
-                    fastHttp = dev.cim.f2v.PackHttp.start(packZip, fastPort, cachedSha1);
+                // 14-e61 THE PAGE-COMPOSITE OVERLAY: the context-bleed repair's boot
+                // half. The seeded zip gains ONE page model per (flagged page, light
+                // group) — the union of the per-cell composites at their real wall
+                // offsets — plus the page CMD rows in paper.json. The replay then
+                // spawns ONE display per group instead of one per cell, so every
+                // crop's background is the page's own context (the truth's full-page
+                // render law) instead of the flat sky backdrop. Default OFF: without
+                // CIM_GALLERY_PAGE_COMPOSITE nothing changes (the per-cell path, the
+                // 614/614 frame contract). Any failure = the plain pack, per-cell rides.
+                java.util.Map<String, java.util.List<PageRow>> pageRows = java.util.Map.of();
+                String pageSpec = pageCompositeSpec();
+                if (pageSpec != null) {
+                    try {
+                        java.util.TreeMap<String, byte[]> pageEntries = readZipEntries(servedZip);
+                        java.util.List<String> pageLog = new java.util.ArrayList<>();
+                        java.util.Map<String, java.util.List<PageRow>> built =
+                                buildPageCompositeRows(pageEntries, fastGallery, pageSpec, pageLog);
+                        for (String line : pageLog) {
+                            log().info(LOG_PREFIX + "f2v pack: gallerypage " + line);
+                        }
+                        if (!built.isEmpty()) {
+                            java.util.List<java.util.Map.Entry<Float, String>> additions =
+                                    new java.util.ArrayList<>();
+                            int groupCount = 0;
+                            for (java.util.List<PageRow> l : built.values()) {
+                                groupCount += l.size();
+                                for (PageRow pr : l) {
+                                    additions.add(java.util.Map.entry(pr.row().cmd(), pr.row().modelRef()));
+                                }
+                            }
+                            dev.cim.f2v.F2vPack.mergeItemDefEntries(pageEntries, additions, pageLog);
+                            byte[] zipBytes = dev.cim.f2v.F2vPack.zip(pageEntries);
+                            dev.cim.f2v.F2vPack.validateDownloadSize(zipBytes.length);
+                            Path pageZip = base.resolve("pack-page.zip");
+                            Files.write(pageZip, zipBytes);
+                            servedZip = pageZip;
+                            servedSha1 = dev.cim.f2v.F2vPack.sha1Hex(zipBytes);
+                            pageRows = built;
+                            log().info(LOG_PREFIX + "f2v pack: FAST BOOT + 14-e61 PAGE-COMPOSITE OVERLAY — "
+                                    + built.size() + " page(s), " + groupCount
+                                    + " light-group display(s), " + additions.size()
+                                    + " page CMD row(s), serving pack-page.zip sha1=" + servedSha1);
+                        } else {
+                            log().info(LOG_PREFIX + "f2v pack: 14-e61 page overlay: no flagged page built ("
+                                    + pageSpec + ") — the per-cell path rides");
+                        }
+                    } catch (Throwable t) {
+                        log().warning(LOG_PREFIX + "f2v pack: 14-e61 page-composite overlay FAILED"
+                                + " (serving the plain pack, the per-cell path rides): " + t);
+                    }
                 }
+                fastHttp = dev.cim.f2v.PackHttp.start(servedZip, fastPort, servedSha1);
                 visualPack = fastHttp;
+                if (!pageRows.isEmpty()) {
+                    // the overlay state REPLACES the fast state's page rows (the
+                    // record built above carried Map.of() — rebuild with them)
+                    f2v = new F2vState(fastItems, fastBlocks, fastGallery,
+                            readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1, pageRows);
+                }
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
-                        + "serving the pre-boot build's zip, sha1=" + visualPack.sha1()
+                        + "serving " + servedZip.getFileName() + ", sha1=" + visualPack.sha1()
                         + ", " + fastGallery.size() + " gallery row(s), "
                         + fastItems.size() + " item row(s); rebuild-verification "
                         + "skipped (integrity = the server.properties sha1 pin "
@@ -259,7 +331,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
             }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
-                    readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
+                    readFluidTextureMap(base), readFluidCubeMap(base), result.sha1(),
+                    java.util.Map.of());
             int port = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
             dev.cim.f2v.PackHttp http =
                     dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
@@ -1239,6 +1312,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      */
     private final java.util.List<int[]> placedLightBlocks = new java.util.ArrayList<>();
 
+    /**
+     * 14-e61: the page-composite rows built by the boot overlay, keyed by
+     * the manifest base name ({@code gallery-create-p16}). Empty = the
+     * per-cell path (the default). Written once at boot init, read by the
+     * replay (the RCON thread) — volatile so the replay never sees a stale
+     * empty map.
+     */
+    private volatile java.util.Map<String, java.util.List<PageRow>> pageRows = java.util.Map.of();
+
     /** {@code x y z block sky} per scanned position; block light 1..15 kept. */
     public static java.util.List<int[]> parseLightFile(Path file) throws IOException {
         java.util.List<int[]> out = new java.util.ArrayList<>();
@@ -1404,6 +1486,321 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
+     * 14-e61: the page-composite lane spec — env {@code
+     * CIM_GALLERY_PAGE_COMPOSITE} or {@code -Dcim.gallery.pageComposite}.
+     * Value: {@code all} or a comma list of {@code <ns>:<page>} tokens
+     * ({@code create:16}). null/blank = OFF (the per-cell path, the
+     * unchanged default until the arbiter proves the page lane).
+     */
+    private static String pageCompositeSpec() {
+        String v = System.getenv("CIM_GALLERY_PAGE_COMPOSITE");
+        if (v == null || v.isBlank()) {
+            v = System.getProperty("cim.gallery.pageComposite");
+        }
+        return v == null || v.isBlank() ? null : v.trim();
+    }
+
+    /**
+     * 14-e61: one parsed page cell between the manifest read and the group
+     * merge — the resolved pick (+ the multi-mesh extras + the fullbright
+     * companion's wrapper ref) and the cell's computed light pin (the
+     * verbatim galleryPage chain: the shot-time front-air field, then the
+     * 14-cy captured pair, then the legacy emission pin).
+     */
+    private record ParsedCell(int x, int y, int z, String state, String ctKey, int emission,
+                              dev.cim.f2v.GalleryPack.Resolved pick,
+                              java.util.List<dev.cim.f2v.GalleryPack.Resolved> extras,
+                              String fbRef,
+                              int pinBlock, int pinSky) {
+    }
+
+    /** 14-e61: one page light group under synthesis. */
+    private static final class PageGroup {
+        final int pinBlock;
+        final int pinSky;
+        final java.util.List<dev.cim.f2v.GalleryPack.PageCellSpec> specs = new java.util.ArrayList<>();
+        int cells = 0;
+
+        PageGroup(int pinBlock, int pinSky) {
+            this.pinBlock = pinBlock;
+            this.pinSky = pinSky;
+        }
+    }
+
+    /**
+     * 14-e61 THE PAGE-COMPOSITE OVERLAY BUILDER: for every flagged page
+     * manifest, resolve the cells through the ONE pick law, compute the
+     * per-cell light pins, group the cells by pin, and synthesize ONE page
+     * model per group (the union of the per-cell wrappers at their real wall
+     * offsets, {@link dev.cim.f2v.GalleryPack#synthesizePageComposite}). The
+     * CMDs ride the fresh 900000+ space; the rows return keyed by the
+     * manifest base name for the replay's page lane.
+     *
+     * <p>The state-keyed tint/CT/emissive passes are SKIPPED by construction
+     * (the e60c scope narrowing): the page merge reuses the per-cell
+     * wrappers whose bakes already ran — nothing re-runs here.</p>
+     *
+     * @param entries  the served pack's entries (the per-cell wrapper JSONs
+     *                 live here; the page models are added into it)
+     * @param gallery  the seeded resolved rows (the pick maps' source)
+     * @param spec     the pageCompositeSpec() value
+     * @param log      the receipt lines (INFO — the caller logs them)
+     */
+    private static java.util.Map<String, java.util.List<PageRow>> buildPageCompositeRows(
+            java.util.TreeMap<String, byte[]> entries,
+            java.util.List<dev.cim.f2v.GalleryPack.Resolved> gallery,
+            String spec, java.util.List<String> log) {
+        java.util.Map<String, java.util.Set<Integer>> want = new java.util.HashMap<>();
+        boolean wantAll = false;
+        for (String tok : spec.split(",")) {
+            String t = tok.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            if (t.equalsIgnoreCase("all")) {
+                wantAll = true;
+                continue;
+            }
+            int c = t.indexOf(':');
+            if (c <= 0) {
+                log.add("spec token is not <ns>:<page>: " + t);
+                continue;
+            }
+            try {
+                want.computeIfAbsent(t.substring(0, c), k -> new java.util.HashSet<>())
+                        .add(Integer.parseInt(t.substring(c + 1)));
+            } catch (NumberFormatException bad) {
+                log.add("spec page is not a number: " + t);
+            }
+        }
+        if (!wantAll && want.isEmpty()) {
+            return java.util.Map.of();
+        }
+
+        // THE PICK MAPS (verbatim from galleryPage: byState / byQuadHash /
+        // byQuadState / byQuadStateAll)
+        java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byState = new java.util.HashMap<>();
+        java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadHash = new java.util.HashMap<>();
+        java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadState = new java.util.HashMap<>();
+        java.util.Map<String, java.util.List<dev.cim.f2v.GalleryPack.Resolved>> byQuadStateAll =
+                new java.util.HashMap<>();
+        java.util.Map<Float, String> byCmd = new java.util.HashMap<>();
+        for (dev.cim.f2v.GalleryPack.Resolved r : gallery) {
+            byState.putIfAbsent(r.stateId(), r);
+            byCmd.putIfAbsent(r.cmd(), r.modelRef());
+            String id = r.stateId();
+            int q = id.indexOf("#q");
+            if (q >= 0) {
+                byQuadHash.putIfAbsent(id.substring(q + 2), r);
+                byQuadState.putIfAbsent(id.substring(0, q), r);
+                byQuadStateAll.computeIfAbsent(id.substring(0, q),
+                        ignored -> new java.util.ArrayList<>()).add(r);
+            }
+        }
+
+        Path scenes = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes");
+        java.util.regex.Pattern manifestName =
+                java.util.regex.Pattern.compile("gallery-([a-z0-9_]+)-p(\\d+)\\.tsv");
+        java.util.List<Path> manifests = new java.util.ArrayList<>();
+        String[] names = scenes.toFile().list();
+        if (names != null) {
+            java.util.Arrays.sort(names);
+            for (String n : names) {
+                if (manifestName.matcher(n).matches()) {
+                    manifests.add(scenes.resolve(n));
+                }
+            }
+        } else {
+            log.add("scenes dir unreadable: " + scenes);
+        }
+
+        java.util.Map<String, java.util.List<PageRow>> out = new java.util.LinkedHashMap<>();
+        int modelIdx = 0;
+        float nextCmd = dev.cim.f2v.GalleryPack.PAGE_CMD_BASE;
+        for (Path mf : manifests) {
+            String name = mf.getFileName().toString();
+            java.util.regex.Matcher mm = manifestName.matcher(name);
+            if (!mm.matches()) {
+                continue;
+            }
+            String ns = mm.group(1);
+            int page = Integer.parseInt(mm.group(2));
+            java.util.Set<Integer> pages = want.get(ns);
+            if (!wantAll && (pages == null || !pages.contains(page))) {
+                continue;
+            }
+            String base = name.substring(0, name.length() - 4);
+
+            java.util.List<String[]> rows = new java.util.ArrayList<>();
+            try {
+                for (String line : dev.cim.f2v.GalleryPack.readSceneLines(mf)) {
+                    if (line.startsWith("cell\t")) {
+                        rows.add(line.split("\t", -1));
+                    }
+                }
+            } catch (IOException ioe) {
+                log.add(base + ": manifest read failed: " + ioe);
+                continue;
+            }
+            if (rows.isEmpty()) {
+                log.add(base + ": no cell rows — the page lane skipped");
+                continue;
+            }
+            // the ctx tile indices (verbatim source: galleryPage's ctx read)
+            java.util.Map<String, String> ctByPos = new java.util.HashMap<>();
+            Path ctxMf = mf.resolveSibling(base + ".ctx.tsv");
+            if (Files.isRegularFile(ctxMf)) {
+                try {
+                    for (String line : Files.readAllLines(ctxMf, StandardCharsets.UTF_8)) {
+                        if (line.isBlank() || line.startsWith("#")) {
+                            continue;
+                        }
+                        String[] parts = line.split("\t", -1);
+                        if (parts.length >= 4) {
+                            ctByPos.put(parts[0] + "," + parts[1] + "," + parts[2], parts[3]);
+                        }
+                    }
+                } catch (IOException ioe) {
+                    log.add(base + ": ctx read failed: " + ioe);
+                }
+            }
+            // the shot-time light field (verbatim source: galleryPage's pin chain)
+            java.util.Map<String, int[]> lightField = lightFieldOrEmpty(mf.resolveSibling(base + ".light"));
+
+            // PASS 1: parse, resolve, pin
+            java.util.List<ParsedCell> parsed = new java.util.ArrayList<>();
+            int ax = Integer.MAX_VALUE, ay = Integer.MAX_VALUE, az = Integer.MAX_VALUE;
+            for (String[] row : rows) {
+                if (row.length < 5) {
+                    continue;
+                }
+                int x, y, z;
+                try {
+                    x = Integer.parseInt(row[1]);
+                    y = Integer.parseInt(row[2]);
+                    z = Integer.parseInt(row[3]);
+                } catch (NumberFormatException bad) {
+                    continue;
+                }
+                ax = Math.min(ax, x);
+                ay = Math.min(ay, y);
+                az = Math.min(az, z);
+                String state = row[4];
+                String ctKey = ctByPos.get(row[1] + "," + row[2] + "," + row[3]);
+                dev.cim.f2v.GalleryPack.Resolved pick = dev.cim.f2v.GalleryPack.pickResolved(
+                        byState, byQuadState, byQuadHash, state, ctKey);
+                if (pick == null) {
+                    log.add(base + ": no pack CMD for " + state + " — cell "
+                            + row[1] + "," + row[2] + "," + row[3] + " rides the page as a hole");
+                    continue;
+                }
+                int emission = 0;
+                if (row.length > 6) {
+                    try {
+                        emission = Integer.parseInt(row[6].trim());
+                    } catch (NumberFormatException bad) {
+                        emission = 0;
+                    }
+                }
+                final int fEmission = Math.min(15, Math.max(0, emission));
+                final int[] fieldLight = frontAirLight(lightField, row[1], row[2], row[3]);
+                final boolean captured = pick.lightBlock() >= 0 && pick.lightSky() >= 0;
+                final int pinBlock = fieldLight != null ? fieldLight[0]
+                        : captured ? Math.min(15, Math.max(0, pick.lightBlock())) : fEmission;
+                final int pinSky = fieldLight != null ? fieldLight[1]
+                        : captured ? Math.min(15, Math.max(0, pick.lightSky())) : 15;
+                // THE MULTI-MESH EXTRAS (verbatim guard: only when the pick
+                // rode the bare-state capture row)
+                java.util.List<dev.cim.f2v.GalleryPack.Resolved> extras =
+                        pick == byQuadState.get(state)
+                                ? dev.cim.f2v.GalleryPack.remainingCapturedMeshes(
+                                        byQuadStateAll, pick, state)
+                                : java.util.List.of();
+                // THE FULLBRIGHT COMPANION: the companion's wrapper resolves
+                // through its cmd (the fb display rides the same model ref
+                // lookup the per-cell path does via the item def)
+                String fbRef = null;
+                if (pick.fbCmd() != 0f) {
+                    fbRef = byCmd.get(pick.fbCmd());
+                    if (fbRef == null) {
+                        log.add(base + ": fullbright cmd " + pick.fbCmd()
+                                + " has no wrapper — the companion rides the cell hole");
+                    }
+                }
+                parsed.add(new ParsedCell(x, y, z, state, ctKey, fEmission, pick, extras,
+                        fbRef, pinBlock, pinSky));
+            }
+            if (parsed.isEmpty()) {
+                log.add(base + ": no resolvable cell — the page lane skipped");
+                continue;
+            }
+
+            // PASS 2: group by pin, page-frame shifts off the GLOBAL anchor
+            java.util.Map<String, PageGroup> groups = new java.util.LinkedHashMap<>();
+            for (ParsedCell c : parsed) {
+                double dx = (c.x() - ax) * 16.0;
+                double dy = (c.y() - ay) * 16.0;
+                double dz = (c.z() - az) * 16.0;
+                PageGroup g = groups.computeIfAbsent(c.pinBlock() + "/" + c.pinSky(),
+                        k -> new PageGroup(c.pinBlock(), c.pinSky()));
+                g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
+                        "c" + c.x() + "_" + c.y(), c.pick().modelRef(), dx, dy, dz));
+                g.cells++;
+                int ei = 0;
+                for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
+                    g.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
+                            "c" + c.x() + "_" + c.y() + "x" + (ei++), extra.modelRef(), dx, dy, dz));
+                }
+                if (c.fbRef() != null) {
+                    PageGroup fb = groups.computeIfAbsent("15/15", k -> new PageGroup(15, 15));
+                    fb.specs.add(new dev.cim.f2v.GalleryPack.PageCellSpec(
+                            "c" + c.x() + "_" + c.y() + "f", c.fbRef(), dx, dy, dz));
+                    fb.cells++;
+                }
+            }
+
+            // PASS 3: synthesize one page model per group
+            java.util.List<PageRow> pageRowsBuilt = new java.util.ArrayList<>();
+            int groupNo = 0;
+            int totalElements = 0;
+            for (java.util.Map.Entry<String, PageGroup> ge : groups.entrySet()) {
+                PageGroup g = ge.getValue();
+                dev.cim.f2v.GalleryPack.PageSynth synth =
+                        dev.cim.f2v.GalleryPack.synthesizePageComposite(
+                                g.specs, modelIdx, entries, log);
+                if (synth == null) {
+                    log.add(base + ": group g" + groupNo + " pin=" + g.pinBlock + "/"
+                            + g.pinSky + " synthesized to NOTHING — the group rides the hole");
+                    groupNo++;
+                    continue;
+                }
+                log.add(base + ": group g" + groupNo + " pin=" + g.pinBlock + "/" + g.pinSky
+                        + " cells=" + g.cells + " specs=" + g.specs.size()
+                        + " elements=" + synth.elements() + " ref=" + synth.ref());
+                totalElements += synth.elements();
+                pageRowsBuilt.add(new PageRow(
+                        new dev.cim.f2v.GalleryPack.Resolved("page:" + base + "#g" + groupNo,
+                                nextCmd, synth.ref(), 0, 0, true, g.pinBlock, g.pinSky, 0f),
+                        ax, ay, az, g.cells, synth.elements()));
+                nextCmd += 1.0f;
+                modelIdx++;
+                groupNo++;
+            }
+            if (!pageRowsBuilt.isEmpty()) {
+                int totalCells = 0;
+                for (PageRow pr : pageRowsBuilt) {
+                    totalCells += pr.cells();
+                }
+                log.add(base + ": PAGE LANE READY — " + pageRowsBuilt.size() + " group(s), "
+                        + totalCells + " cell(s), " + totalElements + " element(s), anchor="
+                        + ax + "," + ay + "," + az);
+                out.put(base, pageRowsBuilt);
+            }
+        }
+        return out;
+    }
+
+    /**
      * Replay one truth-leg gallery page manifest as ItemDisplay rigs:
      * {@code c-imagine/scenes/gallery-<ns>-p<page>.tsv} rows
      * {@code cell<TAB>x<TAB>y<TAB>TABz<TAB>state} — one display per cell at
@@ -1548,6 +1945,70 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             String lightName = (mfName.endsWith(".tsv")
                     ? mfName.substring(0, mfName.length() - 4) : mfName) + ".light";
             placeLightsFromTruth(wLights, mf.resolveSibling(lightName));
+            // 14-e61 THE PAGE-COMPOSITE LANE: one display per (page, light
+            // group) carrying the page's ENTIRE cell set at the real wall
+            // offsets — the context-bleed repair's replay half (the synthesis
+            // half rode the boot overlay). The anchor = the page's min cell;
+            // the model already carries the cell offsets, so the display
+            // spawns at the anchor with the SAME measured compensation the
+            // per-cell composite rows ride (the negated 0/0 rotations + the
+            // PI yaw counter) and the SAME front-air rig law (the wall
+            // groups pin (0,14+) -> the display spawns in the anchor's front
+            // air, the model translated +1z back — the pixel-neutral trick
+            // that lifts the positional light out of the solid wall). The
+            // per-cell loop below is SKIPPED for a page lane page — the
+            // crops' background becomes the page's own context, by
+            // construction.
+            if (!pageRows.isEmpty()) {
+                String pageKey = mfName.endsWith(".tsv")
+                        ? mfName.substring(0, mfName.length() - 4) : mfName;
+                java.util.List<PageRow> prows = pageRows.get(pageKey);
+                if (prows != null && !prows.isEmpty()) {
+                    int groups = 0, cellsRepresented = 0, elementsTotal = 0;
+                    for (PageRow pr : prows) {
+                        final int pb = Math.min(15, Math.max(0, pr.row().lightBlock()));
+                        final int ps = Math.min(15, Math.max(0, pr.row().lightSky()));
+                        final boolean pageRig = pb == 0 && ps >= 14;
+                        final float pageShift = pageRig ? 1.0f : 0.0f;
+                        org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
+                                pr.ax() + 0.5, pr.ay() + 0.5, pr.az() + 0.5 - pageShift);
+                        org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
+                                new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ + pageShift),
+                                new org.joml.Quaternionf().rotateY((float) Math.PI),
+                                new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
+                                new org.joml.Quaternionf());
+                        final float pageCmd = pr.row().cmd();
+                        ItemStack pStack = new ItemStack(Material.matchMaterial("paper"));
+                        pStack.editMeta(meta -> {
+                            CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+                            cmd.setFloats(List.of(pageCmd));
+                            meta.setCustomModelDataComponent(cmd);
+                        });
+                        org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
+                                org.bukkit.entity.ItemDisplay.class, e -> {
+                                    e.setItemStack(pStack);
+                                    e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
+                                    e.setTransformation(tr);
+                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(pb, ps));
+                                });
+                        log().info(LOG_PREFIX + "f2v gallery: page " + page + " PAGE-LANE "
+                                + pr.row().stateId() + " cmd=" + pageCmd
+                                + " anchor=" + pr.ax() + "," + pr.ay() + "," + pr.az()
+                                + " cells=" + pr.cells() + " elements=" + pr.elements()
+                                + " pin=" + pb + "/" + ps
+                                + " rig=" + pageRig
+                                + " uuid=" + display.getUniqueId());
+                        groups++;
+                        cellsRepresented += pr.cells();
+                        elementsTotal += pr.elements();
+                    }
+                    log().info(LOG_PREFIX + "f2v gallery: page " + page + " PAGE-LANE DONE — "
+                            + groups + " group display(s), " + cellsRepresented
+                            + " cell(s), " + elementsTotal + " element(s)"
+                            + " (the per-cell loop skipped)");
+                    return cellsRepresented;
+                }
+            }
             for (String[] row : cells) {
                 // cell<TAB>x<TAB>y<TAB>z<TAB>state
                 if (row.length < 5) {

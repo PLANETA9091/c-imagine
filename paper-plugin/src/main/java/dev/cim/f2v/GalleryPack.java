@@ -1941,6 +1941,213 @@ public final class GalleryPack {
         return out;
     }
 
+    // ---- 14-e61 THE PAGE-COMPOSITE SYNTHESIS --------------------------------------
+    //
+    // THE CONTEXT-BLEED REPAIR (the e58e pixel forensics + the e58f options
+    // analysis + the e60 design): the truth's per-cell crops are the crops of
+    // ONE full-page native render — the whole wall with depth, the pocket
+    // interiors, the neighbour continuation, the shadow gradients. The ours
+    // side spawns ONE DISPLAY PER CELL, so every crop's background is the flat
+    // sky-bright backdrop instead of the wall context. THE FIX = one display
+    // per (page, light group) carrying the page's ENTIRE cell set: the union
+    // of the per-cell composites at their real wall offsets. The crops are cut
+    // from THAT image with the UNCHANGED join, and the projection matches the
+    // truth's by construction.
+    //
+    // THE MECHANISM: this synthesis reuses the per-cell wrapper models ALREADY
+    // emitted by {@link #synthesizeComposite} (their bakes — the 14-cz shades,
+    // the tint/CT/emissive state-keyed routes, the 14-bs face tiles — already
+    // ran at the per-cell build, so the page model carries them verbatim and
+    // NO state-keyed pass re-runs here: the per-cell-prefixed keys would never
+    // match the state-keyed tables). Each cell's elements are unscaled from
+    // that cell's own normalize factor ({@link #modelScale}), renamed with a
+    // per-cell texture prefix, shifted by (dx, dy, dz) model units into the
+    // page frame, and merged. The merged page model normalizes ONCE (the
+    // 176x112-unit full page lands at scale 8) and the compensating factor
+    // rides the existing MODEL_SCALE contract ({@link #recordScale} -> the
+    // item definition's transformation).
+
+    /** First auto-assigned custom_model_data float for PAGE composite rows
+     *  (above the gallery 100000+ and the fluid 400000+ spaces). */
+    public static final float PAGE_CMD_BASE = 900_000.0f;
+
+    /** Namespace + dir the page-composite models emit under. */
+    static final String PAGE_NS = "c-imagine";
+    static final String PAGE_PREFIX = "assets/" + PAGE_NS + "/models/gallerypage/pg";
+    static final String PAGE_REF_PREFIX = PAGE_NS + ":gallerypage/pg";
+
+    /**
+     * One cell of a page composite: the per-cell wrapper model ref (the
+     * {@code Resolved.modelRef()} the pick law chose — extras included),
+     * the unique per-cell texture-prefix key, and the cell offset from the
+     * page anchor IN MODEL UNITS (16 per block, measured net-identity: the
+     * PI yaw compensation cancels, so model units map 1:1 onto world
+     * offsets — the same convention {@link #translateCompositeElements}
+     * rides with the door slides).
+     */
+    public record PageCellSpec(String key, String modelRef, double dx, double dy, double dz) {
+    }
+
+    /** The synthesis receipt: the model ref + the merged element count (the
+     *  14-e60b element-budget probe — measured and logged per page group). */
+    public record PageSynth(String ref, int elements) {
+    }
+
+    /**
+     * Merge the page's per-cell composites into ONE page model. Cells whose
+     * wrapper is missing or carries no elements are skipped with a warning
+     * (the honest hole — the same receipt the per-cell path logs). Returns
+     * null only when NO cell contributed.
+     */
+    public static PageSynth synthesizePageComposite(List<PageCellSpec> cells,
+                                                    int idx,
+                                                    TreeMap<String, byte[]> entries,
+                                                    List<String> warnings) {
+        JsonArray mergedElements = new JsonArray();
+        Map<String, String> textures = new TreeMap<>();
+        int cellNo = 0;
+        for (PageCellSpec c : cells) {
+            JsonObject model = loadEmittedModel(c.modelRef(), entries);
+            if (model == null || !model.has("elements")
+                    || model.getAsJsonArray("elements").size() == 0) {
+                warnings.add("gallerypage: cell wrapper missing or empty: "
+                        + c.modelRef() + " (cell " + c.key() + ")");
+                cellNo++;
+                continue;
+            }
+            String prefix = c.key() + "_";
+            for (Map.Entry<String, String> t : extractWrapperTextures(model).entrySet()) {
+                textures.put(prefix + t.getKey(), t.getValue());
+            }
+            JsonArray els = model.getAsJsonArray("elements").deepCopy();
+            double kc = modelScale(c.modelRef());
+            if (kc != 1) {
+                // the per-cell normalize shrank this wrapper: restore true
+                // model units (the center-8 inverse of normalizeCompositeBounds)
+                // BEFORE the page shift, so every cell sits in one frame
+                unscaleElementCoords(els, kc);
+            }
+            els = shiftElementsXYZ(els, c.dx(), c.dy(), c.dz());
+            for (JsonElement el : els) {
+                JsonObject e = inflateDegenerate(el.getAsJsonObject());
+                mergedElements.add(renameTextureRefs(e, prefix));
+            }
+            cellNo++;
+        }
+        if (mergedElements.size() == 0) {
+            return null;
+        }
+        double displayScale = normalizeCompositeBounds(mergedElements);
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.addProperty("render_type", "minecraft:cutout");
+        JsonObject texObj = new JsonObject();
+        for (Map.Entry<String, String> t : textures.entrySet()) {
+            texObj.addProperty(t.getKey(), t.getValue());
+        }
+        wrapper.add("textures", texObj);
+        wrapper.add("elements", mergedElements);
+        recordScale(PAGE_REF_PREFIX + idx, displayScale);
+        entries.put(PAGE_PREFIX + idx + ".json", wrapper.toString()
+                .getBytes(StandardCharsets.UTF_8));
+        return new PageSynth(PAGE_REF_PREFIX + idx, mergedElements.size());
+    }
+
+    /** Load one already-emitted wrapper model ({@code ns:path}) from the
+     *  pack's entry tree, or null when absent. */
+    private static JsonObject loadEmittedModel(String ref, TreeMap<String, byte[]> entries) {
+        int colon = ref.indexOf(':');
+        if (colon <= 0) {
+            return null;
+        }
+        String file = "assets/" + ref.substring(0, colon) + "/models/"
+                + ref.substring(colon + 1) + ".json";
+        byte[] raw = entries.get(file);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return com.google.gson.JsonParser.parseString(
+                    new String(raw, StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (Exception bad) {
+            return null;
+        }
+    }
+
+    /** The wrapper's texture map (the synthesized composites always carry one). */
+    private static Map<String, String> extractWrapperTextures(JsonObject model) {
+        Map<String, String> out = new TreeMap<>();
+        if (model.has("textures") && model.get("textures").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> e : model.getAsJsonObject("textures").entrySet()) {
+                out.put(e.getKey(), e.getValue().getAsString());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Shift every element by (dx, dy, dz) model units: the from/to boxes AND
+     * the rotation origins (a shifted origin keeps the baked rotation's
+     * pivot glued to its element — the same contract translateCompositeElements'
+     * box-only shift satisfies trivially because the slides never carry a
+     * rotation origin).
+     */
+    private static JsonArray shiftElementsXYZ(JsonArray elements, double dx, double dy, double dz) {
+        JsonArray out = new JsonArray(elements.size());
+        for (JsonElement el : elements) {
+            JsonObject e = el.getAsJsonObject().deepCopy();
+            if (e.has("from")) {
+                e.add("from", shiftVecXYZ(e.getAsJsonArray("from"), dx, dy, dz));
+            }
+            if (e.has("to")) {
+                e.add("to", shiftVecXYZ(e.getAsJsonArray("to"), dx, dy, dz));
+            }
+            if (e.has("rotation") && e.getAsJsonObject("rotation").has("origin")) {
+                JsonObject rot = e.getAsJsonObject("rotation").deepCopy();
+                rot.add("origin", shiftVecXYZ(rot.getAsJsonArray("origin"), dx, dy, dz));
+                e.add("rotation", rot);
+            }
+            out.add(e);
+        }
+        return out;
+    }
+
+    private static JsonArray shiftVecXYZ(JsonArray v, double dx, double dy, double dz) {
+        JsonArray out = new JsonArray();
+        out.add(v.get(0).getAsDouble() + dx);
+        out.add(v.get(1).getAsDouble() + dy);
+        out.add(v.get(2).getAsDouble() + dz);
+        return out;
+    }
+
+    /**
+     * The inverse of {@link #normalizeCompositeBounds}' coordinate encoding
+     * (c -> 8 + (c - 8) * k): restore the true model units a shrunken wrapper
+     * stored. Implicit UVs are unaffected — the per-cell normalize
+     * materialized them BEFORE scaling, and UVs live in texture space.
+     */
+    private static void unscaleElementCoords(JsonArray elements, double k) {
+        for (JsonElement el : elements) {
+            JsonObject e = el.getAsJsonObject();
+            List<JsonArray> positions = new ArrayList<>();
+            if (e.has("from")) {
+                positions.add(e.getAsJsonArray("from"));
+            }
+            if (e.has("to")) {
+                positions.add(e.getAsJsonArray("to"));
+            }
+            if (e.has("rotation") && e.getAsJsonObject("rotation").has("origin")) {
+                positions.add(e.getAsJsonObject("rotation").getAsJsonArray("origin"));
+            }
+            for (JsonArray position : positions) {
+                for (int axis = 0; axis < 3; axis++) {
+                    double c = position.get(axis).getAsDouble();
+                    position.set(axis, new com.google.gson.JsonPrimitive(8 + (c - 8) * k));
+                }
+            }
+        }
+    }
+
     /**
      * The near-miss sampling classes — the sprites whose face windows bake
      * into exact-pixel objcut tiles (14-bs doors, 14-cb the ae2 chiseled
