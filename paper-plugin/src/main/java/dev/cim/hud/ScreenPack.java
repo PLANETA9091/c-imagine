@@ -1669,7 +1669,7 @@ public final class ScreenPack {
         // 14-di the run-capture overlay selftest: a synthetic seed pack, a
         // synthetic ScreenArt dump, the whole merge law offline (numbering,
         // replacement law, font append, the no-jars merge that replaced the rebake).
-        if (args.length > 2 && args[2].equals("overlay")) {
+        {
             Path t = Files.createTempDirectory("cim-overlay");
             Path mods = t.resolve("mods");
             Path ci = t.resolve("c-imagine");
