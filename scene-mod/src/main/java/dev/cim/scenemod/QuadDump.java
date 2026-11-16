@@ -581,14 +581,41 @@ final class QuadDump {
      *  shot-state discriminator the 14:15Z bytecode guard requires: the field
      *  starts at OPEN?1:0 in the constructor, so a value disagreeing with the
      *  blockstate's open property names the capture-side pose bug. A failed
-     *  read costs the field, never the dump (the appendBlockEntity law). */
+     *  read costs the field, never the dump (the appendBlockEntity law).
+     *  14-e57f bytecode fix: the field is create's LerpedFloat, which does
+     *  NOT override toString (the upstream source read), so the raw
+     *  f.get(be) printed the object hash — useless. The hop now invokes the
+     *  public getValue(float) on the field's object (pt=1 = the value field
+     *  exactly, the interpolator's lerp(1, prev, value) = value) and prints
+     *  the float; the chase law = 0.15/tick linear toward open?1:0, the
+     *  fresh-restore law = animation == open?1:0 (no NBT persistence: the
+     *  door BE has no write override and addBehaviours is empty, so every
+     *  client restore re-runs the constructor). */
     private static String doorAnim(BlockEntity be) {
         for (Class<?> c = be.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
             for (String name : new String[] {"animation", "anim", "Anim", "animPos"}) {
                 try {
                     java.lang.reflect.Field f = c.getDeclaredField(name);
                     f.setAccessible(true);
-                    return name + "=" + f.get(be);
+                    Object v = f.get(be);
+                    if (v == null) {
+                        return name + "=null";
+                    }
+                    try {
+                        java.lang.reflect.Method g = v.getClass().getMethod("getValue", float.class);
+                        Object r = g.invoke(v, 1.0f);
+                        return name + "=" + String.format("%.3f", ((Number) r).floatValue());
+                    } catch (ReflectiveOperationException inner) {
+                        // not a lerped float (or the method hid): fall back to
+                        // the value field hop, then the raw toString
+                        try {
+                            java.lang.reflect.Field vf = v.getClass().getDeclaredField("value");
+                            vf.setAccessible(true);
+                            return name + "=v" + vf.get(v);
+                        } catch (ReflectiveOperationException inner2) {
+                            return name + "=" + v;
+                        }
+                    }
                 } catch (ReflectiveOperationException ignored) {
                     // try the next name, then the superclass
                 } catch (Throwable t) {
