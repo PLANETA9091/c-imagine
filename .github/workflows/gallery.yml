@@ -1069,6 +1069,20 @@ jobs:
           echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
+      - name: preserve native capture receipts with their original provenance
+        if: ${{ always() && hashFiles('truth-client/client-dump.out') != '' }}
+        env:
+          CAPTURE_SOURCE_SHA: ${{ github.sha }}
+          CAPTURE_RUN_ID: ${{ github.run_id }}
+          CAPTURE_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
+        run: |
+          set -euo pipefail
+          mkdir -p seed-pack/diagnostics
+          cp truth-client/client-dump.out seed-pack/diagnostics/
+          printf 'source_sha=%s\norigin_run_id=%s\ninputs=%s\n' \
+            "$CAPTURE_SOURCE_SHA" "$CAPTURE_RUN_ID" "$CAPTURE_INPUTS" \
+            > seed-pack/diagnostics/origin.txt
+
       - name: save seed cache (success-only — a partial seed-pack must never poison the key)
         if: success() && steps.seed-verify.outputs.hit != 'true'
         uses: actions/cache/save@v4
@@ -1086,6 +1100,18 @@ jobs:
             seed-pack/screens
             seed-pack/f2v
             seed-pack/plugin
+            seed-pack/diagnostics
+          if-no-files-found: error
+
+      # A cache hit does not execute NeoForge. Keep the original capture log
+      # and origin, rather than attributing an old receipt to the replay run.
+      # Older caches without diagnostics leave this artifact absent.
+      - name: upload original native capture diagnostics
+        if: ${{ always() && hashFiles('seed-pack/diagnostics/client-dump.out') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-native-diagnostics
+          path: seed-pack/diagnostics
           if-no-files-found: error
 
       # the pack BYTES themselves, always — local probes must debug the exact

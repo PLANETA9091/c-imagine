@@ -474,6 +474,10 @@ final class QuadDump {
             }
             BlockEntityRenderer<BlockEntity> renderer = mc.getBlockEntityRenderDispatcher().getRenderer(be);
             if (renderer == null) {
+                if (isDoorBER(be)) {
+                    LOGGER.info("[cimscene] door-BER diag state={} pos={} backingState={}: no renderer registered",
+                            state, pos, mc.level.getBlockState(pos));
+                }
                 if (isNixieRenderer(be)) {
                     LOGGER.info("[cimscene] 14-dn text-quads diag {}: no renderer registered", state.getBlock());
                 }
@@ -486,8 +490,8 @@ final class QuadDump {
                     || !renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition())) {
                 berNotRendered++;
                 if (isDoorBER(be)) {
-                    LOGGER.info("[cimscene] 14-e51 door-BER diag {}: not rendered (typeValid={} shouldRender={})",
-                            state.getBlock(), be.getType().isValid(state),
+                    LOGGER.info("[cimscene] door-BER diag state={} pos={} backingState={}: not rendered (typeValid={} shouldRender={})",
+                            state, pos, mc.level.getBlockState(pos), be.getType().isValid(state),
                             renderer.shouldRender(be, mc.gameRenderer.getMainCamera().getPosition()));
                 }
                 if (isNixieRenderer(be)) {
@@ -512,8 +516,9 @@ final class QuadDump {
                         capture.out.length(), capture.foreign);
             }
             if (isDoorBER(be)) {
-                LOGGER.info("[cimscene] 14-e51 door-BER diag {}: renderer={} outLen={} foreign={}",
-                        state.getBlock(), renderer.getClass().getName(), capture.out.length(), capture.foreign);
+                LOGGER.info("[cimscene] door-BER diag state={} pos={} backingState={}: renderer={} outLen={} foreign={}",
+                        state, pos, mc.level.getBlockState(pos), renderer.getClass().getName(),
+                        capture.out.length(), capture.foreign);
             }
         } catch (Throwable t) {
             berFailed++;
@@ -532,10 +537,9 @@ final class QuadDump {
         return cls.contains("nixie") || type.toLowerCase().contains("nixie");
     }
 
-    /** 14-e51: the door-BER diagnostic — the create door family's capture
-     *  stream lands in the boot log (the renderer class, the emitted length,
-     *  the foreign count, the shouldRender verdict) so the next run answers
-     *  whether the isolated-BE invocation is the swung-leaf pose source. */
+    /** Native dump client receipts identify the restored state and the backing
+     *  level separately: a snapshot BE can point at an unrelated live page.
+     *  The seed artifact owns this log, including on subsequent cache hits. */
     private static boolean isDoorBER(BlockEntity be) {
         String type = String.valueOf(be.getType());
         String cls = be.getClass().getName().toLowerCase();
