@@ -716,6 +716,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             String worldgenProbe = System.getenv("CIM_WORLDGEN_PROBE");
             if (worldgenProbe != null && !worldgenProbe.isBlank()) {
                 dev.cim.worldgen.ModWorldgen.awaitReady(120_000L);
+                // The chunks generated before the layer answered (the spawn area) are decorated by the backfill
+                // on the main thread; the probe reads the counters only once they are all done (pending=0).
+                dev.cim.worldgen.ModWorldgen.awaitBackfill(120_000L);
                 String carrierId = worldgenProbe.trim();
                 World overworld = getServer().getWorlds().get(0);
                 for (String line : callSync(() -> dev.cim.worldgen.ModWorldgen.probe(overworld, carrierId, 100, 100, 3, 70))) {

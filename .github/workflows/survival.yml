@@ -298,7 +298,16 @@ jobs:
           [ -n "$ZINC" ] && [ "$ZINC" -ge 1 ] || fail "no create:zinc_ore carrier below y=70 in the probe chunks: $PROBE"
           echo "$PROBE"
           grep -m1 -E '\[cim-worldgen\] probe: chunks=' "$B1" || true
-          echo "survival smoke: every assertion held for $SURVIVAL_ITEM (carrier $KEY, restart, break); worldgen: $ZINC zinc carrier(s)"
+          # 7b. Backfill: the spawn chunks generated before the layer answered get their mod features once it is
+          #     ready (the probe waits for the backfill; pending=0 is the proof that none is left waiting).
+          BF=$(grep -m1 -E '\[c-imagine\] worldgen: backfilled [0-9]+ chunk' "$B1") \
+            || fail "no '[c-imagine] worldgen: backfilled N chunk(s)' line in boot 1 (the pre-layer chunks were not decorated)"
+          BF_N=$(sed -n 's/.*worldgen: backfilled \([0-9]*\) chunk.*/\1/p' <<<"$BF")
+          [ -n "$BF_N" ] && [ "$BF_N" -ge 1 ] || fail "the backfill decorated no chunk: $BF"
+          echo "$BF"
+          grep -m1 -E '\[cim-worldgen\] probe: chunks=.* pending=0 ' "$B1" >/dev/null \
+            || fail "chunks still pending after the backfill (the probe stats line: $(grep -m1 -E '\[cim-worldgen\] probe: chunks=' "$B1"))"
+          echo "survival smoke: every assertion held for $SURVIVAL_ITEM (carrier $KEY, restart, break); worldgen: $ZINC zinc carrier(s), $BF_N backfilled chunk(s)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

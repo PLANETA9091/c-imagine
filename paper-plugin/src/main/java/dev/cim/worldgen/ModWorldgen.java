@@ -8,12 +8,14 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Biome;
@@ -32,15 +34,19 @@ import org.bukkit.plugin.Plugin;
  * real feature code in the layer ({@code dev.cim.live.Worldgen}) and written back here.
  *
  * <p>A {@link BlockPopulator} per overworld, added at world init. For each chunk it snapshots the
- * chunk's blocks and biomes through the {@link LimitedRegion} (the populated chunk only), asks the
- * layer, and writes the answer: vanilla states as they are, a mod block as its carrier (the note-block
- * or mushroom slot its ledger row names, see {@link F2vPack#carrierState}). A mod block on the display
- * family needs an entity, which a populator cannot spawn, so it is counted and left out.
+ * blocks of the layer's window (the y range the runnable features can reach, see {@code Worldgen}) and
+ * the chunk's biomes through the {@link LimitedRegion} (the populated chunk only), asks the layer, and
+ * writes the answer: vanilla states as they are, a mod block as its carrier (the note-block or mushroom
+ * slot its ledger row names, see {@link F2vPack#carrierState}). A mod block on the display family needs
+ * an entity, which a populator cannot spawn, so it is counted and left out.
  *
- * <p>Thread safety: the populator runs on Paper's chunk generation thread. Its only shared state is
- * the boot plan and the layer entry (both written once, read through volatile fields) and atomic
- * counters; the layer serializes the decorations among themselves, and never takes the main thread's
- * lock. The {@link LimitedRegion} is used only inside its own {@code populate} call, as the API requires.
+ * <p>A chunk the populator sees before the layer answered is recorded as pending: {@link Backfill}
+ * decorates it once the layer is ready, from a snapshot of the loaded chunk, under the same rules.
+ *
+ * <p>Thread safety: the populator runs on Paper's chunk generation thread. Its shared state is the plan
+ * and the layer entry (written once, read through volatile fields), the pending set (concurrent) and
+ * atomic counters; the layer serializes the decorations among themselves and never takes the main
+ * thread's lock. The {@link LimitedRegion} is used only inside its own {@code populate} call.
  */
 public final class ModWorldgen {
 
@@ -50,9 +56,15 @@ public final class ModWorldgen {
     static final boolean DEBUG = Boolean.getBoolean("cim.worldgen.debug");
     private static final long WAIT_MS = 600_000L;
     private static final long POLL_MS = 2_000L;
+    /** The pending chunks kept at most: a server whose layer never answers stops recording at this count. */
+    static final int PENDING_CAP = 65_536;
 
-    /** What the layer's listing said at boot. */
-    public record Plan(int features, int modifiers, int skipped, String reasons) {
+    /** What the layer's listing said at boot: the window is the y range [windowMin, windowMax) of the snapshot. */
+    public record Plan(int features, int modifiers, int skipped, int windowMin, int windowMax, String reasons) {
+    }
+
+    /** A chunk generated before the layer answered, waiting for its backfill. */
+    record Pending(String world, int x, int z) {
     }
 
     private static volatile Plan plan;
@@ -60,6 +72,13 @@ public final class ModWorldgen {
     /** The ledger rows by modded id (display rows too: they are counted, not placed). */
     private static volatile Map<String, F2vPack.VisualBlock> rows = Map.of();
     private static volatile Logger log = Logger.getLogger("c-imagine");
+    /** Set when the layer never answered: nothing more is deferred and the pending set is dropped. */
+    private static volatile boolean gaveUp;
+
+    /** Chunks waiting for the layer (populator adds, the backfill removes). */
+    static final Set<Pending> PENDING = ConcurrentHashMap.newKeySet();
+    /** The pending set changed since the file was written. */
+    static final AtomicBoolean PENDING_DIRTY = new AtomicBoolean();
 
     /** Materials by ordinal, once: the chunk encoder indexes them without allocating per chunk. */
     private static final Material[] MATERIALS = Material.values();
@@ -76,6 +95,10 @@ public final class ModWorldgen {
     private static final AtomicLong OUTSIDE = new AtomicLong();
     private static final AtomicLong CLIPPED = new AtomicLong();
     private static final AtomicLong BLOCK_ENTITIES = new AtomicLong();
+    private static final AtomicLong WINDOW_WRITES = new AtomicLong();
+    private static final AtomicLong PARTIAL_HEIGHTS = new AtomicLong();
+    static final AtomicLong BACKFILLED = new AtomicLong();
+    static final AtomicLong BACKFILL_CONFLICTS = new AtomicLong();
     private static final Map<String, AtomicLong> FAILED = new ConcurrentHashMap<>();
 
     private ModWorldgen() {
@@ -83,8 +106,8 @@ public final class ModWorldgen {
 
     /**
      * Starts slice 1: attaches the populator to the overworld(s) now loaded and to those that init later,
-     * and waits in the background for the layer's listing. Plain Paper (no layer) only attaches; nothing
-     * is logged for the listing.
+     * loads the pending chunks of earlier boots, and waits in the background for the layer's listing. Plain
+     * Paper (no layer) only attaches; nothing is logged for the listing.
      */
     public static void start(Plugin plugin, List<F2vPack.VisualBlock> blocks) {
         log = plugin.getLogger();
@@ -93,6 +116,7 @@ public final class ModWorldgen {
             byId.put(row.moddedBlockId(), row);
         }
         rows = Map.copyOf(byId);
+        Backfill.start(plugin);
         for (World world : Bukkit.getWorlds()) {
             attach(world);
         }
@@ -116,6 +140,23 @@ public final class ModWorldgen {
         return plan != null;
     }
 
+    /**
+     * Waits (off the main thread) until the pending chunks are all decorated; false when some still wait
+     * (an unloaded one keeps its place until its chunk loads) or the layer never answered.
+     */
+    public static boolean awaitBackfill(long ms) {
+        long deadline = System.currentTimeMillis() + ms;
+        while (plan != null && !PENDING.isEmpty() && System.currentTimeMillis() < deadline) {
+            try {
+                Thread.sleep(250L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+        return plan != null && PENDING.isEmpty();
+    }
+
     /** The overworld gets the populator; nether and end wait for their own height and biome slice. */
     static void attach(World world) {
         if (world.getEnvironment() != World.Environment.NORMAL) {
@@ -134,6 +175,24 @@ public final class ModWorldgen {
         }
     }
 
+    /** The boot listing, or null before it came. */
+    static Plan plan() {
+        return plan;
+    }
+
+    /** The layer's entry, or null before the layer published it. */
+    static Function<String, String> layer() {
+        return layer;
+    }
+
+    static Logger log() {
+        return log;
+    }
+
+    static boolean gaveUp() {
+        return gaveUp;
+    }
+
     private static void fetchPlan() {
         long deadline = System.currentTimeMillis() + WAIT_MS;
         while (System.currentTimeMillis() < deadline) {
@@ -142,7 +201,9 @@ public final class ModWorldgen {
                 layer = fn;
                 String said = fn.apply("list");
                 if (!said.startsWith("wait")) {
-                    answer(said);
+                    if (!answer(said)) {
+                        giveUp();
+                    }
                     return;
                 }
             }
@@ -156,32 +217,61 @@ public final class ModWorldgen {
         if (layer != null) {
             log.warning(LOG_PREFIX + "worldgen: the layer had no listing after " + WAIT_MS / 1000 + "s");
         }
+        giveUp();
     }
 
-    private static void answer(String said) {
+    /** The layer will not decorate: the pending chunks are dropped, and nothing more is deferred. */
+    private static void giveUp() {
+        gaveUp = true;
+        PENDING.clear();
+        PENDING_DIRTY.set(true);
+    }
+
+    /** Reads the listing; false when the layer's answer is an error or unreadable. */
+    private static boolean answer(String said) {
         if (said.startsWith("error")) {
             log.warning(LOG_PREFIX + "worldgen: the layer answered " + said.split("\n")[0]);
-            return;
+            return false;
         }
-        String[] f = said.trim().split("\t", 5);
-        if (f.length < 5 || !f[0].equals("ready")) {
+        String[] f = said.trim().split("\t", 7);
+        if (f.length < 7 || !f[0].equals("ready")) {
             log.warning(LOG_PREFIX + "worldgen: unreadable listing: " + said.trim());
-            return;
+            return false;
         }
-        Plan built = new Plan(Integer.parseInt(f[1]), Integer.parseInt(f[2]), Integer.parseInt(f[3]), f[4]);
+        Plan built;
+        try {
+            built = new Plan(Integer.parseInt(f[1]), Integer.parseInt(f[2]), Integer.parseInt(f[3]),
+                    Integer.parseInt(f[4]), Integer.parseInt(f[5]), f[6]);
+        } catch (NumberFormatException e) {
+            log.warning(LOG_PREFIX + "worldgen: unreadable listing: " + said.trim());
+            return false;
+        }
         plan = built;
         log.info(LOG_PREFIX + "worldgen: " + built.features() + " mod feature(s) from " + built.modifiers()
-                + " biome modifier(s) active (skipped " + built.skipped() + ": " + built.reasons() + ")");
+                + " biome modifier(s) active (skipped " + built.skipped() + ": " + built.reasons()
+                + "; snapshot y=" + built.windowMin() + ".." + built.windowMax() + ")");
         long early = NOT_READY.get();
         if (early > 0) {
-            log.info(LOG_PREFIX + "worldgen: " + early + " chunk(s) generated before the layer answered (no mod features there)");
+            log.info(LOG_PREFIX + "worldgen: " + early + " chunk(s) generated before the layer answered (pending: "
+                    + PENDING.size() + ", decorated once the layer is ready)");
         }
+        return true;
     }
 
     @SuppressWarnings("unchecked")
     private static Function<String, String> entry() {
         Object f = System.getProperties().get(KEY);
         return f instanceof Function<?, ?> fn ? (Function<String, String>) fn : null;
+    }
+
+    /** Records a chunk the layer did not decorate, so its backfill can decorate it once the layer is ready. */
+    static void defer(String world, int chunkX, int chunkZ) {
+        if (gaveUp || PENDING.size() >= PENDING_CAP) {
+            return;
+        }
+        if (PENDING.add(new Pending(world, chunkX, chunkZ))) {
+            PENDING_DIRTY.set(true);
+        }
     }
 
     // ---- the populator ------------------------------------------------------------------------------
@@ -199,13 +289,28 @@ public final class ModWorldgen {
         @Override
         public void populate(WorldInfo info, Random random, int chunkX, int chunkZ, LimitedRegion region) {
             Function<String, String> fn = layer;
-            if (plan == null || fn == null) {
+            Plan p = plan;
+            if (p == null || fn == null) {
                 NOT_READY.incrementAndGet();
+                defer(info.getName(), chunkX, chunkZ);
+                return;
+            }
+            int lo = Math.max(p.windowMin(), info.getMinHeight());
+            int hi = Math.min(p.windowMax(), info.getMaxHeight());
+            if (lo >= hi) {
                 return;
             }
             long t0 = System.nanoTime();
-            String answer = fn.apply(encode(info, chunkX, chunkZ, region));
-            int sets = apply(region, chunkX, chunkZ, answer);
+            String answer = fn.apply(encode(Cells.of(region), info.getSeed(), info.getMinHeight(), info.getMaxHeight(),
+                    chunkX, chunkZ, lo, hi));
+            int sets = apply(answer, chunkX, chunkZ, (x, y, z, data) -> {
+                if (!region.isInRegion(x, y, z)) {
+                    OUTSIDE.incrementAndGet();
+                    return false;
+                }
+                region.setBlockData(x, y, z, data);
+                return true;
+            });
             long dt = System.nanoTime() - t0;
             long chunks = CHUNKS.incrementAndGet();
             NANOS.addAndGet(dt);
@@ -217,26 +322,63 @@ public final class ModWorldgen {
         }
     }
 
+    /** Where a request's blocks and biomes come from: the populator's region, or a backfill's chunk snapshot. */
+    interface Cells {
+        Material type(int x, int y, int z);
+
+        Biome biome(int x, int y, int z);
+
+        static Cells of(LimitedRegion region) {
+            return new Cells() {
+                @Override
+                public Material type(int x, int y, int z) {
+                    return region.getType(x, y, z);
+                }
+
+                @Override
+                public Biome biome(int x, int y, int z) {
+                    return region.getBiome(x, y, z);
+                }
+            };
+        }
+
+        /** A snapshot is immutable, so the worker thread reads it without the main thread. */
+        static Cells of(ChunkSnapshot snapshot, int chunkX, int chunkZ) {
+            int baseX = chunkX << 4;
+            int baseZ = chunkZ << 4;
+            return new Cells() {
+                @Override
+                public Material type(int x, int y, int z) {
+                    return snapshot.getBlockType(x - baseX, y, z - baseZ);
+                }
+
+                @Override
+                public Biome biome(int x, int y, int z) {
+                    return snapshot.getBiome(x - baseX, y, z - baseZ);
+                }
+            };
+        }
+    }
+
     /**
-     * The request for one chunk: the block palette and the columns as runs of palette indices (bottom up),
-     * the biome palette and the 4x4 biome columns over the quart rows. Runs are the only per-block output.
+     * The request for one chunk: the block palette and the columns as runs of palette indices (bottom up,
+     * over the window [snapMin, snapMax)), the biome palette and the 4x4 biome columns over the world's quart
+     * rows. Runs are the only per-block output.
      */
-    static String encode(WorldInfo info, int chunkX, int chunkZ, LimitedRegion region) {
-        int minY = info.getMinHeight();
-        int maxY = info.getMaxHeight();
+    static String encode(Cells cells, long seed, int minY, int maxY, int chunkX, int chunkZ, int snapMin, int snapMax) {
         int baseX = chunkX << 4;
         int baseZ = chunkZ << 4;
         int[] palette = new int[MATERIALS.length];
         Arrays.fill(palette, -1);
         List<String> ids = new ArrayList<>();
-        StringBuilder columns = new StringBuilder(16 * 16 * 16);
+        StringBuilder columns = new StringBuilder(16 * 16 * 24);
         for (int lz = 0; lz < 16; lz++) {
             for (int lx = 0; lx < 16; lx++) {
                 StringBuilder runs = new StringBuilder();
                 int runIndex = -1;
                 int runCount = 0;
-                for (int y = minY; y < maxY; y++) {
-                    Material m = region.getType(baseX + lx, y, baseZ + lz);
+                for (int y = snapMin; y < snapMax; y++) {
+                    Material m = cells.type(baseX + lx, y, baseZ + lz);
                     int index = palette[m.ordinal()];
                     if (index < 0) {
                         index = ids.size();
@@ -269,7 +411,7 @@ public final class ModWorldgen {
                 int runIndex = -1;
                 int runCount = 0;
                 for (int q = quartMin; q <= quartMax; q++) {
-                    Biome biome = region.getBiome(baseX + qx * 4, Math.max(minY, q * 4), baseZ + qz * 4);
+                    Biome biome = cells.biome(baseX + qx * 4, Math.max(minY, q * 4), baseZ + qz * 4);
                     Integer index = biomePalette.get(biome);
                     if (index == null) {
                         index = biomeIds.size();
@@ -292,8 +434,9 @@ public final class ModWorldgen {
         }
 
         StringBuilder out = new StringBuilder(columns.length() + biomes.length() + 512);
-        out.append("decorate\t").append(chunkX).append('\t').append(chunkZ).append('\t').append(info.getSeed())
-                .append('\t').append(minY).append('\t').append(maxY).append('\n');
+        out.append("decorate\t").append(chunkX).append('\t').append(chunkZ).append('\t').append(seed)
+                .append('\t').append(snapMin).append('\t').append(snapMax).append('\t').append(minY)
+                .append('\t').append(maxY).append('\n');
         for (int i = 0; i < ids.size(); i++) {
             out.append("mat\t").append(i).append('\t').append(ids.get(i)).append('\n');
         }
@@ -313,11 +456,17 @@ public final class ModWorldgen {
         runs.append(index).append(':').append(count);
     }
 
+    /** Where one written block goes: returns true when it was written. */
+    @FunctionalInterface
+    interface Sink {
+        boolean set(int x, int y, int z, BlockData data);
+    }
+
     /**
-     * Writes the layer's answer into the populated chunk. A block that cannot be written (no carrier, the
-     * display family, an unreadable state, outside the region) is counted and left out.
+     * Writes the layer's answer through the sink. A block that cannot be written (no carrier, the display
+     * family, an unreadable state, refused by the sink) is counted and left out. Returns the blocks written.
      */
-    static int apply(LimitedRegion region, int chunkX, int chunkZ, String answer) {
+    static int apply(String answer, int chunkX, int chunkZ, Sink sink) {
         int baseX = chunkX << 4;
         int baseZ = chunkZ << 4;
         Map<String, BlockData> cache = new HashMap<>();
@@ -333,20 +482,20 @@ public final class ModWorldgen {
                     if (data == null) {
                         continue;
                     }
-                    int x = baseX + Integer.parseInt(f[1]);
-                    int y = Integer.parseInt(f[2]);
-                    int z = baseZ + Integer.parseInt(f[3]);
-                    if (!region.isInRegion(x, y, z)) {
-                        OUTSIDE.incrementAndGet();
-                        continue;
+                    if (sink.set(baseX + Integer.parseInt(f[1]), Integer.parseInt(f[2]),
+                            baseZ + Integer.parseInt(f[3]), data)) {
+                        sets++;
                     }
-                    region.setBlockData(x, y, z, data);
-                    sets++;
                 }
                 case "fail" -> FAILED.computeIfAbsent(f[1], k -> new AtomicLong()).addAndGet(Long.parseLong(f[2]));
                 case "stat" -> {
-                    CLIPPED.addAndGet(Long.parseLong(f[2]));
-                    BLOCK_ENTITIES.addAndGet(Long.parseLong(f[3]));
+                    String[] s = line.split("\t");
+                    CLIPPED.addAndGet(Long.parseLong(s[2]));
+                    BLOCK_ENTITIES.addAndGet(Long.parseLong(s[3]));
+                    if (s.length > 6) {
+                        WINDOW_WRITES.addAndGet(Long.parseLong(s[5]));
+                        PARTIAL_HEIGHTS.addAndGet(Long.parseLong(s[6]));
+                    }
                 }
                 case "error" -> {
                     if (ERROR_LOGGED.compareAndSet(false, true)) {
@@ -399,7 +548,10 @@ public final class ModWorldgen {
         return "chunks=" + chunks + " sets=" + SETS.get() + " average_us=" + (chunks == 0 ? 0 : NANOS.get() / chunks / 1000)
                 + " not_ready=" + NOT_READY.get() + " no_carrier=" + NO_CARRIER.get() + " display=" + DISPLAY.get()
                 + " bad_state=" + BAD_STATE.get() + " outside=" + OUTSIDE.get() + " clipped=" + CLIPPED.get()
-                + " block_entities=" + BLOCK_ENTITIES.get() + " failed=" + FAILED.keySet();
+                + " block_entities=" + BLOCK_ENTITIES.get() + " window_writes=" + WINDOW_WRITES.get()
+                + " partial_height=" + PARTIAL_HEIGHTS.get() + " backfilled=" + BACKFILLED.get()
+                + " backfill_conflicts=" + BACKFILL_CONFLICTS.get() + " pending=" + PENDING.size()
+                + " failed=" + FAILED.keySet();
     }
 
     /**
