@@ -637,10 +637,62 @@ public final class F2vPack {
             return MUSHROOM_HOSTS.contains(instrument);
         }
 
-        /** The carrier's allocation key: {@code harp:5} for a note slot, {@code brown_mushroom_block:101010} for a mushroom slot. */
+        /**
+         * True for a display-family row: no slot at all. The block stands in Paper's world as a
+         * barrier with an ItemDisplay of its model on top (see {@link #DISPLAY_FAMILY}); {@code note}
+         * is unused and 0.
+         */
+        public boolean isDisplay() {
+            return DISPLAY_FAMILY.equals(instrument);
+        }
+
+        /**
+         * The carrier's allocation key: {@code harp:5} for a note slot, {@code brown_mushroom_block:101010}
+         * for a mushroom slot, {@code display:<id>} for a display row (one per block, never a slot).
+         */
         public String key() {
+            if (isDisplay()) {
+                return DISPLAY_FAMILY + ":" + moddedBlockId;
+            }
             return isMushroom() ? instrument + ":" + mushroomBits(note) : instrument + ":" + note;
         }
+    }
+
+    /**
+     * The display family: the unbounded overflow after the note and mushroom slots. A display block
+     * is a barrier (the collision and the invisible host) with an {@code ItemDisplay} at its centre
+     * whose item_model names the block's own model ({@link #displayItemModel}). Ledger and resolved
+     * rows spell it {@code <id> TAB display TAB 0}; the third column is unused for this family.
+     */
+    public static final String DISPLAY_FAMILY = "display";
+    /** The display family's host block in Paper's world: invisible, full collision, unbreakable by a survival dig (see DisplayCarriers). */
+    public static final String DISPLAY_HOST = "barrier";
+    /** The namespace of the display items' item_model keys: {@code c-imagine:_display/<ns>/<path>}; the underscore keeps it out of every mod's namespace. */
+    static final String DISPLAY_PATH = "_display";
+
+    /** The item_model key of a display block's item (its items/ definition in the pack). */
+    public static String displayItemModel(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        return ALLOCATED_NS + ":" + DISPLAY_PATH + "/" + moddedId.substring(0, colon) + "/" + moddedId.substring(colon + 1);
+    }
+
+    /** The mod block id a display item_model key names, or null when it is not a display key (the inverse of {@link #displayItemModel}). */
+    public static String moddedIdOfDisplayItemModel(String key) {
+        String prefix = ALLOCATED_NS + ":" + DISPLAY_PATH + "/";
+        if (key == null || !key.startsWith(prefix)) {
+            return null;
+        }
+        String rest = key.substring(prefix.length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0 || slash == rest.length() - 1) {
+            return null;
+        }
+        return rest.substring(0, slash) + ":" + rest.substring(slash + 1);
+    }
+
+    /** The items/ definition path of a display block's item. */
+    static String displayItemDefPath(String moddedId) {
+        return "assets/" + displayItemModel(moddedId).replaceFirst(":", "/items/") + ".json";
     }
 
     /**
@@ -687,6 +739,9 @@ public final class F2vPack {
      * faces ({@code minecraft:brown_mushroom_block[down=true,east=false,...]}).
      */
     public static String carrierState(VisualBlock row) {
+        if (row.isDisplay()) {
+            return "minecraft:" + DISPLAY_HOST;
+        }
         if (!row.isMushroom()) {
             return "minecraft:note_block[instrument=" + row.instrument() + ",note=" + row.note() + "]";
         }
@@ -1045,6 +1100,13 @@ public final class F2vPack {
                 continue;
             }
             String host = parts[1].trim();
+            if (DISPLAY_FAMILY.equals(host)) {
+                // display family row: no slot, the third column is unused
+                if (parts[0].trim().indexOf(':') > 0) {
+                    rows.add(new VisualBlock(parts[0].trim(), DISPLAY_FAMILY, 0));
+                }
+                continue;
+            }
             if (MUSHROOM_HOSTS.contains(host)) {
                 // mushroom family row: the third column is the six face bits (NESWUD order)
                 int mask = parts.length >= 3 ? parseMushroomBits(parts[2].trim()) : -1;
@@ -1090,8 +1152,8 @@ public final class F2vPack {
     /** The mod id an item_model key names when it is an allocated key, else null (the inverse of {@link #allocatedItemModel}). */
     public static String moddedIdOfItemModel(String key) {
         String prefix = ALLOCATED_NS + ":";
-        if (key == null || !key.startsWith(prefix)) {
-            return null;
+        if (key == null || !key.startsWith(prefix) || key.startsWith(prefix + DISPLAY_PATH + "/")) {
+            return null; // a display key is not an allocated item
         }
         String rest = key.substring(prefix.length());
         int slash = rest.indexOf('/');
@@ -1239,7 +1301,9 @@ public final class F2vPack {
      * Pure carrier planner. The manifest is authoritative: its rows keep their slots and
      * block their ids from auto allocation. A ledger row keeps its slot across restarts;
      * it only moves when a manifest row now holds that slot (logged). Every other
-     * discovered mod block takes the lowest free slot in sorted id order. Ledger rows
+     * discovered mod block takes the lowest free slot in sorted id order; once the slot
+     * families are full it joins the display family (unbounded, see {@link #DISPLAY_FAMILY}).
+     * A display row never moves (it holds no slot). Ledger rows
      * of blocks no jar carries any more are reserved, never reissued, and not emitted.
      */
     static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
@@ -1260,8 +1324,13 @@ public final class F2vPack {
         Set<String> used = new HashSet<>();
         Set<String> placed = new HashSet<>();
         Set<String> manifestIds = new HashSet<>();
-        List<VisualBlock> effective = new ArrayList<>(manifest);
+        List<VisualBlock> effective = new ArrayList<>();
         for (VisualBlock row : manifest) {
+            if (row.isDisplay()) {
+                notes.add("carrier manifest: display rows are automatic, dropped " + row.moddedBlockId());
+                continue;
+            }
+            effective.add(row);
             used.add(slotKey(row));
             placed.add(row.moddedBlockId());
             manifestIds.add(row.moddedBlockId());
@@ -1279,7 +1348,18 @@ public final class F2vPack {
             }
             if (manifestIds.contains(id)) {
                 ledger.add(row); // reserved while the manifest owns the id
-                used.add(slotKey(row));
+                if (!row.isDisplay()) {
+                    used.add(slotKey(row));
+                }
+                continue;
+            }
+            if (row.isDisplay()) {
+                // a display row holds no slot: it stays on the family while the block is still here
+                ledger.add(row);
+                if (found.contains(id)) {
+                    effective.add(row);
+                    placed.add(id);
+                }
                 continue;
             }
             if (used.contains(slotKey(row))) {
@@ -1293,7 +1373,7 @@ public final class F2vPack {
                 placed.add(id);
             }
         }
-        int overflow = 0;
+        int displayed = 0;
         int cursor = 0;
         List<String> order = new ArrayList<>(found);
         order.sort(Comparator.comparingInt(F2vPack::carrierRank).thenComparing(Comparator.naturalOrder()));
@@ -1304,20 +1384,19 @@ public final class F2vPack {
             while (cursor < capacity && used.contains(slotKey(slotAt(cursor)))) {
                 cursor++;
             }
+            VisualBlock row;
             if (cursor >= capacity) {
-                overflow++;
-                continue;
+                // the slot families are full: the display family takes it, unbounded
+                row = new VisualBlock(id, DISPLAY_FAMILY, 0);
+                displayed++;
+            } else {
+                VisualBlock slot = slotAt(cursor);
+                row = new VisualBlock(id, slot.instrument(), slot.note());
+                used.add(slotKey(slot));
             }
-            VisualBlock slot = slotAt(cursor);
-            VisualBlock row = new VisualBlock(id, slot.instrument(), slot.note());
-            used.add(slotKey(slot));
             effective.add(row);
             ledger.add(row);
             placed.add(id);
-        }
-        if (overflow > 0) {
-            notes.add(overflow + " mod block(s) have no free carrier slot (" + capacity
-                    + " slots in use, mushroom family " + (mushroom ? "on" : "off") + "): not placeable in this pack");
         }
         effective.sort(BLOCK_ORDER);
         ledger.sort(BLOCK_ORDER);
@@ -1358,6 +1437,9 @@ public final class F2vPack {
     }
 
     private static boolean validSlot(VisualBlock row) {
+        if (row.isDisplay()) {
+            return row.moddedBlockId().indexOf(':') > 0;
+        }
         if (row.isMushroom()) {
             return row.note() >= MUSHROOM_MASK_MIN && row.note() <= MUSHROOM_MASK_MAX;
         }
@@ -2210,6 +2292,27 @@ public final class F2vPack {
         List<VisualBlock> emittedBlocks = new ArrayList<>();
         try (JarCache blockJars = new JarCache(jars)) {
             for (VisualBlock block : blockRows) {
+                if (block.isDisplay()) {
+                    // display family: no slot, an items/ definition of the block's own model (the
+                    // ItemDisplay on the barrier host renders it; see DisplayCarriers in the HUD)
+                    String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
+                    if (ref != null && GalleryPack.chainHasElements(jars, ref, warnings)) {
+                        // block-geometry models ride a standalone composite on the item channel (as allocated items do)
+                        String comp = GalleryPack.synthesizeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                        if (comp != null) {
+                            ref = comp;
+                        }
+                    }
+                    if (ref != null) {
+                        entries.put(displayItemDefPath(block.moddedBlockId()),
+                                allocatedItemDef(ref).getBytes(StandardCharsets.UTF_8));
+                        emittedBlocks.add(block);
+                    } else {
+                        warnings.add("no block model found for " + block.moddedBlockId()
+                                + " in any mod jar — display row dropped");
+                    }
+                    continue;
+                }
                 String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(),
                         entries, warnings);
                 if (ref != null && block.isMushroom()) {
@@ -4952,10 +5055,10 @@ public final class F2vPack {
             many.add(String.format("fakemod:b%04d", i));
         }
         CarrierPlan off = planCarriers(many, List.of(), List.of(), false);
-        expect(failures, off.effective().size() == CARRIER_CAPACITY
+        expect(failures, off.effective().size() == CARRIER_CAPACITY + 3
                         && off.effective().stream().noneMatch(VisualBlock::isMushroom)
-                        && off.notes().stream().anyMatch(n -> n.contains("mushroom family off")),
-                "the switch off: the note slots only, overflow reported");
+                        && off.effective().stream().filter(VisualBlock::isDisplay).count() == 3,
+                "the switch off: the note slots, then the display family takes the three overflow blocks");
         CarrierPlan over = planCarriers(many, List.of(), List.of(), true);
         expect(failures, over.effective().size() == CARRIER_CAPACITY + 3
                         && over.effective().stream().filter(VisualBlock::isMushroom).count() == 3
@@ -5122,9 +5225,44 @@ public final class F2vPack {
             many.add(String.format("fakemod:b%04d", i));
         }
         CarrierPlan full = planCarriers(many, List.of(), List.of());
-        expect(failures, full.effective().size() == CARRIER_CAPACITY, "allocation stops at the render capacity");
-        expect(failures, full.effective().stream().noneMatch(b -> b.note() == 0), "note 0 is never handed out");
-        expect(failures, full.notes().stream().anyMatch(n -> n.contains("no free")), "overflow is reported");
+        expect(failures, full.effective().stream().filter(b -> !b.isDisplay()).count() == CARRIER_CAPACITY,
+                "the note family stops at the render capacity");
+        expect(failures, full.effective().stream().noneMatch(b -> b.note() == 0 && !b.isDisplay()),
+                "note 0 is never handed out");
+        expect(failures, full.effective().size() == CARRIER_CAPACITY + 5,
+                "the overflow joins the display family: every discovered block is emitted, none unplaceable");
+        expect(failures, full.effective().stream().filter(VisualBlock::isDisplay).count() == 5,
+                "exactly the five overflow blocks are display rows");
+        expect(failures, full.notes().stream().noneMatch(n -> n.contains("no free")),
+                "a full note family no longer leaves a warning behind");
+        expect(failures, planCarriers(many, List.of(), List.of()).equals(full),
+                "the display family plan is deterministic");
+        // display rows: ledger round trip, a display row never takes a slot, a vanished one is reserved
+        List<VisualBlock> rows = parseBlockRows(List.of("fakemod:disp\tdisplay\t0", "fakemod:harpy\tharp\t7",
+                "bad_id\tdisplay\t0", "# comment"));
+        expect(failures, rows.size() == 2 && rows.get(0).isDisplay() && rows.get(0).key().equals("display:fakemod:disp"),
+                "a display row parses to the display family; a row without a namespace is dropped");
+        expect(failures, blockRowsText("", List.of(new VisualBlock("fakemod:disp", DISPLAY_FAMILY, 0)))
+                .equals("fakemod:disp\tdisplay\t0\n"), "a display row is written as id, display, 0");
+        expect(failures, blockRowsText("", List.of(new VisualBlock("fakemod:harp", "harp", 5)))
+                .equals("fakemod:harp\tharp\t5\n"), "a note row is written byte-identical to before");
+        CarrierPlan disp = planCarriers(List.of("fakemod:disp", "fakemod:harp"), List.of(), rows);
+        expect(failures, disp.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:disp") && b.isDisplay())
+                && disp.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:harp") && slotKey(b).equals("harp:1")),
+                "a ledger display row stays on the display family and holds no note slot (the first free slot is still harp:1)");
+        CarrierPlan gone = planCarriers(List.of("fakemod:harp"), List.of(), rows);
+        expect(failures, gone.ledger().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:disp") && b.isDisplay())
+                && gone.effective().stream().noneMatch(b -> b.moddedBlockId().equals("fakemod:disp")),
+                "a display block no jar carries any more is reserved, not emitted");
+        expect(failures, carrierState(new VisualBlock("fakemod:disp", DISPLAY_FAMILY, 0)).equals("minecraft:barrier"),
+                "a display block stands as a barrier host");
+        expect(failures, displayItemModel("create:andesite/casing").equals("c-imagine:_display/create/andesite/casing")
+                        && "create:andesite/casing".equals(moddedIdOfDisplayItemModel(displayItemModel("create:andesite/casing")))
+                        && moddedIdOfDisplayItemModel("c-imagine:create/andesite") == null
+                        && moddedIdOfItemModel(displayItemModel("create:x")) == null,
+                "the display item_model key inverts to its mod id and is not an allocated item key");
+        expect(failures, displayItemDefPath("create:depot").equals("assets/c-imagine/items/_display/create/depot.json"),
+                "the display items/ definition path");
         expect(failures, "c:d".equals(defaultBlockstateModel(
                 "{\"variants\":{\"facing=north\":{\"model\":\"a:b\"},\"\":{\"model\":\"c:d\"}}}")),
                 "the empty variant key is the default state");
