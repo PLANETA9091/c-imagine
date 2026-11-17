@@ -76,6 +76,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         netWatch = new NetWatch(this);
         f2vInit();
         f2vAutoOfferInit();
+        // Slice 1 of mod world generation: new overworld chunks get the mods' biome-modifier features.
+        dev.cim.worldgen.ModWorldgen.start(this, f2v == null ? List.of() : f2v.blocks());
         dev.cim.hud.HudBootstrap.enable(this);
     }
 
@@ -707,6 +709,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 Player target = bot;
                 for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveBlockTest(target, liveBlock.trim()))) {
                     log().info("[cim-live] paper " + line);
+                }
+            }
+            // Worldgen probe (survival.yml, boot 1): a far square of chunks is generated now, after the
+            // layer's listing, and the carriers of the named mod block below y=70 are counted.
+            String worldgenProbe = System.getenv("CIM_WORLDGEN_PROBE");
+            if (worldgenProbe != null && !worldgenProbe.isBlank()) {
+                dev.cim.worldgen.ModWorldgen.awaitReady(120_000L);
+                String carrierId = worldgenProbe.trim();
+                World overworld = getServer().getWorlds().get(0);
+                for (String line : callSync(() -> dev.cim.worldgen.ModWorldgen.probe(overworld, carrierId, 100, 100, 3, 70))) {
+                    log().info("[cim-worldgen] " + line);
                 }
             }
             // Survival smoke (survival.yml): a carrier placed by the mod item's own use, saved and
