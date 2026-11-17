@@ -40,14 +40,14 @@ CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA:$ASM"
 echo "=== javac cim-paper-plugin (offline) ==="
 # JDK 25 reads Paper's v69 API, while plugin bytecode follows the Java 21
 # repository contract, exactly as in the Maven build.
-/tmp/my-project/tools/jdk-25.0.5+8/bin/javac --release 21 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
+/home/z/my-project/artifacts/jdk25/bin/javac --release 21 -nowarn -cp "$CP" -d "$BUILD" $(find "$SRC" -name '*.java')
 
 # Keep Maven's artifact shape: analysis classes are local; ASM core/tree stay provided.
 unzip -qo "$ASM_ANALYSIS" 'org/objectweb/asm/tree/analysis/*' -d "$BUILD"
 
 echo "=== jar ==="
 mkdir -p "$(dirname "$OUT_JAR")"
-/tmp/my-project/tools/jdk-25.0.5+8/bin/jar --create --file "$OUT_JAR" -C "$BUILD" . -C "$RES" .
+/home/z/my-project/artifacts/jdk25/bin/jar --create --file "$OUT_JAR" -C "$BUILD" . -C "$RES" .
 echo "OK: $OUT_JAR"
 echo "CLI classpath for F2vPack --build (gson needed outside the server):"
 echo "  $OUT_JAR:$GSON"
