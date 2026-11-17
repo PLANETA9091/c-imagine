@@ -29,7 +29,8 @@ CELL = re.compile(
 def main():
     log = sys.argv[1]
     tx = ty = tz = 0.0
-    scale = 8.0
+    scale = 1.0
+    dz = -1.04  # the 14-e91j depth-law repair: the net shifts -1.04 to the face plane
     argv = sys.argv[2:]
     for i, a in enumerate(argv):
         if a == '--tx':
@@ -40,6 +41,8 @@ def main():
             tz = float(argv[i + 1])
         if a == '--scale':
             scale = float(argv[i + 1])
+        if a == '--dz':
+            dz = float(argv[i + 1])
     per_page = collections.defaultdict(list)
     for line in open(log, errors='ignore'):
         m = CELL.search(line)
@@ -64,12 +67,20 @@ def main():
             if not c['at'] or not c['t']:
                 continue
             x, y, z = c['cell']
-            front = c['src'] == 'front-air'
-            exp_at = (x + 0.5, y + 0.5, z + 0.5 - (1.0 if front else 0.0))
-            exp_t = (tx, ty, tz + (1.0 if front else 0.0))
+            # THE NET LAW (14-e91j): the display content plane = at + tr.
+            # The at z = the cell center (z+0.5) or the front-air rig (z-0.5);
+            # the tr z = the NET (z+0.5+dz) minus the at z — the pairing is
+            # pixel-neutral iff at+tr lands on ONE plane per cell, dz deep.
+            # (The src= label describes the LIGHT pin source, not the rig —
+            # the 509 census: plane-rig rows can carry src=front-air.)
+            rig1 = abs(c['at'][2] - (z + 0.5)) < 0.01         # the plane rig (at = the cell center)
+            rig2 = abs(c['at'][2] - (z - 0.5)) < 0.01         # the front-air rig (at = z-1)
+            exp_at = (x + 0.5, y + 0.5, c['at'][2])
+            net_z = z + 0.5 + dz
+            exp_t = (tx, ty, net_z - c['at'][2])
             good = (abs(c['at'][0] - exp_at[0]) < 0.01
                     and abs(c['at'][1] - exp_at[1]) < 0.01
-                    and abs(c['at'][2] - exp_at[2]) < 0.01
+                    and (rig1 or rig2)
                     and abs(c['t'][0] - exp_t[0]) < 0.01
                     and abs(c['t'][1] - exp_t[1]) < 0.01
                     and abs(c['t'][2] - exp_t[2]) < 0.01

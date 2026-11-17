@@ -71,7 +71,7 @@ def main():
         m = re.search(
             r'f2v gallery: page 0 cell (-?\d+),(-?\d+),(-?\d+) state=(\S+) cmd=(\S+)'
             r'.*pin=(\d+)/(\d+) src=(\S+)'
-            r'(?: at=(-?\d.+,[-\d.]+,[-\d.]+))?'
+            r'(?: at=(-?\d+\.\d+,-?\d+\.\d+,-?\d+\.\d+))?'
             r'(?: tr=\[([^;]*); q=([^;]*); s=([^\]]*)\])?', line)
         if m:
             cells[(m.group(1), m.group(2), m.group(3))] = {
@@ -84,6 +84,46 @@ def main():
           'with tr:', sum(1 for c in cells.values() if c['tr']))
     for k, v in list(cells.items())[:4]:
         print(' ', k, v)
+
+    # THE SERVER-VS-MANIFEST JOIN: the receipts vs the p0 manifest, per cell
+    with zipfile.ZipFile(meta_zip) as z:
+        man_rows = z.read(
+            'srv-wall/c-imagine/scenes/gallery-ae2-p0.tsv'
+        ).decode('utf-8', 'replace').splitlines()
+    man = {}
+    for r in man_rows[1:]:
+        p = r.split('\t')
+        if p[0] != 'cell':
+            continue
+        man[(p[1], p[2], p[3])] = p[4]
+    match = mismatch = missing_receipt = extra_receipt = 0
+    mismatched_cells = []
+    for k, m_state in man.items():
+        if k not in cells:
+            missing_receipt += 1
+        elif cells[k]['state'] == m_state:
+            match += 1
+        else:
+            mismatch += 1
+            mismatched_cells.append((k, m_state, cells[k]['state']))
+    for k in cells:
+        if k not in man:
+            extra_receipt += 1
+    print('manifest join: cells', len(man), 'receipts', len(cells),
+          '| match', match, 'state-mismatch', mismatch,
+          'no-receipt', missing_receipt, 'extra-receipt', extra_receipt)
+    for k, ms, rs in mismatched_cells[:6]:
+        print('  MISMATCH', k, 'man=', ms, 'rcpt=', rs)
+    # the tr/q/s census (the geometry the server claims)
+    trs = {}
+    for k, v in cells.items():
+        if v['tr']:
+            key = (v['tr'], v['q'], v['s'])
+            trs[key] = trs.get(key, 0) + 1
+    print('tr/q/s census (top 6):')
+    for key, n in sorted(trs.items(), key=lambda kv: -kv[1])[:6]:
+        print('  n=%d tr=%s q=%s s=%s' % (n, key[0], key[1], key[2]))
+
     # the pixel side
     import numpy as np
     from PIL import Image
@@ -104,6 +144,16 @@ def main():
                 best = (d, dx, dy)
     print('wall-band best (dx,dy):', best[1], best[2], 'ae:', best[0])
     print('raw ae:', int(np.abs(t[100:460, 300:900] - o[100:460, 300:900]).sum()))
+
+    # THE VERDICT: server-side (the receipts differ from the manifest cells)
+    # vs client-side (the receipts = the cells, the pixels shifted).
+    server_bad = mismatch + missing_receipt
+    print('THE VERDICT:',
+          'SERVER-SIDE' if server_bad > 0 and best[1] == 0 and best[2] == 0 else
+          'CLIENT-SIDE (receipts = the manifest, pixels displaced (%d,%d))'
+          % (best[1], best[2]) if server_bad == 0 else
+          'MIXED (server mismatches %d, pixel shift (%d,%d))'
+          % (server_bad, best[1], best[2]))
 
 
 if __name__ == '__main__':

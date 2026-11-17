@@ -1306,6 +1306,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     static final float GALLERY_TZ = 0.0f;
 
     /**
+     * 14-e91j THE DEPTH-LAW REPAIR CONSTANT. The 509 arbiter's per-cell
+     * displacement fit over the ae2-p0 pair (45 cells, scripts/
+     * displacement_law.py): measured_shift ≈ 2.08 × proj(z 9.5) − proj(z 9.0)
+     * − 4.2 px on BOTH axes — the display content lands ~1.04 blocks DEEPER
+     * than the truth's real block face (z+0.5 net + the composite models'
+     * baked forward bias ≈ +0.54). The projection is linear in the plane
+     * position, so shifting the net by GALLERY_DZ lands the content exactly
+     * on the truth's face plane. Applied to the wall lanes' translation z
+     * only (the spawn pos = the front-air light rig — untouched).
+     */
+    static final float GALLERY_DZ = -1.04f;
+
+    /**
      * 14-du THE LIGHT-SPILL LAW: the truth's light-emitting rows light the
      * scene AROUND them (the lit candle's wall renders at block light 12-13
      * while the replay's air band sits at 0 — the crop measured the whole-cell
@@ -2212,7 +2225,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
                                 pr.ax() + 0.5, pr.ay() + 0.5, pr.az() + 0.5 - pageShift);
                         org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
-                                new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ + pageShift),
+                                new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
+                                        GALLERY_TZ + pageShift + GALLERY_DZ),
                                 new org.joml.Quaternionf().rotateY((float) Math.PI),
                                 new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                                 new org.joml.Quaternionf());
@@ -2357,7 +2371,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
                         x + 0.5, y + 0.5, z + 0.5 - rigShift);
                 org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
-                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ + rigShift),
+                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
+                                GALLERY_TZ + rigShift + GALLERY_DZ),
                         // MEASURED (run 9 vs the truth leg): vanilla blockstate
                         // x=90 is R_x(-90) — joml rotationXYZ applies +angles,
                         // so the variant rotations ride NEGATED (a positive
