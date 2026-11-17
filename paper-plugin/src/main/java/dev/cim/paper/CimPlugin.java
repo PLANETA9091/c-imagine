@@ -2247,6 +2247,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             + pageLaneHybridKeys.size() + " hybrid per-cell display(s) to spawn");
                 }
             }
+            int deltaSkipped = 0;
             for (String[] row : cells) {
                 // 14-e71 THE HYBRID FILTER: on a page-lane page only the
                 // excluded (ineligible-node) cells spawn per-cell
@@ -2257,6 +2258,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     if (!isExcluded && !isExtra) {
                         continue;
                     }
+                }
+                // 14-e89 THE DELTA GATE: the restored world's band = the
+                // real blocks (the e87 real-state build) — the cell whose
+                // world block state ALREADY equals the manifest's state =
+                // the truth's own render = the display = the redundant
+                // overlay occluded by the real band = the crop's shift
+                // class (the 505/507 receipt: 51 reds with the displays
+                // invisible-inside-the-real). The spawn = DELTA-GATED: the
+                // world's state != the manifest's state -> the display;
+                // the equal -> the world's own block = the render.
+                try {
+                    Block existing = world(worldName()).getBlockAt(
+                            Integer.parseInt(row[1]), Integer.parseInt(row[2]),
+                            Integer.parseInt(row[3]));
+                    String existingState = existing.getBlockData().getAsString();
+                    if (existingState.equals(row[4])) {
+                        deltaSkipped++;
+                        continue;
+                    }
+                } catch (NumberFormatException gateBad) {
+                    // the unparseable cell: the legacy spawn path rides
                 }
                 // cell<TAB>x<TAB>y<TAB>z<TAB>state
                 if (row.length < 5) {
@@ -2459,6 +2481,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 + " extra-mesh cmd=" + xr.cmd() + " uuid=" + xDisplay.getUniqueId());
                     }
                 }
+            }
+            if (deltaSkipped > 0) {
+                log().info(LOG_PREFIX + "f2v gallery: page " + page + " delta gate: "
+                        + deltaSkipped + " cell(s) already match the world band, no display");
             }
             return n;
         });
