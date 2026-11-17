@@ -2142,16 +2142,18 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             String lightName = (mfName.endsWith(".tsv")
                     ? mfName.substring(0, mfName.length() - 4) : mfName) + ".light";
             placeLightsFromTruth(wLights, mf.resolveSibling(lightName));
-            // 14-e78 THE PAGE-CELL AIR CLEAR: the replay world = THE SEED'S
-            // WORLD restored (the walk's wooden room environment — the
-            // e77 receipt: the truth's doorway renders the room's wood,
-            // the fresh-gen world rendered the gray void = the 207k door
-            // reds) — the restored wall = the seed's REAL blocks, and the
-            // displays spawn INSIDE them invisible. The manifest cell
-            // positions = set to AIR before any display spawns (the tall
-            // panels' spill rows = the manifest's own upper cells; the
-            // room's other blocks stay = the environment the truth saw).
-            int clearedCells = 0;
+            // 14-e87 THE PAGE-CELL REAL-STATE BUILD (supersedes the e78 air
+            // clear): the walk's END world = the band 100% AIR (the NBT
+            // receipt: the y=0 section's palette = [minecraft:air]) while
+            // THE TRUTH'S P16 SHOT = the band WITH the real blocks — the
+            // air-vs-real gap = the 505/506's whole-page displacement (the
+            // ±6 capped shifts). THE FIX = the band = THE MANIFEST'S REAL
+            // STATES (the walk's own build commands replayed by the
+            // plugin): every cell position = setblock to its manifest
+            // state — the truth's band = the real = ours' = the real = the
+            // same pixels. The displays = the modded-content overlay (the
+            // composite/panels) = harmless on top of the real band.
+            int builtCells = 0, failedCells = 0;
             for (String[] row : cells) {
                 if (row.length < 5) {
                     continue;
@@ -2164,20 +2166,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 } catch (NumberFormatException bad) {
                     continue;
                 }
+                String state = row[4];
                 try {
                     Block b = world(worldName()).getBlockAt(cx, cy, cz);
-                    if (!b.getType().isAir()) {
-                        b.setType(org.bukkit.Material.AIR, false);
-                        clearedCells++;
+                    b.setBlockData(org.bukkit.Bukkit.createBlockData(state), false);
+                    builtCells++;
+                } catch (Throwable buildFail) {
+                    failedCells++;
+                    if (failedCells <= 3) {
+                        log().warning(LOG_PREFIX + "f2v gallery: page " + page
+                                + " real-state build failed at " + cx + "," + cy + "," + cz
+                                + " state=" + state + ": " + buildFail);
                     }
-                } catch (Throwable clearFail) {
-                    // the unloaded corner: never abort the page
                 }
             }
-            if (clearedCells > 0) {
-                log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell air clear: "
-                        + clearedCells + " restored-world block(s) cleared for the displays");
-            }
+            log().info(LOG_PREFIX + "f2v gallery: page " + page + " real-state build: "
+                    + builtCells + " cell(s) built, " + failedCells + " failed");
             // 14-e61 THE PAGE-COMPOSITE LANE: one display per (page, light
             // group) carrying the page's ENTIRE cell set at the real wall
             // offsets — the context-bleed repair's replay half (the synthesis
