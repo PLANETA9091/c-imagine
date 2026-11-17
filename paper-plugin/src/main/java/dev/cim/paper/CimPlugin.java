@@ -3288,9 +3288,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                            // the same rig as the block pages
+                            // the same rig as the block pages, with the
+                            // 14-e91j depth-law repair (the same capture
+                            // pipeline = the same baked forward bias)
                             e.setTransformation(new org.bukkit.util.Transformation(
-                                    new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
+                                    new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
+                                            GALLERY_TZ + GALLERY_DZ),
                                     new org.joml.Quaternionf(),
                                     new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                                     new org.joml.Quaternionf()));
@@ -3300,7 +3303,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log().info(LOG_PREFIX + "f2v gallery-item: page " + pagef
                         + " cell " + row[1] + "," + row[2] + "," + row[3]
                         + " item=" + itemId + " cmd=" + fcmd
-                        + " uuid=" + display.getUniqueId());
+                        + " uuid=" + display.getUniqueId()
+                        + " at=" + at.getX() + "," + at.getY() + "," + at.getZ()
+                        + " tr=[" + GALLERY_TX + "," + GALLERY_TY + ","
+                        + (GALLERY_TZ + GALLERY_DZ) + "; q=0.0,0.0,0.0,1.0; s="
+                        + GALLERY_SCALE + "," + GALLERY_SCALE + "," + GALLERY_SCALE
+                        + "]");
                 placed++;
             }
             return new int[]{placed, nochannel, cells.size()};
@@ -4380,8 +4388,18 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                             if (channel.equals("mod-tank") || channel.equals("block")) {
                                 e.setTransformation(new org.bukkit.util.Transformation(
-                                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY, GALLERY_TZ),
+                                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
+                                                GALLERY_TZ + GALLERY_DZ),
                                         new org.joml.Quaternionf().rotationY((float) Math.PI),
+                                        new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
+                                        new org.joml.Quaternionf()));
+                            } else {
+                                // the texture-model rig: the SAME 14-e91j
+                                // depth repair (the same capture pipeline)
+                                e.setTransformation(new org.bukkit.util.Transformation(
+                                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
+                                                GALLERY_TZ + GALLERY_DZ),
+                                        new org.joml.Quaternionf(),
                                         new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                                         new org.joml.Quaternionf()));
                             }
@@ -4390,7 +4408,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         });
                         log().info(LOG_PREFIX + "f2v gallery-fluid: page " + pagef
                                 + " cell " + row[1] + "," + row[2] + "," + row[3]
-                                + " fluid=" + row[4] + " rig cmd=" + rigCmd);
+                                + " fluid=" + row[4] + " rig cmd=" + rigCmd
+                                + " at=" + at.getX() + "," + at.getY() + "," + at.getZ()
+                                + " tr=[" + GALLERY_TX + "," + GALLERY_TY + ","
+                                + (GALLERY_TZ + GALLERY_DZ) + "; q="
+                                + (channel.equals("mod-tank") || channel.equals("block")
+                                        ? "0.0,0.7071,0.0,0.7071" : "0.0,0.0,0.0,1.0")
+                                + "; s=" + GALLERY_SCALE + "," + GALLERY_SCALE + ","
+                                + GALLERY_SCALE + "]");
                         placed++;
                     } else if (caseOnly) {
                         // the case IS the surface (the truth's decaying
