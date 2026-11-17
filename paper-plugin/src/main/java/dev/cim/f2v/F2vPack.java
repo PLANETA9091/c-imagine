@@ -2298,7 +2298,7 @@ public final class F2vPack {
                     String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
                     if (ref != null && GalleryPack.chainHasElements(jars, ref, warnings)) {
                         // block-geometry models ride a standalone composite on the item channel (as allocated items do)
-                        String comp = GalleryPack.synthesizeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                        String comp = safeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
                         if (comp != null) {
                             ref = comp;
                         }
@@ -2459,7 +2459,7 @@ public final class F2vPack {
         // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see GalleryPack.synthesizeItemComposite):
         // block-geometry item models ride a standalone composite; sprite-driven models stay vanilla-shaped.
         if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
-            String comp = GalleryPack.synthesizeItemComposite(jars, found, compositeNo[0]++, entries, warnings);
+            String comp = safeItemComposite(jars, found, compositeNo[0]++, entries, warnings);
             if (comp != null) {
                 // THE ITEM EMISSIVE-BAKE: a tabled modded item's composite carries light_emission
                 found = GalleryPack.applyItemEmissive(moddedId, comp, emissiveTable, emissiveBakeLog);
@@ -5017,6 +5017,22 @@ public final class F2vPack {
         } finally {
             GalleryPack.resetModelScales();
             deleteRecursively(quads);
+        }
+    }
+
+    /**
+     * The item-channel composite for one model, or null (the raw model stays) when the composite
+     * builder cannot read it. Allocated items and display blocks reach every model a modpack
+     * ships, including NeoForge forms the gallery manifest never fed it (measured: a texture
+     * entry given as an object aborted the whole gallery seed build); one model must not.
+     */
+    private static String safeItemComposite(List<Path> jars, String ref, int no,
+                                            TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
+        try {
+            return GalleryPack.synthesizeItemComposite(jars, ref, no, entries, warnings);
+        } catch (RuntimeException e) {
+            warnings.add("item composite skipped for " + ref + ": " + e);
+            return null;
         }
     }
 
