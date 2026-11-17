@@ -4026,7 +4026,10 @@ public final class GalleryPack {
             }
             if (json.has("textures")) {
                 for (Map.Entry<String, JsonElement> t : json.getAsJsonObject("textures").entrySet()) {
-                    textures.putIfAbsent(t.getKey(), t.getValue().getAsString());
+                    String sv = textureValue(t.getValue(), file + ":" + t.getKey(), warnings);
+                    if (sv != null) {
+                        textures.putIfAbsent(t.getKey(), sv);
+                    }
                 }
             }
             if (elements == null && (json.has("elements") || json.has("children"))) {
@@ -4116,7 +4119,10 @@ public final class GalleryPack {
                     if (child.has("textures") && child.getAsJsonObject("textures").isJsonObject()) {
                         for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
                                 .entrySet()) {
-                            textures.putIfAbsent(childPrefix + t.getKey(), t.getValue().getAsString());
+                            String sv = textureValue(t.getValue(), childPrefix + t.getKey(), warnings);
+                            if (sv != null) {
+                                textures.putIfAbsent(childPrefix + t.getKey(), sv);
+                            }
                         }
                     }
                     for (JsonElement el : child.getAsJsonArray("elements")) {
@@ -4132,6 +4138,35 @@ public final class GalleryPack {
             }
         }
         return out.size() == 0 ? null : out;
+    }
+
+    /**
+     * One texture-map value -> the sprite ref string, or null when the
+     * value carries no string sprite. The vanilla format = a string per
+     * key, but modded models ship OBJECT-valued textures (the extended
+     * texture form: a resource path plus tint/metadata siblings) —
+     * {@code getAsString()} on them throws UnsupportedOperationException
+     * and killed the whole pack build (measured run 44131543348, the
+     * survival-merge seed: JsonObject at resolveModelGraph). The read
+     * order = the common extended-form fields; anything else = SKIPPED
+     * with a warning — the model keeps its other textures, the build
+     * survives, and the warning = the honesty channel (the object-texture
+     * tint semantics = the owner's design decision, never guessed here).
+     */
+    private static String textureValue(JsonElement v, String where, List<String> warnings) {
+        if (v.isJsonPrimitive()) {
+            return v.getAsString();
+        }
+        if (v.isJsonObject()) {
+            JsonObject o = v.getAsJsonObject();
+            for (String f : List.of("resource", "sprite", "texture", "path", "id")) {
+                if (o.has(f) && o.get(f).isJsonPrimitive()) {
+                    return o.get(f).getAsString();
+                }
+            }
+        }
+        warnings.add("gallery: object-valued texture skipped: " + where);
+        return null;
     }
 
     /**
@@ -4153,7 +4188,10 @@ public final class GalleryPack {
         }
         if (child.has("textures") && child.getAsJsonObject("textures").isJsonObject()) {
             for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures").entrySet()) {
-                textures.putIfAbsent(prefix + t.getKey(), t.getValue().getAsString());
+                String sv = textureValue(t.getValue(), prefix + t.getKey(), warnings);
+                if (sv != null) {
+                    textures.putIfAbsent(prefix + t.getKey(), sv);
+                }
             }
         }
         String cur = child.get("parent").getAsString();
@@ -4167,7 +4205,10 @@ public final class GalleryPack {
             }
             if (pj.has("textures") && pj.getAsJsonObject("textures").isJsonObject()) {
                 for (Map.Entry<String, JsonElement> t : pj.getAsJsonObject("textures").entrySet()) {
-                    textures.putIfAbsent(prefix + t.getKey(), t.getValue().getAsString());
+                    String sv = textureValue(t.getValue(), prefix + t.getKey(), warnings);
+                    if (sv != null) {
+                        textures.putIfAbsent(prefix + t.getKey(), sv);
+                    }
                 }
             }
             JsonArray geo = mergeModelGeometry(jars, pj, prefix, textures, warnings, depth + 1);
