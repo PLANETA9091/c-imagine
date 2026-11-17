@@ -215,6 +215,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Map<String, String> blockCarriers = new HashMap<>();
     /** Per player: inventory slots the real client shows empty after a click its server ignored. */
     private final Map<UUID, java.util.Set<Integer>> clientEmptied = new HashMap<>();
+    /** True when this build has display-family rows (the chunk PDC and the displays are read only then). */
+    private boolean displayFamily;
     /** Mod block id to the note block that stands for it in Paper's world. */
     private final Map<String, F2vPack.VisualBlock> blockCarrierRows = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
@@ -297,6 +299,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
             blockCarriers.put(row.key(), row.moddedBlockId());
             blockCarrierRows.put(row.moddedBlockId(), row);
+            displayFamily |= row.isDisplay();
         }
     }
 
@@ -349,6 +352,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * are not in yet is reconciled on the next tick.
      */
     private void adoptDisplays(org.bukkit.Chunk chunk) {
+        if (!displayFamily) {
+            return; // no display rows in this build: no chunk PDC to read
+        }
         if (chunk.isEntitiesLoaded() || plugin == null) {
             DisplayCarriers.adopt(chunk, this::knownDisplay);
             return;
