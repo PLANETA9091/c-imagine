@@ -215,6 +215,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final Map<String, String> blockCarriers = new HashMap<>();
     /** Per player: inventory slots the real client shows empty after a click its server ignored. */
     private final Map<UUID, java.util.Set<Integer>> clientEmptied = new HashMap<>();
+    /** True when this build has display-family rows (the chunk PDC and the displays are read only then). */
+    private boolean displayFamily;
     /** Mod block id to the note block that stands for it in Paper's world. */
     private final Map<String, F2vPack.VisualBlock> blockCarrierRows = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
@@ -297,6 +299,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
             blockCarriers.put(row.key(), row.moddedBlockId());
             blockCarrierRows.put(row.moddedBlockId(), row);
+            displayFamily |= row.isDisplay();
         }
     }
 
@@ -334,12 +337,84 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** A chunk loads: its placed mod blocks, kept in its PDC, tick in the layer from now on. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(org.bukkit.event.world.ChunkLoadEvent event) {
+        adoptDisplays(event.getChunk());
         if (!LiveBridge.available()) {
             return;
         }
         LiveBridge bridge = live();
         if (bridge != null && bridge.adoptChunk(event.getChunk(), this::carried)) {
             logTicking();
+        }
+    }
+
+    /**
+     * A loaded chunk's display-family blocks get their displays reconciled. A chunk whose entities
+     * are not in yet is reconciled on the next tick.
+     */
+    private void adoptDisplays(org.bukkit.Chunk chunk) {
+        if (!displayFamily) {
+            return; // no display rows in this build: no chunk PDC to read
+        }
+        if (chunk.isEntitiesLoaded() || plugin == null) {
+            DisplayCarriers.adopt(chunk, this::knownDisplay);
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+            if (chunk.isLoaded()) {
+                DisplayCarriers.adopt(chunk, this::knownDisplay);
+            }
+        });
+    }
+
+    /** True when {@code moddedId} is a display-family block in this build's rows. */
+    private boolean knownDisplay(String moddedId) {
+        F2vPack.VisualBlock row = blockCarrierRows.get(moddedId);
+        return row != null && row.isDisplay();
+    }
+
+    /**
+     * Boot: the loaded chunks' display-family blocks are reconciled once the plugin listens (the
+     * chunks loaded before it did not fire a load event for it).
+     */
+    public void adoptLoadedDisplays() {
+        for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
+            for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+                adoptDisplays(chunk);
+            }
+        }
+    }
+
+    /** Explosions do not take a display block: the barrier host and its display stay where they are. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayBlast(org.bukkit.event.entity.EntityExplodeEvent event) {
+        event.blockList().removeIf(DisplayCarriers::displayed);
+    }
+
+    /** Explosions of blocks (beds, anchors) keep the display family too. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayBlockBlast(org.bukkit.event.block.BlockExplodeEvent event) {
+        event.blockList().removeIf(DisplayCarriers::displayed);
+    }
+
+    /** A piston moving a display block stops: the display would be left behind at its old position. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayPush(org.bukkit.event.block.BlockPistonExtendEvent event) {
+        for (Block moved : event.getBlocks()) {
+            if (DisplayCarriers.displayed(moved)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    /** A piston pulling a display block stops, as the push does. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayPull(org.bukkit.event.block.BlockPistonRetractEvent event) {
+        for (Block moved : event.getBlocks()) {
+            if (DisplayCarriers.displayed(moved)) {
+                event.setCancelled(true);
+                return;
+            }
         }
     }
 
@@ -1578,15 +1653,23 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBreak(org.bukkit.event.block.BlockBreakEvent event) {
         Block block = event.getBlock();
-        if (!isCarrierType(block.getType())) {
+        String modded = carried(block);
+        if (modded == null) {
             return;
         }
-        String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
-        LiveBridge bridge = modded == null ? null : live();
+        // the barrier goes with the break (the event is not cancelled): its display goes too
+        boolean display = block.getType() == Material.BARRIER;
+        LiveBridge bridge = live();
         if (bridge == null) {
+            if (display) {
+                DisplayCarriers.remove(block);
+            }
             return;
         }
         LiveBridge.Broken broken = bridge.breakBlock(event.getPlayer(), block, modded);
+        if (display) {
+            DisplayCarriers.remove(block);
+        }
         if (broken.state().error() != null) {
             log.warning("[cim-screen] live break failed: " + broken.state().error());
             return;
@@ -1604,10 +1687,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 + " stack(s) dropped");
     }
 
-    /** The block types a carrier can stand in: the note block (the note family) and the mushroom hosts (the mushroom family). */
+    /**
+     * The block types a carrier can stand in: the note block (the note family), the mushroom hosts
+     * (the mushroom family) and the barrier (the display family, see {@link DisplayCarriers}).
+     */
     static boolean isCarrierType(Material type) {
         return type == Material.NOTE_BLOCK || type == Material.BROWN_MUSHROOM_BLOCK
-                || type == Material.RED_MUSHROOM_BLOCK || type == Material.MUSHROOM_STEM;
+                || type == Material.RED_MUSHROOM_BLOCK || type == Material.MUSHROOM_STEM
+                || type == Material.BARRIER;
     }
 
     /**
@@ -1650,7 +1737,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             event.setCancelled(true);
             return;
         }
-        if (info.hardness() == 0) {
+        // A display block's host is a barrier, which a survival dig never progresses: it breaks at
+        // once, and the mod's own hardness is not mirrored (the note block's break-speed path cannot apply).
+        if (info.hardness() == 0 || event.getBlock().getType() == Material.BARRIER) {
             event.setInstaBreak(true);
             return;
         }
@@ -1728,9 +1817,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         });
     }
 
-    /** The mod block id a note-block carrier stands for, or null for a plain note block. */
+    /**
+     * The mod block id a carrier stands for: a note block or mushroom host by its state, a display
+     * block by its barrier's chunk key (O(1)). Null for anything else.
+     */
     private String carried(Block block) {
-        if (block == null || !isCarrierType(block.getType()) || blockCarriers.isEmpty()) {
+        if (block == null || blockCarriers.isEmpty()) {
+            return null;
+        }
+        if (block.getType() == Material.BARRIER) {
+            String id = DisplayCarriers.idAt(block);
+            return id != null && knownDisplay(id) ? id : null;
+        }
+        if (!isCarrierType(block.getType())) {
             return null;
         }
         return blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
@@ -1825,11 +1924,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         String opener = null;
         Block block = event.getClickedBlock();
-        if (block != null && isCarrierType(block.getType())) {
-            String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
-            opener = modded == null ? null : "block:" + modded;
+        String modded = carried(block);
+        if (modded != null) {
+            opener = "block:" + modded;
             LiveBridge bridge = live();
-            if (modded != null && bridge != null && !player.isSneaking()) {
+            if (bridge != null && !player.isSneaking()) {
                 LiveBridge.State state = bridge.openBlock(player, block, modded);
                 if (openLive(player, state, opener)) {
                     event.setCancelled(true);
@@ -1843,8 +1942,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
                 && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
             LiveBridge bridge = live();
-            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(),
-                    isCarrierType(block.getType()) ? blockCarriers.get(carrierKey(block.getBlockData().getAsString())) : null)) {
+            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), carried(block))) {
                 event.setCancelled(true);
                 return;
             }
@@ -1888,6 +1986,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
             if (row != null && (at.getType().isAir() || at.isReplaceable())) {
                 at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
+                if (row.isDisplay()) {
+                    DisplayCarriers.place(at, row.moddedBlockId());
+                }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
                 if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
                     logTicking();

@@ -211,6 +211,16 @@ jobs:
           [ "$REG" -ge 300 ] || fail "only $REG recipes registered (floor 300; the carrier-only baseline was 38)"
           echo "recipes registered: $REG"
 
+          # 1c. No mod block is left unplaceable: the note and mushroom slots fill up with Create and
+          #     Sophisticated Backpacks (measured: 648 used, 1 block over), and the overflow joins the
+          #     display family (barrier + ItemDisplay) instead of the old "have no free carrier slot" warning.
+          if grep -q "have no free carrier slot" "$B1"; then
+            fail "a mod block has no carrier at all (the display family did not take the overflow)"
+          fi
+          DISP=$(sed -n 's/.*\[c-imagine\] f2v pack: \([0-9]*\) mod block(s) on the display family.*/\1/p' "$B1" | head -1)
+          [ -n "$DISP" ] && [ "$DISP" -ge 1 ] || fail "no '[c-imagine] f2v pack: N mod block(s) on the display family' line with N>=1 in boot 1 (the measured overflow is one block)"
+          echo "display family: $DISP mod block(s)"
+
           # 2. A Create block gets an auto-allocated carrier: the ledger and the resolved rows.
           LEDGER=srv/c-imagine/f2v/carriers.tsv
           RESOLVED=srv/c-imagine/f2v/visual-blocks.resolved.tsv

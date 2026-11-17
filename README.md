@@ -164,18 +164,21 @@ this section is the short, honest summary (2026-11-14).
   and clicking a mod menu run the mod's own code.
 
 **Not yet survival-playable out of the box.** Known gaps:
-- A mod block can only be placed when it has a note-block carrier. Boot allocates one
-  per mod blockstate (Create first) over 27 instruments x notes 1-24 = 648 note slots,
-  kept in `c-imagine/f2v/carriers.tsv`. The mushroom family (brown/red mushroom block and
-  mushroom stem, six face bits, 62 usable states each = 186 slots) is allocated only after the
-  note slots are full and only with `-Dcim.f2v.mushroomCarriers=true` (an explicit manifest
-  row always emits): vanilla worldgen produces
-  some of those states, so it stays off until a worldgen state census clears it. Blocks past
-  the open capacity stay unplaceable (the display-entity fallback is the next step). Blocks
-  without a blockstate JSON are not discovered.
+- A mod block is placed as a carrier. Boot allocates one per mod blockstate (Create first)
+  over 27 instruments x notes 1-24 = 648 note slots, kept in `c-imagine/f2v/carriers.tsv`.
+  The mushroom family (brown/red mushroom block and mushroom stem, six face bits, 62 usable
+  states each = 186 slots) is allocated only after the note slots are full and only with
+  `-Dcim.f2v.mushroomCarriers=true` (an explicit manifest row always emits): vanilla worldgen
+  produces some of those states, so it stays off until a worldgen state census clears it.
+  Blocks past the slot families join the display family (unbounded): a barrier in the world
+  with an `ItemDisplay` of the block's own model on it, identified by a chunk PDC key per
+  position and reconciled on every chunk load. Survival breaks a display block at once (the
+  barrier never progresses in a dig, so the mod's hardness is not mirrored yet); explosions and
+  pistons leave it in place. Blocks without a blockstate JSON are not discovered.
 - Placed mod block entities tick only while their menu is open.
 - No mod world generation in the Paper world and no mod recipes in Paper's crafting.
-- Mod block hardness, tool and collision are the note block's.
+- Mod block hardness, tool and collision are the note block's (display-family blocks: a barrier's
+  collision, instant break).
 - The F2V pack server listens on loopback only and is not offered on join;
   `cimlive` ships in the module zip and is installed into `mods/` at boot (see Quick start).
 

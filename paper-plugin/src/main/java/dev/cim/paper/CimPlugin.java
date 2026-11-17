@@ -265,6 +265,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().warning(LOG_PREFIX + "f2v pack: warn " + w);
                 }
             }
+            // the display family: the blocks the note and mushroom slots could not hold (barrier + ItemDisplay)
+            long displayed = result.blocks().stream().filter(dev.cim.f2v.F2vPack.VisualBlock::isDisplay).count();
+            if (displayed > 0) {
+                log().info(LOG_PREFIX + "f2v pack: " + displayed + " mod block(s) on the display family"
+                        + " (note and mushroom slots full; barrier + ItemDisplay carriers)");
+            }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
                     readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
             dev.cim.f2v.PackHttp http = startPackServer(packZip, result.sha1());
