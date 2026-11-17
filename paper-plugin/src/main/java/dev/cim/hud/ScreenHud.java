@@ -10,8 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
@@ -39,8 +37,6 @@ import org.bukkit.inventory.ItemStack;
  * when no vanilla screen is open, so sneaking closes.
  */
 public final class ScreenHud implements HudService.Layer, Listener, CommandExecutor {
-
-    private static final Pattern STATE = Pattern.compile("(\\w+)=(\\w+)");
 
     /** The highest vanilla note value (25 notes, 0..24). */
     private static final int NOTE_MAX = 24;
@@ -299,7 +295,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         allocatedItems.addAll(F2vPack.readAllocatedItems(f2v));
         // the rows the pack was built from: the manifest plus the boot-time allocation
         for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
-            blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
+            blockCarriers.put(row.key(), row.moddedBlockId());
             blockCarrierRows.put(row.moddedBlockId(), row);
         }
     }
@@ -1582,7 +1578,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBreak(org.bukkit.event.block.BlockBreakEvent event) {
         Block block = event.getBlock();
-        if (block.getType() != Material.NOTE_BLOCK) {
+        if (!isCarrierType(block.getType())) {
             return;
         }
         String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
@@ -1608,8 +1604,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 + " stack(s) dropped");
     }
 
-    /** The note block a carrier is in Paper: the reference its break time is measured against. */
-    private static final String NOTE = "minecraft:note_block";
+    /** The block types a carrier can stand in: the note block (the note family) and the mushroom hosts (the mushroom family). */
+    static boolean isCarrierType(Material type) {
+        return type == Material.NOTE_BLOCK || type == Material.BROWN_MUSHROOM_BLOCK
+                || type == Material.RED_MUSHROOM_BLOCK || type == Material.MUSHROOM_STEM;
+    }
 
     /**
      * The transient BLOCK_BREAK_SPEED modifier a carrier's dig carries. Transient: a crash mid-dig
@@ -1620,7 +1619,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Per player: the carrier being dug, while its break speed is the mod block's. */
     private final Map<UUID, Digging> digging = new HashMap<>();
 
-    private record Digging(String blockId) {
+    /** The carrier being dug, with its host block (the note block or the mushroom host Paper breaks). */
+    private record Digging(String blockId, String host) {
     }
 
     /**
@@ -1654,8 +1654,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             event.setInstaBreak(true);
             return;
         }
-        digging.put(player.getUniqueId(), new Digging(modded));
-        applyBreakSpeed(player, bridge, modded, info);
+        String host = event.getBlock().getType().getKey().toString();
+        digging.put(player.getUniqueId(), new Digging(modded, host));
+        applyBreakSpeed(player, bridge, modded, info, host);
     }
 
     /**
@@ -1663,15 +1664,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * block's progress per tick into the mod block's. Leaves the player's own speed when the layer
      * or the multiplier cannot be had.
      */
-    private void applyBreakSpeed(Player player, LiveBridge bridge, String modded, LiveBridge.BlockInfo info) {
+    private void applyBreakSpeed(Player player, LiveBridge bridge, String modded, LiveBridge.BlockInfo info,
+                                 String host) {
         org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
         if (speed == null) {
             return;
         }
         // The previous tool's multiplier goes first: a re-measure that cannot answer leaves the player's own speed.
         speed.removeModifier(BREAK_SPEED);
-        LiveBridge.BlockInfo note = bridge.blockInfo(NOTE);
-        LiveBridge.Dig dig = bridge.digSpeed(player.getInventory().getItemInMainHand(), modded, NOTE);
+        LiveBridge.BlockInfo note = bridge.blockInfo(host);
+        LiveBridge.Dig dig = bridge.digSpeed(player.getInventory().getItemInMainHand(), modded, host);
         org.bukkit.attribute.AttributeInstance efficiency = player.getAttribute(org.bukkit.attribute.Attribute.MINING_EFFICIENCY);
         if (note == null || note.hardness() <= 0 || dig == null || dig.refSpeed() <= 0 || efficiency == null) {
             return;
@@ -1720,7 +1722,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (bridge != null && digging.get(player.getUniqueId()) == dig) {
                 LiveBridge.BlockInfo info = bridge.blockInfo(dig.blockId());
                 if (info != null) {
-                    applyBreakSpeed(player, bridge, dig.blockId(), info);
+                    applyBreakSpeed(player, bridge, dig.blockId(), info, dig.host());
                 }
             }
         });
@@ -1728,7 +1730,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     /** The mod block id a note-block carrier stands for, or null for a plain note block. */
     private String carried(Block block) {
-        if (block == null || block.getType() != Material.NOTE_BLOCK || blockCarriers.isEmpty()) {
+        if (block == null || !isCarrierType(block.getType()) || blockCarriers.isEmpty()) {
             return null;
         }
         return blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
@@ -1749,7 +1751,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Neighbor updates (redstone, a block set below) must not re-tune a carrier. */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onCarrierPhysics(org.bukkit.event.block.BlockPhysicsEvent event) {
-        if (event.getChangedType() == Material.NOTE_BLOCK && carried(event.getBlock()) != null) {
+        if (isCarrierType(event.getChangedType()) && carried(event.getBlock()) != null) {
             event.setCancelled(true);
         }
     }
@@ -1782,6 +1784,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** {@code harp:5} of a note-block state, with the note one vanilla step up; null when unreadable. */
     static String steppedKey(String state) {
         String key = carrierKey(state);
+        if (key == null || !state.contains("note_block")) {
+            return null; // only the note family steps: a mushroom face key is not a note
+        }
         int colon = key.lastIndexOf(':');
         try {
             int note = Integer.parseInt(key.substring(colon + 1));
@@ -1820,7 +1825,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         String opener = null;
         Block block = event.getClickedBlock();
-        if (block != null && block.getType() == Material.NOTE_BLOCK) {
+        if (block != null && isCarrierType(block.getType())) {
             String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
             opener = modded == null ? null : "block:" + modded;
             LiveBridge bridge = live();
@@ -1839,7 +1844,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
             LiveBridge bridge = live();
             if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(),
-                    block.getType() == Material.NOTE_BLOCK ? blockCarriers.get(carrierKey(block.getBlockData().getAsString())) : null)) {
+                    isCarrierType(block.getType()) ? blockCarriers.get(carrierKey(block.getBlockData().getAsString())) : null)) {
                 event.setCancelled(true);
                 return;
             }
@@ -1882,8 +1887,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
             Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
             if (row != null && (at.getType().isAir() || at.isReplaceable())) {
-                at.setBlockData(org.bukkit.Bukkit.createBlockData("minecraft:note_block[instrument=" + row.instrument()
-                        + ",note=" + row.note() + "]"), false);
+                at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
                 if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
                     logTicking();
@@ -1912,19 +1916,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return null;
     }
 
-    /** {@code minecraft:note_block[instrument=harp,note=5,...]} to {@code harp:5}. */
+    /** {@code minecraft:note_block[instrument=harp,note=5,...]} to {@code harp:5}; a mushroom host to {@code host:111111}. */
     static String carrierKey(String state) {
-        Matcher m = STATE.matcher(state);
-        String instrument = null;
-        String note = null;
-        while (m.find()) {
-            if (m.group(1).equals("instrument")) {
-                instrument = m.group(2);
-            } else if (m.group(1).equals("note")) {
-                note = m.group(2);
-            }
-        }
-        return instrument + ":" + note;
+        return F2vPack.carrierKeyOf(state);
     }
 
     @EventHandler
@@ -1965,6 +1959,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check("harp:0".equals(steppedKey("minecraft:note_block[instrument=harp,note=24,powered=false]")),
                 "the note wraps from 24 to 0 as vanilla does");
         bad += check(steppedKey("minecraft:note_block") == null, "an unreadable state steps to nothing");
+        bad += check("brown_mushroom_block:100000".equals(carrierKey(
+                "minecraft:brown_mushroom_block[north=true,east=false,south=false,west=false,up=false,down=false]")),
+                "a mushroom host's state reads its face key");
+        bad += check(steppedKey("minecraft:brown_mushroom_block[north=true,east=true,south=true,west=true,up=true,down=false]") == null,
+                "a mushroom carrier never steps as a note block");
+        bad += check(isCarrierType(Material.MUSHROOM_STEM) && !isCarrierType(Material.STONE),
+                "the mushroom hosts are carrier types, stone is not");
         GuiCaptures.Capture c = GuiCaptures.parse(List.of(
                 "cell\tx\ty\tz\tmenu\tnote",
                 "cell\t1\t2\t3\tcreate:filter\topened-by:item:create:filter\tcom.simibubi.FilterMenu",
