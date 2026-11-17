@@ -151,7 +151,7 @@ inside a single JVM.
 ## Status
 
 Milestone detail and the open blockers live in [`docs/ROADMAP.md`](docs/ROADMAP.md);
-this section is the short, honest summary (2026-11-14).
+this section is the short, honest summary (2026-11-17).
 
 **Works (CI-proven on `main`):**
 - M0/M1 — CRUSSTY module boots the relocated NeoForge 1.21.1 layer inside Paper 26.3.
@@ -163,23 +163,33 @@ this section is the short, honest summary (2026-11-14).
 - M6.2/M6.3 — with the `cimlive` mod, using a mod item, placing/breaking a mod block
   and clicking a mod menu run the mod's own code.
 
-**Not yet survival-playable out of the box.** Known gaps:
-- A mod block is placed as a carrier. Boot allocates one per mod blockstate (Create first)
-  over 27 instruments x notes 1-24 = 648 note slots, kept in `c-imagine/f2v/carriers.tsv`.
-  The mushroom family (brown/red mushroom block and mushroom stem, six face bits, 62 usable
-  states each = 186 slots) is allocated only after the note slots are full and only with
-  `-Dcim.f2v.mushroomCarriers=true` (an explicit manifest row always emits): vanilla worldgen
-  produces some of those states, so it stays off until a worldgen state census clears it.
-  Blocks past the slot families join the display family (unbounded): a barrier in the world
-  with an `ItemDisplay` of the block's own model on it, identified by a chunk PDC key per
-  position and reconciled on every chunk load. Survival breaks a display block at once (the
-  barrier never progresses in a dig, so the mod's hardness is not mirrored yet); explosions and
-  pistons leave it in place. Blocks without a blockstate JSON are not discovered.
-- Placed mod block entities tick only while their menu is open.
-- No mod world generation in the Paper world and no mod recipes in Paper's crafting.
-- Mod block hardness, tool and collision are the note block's (display-family blocks: a barrier's
-  collision, instant break).
-- The F2V pack server listens on loopback only and is not offered on join;
-  `cimlive` ships in the module zip and is installed into `mods/` at boot (see Quick start).
+**Survival on `feat/survival`** (gated by `.github/workflows/survival.yml`: Paper 26.3 +
+module + Create 6.0.10 + Sophisticated Backpacks, two boots, no manual install step):
+- `cimlive` ships in the module zip and installs itself into `mods/` at boot.
+- The F2V pack is served on all interfaces and offered on join (required once
+  `CIM_F2V_PUBLIC_URL` or `server-ip` names the address; see Quick start).
+- Every mod block gets a carrier at boot: 648 note-block slots first, then the
+  unbounded display family (a barrier plus an `ItemDisplay` of the block's own model).
+  The mushroom family (186 more slots) exists behind `-Dcim.f2v.mushroomCarriers=true`;
+  it stays off because vanilla worldgen produces some of those states. Carriers are
+  guarded against note changes, redstone and neighbour updates.
+- Every mod item gets a Paper stack (`item_model` + identity), so inventories,
+  drops and recipes hold the real mod item.
+- Placed mod block entities tick in loaded chunks with no menu open, persist in chunk
+  data and are adopted again after a restart.
+- Breaking takes the mod block's own time and needs its correct tool for drops
+  (note-family carriers); the mod's own drop is spilled.
+- Mod recipes: shaped, shapeless, smelting, blasting, smoking, campfire and stonecutting
+  register in Paper (1075 of 1607 for Create + Backpacks) and unlock in the recipe book.
+- Mod ores from NeoForge biome modifiers generate in new overworld chunks (Create zinc),
+  and spawn chunks made before the layer was ready are backfilled once.
 
-Work on these is tracked on the `feat/survival` branch and in `docs/ROADMAP.md`.
+**Known gaps:**
+- Machine-only recipes (Create's crushing, mixing, pressing and the like) run only in
+  the machines, as on NeoForge; smithing and special crafting recipes are not on Paper yet.
+- Display-family blocks break instantly (a barrier never progresses in a dig).
+- Worldgen covers mod features in the overworld only: no nether/end, no new biomes
+  (Biomes O' Plenty) and veins are cut at chunk borders; about 8 ms per new chunk.
+- Mod item names come from the id, not the mod's lang file; collision is the
+  carrier's, not the mod block's shape.
+- Mod entities and their AI in the Paper world are not covered by the survival gate.
