@@ -259,6 +259,8 @@ jobs:
           #    the block's own drop, and no ticking left behind.
           grep -qE "\[cim-screen\] cimbot broke $SURVIVAL_ITEM: [1-9][0-9]* stack\(s\) dropped" "$B2" \
             || fail "breaking the placed $SURVIVAL_ITEM did not drop its own item"
+          grep -q "\[cim-survival\] dropped $SURVIVAL_ITEM x" "$B2" \
+            || fail "the drop is not the mod's own $SURVIVAL_ITEM item (see the dropped lines)"
           grep -q "\[cim-survival\] break $SURVIVAL_ITEM -> broke true block now AIR" "$B2" \
             || fail "the broken block did not become air"
           grep -q "\[cim-survival\] ticking after break: 0" "$B2" \

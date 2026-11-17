@@ -1254,7 +1254,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         out.add("ticking after break: " + (bridge == null ? -1 : bridge.tickingCount()));
         for (org.bukkit.entity.Entity e : at.getWorld().getNearbyEntities(at.getLocation().add(0.5, 0.5, 0.5), 2, 2, 2)) {
             if (e instanceof org.bukkit.entity.Item item) {
-                out.add("dropped " + item.getItemStack().getType() + " x" + item.getItemStack().getAmount());
+                out.add("dropped " + itemId(item.getItemStack()) + " x" + item.getItemStack().getAmount());
             }
         }
         return out;
