@@ -193,6 +193,24 @@ jobs:
           grep -q "\[c-imagine\] f2v pack: auto-offer on join" "$B1" \
             || fail "no '[c-imagine] f2v pack: auto-offer' line in boot 1 (the join offer is off or not logged)"
 
+          # 1b. The item channel: every mod item with an item model gets a Paper representation.
+          #     The tally line is one per build: "N mod items resolved (M from manifest, K allocated, F failed)".
+          ITEMS_LINE=$(grep -m1 -E '\[c-imagine\] f2v items: [0-9]+ mod items resolved' "$B1") \
+            || fail "no '[c-imagine] f2v items:' tally line in boot 1 (the item channel did not run)"
+          echo "$ITEMS_LINE"
+          ALLOC=$(sed -n 's/.*(\([0-9]*\) from manifest, \([0-9]*\) allocated.*/\2/p' <<<"$ITEMS_LINE")
+          [ -n "$ALLOC" ] && [ "$ALLOC" -ge 1 ] || fail "no mod item was allocated a Paper representation: $ITEMS_LINE"
+          # The recipes the layer answered, against the carriers they can now name. The measured baseline
+          # (Create 6.0.10 + Sophisticated Backpacks, before allocation) was 38 registered with 708 skipped
+          # for "no carrier" (shaped 437, shapeless 250, smelting 15, blasting 6). Allocation gives every mod
+          # item with a model a carrier, so most of those 708 become expressible. The floor is 300, under
+          # half of 708, so it still holds when many skip for other reasons (no items, components, a failed
+          # result). Not measured yet: the first CI run after this change sets the real number.
+          REG=$(sed -n 's/.*\[c-imagine\] recipes: registered \([0-9]*\),.*/\1/p' "$B1" | head -1)
+          [ -n "$REG" ] || fail "no '[c-imagine] recipes: registered N' line in boot 1"
+          [ "$REG" -ge 300 ] || fail "only $REG recipes registered (floor 300; the carrier-only baseline was 38)"
+          echo "recipes registered: $REG"
+
           # 2. A Create block gets an auto-allocated carrier: the ledger and the resolved rows.
           LEDGER=srv/c-imagine/f2v/carriers.tsv
           RESOLVED=srv/c-imagine/f2v/visual-blocks.resolved.tsv
@@ -264,4 +282,6 @@ jobs:
             cimbot-2.log
             srv/c-imagine/f2v/carriers.tsv
             srv/c-imagine/f2v/visual-blocks.resolved.tsv
+            srv/c-imagine/f2v/visual-items.resolved.tsv
+            srv/c-imagine/f2v/visual-items.allocated.tsv
             srv/logs/latest.log

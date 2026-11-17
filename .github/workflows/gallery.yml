@@ -921,6 +921,7 @@ jobs:
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
+          test -f seed-pack/f2v/visual-items.allocated.tsv
           # 14-dx-f: the animated-sprite states manifest rides the build (the
           # file is ABSENT, not empty, when no animated sprite was baked — the
           # join treats a missing file as the empty law)
@@ -1032,6 +1033,7 @@ jobs:
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
+            seed-pack/f2v/visual-items.allocated.tsv
           if-no-files-found: error
 
       - name: upload captured meshes and source mappings (also on failure)
@@ -1050,6 +1052,7 @@ jobs:
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
+            seed-pack/f2v/visual-items.allocated.tsv
             seed-pack/f2v/pack.sha1
             seed-pack/f2v/inputs.sha1
             pack-build.log
