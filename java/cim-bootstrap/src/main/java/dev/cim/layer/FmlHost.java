@@ -150,7 +150,16 @@ public final class FmlHost {
         return loadEnded;
     }
 
+    /** Set when a mod load begins: a slow load is waited for, never raced. */
+    private static volatile boolean loadStarted;
+
+    /** Whether a mod load has begun (it may still be running). */
+    public static boolean loadStarted() {
+        return loadStarted;
+    }
+
     public static String run(Map<String, Object> manifest) {
+        loadStarted = true;
         try {
             return runLoad(manifest);
         } finally {

@@ -230,9 +230,17 @@ public final class LayerServerHost {
                 // Paper ticks before the mods finish loading (they wait for its server
                 // object): a start now finds every mod registry entry unbound (measured:
                 // Create's AddPackFindersEvent on create:cutting, 5 s before the load ended).
-                // A host that never loads mods starts after two minutes of waiting.
-                if (!FmlHost.loadEnded() && WAITED.incrementAndGet() < 2400) {
-                    return;
+                // A host that never loads mods starts after two minutes of waiting; a load
+                // that has begun is waited for however long it takes (measured: a slow CI
+                // runner passed the two minutes mid-load and the start found no ModList).
+                if (!FmlHost.loadEnded()) {
+                    long waited = WAITED.incrementAndGet();
+                    if (FmlHost.loadStarted() || waited < 2400) {
+                        if (waited == 2400) {
+                            System.out.println(LOG + " still waiting for the mod load to end");
+                        }
+                        return;
+                    }
                 }
                 start();
                 if (!STARTED.get()) {
