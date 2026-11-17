@@ -568,6 +568,20 @@ final class LiveBridge {
         }
     }
 
+    /** Latched once the layer's real server is up; until then interactions are refused. */
+    private static volatile boolean ready;
+
+    /**
+     * Whether the layer's real server is up (its resources exist): a use, place or break
+     * in the first seconds after boot would otherwise reach a server with none.
+     */
+    public static boolean ready() {
+        if (!ready) {
+            ready = call("ready").startsWith("ready");
+        }
+        return ready;
+    }
+
     private static String call(String request) {
         Function<String, String> fn = entry();
         return fn == null ? "error\tno layer" : fn.apply(request);

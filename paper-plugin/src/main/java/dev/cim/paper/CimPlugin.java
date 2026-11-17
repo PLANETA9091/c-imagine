@@ -716,6 +716,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             if (survivalItem != null && !survivalItem.isBlank()) {
                 Player target = bot;
                 String item = survivalItem.trim();
+                // A player's first click waits for the layer's real server, as a real player's would.
+                int waited = 0;
+                while (waited < 300 && !callSync(dev.cim.hud.HudBootstrap::liveReady)) {
+                    Thread.sleep(1000);
+                    waited++;
+                }
+                log().info("[cim-survival] layer ready after " + waited + " s: " + callSync(dev.cim.hud.HudBootstrap::liveReady));
                 if ("resume".equals(System.getenv("CIM_SURVIVAL_PHASE"))) {
                     for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalResume(target, item))) {
                         log().info("[cim-survival] " + line);

@@ -1660,6 +1660,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // the barrier goes with the break (the event is not cancelled): its display goes too
         boolean display = block.getType() == Material.BARRIER;
         LiveBridge bridge = live();
+        if (bridge != null && !LiveBridge.ready()) {
+            // the mod's own drop needs the layer's real server: keep the block until it is up
+            event.setCancelled(true);
+            event.getPlayer().sendActionBar(net.kyori.adventure.text.Component.text("Mods are still starting"));
+            return;
+        }
         if (bridge == null) {
             if (display) {
                 DisplayCarriers.remove(block);
@@ -1817,6 +1823,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         });
     }
 
+    /** The live bridge, only once the layer's real server is up (else null). */
+    private LiveBridge liveReady() {
+        LiveBridge bridge = live();
+        return bridge != null && LiveBridge.ready() ? bridge : null;
+    }
+
     /**
      * The mod block id a carrier stands for: a note block or mushroom host by its state, a display
      * block by its barrier's chunk key (O(1)). Null for anything else.
@@ -1927,7 +1939,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         String modded = carried(block);
         if (modded != null) {
             opener = "block:" + modded;
-            LiveBridge bridge = live();
+            LiveBridge bridge = liveReady();
             if (bridge != null && !player.isSneaking()) {
                 LiveBridge.State state = bridge.openBlock(player, block, modded);
                 if (openLive(player, state, opener)) {
@@ -1941,7 +1953,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // places, a backpack set down by a sneaking click, a menu it opens).
         if (block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
                 && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
-            LiveBridge bridge = live();
+            LiveBridge bridge = liveReady();
             if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), carried(block))) {
                 event.setCancelled(true);
                 return;
@@ -1950,7 +1962,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (opener == null && item != null && !item.getType().isAir()) {
             opener = "item:" + itemId(item);
             // The mod's own use() decides, when the layer is there: what opens is its menu.
-            LiveBridge bridge = live();
+            LiveBridge bridge = liveReady();
             if (bridge != null && !player.isSneaking()) {
                 LiveBridge.State state = bridge.openHeld(player);
                 if (openLive(player, state, opener)) {

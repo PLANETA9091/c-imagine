@@ -67,6 +67,11 @@ public final class HudBootstrap {
         return screens == null ? java.util.List.of("no screens") : screens.liveBlockTest(player, blockId);
     }
 
+    /** Whether the layer's real server is up, so a mod interaction can run (see {@link LiveBridge#ready}). */
+    public static boolean liveReady() {
+        return LiveBridge.ready();
+    }
+
     /** Survival smoke (survival.yml): the four steps, see {@link ScreenHud#survivalPlace}. */
     public static java.util.List<String> survivalPlace(org.bukkit.entity.Player player, String itemId) {
         return screens == null ? java.util.List.of("no screens") : screens.survivalPlace(player, itemId);

@@ -53,6 +53,11 @@ public final class LiveProtocol {
             if (head[0].equals("tick")) {
                 return tick();
             }
+            // Whether the real server is up: interactions need its resources (no player, no uuid).
+            if (head[0].equals("ready")) {
+                net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+                return real == null || real instanceof FacadeServer || !real.isReady() ? "wait\n" : "ready\n";
+            }
             // The mod recipes of the real server, once its data is loaded (no player, no uuid).
             if (head[0].equals("recipes")) {
                 return recipes();
