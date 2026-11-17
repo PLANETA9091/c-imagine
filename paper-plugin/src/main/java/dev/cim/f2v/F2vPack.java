@@ -1,5 +1,6 @@
 package dev.cim.f2v;
 
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import java.io.IOException;
 import java.io.InputStream;
@@ -615,6 +616,119 @@ public final class F2vPack {
      * component codec, nothing per-instance.
      */
     public record VisualBlock(String moddedBlockId, String instrument, int note) {
+
+        /**
+         * True for a mushroom-family carrier: {@code instrument} then names the host block
+         * ({@link #MUSHROOM_HOSTS}) and {@code note} carries the six face bits (bit i =
+         * {@link #MUSHROOM_FACES} i). Note-family rows (the default) keep their meaning.
+         */
+        public boolean isMushroom() {
+            return MUSHROOM_HOSTS.contains(instrument);
+        }
+
+        /** The carrier's allocation key: {@code harp:5} for a note slot, {@code brown_mushroom_block:101010} for a mushroom slot. */
+        public String key() {
+            return isMushroom() ? instrument + ":" + mushroomBits(note) : instrument + ":" + note;
+        }
+    }
+
+    /**
+     * The mushroom-block carrier family (overflow capacity, after the note slots). Three host
+     * blocks, each a six-boolean blockstate (64 states). Vanilla's placed default (all faces
+     * true) and its all-false interior are never handed out.
+     */
+    public static final List<String> MUSHROOM_HOSTS = List.of("brown_mushroom_block", "red_mushroom_block",
+            "mushroom_stem");
+    /** The six face properties, in the bit order of a mushroom slot's mask and bit string. */
+    public static final List<String> MUSHROOM_FACES = List.of("north", "east", "south", "west", "up", "down");
+    static final int MUSHROOM_MASK_MIN = 1;
+    static final int MUSHROOM_MASK_MAX = 62;
+    static final int MUSHROOM_CAPACITY = MUSHROOM_HOSTS.size() * (MUSHROOM_MASK_MAX - MUSHROOM_MASK_MIN + 1);
+
+    /** The six bits of a mushroom mask as the blockstate string {@code 101010} (face order of {@link #MUSHROOM_FACES}). */
+    public static String mushroomBits(int mask) {
+        StringBuilder sb = new StringBuilder(MUSHROOM_FACES.size());
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            sb.append((mask >> i & 1) == 1 ? '1' : '0');
+        }
+        return sb.toString();
+    }
+
+    /** The mask of a six-character bit string, or -1 when it is not one. */
+    static int parseMushroomBits(String bits) {
+        if (bits.length() != MUSHROOM_FACES.size()) {
+            return -1;
+        }
+        int mask = 0;
+        for (int i = 0; i < bits.length(); i++) {
+            char c = bits.charAt(i);
+            if (c != '0' && c != '1') {
+                return -1;
+            }
+            mask |= (c - '0') << i;
+        }
+        return mask;
+    }
+
+    /**
+     * The block state a carrier of this row is placed as in Paper's world: the note block
+     * ({@code minecraft:note_block[instrument=..,note=..]}) or the mushroom host with its six
+     * faces ({@code minecraft:brown_mushroom_block[down=true,east=false,...]}).
+     */
+    public static String carrierState(VisualBlock row) {
+        if (!row.isMushroom()) {
+            return "minecraft:note_block[instrument=" + row.instrument() + ",note=" + row.note() + "]";
+        }
+        StringBuilder sb = new StringBuilder("minecraft:").append(row.instrument()).append('[');
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            sb.append(i == 0 ? "" : ",").append(MUSHROOM_FACES.get(i)).append('=')
+                    .append((row.note() >> i & 1) == 1 ? "true" : "false");
+        }
+        return sb.append(']').toString();
+    }
+
+    /**
+     * The carrier key of a placed block's state string: {@code harp:5} for a note block,
+     * {@code brown_mushroom_block:101010} for a mushroom host, null for anything else (or a
+     * state that does not parse).
+     */
+    public static String carrierKeyOf(String state) {
+        int open = state.indexOf('[');
+        String name = open < 0 ? state : state.substring(0, open);
+        name = name.startsWith("minecraft:") ? name.substring("minecraft:".length()) : name;
+        if (name.equals("note_block")) {
+            Map<String, String> props = stateProperties(state);
+            return props.get("instrument") + ":" + props.get("note");
+        }
+        if (MUSHROOM_HOSTS.contains(name)) {
+            Map<String, String> props = stateProperties(state);
+            StringBuilder bits = new StringBuilder();
+            for (String face : MUSHROOM_FACES) {
+                String v = props.get(face);
+                if (v == null) {
+                    return null;
+                }
+                bits.append(v.equals("true") ? '1' : '0');
+            }
+            return name + ":" + bits;
+        }
+        return null;
+    }
+
+    private static Map<String, String> stateProperties(String state) {
+        Map<String, String> props = new HashMap<>();
+        int open = state.indexOf('[');
+        int close = state.lastIndexOf(']');
+        if (open < 0 || close <= open) {
+            return props;
+        }
+        for (String pair : state.substring(open + 1, close).split(",")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0) {
+                props.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
+            }
+        }
+        return props;
     }
 
     /**
@@ -894,23 +1008,38 @@ public final class F2vPack {
 
     /**
      * Read {@code visual-blocks.tsv}: {@code moddedBlockId<TAB>instrument[
-     * <TAB>note]} — one note_block stand-in slot per row (measured surface:
+     * <TAB>note]} — one note_block stand-in slot per row, or a mushroom row
+     * {@code moddedBlockId<TAB>host<TAB>NESWUD bits} (measured surface:
      * block-channel-26-3.md). Optional; missing file = no block overrides.
      * Note defaults to 13 (a deliberate non-default pick so a vanilla
      * note=0 note block elsewhere can never collide with the slot).
      */
     public static List<VisualBlock> readBlockManifest(Path tsv) throws IOException {
-        List<VisualBlock> rows = new ArrayList<>();
         if (!Files.isRegularFile(tsv)) {
-            return rows;
+            return new ArrayList<>();
         }
-        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+        return parseBlockRows(Files.readAllLines(tsv, StandardCharsets.UTF_8));
+    }
+
+    /** The rows of a block manifest or ledger text (see {@link #readBlockManifest}). */
+    static List<VisualBlock> parseBlockRows(List<String> lines) {
+        List<VisualBlock> rows = new ArrayList<>();
+        for (String line : lines) {
             String t = line.trim();
             if (t.isEmpty() || t.startsWith("#")) {
                 continue;
             }
             String[] parts = t.split("\t", -1);
             if (parts.length < 2) {
+                continue;
+            }
+            String host = parts[1].trim();
+            if (MUSHROOM_HOSTS.contains(host)) {
+                // mushroom family row: the third column is the six face bits (NESWUD order)
+                int mask = parts.length >= 3 ? parseMushroomBits(parts[2].trim()) : -1;
+                if (mask >= MUSHROOM_MASK_MIN && mask <= MUSHROOM_MASK_MAX) {
+                    rows.add(new VisualBlock(parts[0].trim(), host, mask));
+                }
                 continue;
             }
             int note = 13;
@@ -921,7 +1050,7 @@ public final class F2vPack {
                     continue; // malformed note — row dropped
                 }
             }
-            rows.add(new VisualBlock(parts[0].trim(), parts[1].trim(), note));
+            rows.add(new VisualBlock(parts[0].trim(), host, note));
         }
         rows.sort(Comparator.comparing(VisualBlock::moddedBlockId)
                 .thenComparing(VisualBlock::instrument)
@@ -971,6 +1100,17 @@ public final class F2vPack {
      */
     static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
                                     List<VisualBlock> ledgerRows) {
+        return planCarriers(discovered, manifest, ledgerRows, false);
+    }
+
+    /**
+     * The planner with the mushroom family switched on or off. Ledger rows are honoured either
+     * way (a slot once issued is never taken back); the switch only gates NEW mushroom slots,
+     * which open after the note slots are full.
+     */
+    static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
+                                    List<VisualBlock> ledgerRows, boolean mushroom) {
+        final int capacity = mushroom ? CARRIER_CAPACITY + MUSHROOM_CAPACITY : CARRIER_CAPACITY;
         Set<String> found = new TreeSet<>(discovered);
         List<String> notes = new ArrayList<>();
         Set<String> used = new HashSet<>();
@@ -1017,10 +1157,10 @@ public final class F2vPack {
             if (placed.contains(id)) {
                 continue;
             }
-            while (cursor < CARRIER_CAPACITY && used.contains(slotKey(slotAt(cursor)))) {
+            while (cursor < capacity && used.contains(slotKey(slotAt(cursor)))) {
                 cursor++;
             }
-            if (cursor >= CARRIER_CAPACITY) {
+            if (cursor >= capacity) {
                 overflow++;
                 continue;
             }
@@ -1032,8 +1172,8 @@ public final class F2vPack {
             placed.add(id);
         }
         if (overflow > 0) {
-            notes.add(overflow + " mod block(s) have no free note_block carrier slot ("
-                    + CARRIER_CAPACITY + " slots in use): not placeable in this pack");
+            notes.add(overflow + " mod block(s) have no free carrier slot (" + capacity
+                    + " slots in use, mushroom family " + (mushroom ? "on" : "off") + "): not placeable in this pack");
         }
         effective.sort(BLOCK_ORDER);
         ledger.sort(BLOCK_ORDER);
@@ -1060,15 +1200,23 @@ public final class F2vPack {
 
     /** The slot at a dense index: instrument-major over CARRIER_INSTRUMENTS, notes 1..24. */
     static VisualBlock slotAt(int index) {
+        if (index >= CARRIER_CAPACITY) {
+            int m = index - CARRIER_CAPACITY;
+            int masks = MUSHROOM_MASK_MAX - MUSHROOM_MASK_MIN + 1;
+            return new VisualBlock("", MUSHROOM_HOSTS.get(m / masks), MUSHROOM_MASK_MIN + m % masks);
+        }
         int notes = CARRIER_NOTE_MAX - CARRIER_NOTE_MIN + 1;
         return new VisualBlock("", CARRIER_INSTRUMENTS.get(index / notes), CARRIER_NOTE_MIN + index % notes);
     }
 
     private static String slotKey(VisualBlock row) {
-        return row.instrument() + ":" + row.note();
+        return row.key();
     }
 
     private static boolean validSlot(VisualBlock row) {
+        if (row.isMushroom()) {
+            return row.note() >= MUSHROOM_MASK_MIN && row.note() <= MUSHROOM_MASK_MAX;
+        }
         return CARRIER_INSTRUMENTS.contains(row.instrument()) && row.note() >= 0 && row.note() <= CARRIER_NOTE_MAX;
     }
 
@@ -1111,11 +1259,21 @@ public final class F2vPack {
      * the ledger ({@code carriers.tsv}, kept across restarts) into {@code f2vDir}; it is
      * rewritten only when its content changes.
      */
+    /**
+     * The mushroom family is OFF unless {@code -Dcim.f2v.mushroomCarriers=true}: vanilla
+     * placement and neighbour updates can reach all 64 face states, and worldgen (huge
+     * mushrooms, mushroom islands) produces some of them, so a mushroom carrier would re-draw
+     * vanilla terrain that shares its state. Enabling it is blocked on a worldgen state census.
+     */
+    static boolean mushroomCarriersEnabled() {
+        return Boolean.getBoolean("cim.f2v.mushroomCarriers");
+    }
+
     static CarrierPlan carrierPlan(Path f2vDir, Path modsDir, List<VisualBlock> manifest,
                                    boolean persist) throws IOException {
         Path ledgerFile = f2vDir.resolve(CARRIER_LEDGER);
         CarrierPlan plan = planCarriers(discoverBlockIds(listJars(modsDir)), manifest,
-                readBlockManifest(ledgerFile));
+                readBlockManifest(ledgerFile), mushroomCarriersEnabled());
         if (persist) {
             Files.createDirectories(f2vDir);
             writeIfChanged(ledgerFile, blockRowsText(LEDGER_HEADER, plan.ledger()));
@@ -1144,7 +1302,8 @@ public final class F2vPack {
         StringBuilder sb = new StringBuilder(header);
         for (VisualBlock r : rows) {
             sb.append(r.moddedBlockId()).append('\t').append(r.instrument())
-                    .append('\t').append(r.note()).append('\n');
+                    .append('\t').append(r.isMushroom() ? mushroomBits(r.note()) : Integer.toString(r.note()))
+                    .append('\n');
         }
         return sb.toString();
     }
@@ -1921,12 +2080,17 @@ public final class F2vPack {
         // note_block stand-in slots -> the modded block models, ONE merged
         // blockstates override, manifest-driven slot allocation
         List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
+        Map<String, Map<Integer, String>> mushroomModels = new TreeMap<>();
         List<VisualBlock> emittedBlocks = new ArrayList<>();
         try (JarCache blockJars = new JarCache(jars)) {
             for (VisualBlock block : blockRows) {
                 String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(),
                         entries, warnings);
-                if (ref != null) {
+                if (ref != null && block.isMushroom()) {
+                    mushroomModels.computeIfAbsent(block.instrument(), h -> new TreeMap<>())
+                            .put(block.note(), ref);
+                    emittedBlocks.add(block);
+                } else if (ref != null) {
                     blockVariants.add(Map.entry(
                             "instrument=" + block.instrument() + ",note=" + block.note(),
                             ref));
@@ -1935,6 +2099,19 @@ public final class F2vPack {
                     warnings.add("no block model found for " + block.moddedBlockId()
                             + " in any mod jar — block row dropped");
                 }
+            }
+            for (Map.Entry<String, Map<Integer, String>> host : mushroomModels.entrySet()) {
+                byte[] vanilla = blockJars.read("assets/minecraft/blockstates/" + host.getKey() + ".json");
+                String state = vanilla == null ? null
+                        : mushroomBlockState(new String(vanilla, StandardCharsets.UTF_8), host.getValue());
+                if (state == null) {
+                    warnings.add("mushroom carriers on " + host.getKey() + " dropped: its vanilla blockstate"
+                            + " is missing or not a multipart (the pack cannot keep vanilla states)");
+                    emittedBlocks.removeIf(b -> b.isMushroom() && b.instrument().equals(host.getKey()));
+                    continue;
+                }
+                entries.put("assets/minecraft/blockstates/" + host.getKey() + ".json",
+                        state.getBytes(StandardCharsets.UTF_8));
             }
         }
         blockVariants.sort(Map.Entry.comparingByKey());
@@ -2209,6 +2386,104 @@ public final class F2vPack {
             }
         }
         return null;
+    }
+
+    /** The six face states of a mushroom mask as a blockstate {@code when} map (NESWUD order). */
+    private static JsonObject mushroomWhen(int mask) {
+        JsonObject when = new JsonObject();
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            when.addProperty(MUSHROOM_FACES.get(i), (mask >> i & 1) == 1 ? "true" : "false");
+        }
+        return when;
+    }
+
+    /**
+     * The mushroom host's blockstate with its carrier states added, keeping every vanilla state
+     * on its vanilla parts. Vanilla is multipart: each part matches a set of masks. A part that
+     * meets a carrier mask is rewritten as an OR over its remaining masks (never the carriers),
+     * and each carrier gets one part of its own. Null when the vanilla JSON is not a multipart
+     * of plain property maps (the caller then drops the carriers instead).
+     */
+    static String mushroomBlockState(String vanillaJson, Map<Integer, String> carriers) {
+        JsonObject root;
+        try {
+            root = JsonParser.parseString(vanillaJson).getAsJsonObject();
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (!root.has("multipart") || !root.get("multipart").isJsonArray()) {
+            return null;
+        }
+        JsonArray out = new JsonArray();
+        for (JsonElement el : root.getAsJsonArray("multipart")) {
+            if (!el.isJsonObject() || !el.getAsJsonObject().has("apply")) {
+                return null;
+            }
+            JsonObject part = el.getAsJsonObject();
+            Map<String, String> want = new TreeMap<>();
+            if (part.has("when")) {
+                if (!part.get("when").isJsonObject()) {
+                    return null; // combined conditions are not rewritten here
+                }
+                for (Map.Entry<String, JsonElement> c : part.getAsJsonObject("when").entrySet()) {
+                    if (!MUSHROOM_FACES.contains(c.getKey()) || !c.getValue().isJsonPrimitive()) {
+                        return null;
+                    }
+                    want.put(c.getKey(), c.getValue().getAsString());
+                }
+            }
+            List<Integer> matches = new ArrayList<>();
+            for (int mask = 0; mask < 64; mask++) {
+                if (matchesWhen(mask, want) && !carriers.containsKey(mask)) {
+                    matches.add(mask);
+                }
+            }
+            boolean touched = false;
+            for (int mask = 0; mask < 64; mask++) {
+                if (carriers.containsKey(mask) && matchesWhen(mask, want)) {
+                    touched = true;
+                    break;
+                }
+            }
+            if (!touched) {
+                out.add(part);
+                continue;
+            }
+            if (matches.isEmpty()) {
+                continue;
+            }
+            JsonArray alts = new JsonArray();
+            for (int mask : matches) {
+                alts.add(mushroomWhen(mask));
+            }
+            JsonObject combined = new JsonObject();
+            combined.add("OR", alts);
+            JsonObject rewritten = new JsonObject();
+            rewritten.add("when", combined);
+            rewritten.add("apply", part.get("apply"));
+            out.add(rewritten);
+        }
+        for (Map.Entry<Integer, String> carrier : new TreeMap<>(carriers).entrySet()) {
+            JsonObject apply = new JsonObject();
+            apply.addProperty("model", carrier.getValue());
+            JsonObject part = new JsonObject();
+            part.add("when", mushroomWhen(carrier.getKey()));
+            part.add("apply", apply);
+            out.add(part);
+        }
+        JsonObject root2 = new JsonObject();
+        root2.add("multipart", out);
+        return new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root2) + "\n";
+    }
+
+    private static boolean matchesWhen(int mask, Map<String, String> want) {
+        for (Map.Entry<String, String> w : want.entrySet()) {
+            boolean bit = (mask >> MUSHROOM_FACES.indexOf(w.getKey()) & 1) == 1;
+            if (bit != w.getValue().equals("true")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -4473,8 +4748,135 @@ public final class F2vPack {
         }
     }
 
+    /**
+     * The mushroom family and the back-compatible note keys: the key/state round trip, the
+     * ledger text, the opt-in planner, and the multipart rewrite evaluated mask by mask.
+     */
+    private static void mushroomSelftest(List<String> failures) {
+        VisualBlock note = new VisualBlock("fakemod:n", "harp", 5);
+        expect(failures, "harp:5".equals(note.key()) && "harp:5".equals(carrierKeyOf(carrierState(note)))
+                        && carrierState(note).equals("minecraft:note_block[instrument=harp,note=5]"),
+                "note key and state keep the note_block form");
+        expect(failures, "harp:5".equals(carrierKeyOf("minecraft:note_block[instrument=harp,note=5,powered=true]")),
+                "a powered note block reads the same note key");
+        expect(failures, carrierKeyOf("minecraft:stone") == null, "a plain block is no carrier");
+        VisualBlock north = new VisualBlock("fakemod:m", "brown_mushroom_block", 1);
+        expect(failures, "brown_mushroom_block:100000".equals(north.key())
+                        && north.isMushroom() && !note.isMushroom(),
+                "a mushroom key carries its six face bits, NESWUD order");
+        expect(failures, "minecraft:brown_mushroom_block[north=true,east=false,south=false,west=false,up=false,down=false]"
+                        .equals(carrierState(north)), "a mushroom carrier is placed with its six faces");
+        expect(failures, "brown_mushroom_block:100000".equals(carrierKeyOf(carrierState(north))),
+                "a placed mushroom reads back to its key");
+        expect(failures, parseBlockRows(List.of("fakemod:n\tharp\t5")).equals(List.of(note)),
+                "a three-column note ledger row parses as before");
+        List<VisualBlock> rows = parseBlockRows(List.of("fakemod:m\tbrown_mushroom_block\t100000",
+                "fakemod:bad\tbrown_mushroom_block\t10000", "fakemod:x\tred_mushroom_block\t1x0000"));
+        expect(failures, rows.equals(List.of(north)), "a mushroom row needs six bits; bad rows drop");
+        List<VisualBlock> round = parseBlockRows(List.of(blockRowsText("", List.of(note, north)).split("\n")));
+        expect(failures, round.equals(List.of(north, note)), "the ledger text round-trips note and mushroom rows");
+        expect(failures, parseBlockRows(List.of("fakemod:def\tbrown_mushroom_block\t111111")).isEmpty(),
+                "a manifest mushroom row on the placed default is refused");
+        expect(failures, MUSHROOM_CAPACITY == 186, "three hosts, sixty-two masks each");
+        List<String> many = new ArrayList<>();
+        for (int i = 0; i < CARRIER_CAPACITY + 3; i++) {
+            many.add(String.format("fakemod:b%04d", i));
+        }
+        CarrierPlan off = planCarriers(many, List.of(), List.of(), false);
+        expect(failures, off.effective().size() == CARRIER_CAPACITY
+                        && off.effective().stream().noneMatch(VisualBlock::isMushroom)
+                        && off.notes().stream().anyMatch(n -> n.contains("mushroom family off")),
+                "the switch off: the note slots only, overflow reported");
+        CarrierPlan over = planCarriers(many, List.of(), List.of(), true);
+        expect(failures, over.effective().size() == CARRIER_CAPACITY + 3
+                        && over.effective().stream().filter(VisualBlock::isMushroom).count() == 3
+                        && over.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:b0648")
+                        && b.key().equals("brown_mushroom_block:100000")),
+                "the first mushroom slot is brown mask 1, after every note slot");
+        expect(failures, over.effective().stream().filter(VisualBlock::isMushroom)
+                        .allMatch(b -> b.note() >= MUSHROOM_MASK_MIN && b.note() <= MUSHROOM_MASK_MAX),
+                "no mushroom slot is ever the placed default (63) or the all-false interior (0)");
+        CarrierPlan again = planCarriers(many, List.of(), over.ledger(), true);
+        expect(failures, again.effective().equals(over.effective()), "a mushroom slot survives a restart");
+        CarrierPlan dropped = planCarriers(List.of("fakemod:z"), List.of(),
+                List.of(new VisualBlock("fakemod:z", "brown_mushroom_block", 0)), false);
+        expect(failures, dropped.effective().stream().noneMatch(VisualBlock::isMushroom)
+                        && dropped.notes().stream().anyMatch(n -> n.contains("malformed")),
+                "a ledger mushroom row on the default state is malformed, not kept");
+
+        // the rewrite: every mask, evaluated against the output parts, matches vanilla except the carriers
+        StringBuilder vanilla = new StringBuilder("{\"multipart\":[");
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            String f = MUSHROOM_FACES.get(i);
+            vanilla.append(i == 0 ? "" : ",")
+                    .append("{\"apply\":{\"model\":\"minecraft:block/skin_").append(f).append("\"},\"when\":{\"")
+                    .append(f).append("\":\"true\"}},")
+                    .append("{\"apply\":{\"model\":\"minecraft:block/inside_").append(f).append("\"},\"when\":{\"")
+                    .append(f).append("\":\"false\"}}");
+        }
+        vanilla.append("]}");
+        Map<Integer, String> carriers = new TreeMap<>(Map.of(1, "fakemod:block/c1", 42, "fakemod:block/c42",
+                63 - 1, "fakemod:block/c62"));
+        String out = mushroomBlockState(vanilla.toString(), carriers);
+        expect(failures, out != null, "the vanilla multipart rewrites");
+        if (out != null) {
+            JsonObject root = JsonParser.parseString(out).getAsJsonObject();
+            boolean ok = true;
+            for (int mask = 0; mask < 64; mask++) {
+                List<String> got = new ArrayList<>();
+                for (JsonElement el : root.getAsJsonArray("multipart")) {
+                    JsonObject part = el.getAsJsonObject();
+                    if (partMatches(part.get("when"), mask)) {
+                        got.add(part.getAsJsonObject("apply").get("model").getAsString());
+                    }
+                }
+                List<String> want = new ArrayList<>();
+                if (carriers.containsKey(mask)) {
+                    want.add(carriers.get(mask));
+                } else {
+                    for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+                        boolean on2 = (mask >> i & 1) == 1;
+                        want.add("minecraft:block/" + (on2 ? "skin_" : "inside_") + MUSHROOM_FACES.get(i));
+                    }
+                }
+                Collections.sort(got);
+                Collections.sort(want);
+                if (!got.equals(want)) {
+                    ok = false;
+                }
+            }
+            expect(failures, ok, "the rewritten blockstate renders vanilla on every non-carrier mask and the carrier alone on its own");
+        }
+        expect(failures, mushroomBlockState("{\"variants\":{}}", carriers) == null,
+                "a variants blockstate is not rewritten (the carriers drop instead)");
+    }
+
+    /** Evaluates a multipart {@code when} (absent, one property map, or {"OR": [maps]}) against a mushroom mask. */
+    private static boolean partMatches(JsonElement when, int mask) {
+        if (when == null) {
+            return true;
+        }
+        JsonObject w = when.getAsJsonObject();
+        if (w.has("OR")) {
+            for (JsonElement alt : w.getAsJsonArray("OR")) {
+                if (partMatches(alt, mask)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        for (Map.Entry<String, JsonElement> c : w.entrySet()) {
+            boolean bit = (mask >> MUSHROOM_FACES.indexOf(c.getKey()) & 1) == 1;
+            if (bit != c.getValue().getAsString().equals("true")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Carrier allocation: the pure planner, stability, manifest precedence, overflow, blockstate default. */
     private static void carrierSelftest(List<String> failures) {
+        mushroomSelftest(failures);
         VisualBlock manifestRock = new VisualBlock("fakemod:rock", "creeper", 13);
         // an earlier boot's ledger: old keeps harp:5; gone is in no jar any more
         List<VisualBlock> ledger = List.of(new VisualBlock("fakemod:old", "harp", 5),
