@@ -173,10 +173,14 @@ fn loader_thread(vm: SendVmPtr, opts: options::ModuleOptions) {
         );
     }
 
+    // mods/ sits in the server root, like crus/ and the layer dir: the module
+    // initialises before the kernel, so the process working directory is not
+    // a reliable anchor (live run 44123963489 scanned no mods/ there while the
+    // server root held them).
     let mods_dir = opts
         .mods_dir
         .clone()
-        .unwrap_or_else(|| PathBuf::from("mods"));
+        .unwrap_or_else(|| server_root.join("mods"));
 
     // 3) Bundled mods (cimlive) ride in the module dir; the layer only sees
     //    mods/, so install them there first. Only with a layer configured: the
