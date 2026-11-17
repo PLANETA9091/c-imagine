@@ -1948,10 +1948,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 continue;
             }
             StringBuilder pageNode = new StringBuilder();
+            // 14-e83 THE REVERSE CHILD ORDER: the sliding-door panels
+            // OVERLAP their west/north neighbour cells' volumes (the
+            // hinge-negated 13/16 slide — the c6r0 panel lands inside the
+            // c7 cell), and the coincident faces resolve by DRAW ORDER.
+            // The manifest order = west-to-east = the east cell drawn LAST
+            // = the slid-away panel wins the depth tie = the doorway
+            // renders EMPTY (the 498/502 gray) where the truth renders the
+            // neighbour's slid panel. THE REVERSE = the west/north cells
+            // drawn LAST = the slid panels win = the truth's own
+            // visibility. The non-overlapping cells = the order-irrelevant
+            // (no coincident geometry).
             pageNode.append("{\"type\":\"minecraft:composite\",\"models\":[");
-            for (int i = 0; i < children.size(); i++) {
+            for (int i = children.size() - 1; i >= 0; i--) {
                 pageNode.append(children.get(i));
-                if (i + 1 < children.size()) {
+                if (i > 0) {
                     pageNode.append(',');
                 }
             }
