@@ -67,6 +67,28 @@ public final class HudBootstrap {
         return screens == null ? java.util.List.of("no screens") : screens.liveBlockTest(player, blockId);
     }
 
+    /** Whether the layer's real server is up, so a mod interaction can run (see {@link LiveBridge#ready}). */
+    public static boolean liveReady() {
+        return LiveBridge.ready();
+    }
+
+    /** Survival smoke (survival.yml): the four steps, see {@link ScreenHud#survivalPlace}. */
+    public static java.util.List<String> survivalPlace(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.survivalPlace(player, itemId);
+    }
+
+    public static java.util.List<String> survivalKeep(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.survivalKeep(player, itemId);
+    }
+
+    public static java.util.List<String> survivalResume(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.survivalResume(player, itemId);
+    }
+
+    public static java.util.List<String> survivalBreak(org.bukkit.entity.Player player, String itemId) {
+        return screens == null ? java.util.List.of("no screens") : screens.survivalBreak(player, itemId);
+    }
+
     public static void closeForHarness(org.bukkit.entity.Player player) {
         if (screens != null && player != null) {
             screens.close(player);
@@ -118,6 +140,8 @@ public final class HudBootstrap {
         hud.register(screens);
         screens.busyWhen(keyboard::isOpen);
         screens.useCamera(camera, plugin);
+        screens.adoptLoadedDisplays();
+        LiveRecipes.start(plugin, screens::liveBridge, screens::carrier);
         HudBootstrap.hud = hud;
         PluginCommand screen = plugin.getCommand("modscreen");
         if (screen != null) {

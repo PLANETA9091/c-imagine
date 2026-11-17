@@ -53,6 +53,32 @@ public final class LiveProtocol {
             if (head[0].equals("tick")) {
                 return tick();
             }
+            // Whether the real server is up: interactions need its resources (no player, no uuid).
+            if (head[0].equals("ready")) {
+                net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+                return real == null || real instanceof FacadeServer || !real.isReady() ? "wait\n" : "ready\n";
+            }
+            // The mod recipes of the real server, once its data is loaded (no player, no uuid).
+            if (head[0].equals("recipes")) {
+                return recipes();
+            }
+            // Placed mod blocks of loaded Paper chunks: no player, so no uuid.
+            if (head[0].equals("adopt")) {
+                return adopt(head, lines);
+            }
+            if (head[0].equals("release")) {
+                return release(head);
+            }
+            if (head[0].equals("save")) {
+                return save(head);
+            }
+            // Stateless answers about blocks and tools: no player, so no uuid.
+            if (head[0].equals("blockinfo")) {
+                return blockInfo(head);
+            }
+            if (head[0].equals("digspeed")) {
+                return digSpeed(head);
+            }
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
@@ -465,27 +491,228 @@ public final class LiveProtocol {
         return ticks;
     }
 
+    /**
+     * The placed mod block entities of Paper's loaded chunks: each ticks every server tick
+     * while it is adopted, with or without a menu open. Keyed by position, valued by block id.
+     * {@link #tickList} is the same set as an array, rebuilt on change, so the tick allocates
+     * nothing for it.
+     */
+    private static final java.util.Map<net.minecraft.core.BlockPos, String> TICKING = new java.util.HashMap<>();
+    private static net.minecraft.core.BlockPos[] tickList = new net.minecraft.core.BlockPos[0];
+
+    private static void refreshTickList() {
+        tickList = TICKING.keySet().toArray(new net.minecraft.core.BlockPos[0]);
+    }
+
+    private static net.minecraft.core.BlockPos pos(String[] head, int at) {
+        return new net.minecraft.core.BlockPos(Integer.parseInt(head[at]), Integer.parseInt(head[at + 1]),
+                Integer.parseInt(head[at + 2]));
+    }
+
+    /** adopt TAB x TAB y TAB z TAB blockId, then an optional "be TAB snbt" line: a placed block starts ticking. */
+    private static String adopt(String[] head, String[] lines) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        net.minecraft.core.BlockPos pos = pos(head, 1);
+        FacadeServerLevel level = LiveMenus.level();
+        net.minecraft.world.level.block.state.BlockState wanted =
+                net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                        net.minecraft.resources.ResourceLocation.parse(head[4])).defaultBlockState();
+        // The registry answers air for an id it does not know: a block the layer lacks never ticks.
+        if (wanted.isAir() && !head[4].equals("minecraft:air")) {
+            return "error\tunknown block " + head[4];
+        }
+        if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
+            level.setBlock(pos, wanted, 3);
+        }
+        for (int i = 1; i < lines.length; i++) {
+            if (lines[i].startsWith("be\t")) {
+                loadKept(level, pos, lines[i].substring(3));
+            }
+        }
+        TICKING.put(pos, head[4]);
+        refreshTickList();
+        return "adopted\t" + TICKING.size() + "\n";
+    }
+
+    /**
+     * release TAB x TAB y TAB z: the block leaves the ticking set (its chunk unloaded, or it was
+     * broken). Its data goes back as a "be" line, unless a menu holds it open.
+     */
+    private static String release(String[] head) {
+        net.minecraft.core.BlockPos pos = pos(head, 1);
+        FacadeServerLevel level = LiveMenus.level();
+        StringBuilder out = new StringBuilder(save(head));
+        if (TICKING.remove(pos) != null) {
+            refreshTickList();
+        }
+        if (!BLOCKS.containsValue(pos)) {
+            // removeBlockEntity only: no onRemove, so nothing a mod drops is spilled into the facade.
+            level.removeBlockEntity(pos);
+        }
+        return out.append("released\t").append(TICKING.size()).append('\n').toString();
+    }
+
+    /**
+     * recipes: the mod recipes of the real server (namespace other than minecraft), one line each:
+     * <pre>
+     * recipe TAB shaped TAB id TAB result TAB w TAB h TAB token...      (w*h tokens, row by row)
+     * recipe TAB shapeless TAB id TAB result TAB token...
+     * recipe TAB smelting|blasting|smoking|campfire TAB id TAB result TAB ticks TAB xp TAB token
+     * recipe TAB stonecutting TAB id TAB result TAB token
+     * skip TAB type TAB id TAB reason                                    (the layer's other recipes)
+     * </pre>
+     * A token is "-" for an empty slot, or "[!]id,id,..." listing the items an ingredient takes;
+     * "!" marks an ingredient whose items carry components of their own (not expressible on Paper),
+     * "?" one that takes no item at all. Answers "wait" until the real server has loaded its data.
+     */
+    private static String recipes() {
+        net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (real == null || real instanceof FacadeServer) {
+            return "wait\n";
+        }
+        java.util.Collection<net.minecraft.world.item.crafting.RecipeHolder<?>> all = real.getRecipeManager().getRecipes();
+        if (all.isEmpty()) {
+            return "wait\n";
+        }
+        StringBuilder out = new StringBuilder();
+        net.minecraft.core.HolderLookup.Provider access = real.registryAccess();
+        for (net.minecraft.world.item.crafting.RecipeHolder<?> holder : all) {
+            if (holder.id().getNamespace().equals("minecraft")) {
+                continue;
+            }
+            // One recipe that fails to read is a skip line, never the whole export's error.
+            try {
+                recipe(out, holder, access);
+            } catch (RuntimeException e) {
+                out.append("skip\tunreadable\t").append(holder.id())
+                        .append("\tfailed: ").append(e.getClass().getSimpleName()).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    private static void recipe(StringBuilder out, net.minecraft.world.item.crafting.RecipeHolder<?> holder,
+                               net.minecraft.core.HolderLookup.Provider access) {
+        net.minecraft.world.item.crafting.Recipe<?> r = holder.value();
+        net.minecraft.resources.ResourceLocation id = holder.id();
+        String type = net.minecraft.core.registries.BuiltInRegistries.RECIPE_TYPE.getKey(r.getType()).toString();
+        String result = encode(r.getResultItem(access));
+        if (r instanceof net.minecraft.world.item.crafting.ShapedRecipe shaped) {
+            out.append("recipe\tshaped\t").append(id).append('\t').append(result)
+                    .append('\t').append(shaped.getWidth()).append('\t').append(shaped.getHeight());
+            for (net.minecraft.world.item.crafting.Ingredient ing : shaped.getIngredients()) {
+                out.append('\t').append(token(ing));
+            }
+            out.append('\n');
+        } else if (r instanceof net.minecraft.world.item.crafting.ShapelessRecipe shapeless) {
+            out.append("recipe\tshapeless\t").append(id).append('\t').append(result);
+            for (net.minecraft.world.item.crafting.Ingredient ing : shapeless.getIngredients()) {
+                out.append('\t').append(token(ing));
+            }
+            out.append('\n');
+        } else if (r instanceof net.minecraft.world.item.crafting.AbstractCookingRecipe cooking) {
+            String kind = r instanceof net.minecraft.world.item.crafting.SmeltingRecipe ? "smelting"
+                    : r instanceof net.minecraft.world.item.crafting.BlastingRecipe ? "blasting"
+                    : r instanceof net.minecraft.world.item.crafting.SmokingRecipe ? "smoking"
+                    : r instanceof net.minecraft.world.item.crafting.CampfireCookingRecipe ? "campfire" : null;
+            if (kind == null) {
+                out.append("skip\t").append(type).append('\t').append(id).append("\tunknown cooking\n");
+                return;
+            }
+            out.append("recipe\t").append(kind).append('\t').append(id).append('\t').append(result)
+                    .append('\t').append(cooking.getCookingTime()).append('\t').append(cooking.getExperience())
+                    .append('\t').append(token(cooking.getIngredients().get(0))).append('\n');
+        } else if (r instanceof net.minecraft.world.item.crafting.StonecutterRecipe cutting) {
+            out.append("recipe\tstonecutting\t").append(id).append('\t').append(result)
+                    .append('\t').append(token(cutting.getIngredients().get(0))).append('\n');
+        } else {
+            out.append("skip\t").append(type).append('\t').append(id).append("\tnot expressible\n");
+        }
+    }
+
+    private static String token(net.minecraft.world.item.crafting.Ingredient ing) {
+        if (ing.isEmpty()) {
+            return "-";
+        }
+        net.minecraft.world.item.ItemStack[] items = ing.getItems();
+        if (items.length == 0) {
+            return "?";
+        }
+        StringBuilder sb = new StringBuilder();
+        boolean data = false;
+        for (net.minecraft.world.item.ItemStack s : items) {
+            data |= !s.getComponentsPatch().isEmpty();
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(s.getItem()));
+        }
+        return (data ? "!" : "") + sb;
+    }
+
+    /** A block id's default state, or an error for an id the layer does not know (the registry would answer air). */
+    private static net.minecraft.world.level.block.state.BlockState blockState(String id) {
+        net.minecraft.resources.ResourceLocation rl = net.minecraft.resources.ResourceLocation.parse(id);
+        if (!net.minecraft.core.registries.BuiltInRegistries.BLOCK.containsKey(rl)) {
+            throw new IllegalArgumentException("unknown block " + id);
+        }
+        return net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(rl).defaultBlockState();
+    }
+
+    /**
+     * blockinfo TAB blockId: "block TAB hardness TAB requiresTool" (1 or 0). The hardness is the
+     * block's destroy time as the game has it (-1 unbreakable, 0 instant); cached on Paper per id.
+     */
+    private static String blockInfo(String[] head) {
+        net.minecraft.world.level.block.state.BlockState st = blockState(head[1]);
+        return "block\t" + st.getDestroySpeed(LiveMenus.level(), net.minecraft.core.BlockPos.ZERO) + "\t"
+                + (st.requiresCorrectToolForDrops() ? 1 : 0) + "\n";
+    }
+
+    /**
+     * digspeed TAB modBlockId TAB refBlockId TAB heldStack TAB refStack: "digspeed TAB speed TAB correct TAB refSpeed".
+     * The held stack's destroy speed on the mod block and whether it is a correct tool for the mod block's
+     * drops; the ref stack (what Paper actually holds: a mod item's host vanilla item) gives the speed on the
+     * reference block, the one Paper's own break progress runs at. Stacks are their JSON ("-" for none).
+     */
+    private static String digSpeed(String[] head) {
+        ItemStack held = decode(head[3]);
+        ItemStack refHeld = decode(head[4]);
+        net.minecraft.world.level.block.state.BlockState mod = blockState(head[1]);
+        net.minecraft.world.level.block.state.BlockState ref = blockState(head[2]);
+        return "digspeed\t" + held.getDestroySpeed(mod) + "\t" + (held.isCorrectToolForDrops(mod) ? 1 : 0) + "\t"
+                + refHeld.getDestroySpeed(ref) + "\n";
+    }
+
+    /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */
+    private static String save(String[] head) {
+        net.minecraft.world.level.block.entity.BlockEntity be = LiveMenus.level().getBlockEntity(pos(head, 1));
+        return be == null ? "" : "be\t" + be.saveWithoutMetadata(LiveMenus.level().registryAccess()) + "\n";
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static String tick() {
         ticks++;
         FacadeServerLevel level = LiveMenus.level();
         int ticked = 0;
-        for (net.minecraft.core.BlockPos pos : new java.util.HashSet<>(BLOCKS.values())) {
-            net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
-            if (be == null) {
-                continue;
+        SPILLS.setLength(0);
+        StringBuilder spills = SPILLS;
+        // Menu-open block entities first, each once however many sessions hold it open; a placed one
+        // that a menu also holds ticks once, here.
+        int held = 0;
+        for (net.minecraft.core.BlockPos pos : BLOCKS.values()) {
+            if (!earlierHolder(pos, held++)) {
+                if (tickAt(level, pos)) {
+                    ticked++;
+                }
+                drainSpills(spills, pos);
             }
-            net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
-            net.minecraft.world.level.block.entity.BlockEntityTicker ticker =
-                    state.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType) be.getType());
-            if (ticker == null) {
-                continue;
-            }
-            try {
-                ticker.tick(level, pos, state, be);
-                ticked++;
-            } catch (Throwable t) {
-                // A machine that cannot run here stops ticking; its menu stays as it is.
+        }
+        for (net.minecraft.core.BlockPos pos : tickList) {
+            if (!BLOCKS.containsValue(pos)) {
+                if (tickAt(level, pos)) {
+                    ticked++;
+                }
+                drainSpills(spills, pos);
             }
         }
         for (SessionServerPlayer p : LiveMenus.openSessions()) {
@@ -493,7 +720,56 @@ public final class LiveProtocol {
                 p.opened().broadcastChanges();
             }
         }
-        return "ticked\t" + ticked;
+        return "ticked\t" + ticked + spills;
+    }
+
+    /** What the tick spilled, reused across ticks: the common tick allocates no buffer. */
+    private static final StringBuilder SPILLS = new StringBuilder();
+
+    /** True when one of the first {@code n} menu-held positions is {@code pos}: it already ticked. */
+    private static boolean earlierHolder(net.minecraft.core.BlockPos pos, int n) {
+        int i = 0;
+        for (net.minecraft.core.BlockPos earlier : BLOCKS.values()) {
+            if (i++ >= n) {
+                break;
+            }
+            if (earlier.equals(pos)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** What a tick spilled at {@code pos} goes out as "spill" lines, for Paper to drop there. */
+    private static void drainSpills(StringBuilder out, net.minecraft.core.BlockPos pos) {
+        if (!FacadeServerLevel.hasSpilled()) {
+            return;
+        }
+        for (net.minecraft.world.item.ItemStack stack : FacadeServerLevel.takeSpilled()) {
+            out.append("\nspill\t").append(pos.getX()).append('\t').append(pos.getY()).append('\t')
+                    .append(pos.getZ()).append('\t').append(encode(stack));
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static boolean tickAt(FacadeServerLevel level, net.minecraft.core.BlockPos pos) {
+        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
+        if (be == null) {
+            return false;
+        }
+        net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+        net.minecraft.world.level.block.entity.BlockEntityTicker ticker =
+                state.getTicker(level, (net.minecraft.world.level.block.entity.BlockEntityType) be.getType());
+        if (ticker == null) {
+            return false;
+        }
+        try {
+            ticker.tick(level, pos, state, be);
+            return true;
+        } catch (Throwable t) {
+            // A machine that cannot run here stops ticking; its menu stays as it is.
+            return false;
+        }
     }
 
     private static void readInventory(SessionServerPlayer player, String[] lines) {

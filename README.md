@@ -84,13 +84,28 @@ docs/runtime-analysis/  deep upstream analysis: vanilla MC 26.3 (+client), Paper
 ## Quick start (module authors / server admins)
 
 ```bash
-# CI produces module-imagine.zip — drop it into the server:
-unzip module-imagine.zip -d <server>/modules/imagine
+# CI produces module-imagine.zip — extract it into the server's modules dir
+# (the archive's top folder is imagine/, so this creates <server>/modules/imagine):
+unzip module-imagine.zip -d <server>/modules
 # put NeoForge 1.21.1 mods in the usual place:
 cp mymod-1.21.1.jar <server>/mods/
 # start (CRUSSTY launcher boots Paper + runtime + module):
 cd <server> && crussty run
 ```
+
+The zip also carries `cimlive-1.0.0.jar` (live menus and block place/break). When a
+layer is configured (`crus/c-imagine.json` with `layerDir`), the loader copies it into
+`<server>/mods/` before the mods scan, and only rewrites it when the bytes differ.
+To keep it out of the server, set `"bundledMods": false` in `crus/c-imagine.json` and
+delete `<server>/mods/cimlive-1.0.0.jar`: the loader never removes a jar it installed, and
+while bundled mods stay on it reinstalls the jar on every boot.
+
+Resource pack for players: the module serves the F2V pack on port 25580 on all
+interfaces and offers it on join. Set `CIM_F2V_PUBLIC_URL` (or `-Dcim.f2v.publicUrl`)
+to the address players reach (or `server-ip` in `server.properties`); the offer is
+then required. `CIM_F2V_BIND`, `CIM_F2V_PORT`, `CIM_F2V_AUTO_OFFER=false` and
+`CIM_F2V_AUTO_OFFER_REQUIRED` override the defaults. A `resource-pack=` line in
+`server.properties` turns the module's own offer off.
 
 Boot log markers to look for:
 
@@ -102,6 +117,7 @@ Boot log markers to look for:
 ```bash
 cargo test --workspace          # unit tests for every crate
 cargo clippy --workspace --all-targets -- -D warnings
+gradle build --no-daemon -p live-mod   # cimlive jar, required by the packager
 ./scripts/package-module.sh     # build the installable module zip (CI-equivalent)
 ```
 
@@ -134,10 +150,46 @@ inside a single JVM.
 
 ## Status
 
-M0 — foundation: repository, architecture, core crates, CRUSSTY module skeleton,
-CI/integration/profiling pipelines. ✅
-M1 — embedded 1.21.1 layer boots: `cim-reloc` (shadow-namespace relocation of the
-real MC 1.21.1 + NeoForge 21.1.265 stack), shadow classloader, layer boot inside
-Paper JVM with vanilla registry snapshot; ground-truth CI jobs. ✅ (matrix green)
-M2 — mod execution: real FML discovery pipeline + mod relocation, `cimtest`
-registration through the layer. ⏳ next
+Milestone detail and the open blockers live in [`docs/ROADMAP.md`](docs/ROADMAP.md);
+this section is the short, honest summary (2026-11-17).
+
+**Works (CI-proven on `main`):**
+- M0/M1 — CRUSSTY module boots the relocated NeoForge 1.21.1 layer inside Paper 26.3.
+- M2/M3 — real FML discovery, mod construction and registration (Tier 0 mods:
+  Create, Biomes O' Plenty, Dynamic Trees, Combat Roll); a real 1.21.1
+  `DedicatedServer` runs inside the layer, ticked from Paper's tick end.
+- M4/M5 — vanilla 26.3 clients see mod items, blocks, entities and fluids through
+  the F2V resource pack; the gallery compares them against a real NeoForge client.
+- M6.2/M6.3 — with the `cimlive` mod, using a mod item, placing/breaking a mod block
+  and clicking a mod menu run the mod's own code.
+
+**Survival on `feat/survival`** (gated by `.github/workflows/survival.yml`: Paper 26.3 +
+module + Create 6.0.10 + Sophisticated Backpacks, two boots, no manual install step):
+- `cimlive` ships in the module zip and installs itself into `mods/` at boot.
+- The F2V pack is served on all interfaces and offered on join (required once
+  `CIM_F2V_PUBLIC_URL` or `server-ip` names the address; see Quick start).
+- Every mod block gets a carrier at boot: 648 note-block slots first, then the
+  unbounded display family (a barrier plus an `ItemDisplay` of the block's own model).
+  The mushroom family (186 more slots) exists behind `-Dcim.f2v.mushroomCarriers=true`;
+  it stays off because vanilla worldgen produces some of those states. Carriers are
+  guarded against note changes, redstone and neighbour updates.
+- Every mod item gets a Paper stack (`item_model` + identity), so inventories,
+  drops and recipes hold the real mod item.
+- Placed mod block entities tick in loaded chunks with no menu open, persist in chunk
+  data and are adopted again after a restart.
+- Breaking takes the mod block's own time and needs its correct tool for drops
+  (note-family carriers); the mod's own drop is spilled.
+- Mod recipes: shaped, shapeless, smelting, blasting, smoking, campfire and stonecutting
+  register in Paper (1075 of 1607 for Create + Backpacks) and unlock in the recipe book.
+- Mod ores from NeoForge biome modifiers generate in new overworld chunks (Create zinc),
+  and spawn chunks made before the layer was ready are backfilled once.
+
+**Known gaps:**
+- Machine-only recipes (Create's crushing, mixing, pressing and the like) run only in
+  the machines, as on NeoForge; smithing and special crafting recipes are not on Paper yet.
+- Display-family blocks break instantly (a barrier never progresses in a dig).
+- Worldgen covers mod features in the overworld only: no nether/end, no new biomes
+  (Biomes O' Plenty) and veins are cut at chunk borders; about 8 ms per new chunk.
+- Mod item names come from the id, not the mod's lang file; collision is the
+  carrier's, not the mod block's shape.
+- Mod entities and their AI in the Paper world are not covered by the survival gate.

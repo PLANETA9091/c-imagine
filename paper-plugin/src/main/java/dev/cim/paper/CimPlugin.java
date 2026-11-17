@@ -61,6 +61,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /** F2V 2.0 visual pipeline state (M5.2). */
     private F2vState f2v;
     private dev.cim.f2v.PackHttp visualPack;
+    /** cim.f2v.autoOffer resolved AND server.properties does not pin a resource-pack. */
+    private boolean packAutoOffer;
+    private boolean packAutoOfferRequired = true;
 
     private Logger log() {
         return getLogger();
@@ -73,6 +76,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         netWatch = new NetWatch(this);
         f2vInit();
+        f2vAutoOfferInit();
+        // Slice 1 of mod world generation: new overworld chunks get the mods' biome-modifier features.
+        dev.cim.worldgen.ModWorldgen.start(this, f2v == null ? List.of() : f2v.blocks());
         dev.cim.hud.HudBootstrap.enable(this);
     }
 
@@ -199,8 +205,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                         base.resolve("visual-items.resolved.tsv"))
                                 : List.of();
                 List<dev.cim.f2v.F2vPack.VisualBlock> fastBlocks =
-                        dev.cim.f2v.F2vPack.readBlockManifest(
-                                base.resolve("visual-blocks.tsv"));
+                        dev.cim.f2v.F2vPack.readEffectiveBlocks(base);
                 List<dev.cim.f2v.GalleryPack.Resolved> fastGallery =
                         Files.isRegularFile(base.resolve("visual-gallery.resolved.tsv"))
                                 ? dev.cim.f2v.GalleryPack.readResolvedManifest(
@@ -208,7 +213,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 : List.of();
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
                         readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
-                int fastPort = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
                 dev.cim.f2v.PackHttp fastHttp = null;
                 // 14-di THE RUN-CAPTURE OVERLAY: the captures dir carries the truth
                 // client's ScreenArt dump for THIS run's menus; scenes the seed's
@@ -312,7 +316,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 + " (serving the plain pack, the per-cell path rides): " + t);
                     }
                 }
-                fastHttp = dev.cim.f2v.PackHttp.start(servedZip, fastPort, servedSha1);
+                fastHttp = startPackServer(servedZip, servedSha1);
                 visualPack = fastHttp;
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
                         + "serving " + servedZip.getFileName() + ", sha1=" + visualPack.sha1()
@@ -320,7 +324,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + fastItems.size() + " item row(s); rebuild-verification "
                         + "skipped (integrity = the server.properties sha1 pin "
                         + "+ the client's pack hash check)");
-                log().info(LOG_PREFIX + "f2v pack: serving " + fastHttp.url()
+                log().info(LOG_PREFIX + "f2v pack: serving " + fastHttp.localUrl()
+                        + " bind=" + fastHttp.bindHost() + " public=" + fastHttp.url()
                         + " sha1=" + visualPack.sha1());
                 return;
             }
@@ -338,22 +343,84 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log().info(LOG_PREFIX + "f2v pack: built (" + result.items().size()
                         + " item(s), sha1=" + result.sha1() + ")");
             }
+            // the item channel's tally (manifest rows + allocated mod items), one line per build
+            dev.cim.f2v.F2vPack.ItemTally tally = result.tally();
+            log().info(LOG_PREFIX + "f2v items: " + tally.resolved() + " mod items resolved ("
+                    + tally.manifest() + " from manifest, " + tally.allocated() + " allocated, "
+                    + tally.failed() + " failed)");
             if (!result.warnings().isEmpty()) {
                 for (String w : result.warnings()) {
                     log().warning(LOG_PREFIX + "f2v pack: warn " + w);
                 }
             }
+            // the display family: the blocks the note and mushroom slots could not hold (barrier + ItemDisplay)
+            long displayed = result.blocks().stream().filter(dev.cim.f2v.F2vPack.VisualBlock::isDisplay).count();
+            if (displayed > 0) {
+                log().info(LOG_PREFIX + "f2v pack: " + displayed + " mod block(s) on the display family"
+                        + " (note and mushroom slots full; barrier + ItemDisplay carriers)");
+            }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
                     readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
-            int port = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
-            dev.cim.f2v.PackHttp http =
-                    dev.cim.f2v.PackHttp.start(packZip, port, result.sha1());
+            dev.cim.f2v.PackHttp http = startPackServer(packZip, result.sha1());
             visualPack = http;
-            log().info(LOG_PREFIX + "f2v pack: serving " + http.url()
+            log().info(LOG_PREFIX + "f2v pack: serving " + http.localUrl()
+                    + " bind=" + http.bindHost() + " public=" + http.url()
                     + " sha1=" + result.sha1());
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v pack: init FAILED (visual parity degraded): " + t);
         }
+    }
+
+    /**
+     * Bind the pack server (cim.f2v.bind / CIM_F2V_BIND, default 0.0.0.0) and
+     * resolve the URL players are offered (cim.f2v.publicUrl /
+     * CIM_F2V_PUBLIC_URL; fallback server-ip, host address, loopback).
+     */
+    private dev.cim.f2v.PackHttp startPackServer(Path zip, String sha1) throws IOException {
+        String bind = dev.cim.f2v.PackOffer.text("cim.f2v.bind", System.getenv("CIM_F2V_BIND"),
+                dev.cim.f2v.PackOffer.DEFAULT_BIND);
+        int port = Integer.getInteger("cim.f2v.port", envInt("CIM_F2V_PORT", 25580));
+        String explicit = dev.cim.f2v.PackOffer.text("cim.f2v.publicUrl",
+                System.getenv("CIM_F2V_PUBLIC_URL"), null);
+        String serverIp = serverProperties().getProperty("server-ip");
+        String publicUrl = dev.cim.f2v.PackOffer.publicUrl(explicit, serverIp,
+                explicit == null && dev.cim.f2v.PackOffer.isAnyLocal(serverIp)
+                        ? dev.cim.f2v.PackOffer.guessHostAddress() : null,
+                port);
+        return dev.cim.f2v.PackHttp.start(zip, bind, port, sha1, publicUrl);
+    }
+
+    /**
+     * Resolve the join-offer policy once at enable: cim.f2v.autoOffer (default
+     * on) is skipped when server.properties already sets resource-pack.
+     */
+    private void f2vAutoOfferInit() {
+        boolean knob = dev.cim.f2v.PackOffer.flag("cim.f2v.autoOffer",
+                System.getenv("CIM_F2V_AUTO_OFFER"), true);
+        // Required only when the operator named a reachable address: a guessed host
+        // address that a remote client cannot reach would kick every player.
+        boolean named = dev.cim.f2v.PackOffer.text("cim.f2v.publicUrl",
+                System.getenv("CIM_F2V_PUBLIC_URL"), null) != null
+                || !dev.cim.f2v.PackOffer.isAnyLocal(serverProperties().getProperty("server-ip"));
+        packAutoOfferRequired = dev.cim.f2v.PackOffer.flag("cim.f2v.autoOfferRequired",
+                System.getenv("CIM_F2V_AUTO_OFFER_REQUIRED"), named);
+        String skip = dev.cim.f2v.PackOffer.autoOfferSkipReason(knob, serverProperties());
+        packAutoOffer = skip == null;
+        log().info(LOG_PREFIX + (packAutoOffer
+                ? "f2v pack: auto-offer on join (required=" + packAutoOfferRequired + ")"
+                : "f2v pack: auto-offer off (" + skip + ")"));
+    }
+
+    private java.util.Properties serverProperties() {
+        return dev.cim.f2v.PackOffer.readServerProperties(
+                Path.of(System.getProperty("user.dir"), "server.properties"));
+    }
+
+    /** Offer the served pack to one player; logs the deterministic offer marker. */
+    private void offerVisualPack(Player player, boolean required) {
+        player.setResourcePack(visualPack.url(),
+                java.util.HexFormat.of().parseHex(visualPack.sha1()), required);
+        log().info(LOG_PREFIX + "f2v pack: offered " + player.getName() + " url=" + visualPack.url());
     }
 
     /**
@@ -392,6 +459,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     @EventHandler
     public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
         netWatch.attach(event.getPlayer());
+        dev.cim.hud.LiveRecipes.discover(event.getPlayer());
+        if (packAutoOffer && visualPack != null) {
+            try {
+                offerVisualPack(event.getPlayer(), packAutoOfferRequired);
+            } catch (RuntimeException e) {
+                log().warning(LOG_PREFIX + "f2v pack: join offer FAILED for "
+                        + event.getPlayer().getName() + ": " + e);
+            }
+        }
     }
 
     @EventHandler
@@ -719,6 +795,52 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 Player target = bot;
                 for (String line : callSync(() -> dev.cim.hud.HudBootstrap.liveBlockTest(target, liveBlock.trim()))) {
                     log().info("[cim-live] paper " + line);
+                }
+            }
+            // Worldgen probe (survival.yml, boot 1): a far square of chunks is generated now, after the
+            // layer's listing, and the carriers of the named mod block below y=70 are counted.
+            String worldgenProbe = System.getenv("CIM_WORLDGEN_PROBE");
+            if (worldgenProbe != null && !worldgenProbe.isBlank()) {
+                dev.cim.worldgen.ModWorldgen.awaitReady(120_000L);
+                // The chunks generated before the layer answered (the spawn area) are decorated by the backfill
+                // on the main thread; the probe reads the counters only once they are all done (pending=0).
+                dev.cim.worldgen.ModWorldgen.awaitBackfill(120_000L);
+                String carrierId = worldgenProbe.trim();
+                World overworld = getServer().getWorlds().get(0);
+                for (String line : callSync(() -> dev.cim.worldgen.ModWorldgen.probe(overworld, carrierId, 100, 100, 3, 70))) {
+                    log().info("[cim-worldgen] " + line);
+                }
+            }
+            // Survival smoke (survival.yml): a carrier placed by the mod item's own use, saved and
+            // restarted, adopted again and broken. The first boot places it; the second one (phase
+            // "resume") adopts it and breaks it. Off unless CIM_SURVIVAL_ITEM names the block.
+            String survivalItem = System.getenv("CIM_SURVIVAL_ITEM");
+            if (survivalItem != null && !survivalItem.isBlank()) {
+                Player target = bot;
+                String item = survivalItem.trim();
+                // A player's first click waits for the layer's real server, as a real player's would.
+                int waited = 0;
+                while (waited < 300 && !callSync(dev.cim.hud.HudBootstrap::liveReady)) {
+                    Thread.sleep(1000);
+                    waited++;
+                }
+                log().info("[cim-survival] layer ready after " + waited + " s: " + callSync(dev.cim.hud.HudBootstrap::liveReady));
+                if ("resume".equals(System.getenv("CIM_SURVIVAL_PHASE"))) {
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalResume(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                    Thread.sleep(2000); // about 40 server ticks (2 s at 20 TPS): the adopted block entity ticks with no menu open
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalBreak(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                } else {
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalPlace(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
+                    Thread.sleep(2000); // about 40 server ticks (2 s at 20 TPS): the placed block entity ticks with no menu open
+                    for (String line : callSync(() -> dev.cim.hud.HudBootstrap.survivalKeep(target, item))) {
+                        log().info("[cim-survival] " + line);
+                    }
                 }
             }
             // Attach the outbound net watch HERE, not via PlayerJoinEvent: the
@@ -1200,6 +1322,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + moddedBlockId + " (place skipped)");
                 return;
             }
+            if (row.isMushroom()) {
+                // this harness places note-family carriers only (its verify leg reads note_block)
+                log().warning(LOG_PREFIX + "f2v block: " + moddedBlockId
+                        + " is a mushroom carrier; place skipped");
+                return;
+            }
             final dev.cim.f2v.F2vPack.VisualBlock visual = row;
             Player p = Bukkit.getPlayerExact(playerName);
             if (p == null) {
@@ -1207,13 +1335,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
             String verified = callSync(() -> {
-                org.bukkit.block.data.type.NoteBlock data;
+                // the vanilla serialized names (harp, trumpet_exposed, ...) parse as a
+                // state string; Bukkit's Instrument enum names differ for some of them
+                org.bukkit.block.data.BlockData data;
                 try {
-                    data = (org.bukkit.block.data.type.NoteBlock)
-                            Material.NOTE_BLOCK.createBlockData();
-                    data.setInstrument(org.bukkit.Instrument.valueOf(
-                            visual.instrument().toUpperCase(Locale.ROOT)));
-                    data.setNote(new org.bukkit.Note(visual.note()));
+                    data = org.bukkit.Bukkit.createBlockData("minecraft:note_block[instrument="
+                            + visual.instrument() + ",note=" + visual.note() + "]");
                 } catch (Throwable t) {
                     return "component-failed: " + t;
                 }
@@ -1235,10 +1362,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                             d.setBrightness(new org.bukkit.entity.Display.Brightness(15, 15));
                         });
                 // verify: the entity exists and carries exactly that state
-                if (disp.isValid() && disp.getBlock() instanceof org.bukkit.block.data.type.NoteBlock nb
-                        && nb.getInstrument() == org.bukkit.Instrument.valueOf(
-                                visual.instrument().toUpperCase(Locale.ROOT))
-                        && nb.getNote().getId() == visual.note()) {
+                String shown = disp.isValid() ? disp.getBlock().getAsString() : "";
+                if (shown.contains("instrument=" + visual.instrument() + ",")
+                        && shown.contains(",note=" + visual.note() + ",")) {
                     org.bukkit.Location l = disp.getLocation();
                     return "verified @" + l.getBlockX() + "," + l.getBlockY() + "," + l.getBlockZ();
                 }
@@ -4587,8 +4713,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage(LOG_PREFIX + "pack: player or served pack unavailable");
                 return true;
             }
-            player.setResourcePack(visualPack.url(),
-                    java.util.HexFormat.of().parseHex(visualPack.sha1()), true);
+            offerVisualPack(player, true);
             sender.sendMessage(LOG_PREFIX + "pack: offered " + visualPack.sha1() + " to " + player.getName());
             return true;
         }

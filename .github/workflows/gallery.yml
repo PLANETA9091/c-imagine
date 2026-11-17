@@ -1004,6 +1004,7 @@ jobs:
           test -f seed-pack/f2v/pack.sha1
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
+          test -f seed-pack/f2v/visual-items.allocated.tsv
           # 14-dx-f: the animated-sprite states manifest rides the build (the
           # file is ABSENT, not empty, when no animated sprite was baked — the
           # join treats a missing file as the empty law)
@@ -1116,6 +1117,7 @@ jobs:
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
+            seed-pack/f2v/visual-items.allocated.tsv
           if-no-files-found: error
 
       - name: upload captured meshes and source mappings (also on failure)
@@ -1141,6 +1143,7 @@ jobs:
             seed-pack/f2v/visual-gallery.resolved.tsv
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
+            seed-pack/f2v/visual-items.allocated.tsv
             seed-pack/f2v/pack.sha1
             seed-pack/f2v/inputs.sha1
             pack-build.log
@@ -2244,13 +2247,17 @@ jobs:
           # play-phase offer pins the same SHA1 for the client's hash check).
           # Measured cost of
           # the rebuild: 4.8 min of every ours boot (#35).
+          # -Dcim.f2v.autoOffer=false: the join offer is OFF here — the
+          # explicit 'cim pack cimviewer' below is the one offer this shard
+          # measures (a join offer would double it). publicUrl pins the
+          # loopback URL the same way the server.properties pins did before.
           # 14-e61 THE CONTEXT-BLEED A/B: the page-composite lane ON for
           # gallery-create-p16 ONLY (the brass door page — the e58h red
           # census's 4 door reds at 107k-207k ae). Every other page keeps
           # the per-cell path = the in-run control group; the pre-registered
           # prediction (14-e60): the p16 door reds collapse toward zero IF
           # the context-bleed law is the whole mechanism.
-          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -Dcim.gallery.pageComposite=create:16 -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -Dcim.f2v.autoOffer=false -Dcim.f2v.publicUrl=http://127.0.0.1:25580/cim-f2v-pack.zip -Dcim.gallery.pageComposite=create:16 -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
           # MEASURED (run 42250969085, all 8 ours shards): the client died

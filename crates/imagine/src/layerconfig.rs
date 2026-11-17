@@ -6,8 +6,11 @@
 //! belongs to the engine; c-imagine keeps its own settings here:
 //!
 //! ```json
-//! {"layerDir": "layer1211/libraries", "mods": "mods"}
+//! {"layerDir": "layer1211/libraries", "bundledMods": false}
 //! ```
+//!
+//! `bundledMods: false` opts out of installing the jars shipped in the module
+//! dir (cimlive) into `mods/`; the default is to install them when a layer is set.
 //!
 //! Hand-rolled extraction only (no serde at the module boundary): the file
 //! is flat and tiny. Missing file → defaults (layer disabled), matching the
@@ -20,6 +23,8 @@ pub struct LayerConfig {
     /// Directory with the 1.21.1 layer jars (NeoForge server install's
     /// `libraries/`). Empty = layer boot disabled (M0 behavior).
     pub layer_dir: String,
+    /// `"bundledMods": false` — skip installing the module's bundled mods.
+    pub bundled_mods_disabled: bool,
 }
 
 /// Read `crus/c-imagine.json` relative to `server_root`. Never errors:
@@ -30,9 +35,30 @@ pub fn load(server_root: &Path) -> LayerConfig {
     match std::fs::read_to_string(&path) {
         Ok(text) => {
             let layer_dir = json_str(&text, "layerDir").unwrap_or_default();
-            LayerConfig { layer_dir }
+            let bundled_mods_disabled = json_bool(&text, "bundledMods") == Some(false);
+            LayerConfig {
+                layer_dir,
+                bundled_mods_disabled,
+            }
         }
         Err(_) => LayerConfig::default(),
+    }
+}
+
+/// Extract a top-level boolean field from a flat JSON object.
+fn json_bool(json: &str, key: &str) -> Option<bool> {
+    let needle = format!("\"{key}\"");
+    let k = json.find(&needle)?;
+    let rest = json[k + needle.len()..]
+        .trim_start()
+        .strip_prefix(':')?
+        .trim_start();
+    if rest.starts_with("true") {
+        Some(true)
+    } else if rest.starts_with("false") {
+        Some(false)
+    } else {
+        None
     }
 }
 
@@ -96,6 +122,20 @@ mod tests {
             load(Path::new("/nonexistent-server-root")),
             LayerConfig::default()
         );
+    }
+
+    #[test]
+    fn bundled_mods_flag_is_read_as_a_boolean() {
+        assert_eq!(
+            json_bool("{\"bundledMods\": false}", "bundledMods"),
+            Some(false)
+        );
+        assert_eq!(
+            json_bool("{\"bundledMods\":true}", "bundledMods"),
+            Some(true)
+        );
+        assert_eq!(json_bool("{\"layerDir\":\"x\"}", "bundledMods"), None);
+        assert_eq!(json_bool("{\"bundledMods\": \"no\"}", "bundledMods"), None);
     }
 
     #[test]

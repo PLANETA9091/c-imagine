@@ -10,8 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
@@ -40,7 +38,8 @@ import org.bukkit.inventory.ItemStack;
  */
 public final class ScreenHud implements HudService.Layer, Listener, CommandExecutor {
 
-    private static final Pattern STATE = Pattern.compile("(\\w+)=(\\w+)");
+    /** The highest vanilla note value (25 notes, 0..24). */
+    private static final int NOTE_MAX = 24;
 
     /** Where AbstractContainerScreen puts its labels. */
     private static final int TITLE_X = 8;
@@ -211,9 +210,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final ItemGlyphs glyphs;
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
+    /** Mod items the pack allocated a definition for (no manifest row): their stacks name it through item_model. */
+    private final java.util.Set<String> allocatedItems = new java.util.HashSet<>();
     private final Map<String, String> blockCarriers = new HashMap<>();
     /** Per player: inventory slots the real client shows empty after a click its server ignored. */
     private final Map<UUID, java.util.Set<Integer>> clientEmptied = new HashMap<>();
+    /** True when this build has display-family rows (the chunk PDC and the displays are read only then). */
+    private boolean displayFamily;
     /** Mod block id to the note block that stands for it in Paper's world. */
     private final Map<String, F2vPack.VisualBlock> blockCarrierRows = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
@@ -290,24 +293,153 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 carrierRows.put(row.moddedId(), row);
             }
         }
-        Path blocks = f2v.resolve("visual-blocks.tsv");
-        if (Files.isRegularFile(blocks)) {
-            for (F2vPack.VisualBlock row : F2vPack.readBlockManifest(blocks)) {
-                blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
-                blockCarrierRows.put(row.moddedBlockId(), row);
-            }
+        allocatedItems.clear();
+        allocatedItems.addAll(F2vPack.readAllocatedItems(f2v));
+        // the rows the pack was built from: the manifest plus the boot-time allocation
+        for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
+            blockCarriers.put(row.key(), row.moddedBlockId());
+            blockCarrierRows.put(row.moddedBlockId(), row);
+            displayFamily |= row.isDisplay();
         }
     }
 
     private LiveBridge live;
+
+    /** The live bridge for the layer's recipe export at boot; null without the layer. */
+    LiveBridge liveBridge() {
+        return live();
+    }
 
     private LiveBridge live() {
         if (live == null && plugin != null && LiveBridge.available()) {
             live = new LiveBridge(plugin, this::carrier, this::itemId);
             startLiveTick();
             log.info("[cim-screen] live menus: the layer's cimlive answers, mod menus run their own code");
+            // Chunks loaded before this plugin listened: their placed mod blocks start ticking now.
+            boolean grew = false;
+            for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
+                for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+                    grew |= live.adoptChunk(chunk, this::carried);
+                }
+            }
+            if (grew) {
+                logTicking();
+            }
         }
         return live;
+    }
+
+    /** The one line that says how many placed mod block entities tick in the layer now. */
+    private void logTicking() {
+        log.info("[c-imagine] live: ticking " + live.tickingCount() + " placed block entities");
+    }
+
+    /** A chunk loads: its placed mod blocks, kept in its PDC, tick in the layer from now on. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkLoad(org.bukkit.event.world.ChunkLoadEvent event) {
+        adoptDisplays(event.getChunk());
+        if (!LiveBridge.available()) {
+            return;
+        }
+        LiveBridge bridge = live();
+        if (bridge != null && bridge.adoptChunk(event.getChunk(), this::carried)) {
+            logTicking();
+        }
+    }
+
+    /**
+     * A loaded chunk's display-family blocks get their displays reconciled. A chunk whose entities
+     * are not in yet is reconciled on the next tick.
+     */
+    private void adoptDisplays(org.bukkit.Chunk chunk) {
+        if (!displayFamily) {
+            return; // no display rows in this build: no chunk PDC to read
+        }
+        if (chunk.isEntitiesLoaded() || plugin == null) {
+            DisplayCarriers.adopt(chunk, this::knownDisplay);
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+            if (chunk.isLoaded()) {
+                DisplayCarriers.adopt(chunk, this::knownDisplay);
+            }
+        });
+    }
+
+    /** True when {@code moddedId} is a display-family block in this build's rows. */
+    private boolean knownDisplay(String moddedId) {
+        F2vPack.VisualBlock row = blockCarrierRows.get(moddedId);
+        return row != null && row.isDisplay();
+    }
+
+    /**
+     * Boot: the loaded chunks' display-family blocks are reconciled once the plugin listens (the
+     * chunks loaded before it did not fire a load event for it).
+     */
+    public void adoptLoadedDisplays() {
+        for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
+            for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
+                adoptDisplays(chunk);
+            }
+        }
+    }
+
+    /** Explosions do not take a display block: the barrier host and its display stay where they are. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayBlast(org.bukkit.event.entity.EntityExplodeEvent event) {
+        event.blockList().removeIf(DisplayCarriers::displayed);
+    }
+
+    /** Explosions of blocks (beds, anchors) keep the display family too. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayBlockBlast(org.bukkit.event.block.BlockExplodeEvent event) {
+        event.blockList().removeIf(DisplayCarriers::displayed);
+    }
+
+    /** A piston moving a display block stops: the display would be left behind at its old position. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayPush(org.bukkit.event.block.BlockPistonExtendEvent event) {
+        for (Block moved : event.getBlocks()) {
+            if (DisplayCarriers.displayed(moved)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    /** A piston pulling a display block stops, as the push does. */
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDisplayPull(org.bukkit.event.block.BlockPistonRetractEvent event) {
+        for (Block moved : event.getBlocks()) {
+            if (DisplayCarriers.displayed(moved)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
+    }
+
+    /** A chunk unloads: its placed mod blocks stop ticking and keep their data in the chunk. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkUnload(org.bukkit.event.world.ChunkUnloadEvent event) {
+        if (live != null && live.releaseChunk(event.getChunk())) {
+            logTicking();
+        }
+    }
+
+    /** The world saves: the ticking blocks' data goes into their chunks first. */
+    @EventHandler
+    public void onWorldSave(org.bukkit.event.world.WorldSaveEvent event) {
+        if (live != null && live.saveAll(this::carried)) {
+            logTicking();
+        }
+    }
+
+    /** The plugin disables: the ticking blocks' data is kept before the server stops. */
+    @EventHandler
+    public void onPluginDisable(org.bukkit.event.server.PluginDisableEvent event) {
+        if (live != null && event.getPlugin() == plugin) {
+            live.saveAll(this::carried);
+        }
     }
 
     private boolean ticking;
@@ -327,12 +459,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             for (Session s : open.values()) {
                 any |= s.live;
             }
-            if (!any) {
+            // Placed block entities of loaded chunks tick with or without a menu open.
+            if (!any && !live.hasTicking()) {
                 return;
             }
-            LiveBridge.tick();
+            live.tick();
+            // Every 200 ticks the placed block entities' data is kept in their chunks; a block whose carrier is gone stops.
+            if (++liveTicks % 200 == 0 && live.saveAll(this::carried)) {
+                logTicking();
+            }
             // Every 4 ticks the screens show what the ticks did (a machine's slots, its output).
-            if (++liveTicks % 4 == 0) {
+            if (any && liveTicks % 4 == 0) {
                 for (Map.Entry<UUID, Session> e : new ArrayList<>(open.entrySet())) {
                     Player p = org.bukkit.Bukkit.getPlayer(e.getKey());
                     if (p != null && e.getValue().live) {
@@ -386,6 +523,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** The real stack that shows as a modded item, or air when there is none. */
     ItemStack carrier(String moddedId) {
         F2vPack.VisualItem row = moddedId == null ? null : carrierRows.get(moddedId);
+        if (row == null && moddedId != null && allocatedItems.contains(moddedId)) {
+            return allocatedCarrier(moddedId);
+        }
         Material host = row == null ? null : Material.matchMaterial(row.hostItem());
         if (host == null) {
             return new ItemStack(Material.AIR);
@@ -395,6 +535,22 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         org.bukkit.inventory.meta.components.CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
         cmd.setFloats(List.of(row.cmd()));
         meta.setCustomModelDataComponent(cmd);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /**
+     * A stack of an allocated mod item: a vanilla host, named by item_model (its own items/ definition in
+     * the pack) and by the leaf name of its id. The id reads back through {@link #itemId}.
+     */
+    private static ItemStack allocatedCarrier(String moddedId) {
+        ItemStack stack = new ItemStack(Material.PAPER);
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        org.bukkit.NamespacedKey model = org.bukkit.NamespacedKey.fromString(F2vPack.allocatedItemModel(moddedId));
+        if (model != null) {
+            meta.setItemModel(model);
+        }
+        meta.itemName(net.kyori.adventure.text.Component.text(F2vPack.allocatedItemName(moddedId)));
         stack.setItemMeta(meta);
         return stack;
     }
@@ -604,11 +760,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     private String itemId(ItemStack stack) {
-        if (stack.hasItemMeta() && stack.getItemMeta().hasCustomModelDataComponent()) {
-            List<Float> floats = stack.getItemMeta().getCustomModelDataComponent().getFloats();
-            String modded = floats.isEmpty() ? null : itemCarriers.get(floats.get(0));
-            if (modded != null) {
-                return modded;
+        if (stack.hasItemMeta()) {
+            org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+            // an allocated item names itself through item_model (stable across pack rebuilds)
+            String allocated = meta.hasItemModel() ? F2vPack.moddedIdOfItemModel(meta.getItemModel().toString()) : null;
+            if (allocated != null) {
+                return allocated;
+            }
+            if (meta.hasCustomModelDataComponent()) {
+                List<Float> floats = meta.getCustomModelDataComponent().getFloats();
+                String modded = floats.isEmpty() ? null : itemCarriers.get(floats.get(0));
+                if (modded != null) {
+                    return modded;
+                }
             }
         }
         return stack.getType().getKey().toString();
@@ -1065,6 +1229,108 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return out;
     }
 
+    /** Survival smoke ground: a stone block 5 west and 5 north of the spawn, the carrier stands above it. */
+    private static Block survivalGround() {
+        return org.bukkit.Bukkit.getWorlds().get(0).getSpawnLocation().getBlock().getRelative(-5, -1, -5);
+    }
+
+    /**
+     * Survival smoke (CIM_SURVIVAL_ITEM, first boot): a carrier item clicked onto a stone block
+     * through {@link #placeOrUse}, the call onUse makes for a mod item on a block. The smoke calls it
+     * directly, not through a PlayerInteractEvent, so onUse's own item-id gate is not exercised.
+     * Then a redstone block beside it. Lines are asserted by survival.yml.
+     */
+    public List<String> survivalPlace(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: survival unavailable");
+            return out;
+        }
+        Block ground = survivalGround();
+        ground.setType(Material.STONE, false);
+        Block at = ground.getRelative(org.bukkit.block.BlockFace.UP);
+        at.setType(Material.AIR, false);
+        player.teleport(at.getLocation().add(2.5, 0, 0.5));
+        player.getInventory().clear();
+        player.getInventory().setItemInMainHand(bridge.stackOf(itemId, 1));
+        boolean did = placeOrUse(player, bridge, ground, org.bukkit.block.BlockFace.UP, null);
+        if (!did || carried(at) == null) {
+            out.add("place " + itemId + " -> refused (carried " + carried(at) + ", block "
+                    + at.getBlockData().getAsString() + ")");
+            return out;
+        }
+        String placed = at.getBlockData().getAsString();
+        out.add("place " + itemId + " -> carrier key " + carrierKey(placed) + " state " + placed
+                + " at " + at.getX() + "," + at.getY() + "," + at.getZ());
+        out.add("ticking after place: " + bridge.tickingCount());
+        Block beside = at.getRelative(org.bukkit.block.BlockFace.EAST);
+        beside.setType(Material.AIR, false);
+        beside.setType(Material.REDSTONE_BLOCK, true);
+        String pulsed = at.getBlockData().getAsString();
+        out.add("redstone beside -> carried " + carried(at) + " key " + carrierKey(pulsed) + " state " + pulsed);
+        beside.setType(Material.AIR, true);
+        return out;
+    }
+
+    /** Survival smoke, first boot, after 40 server ticks with no menu open: still ticking, world saved. */
+    public List<String> survivalKeep(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
+        if (bridge == null) {
+            out.add("no layer: survival unavailable");
+            return out;
+        }
+        out.add("ticking after 40 ticks: " + bridge.tickingCount() + " carried " + carried(at));
+        // The same write onWorldSave makes: the ticking data goes into the chunk before the world saves.
+        if (bridge.saveAll(this::carried)) {
+            logTicking();
+        }
+        at.getWorld().save();
+        out.add("saved: world written with the placed block entity kept, ticking " + bridge.tickingCount());
+        return out;
+    }
+
+    /** Survival smoke, second boot: the chunk loads, the layer adopts the kept block entity again. */
+    public List<String> survivalResume(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
+        // Loading the chunk (if it is not loaded yet) fires ChunkLoadEvent; live() adopts every loaded chunk.
+        at.getChunk();
+        LiveBridge bridge = live();
+        if (bridge == null) {
+            out.add("no layer: survival unavailable");
+            return out;
+        }
+        String state = at.getBlockData().getAsString();
+        out.add("resume: carried " + carried(at) + " key " + carrierKey(state) + " state " + state);
+        out.add("resume: ticking " + bridge.tickingCount());
+        return out;
+    }
+
+    /** Survival smoke, second boot: broken by a survival player through Bukkit's own break, the mod's drop. */
+    public List<String> survivalBreak(Player player, String itemId) {
+        List<String> out = new ArrayList<>();
+        LiveBridge bridge = live();
+        Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
+        player.teleport(at.getLocation().add(2.5, 0, 0.5));
+        player.getInventory().clear();
+        // A survival player mines with the right tool: blocks that require one (Create's
+        // depot is stone-like) drop nothing to a bare hand, on NeoForge as here.
+        player.getInventory().setItemInMainHand(new ItemStack(Material.IRON_PICKAXE));
+        out.add("ticking before break: " + (bridge == null ? -1 : bridge.tickingCount()));
+        boolean broke = player.breakBlock(at);
+        out.add("break " + itemId + " -> broke " + broke + " block now " + at.getType());
+        out.add("ticking after break: " + (bridge == null ? -1 : bridge.tickingCount()));
+        for (org.bukkit.entity.Entity e : at.getWorld().getNearbyEntities(at.getLocation().add(0.5, 0.5, 0.5), 2, 2, 2)) {
+            if (e instanceof org.bukkit.entity.Item item) {
+                out.add("dropped " + itemId(item.getItemStack()) + " x" + item.getItemStack().getAmount());
+            }
+        }
+        return out;
+    }
+
     private String firstOwn(LiveBridge bridge, LiveBridge.State state) {
         return state.slots().stream().filter(sl -> !sl.player()).findFirst()
                 .map(sl -> paperName(bridge.toPaper(sl.stack()))).orElse("none");
@@ -1387,18 +1653,35 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onBreak(org.bukkit.event.block.BlockBreakEvent event) {
         Block block = event.getBlock();
-        if (block.getType() != Material.NOTE_BLOCK) {
+        String modded = carried(block);
+        if (modded == null) {
             return;
         }
-        String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
-        LiveBridge bridge = modded == null ? null : live();
+        // the barrier goes with the break (the event is not cancelled): its display goes too
+        boolean display = block.getType() == Material.BARRIER;
+        LiveBridge bridge = live();
+        if (bridge != null && !LiveBridge.ready()) {
+            // the mod's own drop needs the layer's real server: keep the block until it is up
+            event.setCancelled(true);
+            event.getPlayer().sendActionBar(net.kyori.adventure.text.Component.text("Mods are still starting"));
+            return;
+        }
         if (bridge == null) {
+            if (display) {
+                DisplayCarriers.remove(block);
+            }
             return;
         }
         LiveBridge.Broken broken = bridge.breakBlock(event.getPlayer(), block, modded);
+        if (display) {
+            DisplayCarriers.remove(block);
+        }
         if (broken.state().error() != null) {
             log.warning("[cim-screen] live break failed: " + broken.state().error());
             return;
+        }
+        if (bridge.release(block, null)) {
+            logTicking();
         }
         event.setDropItems(false);
         org.bukkit.Location at = block.getLocation().add(0.5, 0.5, 0.5);
@@ -1408,6 +1691,220 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bridge.applyInventory(event.getPlayer(), broken.state());
         log.info("[cim-screen] " + event.getPlayer().getName() + " broke " + modded + ": " + broken.spilled().size()
                 + " stack(s) dropped");
+    }
+
+    /**
+     * The block types a carrier can stand in: the note block (the note family), the mushroom hosts
+     * (the mushroom family) and the barrier (the display family, see {@link DisplayCarriers}).
+     */
+    static boolean isCarrierType(Material type) {
+        return type == Material.NOTE_BLOCK || type == Material.BROWN_MUSHROOM_BLOCK
+                || type == Material.RED_MUSHROOM_BLOCK || type == Material.MUSHROOM_STEM
+                || type == Material.BARRIER;
+    }
+
+    /**
+     * The transient BLOCK_BREAK_SPEED modifier a carrier's dig carries. Transient: a crash mid-dig
+     * leaves nothing in the player's saved data.
+     */
+    private static final org.bukkit.NamespacedKey BREAK_SPEED = new org.bukkit.NamespacedKey("cim", "carrier_break_speed");
+
+    /** Per player: the carrier being dug, while its break speed is the mod block's. */
+    private final Map<UUID, Digging> digging = new HashMap<>();
+
+    /** The carrier being dug, with its host block (the note block or the mushroom host Paper breaks). */
+    private record Digging(String blockId, String host) {
+    }
+
+    /**
+     * A carrier's break time is the mod block's, not the note block's: Paper scales the player's
+     * break progress by the time ratio (see {@link BreakSpeed}) while the carrier is dug. Survival
+     * and adventure only: creative breaks at once, as the game does. A mod block the game never
+     * breaks (-1) is not dug at all; a hardness of 0 breaks at once.
+     */
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onCarrierDamage(org.bukkit.event.block.BlockDamageEvent event) {
+        Player player = event.getPlayer();
+        endDigging(player);
+        if (event.isCancelled()) {
+            return; // no dig starts, so no modifier is kept
+        }
+        String modded = carried(event.getBlock());
+        LiveBridge bridge = modded == null ? null : live();
+        org.bukkit.GameMode mode = player.getGameMode();
+        if (bridge == null || (mode != org.bukkit.GameMode.SURVIVAL && mode != org.bukkit.GameMode.ADVENTURE)) {
+            return;
+        }
+        LiveBridge.BlockInfo info = bridge.blockInfo(modded);
+        if (info == null) {
+            return; // the layer cannot say: the note block's own time stands
+        }
+        if (info.hardness() < 0) {
+            event.setCancelled(true);
+            return;
+        }
+        // A display block's host is a barrier, which a survival dig never progresses: it breaks at
+        // once, and the mod's own hardness is not mirrored (the note block's break-speed path cannot apply).
+        if (info.hardness() == 0 || event.getBlock().getType() == Material.BARRIER) {
+            event.setInstaBreak(true);
+            return;
+        }
+        String host = event.getBlock().getType().getKey().toString();
+        digging.put(player.getUniqueId(), new Digging(modded, host));
+        applyBreakSpeed(player, bridge, modded, info, host);
+    }
+
+    /**
+     * Sets the carrier's break speed for the player's held item: the multiplier that turns the note
+     * block's progress per tick into the mod block's. Leaves the player's own speed when the layer
+     * or the multiplier cannot be had.
+     */
+    private void applyBreakSpeed(Player player, LiveBridge bridge, String modded, LiveBridge.BlockInfo info,
+                                 String host) {
+        org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
+        if (speed == null) {
+            return;
+        }
+        // The previous tool's multiplier goes first: a re-measure that cannot answer leaves the player's own speed.
+        speed.removeModifier(BREAK_SPEED);
+        LiveBridge.BlockInfo note = bridge.blockInfo(host);
+        LiveBridge.Dig dig = bridge.digSpeed(player.getInventory().getItemInMainHand(), modded, host);
+        org.bukkit.attribute.AttributeInstance efficiency = player.getAttribute(org.bukkit.attribute.Attribute.MINING_EFFICIENCY);
+        if (note == null || note.hardness() <= 0 || dig == null || dig.refSpeed() <= 0 || efficiency == null) {
+            return;
+        }
+        double m = BreakSpeed.multiplier(info.hardness(), info.requiresTool(), dig.correct(), dig.speed(),
+                note.hardness(), dig.refSpeed(), efficiency.getValue());
+        if (!Double.isFinite(m) || m <= 0) {
+            return;
+        }
+        speed.addTransientModifier(new org.bukkit.attribute.AttributeModifier(BREAK_SPEED,
+                BreakSpeed.modifierAmount(m), org.bukkit.attribute.AttributeModifier.Operation.MULTIPLY_SCALAR_1));
+    }
+
+    /** A dig ends (a break, an abort, the quit, or the next dig): the player's own break speed comes back. */
+    private void endDigging(Player player) {
+        digging.remove(player.getUniqueId());
+        org.bukkit.attribute.AttributeInstance speed = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_BREAK_SPEED);
+        if (speed != null) {
+            speed.removeModifier(BREAK_SPEED);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onCarrierDigEnd(org.bukkit.event.block.BlockDamageAbortEvent event) {
+        endDigging(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onCarrierBroken(org.bukkit.event.block.BlockBreakEvent event) {
+        endDigging(event.getPlayer());
+    }
+
+    /**
+     * The held item changes a dig's tool mid-dig: the break speed is measured again on the next tick,
+     * when the new item is in hand and its attributes have applied.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onCarrierHeld(org.bukkit.event.player.PlayerItemHeldEvent event) {
+        Player player = event.getPlayer();
+        Digging dig = digging.get(player.getUniqueId());
+        if (dig == null || plugin == null) {
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+            LiveBridge bridge = live();
+            if (bridge != null && digging.get(player.getUniqueId()) == dig) {
+                LiveBridge.BlockInfo info = bridge.blockInfo(dig.blockId());
+                if (info != null) {
+                    applyBreakSpeed(player, bridge, dig.blockId(), info, dig.host());
+                }
+            }
+        });
+    }
+
+    /** The live bridge, only once the layer's real server is up (else null). */
+    private LiveBridge liveReady() {
+        LiveBridge bridge = live();
+        return bridge != null && LiveBridge.ready() ? bridge : null;
+    }
+
+    /**
+     * The mod block id a carrier stands for: a note block or mushroom host by its state, a display
+     * block by its barrier's chunk key (O(1)). Null for anything else.
+     */
+    private String carried(Block block) {
+        if (block == null || blockCarriers.isEmpty()) {
+            return null;
+        }
+        if (block.getType() == Material.BARRIER) {
+            String id = DisplayCarriers.idAt(block);
+            return id != null && knownDisplay(id) ? id : null;
+        }
+        if (!isCarrierType(block.getType())) {
+            return null;
+        }
+        return blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
+    }
+
+    /**
+     * Survival guard: a carrier is a note-block state the pack draws as a mod block, so a
+     * vanilla note change would silently turn it into a different mod block. A carrier
+     * never plays a note and never takes vanilla's right-click note cycling.
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onCarrierNote(org.bukkit.event.block.NotePlayEvent event) {
+        if (carried(event.getBlock()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    /** Neighbor updates (redstone, a block set below) must not re-tune a carrier. */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onCarrierPhysics(org.bukkit.event.block.BlockPhysicsEvent event) {
+        if (isCarrierType(event.getChangedType()) && carried(event.getBlock()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    /**
+     * Either hand's right-click on a carrier: the item may still be used, the note block may
+     * not. A vanilla note block one step below a carrier must not be tuned onto it either:
+     * the right-click would turn it into a mod block's look.
+     */
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onCarrierUse(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK) {
+            return;
+        }
+        Block block = event.getClickedBlock();
+        if (carried(block) != null || tunesOntoCarrier(block)) {
+            event.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
+        }
+    }
+
+    /** True when one vanilla right-click (note + 1, wrapping at 24 to 0) would land a plain note block on a carrier. */
+    private boolean tunesOntoCarrier(Block block) {
+        if (block == null || block.getType() != Material.NOTE_BLOCK || blockCarriers.isEmpty()) {
+            return false;
+        }
+        String next = steppedKey(block.getBlockData().getAsString());
+        return next != null && blockCarriers.containsKey(next);
+    }
+
+    /** {@code harp:5} of a note-block state, with the note one vanilla step up; null when unreadable. */
+    static String steppedKey(String state) {
+        String key = carrierKey(state);
+        if (key == null || !state.contains("note_block")) {
+            return null; // only the note family steps: a mushroom face key is not a note
+        }
+        int colon = key.lastIndexOf(':');
+        try {
+            int note = Integer.parseInt(key.substring(colon + 1));
+            return key.substring(0, colon + 1) + ((note + 1) % (NOTE_MAX + 1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     @EventHandler
@@ -1439,11 +1936,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         String opener = null;
         Block block = event.getClickedBlock();
-        if (block != null && block.getType() == Material.NOTE_BLOCK) {
-            String modded = blockCarriers.get(carrierKey(block.getBlockData().getAsString()));
-            opener = modded == null ? null : "block:" + modded;
-            LiveBridge bridge = live();
-            if (modded != null && bridge != null && !player.isSneaking()) {
+        String modded = carried(block);
+        if (modded != null) {
+            opener = "block:" + modded;
+            LiveBridge bridge = liveReady();
+            if (bridge != null && !player.isSneaking()) {
                 LiveBridge.State state = bridge.openBlock(player, block, modded);
                 if (openLive(player, state, opener)) {
                     event.setCancelled(true);
@@ -1456,9 +1953,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // places, a backpack set down by a sneaking click, a menu it opens).
         if (block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
                 && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
-            LiveBridge bridge = live();
-            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(),
-                    block.getType() == Material.NOTE_BLOCK ? blockCarriers.get(carrierKey(block.getBlockData().getAsString())) : null)) {
+            LiveBridge bridge = liveReady();
+            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), carried(block))) {
                 event.setCancelled(true);
                 return;
             }
@@ -1466,7 +1962,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (opener == null && item != null && !item.getType().isAir()) {
             opener = "item:" + itemId(item);
             // The mod's own use() decides, when the layer is there: what opens is its menu.
-            LiveBridge bridge = live();
+            LiveBridge bridge = liveReady();
             if (bridge != null && !player.isSneaking()) {
                 LiveBridge.State state = bridge.openHeld(player);
                 if (openLive(player, state, opener)) {
@@ -1501,9 +1997,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
             Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
             if (row != null && (at.getType().isAir() || at.isReplaceable())) {
-                at.setBlockData(org.bukkit.Bukkit.createBlockData("minecraft:note_block[instrument=" + row.instrument()
-                        + ",note=" + row.note() + "]"), false);
+                at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
+                if (row.isDisplay()) {
+                    DisplayCarriers.place(at, row.moddedBlockId());
+                }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
+                if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
+                    logTicking();
+                }
                 log.info("[cim-screen] " + player.getName() + " placed " + result.placedId() + " at "
                         + at.getX() + "," + at.getY() + "," + at.getZ());
                 did = true;
@@ -1528,19 +2029,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return null;
     }
 
-    /** {@code minecraft:note_block[instrument=harp,note=5,...]} to {@code harp:5}. */
+    /** {@code minecraft:note_block[instrument=harp,note=5,...]} to {@code harp:5}; a mushroom host to {@code host:111111}. */
     static String carrierKey(String state) {
-        Matcher m = STATE.matcher(state);
-        String instrument = null;
-        String note = null;
-        while (m.find()) {
-            if (m.group(1).equals("instrument")) {
-                instrument = m.group(2);
-            } else if (m.group(1).equals("note")) {
-                note = m.group(2);
-            }
-        }
-        return instrument + ":" + note;
+        return F2vPack.carrierKeyOf(state);
     }
 
     @EventHandler
@@ -1553,6 +2044,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         close(event.getPlayer());
+        endDigging(event.getPlayer());
     }
 
     private static int check(boolean ok, String what) {
@@ -1575,6 +2067,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(p.y() == -10, "it leaves the edge as soon as the look reverses: " + p.y());
         bad += check(carrierKey("minecraft:note_block[instrument=trumpet_exposed,note=12,powered=false]")
                 .equals("trumpet_exposed:12"), "carrier key reads a real state string");
+        bad += check("harp:6".equals(steppedKey("minecraft:note_block[instrument=harp,note=5,powered=true]")),
+                "a right-click steps the note up by one");
+        bad += check("harp:0".equals(steppedKey("minecraft:note_block[instrument=harp,note=24,powered=false]")),
+                "the note wraps from 24 to 0 as vanilla does");
+        bad += check(steppedKey("minecraft:note_block") == null, "an unreadable state steps to nothing");
+        bad += check("brown_mushroom_block:100000".equals(carrierKey(
+                "minecraft:brown_mushroom_block[north=true,east=false,south=false,west=false,up=false,down=false]")),
+                "a mushroom host's state reads its face key");
+        bad += check(steppedKey("minecraft:brown_mushroom_block[north=true,east=true,south=true,west=true,up=true,down=false]") == null,
+                "a mushroom carrier never steps as a note block");
+        bad += check(isCarrierType(Material.MUSHROOM_STEM) && !isCarrierType(Material.STONE),
+                "the mushroom hosts are carrier types, stone is not");
         GuiCaptures.Capture c = GuiCaptures.parse(List.of(
                 "cell\tx\ty\tz\tmenu\tnote",
                 "cell\t1\t2\t3\tcreate:filter\topened-by:item:create:filter\tcom.simibubi.FilterMenu",

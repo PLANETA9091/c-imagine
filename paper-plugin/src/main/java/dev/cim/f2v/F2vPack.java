@@ -1,5 +1,6 @@
 package dev.cim.f2v;
 
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import java.io.IOException;
 import java.io.InputStream;
@@ -10,12 +11,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -80,11 +86,22 @@ public final class F2vPack {
         }
     }
 
-    /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
+    /**
+     * The item channel's tally for the build log: manifest rows that resolved to a model,
+     * mod items allocated a definition of their own (no manifest row), and the candidates
+     * or rows that found no model in any jar.
+     */
+    public record ItemTally(int manifest, int allocated, int failed) {
+        public int resolved() {
+            return manifest + allocated;
+        }
+    }
+
+    /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings, item tally. */
     public record Result(List<VisualItem> items, List<VisualBlock> blocks,
                          String sha1, int entryCount, List<String> warnings,
                          List<GalleryPack.Resolved> gallery,
-                         List<String[]> placeholders) {
+                         List<String[]> placeholders, ItemTally tally) {
     }
 
     /**
@@ -670,6 +687,174 @@ public final class F2vPack {
      * component codec, nothing per-instance.
      */
     public record VisualBlock(String moddedBlockId, String instrument, int note) {
+
+        /**
+         * True for a mushroom-family carrier: {@code instrument} then names the host block
+         * ({@link #MUSHROOM_HOSTS}) and {@code note} carries the six face bits (bit i =
+         * {@link #MUSHROOM_FACES} i). Note-family rows (the default) keep their meaning.
+         */
+        public boolean isMushroom() {
+            return MUSHROOM_HOSTS.contains(instrument);
+        }
+
+        /**
+         * True for a display-family row: no slot at all. The block stands in Paper's world as a
+         * barrier with an ItemDisplay of its model on top (see {@link #DISPLAY_FAMILY}); {@code note}
+         * is unused and 0.
+         */
+        public boolean isDisplay() {
+            return DISPLAY_FAMILY.equals(instrument);
+        }
+
+        /**
+         * The carrier's allocation key: {@code harp:5} for a note slot, {@code brown_mushroom_block:101010}
+         * for a mushroom slot, {@code display:<id>} for a display row (one per block, never a slot).
+         */
+        public String key() {
+            if (isDisplay()) {
+                return DISPLAY_FAMILY + ":" + moddedBlockId;
+            }
+            return isMushroom() ? instrument + ":" + mushroomBits(note) : instrument + ":" + note;
+        }
+    }
+
+    /**
+     * The display family: the unbounded overflow after the note and mushroom slots. A display block
+     * is a barrier (the collision and the invisible host) with an {@code ItemDisplay} at its centre
+     * whose item_model names the block's own model ({@link #displayItemModel}). Ledger and resolved
+     * rows spell it {@code <id> TAB display TAB 0}; the third column is unused for this family.
+     */
+    public static final String DISPLAY_FAMILY = "display";
+    /** The display family's host block in Paper's world: invisible, full collision, unbreakable by a survival dig (see DisplayCarriers). */
+    public static final String DISPLAY_HOST = "barrier";
+    /** The namespace of the display items' item_model keys: {@code c-imagine:_display/<ns>/<path>}; the underscore keeps it out of every mod's namespace. */
+    static final String DISPLAY_PATH = "_display";
+
+    /** The item_model key of a display block's item (its items/ definition in the pack). */
+    public static String displayItemModel(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        return ALLOCATED_NS + ":" + DISPLAY_PATH + "/" + moddedId.substring(0, colon) + "/" + moddedId.substring(colon + 1);
+    }
+
+    /** The mod block id a display item_model key names, or null when it is not a display key (the inverse of {@link #displayItemModel}). */
+    public static String moddedIdOfDisplayItemModel(String key) {
+        String prefix = ALLOCATED_NS + ":" + DISPLAY_PATH + "/";
+        if (key == null || !key.startsWith(prefix)) {
+            return null;
+        }
+        String rest = key.substring(prefix.length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0 || slash == rest.length() - 1) {
+            return null;
+        }
+        return rest.substring(0, slash) + ":" + rest.substring(slash + 1);
+    }
+
+    /** The items/ definition path of a display block's item. */
+    static String displayItemDefPath(String moddedId) {
+        return "assets/" + displayItemModel(moddedId).replaceFirst(":", "/items/") + ".json";
+    }
+
+    /**
+     * The mushroom-block carrier family (overflow capacity, after the note slots). Three host
+     * blocks, each a six-boolean blockstate (64 states). Vanilla's placed default (all faces
+     * true) and its all-false interior are never handed out.
+     */
+    public static final List<String> MUSHROOM_HOSTS = List.of("brown_mushroom_block", "red_mushroom_block",
+            "mushroom_stem");
+    /** The six face properties, in the bit order of a mushroom slot's mask and bit string. */
+    public static final List<String> MUSHROOM_FACES = List.of("north", "east", "south", "west", "up", "down");
+    static final int MUSHROOM_MASK_MIN = 1;
+    static final int MUSHROOM_MASK_MAX = 62;
+    static final int MUSHROOM_CAPACITY = MUSHROOM_HOSTS.size() * (MUSHROOM_MASK_MAX - MUSHROOM_MASK_MIN + 1);
+
+    /** The six bits of a mushroom mask as the blockstate string {@code 101010} (face order of {@link #MUSHROOM_FACES}). */
+    public static String mushroomBits(int mask) {
+        StringBuilder sb = new StringBuilder(MUSHROOM_FACES.size());
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            sb.append((mask >> i & 1) == 1 ? '1' : '0');
+        }
+        return sb.toString();
+    }
+
+    /** The mask of a six-character bit string, or -1 when it is not one. */
+    static int parseMushroomBits(String bits) {
+        if (bits.length() != MUSHROOM_FACES.size()) {
+            return -1;
+        }
+        int mask = 0;
+        for (int i = 0; i < bits.length(); i++) {
+            char c = bits.charAt(i);
+            if (c != '0' && c != '1') {
+                return -1;
+            }
+            mask |= (c - '0') << i;
+        }
+        return mask;
+    }
+
+    /**
+     * The block state a carrier of this row is placed as in Paper's world: the note block
+     * ({@code minecraft:note_block[instrument=..,note=..]}) or the mushroom host with its six
+     * faces ({@code minecraft:brown_mushroom_block[down=true,east=false,...]}).
+     */
+    public static String carrierState(VisualBlock row) {
+        if (row.isDisplay()) {
+            return "minecraft:" + DISPLAY_HOST;
+        }
+        if (!row.isMushroom()) {
+            return "minecraft:note_block[instrument=" + row.instrument() + ",note=" + row.note() + "]";
+        }
+        StringBuilder sb = new StringBuilder("minecraft:").append(row.instrument()).append('[');
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            sb.append(i == 0 ? "" : ",").append(MUSHROOM_FACES.get(i)).append('=')
+                    .append((row.note() >> i & 1) == 1 ? "true" : "false");
+        }
+        return sb.append(']').toString();
+    }
+
+    /**
+     * The carrier key of a placed block's state string: {@code harp:5} for a note block,
+     * {@code brown_mushroom_block:101010} for a mushroom host, null for anything else (or a
+     * state that does not parse).
+     */
+    public static String carrierKeyOf(String state) {
+        int open = state.indexOf('[');
+        String name = open < 0 ? state : state.substring(0, open);
+        name = name.startsWith("minecraft:") ? name.substring("minecraft:".length()) : name;
+        if (name.equals("note_block")) {
+            Map<String, String> props = stateProperties(state);
+            return props.get("instrument") + ":" + props.get("note");
+        }
+        if (MUSHROOM_HOSTS.contains(name)) {
+            Map<String, String> props = stateProperties(state);
+            StringBuilder bits = new StringBuilder();
+            for (String face : MUSHROOM_FACES) {
+                String v = props.get(face);
+                if (v == null) {
+                    return null;
+                }
+                bits.append(v.equals("true") ? '1' : '0');
+            }
+            return name + ":" + bits;
+        }
+        return null;
+    }
+
+    private static Map<String, String> stateProperties(String state) {
+        Map<String, String> props = new HashMap<>();
+        int open = state.indexOf('[');
+        int close = state.lastIndexOf(']');
+        if (open < 0 || close <= open) {
+            return props;
+        }
+        for (String pair : state.substring(open + 1, close).split(",")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0) {
+                props.put(pair.substring(0, eq).trim(), pair.substring(eq + 1).trim());
+            }
+        }
+        return props;
     }
 
     /**
@@ -877,9 +1062,13 @@ public final class F2vPack {
      */
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows)
             throws IOException {
-        return build(modsDir, outDir, manifestRows,
+        CarrierPlan plan = carrierPlan(outDir, modsDir,
+                readBlockManifest(outDir.resolve("visual-blocks.tsv")), true);
+        Result r = withNotes(build(modsDir, outDir, manifestRows,
                 readEquipmentManifest(outDir.resolve("visual-equipment.tsv")),
-                readBlockManifest(outDir.resolve("visual-blocks.tsv")));
+                plan.effective()), plan.notes());
+        writeResolvedBlocks(outDir, r.blocks());
+        return r;
     }
 
     /**
@@ -933,9 +1122,10 @@ public final class F2vPack {
                 }
             }
             Path items = base.resolve("visual-items.tsv");
+            // the same carrier plan the pre-boot build persisted (read-only here)
             return build(mods, scratch, Files.isRegularFile(items) ? readManifest(items) : List.of(),
                     readEquipmentManifest(base.resolve("visual-equipment.tsv")),
-                    readBlockManifest(base.resolve("visual-blocks.tsv")),
+                    carrierPlan(base, mods, readBlockManifest(base.resolve("visual-blocks.tsv")), false).effective(),
                     readPaletteManifest(base.resolve("visual-palettes.tsv")), assets);
         } finally {
             deleteRecursively(scratch);
@@ -944,23 +1134,45 @@ public final class F2vPack {
 
     /**
      * Read {@code visual-blocks.tsv}: {@code moddedBlockId<TAB>instrument[
-     * <TAB>note]} — one note_block stand-in slot per row (measured surface:
+     * <TAB>note]} — one note_block stand-in slot per row, or a mushroom row
+     * {@code moddedBlockId<TAB>host<TAB>NESWUD bits} (measured surface:
      * block-channel-26-3.md). Optional; missing file = no block overrides.
      * Note defaults to 13 (a deliberate non-default pick so a vanilla
      * note=0 note block elsewhere can never collide with the slot).
      */
     public static List<VisualBlock> readBlockManifest(Path tsv) throws IOException {
-        List<VisualBlock> rows = new ArrayList<>();
         if (!Files.isRegularFile(tsv)) {
-            return rows;
+            return new ArrayList<>();
         }
-        for (String line : Files.readAllLines(tsv, StandardCharsets.UTF_8)) {
+        return parseBlockRows(Files.readAllLines(tsv, StandardCharsets.UTF_8));
+    }
+
+    /** The rows of a block manifest or ledger text (see {@link #readBlockManifest}). */
+    static List<VisualBlock> parseBlockRows(List<String> lines) {
+        List<VisualBlock> rows = new ArrayList<>();
+        for (String line : lines) {
             String t = line.trim();
             if (t.isEmpty() || t.startsWith("#")) {
                 continue;
             }
             String[] parts = t.split("\t", -1);
             if (parts.length < 2) {
+                continue;
+            }
+            String host = parts[1].trim();
+            if (DISPLAY_FAMILY.equals(host)) {
+                // display family row: no slot, the third column is unused
+                if (parts[0].trim().indexOf(':') > 0) {
+                    rows.add(new VisualBlock(parts[0].trim(), DISPLAY_FAMILY, 0));
+                }
+                continue;
+            }
+            if (MUSHROOM_HOSTS.contains(host)) {
+                // mushroom family row: the third column is the six face bits (NESWUD order)
+                int mask = parts.length >= 3 ? parseMushroomBits(parts[2].trim()) : -1;
+                if (mask >= MUSHROOM_MASK_MIN && mask <= MUSHROOM_MASK_MAX) {
+                    rows.add(new VisualBlock(parts[0].trim(), host, mask));
+                }
                 continue;
             }
             int note = 13;
@@ -971,12 +1183,526 @@ public final class F2vPack {
                     continue; // malformed note — row dropped
                 }
             }
-            rows.add(new VisualBlock(parts[0].trim(), parts[1].trim(), note));
+            rows.add(new VisualBlock(parts[0].trim(), host, note));
         }
         rows.sort(Comparator.comparing(VisualBlock::moddedBlockId)
                 .thenComparing(VisualBlock::instrument)
                 .thenComparingInt(VisualBlock::note));
         return rows;
+    }
+
+    // ---- allocated mod items (boot-time, no manifest row) ------------------------
+
+    /** The item_model namespace of an allocated mod item: {@code c-imagine:<ns>/<path>}. */
+    public static final String ALLOCATED_NS = "c-imagine";
+    /** The allocated items the last build emitted (moddedId TAB item_model); the HUD reads them. */
+    public static final String ALLOCATED_ITEMS = "visual-items.allocated.tsv";
+    private static final String ALLOCATED_HEADER = "# c-imagine F2V allocated mod items (no manifest row)\n"
+            + "# moddedId <TAB> item_model (c-imagine:<ns>/<path>) — written by the pack build, do not edit\n";
+    /** A plain mod id: lowercase segments, no empty or dot-only segment, so the item def path stays inside its folder. */
+    private static final java.util.regex.Pattern ALLOCATABLE = java.util.regex.Pattern.compile(
+            "[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*:[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*(?:/[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*)*");
+
+    /** The item_model key of an allocated mod item (its items/ definition, namespace-less path). */
+    public static String allocatedItemModel(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        return ALLOCATED_NS + ":" + moddedId.substring(0, colon) + "/" + moddedId.substring(colon + 1);
+    }
+
+    /** The mod id an item_model key names when it is an allocated key, else null (the inverse of {@link #allocatedItemModel}). */
+    public static String moddedIdOfItemModel(String key) {
+        String prefix = ALLOCATED_NS + ":";
+        if (key == null || !key.startsWith(prefix) || key.startsWith(prefix + DISPLAY_PATH + "/")) {
+            return null; // a display key is not an allocated item
+        }
+        String rest = key.substring(prefix.length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0 || slash == rest.length() - 1) {
+            return null;
+        }
+        return rest.substring(0, slash) + ":" + rest.substring(slash + 1);
+    }
+
+    /** The name a Paper stack of an allocated item shows: the id's leaf, title-cased ("brass_ingot" -> "Brass Ingot"). */
+    public static String allocatedItemName(String moddedId) {
+        String path = moddedId.substring(moddedId.indexOf(':') + 1);
+        String leaf = path.substring(path.lastIndexOf('/') + 1);
+        StringBuilder sb = new StringBuilder();
+        for (String word : leaf.split("[_-]+")) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return sb.isEmpty() ? moddedId : sb.toString();
+    }
+
+    /** The candidates: discovered mod ids that are plain, not vanilla, not ours, and not a manifest row; sorted. */
+    static List<String> itemCandidates(Collection<String> discovered, Collection<String> manifestIds) {
+        Set<String> manifest = new HashSet<>(manifestIds);
+        TreeSet<String> out = new TreeSet<>();
+        for (String id : discovered) {
+            if (id.startsWith("minecraft:") || id.startsWith(ALLOCATED_NS + ":") || manifest.contains(id)) {
+                continue;
+            }
+            if (ALLOCATABLE.matcher(id).matches()) {
+                out.add(id);
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    /** Every mod item a jar ships an item model for ({@code assets/<ns>/models/item/<path>.json}), as {@code ns:path}. */
+    static Set<String> discoverItemIds(List<Path> jars) throws IOException {
+        Set<String> out = new TreeSet<>();
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                var entries = zf.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    if (!name.startsWith("assets/") || !name.endsWith(".json")) {
+                        continue;
+                    }
+                    int slash = name.indexOf('/', "assets/".length());
+                    if (slash < 0) {
+                        continue;
+                    }
+                    String ns = name.substring("assets/".length(), slash);
+                    String prefix = "assets/" + ns + "/models/item/";
+                    if (ns.equals("minecraft") || !name.startsWith(prefix)) {
+                        continue;
+                    }
+                    String path = name.substring(prefix.length(), name.length() - ".json".length());
+                    if (!path.isEmpty()) {
+                        out.add(ns + ":" + path);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The items/ definition path of an allocated item: {@code assets/c-imagine/items/<ns>/<path>.json}. */
+    static String allocatedItemDefPath(String moddedId) {
+        return "assets/" + allocatedItemModel(moddedId).replaceFirst(":", "/items/") + ".json";
+    }
+
+    /** The items/ definition of an allocated item: the mod's own model (or its composite), as the model node. */
+    static String allocatedItemDef(String ref) {
+        JsonObject node = GalleryPack.itemNode(ref);
+        return "{\n  \"model\": " + (node != null ? node : itemModelNode(ref)) + "\n}\n";
+    }
+
+    private static String allocatedText(List<String> ids) {
+        StringBuilder sb = new StringBuilder(ALLOCATED_HEADER);
+        for (String id : ids) {
+            sb.append(id).append('\t').append(allocatedItemModel(id)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** The allocated items the last build emitted (the HUD's stand-in for the rows it has no CMD for). */
+    public static List<String> readAllocatedItems(Path f2vDir) throws IOException {
+        List<String> out = new ArrayList<>();
+        Path file = f2vDir.resolve(ALLOCATED_ITEMS);
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String id = t.split("\t", -1)[0].trim();
+            if (!id.isEmpty()) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
+    // ---- carrier allocation (boot-time fallback for every mod block) --------------
+
+    /**
+     * The 27 NoteBlockInstrument serialized names in the vanilla 26.3 enum order
+     * (the 23 1.21.x instruments plus the trumpet family). The slot order is this
+     * list, instrument-major, so the allocation is a pure function of the inputs.
+     */
+    static final List<String> CARRIER_INSTRUMENTS = List.of("harp", "basedrum", "snare", "hat", "bass",
+            "flute", "bell", "guitar", "chime", "xylophone", "iron_xylophone", "cow_bell", "didgeridoo",
+            "bit", "banjo", "pling", "trumpet", "trumpet_exposed", "trumpet_oxidized", "trumpet_weathered",
+            "zombie", "skeleton", "creeper", "dragon", "wither_skeleton", "piglin", "custom_head");
+    /**
+     * Note 0 is vanilla's placed default: never handed out, so a freshly placed vanilla
+     * note block can never read as a carrier. The pack variant key pins instrument +
+     * note and leaves powered a wildcard, so 27 x 24 = 648 slots is the render space.
+     */
+    static final int CARRIER_NOTE_MIN = 1;
+    static final int CARRIER_NOTE_MAX = 24;
+    /** The allocation ledger: every auto-allocated carrier, kept across restarts. */
+    static final String CARRIER_LEDGER = "carriers.tsv";
+    /** The rows the last build used (manifest + allocation); the HUD reads these. */
+    static final String RESOLVED_BLOCKS = "visual-blocks.resolved.tsv";
+    static final int CARRIER_CAPACITY = CARRIER_INSTRUMENTS.size()
+            * (CARRIER_NOTE_MAX - CARRIER_NOTE_MIN + 1);
+    private static final String LEDGER_HEADER = "# c-imagine F2V carrier ledger (auto-allocated; never reassigned)\n"
+            + "# modded_block_id <TAB> instrument <TAB> note — written by the pack build, do not edit\n";
+    private static final String RESOLVED_HEADER = "# c-imagine F2V resolved block carriers (manifest + allocation)\n"
+            + "# written by the pack build; the HUD and the pack read the same rows\n";
+
+    /** The planner's output: the rows the pack emits, the ledger to keep, notes for the build log. */
+    public record CarrierPlan(List<VisualBlock> effective, List<VisualBlock> ledger, List<String> notes) {
+    }
+
+    /**
+     * Pure carrier planner. The manifest is authoritative: its rows keep their slots and
+     * block their ids from auto allocation. A ledger row keeps its slot across restarts;
+     * it only moves when a manifest row now holds that slot (logged). Every other
+     * discovered mod block takes the lowest free slot in sorted id order; once the slot
+     * families are full it joins the display family (unbounded, see {@link #DISPLAY_FAMILY}).
+     * A display row never moves (it holds no slot). Ledger rows
+     * of blocks no jar carries any more are reserved, never reissued, and not emitted.
+     */
+    static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
+                                    List<VisualBlock> ledgerRows) {
+        return planCarriers(discovered, manifest, ledgerRows, false);
+    }
+
+    /**
+     * The planner with the mushroom family switched on or off. Ledger rows are honoured either
+     * way (a slot once issued is never taken back); the switch only gates NEW mushroom slots,
+     * which open after the note slots are full.
+     */
+    static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
+                                    List<VisualBlock> ledgerRows, boolean mushroom) {
+        final int capacity = mushroom ? CARRIER_CAPACITY + MUSHROOM_CAPACITY : CARRIER_CAPACITY;
+        Set<String> found = new TreeSet<>(discovered);
+        List<String> notes = new ArrayList<>();
+        Set<String> used = new HashSet<>();
+        Set<String> placed = new HashSet<>();
+        Set<String> manifestIds = new HashSet<>();
+        List<VisualBlock> effective = new ArrayList<>();
+        for (VisualBlock row : manifest) {
+            if (row.isDisplay()) {
+                notes.add("carrier manifest: display rows are automatic, dropped " + row.moddedBlockId());
+                continue;
+            }
+            effective.add(row);
+            used.add(slotKey(row));
+            placed.add(row.moddedBlockId());
+            manifestIds.add(row.moddedBlockId());
+        }
+        List<VisualBlock> ledger = new ArrayList<>();
+        Set<String> ledgerIds = new HashSet<>();
+        for (VisualBlock row : ledgerRows) {
+            String id = row.moddedBlockId();
+            if (!validSlot(row)) {
+                notes.add("carrier ledger: dropped malformed row " + id + " " + slotKey(row));
+                continue;
+            }
+            if (!ledgerIds.add(id)) {
+                continue; // duplicate ledger row: the first one owns the id
+            }
+            if (manifestIds.contains(id)) {
+                ledger.add(row); // reserved while the manifest owns the id
+                if (!row.isDisplay()) {
+                    used.add(slotKey(row));
+                }
+                continue;
+            }
+            if (row.isDisplay()) {
+                // a display row holds no slot: it stays on the family while the block is still here
+                ledger.add(row);
+                if (found.contains(id)) {
+                    effective.add(row);
+                    placed.add(id);
+                }
+                continue;
+            }
+            if (used.contains(slotKey(row))) {
+                notes.add("carrier " + id + " lost " + slotKey(row) + " to another row: reallocated");
+                continue;
+            }
+            used.add(slotKey(row));
+            ledger.add(row);
+            if (found.contains(id)) {
+                effective.add(row);
+                placed.add(id);
+            }
+        }
+        int displayed = 0;
+        int cursor = 0;
+        List<String> order = new ArrayList<>(found);
+        order.sort(Comparator.comparingInt(F2vPack::carrierRank).thenComparing(Comparator.naturalOrder()));
+        for (String id : order) {
+            if (placed.contains(id)) {
+                continue;
+            }
+            while (cursor < capacity && used.contains(slotKey(slotAt(cursor)))) {
+                cursor++;
+            }
+            VisualBlock row;
+            if (cursor >= capacity) {
+                // the slot families are full: the display family takes it, unbounded
+                row = new VisualBlock(id, DISPLAY_FAMILY, 0);
+                displayed++;
+            } else {
+                VisualBlock slot = slotAt(cursor);
+                row = new VisualBlock(id, slot.instrument(), slot.note());
+                used.add(slotKey(slot));
+            }
+            effective.add(row);
+            ledger.add(row);
+            placed.add(id);
+        }
+        effective.sort(BLOCK_ORDER);
+        ledger.sort(BLOCK_ORDER);
+        return new CarrierPlan(effective, ledger, notes);
+    }
+
+    /**
+     * Fresh allocations favour the owner's Tier 0 mods (docs/MODPACK.md, the parity law:
+     * Create first), then the rest by id. Plain alphabetical order would starve create:
+     * behind ae2 and alexsmobs in a full pack. Ledger rows are never re-ranked.
+     */
+    static final List<String> CARRIER_PRIORITY = List.of("create", "biomesoplenty", "dynamictrees", "combat_roll");
+
+    static int carrierRank(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        int rank = colon > 0 ? CARRIER_PRIORITY.indexOf(moddedId.substring(0, colon)) : -1;
+        return rank < 0 ? CARRIER_PRIORITY.size() : rank;
+    }
+
+    private static final Comparator<VisualBlock> BLOCK_ORDER = Comparator
+            .comparing(VisualBlock::moddedBlockId)
+            .thenComparing(VisualBlock::instrument)
+            .thenComparingInt(VisualBlock::note);
+
+    /** The slot at a dense index: instrument-major over CARRIER_INSTRUMENTS, notes 1..24. */
+    static VisualBlock slotAt(int index) {
+        if (index >= CARRIER_CAPACITY) {
+            int m = index - CARRIER_CAPACITY;
+            int masks = MUSHROOM_MASK_MAX - MUSHROOM_MASK_MIN + 1;
+            return new VisualBlock("", MUSHROOM_HOSTS.get(m / masks), MUSHROOM_MASK_MIN + m % masks);
+        }
+        int notes = CARRIER_NOTE_MAX - CARRIER_NOTE_MIN + 1;
+        return new VisualBlock("", CARRIER_INSTRUMENTS.get(index / notes), CARRIER_NOTE_MIN + index % notes);
+    }
+
+    private static String slotKey(VisualBlock row) {
+        return row.key();
+    }
+
+    private static boolean validSlot(VisualBlock row) {
+        if (row.isDisplay()) {
+            return row.moddedBlockId().indexOf(':') > 0;
+        }
+        if (row.isMushroom()) {
+            return row.note() >= MUSHROOM_MASK_MIN && row.note() <= MUSHROOM_MASK_MAX;
+        }
+        return CARRIER_INSTRUMENTS.contains(row.instrument()) && row.note() >= 0 && row.note() <= CARRIER_NOTE_MAX;
+    }
+
+    /**
+     * Every mod block a jar ships a blockstate for, as {@code ns:path}. The minecraft
+     * namespace is vanilla, never a carrier candidate. A block with no blockstate JSON
+     * cannot be discovered this way (documented limit).
+     */
+    static Set<String> discoverBlockIds(List<Path> jars) throws IOException {
+        Set<String> out = new TreeSet<>();
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                var entries = zf.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    if (!name.startsWith("assets/") || !name.endsWith(".json")) {
+                        continue;
+                    }
+                    int slash = name.indexOf('/', "assets/".length());
+                    if (slash < 0) {
+                        continue;
+                    }
+                    String ns = name.substring("assets/".length(), slash);
+                    String prefix = "assets/" + ns + "/blockstates/";
+                    if (ns.equals("minecraft") || !name.startsWith(prefix)) {
+                        continue;
+                    }
+                    String path = name.substring(prefix.length(), name.length() - ".json".length());
+                    if (!path.isEmpty()) {
+                        out.add(ns + ":" + path);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Plans the carriers over the mod jars in {@code modsDir}. With {@code persist}, writes
+     * the ledger ({@code carriers.tsv}, kept across restarts) into {@code f2vDir}; it is
+     * rewritten only when its content changes.
+     */
+    /**
+     * The mushroom family is OFF unless {@code -Dcim.f2v.mushroomCarriers=true}: vanilla
+     * placement and neighbour updates can reach all 64 face states, and worldgen (huge
+     * mushrooms, mushroom islands) produces some of them, so a mushroom carrier would re-draw
+     * vanilla terrain that shares its state. Enabling it is blocked on a worldgen state census.
+     */
+    static boolean mushroomCarriersEnabled() {
+        return Boolean.getBoolean("cim.f2v.mushroomCarriers");
+    }
+
+    static CarrierPlan carrierPlan(Path f2vDir, Path modsDir, List<VisualBlock> manifest,
+                                   boolean persist) throws IOException {
+        Path ledgerFile = f2vDir.resolve(CARRIER_LEDGER);
+        CarrierPlan plan = planCarriers(discoverBlockIds(listJars(modsDir)), manifest,
+                readBlockManifest(ledgerFile), mushroomCarriersEnabled());
+        if (persist) {
+            Files.createDirectories(f2vDir);
+            writeIfChanged(ledgerFile, blockRowsText(LEDGER_HEADER, plan.ledger()));
+        }
+        return plan;
+    }
+
+    /** Writes the rows a build emitted ({@link Result#blocks()}) for the HUD to read. */
+    static void writeResolvedBlocks(Path f2vDir, List<VisualBlock> emitted) throws IOException {
+        Files.createDirectories(f2vDir);
+        writeIfChanged(f2vDir.resolve(RESOLVED_BLOCKS), blockRowsText(RESOLVED_HEADER, emitted));
+    }
+
+    /**
+     * The block rows the running pack was built from: the resolved plan when a build wrote
+     * it, else the manifest. The HUD and the boot fast path read through this.
+     */
+    public static List<VisualBlock> readEffectiveBlocks(Path f2vDir) throws IOException {
+        Path resolved = f2vDir.resolve(RESOLVED_BLOCKS);
+        return Files.isRegularFile(resolved)
+                ? readBlockManifest(resolved)
+                : readBlockManifest(f2vDir.resolve("visual-blocks.tsv"));
+    }
+
+    private static String blockRowsText(String header, List<VisualBlock> rows) {
+        StringBuilder sb = new StringBuilder(header);
+        for (VisualBlock r : rows) {
+            sb.append(r.moddedBlockId()).append('\t').append(r.instrument())
+                    .append('\t').append(r.isMushroom() ? mushroomBits(r.note()) : Integer.toString(r.note()))
+                    .append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static void writeIfChanged(Path file, String text) throws IOException {
+        if (Files.isRegularFile(file) && Files.readString(file, StandardCharsets.UTF_8).equals(text)) {
+            return;
+        }
+        Files.writeString(file, text, StandardCharsets.UTF_8);
+    }
+
+    private static Result withNotes(Result r, List<String> notes) {
+        if (notes.isEmpty()) {
+            return r;
+        }
+        List<String> warnings = new ArrayList<>(r.warnings());
+        warnings.addAll(notes);
+        return new Result(r.items(), r.blocks(), r.sha1(), r.entryCount(), warnings, r.gallery(), r.placeholders(), r.tally());
+    }
+
+    /**
+     * The block model a note-block carrier renders: the mod's own blockstate DEFAULT
+     * variant (the "" key, else the first sorted key; a multipart's first part), copied
+     * with its parent graph. A block without a usable blockstate falls back to the
+     * models/block/&lt;path&gt; probe that manifest rows always used.
+     */
+    private static String resolveBlockModel(JarCache cache, List<Path> jars, String moddedId,
+                                            TreeMap<String, byte[]> entries, List<String> warnings)
+            throws IOException {
+        int colon = moddedId.indexOf(':');
+        if (colon > 0) {
+            byte[] bs = cache.read("assets/" + moddedId.substring(0, colon) + "/blockstates/"
+                    + moddedId.substring(colon + 1) + ".json");
+            String model = bs == null ? null : defaultBlockstateModel(new String(bs, StandardCharsets.UTF_8));
+            if (model != null) {
+                String ref = copyModelRef(cache, model, entries, warnings);
+                if (ref != null) {
+                    return ref;
+                }
+                warnings.add("blockstate model missing in jars: " + model + " (" + moddedId + ")");
+            }
+        }
+        return resolveAndCopyBlockGraph(jars, moddedId, entries, warnings);
+    }
+
+    /** Copies a {@code ns:path} model's parent graph from the first jar carrying it; vanilla refs pass through. */
+    private static String copyModelRef(JarCache cache, String ref, TreeMap<String, byte[]> entries,
+                                       List<String> warnings) throws IOException {
+        int colon = ref.indexOf(':');
+        String ns = colon > 0 ? ref.substring(0, colon) : "minecraft";
+        String path = colon > 0 ? ref.substring(colon + 1) : ref;
+        if (ns.equals("minecraft")) {
+            return ref; // vanilla model: the client carries it
+        }
+        String file = "assets/" + ns + "/models/" + path + ".json";
+        for (Path jar : cache.paths()) {
+            ZipFile zf = cache.zip(jar);
+            ZipEntry e = zf.getEntry(file);
+            if (e != null) {
+                byte[] bytes = zf.getInputStream(e).readAllBytes();
+                entries.putIfAbsent(file, bytes);
+                copyParentGraph(zf, file, bytes, entries, warnings, 0);
+                return ref;
+            }
+        }
+        return null;
+    }
+
+    /** The default state's model ref in a blockstate JSON, or null when there is none or it does not parse. */
+    static String defaultBlockstateModel(String json) {
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            if (obj.has("variants") && obj.get("variants").isJsonObject()) {
+                JsonObject variants = obj.getAsJsonObject("variants");
+                JsonElement pick = variants.get("");
+                if (pick == null) {
+                    List<String> keys = new ArrayList<>(variants.keySet());
+                    if (keys.isEmpty()) {
+                        return null;
+                    }
+                    Collections.sort(keys);
+                    pick = variants.get(keys.get(0));
+                }
+                return modelOf(pick);
+            }
+            if (obj.has("multipart") && obj.get("multipart").isJsonArray()) {
+                for (JsonElement part : obj.getAsJsonArray("multipart")) {
+                    if (part.isJsonObject() && part.getAsJsonObject().has("apply")) {
+                        String model = modelOf(part.getAsJsonObject().get("apply"));
+                        if (model != null) {
+                            return model;
+                        }
+                    }
+                }
+            }
+            return null;
+        } catch (RuntimeException e) {
+            return null; // malformed JSON or wrong shape: the caller falls back
+        }
+    }
+
+    private static String modelOf(JsonElement e) {
+        if (e == null) {
+            return null;
+        }
+        if (e.isJsonArray()) {
+            return e.getAsJsonArray().isEmpty() ? null : modelOf(e.getAsJsonArray().get(0));
+        }
+        if (e.isJsonObject() && e.getAsJsonObject().has("model")
+                && e.getAsJsonObject().get("model").isJsonPrimitive()) {
+            return e.getAsJsonObject().get("model").getAsString();
+        }
+        return null;
     }
 
     /**
@@ -1228,8 +1954,11 @@ public final class F2vPack {
     public static Result build(Path modsDir, Path outDir, List<VisualItem> manifestRows,
                                List<EquipmentAsset> equipmentRows)
             throws IOException {
-        return build(modsDir, outDir, manifestRows, equipmentRows,
-                readBlockManifest(outDir.resolve("visual-blocks.tsv")));
+        CarrierPlan plan = carrierPlan(outDir, modsDir,
+                readBlockManifest(outDir.resolve("visual-blocks.tsv")), true);
+        Result r = withNotes(build(modsDir, outDir, manifestRows, equipmentRows, plan.effective()), plan.notes());
+        writeResolvedBlocks(outDir, r.blocks());
+        return r;
     }
 
     /** Full build with explicit equipment + block rows (selftest seam). */
@@ -1376,7 +2105,9 @@ public final class F2vPack {
                 readEmissiveManifest(outDir.resolve("visual-emissive.tsv"));
         List<String> itemEmissiveBakeLog = new ArrayList<>();
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
-        int itemCompositeNo = 0;
+        int[] compositeNo = {0};
+        int manifestResolved = 0;
+        int manifestFailed = 0;
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
             String[] keyParts = host.getKey().split("\t");
             String hostItem = keyParts[0];
@@ -1388,59 +2119,15 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
-                // 14-dy: the placeholder ledger attributes item-model
-                // fallbacks to the modded item id
-                GalleryPack.placeholderContext(row.moddedId());
-                String quadModel = GalleryPack.synthesizeItemQuads(jars, row.moddedId(), itemCompositeNo,
-                        entries, warnings);
-                if (quadModel != null) {
-                    itemCompositeNo++;
-                }
-                String found = quadModel != null ? quadModel
-                        : resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings, paletteByVariantId);
-                // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see
-                // GalleryPack.synthesizeItemComposite): block-geometry item
-                // models ride a standalone composite (inline elements, all
-                // sprites pack-side) — a raw block-parented model or a
-                // vanilla-sprite reference aborts the whole host def bake at
-                // CuboidItemModelWrapper.validateAtlasUsage. Sprite-driven
-                // item models (item/generated chains) stay vanilla-shaped.
-                if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
-                    String comp = GalleryPack.synthesizeItemComposite(
-                            jars, found, itemCompositeNo++, entries, warnings);
-                    if (comp != null) {
-                        // THE ITEM EMISSIVE-BAKE: a tabled modded item's
-                        // standalone composite carries light_emission on
-                        // every element (the same contract the gallery
-                        // block composite honors) — the measured driver:
-                        // create:refined_radiance's item-cell red (ae
-                        // 63497) whose truth render is fullbright.
-                        comp = GalleryPack.applyItemEmissive(
-                                row.moddedId(), comp, emissiveTable, itemEmissiveBakeLog);
-                        found = comp;
-                    }
-                } else if (quadModel == null && found != null) {
-                    // THE SPRITE EMISSIVE UPGRADE: a tabled item whose model
-                    // is an item/generated SPRITE (no elements — the element
-                    // light_emission lever does not exist there) upgrades to
-                    // a flat-quad composite carrying the sprite texture on
-                    // the faces + light_emission. Geometry-compatible with
-                    // the sprite (a flat quad), but fullbright — measured:
-                    // create:refined_radiance, the truth item renders
-                    // fullbright while ours renders the dim sprite.
-                    String upgraded = GalleryPack.synthesizeSpriteEmissive(
-                            jars, found, row.moddedId(), itemCompositeNo,
-                            emissiveTable, entries, warnings);
-                    if (upgraded != null) {
-                        itemCompositeNo++;
-                        found = upgraded;
-                    }
-                }
+                String found = itemModelRef(row.moddedId(), jars, entries, warnings,
+                        paletteByVariantId, emissiveTable, itemEmissiveBakeLog, compositeNo);
                 if (found == null) {
                     warnings.add("no item model found for " + row.moddedId()
                             + " in any mod jar — row dropped");
+                    manifestFailed++;
                     continue;
                 }
+                manifestResolved++;
                 if (floatKind) {
                     entriesForHost.add(Map.entry(row.cmd(), found));
                     if (hostItem.equals("minecraft:paper")) {
@@ -1465,6 +2152,30 @@ public final class F2vPack {
                 }
             }
         }
+
+        // ALLOCATED ITEMS (the item channel, no slot budget): every mod item a mod jar ships an
+        // item model for, that no manifest row covers, gets its own items/ definition under
+        // assets/c-imagine/items/<ns>/<path>.json (the same model chain a manifest row runs). A Paper
+        // stack names that definition through item_model on a vanilla host material, so capacity is
+        // the item count, not the custom_model_data float space. Sorted candidates keep the bytes and
+        // the allocated ledger a pure function of the jars.
+        Set<String> manifestIds = new HashSet<>();
+        for (VisualItem r : baseResolved) {
+            manifestIds.add(r.moddedId());
+        }
+        List<String> allocatedIds = new ArrayList<>();
+        int allocFailed = 0;
+        for (String id : itemCandidates(discoverItemIds(listJars(modsDir)), manifestIds)) {
+            String found = itemModelRef(id, jars, entries, warnings, Map.of(),
+                    emissiveTable, itemEmissiveBakeLog, compositeNo);
+            if (found == null) {
+                allocFailed++;
+                continue;
+            }
+            entries.put(allocatedItemDefPath(id), allocatedItemDef(found).getBytes(StandardCharsets.UTF_8));
+            allocatedIds.add(id);
+        }
+        ItemTally tally = new ItemTally(manifestResolved, allocatedIds.size(), manifestFailed + allocFailed);
 
         // equipment assets (M6 pull-forward): legacy armor textures -> the
         // 26.3 equipment surface, manifest-driven, zero vanilla overrides
@@ -1658,16 +2369,59 @@ public final class F2vPack {
         // note_block stand-in slots -> the modded block models, ONE merged
         // blockstates override, manifest-driven slot allocation
         List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
-        for (VisualBlock block : blockRows) {
-            String ref = resolveAndCopyBlockGraph(jars, block.moddedBlockId(),
-                    entries, warnings);
-            if (ref != null) {
-                blockVariants.add(Map.entry(
-                        "instrument=" + block.instrument() + ",note=" + block.note(),
-                        ref));
-            } else {
-                warnings.add("no block model found for " + block.moddedBlockId()
-                        + " in any mod jar — block row dropped");
+        Map<String, Map<Integer, String>> mushroomModels = new TreeMap<>();
+        List<VisualBlock> emittedBlocks = new ArrayList<>();
+        try (JarCache blockJars = new JarCache(jars)) {
+            for (VisualBlock block : blockRows) {
+                if (block.isDisplay()) {
+                    // display family: no slot, an items/ definition of the block's own model (the
+                    // ItemDisplay on the barrier host renders it; see DisplayCarriers in the HUD)
+                    String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
+                    if (ref != null && GalleryPack.chainHasElements(jars, ref, warnings)) {
+                        // block-geometry models ride a standalone composite on the item channel (as allocated items do)
+                        String comp = GalleryPack.synthesizeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                        if (comp != null) {
+                            ref = comp;
+                        }
+                    }
+                    if (ref != null) {
+                        entries.put(displayItemDefPath(block.moddedBlockId()),
+                                allocatedItemDef(ref).getBytes(StandardCharsets.UTF_8));
+                        emittedBlocks.add(block);
+                    } else {
+                        warnings.add("no block model found for " + block.moddedBlockId()
+                                + " in any mod jar — display row dropped");
+                    }
+                    continue;
+                }
+                String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(),
+                        entries, warnings);
+                if (ref != null && block.isMushroom()) {
+                    mushroomModels.computeIfAbsent(block.instrument(), h -> new TreeMap<>())
+                            .put(block.note(), ref);
+                    emittedBlocks.add(block);
+                } else if (ref != null) {
+                    blockVariants.add(Map.entry(
+                            "instrument=" + block.instrument() + ",note=" + block.note(),
+                            ref));
+                    emittedBlocks.add(block);
+                } else {
+                    warnings.add("no block model found for " + block.moddedBlockId()
+                            + " in any mod jar — block row dropped");
+                }
+            }
+            for (Map.Entry<String, Map<Integer, String>> host : mushroomModels.entrySet()) {
+                byte[] vanilla = blockJars.read("assets/minecraft/blockstates/" + host.getKey() + ".json");
+                String state = vanilla == null ? null
+                        : mushroomBlockState(new String(vanilla, StandardCharsets.UTF_8), host.getValue());
+                if (state == null) {
+                    warnings.add("mushroom carriers on " + host.getKey() + " dropped: its vanilla blockstate"
+                            + " is missing or not a multipart (the pack cannot keep vanilla states)");
+                    emittedBlocks.removeIf(b -> b.isMushroom() && b.instrument().equals(host.getKey()));
+                    continue;
+                }
+                entries.put("assets/minecraft/blockstates/" + host.getKey() + ".json",
+                        state.getBytes(StandardCharsets.UTF_8));
             }
         }
         blockVariants.sort(Map.Entry.comparingByKey());
@@ -1732,6 +2486,7 @@ public final class F2vPack {
         Files.write(outDir.resolve("pack.zip"), zip);
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
+        writeIfChanged(outDir.resolve(ALLOCATED_ITEMS), allocatedText(allocatedIds));
         // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
         // (sprite, context, uses) — the texture-fidelity audit's named
         // backlog, written next to the manifest and summarized in the
@@ -1742,6 +2497,9 @@ public final class F2vPack {
                 .append("items requested: ").append(rows.size()).append('\n')
                 .append("zip entries:     ").append(entries.size()).append('\n')
                 .append("zip bytes:       ").append(zip.length).append('\n')
+                .append("mod items:       ").append(tally.resolved()).append(" resolved (")
+                .append(tally.manifest()).append(" manifest, ").append(tally.allocated())
+                .append(" allocated, ").append(tally.failed()).append(" failed)\n")
                 .append("tile hash collisions resolved: ").append(ObjMesh.tileHashCollisions()).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
                 .append("warnings:        ").append(warnings.size()).append('\n')
@@ -1756,10 +2514,49 @@ public final class F2vPack {
         }
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
-        return new Result(rows, blockRows, sha1, entries.size(), warnings, gallery, placeholders);
+        // only rows the pack emits: a carrier without a model would render as a plain note block
+        return new Result(rows, emittedBlocks, sha1, entries.size(), warnings, gallery, placeholders, tally);
     }
 
     /** Any element-face uv array in a model json, 4 numbers. */
+    /**
+     * The item-channel model of one modded item ({@code ns:path}), copied into the pack: block-geometry
+     * models ride a standalone composite, sprite models keep their vanilla shape (the emissive upgrade
+     * when the table carries them). Shared by the manifest rows (host dispatch) and the allocated items
+     * (their own definition). Null when no jar carries a model.
+     */
+    private static String itemModelRef(String moddedId, List<Path> jars, TreeMap<String, byte[]> entries,
+                                       List<String> warnings, Map<String, PaletteRow> paletteByVariantId,
+                                       Map<String, Integer> emissiveTable, List<String> emissiveBakeLog,
+                                       int[] compositeNo) throws IOException {
+        // 14-dy: the placeholder ledger attributes item-model fallbacks to the modded item id
+        GalleryPack.placeholderContext(moddedId);
+        String quadModel = GalleryPack.synthesizeItemQuads(jars, moddedId, compositeNo[0], entries, warnings);
+        if (quadModel != null) {
+            compositeNo[0]++;
+        }
+        String found = quadModel != null ? quadModel
+                : resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+        // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see GalleryPack.synthesizeItemComposite):
+        // block-geometry item models ride a standalone composite; sprite-driven models stay vanilla-shaped.
+        if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
+            String comp = GalleryPack.synthesizeItemComposite(jars, found, compositeNo[0]++, entries, warnings);
+            if (comp != null) {
+                // THE ITEM EMISSIVE-BAKE: a tabled modded item's composite carries light_emission
+                found = GalleryPack.applyItemEmissive(moddedId, comp, emissiveTable, emissiveBakeLog);
+            }
+        } else if (quadModel == null && found != null) {
+            // THE SPRITE EMISSIVE UPGRADE: a tabled sprite model becomes a flat-quad composite + light_emission
+            String upgraded = GalleryPack.synthesizeSpriteEmissive(
+                    jars, found, moddedId, compositeNo[0], emissiveTable, entries, warnings);
+            if (upgraded != null) {
+                compositeNo[0]++;
+                found = upgraded;
+            }
+        }
+        return found;
+    }
+
     private static final java.util.regex.Pattern FACE_UV = java.util.regex.Pattern.compile(
             "\"uv\"\\s*:\\s*\\[\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,"
             + "\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,"
@@ -1941,6 +2738,104 @@ public final class F2vPack {
             }
         }
         return null;
+    }
+
+    /** The six face states of a mushroom mask as a blockstate {@code when} map (NESWUD order). */
+    private static JsonObject mushroomWhen(int mask) {
+        JsonObject when = new JsonObject();
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            when.addProperty(MUSHROOM_FACES.get(i), (mask >> i & 1) == 1 ? "true" : "false");
+        }
+        return when;
+    }
+
+    /**
+     * The mushroom host's blockstate with its carrier states added, keeping every vanilla state
+     * on its vanilla parts. Vanilla is multipart: each part matches a set of masks. A part that
+     * meets a carrier mask is rewritten as an OR over its remaining masks (never the carriers),
+     * and each carrier gets one part of its own. Null when the vanilla JSON is not a multipart
+     * of plain property maps (the caller then drops the carriers instead).
+     */
+    static String mushroomBlockState(String vanillaJson, Map<Integer, String> carriers) {
+        JsonObject root;
+        try {
+            root = JsonParser.parseString(vanillaJson).getAsJsonObject();
+        } catch (RuntimeException e) {
+            return null;
+        }
+        if (!root.has("multipart") || !root.get("multipart").isJsonArray()) {
+            return null;
+        }
+        JsonArray out = new JsonArray();
+        for (JsonElement el : root.getAsJsonArray("multipart")) {
+            if (!el.isJsonObject() || !el.getAsJsonObject().has("apply")) {
+                return null;
+            }
+            JsonObject part = el.getAsJsonObject();
+            Map<String, String> want = new TreeMap<>();
+            if (part.has("when")) {
+                if (!part.get("when").isJsonObject()) {
+                    return null; // combined conditions are not rewritten here
+                }
+                for (Map.Entry<String, JsonElement> c : part.getAsJsonObject("when").entrySet()) {
+                    if (!MUSHROOM_FACES.contains(c.getKey()) || !c.getValue().isJsonPrimitive()) {
+                        return null;
+                    }
+                    want.put(c.getKey(), c.getValue().getAsString());
+                }
+            }
+            List<Integer> matches = new ArrayList<>();
+            for (int mask = 0; mask < 64; mask++) {
+                if (matchesWhen(mask, want) && !carriers.containsKey(mask)) {
+                    matches.add(mask);
+                }
+            }
+            boolean touched = false;
+            for (int mask = 0; mask < 64; mask++) {
+                if (carriers.containsKey(mask) && matchesWhen(mask, want)) {
+                    touched = true;
+                    break;
+                }
+            }
+            if (!touched) {
+                out.add(part);
+                continue;
+            }
+            if (matches.isEmpty()) {
+                continue;
+            }
+            JsonArray alts = new JsonArray();
+            for (int mask : matches) {
+                alts.add(mushroomWhen(mask));
+            }
+            JsonObject combined = new JsonObject();
+            combined.add("OR", alts);
+            JsonObject rewritten = new JsonObject();
+            rewritten.add("when", combined);
+            rewritten.add("apply", part.get("apply"));
+            out.add(rewritten);
+        }
+        for (Map.Entry<Integer, String> carrier : new TreeMap<>(carriers).entrySet()) {
+            JsonObject apply = new JsonObject();
+            apply.addProperty("model", carrier.getValue());
+            JsonObject part = new JsonObject();
+            part.add("when", mushroomWhen(carrier.getKey()));
+            part.add("apply", apply);
+            out.add(part);
+        }
+        JsonObject root2 = new JsonObject();
+        root2.add("multipart", out);
+        return new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create().toJson(root2) + "\n";
+    }
+
+    private static boolean matchesWhen(int mask, Map<String, String> want) {
+        for (Map.Entry<String, String> w : want.entrySet()) {
+            boolean bit = (mask >> MUSHROOM_FACES.indexOf(w.getKey()) & 1) == 1;
+            if (bit != w.getValue().equals("true")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -2677,11 +3572,14 @@ public final class F2vPack {
             }
             List<VisualItem> rows = Files.isRegularFile(manifest)
                     ? readManifest(manifest) : List.of();
-            Result r = build(modsDir, outDir, rows,
+            CarrierPlan plan = carrierPlan(outDir, modsDir,
+                    readBlockManifest(outDir.resolve("visual-blocks.tsv")), true);
+            Result r = withNotes(build(modsDir, outDir, rows,
                     readEquipmentManifest(outDir.resolve("visual-equipment.tsv")),
-                    readBlockManifest(outDir.resolve("visual-blocks.tsv")),
+                    plan.effective(),
                     readPaletteManifest(outDir.resolve("visual-palettes.tsv")),
-                    extraAssets);
+                    extraAssets), plan.notes());
+            writeResolvedBlocks(outDir, r.blocks());
             System.out.println("f2v pack: built (" + r.items().size() + " item(s), "
                     + r.gallery().size() + " gallery state(s), "
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
@@ -2969,12 +3867,15 @@ public final class F2vPack {
                     "textures/models/armor/shiny_layer_2.png"));
             Files.writeString(out.resolve("visual-equipment.tsv"), "fakemod:shiny\t"
                     + "textures/models/armor/shiny_layer_1.png\ttextures/models/armor/shiny_layer_2.png\n");
+            // the carrier plan rides both builds exactly as the verification rebuild does
+            List<VisualBlock> blockPlan = carrierPlan(out, mods,
+                    readBlockManifest(out.resolve("visual-blocks.tsv")), true).effective();
             Result r1 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
-                    equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
+                    equipment, blockPlan,
                     readPaletteManifest(out.resolve("visual-palettes.tsv")),
                     List.of(vanillaJar));
             Result r2 = build(mods, out, readManifest(out.resolve("visual-items.tsv")),
-                    equipment, readBlockManifest(out.resolve("visual-blocks.tsv")),
+                    equipment, blockPlan,
                     readPaletteManifest(out.resolve("visual-palettes.tsv")),
                     List.of(vanillaJar));
             if (!r1.sha1().equals(r2.sha1())) {
@@ -2987,11 +3888,12 @@ public final class F2vPack {
                 failures.add("expected 5 resolved rows (4 manifest + 1 palette variant), got "
                         + r1.items().size() + ": " + r1.items());
             }
-            if (r1.blocks().size() != 1
-                    || !"fakemod:rock".equals(r1.blocks().get(0).moddedBlockId())
-                    || !"creeper".equals(r1.blocks().get(0).instrument())
-                    || r1.blocks().get(0).note() != 13) {
-                failures.add("block row not resolved: " + r1.blocks());
+            // the manifest row keeps its slot; every other fixture blockstate gets a distinct carrier
+            boolean rockKept = r1.blocks().stream().anyMatch(b -> "fakemod:rock".equals(b.moddedBlockId())
+                    && "creeper".equals(b.instrument()) && b.note() == 13);
+            long distinctSlots = r1.blocks().stream().map(F2vPack::slotKey).distinct().count();
+            if (!rockKept || distinctSlots != r1.blocks().size() || r1.blocks().isEmpty()) {
+                failures.add("block rows not resolved: " + r1.blocks());
             }
             // auto cmd must be CMD_BASE for the first sorted row
             if (r1.items().get(0).cmd() != CMD_BASE
@@ -3845,6 +4747,8 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        carrierSelftest(failures);
+        itemAllocationSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
         capturedEmptyMeshSelftest(failures);
@@ -4476,6 +5380,262 @@ public final class F2vPack {
             GalleryPack.setQuadDir(null);
             deleteRecursively(quads);
         }
+    }
+
+    /**
+     * The mushroom family and the back-compatible note keys: the key/state round trip, the
+     * ledger text, the opt-in planner, and the multipart rewrite evaluated mask by mask.
+     */
+    private static void mushroomSelftest(List<String> failures) {
+        VisualBlock note = new VisualBlock("fakemod:n", "harp", 5);
+        expect(failures, "harp:5".equals(note.key()) && "harp:5".equals(carrierKeyOf(carrierState(note)))
+                        && carrierState(note).equals("minecraft:note_block[instrument=harp,note=5]"),
+                "note key and state keep the note_block form");
+        expect(failures, "harp:5".equals(carrierKeyOf("minecraft:note_block[instrument=harp,note=5,powered=true]")),
+                "a powered note block reads the same note key");
+        expect(failures, carrierKeyOf("minecraft:stone") == null, "a plain block is no carrier");
+        VisualBlock north = new VisualBlock("fakemod:m", "brown_mushroom_block", 1);
+        expect(failures, "brown_mushroom_block:100000".equals(north.key())
+                        && north.isMushroom() && !note.isMushroom(),
+                "a mushroom key carries its six face bits, NESWUD order");
+        expect(failures, "minecraft:brown_mushroom_block[north=true,east=false,south=false,west=false,up=false,down=false]"
+                        .equals(carrierState(north)), "a mushroom carrier is placed with its six faces");
+        expect(failures, "brown_mushroom_block:100000".equals(carrierKeyOf(carrierState(north))),
+                "a placed mushroom reads back to its key");
+        expect(failures, parseBlockRows(List.of("fakemod:n\tharp\t5")).equals(List.of(note)),
+                "a three-column note ledger row parses as before");
+        List<VisualBlock> rows = parseBlockRows(List.of("fakemod:m\tbrown_mushroom_block\t100000",
+                "fakemod:bad\tbrown_mushroom_block\t10000", "fakemod:x\tred_mushroom_block\t1x0000"));
+        expect(failures, rows.equals(List.of(north)), "a mushroom row needs six bits; bad rows drop");
+        List<VisualBlock> round = parseBlockRows(List.of(blockRowsText("", List.of(note, north)).split("\n")));
+        expect(failures, round.equals(List.of(north, note)), "the ledger text round-trips note and mushroom rows");
+        expect(failures, parseBlockRows(List.of("fakemod:def\tbrown_mushroom_block\t111111")).isEmpty(),
+                "a manifest mushroom row on the placed default is refused");
+        expect(failures, MUSHROOM_CAPACITY == 186, "three hosts, sixty-two masks each");
+        List<String> many = new ArrayList<>();
+        for (int i = 0; i < CARRIER_CAPACITY + 3; i++) {
+            many.add(String.format("fakemod:b%04d", i));
+        }
+        CarrierPlan off = planCarriers(many, List.of(), List.of(), false);
+        expect(failures, off.effective().size() == CARRIER_CAPACITY + 3
+                        && off.effective().stream().noneMatch(VisualBlock::isMushroom)
+                        && off.effective().stream().filter(VisualBlock::isDisplay).count() == 3,
+                "the switch off: the note slots, then the display family takes the three overflow blocks");
+        CarrierPlan over = planCarriers(many, List.of(), List.of(), true);
+        expect(failures, over.effective().size() == CARRIER_CAPACITY + 3
+                        && over.effective().stream().filter(VisualBlock::isMushroom).count() == 3
+                        && over.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:b0648")
+                        && b.key().equals("brown_mushroom_block:100000")),
+                "the first mushroom slot is brown mask 1, after every note slot");
+        expect(failures, over.effective().stream().filter(VisualBlock::isMushroom)
+                        .allMatch(b -> b.note() >= MUSHROOM_MASK_MIN && b.note() <= MUSHROOM_MASK_MAX),
+                "no mushroom slot is ever the placed default (63) or the all-false interior (0)");
+        CarrierPlan again = planCarriers(many, List.of(), over.ledger(), true);
+        expect(failures, again.effective().equals(over.effective()), "a mushroom slot survives a restart");
+        CarrierPlan dropped = planCarriers(List.of("fakemod:z"), List.of(),
+                List.of(new VisualBlock("fakemod:z", "brown_mushroom_block", 0)), false);
+        expect(failures, dropped.effective().stream().noneMatch(VisualBlock::isMushroom)
+                        && dropped.notes().stream().anyMatch(n -> n.contains("malformed")),
+                "a ledger mushroom row on the default state is malformed, not kept");
+
+        // the rewrite: every mask, evaluated against the output parts, matches vanilla except the carriers
+        StringBuilder vanilla = new StringBuilder("{\"multipart\":[");
+        for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+            String f = MUSHROOM_FACES.get(i);
+            vanilla.append(i == 0 ? "" : ",")
+                    .append("{\"apply\":{\"model\":\"minecraft:block/skin_").append(f).append("\"},\"when\":{\"")
+                    .append(f).append("\":\"true\"}},")
+                    .append("{\"apply\":{\"model\":\"minecraft:block/inside_").append(f).append("\"},\"when\":{\"")
+                    .append(f).append("\":\"false\"}}");
+        }
+        vanilla.append("]}");
+        Map<Integer, String> carriers = new TreeMap<>(Map.of(1, "fakemod:block/c1", 42, "fakemod:block/c42",
+                63 - 1, "fakemod:block/c62"));
+        String out = mushroomBlockState(vanilla.toString(), carriers);
+        expect(failures, out != null, "the vanilla multipart rewrites");
+        if (out != null) {
+            JsonObject root = JsonParser.parseString(out).getAsJsonObject();
+            boolean ok = true;
+            for (int mask = 0; mask < 64; mask++) {
+                List<String> got = new ArrayList<>();
+                for (JsonElement el : root.getAsJsonArray("multipart")) {
+                    JsonObject part = el.getAsJsonObject();
+                    if (partMatches(part.get("when"), mask)) {
+                        got.add(part.getAsJsonObject("apply").get("model").getAsString());
+                    }
+                }
+                List<String> want = new ArrayList<>();
+                if (carriers.containsKey(mask)) {
+                    want.add(carriers.get(mask));
+                } else {
+                    for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
+                        boolean on2 = (mask >> i & 1) == 1;
+                        want.add("minecraft:block/" + (on2 ? "skin_" : "inside_") + MUSHROOM_FACES.get(i));
+                    }
+                }
+                Collections.sort(got);
+                Collections.sort(want);
+                if (!got.equals(want)) {
+                    ok = false;
+                }
+            }
+            expect(failures, ok, "the rewritten blockstate renders vanilla on every non-carrier mask and the carrier alone on its own");
+        }
+        expect(failures, mushroomBlockState("{\"variants\":{}}", carriers) == null,
+                "a variants blockstate is not rewritten (the carriers drop instead)");
+    }
+
+    /** Evaluates a multipart {@code when} (absent, one property map, or {"OR": [maps]}) against a mushroom mask. */
+    private static boolean partMatches(JsonElement when, int mask) {
+        if (when == null) {
+            return true;
+        }
+        JsonObject w = when.getAsJsonObject();
+        if (w.has("OR")) {
+            for (JsonElement alt : w.getAsJsonArray("OR")) {
+                if (partMatches(alt, mask)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        for (Map.Entry<String, JsonElement> c : w.entrySet()) {
+            boolean bit = (mask >> MUSHROOM_FACES.indexOf(c.getKey()) & 1) == 1;
+            if (bit != c.getValue().getAsString().equals("true")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Carrier allocation: the pure planner, stability, manifest precedence, overflow, blockstate default. */
+    /** The allocated-item channel: keys, candidates, the jar scan and the ledger, all pure over fixtures. */
+    private static void itemAllocationSelftest(List<String> failures) throws IOException {
+        expect(failures, allocatedItemModel("create:brass/ingot").equals("c-imagine:create/brass/ingot"),
+                "allocated item_model key is c-imagine:<ns>/<path>");
+        expect(failures, "create:brass/ingot".equals(moddedIdOfItemModel("c-imagine:create/brass/ingot")),
+                "the item_model key inverts to the mod id");
+        expect(failures, moddedIdOfItemModel("minecraft:paper") == null,
+                "a vanilla item_model is not an allocated id");
+        expect(failures, moddedIdOfItemModel("c-imagine:create") == null,
+                "a c-imagine key without a path is not an allocated id");
+        expect(failures, allocatedItemDefPath("create:brass_ingot").equals("assets/c-imagine/items/create/brass_ingot.json"),
+                "the allocated items/ definition path");
+        expect(failures, allocatedItemName("create:brass/ingot_block").equals("Ingot Block"),
+                "the allocated item name is the title-cased leaf of the id");
+        List<String> candidates = itemCandidates(
+                List.of("create:wrench", "fakemod:gem", "minecraft:paper", "c-imagine:x/y", "create:manual_row",
+                        "Bad:Id", "create:../x", "nocolon", "fakemod:gem"),
+                List.of("create:manual_row"));
+        expect(failures, candidates.equals(List.of("create:wrench", "fakemod:gem")),
+                "candidates are plain, unowned, not vanilla, not ours, sorted and unique");
+        expect(failures, new ItemTally(3, 2, 1).resolved() == 5, "the tally resolves manifest plus allocated");
+        Path tmp = Files.createTempDirectory("f2v-items-selftest");
+        try {
+            TreeMap<String, byte[]> jarEntries = new TreeMap<>();
+            jarEntries.put("assets/fakemod/models/item/gem.json", "{}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/item/sub/deep.json", "{}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/rock.json", "{}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/item/gem.png", "x".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/minecraft/models/item/stone.json", "{}".getBytes(StandardCharsets.UTF_8));
+            Path jar = tmp.resolve("items-fixture-1.0.jar");
+            writeJar(jar, jarEntries);
+            expect(failures, discoverItemIds(List.of(jar)).equals(Set.of("fakemod:gem", "fakemod:sub/deep")),
+                    "the jar scan finds item models only: no block, texture or vanilla model");
+            List<String> ids = List.of("fakemod:gem", "fakemod:sub/deep");
+            Files.writeString(tmp.resolve(ALLOCATED_ITEMS), allocatedText(ids), StandardCharsets.UTF_8);
+            expect(failures, readAllocatedItems(tmp).equals(ids),
+                    "the allocated ledger round-trips through its text form");
+            expect(failures, readAllocatedItems(tmp.resolve("absent")).isEmpty(),
+                    "a missing ledger reads as no allocated items");
+        } finally {
+            deleteRecursively(tmp);
+        }
+    }
+
+    private static void carrierSelftest(List<String> failures) {
+        mushroomSelftest(failures);
+        VisualBlock manifestRock = new VisualBlock("fakemod:rock", "creeper", 13);
+        // an earlier boot's ledger: old keeps harp:5; gone is in no jar any more
+        List<VisualBlock> ledger = List.of(new VisualBlock("fakemod:old", "harp", 5),
+                new VisualBlock("fakemod:gone", "trumpet", 3));
+        List<String> found = List.of("fakemod:rock", "fakemod:new", "fakemod:old");
+        CarrierPlan p = planCarriers(found, List.of(manifestRock), ledger);
+        expect(failures, p.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:rock")
+                && slotKey(b).equals("creeper:13")), "manifest row keeps its slot");
+        expect(failures, p.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:old")
+                && slotKey(b).equals("harp:5")), "ledger slot survives a restart");
+        expect(failures, p.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:new")
+                && slotKey(b).equals("harp:1")), "a new block takes the lowest free slot");
+        expect(failures, p.effective().size() == 3, "a block no jar carries is reserved, not emitted");
+        expect(failures, p.ledger().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:gone")
+                && slotKey(b).equals("trumpet:3")), "a vanished block keeps its reservation");
+        CarrierPlan again = planCarriers(found, List.of(manifestRock), p.ledger());
+        expect(failures, again.effective().equals(p.effective()) && again.ledger().equals(p.ledger()),
+                "a second plan from the written ledger is identical");
+        CarrierPlan taken = planCarriers(List.of("fakemod:y"), List.of(new VisualBlock("fakemod:x", "harp", 1)),
+                List.of(new VisualBlock("fakemod:y", "harp", 1)));
+        expect(failures, taken.effective().size() == 2 && taken.effective().stream()
+                .filter(b -> b.moddedBlockId().equals("fakemod:y")).allMatch(b -> !slotKey(b).equals("harp:1")),
+                "a manifest row takes a ledger slot and the ledger block moves");
+        expect(failures, taken.notes().stream().anyMatch(n -> n.contains("reallocated")), "the move is logged");
+        CarrierPlan tier0 = planCarriers(List.of("ae2:a_block", "create:z_block"), List.of(), List.of());
+        expect(failures, tier0.effective().stream().anyMatch(b -> b.moddedBlockId().equals("create:z_block")
+                && slotKey(b).equals("harp:1")), "a Tier 0 mod takes the first slot ahead of ae2");
+        List<String> many = new ArrayList<>();
+        for (int i = 0; i < CARRIER_CAPACITY + 5; i++) {
+            many.add(String.format("fakemod:b%04d", i));
+        }
+        CarrierPlan full = planCarriers(many, List.of(), List.of());
+        expect(failures, full.effective().stream().filter(b -> !b.isDisplay()).count() == CARRIER_CAPACITY,
+                "the note family stops at the render capacity");
+        expect(failures, full.effective().stream().noneMatch(b -> b.note() == 0 && !b.isDisplay()),
+                "note 0 is never handed out");
+        expect(failures, full.effective().size() == CARRIER_CAPACITY + 5,
+                "the overflow joins the display family: every discovered block is emitted, none unplaceable");
+        expect(failures, full.effective().stream().filter(VisualBlock::isDisplay).count() == 5,
+                "exactly the five overflow blocks are display rows");
+        expect(failures, full.notes().stream().noneMatch(n -> n.contains("no free")),
+                "a full note family no longer leaves a warning behind");
+        expect(failures, planCarriers(many, List.of(), List.of()).equals(full),
+                "the display family plan is deterministic");
+        // display rows: ledger round trip, a display row never takes a slot, a vanished one is reserved
+        List<VisualBlock> rows = parseBlockRows(List.of("fakemod:disp\tdisplay\t0", "fakemod:harpy\tharp\t7",
+                "bad_id\tdisplay\t0", "# comment"));
+        expect(failures, rows.size() == 2 && rows.get(0).isDisplay() && rows.get(0).key().equals("display:fakemod:disp"),
+                "a display row parses to the display family; a row without a namespace is dropped");
+        expect(failures, blockRowsText("", List.of(new VisualBlock("fakemod:disp", DISPLAY_FAMILY, 0)))
+                .equals("fakemod:disp\tdisplay\t0\n"), "a display row is written as id, display, 0");
+        expect(failures, blockRowsText("", List.of(new VisualBlock("fakemod:harp", "harp", 5)))
+                .equals("fakemod:harp\tharp\t5\n"), "a note row is written byte-identical to before");
+        CarrierPlan disp = planCarriers(List.of("fakemod:disp", "fakemod:harp"), List.of(), rows);
+        expect(failures, disp.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:disp") && b.isDisplay())
+                && disp.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:harp") && slotKey(b).equals("harp:1")),
+                "a ledger display row stays on the display family and holds no note slot (the first free slot is still harp:1)");
+        CarrierPlan gone = planCarriers(List.of("fakemod:harp"), List.of(), rows);
+        expect(failures, gone.ledger().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:disp") && b.isDisplay())
+                && gone.effective().stream().noneMatch(b -> b.moddedBlockId().equals("fakemod:disp")),
+                "a display block no jar carries any more is reserved, not emitted");
+        expect(failures, carrierState(new VisualBlock("fakemod:disp", DISPLAY_FAMILY, 0)).equals("minecraft:barrier"),
+                "a display block stands as a barrier host");
+        expect(failures, displayItemModel("create:andesite/casing").equals("c-imagine:_display/create/andesite/casing")
+                        && "create:andesite/casing".equals(moddedIdOfDisplayItemModel(displayItemModel("create:andesite/casing")))
+                        && moddedIdOfDisplayItemModel("c-imagine:create/andesite") == null
+                        && moddedIdOfItemModel(displayItemModel("create:x")) == null,
+                "the display item_model key inverts to its mod id and is not an allocated item key");
+        expect(failures, displayItemDefPath("create:depot").equals("assets/c-imagine/items/_display/create/depot.json"),
+                "the display items/ definition path");
+        expect(failures, "c:d".equals(defaultBlockstateModel(
+                "{\"variants\":{\"facing=north\":{\"model\":\"a:b\"},\"\":{\"model\":\"c:d\"}}}")),
+                "the empty variant key is the default state");
+        expect(failures, "e:f".equals(defaultBlockstateModel(
+                "{\"variants\":{\"facing=west\":[{\"model\":\"a:b\"}],\"facing=north\":{\"model\":\"e:f\"}}}")),
+                "without an empty key the first sorted variant wins, arrays take their first entry");
+        expect(failures, "x:y".equals(defaultBlockstateModel(
+                "{\"multipart\":[{\"apply\":[{\"model\":\"x:y\"},{\"model\":\"z:w\"}]}]}")),
+                "multipart takes the first part's model");
+        expect(failures, defaultBlockstateModel("{") == null && defaultBlockstateModel("[]") == null,
+                "malformed blockstates resolve to no model");
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {

@@ -148,6 +148,7 @@ jobs:
                                        if not Path(p).name.startswith('asm-analysis-')))
           PY
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.F2vPack --selftest
+          java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.f2v.PackOffer --selftest
       - name: menu verdict test
         run: |
           python3 -m pip install -q pillow
@@ -156,7 +157,7 @@ jobs:
         working-directory: paper-plugin
         run: |
           java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.paper.LightPoke
-          for t in KeyCensus KeyboardState KeyboardLayout CameraLock HudPack ScreenPack ScreenHud; do
+          for t in KeyCensus KeyboardState KeyboardLayout CameraLock BreakSpeed HudPack ScreenPack ScreenHud; do
             java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" "dev.cim.hud.$t" --selftest
           done
       - uses: actions/upload-artifact@v4

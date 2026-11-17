@@ -76,6 +76,7 @@ final class LiveBridge {
      * new block for every page, as the truth walk does); its kept data is dropped too.
      */
     State openBlock(Player player, org.bukkit.block.Block block, String blockId, boolean fresh) {
+        saveFresh(block, blockId);
         StringBuilder in = new StringBuilder("open-block\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(blockId).append('\t')
                 .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
@@ -107,9 +108,159 @@ final class LiveBridge {
      * the previous page's machine contents in its fuel slot).
      */
     private NamespacedKey blockKey(org.bukkit.block.Block block, String blockId) {
-        String id = blockId.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._-]", "_");
         return new NamespacedKey(key.getNamespace(),
-                "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ() + "_" + id);
+                "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ() + "_" + sanitize(blockId));
+    }
+
+    private static String sanitize(String blockId) {
+        return blockId.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._-]", "_");
+    }
+
+    /** A placed mod block in a loaded chunk, whose block entity ticks in the layer. */
+    record Tracked(String world, int x, int y, int z, String blockId) {
+        int chunkX() {
+            return x >> 4;
+        }
+
+        int chunkZ() {
+            return z >> 4;
+        }
+    }
+
+    /** Ticking placed block entities by world and position; the layer ticks each one every tick. */
+    private final java.util.Map<String, Tracked> ticking = new java.util.HashMap<>();
+
+    private static String where(String world, int x, int y, int z) {
+        return world + ":" + x + ":" + y + ":" + z;
+    }
+
+    /** How many placed block entities tick in the layer now. */
+    int tickingCount() {
+        return ticking.size();
+    }
+
+    /** True while any placed block entity ticks: the Paper tick drives the layer for them too. */
+    boolean hasTicking() {
+        return !ticking.isEmpty();
+    }
+
+    /**
+     * The placed mod block at {@code block} starts ticking in the layer, with the data Paper kept
+     * for it. True when the set grew; a layer that refuses it leaves the set as it was.
+     */
+    boolean track(org.bukkit.block.Block block, String blockId, String blockEntity) {
+        String at = where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
+        // The layer keys its block entities by position alone: another world's block there would share it.
+        for (Tracked t : ticking.values()) {
+            if (t.x() == block.getX() && t.y() == block.getY() && t.z() == block.getZ()
+                    && !t.world().equals(block.getWorld().getName())) {
+                return false;
+            }
+        }
+        String in = "adopt\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ() + "\t" + blockId
+                + (blockEntity == null ? "" : "\nbe\t" + blockEntity);
+        if (parse(call(in)).error() != null) {
+            return false;
+        }
+        return ticking.put(at, new Tracked(block.getWorld().getName(), block.getX(), block.getY(), block.getZ(),
+                blockId)) == null;
+    }
+
+    /**
+     * The block at {@code block} stops ticking. Its data is kept in {@code keepIn} when given (a
+     * chunk unload), else the block is gone (broken). True when the set shrank.
+     */
+    boolean release(org.bukkit.block.Block block, org.bukkit.Chunk keepIn) {
+        String at = where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
+        Tracked t = ticking.get(at);
+        if (t == null) {
+            return false;
+        }
+        State state = parse(call("release\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()));
+        if (keepIn != null && state.blockEntity() != null) {
+            put(keepIn.getPersistentDataContainer(), block, t.blockId(), state.blockEntity());
+        }
+        ticking.remove(at);
+        return true;
+    }
+
+    /**
+     * A loaded chunk: each placed mod block its PDC keeps (under its position and id) starts
+     * ticking, when a carrier of that id stands there. True when the set grew.
+     */
+    boolean adoptChunk(org.bukkit.Chunk chunk, java.util.function.Function<org.bukkit.block.Block, String> carriedId) {
+        org.bukkit.persistence.PersistentDataContainer pdc = chunk.getPersistentDataContainer();
+        boolean grew = false;
+        for (NamespacedKey k : pdc.getKeys()) {
+            if (!k.getNamespace().equals(key.getNamespace()) || !k.getKey().startsWith("be_")) {
+                continue;
+            }
+            java.util.regex.Matcher m = KEPT.matcher(k.getKey());
+            if (!m.matches()) {
+                continue;
+            }
+            org.bukkit.block.Block block = chunk.getWorld().getBlockAt(
+                    Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)));
+            String id = carriedId.apply(block);
+            String kept = pdc.get(k, PersistentDataType.STRING);
+            // A kept entry no carrier of its id stands on is stale: it waits for its block.
+            if (id == null || !sanitize(id).equals(m.group(4)) || kept == null) {
+                continue;
+            }
+            grew |= track(block, id, kept);
+        }
+        return grew;
+    }
+
+    private static final Pattern KEPT = Pattern.compile("be_(-?\\d+)_(-?\\d+)_(-?\\d+)_(.+)");
+
+    /** A chunk unloads: its placed block entities stop ticking, their data kept in the chunk. True when the set shrank. */
+    boolean releaseChunk(org.bukkit.Chunk chunk) {
+        boolean shrank = false;
+        for (Tracked t : new ArrayList<>(ticking.values())) {
+            if (t.world().equals(chunk.getWorld().getName()) && t.chunkX() == chunk.getX() && t.chunkZ() == chunk.getZ()) {
+                shrank |= release(chunk.getWorld().getBlockAt(t.x(), t.y(), t.z()), chunk);
+            }
+        }
+        return shrank;
+    }
+
+    /** A ticking block's data as it is now, kept in its chunk, before a menu or a break reads the chunk. */
+    private void saveFresh(org.bukkit.block.Block block, String blockId) {
+        Tracked t = ticking.get(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()));
+        // Only the block that ticking is for: a stale entry's data must not be kept under another id.
+        if (t != null && t.blockId().equals(blockId)) {
+            State state = parse(call("save\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()));
+            if (state.blockEntity() != null) {
+                keepPlaced(block, blockId, state.blockEntity());
+            }
+        }
+    }
+
+    /**
+     * Every ticking block's data as it is now, kept in its chunk: the periodic and world-save write.
+     * A ticking block whose carrier no longer stands (an explosion, a piston, a set by a command)
+     * stops ticking and its kept data goes with it. True when the set shrank.
+     */
+    boolean saveAll(java.util.function.Function<org.bukkit.block.Block, String> carriedId) {
+        boolean shrank = false;
+        for (Tracked t : new ArrayList<>(ticking.values())) {
+            org.bukkit.World world = org.bukkit.Bukkit.getWorld(t.world());
+            if (world == null || !world.isChunkLoaded(t.chunkX(), t.chunkZ())) {
+                continue;
+            }
+            org.bukkit.block.Block block = world.getBlockAt(t.x(), t.y(), t.z());
+            if (!t.blockId().equals(carriedId.apply(block))) {
+                block.getChunk().getPersistentDataContainer().remove(blockKey(block, t.blockId()));
+                shrank |= release(block, null);
+                continue;
+            }
+            State state = parse(call("save\t" + t.x() + "\t" + t.y() + "\t" + t.z()));
+            if (state.blockEntity() != null) {
+                keepPlaced(block, t.blockId(), state.blockEntity());
+            }
+        }
+        return shrank;
     }
 
     /** The block entity's data the close handed back, stored for the next opening. */
@@ -197,6 +348,7 @@ final class LiveBridge {
      * Paper kept for it; the kept data goes with the block.
      */
     Broken breakBlock(Player player, org.bukkit.block.Block block, String blockId) {
+        saveFresh(block, blockId);
         StringBuilder in = new StringBuilder("break\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(blockId).append('\t')
                 .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
@@ -227,6 +379,54 @@ final class LiveBridge {
         return new Broken(removed, spilled, state);
     }
 
+    /** A block's destroy time (-1 unbreakable, 0 instant) and whether its drops need the right tool. */
+    record BlockInfo(float hardness, boolean requiresTool) {
+    }
+
+    /** The layer's answers per block id: static for the id, so asked once. */
+    private final java.util.Map<String, BlockInfo> blockInfos = new java.util.HashMap<>();
+
+    /** The layer's block info for {@code blockId}, or null when it cannot answer (nothing is kept then). */
+    BlockInfo blockInfo(String blockId) {
+        BlockInfo known = blockInfos.get(blockId);
+        if (known != null) {
+            return known;
+        }
+        for (String line : call("blockinfo\t" + blockId).split("\n")) {
+            String[] p = line.split("\t");
+            if (p.length == 3 && p[0].equals("block")) {
+                BlockInfo info = new BlockInfo(Float.parseFloat(p[1]), p[2].equals("1"));
+                blockInfos.put(blockId, info);
+                return info;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * What the held stack does against a mod block and a reference block: its destroy speed on the mod
+     * block, whether it is a correct tool for the mod block's drops, and its destroy speed on the reference.
+     */
+    record Dig(float speed, boolean correct, float refSpeed) {
+    }
+
+    /**
+     * The layer's {@link Dig} for the held stack, or null when the layer cannot answer. The reference speed
+     * is taken for the host item Paper holds (a mod item is a vanilla carrier item): Paper's own note-block
+     * progress runs at the host's speed, not the mod item's.
+     */
+    Dig digSpeed(ItemStack held, String blockId, String refBlockId) {
+        String host = held.getType().isAir() ? "-" : toLayer(new ItemStack(held.getType()));
+        for (String line : call("digspeed\t" + blockId + "\t" + refBlockId + "\t" + toLayer(held) + "\t" + host)
+                .split("\n")) {
+            String[] p = line.split("\t");
+            if (p.length == 4 && p[0].equals("digspeed")) {
+                return new Dig(Float.parseFloat(p[1]), p[2].equals("1"), Float.parseFloat(p[3]));
+            }
+        }
+        return null;
+    }
+
     /** A record payload rebuilt from the plain values the real client's press sent. */
     State payload(Player player, String payloadClass, String values) {
         return parse(call("payload\t" + player.getUniqueId() + "\t" + payloadClass + "\t" + values));
@@ -239,9 +439,13 @@ final class LiveBridge {
 
     /** A mod block Paper now holds: its block entity's data, kept for its first opening. */
     void keepPlaced(org.bukkit.block.Block block, String blockId, String blockEntity) {
+        put(block.getChunk().getPersistentDataContainer(), block, blockId, blockEntity);
+    }
+
+    private void put(org.bukkit.persistence.PersistentDataContainer pdc, org.bukkit.block.Block block, String blockId,
+                     String blockEntity) {
         if (blockEntity != null) {
-            block.getChunk().getPersistentDataContainer().set(blockKey(block, blockId), PersistentDataType.STRING,
-                    blockEntity);
+            pdc.set(blockKey(block, blockId), PersistentDataType.STRING, blockEntity);
         }
     }
 
@@ -299,10 +503,46 @@ final class LiveBridge {
     }
 
     /** One tick of the open live block menus, once per Paper tick. */
-    static void tick() {
+    /**
+     * One server tick of the layer's menus and placed block entities. What they spilled drops in
+     * Paper's world at the block that spilled it; nothing is kept for a later break to hand out.
+     */
+    void tick() {
         Function<String, String> fn = entry();
-        if (fn != null) {
-            fn.apply("tick\t-");
+        if (fn == null) {
+            return;
+        }
+        String answer = fn.apply("tick\t-");
+        if (answer.indexOf('\n') < 0) {
+            return; // nothing spilled: the common tick splits nothing
+        }
+        for (String line : answer.split("\n")) {
+            if (line.startsWith("spill\t")) {
+                drop(line);
+            }
+        }
+    }
+
+    private void drop(String line) {
+        String[] p = line.split("\t", 5);
+        int x = Integer.parseInt(p[1]);
+        int y = Integer.parseInt(p[2]);
+        int z = Integer.parseInt(p[3]);
+        org.bukkit.World world = null;
+        for (Tracked t : ticking.values()) {
+            if (t.x() == x && t.y() == y && t.z() == z) {
+                world = org.bukkit.Bukkit.getWorld(t.world());
+                break;
+            }
+        }
+        for (org.bukkit.block.Block b : openBlocks.values()) {
+            if (world == null && b.getX() == x && b.getY() == y && b.getZ() == z) {
+                world = b.getWorld();
+            }
+        }
+        ItemStack stack = toPaper(p[4]);
+        if (world != null && stack != null) {
+            world.dropItemNaturally(new org.bukkit.Location(world, x + 0.5, y + 0.5, z + 0.5), stack);
         }
     }
 
@@ -326,6 +566,20 @@ final class LiveBridge {
                 player.getWorld().dropItem(player.getLocation(), stack);
             }
         }
+    }
+
+    /** Latched once the layer's real server is up; until then interactions are refused. */
+    private static volatile boolean ready;
+
+    /**
+     * Whether the layer's real server is up (its resources exist): a use, place or break
+     * in the first seconds after boot would otherwise reach a server with none.
+     */
+    public static boolean ready() {
+        if (!ready) {
+            ready = call("ready").startsWith("ready");
+        }
+        return ready;
     }
 
     private static String call(String request) {

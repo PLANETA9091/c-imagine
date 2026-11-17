@@ -308,6 +308,10 @@ public final class FacadeServerLevel extends ServerLevel {
     /** Items the mods' code spilled into the world (a broken block's drops), for Paper to drop. */
     private static final java.util.List<net.minecraft.world.item.ItemStack> SPILLED = new java.util.ArrayList<>();
 
+    static boolean hasSpilled() {
+        return !SPILLED.isEmpty();
+    }
+
     static java.util.List<net.minecraft.world.item.ItemStack> takeSpilled() {
         java.util.List<net.minecraft.world.item.ItemStack> out = new java.util.ArrayList<>(SPILLED);
         SPILLED.clear();
