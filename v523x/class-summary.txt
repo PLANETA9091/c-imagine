@@ -1,0 +1,68 @@
+class      ns               pages     eff   green     red  green%  state
+biome      ae2                  1       1       1       0   100.0  DIAGNOSTIC (calibration required)
+biome      biomesoplenty       69      69      69       0   100.0  DIAGNOSTIC (calibration required)
+block      ae2                 69    2799    2527     272  90.282  NEAR (>=90%)
+block      biomesoplenty      118    4996    4315     681  86.369  MEASURED
+block      create             408   16312   14511    1801  88.959  MEASURED
+block      dynamictrees        36    1622    1622       0   100.0  GATED-GREEN (0 red)
+block      farmersdelight      34     492     425      67  86.382  MEASURED
+block      mekanism            33     877     822      55  93.729  NEAR (>=90%)
+block      minecraft          137     131     122       9   93.13  NEAR (>=90%)
+block      sophisticatedbackpacks    10     384     315      69  82.031  MEASURED
+block      supplementaries    245    8264    6961    1303  84.233  MEASURED
+e          ae2                  1       0       0       0       -  NO-DATA
+e          biomesoplenty        2       0       0       0       -  NO-DATA
+e          create               9       0       0       0       -  NO-DATA
+e          dynamictrees         2       0       0       0       -  NO-DATA
+e          farmersdelight       1       0       0       0       -  NO-DATA
+e          mekanism             2       1       0       1     0.0  MEASURED
+e          sophisticatedbackpacks     1       0       0       0       -  NO-DATA
+e          supplementaries     16       2       0       2     0.0  MEASURED
+fluid      biomesoplenty        1       2       0       2     0.0  MEASURED
+fluid      create               1       4       0       4     0.0  MEASURED
+fluid      mekanism             2      18       0      18     0.0  MEASURED
+fluid      supplementaries      1       0       0       0       -  NO-DATA
+gui        ae2                 40      40      40       0   100.0  DIAGNOSTIC (calibration required)
+gui        create              14      14      14       0   100.0  DIAGNOSTIC (calibration required)
+gui        farmersdelight       1       1       1       0   100.0  DIAGNOSTIC (calibration required)
+gui        mekanism            71      71      71       0   100.0  DIAGNOSTIC (calibration required)
+gui        sophisticatedbackpacks     2       2       2       0   100.0  DIAGNOSTIC (calibration required)
+gui        supplementaries      9       9       9       0   100.0  DIAGNOSTIC (calibration required)
+held       ae2                  5       5       5       0   100.0  DIAGNOSTIC (calibration required)
+held       biomesoplenty        6       6       6       0   100.0  DIAGNOSTIC (calibration required)
+held       create              10      10      10       0   100.0  DIAGNOSTIC (calibration required)
+held       dynamictrees         1       1       1       0   100.0  DIAGNOSTIC (calibration required)
+held       farmersdelight       3       3       3       0   100.0  DIAGNOSTIC (calibration required)
+held       mekanism             5       5       5       0   100.0  DIAGNOSTIC (calibration required)
+held       sophisticatedbackpacks     1       1       1       0   100.0  DIAGNOSTIC (calibration required)
+held       supplementaries      4       4       4       0   100.0  DIAGNOSTIC (calibration required)
+inv        ae2                 11      11       0      11     0.0  DIAGNOSTIC (calibration required)
+inv        biomesoplenty       13      13       0      13     0.0  DIAGNOSTIC (calibration required)
+inv        create              20      20       0      20     0.0  DIAGNOSTIC (calibration required)
+inv        dynamictrees         1       1       0       1     0.0  DIAGNOSTIC (calibration required)
+inv        farmersdelight       6       6       0       6     0.0  DIAGNOSTIC (calibration required)
+inv        mekanism            11      11       0      11     0.0  DIAGNOSTIC (calibration required)
+inv        sophisticatedbackpacks     2       2       0       2     0.0  DIAGNOSTIC (calibration required)
+inv        supplementaries      8       8       0       8     0.0  DIAGNOSTIC (calibration required)
+item       ae2                  5     357     324      33  90.756  NEAR (>=90%)
+item       biomesoplenty        6     433     394      39  90.993  NEAR (>=90%)
+item       create              10     698     625      73  89.542  MEASURED
+item       dynamictrees         1      31      28       3  90.323  NEAR (>=90%)
+item       farmersdelight       3     185     169      16  91.351  NEAR (>=90%)
+item       mekanism             5     378     353      25  93.386  NEAR (>=90%)
+item       sophisticatedbackpacks     1      71      71       0   100.0  GATED-GREEN (0 red)
+item       supplementaries      4     274     259      15  94.526  NEAR (>=90%)
+particle   ae2                  1       5       5       0   100.0  FLIP-CANDIDATE (0 red)
+particle   biomesoplenty        1      15      15       0   100.0  FLIP-CANDIDATE (0 red)
+particle   create               1      13      13       0   100.0  FLIP-CANDIDATE (0 red)
+particle   farmersdelight       1       3       3       0   100.0  FLIP-CANDIDATE (0 red)
+particle   mekanism             1       5       5       0   100.0  FLIP-CANDIDATE (0 red)
+particle   supplementaries      1      29      29       0   100.0  FLIP-CANDIDATE (0 red)
+sound      ae2                  1       1       1       0   100.0  FLIP-CANDIDATE (0 red)
+sound      biomesoplenty        1      11      11       0   100.0  FLIP-CANDIDATE (0 red)
+sound      combat_roll          1       2       2       0   100.0  FLIP-CANDIDATE (0 red)
+sound      create               2      79      79       0   100.0  FLIP-CANDIDATE (0 red)
+sound      dynamictrees         1      11      11       0   100.0  FLIP-CANDIDATE (0 red)
+sound      farmersdelight       1      20      20       0   100.0  FLIP-CANDIDATE (0 red)
+sound      mekanism             1      46      46       0   100.0  FLIP-CANDIDATE (0 red)
+sound      supplementaries      1      77      77       0   100.0  FLIP-CANDIDATE (0 red)
