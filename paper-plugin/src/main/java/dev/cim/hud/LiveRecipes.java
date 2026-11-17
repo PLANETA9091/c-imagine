@@ -22,7 +22,7 @@ import org.bukkit.inventory.SmokingRecipe;
 import org.bukkit.plugin.Plugin;
 
 /**
- * The layer's mod crafting recipes on Paper (shaped, shapeless, smelting, blasting, smoking and
+ * The layer's mod crafting recipes on Paper (shaped, shapeless, stonecutting, smelting, blasting, smoking and
  * campfire), registered once at boot under the {@code cim} namespace, the mod id and path as the key.
  *
  * <p>The layer answers with the recipes its real server loaded ({@code recipes} in cimlive's
@@ -225,6 +225,16 @@ public final class LiveRecipes {
                     case "smoking" -> new SmokingRecipe(key, result, input, xp, ticks);
                     default -> new CampfireRecipe(key, result, input, xp, ticks);
                 };
+            }
+            case "stonecutting": {
+                if (f.length != 5) {
+                    throw new Skip("malformed");
+                }
+                RecipeChoice input = choice(bridge, carrier, f[4]);
+                if (input == null) {
+                    throw new Skip("no input");
+                }
+                return new org.bukkit.inventory.StonecuttingRecipe(key, result(bridge, f[3]), input);
             }
             default:
                 throw new Skip("unknown kind");

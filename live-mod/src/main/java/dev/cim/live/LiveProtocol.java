@@ -552,6 +552,7 @@ public final class LiveProtocol {
      * recipe TAB shaped TAB id TAB result TAB w TAB h TAB token...      (w*h tokens, row by row)
      * recipe TAB shapeless TAB id TAB result TAB token...
      * recipe TAB smelting|blasting|smoking|campfire TAB id TAB result TAB ticks TAB xp TAB token
+     * recipe TAB stonecutting TAB id TAB result TAB token
      * skip TAB type TAB id TAB reason                                    (the layer's other recipes)
      * </pre>
      * A token is "-" for an empty slot, or "[!]id,id,..." listing the items an ingredient takes;
@@ -615,6 +616,9 @@ public final class LiveProtocol {
             out.append("recipe\t").append(kind).append('\t').append(id).append('\t').append(result)
                     .append('\t').append(cooking.getCookingTime()).append('\t').append(cooking.getExperience())
                     .append('\t').append(token(cooking.getIngredients().get(0))).append('\n');
+        } else if (r instanceof net.minecraft.world.item.crafting.StonecutterRecipe cutting) {
+            out.append("recipe\tstonecutting\t").append(id).append('\t').append(result)
+                    .append('\t').append(token(cutting.getIngredients().get(0))).append('\n');
         } else {
             out.append("skip\t").append(type).append('\t').append(id).append("\tnot expressible\n");
         }
