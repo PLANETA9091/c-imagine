@@ -107,12 +107,15 @@ jobs:
           cp mods-create/*.jar srv/mods/
           cp scripts/log4j2-layer.xml srv/
           echo "eula=true" > srv/eula.txt
-          printf 'online-mode=false\nwhite-list=false\nlevel-type=minecraft:flat\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\n' > srv/server.properties
+          # The superflat has stone (the zinc ore vein targets are stone and deepslate; the classic flat
+          # has dirt only, so the worldgen probe would find no ore). Same flat world type, new layers.
+          printf 'online-mode=false\nwhite-list=false\nlevel-type=minecraft:flat\ngenerator-settings={"layers":[{"block":"minecraft:bedrock","height":1},{"block":"minecraft:stone","height":40},{"block":"minecraft:dirt","height":2},{"block":"minecraft:grass_block","height":1}],"biome":"minecraft:plains"}\nview-distance=4\nsimulation-distance=4\nspawn-protection=0\n' > srv/server.properties
           ls srv/mods
       - name: boot 1, the player places the Create block, the redstone neighbour, the save
         env:
           CIM_SURVIVAL_ITEM: ${{ env.SURVIVAL_ITEM }}
           CIM_SURVIVAL_PHASE: place
+          CIM_WORLDGEN_PROBE: create:zinc_ore
         run: |
           set +e
           (
@@ -280,7 +283,22 @@ jobs:
           if grep -qE "\[cim-screen\] live (use-on|break|open|close) failed|\[cim-survival\] place .* refused" "$B1" "$B2"; then
             fail "the live path reported an error (see the cim-screen lines)"
           fi
-          echo "survival smoke: every assertion held for $SURVIVAL_ITEM (carrier $KEY, restart, break)"
+
+          # 7. Worldgen slice 1 (boot 1): the layer's biome-modifier features reach Paper's new chunks.
+          #    The listing runs N >= 1 mod features (Create's zinc and striated ores); the probe generates
+          #    a far 3x3 chunk square after the listing and counts create:zinc_ore carriers below y=70.
+          WG=$(grep -m1 -E '\[c-imagine\] worldgen: [0-9]+ mod feature' "$B1") \
+            || fail "no '[c-imagine] worldgen: N mod feature(s)' listing line in boot 1 (the layer's features did not reach Paper)"
+          WG_N=$(sed -n 's/.*worldgen: \([0-9]*\) mod feature.*/\1/p' <<<"$WG")
+          [ -n "$WG_N" ] && [ "$WG_N" -ge 1 ] || fail "the worldgen listing runs no mod feature: $WG"
+          echo "$WG"
+          PROBE=$(grep -m1 -E '\[cim-worldgen\] probe: create:zinc_ore carriers below y=70' "$B1") \
+            || fail "no worldgen probe line in boot 1 (the far chunks were not decorated, or the probe did not run)"
+          ZINC=$(sed -n 's/.*chunk(s): \([0-9]*\)$/\1/p' <<<"$PROBE")
+          [ -n "$ZINC" ] && [ "$ZINC" -ge 1 ] || fail "no create:zinc_ore carrier below y=70 in the probe chunks: $PROBE"
+          echo "$PROBE"
+          grep -m1 -E '\[cim-worldgen\] probe: chunks=' "$B1" || true
+          echo "survival smoke: every assertion held for $SURVIVAL_ITEM (carrier $KEY, restart, break); worldgen: $ZINC zinc carrier(s)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
