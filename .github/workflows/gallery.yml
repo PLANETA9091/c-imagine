@@ -3900,13 +3900,40 @@ jobs:
             echo "RED: see the named holes above — the gate is pixels and coverage"
           fi
           python3 - <<'PY'
-          import glob, json
-          summary = {"shards": {}, "coverage": "see log"}
+          import glob, json, collections
+          # 14-e91b THE UNCAPPED JOIN CENSUS: the gate.json reds list = capped
+          # (200) and the summary capped it again (50) — the capped view HID
+          # the door lane (the glob order sorts join-ae2-* first) and the
+          # capped "reds" list = decorative. The summary now aggregates the
+          # join-*.json rows DIRECTLY: the uncapped per-block-family red
+          # census + the per-shard totals + the capped sample kept for
+          # backwards compatibility.
+          summary = {"shards": {}, "coverage": "see log", "join_census": {}}
+          fam_total = collections.Counter()
+          total_red_rows = 0
           for f in sorted(glob.glob('reports/*/gate.json')):
               g = json.load(open(f))
               summary["shards"][g["shard"]] = {"gate": g["gate"],
                                                "join_pages": g["join_pages"],
                                                "reds": g["reds"][:50]}
+          for f in sorted(glob.glob('reports/*/join-*.json')):
+              try:
+                  r = json.load(open(f))
+              except Exception:
+                  continue
+              rows = [row for row in r.get('rows', [])
+                      if row.get('verdict') == 'RED']
+              if not rows:
+                  continue
+              total_red_rows += len(rows)
+              for row in rows:
+                  st = str(row.get('state', '?'))
+                  fam = st.split('[')[0]
+                  fam_total[fam] += 1
+          summary["join_census"] = {
+              "total_red_rows": total_red_rows,
+              "by_block": dict(fam_total.most_common(60)),
+          }
           json.dump(summary, open('gallery-verdict/verdict-summary.json', 'w'), indent=1)
           PY
           exit $GATE
