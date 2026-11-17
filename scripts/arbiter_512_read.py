@@ -73,7 +73,7 @@ def receipt_check(lines, rx, label):
             continue
         n += 1
         x, y, z = int(m.group(2)), int(m.group(3)), int(m.group(4))
-        atz = float(m.group(7))
+        atz = float(m.group(8))   # the at Z = the third component (groups 6,7,8)
         trz = float(m.group(9).split(',')[2])
         good = (abs(atz - (z + 0.5)) < 0.01 and abs(trz + 1.04) < 0.01)
         if good:
