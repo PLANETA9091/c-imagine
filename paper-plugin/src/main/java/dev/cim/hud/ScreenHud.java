@@ -214,6 +214,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private final ItemGlyphs glyphs;
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
+    /** Mod items the pack allocated a definition for (no manifest row): their stacks name it through item_model. */
+    private final java.util.Set<String> allocatedItems = new java.util.HashSet<>();
     private final Map<String, String> blockCarriers = new HashMap<>();
     /** Per player: inventory slots the real client shows empty after a click its server ignored. */
     private final Map<UUID, java.util.Set<Integer>> clientEmptied = new HashMap<>();
@@ -293,6 +295,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 carrierRows.put(row.moddedId(), row);
             }
         }
+        allocatedItems.clear();
+        allocatedItems.addAll(F2vPack.readAllocatedItems(f2v));
         // the rows the pack was built from: the manifest plus the boot-time allocation
         for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
             blockCarriers.put(row.instrument() + ":" + row.note(), row.moddedBlockId());
@@ -448,6 +452,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** The real stack that shows as a modded item, or air when there is none. */
     ItemStack carrier(String moddedId) {
         F2vPack.VisualItem row = moddedId == null ? null : carrierRows.get(moddedId);
+        if (row == null && moddedId != null && allocatedItems.contains(moddedId)) {
+            return allocatedCarrier(moddedId);
+        }
         Material host = row == null ? null : Material.matchMaterial(row.hostItem());
         if (host == null) {
             return new ItemStack(Material.AIR);
@@ -457,6 +464,22 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         org.bukkit.inventory.meta.components.CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
         cmd.setFloats(List.of(row.cmd()));
         meta.setCustomModelDataComponent(cmd);
+        stack.setItemMeta(meta);
+        return stack;
+    }
+
+    /**
+     * A stack of an allocated mod item: a vanilla host, named by item_model (its own items/ definition in
+     * the pack) and by the leaf name of its id. The id reads back through {@link #itemId}.
+     */
+    private static ItemStack allocatedCarrier(String moddedId) {
+        ItemStack stack = new ItemStack(Material.PAPER);
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        org.bukkit.NamespacedKey model = org.bukkit.NamespacedKey.fromString(F2vPack.allocatedItemModel(moddedId));
+        if (model != null) {
+            meta.setItemModel(model);
+        }
+        meta.itemName(net.kyori.adventure.text.Component.text(F2vPack.allocatedItemName(moddedId)));
         stack.setItemMeta(meta);
         return stack;
     }
@@ -666,11 +689,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     private String itemId(ItemStack stack) {
-        if (stack.hasItemMeta() && stack.getItemMeta().hasCustomModelDataComponent()) {
-            List<Float> floats = stack.getItemMeta().getCustomModelDataComponent().getFloats();
-            String modded = floats.isEmpty() ? null : itemCarriers.get(floats.get(0));
-            if (modded != null) {
-                return modded;
+        if (stack.hasItemMeta()) {
+            org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+            // an allocated item names itself through item_model (stable across pack rebuilds)
+            String allocated = meta.hasItemModel() ? F2vPack.moddedIdOfItemModel(meta.getItemModel().toString()) : null;
+            if (allocated != null) {
+                return allocated;
+            }
+            if (meta.hasCustomModelDataComponent()) {
+                List<Float> floats = meta.getCustomModelDataComponent().getFloats();
+                String modded = floats.isEmpty() ? null : itemCarriers.get(floats.get(0));
+                if (modded != null) {
+                    return modded;
+                }
             }
         }
         return stack.getType().getKey().toString();

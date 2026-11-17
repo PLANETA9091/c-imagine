@@ -85,11 +85,22 @@ public final class F2vPack {
         }
     }
 
-    /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings. */
+    /**
+     * The item channel's tally for the build log: manifest rows that resolved to a model,
+     * mod items allocated a definition of their own (no manifest row), and the candidates
+     * or rows that found no model in any jar.
+     */
+    public record ItemTally(int manifest, int allocated, int failed) {
+        public int resolved() {
+            return manifest + allocated;
+        }
+    }
+
+    /** Build outcome: resolved rows, sha1 hex, emitted entry count, warnings, item tally. */
     public record Result(List<VisualItem> items, List<VisualBlock> blocks,
                          String sha1, int entryCount, List<String> warnings,
                          List<GalleryPack.Resolved> gallery,
-                         List<String[]> placeholders) {
+                         List<String[]> placeholders, ItemTally tally) {
     }
 
     /**
@@ -929,6 +940,139 @@ public final class F2vPack {
         return rows;
     }
 
+    // ---- allocated mod items (boot-time, no manifest row) ------------------------
+
+    /** The item_model namespace of an allocated mod item: {@code c-imagine:<ns>/<path>}. */
+    public static final String ALLOCATED_NS = "c-imagine";
+    /** The allocated items the last build emitted (moddedId TAB item_model); the HUD reads them. */
+    public static final String ALLOCATED_ITEMS = "visual-items.allocated.tsv";
+    private static final String ALLOCATED_HEADER = "# c-imagine F2V allocated mod items (no manifest row)\n"
+            + "# moddedId <TAB> item_model (c-imagine:<ns>/<path>) — written by the pack build, do not edit\n";
+    /** A plain mod id: lowercase segments, no empty or dot-only segment, so the item def path stays inside its folder. */
+    private static final java.util.regex.Pattern ALLOCATABLE = java.util.regex.Pattern.compile(
+            "[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*:[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*(?:/[a-z0-9_-]+(?:\\.[a-z0-9_-]+)*)*");
+
+    /** The item_model key of an allocated mod item (its items/ definition, namespace-less path). */
+    public static String allocatedItemModel(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        return ALLOCATED_NS + ":" + moddedId.substring(0, colon) + "/" + moddedId.substring(colon + 1);
+    }
+
+    /** The mod id an item_model key names when it is an allocated key, else null (the inverse of {@link #allocatedItemModel}). */
+    public static String moddedIdOfItemModel(String key) {
+        String prefix = ALLOCATED_NS + ":";
+        if (key == null || !key.startsWith(prefix)) {
+            return null;
+        }
+        String rest = key.substring(prefix.length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0 || slash == rest.length() - 1) {
+            return null;
+        }
+        return rest.substring(0, slash) + ":" + rest.substring(slash + 1);
+    }
+
+    /** The name a Paper stack of an allocated item shows: the id's leaf, title-cased ("brass_ingot" -> "Brass Ingot"). */
+    public static String allocatedItemName(String moddedId) {
+        String path = moddedId.substring(moddedId.indexOf(':') + 1);
+        String leaf = path.substring(path.lastIndexOf('/') + 1);
+        StringBuilder sb = new StringBuilder();
+        for (String word : leaf.split("[_-]+")) {
+            if (word.isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return sb.isEmpty() ? moddedId : sb.toString();
+    }
+
+    /** The candidates: discovered mod ids that are plain, not vanilla, not ours, and not a manifest row; sorted. */
+    static List<String> itemCandidates(Collection<String> discovered, Collection<String> manifestIds) {
+        Set<String> manifest = new HashSet<>(manifestIds);
+        TreeSet<String> out = new TreeSet<>();
+        for (String id : discovered) {
+            if (id.startsWith("minecraft:") || id.startsWith(ALLOCATED_NS + ":") || manifest.contains(id)) {
+                continue;
+            }
+            if (ALLOCATABLE.matcher(id).matches()) {
+                out.add(id);
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    /** Every mod item a jar ships an item model for ({@code assets/<ns>/models/item/<path>.json}), as {@code ns:path}. */
+    static Set<String> discoverItemIds(List<Path> jars) throws IOException {
+        Set<String> out = new TreeSet<>();
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                var entries = zf.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    if (!name.startsWith("assets/") || !name.endsWith(".json")) {
+                        continue;
+                    }
+                    int slash = name.indexOf('/', "assets/".length());
+                    if (slash < 0) {
+                        continue;
+                    }
+                    String ns = name.substring("assets/".length(), slash);
+                    String prefix = "assets/" + ns + "/models/item/";
+                    if (ns.equals("minecraft") || !name.startsWith(prefix)) {
+                        continue;
+                    }
+                    String path = name.substring(prefix.length(), name.length() - ".json".length());
+                    if (!path.isEmpty()) {
+                        out.add(ns + ":" + path);
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The items/ definition path of an allocated item: {@code assets/c-imagine/items/<ns>/<path>.json}. */
+    static String allocatedItemDefPath(String moddedId) {
+        return "assets/" + allocatedItemModel(moddedId).replaceFirst(":", "/items/") + ".json";
+    }
+
+    /** The items/ definition of an allocated item: the mod's own model (or its composite), as the model node. */
+    static String allocatedItemDef(String ref) {
+        JsonObject node = GalleryPack.itemNode(ref);
+        return "{\n  \"model\": " + (node != null ? node : itemModelNode(ref)) + "\n}\n";
+    }
+
+    private static String allocatedText(List<String> ids) {
+        StringBuilder sb = new StringBuilder(ALLOCATED_HEADER);
+        for (String id : ids) {
+            sb.append(id).append('\t').append(allocatedItemModel(id)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** The allocated items the last build emitted (the HUD's stand-in for the rows it has no CMD for). */
+    public static List<String> readAllocatedItems(Path f2vDir) throws IOException {
+        List<String> out = new ArrayList<>();
+        Path file = f2vDir.resolve(ALLOCATED_ITEMS);
+        if (!Files.isRegularFile(file)) {
+            return out;
+        }
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            String t = line.trim();
+            if (t.isEmpty() || t.startsWith("#")) {
+                continue;
+            }
+            String id = t.split("\t", -1)[0].trim();
+            if (!id.isEmpty()) {
+                out.add(id);
+            }
+        }
+        return out;
+    }
+
     // ---- carrier allocation (boot-time fallback for every mod block) --------------
 
     /**
@@ -1162,7 +1306,7 @@ public final class F2vPack {
         }
         List<String> warnings = new ArrayList<>(r.warnings());
         warnings.addAll(notes);
-        return new Result(r.items(), r.blocks(), r.sha1(), r.entryCount(), warnings, r.gallery(), r.placeholders());
+        return new Result(r.items(), r.blocks(), r.sha1(), r.entryCount(), warnings, r.gallery(), r.placeholders(), r.tally());
     }
 
     /**
@@ -1660,7 +1804,9 @@ public final class F2vPack {
                 readEmissiveManifest(outDir.resolve("visual-emissive.tsv"));
         List<String> itemEmissiveBakeLog = new ArrayList<>();
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
-        int itemCompositeNo = 0;
+        int[] compositeNo = {0};
+        int manifestResolved = 0;
+        int manifestFailed = 0;
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
             String[] keyParts = host.getKey().split("\t");
             String hostItem = keyParts[0];
@@ -1672,59 +1818,15 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> entriesForHost = new ArrayList<>();
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
-                // 14-dy: the placeholder ledger attributes item-model
-                // fallbacks to the modded item id
-                GalleryPack.placeholderContext(row.moddedId());
-                String quadModel = GalleryPack.synthesizeItemQuads(jars, row.moddedId(), itemCompositeNo,
-                        entries, warnings);
-                if (quadModel != null) {
-                    itemCompositeNo++;
-                }
-                String found = quadModel != null ? quadModel
-                        : resolveAndCopyModelGraph(jars, row.moddedId(), entries, warnings, paletteByVariantId);
-                // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see
-                // GalleryPack.synthesizeItemComposite): block-geometry item
-                // models ride a standalone composite (inline elements, all
-                // sprites pack-side) — a raw block-parented model or a
-                // vanilla-sprite reference aborts the whole host def bake at
-                // CuboidItemModelWrapper.validateAtlasUsage. Sprite-driven
-                // item models (item/generated chains) stay vanilla-shaped.
-                if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
-                    String comp = GalleryPack.synthesizeItemComposite(
-                            jars, found, itemCompositeNo++, entries, warnings);
-                    if (comp != null) {
-                        // THE ITEM EMISSIVE-BAKE: a tabled modded item's
-                        // standalone composite carries light_emission on
-                        // every element (the same contract the gallery
-                        // block composite honors) — the measured driver:
-                        // create:refined_radiance's item-cell red (ae
-                        // 63497) whose truth render is fullbright.
-                        comp = GalleryPack.applyItemEmissive(
-                                row.moddedId(), comp, emissiveTable, itemEmissiveBakeLog);
-                        found = comp;
-                    }
-                } else if (quadModel == null && found != null) {
-                    // THE SPRITE EMISSIVE UPGRADE: a tabled item whose model
-                    // is an item/generated SPRITE (no elements — the element
-                    // light_emission lever does not exist there) upgrades to
-                    // a flat-quad composite carrying the sprite texture on
-                    // the faces + light_emission. Geometry-compatible with
-                    // the sprite (a flat quad), but fullbright — measured:
-                    // create:refined_radiance, the truth item renders
-                    // fullbright while ours renders the dim sprite.
-                    String upgraded = GalleryPack.synthesizeSpriteEmissive(
-                            jars, found, row.moddedId(), itemCompositeNo,
-                            emissiveTable, entries, warnings);
-                    if (upgraded != null) {
-                        itemCompositeNo++;
-                        found = upgraded;
-                    }
-                }
+                String found = itemModelRef(row.moddedId(), jars, entries, warnings,
+                        paletteByVariantId, emissiveTable, itemEmissiveBakeLog, compositeNo);
                 if (found == null) {
                     warnings.add("no item model found for " + row.moddedId()
                             + " in any mod jar — row dropped");
+                    manifestFailed++;
                     continue;
                 }
+                manifestResolved++;
                 if (floatKind) {
                     entriesForHost.add(Map.entry(row.cmd(), found));
                     if (hostItem.equals("minecraft:paper")) {
@@ -1749,6 +1851,30 @@ public final class F2vPack {
                 }
             }
         }
+
+        // ALLOCATED ITEMS (the item channel, no slot budget): every mod item a mod jar ships an
+        // item model for, that no manifest row covers, gets its own items/ definition under
+        // assets/c-imagine/items/<ns>/<path>.json (the same model chain a manifest row runs). A Paper
+        // stack names that definition through item_model on a vanilla host material, so capacity is
+        // the item count, not the custom_model_data float space. Sorted candidates keep the bytes and
+        // the allocated ledger a pure function of the jars.
+        Set<String> manifestIds = new HashSet<>();
+        for (VisualItem r : baseResolved) {
+            manifestIds.add(r.moddedId());
+        }
+        List<String> allocatedIds = new ArrayList<>();
+        int allocFailed = 0;
+        for (String id : itemCandidates(discoverItemIds(listJars(modsDir)), manifestIds)) {
+            String found = itemModelRef(id, jars, entries, warnings, Map.of(),
+                    emissiveTable, itemEmissiveBakeLog, compositeNo);
+            if (found == null) {
+                allocFailed++;
+                continue;
+            }
+            entries.put(allocatedItemDefPath(id), allocatedItemDef(found).getBytes(StandardCharsets.UTF_8));
+            allocatedIds.add(id);
+        }
+        ItemTally tally = new ItemTally(manifestResolved, allocatedIds.size(), manifestFailed + allocFailed);
 
         // equipment assets (M6 pull-forward): legacy armor textures -> the
         // 26.3 equipment surface, manifest-driven, zero vanilla overrides
@@ -1999,6 +2125,7 @@ public final class F2vPack {
         Files.write(outDir.resolve("pack.zip"), zip);
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
+        writeIfChanged(outDir.resolve(ALLOCATED_ITEMS), allocatedText(allocatedIds));
         // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
         // (sprite, context, uses) — the texture-fidelity audit's named
         // backlog, written next to the manifest and summarized in the
@@ -2009,6 +2136,9 @@ public final class F2vPack {
                 .append("items requested: ").append(rows.size()).append('\n')
                 .append("zip entries:     ").append(entries.size()).append('\n')
                 .append("zip bytes:       ").append(zip.length).append('\n')
+                .append("mod items:       ").append(tally.resolved()).append(" resolved (")
+                .append(tally.manifest()).append(" manifest, ").append(tally.allocated())
+                .append(" allocated, ").append(tally.failed()).append(" failed)\n")
                 .append("tile hash collisions resolved: ").append(ObjMesh.tileHashCollisions()).append('\n')
                 .append("sha1:            ").append(sha1).append('\n')
                 .append("warnings:        ").append(warnings.size()).append('\n')
@@ -2024,10 +2154,48 @@ public final class F2vPack {
         Files.writeString(outDir.resolve("build-report.txt"), report.toString(),
                 StandardCharsets.UTF_8);
         // only rows the pack emits: a carrier without a model would render as a plain note block
-        return new Result(rows, emittedBlocks, sha1, entries.size(), warnings, gallery, placeholders);
+        return new Result(rows, emittedBlocks, sha1, entries.size(), warnings, gallery, placeholders, tally);
     }
 
     /** Any element-face uv array in a model json, 4 numbers. */
+    /**
+     * The item-channel model of one modded item ({@code ns:path}), copied into the pack: block-geometry
+     * models ride a standalone composite, sprite models keep their vanilla shape (the emissive upgrade
+     * when the table carries them). Shared by the manifest rows (host dispatch) and the allocated items
+     * (their own definition). Null when no jar carries a model.
+     */
+    private static String itemModelRef(String moddedId, List<Path> jars, TreeMap<String, byte[]> entries,
+                                       List<String> warnings, Map<String, PaletteRow> paletteByVariantId,
+                                       Map<String, Integer> emissiveTable, List<String> emissiveBakeLog,
+                                       int[] compositeNo) throws IOException {
+        // 14-dy: the placeholder ledger attributes item-model fallbacks to the modded item id
+        GalleryPack.placeholderContext(moddedId);
+        String quadModel = GalleryPack.synthesizeItemQuads(jars, moddedId, compositeNo[0], entries, warnings);
+        if (quadModel != null) {
+            compositeNo[0]++;
+        }
+        String found = quadModel != null ? quadModel
+                : resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+        // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see GalleryPack.synthesizeItemComposite):
+        // block-geometry item models ride a standalone composite; sprite-driven models stay vanilla-shaped.
+        if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
+            String comp = GalleryPack.synthesizeItemComposite(jars, found, compositeNo[0]++, entries, warnings);
+            if (comp != null) {
+                // THE ITEM EMISSIVE-BAKE: a tabled modded item's composite carries light_emission
+                found = GalleryPack.applyItemEmissive(moddedId, comp, emissiveTable, emissiveBakeLog);
+            }
+        } else if (quadModel == null && found != null) {
+            // THE SPRITE EMISSIVE UPGRADE: a tabled sprite model becomes a flat-quad composite + light_emission
+            String upgraded = GalleryPack.synthesizeSpriteEmissive(
+                    jars, found, moddedId, compositeNo[0], emissiveTable, entries, warnings);
+            if (upgraded != null) {
+                compositeNo[0]++;
+                found = upgraded;
+            }
+        }
+        return found;
+    }
+
     private static final java.util.regex.Pattern FACE_UV = java.util.regex.Pattern.compile(
             "\"uv\"\\s*:\\s*\\[\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,"
             + "\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,\\s*(-?[0-9]+(?:\\.[0-9]+)?)\\s*,"
@@ -3910,6 +4078,7 @@ public final class F2vPack {
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
         carrierSelftest(failures);
+        itemAllocationSelftest(failures);
         rawCaptureTextureSelftest(failures);
         capturedAlphaSelftest(failures);
         capturedEmptyMeshSelftest(failures);
@@ -4474,6 +4643,50 @@ public final class F2vPack {
     }
 
     /** Carrier allocation: the pure planner, stability, manifest precedence, overflow, blockstate default. */
+    /** The allocated-item channel: keys, candidates, the jar scan and the ledger, all pure over fixtures. */
+    private static void itemAllocationSelftest(List<String> failures) throws IOException {
+        expect(failures, allocatedItemModel("create:brass/ingot").equals("c-imagine:create/brass/ingot"),
+                "allocated item_model key is c-imagine:<ns>/<path>");
+        expect(failures, "create:brass/ingot".equals(moddedIdOfItemModel("c-imagine:create/brass/ingot")),
+                "the item_model key inverts to the mod id");
+        expect(failures, moddedIdOfItemModel("minecraft:paper") == null,
+                "a vanilla item_model is not an allocated id");
+        expect(failures, moddedIdOfItemModel("c-imagine:create") == null,
+                "a c-imagine key without a path is not an allocated id");
+        expect(failures, allocatedItemDefPath("create:brass_ingot").equals("assets/c-imagine/items/create/brass_ingot.json"),
+                "the allocated items/ definition path");
+        expect(failures, allocatedItemName("create:brass/ingot_block").equals("Ingot Block"),
+                "the allocated item name is the title-cased leaf of the id");
+        List<String> candidates = itemCandidates(
+                List.of("create:wrench", "fakemod:gem", "minecraft:paper", "c-imagine:x/y", "create:manual_row",
+                        "Bad:Id", "create:../x", "nocolon", "fakemod:gem"),
+                List.of("create:manual_row"));
+        expect(failures, candidates.equals(List.of("create:wrench", "fakemod:gem")),
+                "candidates are plain, unowned, not vanilla, not ours, sorted and unique");
+        expect(failures, new ItemTally(3, 2, 1).resolved() == 5, "the tally resolves manifest plus allocated");
+        Path tmp = Files.createTempDirectory("f2v-items-selftest");
+        try {
+            TreeMap<String, byte[]> jarEntries = new TreeMap<>();
+            jarEntries.put("assets/fakemod/models/item/gem.json", "{}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/item/sub/deep.json", "{}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/rock.json", "{}".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/item/gem.png", "x".getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/minecraft/models/item/stone.json", "{}".getBytes(StandardCharsets.UTF_8));
+            Path jar = tmp.resolve("items-fixture-1.0.jar");
+            writeJar(jar, jarEntries);
+            expect(failures, discoverItemIds(List.of(jar)).equals(Set.of("fakemod:gem", "fakemod:sub/deep")),
+                    "the jar scan finds item models only: no block, texture or vanilla model");
+            List<String> ids = List.of("fakemod:gem", "fakemod:sub/deep");
+            Files.writeString(tmp.resolve(ALLOCATED_ITEMS), allocatedText(ids), StandardCharsets.UTF_8);
+            expect(failures, readAllocatedItems(tmp).equals(ids),
+                    "the allocated ledger round-trips through its text form");
+            expect(failures, readAllocatedItems(tmp.resolve("absent")).isEmpty(),
+                    "a missing ledger reads as no allocated items");
+        } finally {
+            deleteRecursively(tmp);
+        }
+    }
+
     private static void carrierSelftest(List<String> failures) {
         VisualBlock manifestRock = new VisualBlock("fakemod:rock", "creeper", 13);
         // an earlier boot's ledger: old keeps harp:5; gone is in no jar any more

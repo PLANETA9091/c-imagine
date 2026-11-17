@@ -255,6 +255,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log().info(LOG_PREFIX + "f2v pack: built (" + result.items().size()
                         + " item(s), sha1=" + result.sha1() + ")");
             }
+            // the item channel's tally (manifest rows + allocated mod items), one line per build
+            dev.cim.f2v.F2vPack.ItemTally tally = result.tally();
+            log().info(LOG_PREFIX + "f2v items: " + tally.resolved() + " mod items resolved ("
+                    + tally.manifest() + " from manifest, " + tally.allocated() + " allocated, "
+                    + tally.failed() + " failed)");
             if (!result.warnings().isEmpty()) {
                 for (String w : result.warnings()) {
                     log().warning(LOG_PREFIX + "f2v pack: warn " + w);
