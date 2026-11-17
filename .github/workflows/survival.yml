@@ -237,7 +237,8 @@ jobs:
           grep -qE "\[cim-survival\] ticking before break: [1-9][0-9]*" "$B2" \
             || fail "after the restart the adopted block is not ticking before the break"
 
-          # 6. Broken by a survival player: the block's own drop, and no ticking left behind.
+          # 6. Broken by a survival player holding an iron pickaxe (the depot requires a tool):
+          #    the block's own drop, and no ticking left behind.
           grep -qE "\[cim-screen\] cimbot broke $SURVIVAL_ITEM: [1-9][0-9]* stack\(s\) dropped" "$B2" \
             || fail "breaking the placed $SURVIVAL_ITEM did not drop its own item"
           grep -q "\[cim-survival\] break $SURVIVAL_ITEM -> broke true block now AIR" "$B2" \

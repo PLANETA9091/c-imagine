@@ -1214,7 +1214,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         Block at = survivalGround().getRelative(org.bukkit.block.BlockFace.UP);
         player.teleport(at.getLocation().add(2.5, 0, 0.5));
         player.getInventory().clear();
-        player.getInventory().setItemInMainHand(null);
+        // A survival player mines with the right tool: blocks that require one (Create's
+        // depot is stone-like) drop nothing to a bare hand, on NeoForge as here.
+        player.getInventory().setItemInMainHand(new ItemStack(Material.IRON_PICKAXE));
         out.add("ticking before break: " + (bridge == null ? -1 : bridge.tickingCount()));
         boolean broke = player.breakBlock(at);
         out.add("break " + itemId + " -> broke " + broke + " block now " + at.getType());
