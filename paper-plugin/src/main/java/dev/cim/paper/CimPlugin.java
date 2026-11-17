@@ -1202,6 +1202,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + moddedBlockId + " (place skipped)");
                 return;
             }
+            if (row.isMushroom()) {
+                // this harness places note-family carriers only (its verify leg reads note_block)
+                log().warning(LOG_PREFIX + "f2v block: " + moddedBlockId
+                        + " is a mushroom carrier; place skipped");
+                return;
+            }
             final dev.cim.f2v.F2vPack.VisualBlock visual = row;
             Player p = Bukkit.getPlayerExact(playerName);
             if (p == null) {
