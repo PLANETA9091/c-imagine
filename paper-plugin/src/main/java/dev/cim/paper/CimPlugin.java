@@ -1319,6 +1319,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     static final float GALLERY_DZ = -1.04f;
 
     /**
+     * 14-e91w THE FAMILY CALIBRATION ROOF TABLES. The per-family sky dim:
+     * the 512's measured truth/ours luminance ratios at the repaired
+     * geometry mapped to the vanilla sky-propagation level steps (the −53
+     * roof row ≈ the sky 14 = the −7%; the −53+−52 ≈ the sky 13 = the
+     * −13%). The bop/dynamictrees/minecraft = the ratio ~1.0 = no roof.
+     */
+    static final java.util.Set<String> CALIB_ROOF_1 = java.util.Set.of(
+            "ae2", "mekanism", "supplementaries", "farmersdelight",
+            "sophisticatedbackpacks");
+    static final java.util.Set<String> CALIB_ROOF_2 = java.util.Set.of("create");
+    static final int CALIB_ROOF_Y0 = -53;
+
+    /**
      * 14-du THE LIGHT-SPILL LAW: the truth's light-emitting rows light the
      * scene AROUND them (the lit candle's wall renders at block light 12-13
      * while the replay's air band sits at 0 — the crop measured the whole-cell
@@ -2155,6 +2168,67 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             String lightName = (mfName.endsWith(".tsv")
                     ? mfName.substring(0, mfName.length() - 4) : mfName) + ".light";
             placeLightsFromTruth(wLights, mf.resolveSibling(lightName));
+            // 14-e91w THE FAMILY CALIBRATION ROOF. The 512's per-family
+            // luminance ratios (the truth/ours at the repaired geometry:
+            // ae2 0.944, create 0.908, mekanism 0.952, supplementaries
+            // 0.957, farmersdelight 0.934, sophisticatedbackpacks 0.952 —
+            // the machine families = the TIGHT uniform dim, the spreads
+            // p10..p90 within ±0.03) + the 14-cy receipt (the Brightness
+            // override = the MEASURED no-op for the composites — the pin
+            // lane = decorative; the render's lightmap = the DISPLAY'S
+            // POSITIONAL light = the open front-air column's sky 15)
+            // => the ours = uniformly brighter than the truth by the
+            // family factor. THE CALIBRATION = the vanilla sky
+            // propagation: the opaque roof rows above the front-air
+            // column cut the sky access (the -53 row ≈ the sky 14 = the
+            // −7% luminance; the −53+−52 ≈ the sky 13 = the −13%) — the
+            // mechanism the placed-light engine already trusts. The
+            // bop/dynamictrees/minecraft = the ratio ~1.0 = NO roof (the
+            // control class). The roof = the per-cell-crop-safe: the roof
+            // rows sit ABOVE the wall's top row's front air (y=-54's
+            // spawn), outside every cell crop; the whole-frame band read
+            // = the diagnostic-only cost (the e91v note). The previous
+            // page's roof clears first (the real-state build cannot —
+            // the vanilla air setblock does).
+            try {
+                int minX = Integer.MAX_VALUE, maxX = Integer.MIN_VALUE, wallZ = Integer.MIN_VALUE;
+                for (String[] row : cells) {
+                    if (row.length < 5) continue;
+                    int cx = Integer.parseInt(row[1]);
+                    int cz = Integer.parseInt(row[3]);
+                    if (cx < minX) minX = cx;
+                    if (cx > maxX) maxX = cx;
+                    if (cz > wallZ) wallZ = cz;
+                }
+                int roofRows = CALIB_ROOF_2.contains(ns) ? 2
+                        : CALIB_ROOF_1.contains(ns) ? 1 : 0;
+                int frontZ = wallZ - 1;
+                int cleared = 0, placedR = 0;
+                for (int y = CALIB_ROOF_Y0; y < CALIB_ROOF_Y0 + 2; y++) {
+                    for (int x = minX; x <= maxX; x++) {
+                        boolean want = roofRows > (y - CALIB_ROOF_Y0);
+                        org.bukkit.block.Block b = wLights.getBlockAt(x, y, frontZ);
+                        if (want) {
+                            if (!b.getType().isSolid()) {
+                                b.setType(org.bukkit.Material.BLACK_CONCRETE, false);
+                                placedR++;
+                            }
+                        } else if (b.getType() == org.bukkit.Material.BLACK_CONCRETE) {
+                            b.setType(org.bukkit.Material.AIR, false);
+                            cleared++;
+                        }
+                    }
+                }
+                if (roofRows > 0 || cleared > 0) {
+                    log().info(LOG_PREFIX + "f2v gallery: page " + page
+                            + " calib-roof ns=" + ns + " rows=" + roofRows
+                            + " placed=" + placedR + " cleared=" + cleared
+                            + " x=" + minX + ".." + maxX + " z=" + frontZ);
+                }
+            } catch (Throwable roofFail) {
+                log().warning(LOG_PREFIX + "f2v gallery: page " + page
+                        + " calib-roof failed: " + roofFail);
+            }
             // 14-e87 THE PAGE-CELL REAL-STATE BUILD (supersedes the e78 air
             // clear): the walk's END world = the band 100% AIR (the NBT
             // receipt: the y=0 section's palette = [minecraft:air]) while
