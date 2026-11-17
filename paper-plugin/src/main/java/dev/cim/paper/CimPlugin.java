@@ -2411,11 +2411,25 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 // both, per cell, with the source chain (front-air = the
                 // (x,y,z-1) row of the truth's .light snapshot, cell = the
                 // cell's own row, legacy = the no-snapshot fallback)
+                // 14-e91g THE GEOMETRY RECEIPT: the receipt also carries the
+                // FULL server-intended geometry — the spawn Location (the
+                // front-air shift included) and the transformation's
+                // translation / left-rotation / scale — so the arbiter can
+                // split a client-side render displacement from a server-side
+                // spawn displacement with one boot.log diff, no pixel
+                // forensics required.
+                final org.joml.Vector3f gT = tr.getTranslation();
+                final org.joml.Quaternionf gR = tr.getLeftRotation();
+                final org.joml.Vector3f gS = tr.getScale();
                 log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                         + row[1] + "," + row[2] + "," + row[3] + " state=" + state
                         + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId()
                         + " pin=" + pinBlock + "/" + pinSky
-                        + " src=" + (fieldLight != null ? "front-air" : capturedLight ? "captured" : "legacy"));
+                        + " src=" + (fieldLight != null ? "front-air" : capturedLight ? "captured" : "legacy")
+                        + " at=" + at.getX() + "," + at.getY() + "," + at.getZ()
+                        + " tr=[" + gT.x + "," + gT.y + "," + gT.z
+                        + "; q=" + gR.x + "," + gR.y + "," + gR.z + "," + gR.w
+                        + "; s=" + gS.x + "," + gS.y + "," + gS.z + "]");
                 n++;
                 // 14-cy FULLBRIGHT COMPANION: the mesh's mod light-override
                 // quads (the LED/window art the truth renders fullbright)
