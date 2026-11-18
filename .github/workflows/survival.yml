@@ -182,9 +182,13 @@ jobs:
           grep -q "Done (" "$B2" || fail "boot 2 never finished starting (no 'Done (')"
 
           # 1. The module zip carries cimlive, the loader installed it, nothing copied it by hand.
-          grep -qE "\[c-imagine\] bundled mod installed: .*cimlive-1\.0\.0\.jar" "$B1" \
-            || fail "the loader did not install the bundled cimlive jar into mods/"
+          # The outcome, not the marker: crussty's runtime writes stderr from its own thread
+          # and can splice into the module's line (run 44166517138: "NetHook[c-imagine]s
+          # bundled mod installed: ..."). Nothing in this workflow copies cimlive into mods/,
+          # so a byte-identical jar there was installed by the loader.
           test -s srv/mods/cimlive-1.0.0.jar || fail "srv/mods/cimlive-1.0.0.jar is missing after boot"
+          cmp -s srv/mods/cimlive-1.0.0.jar srv/modules/imagine/cimlive-1.0.0.jar \
+            || fail "srv/mods/cimlive-1.0.0.jar is not the module's bundled jar"
           MODS_LINE=$(grep -E '\[c-imagine\] mods \([0-9]+\):' "$B1" | head -1)
           [ -n "$MODS_LINE" ] || fail "no '[c-imagine] mods (N):' line in boot 1"
           for m in cimlive create sophisticatedbackpacks; do
