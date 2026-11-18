@@ -140,7 +140,11 @@ env:
                # another; measured 16d62f0). Each LADDER_NS mod namespace
                # walks ALL THREE series to exhaustion separately
   EDPAGES: "0"
-  K: "8"       # THE SHARD COUNT (13-b): pages i, i+K, ... per shard. The
+  K: "16"      # PERF (fast-gallery): 16. The truth shards are cached on their
+               # inputs, so on a hit they re-upload in ~1 min and free their runners:
+               # the 14-bt "two waves on the free 20" cost below no longer applies to
+               # the truth half (a truth MISS still queues; misses are rare).
+               # THE SHARD COUNT (13-b): pages i, i+K, ... per shard. The
                # free-plan runner pool is 20 concurrent jobs — 8+8 shards +
                # seed + verdict = 18. Raising K: extend BOTH matrices and
                # this number together (the stride law requires K == the
@@ -1043,7 +1047,7 @@ jobs:
           python3 -m pip install -q pillow numpy
           ARTS=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
             "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/$PREV/artifacts?per_page=100")
-          for S in 0 1 2 3 4 5 6 7; do
+          for S in $(seq 0 $((K-1))); do
             for KIND in meta shots; do
               AID=$(echo "$ARTS" | python3 scripts/f2v/find-artifact.py "$KIND" "$S")
               [ -n "$AID" ] || { echo "run $PREV has no wall-truth-$KIND-$S"; continue; }
@@ -1314,7 +1318,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     env:
       SI: ${{ matrix.shard }}
     steps:
@@ -2306,7 +2310,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     env:
       SI: ${{ matrix.shard }}
     steps:
