@@ -2084,6 +2084,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: runner telemetry sampler (CPU/RAM per 15s — pairs-per-runner measurement)
+        run: |
+          mkdir -p gallery-report
+          { echo "nproc=$(nproc)"; free -m | sed -n 2p; lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core)' ; } > gallery-report/runner-info.txt 2>&1 || true
+          setsid bash -c 'while true; do echo "== $(date +%T)"; vmstat 1 2 | tail -1; free -m | sed -n 2p; ps -eo pcpu,rss,etimes,comm --sort=-pcpu | head -8; sleep 15; done' \
+            > gallery-report/telemetry.log 2>&1 < /dev/null &
+
       # the SAME fingerprint the seed job stamps into f2v/inputs.sha1 — the
       # ours shard must serve the pack built from THIS input tree (measured
       # #47: a prefix-restored older pack silently served the stale builder;
@@ -2171,6 +2178,30 @@ jobs:
         with:
           name: wall-truth-screens-${{ matrix.shard }}
           path: truth-meta-screens
+
+      # PERF (fast-gallery): the 26.3 visual-client fetch (client jar + the
+      # assets index) is a pure function of the version pin. It was re-fetched
+      # on every shard (~minutes of Mojang downloads). Restore it from the
+      # cache; on a miss fetch it and save IMMEDIATELY (before the launch-line
+      # sed and the options writes below mutate the dir) so the saved tree is
+      # the pristine fetch and every later restore starts from it.
+      - name: visual client runtime (cache restore)
+        id: vc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: visual-client
+          key: gallery-visual-client-26.3-v1
+
+      - name: visual client runtime (fetch, cache miss)
+        if: steps.vc-cache.outputs.cache-hit != 'true'
+        run: python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+
+      - name: visual client runtime (cache save — pristine fetch)
+        if: steps.vc-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: visual-client
+          key: gallery-visual-client-26.3-v1
 
       - name: launch Paper (background, FAST BOOT) + prepare the client while it boots
         run: |
@@ -2336,21 +2367,34 @@ jobs:
           # opengl_missing -> try the ladder below; the window actually
           # coming up ("Sound engine started") -> the backend stands.
           probe_client() {
+            # PERF (fast-gallery): the client is run in the background and the
+            # probe returns at the client's own verdict (opengl_missing ->
+            # refusal; a window verdict -> up) instead of always sleeping out the
+            # 75s timeout. Budget and verdict logic are unchanged: no verdict in
+            # 75s -> inconclusive -> keep the current backend.
             OUT=$(mktemp)
-            timeout 75 env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
-              $(cat visual-client/launch.txt) > "$OUT" 2>&1 || true
-            if grep -q "opengl_missing" "$OUT"; then
+            env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+              $(cat visual-client/launch.txt) > "$OUT" 2>&1 &
+            CPID=$!
+            VERDICT=inconclusive
+            for i in $(seq 1 150); do
+              if grep -q "opengl_missing" "$OUT"; then VERDICT=missing; break; fi
+              if grep -qE "Sound engine started|Backend: OpenGL|Created: .*atlas" "$OUT"; then VERDICT=up; break; fi
+              kill -0 "$CPID" 2>/dev/null || break
+              sleep 0.5
+            done
+            kill "$CPID" 2>/dev/null || true
+            sleep 1; kill -9 "$CPID" 2>/dev/null || true
+            wait "$CPID" 2>/dev/null || true
+            if [ "$VERDICT" = "missing" ]; then
               echo "PROBE: opengl_missing on $1"
               tail -4 "$OUT" | sed 's/^/PROBE: /'
               rm -f "$OUT"; return 3
             fi
-            if grep -qE "Sound engine started|Backend: OpenGL|Created: .*atlas" "$OUT"; then
+            if [ "$VERDICT" = "up" ]; then
               echo "PROBE: window up on $1"
               rm -f "$OUT"; return 0
             fi
-            # inconclusive = the client is slow, not broken: opengl_missing
-            # is instant (the GLX refusal fires at window creation). Keep the
-            # current backend — the real run allows 12 minutes, not 75s.
             echo "PROBE: inconclusive on $1 (no backend verdict in 75s) — keeping the current backend"
             tail -4 "$OUT" | sed 's/^/PROBE: /'
             rm -f "$OUT"; return 0
@@ -3372,6 +3416,41 @@ jobs:
           pip install -q numpy pillow
           mkdir -p gallery-report
           GATE=0
+          # THE PARALLEL JOIN (perf(ci), fast-gallery): every per-page join call
+          # below is INDEPENDENT (its own inputs, its own --out), so they run as
+          # a bounded pool of background jobs, one per core. The command text is
+          # the same; the gate law is the same: a call that used to end in
+          # `|| GATE=1` still reds the shard on a nonzero exit (rc collected in
+          # pjoin_wait), a `|| true` diagnostic never reds it. BLAS/OMP threads
+          # pinned to 1 so N workers do not oversubscribe the cores.
+          PJ_MAX=$(nproc)
+          PJ_DIR=gallery-report/pjoin; mkdir -p "$PJ_DIR"
+          PJ_RUN=0; PJ_SEQ=0
+          pjoin() { # $1 = 1 (gated: nonzero rc reds the shard) | 0 (diagnostic); rest = the command
+            local gated="$1"; shift
+            PJ_SEQ=$((PJ_SEQ+1))
+            local id; id=$(printf '%05d' "$PJ_SEQ")
+            while [ "$PJ_RUN" -ge "$PJ_MAX" ]; do wait -n || true; PJ_RUN=$((PJ_RUN-1)); done
+            echo "$gated" > "$PJ_DIR/$id.gated"
+            ( if env OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 "$@" > "$PJ_DIR/$id.log" 2>&1; then echo 0; else echo $?; fi > "$PJ_DIR/$id.rc" ) &
+            PJ_RUN=$((PJ_RUN+1))
+          }
+          pjoin_wait() { # drain the pool, then apply the gate law per job
+            wait || true
+            PJ_RUN=0
+            local f id rc g
+            for f in "$PJ_DIR"/*.rc; do
+              id=$(basename "$f" .rc)
+              rc=$(cat "$f"); g=$(cat "$PJ_DIR/$id.gated")
+              if [ "$rc" != "0" ]; then
+                echo "::warning::join $id exited rc=$rc (gated=$g) — tail:"
+                tail -3 "$PJ_DIR/$id.log" | cut -c1-200
+                [ "$g" = "1" ] && GATE=1
+              fi
+            done
+            echo "parallel join: $PJ_SEQ calls, $PJ_MAX workers"
+          }
+
           # A failed item bake is one root cause, not N pixel reds: every
           # cell shares the paper definition, so a single atlas-mixing model
           # turns the whole walk into missing-model cubes. Name it up front;
@@ -3407,14 +3486,14 @@ jobs:
               # re-placements); a probe against another page compares different
               # content and is meaningless
               if [ "$p" = "0" ] && [ -f "truth-shots/gal-p-${NS}0-again.png" ]; then
-                python3 scripts/cimscene/gallery-diff.py --truth "$T" \
+                pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" \
                   --ours "truth-shots/gal-p-${NS}0-again.png" --manifest "$M" \
-                  --out "gallery-report/determinism-truth-$NS-p0.json" || true
+                  --out "gallery-report/determinism-truth-$NS-p0.json"
               fi
               if [ "$p" = "0" ] && [ -f "ours-shots/ours-gal-p-${NS}0-again.png" ]; then
-                python3 scripts/cimscene/gallery-diff.py --truth "$O" \
+                pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$O" \
                   --ours "ours-shots/ours-gal-p-${NS}0-again.png" --manifest "$M" \
-                  --out "gallery-report/determinism-ours-$NS-p0.json" || true
+                  --out "gallery-report/determinism-ours-$NS-p0.json"
               fi
               # 14-br THE BLOCK SELF-CONSISTENCY PAIR: the anim probes already
               # shoot t0/t1 2s apart on BOTH legs for every dyn=1 page — feed
@@ -3425,7 +3504,7 @@ jobs:
               SELF_T=""; SELF_O=""
               [ -f "truth-shots/gal-p-$NS$p-t1.png" ] && SELF_T="--truth-self truth-shots/gal-p-$NS$p-t1.png"
               [ -f "ours-shots/ours-gal-p-$NS$p-t1.png" ] && SELF_O="--ours-self ours-shots/ours-gal-p-$NS$p-t1.png"
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+              pjoin 1 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" \
                 --replay-manifests srv-wall/c-imagine/scenes \
                 --out "gallery-report/join-$NS-p$p.json" \
@@ -3436,7 +3515,7 @@ jobs:
                 --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
                 --demote-family '^supplementaries:hourglass(?:\[|$)' \
                 --demote-family '^supplementaries:gunpowder\[burning=[1-9]' \
-                $SELF_T $SELF_O || GATE=1
+                $SELF_T $SELF_O
             done
           done
 
@@ -3450,14 +3529,14 @@ jobs:
             SELF_T=""; SELF_O=""
             [ -f "truth-shots/gal-iso-ae2$p-t1.png" ] && SELF_T="--truth-self truth-shots/gal-iso-ae2$p-t1.png"
             [ -f "ours-shots/ours-gal-iso-ae2$p-t1.png" ] && SELF_O="--ours-self ours-shots/ours-gal-iso-ae2$p-t1.png"
-            python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+            pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
               --manifest "$M" \
               --out "gallery-report/diag-iso-ae2-p$p.json" \
               --diff-dir "gallery-report/diff-iso-ae2-p$p" --gate-dyn \
               --anim-floor 1000 \
               --pitch 2 --cam-x 5.5 --eye-y -53.5 --dist 11 \
               --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
-              $SELF_T $SELF_O || true
+              $SELF_T $SELF_O
             echo "iso join ae2 page $p done (diagnostic)"
           done
           echo "=== ENTITY pages: the same gate, no channel excuses ==="
@@ -3469,16 +3548,16 @@ jobs:
             test -f "$O" || { echo "missing ours mob shot p$p"; GATE=1; continue; }
             test -f "$M" || { echo "missing mob manifest p$p"; GATE=1; continue; }
             if [ "$p" = "0" ] && [ -f "truth-shots/gal-e0-again.png" ]; then
-              python3 scripts/cimscene/gallery-diff.py --truth "$T" \
+              pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" \
                 --ours truth-shots/gal-e0-again.png --manifest "$M" \
                 --out "gallery-report/determinism-truth-e0.json" \
-                --pitch 2 --gate 240000 || true
+                --pitch 2 --gate 240000
             fi
             if [ "$p" = "0" ] && [ -f "ours-shots/ours-gal-e0-again.png" ]; then
-              python3 scripts/cimscene/gallery-diff.py --truth "$O" \
+              pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$O" \
                 --ours ours-shots/ours-gal-e0-again.png --manifest "$M" \
                 --out "gallery-report/determinism-ours-e0.json" \
-                --pitch 2 --gate 240000 || true
+                --pitch 2 --gate 240000
             fi
             # 14-aj: the self-consistency pair (each leg's second shot) drives
             # the ANIMATED class — a cell that moves against ITSELF is a mob
@@ -3488,10 +3567,10 @@ jobs:
             SELF_T=""; SELF_O=""
             [ -f "truth-shots/gal-e$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$p-self.png"
             [ -f "ours-shots/ours-gal-e$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$p-self.png"
-            python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
+            pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
               --manifest "$M" --out "gallery-report/join-e$p.json" \
               --diff-dir "gallery-report/diff-e$p" \
-              --pitch 2 --gate 240000 || GATE=1
+              --pitch 2 --gate 240000
           done
           echo "=== DYN + LARGE pages (minecraft): THE GATE since 14-bf — vanilla non-Mob entities both legs render (mod-ns dyn/large stay diagnostic below) ==="
           for p in $(seq $SI $K $((EDPAGES-1))); do
@@ -3509,10 +3588,10 @@ jobs:
               SELF_T=""; SELF_O=""
               [ -f "truth-shots/gal-e$SERIES$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$SERIES$p-self.png"
               [ -f "ours-shots/ours-gal-e$SERIES$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$SERIES$p-self.png"
-              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
+              pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
                 --manifest "$M" --out "gallery-report/join-e-$SERIES-minecraft-p$p.json" \
                 --diff-dir "gallery-report/diff-e-$SERIES-minecraft-p$p" \
-                --pitch 2 --gate 240000 || GATE=1
+                --pitch 2 --gate 240000
             done
           done
           echo "=== MOD-NAMESPACE entity pages (per ladder ns): mobs = the gate, dyn/large = diagnostic ==="
@@ -3526,15 +3605,15 @@ jobs:
                 O="ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 if [ -f "$T" ] && [ -f "$O" ]; then
                   if [ "$SERIES" = mobs ]; then
-                    python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
+                    pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                       --manifest "$M" --out "gallery-report/join-e-$NS-$p.json" \
                       --diff-dir "gallery-report/diff-e-$NS-$p" \
-                      --pitch 2 --gate 240000 || GATE=1
+                      --pitch 2 --gate 240000
                   else
-                    python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                    pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                       --manifest "$M" --out "gallery-report/diag-e-$NS-$SERIES-$p.json" \
                       --diff-dir "gallery-report/diff-e-$NS-$SERIES-$p" \
-                      --pitch 2 --gate 240000 || true
+                      --pitch 2 --gate 240000
                   fi
                 elif [ "$SERIES" = mobs ]; then
                   echo "$NS mobs page $p shots missing"; GATE=1
@@ -3552,11 +3631,11 @@ jobs:
               O="ours-shots/ours-gal-i-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth item shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours item shot p$p"; GATE=1; continue; }
-              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
+              pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-item-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-item-$NS-p$p" \
                 --anim-floor 1000 \
-                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv || GATE=1
+                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv
             done
           done
           echo "=== PARTICLE pages: diagnostic join (dyn class, fixed 1s shot window) ==="
@@ -3574,8 +3653,8 @@ jobs:
                 ST=""; SO=""
                 [ -f "truth-shots/gal-pa-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-pa-$NS$p-self.png"
                 [ -f "ours-shots/ours-gal-pa-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-pa-$NS$p-self.png"
-                python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
-                  --manifest "$M" $ST $SO --out "gallery-report/diag-particle-$NS-p$p.json" || true
+                pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
+                  --manifest "$M" $ST $SO --out "gallery-report/diag-particle-$NS-p$p.json"
               else
                 echo "$NS particle page $p shots missing (tolerated: diagnostic)"
               fi
@@ -3596,12 +3675,12 @@ jobs:
               ST=""; SO=""
               [ -f "truth-shots/gal-fl-$NS$p-self.png" ] && ST="--truth-self truth-shots/gal-fl-$NS$p-self.png"
               [ -f "ours-shots/ours-gal-fl-$NS$p-self.png" ] && SO="--ours-self ours-shots/ours-gal-fl-$NS$p-self.png"
-              python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
+              pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-fluid-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-fluid-$NS-p$p" \
                 --anim-floor 1000 \
                 --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
-                $ST $SO --pitch 2 --gate 240000 || GATE=1
+                $ST $SO --pitch 2 --gate 240000
             done
           done
           echo "=== SOUND pages: census-style stream join (DIAGNOSTIC — the flip law lives in coverage-gate.py) ==="
@@ -3625,10 +3704,10 @@ jobs:
                 # preview had zero disagreements to show, the gate rides it now.
                 GATE_FLAG=""
                 [ "$SOUND_FLIP" = "on" ] && GATE_FLAG="--gate-mapped"
-                python3 scripts/cimscene/sound-diff.py --truth "$TL" --ours "$OL" \
+                pjoin 0 python3 scripts/cimscene/sound-diff.py --truth "$TL" --ours "$OL" \
                   --ns "$NS" --page "$p" \
                   --map "srv-wall/c-imagine/f2v/visual-sounds.tsv" $GATE_FLAG \
-                  --out "gallery-report/diag-sound-$NS-p$p.json" || true
+                  --out "gallery-report/diag-sound-$NS-p$p.json"
               else
                 echo "$NS sound page $p capture logs missing (tolerated: diagnostic)"
               fi
@@ -3641,10 +3720,10 @@ jobs:
               TL="truth-meta/srv-wall/c-imagine/scenes/gallery-particle-$NS-p$p.log"
               OL="srv-wall/c-imagine/scenes/gallery-particle-$NS-p$p.log"
               if [ -f "$TL" ] && [ -f "$OL" ]; then
-                python3 scripts/cimscene/particle-diff.py --truth "$TL" --ours "$OL" \
+                pjoin 0 python3 scripts/cimscene/particle-diff.py --truth "$TL" --ours "$OL" \
                   --ns "$NS" --page "$p" \
                   --map "srv-wall/c-imagine/f2v/visual-particles.tsv" \
-                  --out "gallery-report/diag-pstream-$NS-p$p.json" || true
+                  --out "gallery-report/diag-pstream-$NS-p$p.json"
               else
                 echo "$NS particle-stream page $p capture logs missing (tolerated: diagnostic)"
               fi
@@ -3659,9 +3738,9 @@ jobs:
               T1="truth-shots/gal-p-$NS$p-t1.png"
               O1="ours-shots/ours-gal-p-$NS$p-t1.png"
               if [ -f "$T0" ] && [ -f "$T1" ] && [ -f "$O0" ] && [ -f "$O1" ]; then
-                python3 scripts/cimscene/anim-diff.py --truth-t0 "$T0" --truth-t1 "$T1" \
+                pjoin 0 python3 scripts/cimscene/anim-diff.py --truth-t0 "$T0" --truth-t1 "$T1" \
                   --ours-t0 "$O0" --ours-t1 "$O1" --ns "$NS" --page "$p" \
-                  --out "gallery-report/diag-anim-$NS-p$p.json" || true
+                  --out "gallery-report/diag-anim-$NS-p$p.json"
               fi
             done
           done
@@ -3672,9 +3751,9 @@ jobs:
               T="truth-shots/gal-inv-$NS$p.png"
               O="ours-shots/ours-gal-inv-$NS$p.png"
               if [ -f "$T" ] && [ -f "$O" ]; then
-                python3 scripts/cimscene/inv-diff.py --truth "$T" --ours "$O" \
+                pjoin 0 python3 scripts/cimscene/inv-diff.py --truth "$T" --ours "$O" \
                   --ns "$NS" --page "$p" \
-                  --out "gallery-report/diag-inv-$NS-p$p.json" || true
+                  --out "gallery-report/diag-inv-$NS-p$p.json"
               else
                 echo "$NS inv page $p shots missing (tolerated: diagnostic)"
               fi
@@ -3693,15 +3772,16 @@ jobs:
                 T="truth-shots/gal-$STEM-$NS$p.png"
                 O="ours-shots/ours-gal-$STEM-$NS$p.png"
                 if [ -f "$T" ] && [ -f "$O" ]; then
-                  python3 scripts/cimscene/framediff.py --truth "$T" --ours "$O" \
+                  pjoin 0 python3 scripts/cimscene/framediff.py --truth "$T" --ours "$O" \
                     --ns "$NS" --page "$p" --class-name "$KLASS" \
-                    --out "gallery-report/diag-$KLASS-$NS-p$p.json" || true
+                    --out "gallery-report/diag-$KLASS-$NS-p$p.json"
                 else
                   echo "$NS $KLASS page $p shots missing (tolerated: diagnostic)"
                 fi
               done
             done
           done
+          pjoin_wait
           echo "=== MENU gate: every menu pixel-identical or RED ==="
           # 14-di: the run's own screen art (when the truth walk dumped it)
           # bounds the judgement first; the seed's captures stay the fallback
