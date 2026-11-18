@@ -274,7 +274,23 @@ jobs:
             grep "selftest $subject live PASS" srv-create/boot.log || { tail -80 srv-create/boot.log; exit 1; }
           done
 
+      # THE SWEEP CACHE (perf(ci), fast-gallery): the Create sweep is a pure
+      # function of the Create jar + the cimscene/cimtest sources + the
+      # locked ladder pins + this step's own walk logic (it IS in this file,
+      # hashed below). Its output is the per-page manifests; on a key hit
+      # the manifests are restored byte-for-byte and the server-side sweep
+      # + wall probe are skipped (the probe checks a wall the sweep built,
+      # so it rides the same cache entry — only a PASSING sweep is saved).
+      # Miss = the full sweep, unchanged.
+      - name: gallery sweep cache (restore)
+        id: sweep-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: create-sweep-out
+          key: mod-matrix-create-sweep-v1-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*', 'gradle/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scripts/cimscene/mods.lock', 'scripts/cimscene/rcon.py', 'scripts/cimscene/fetch-ladder.sh', '.github/workflows/mod-matrix.yml') }}
+
       - name: gallery sweep (truth leg — every Create blockstate)
+        if: steps.sweep-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           echo "gamerule doDaylightCycle false" > srv-create/console.in
@@ -290,9 +306,12 @@ jobs:
           for p in $(seq 0 999); do
             echo "cimscene gallery page create $p" > srv-create/console.in
             ok=0
-            for i in $(seq 1 30); do
+            # 0.2s poll x 150 = the same 30s done-marker budget as the old
+            # 1s x 30 (the marker is written by the scene, not by the poll:
+            # a finer poll only stops wasting up to a second per page)
+            for i in $(seq 1 150); do
               grep -q "gallery done ns=create page=$p " srv-create/boot.log 2>/dev/null && { ok=1; break; }
-              sleep 1
+              sleep 0.2
             done
             [ "$ok" = "1" ] || { echo "gallery page $p produced no done marker"; tail -20 srv-create/boot.log; exit 1; }
             line=$(grep "gallery done ns=create page=$p " srv-create/boot.log | tail -1)
@@ -332,6 +351,26 @@ jobs:
             exit 1
           fi
           echo "create-truth gallery: PAGES=$PAGES placed=$N wall probe ALL OK"
+          # the passing sweep's manifests -> the cache dir (saved below, miss only)
+          mkdir -p create-sweep-out
+          cp srv-create/c-imagine/scenes/gallery-create-p*.tsv create-sweep-out/
+          echo "$PAGES" > create-sweep-out/pages.txt
+
+      - name: gallery sweep cache (restore hit -> manifests in place)
+        if: steps.sweep-cache.outputs.cache-hit == 'true'
+        run: |
+          set -euo pipefail
+          test -f create-sweep-out/pages.txt || { echo "sweep cache entry incomplete"; exit 1; }
+          mkdir -p srv-create/c-imagine/scenes
+          cp create-sweep-out/gallery-create-p*.tsv srv-create/c-imagine/scenes/
+          echo "create-truth gallery: sweep CACHE HIT — PAGES=$(cat create-sweep-out/pages.txt) manifests restored (sweep + wall probe skipped; the key covers every input)"
+
+      - name: gallery sweep cache (save — passing sweep only)
+        if: success() && steps.sweep-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: create-sweep-out
+          key: mod-matrix-create-sweep-v1-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*', 'gradle/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scripts/cimscene/mods.lock', 'scripts/cimscene/rcon.py', 'scripts/cimscene/fetch-ladder.sh', '.github/workflows/mod-matrix.yml') }}
 
       - name: dump the REAL classpath contract (autopsy telemetry)
         run: |
