@@ -216,90 +216,63 @@ jobs:
   # lock. A hit means "this exact input tree was already walked + built" —
   # the pure functions (server-side walk, F2vPack) are deterministic, the
   # sha1 pin + the per-page join re-verify the result every run.
-  seed:
-    name: gallery seed — pack + manifests (cache-hit ~1 min, miss = full walk)
+  # ------------------------------------------------------- seed-truth --
+  # THE TRUTH HALF OF THE SEED (perf(ci), fast-gallery): the real NeoForge
+  # server walk + the quad dump on the real client. Keyed on TRUTH_LIST only,
+  # so a plugin/f2v change never re-walks it. Output = the seed-truth payload.
+  seed-truth:
+    name: gallery seed — truth walk + quad dump (cache-hit ~1 min, miss = full walk)
     runs-on: ubuntu-latest
     timeout-minutes: 90   # the P2 ladder (ae2/mekanism/backpacks/jade) walks four more registries to exhaustion
     steps:
       - uses: actions/checkout@v4
-
-      # 14-e20 THE SEED-SCOPE REFINEMENT: scripts/cimscene/** pulled the test
-      # suites into the key (the e18's 28-test edit re-walked the 45-minute
-      # seed for zero pack change). The seed's REAL inputs = the f2v tree +
-      # the shell drivers + the rcon/walk tools + mods.lock; the join/verdict
-      # tools and the tests are post-seed and stay out. BOTH hash sites stay
-      # byte-identical (the ours shard's integrity check = the same key).
-      # ONE fingerprint for the cache key AND the payload stamp (hashFiles is
-      # not allowed in job-level env — measured #48 startup rejection — so a
-      # step computes it; steps context IS allowed in `with`). The prefix
-      # restore-keys fallback may return an OLDER pack (measured #47: the uv
-      # fix changed the builder, the exact key moved, the prefix hit served
-      # the stale missingno pack anyway) — the payload carries
-      # f2v/inputs.sha1 and every consumer compares it against this hash.
-      - name: seed input fingerprint
-        id: seed-inputs
-        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache: false
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-
-      - uses: actions/setup-java@v4
-        id: jdk25
-        with:
-          distribution: temurin
-          java-version: 25    # paper 26.3 api + the 26.3 client are class 69
-
-      - name: restore seed (cache, restore-only)
-        id: seed-cache
+      - name: seed input fingerprint (truth walk inputs)
+        id: truth-inputs
+        run: echo "hash=${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', '.github/workflows/gallery.yml') }}" >> "$GITHUB_OUTPUT"
+      - name: restore seed-truth (cache, restore-only)
+        id: truth-cache
         uses: actions/cache/restore@v4
         with:
-          path: seed-pack
-          key: gallery-seed-v4-${{ steps.seed-inputs.outputs.hash }}
-          restore-keys: |
-            gallery-seed-v4-
-
-      - name: seed payload verify (freshness gate)
-        id: seed-verify
+          path: seed-truth
+          key: gallery-truth-seed-v1-${{ steps.truth-inputs.outputs.hash }}
+      - name: seed-truth payload verify (freshness gate)
+        id: truth-verify
         env:
-          SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
+          TRUTH_INPUTS: ${{ steps.truth-inputs.outputs.hash }}
         run: |
           set -euo pipefail
           HIT=false
-          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ] \
-             && [ -f seed-pack/f2v/pack.sha1 ] && [ -f seed-pack/plugin/cim-paper-plugin.jar ]; then
-            # block manifests of EVERY ladder namespace (the per-ns glob is
-            # exact: gallery-<ns>-p*.tsv; a bare gallery-*-p* would also
-            # count entity/item/... manifests)
+          if [ -f seed-truth/truth.sha1 ] && [ "$(cat seed-truth/truth.sha1)" = "$TRUTH_INPUTS" ]; then
             N=0
             for NS in $LADDER_NS; do
-              NB=$(ls seed-pack/scenes/gallery-$NS-p*.tsv 2>/dev/null | wc -l || true)
+              NB=$(ls seed-truth/scenes/gallery-$NS-p*.tsv 2>/dev/null | wc -l || true)
               N=$((N + ${NB:-0}))
             done
             [ "${N:-0}" -gt 100 ] && HIT=true
           fi
           if [ "$HIT" = "true" ]; then
             echo "hit=true" >> "$GITHUB_OUTPUT"
-            echo "seed cache HIT (fresh): pack.sha1=$(cat seed-pack/f2v/pack.sha1), inputs=$SEED_INPUTS"
+            echo "seed-truth cache HIT (fresh): truth=$TRUTH_INPUTS"
           else
             echo "hit=false" >> "$GITHUB_OUTPUT"
-            echo "seed payload STALE or missing (payload inputs=$(cat seed-pack/f2v/inputs.sha1 2>/dev/null || echo none), want=$SEED_INPUTS) — full rebuild"
-            rm -rf seed-pack
+            echo "seed-truth STALE or missing — full truth walk"
+            rm -rf seed-truth
           fi
-
       - name: seed cache miss — build cimtest + cimscene
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: |
           gradle build --no-daemon -p test-mods
           gradle build --no-daemon -p scene-mod
 
       - name: restore NeoForge server layer (cache miss)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         id: layer-cache
         uses: actions/cache@v4
         with:
@@ -307,18 +280,18 @@ jobs:
           key: neoforge-layer-21.1.265
 
       - name: download + install NeoForge 21.1.265 server (cache miss)
-        if: steps.seed-verify.outputs.hit != 'true' && steps.layer-cache.outputs.cache-hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true' && steps.layer-cache.outputs.cache-hit != 'true'
         run: |
           curl -sL --max-time 300 -o nf-srv-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           java -jar nf-srv-installer.jar --installServer layer-srv
 
       - name: fetch ladder mods (locked — scripts/cimscene/mods.lock)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
 
       - name: assemble server dir (cache miss)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: |
           cp -r layer-srv srv-wall
           mkdir -p srv-wall/mods
@@ -342,7 +315,7 @@ jobs:
           PROPS
 
       - name: boot real NeoForge server (cache miss; RCON poll 1s)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           cd srv-wall
@@ -357,19 +330,8 @@ jobs:
           [ -n "$R" ] || { tail -60 srv-wall/boot.log; exit 1; }
           echo "seed server up: $R"
 
-      # 14-bj: the dump client boots BEFORE the walk. A player in the world
-      # keeps the wall chunks entity-ticking (the player ticket, level 31 —
-      # FORCED/forceload tickets ride level 33 and DO NOT tick block
-      # entities), exactly the truth walk's environment, so
-      # BlockEntity-driven blocks (Create doors, pipes, shafts) settle the
-      # wall identically on both legs. Measured #158 without the player: the
-      # seed's doors never ticked (create p16: mutated=0 dissolved=0) while
-      # the truth's dissolved 10 and silently flipped open/powered — the
-      # manifests diverged and the join compared DIFFERENT states (43 cells
-      # in shard 0 alone, all Create BE families). The dump itself waits for
-      # the trigger file the walk touches after the last manifest.
       - name: restore NeoForge client runtime for the quad dump (cache miss)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         id: nfc-cache-seed
         uses: actions/cache@v4
         with:
@@ -379,7 +341,7 @@ jobs:
           key: neoforge-truth-client-1211-v4
 
       - name: fetch the NeoForge client runtime (client cache miss)
-        if: steps.seed-verify.outputs.hit != 'true' && steps.nfc-cache-seed.outputs.cache-hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true' && steps.nfc-cache-seed.outputs.cache-hit != 'true'
         run: |
           # the Mojang CDN intermittently serves a truncated client jar
           # (the installer's sha1 check: "invalid checksum", measured on the
@@ -394,7 +356,7 @@ jobs:
           sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
 
       - name: prep the dump client runtime (player-ticket parity, 14-bj)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           NEED=""
@@ -460,7 +422,7 @@ jobs:
           sed "s#^java #java -Dcim.screenart=$PWD/srv-wall/c-imagine/screens -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
 
       - name: server-side walk — block pages under a live client, restart on disconnect (14-bj)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           # 14-bt THE PERSISTENT RCON DRIVER: the walk used to pay a fresh
@@ -808,15 +770,8 @@ jobs:
           # ~26-30m seed cache-miss for artifacts nothing reads.
           ls srv-wall/c-imagine/scenes/ | wc -l
 
-      # THE QUAD DUMP: a static pack model cannot know what a dynamic model
-      # draws (connected textures, neighbour-aware meshes, culled see-through
-      # faces), so the real NeoForge client answers per wall cell, for every mod
-      # alike. The block walk ran under a live client (player-ticket parity,
-      # 14-bj); the later series may have outlived it — the dump needs A
-      # client (models + the join), but NOT the parity (it reads manifests +
-      # models, never the wall's settled state), so relaunch freely here.
       - name: quad dump on the real client (cache miss) — trigger after the walk
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.truth-verify.outputs.hit != 'true'
         run: |
           set -euo pipefail
           SCENES="$PWD/srv-wall/c-imagine/scenes"
@@ -861,8 +816,189 @@ jobs:
           grep "quad dump done" truth-client/client-dump.out || { tail -80 truth-client/client-dump.out; exit 1; }
           test -f "$SCENES/quads/done"
 
+      # THE TRUTH PAYLOAD (perf(ci), fast-gallery): everything the pack and the
+      # truth-side walk need, assembled while the real server is still UP (the
+      # world flush needs RCON). Scenes (manifests + quads), screens, the world,
+      # the walk log and the truth stamp. The pack job restores this entry (or
+      # the artifact fallback below) and never touches the truth server.
+      - name: assemble seed-truth payload (server still up — world flushed here)
+        if: steps.truth-verify.outputs.hit != 'true'
+        run: |
+          set -euo pipefail
+          rm -rf seed-truth
+          mkdir -p seed-truth/scenes seed-truth/screens
+          cp -r srv-wall/c-imagine/scenes/. seed-truth/scenes/
+          cp -r srv-wall/c-imagine/screens/. seed-truth/screens/ 2>/dev/null || true
+          cp srv-wall/boot.log seed-truth/boot-walk.log
+          # save-all flushes the region files (the 14-e78 world payload; the
+          # pack job copies this world for the ours restore)
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "save-all flush" \
+            > save-all-receipt.log 2>&1 || true
+          sleep 5
+          cp -r srv-wall/world seed-truth/world
+          echo "seed world: $(du -sh seed-truth/world | cut -f1), $(find seed-truth/world -name '*.mcr' -o -name '*.mca' | wc -l) region file(s)"
+          echo "$TRUTH_INPUTS" > seed-truth/truth.sha1
+        env:
+          TRUTH_INPUTS: ${{ steps.truth-inputs.outputs.hash }}
+
+      - name: save seed-truth cache (success-only)
+        if: success() && steps.truth-verify.outputs.hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: seed-truth
+          key: gallery-truth-seed-v1-${{ steps.truth-inputs.outputs.hash }}
+
+      - name: upload seed-truth artifact (cache-eviction fallback for the pack job)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-truth
+          path: |
+            seed-truth/scenes
+            seed-truth/screens
+            seed-truth/world
+            seed-truth/boot-walk.log
+            seed-truth/truth.sha1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------- seed-pack --
+  # THE PACK HALF OF THE SEED (perf(ci), fast-gallery): the plugin build, the
+  # fluid-face sample and the F2vPack build, from the seed-truth payload.
+  # Keyed on the truth hash + PACK_LIST; a plugin-only change lands here (the
+  # truth walk is a cache hit upstream).
+  seed-pack:
+    name: gallery seed — ours pack (plugin + F2vPack; cache-hit ~1 min)
+    runs-on: ubuntu-latest
+    needs: [seed-truth]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # ONE FINGERPRINT FOR BOTH SEED SPLITS (perf(ci), fast-gallery). The truth
+      # walk (real NeoForge server + client) reads only TRUTH_LIST, so its
+      # cache key is the truth hash alone: a plugin or f2v change re-builds the
+      # ours pack (minutes) but never re-walks the truth (~20 min). The pack
+      # is a function of the truth payload AND PACK_LIST, so its key and its
+      # freshness stamp hash both: hash = sha1(truth:pack). The ours shards
+      # compute the SAME string (same lists, same combiner) to verify the stamp.
+      - name: seed input fingerprint
+        id: seed-inputs
+        run: |
+          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', '.github/workflows/gallery.yml') }}"
+          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}"
+          echo "truth=$T" >> "$GITHUB_OUTPUT"
+          echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/setup-java@v4
+        id: jdk25
+        with:
+          distribution: temurin
+          java-version: 25    # paper 26.3 api + the 26.3 client are class 69
+      - name: restore seed pack (cache, restore-only)
+        id: seed-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: seed-pack
+          key: gallery-seed-v5-${{ steps.seed-inputs.outputs.hash }}
+          restore-keys: |
+            gallery-seed-v5-
+      - name: seed pack verify (freshness gate)
+        id: pack-verify
+        env:
+          SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
+        run: |
+          set -euo pipefail
+          HIT=false
+          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ] \
+             && [ -f seed-pack/f2v/pack.sha1 ] && [ -f seed-pack/plugin/cim-paper-plugin.jar ]; then
+            HIT=true
+          fi
+          if [ "$HIT" = "true" ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+            echo "seed pack cache HIT (fresh): pack.sha1=$(cat seed-pack/f2v/pack.sha1), inputs=$SEED_INPUTS"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            echo "seed pack STALE or missing — rebuild from the truth payload"
+            rm -rf seed-pack
+          fi
+      - name: restore seed-truth payload (cache; artifact fallback)
+        if: steps.pack-verify.outputs.hit != 'true'
+        id: truth-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: seed-truth
+          key: gallery-truth-seed-v1-${{ steps.seed-inputs.outputs.truth }}
+      - name: seed-truth artifact fallback (cache eviction)
+        if: steps.pack-verify.outputs.hit != 'true' && steps.truth-cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: seed-truth
+          path: seed-truth
+      - name: verify the seed-truth payload
+        if: steps.pack-verify.outputs.hit != 'true'
+        env:
+          TRUTH_INPUTS: ${{ steps.seed-inputs.outputs.truth }}
+        run: |
+          set -euo pipefail
+          [ "$(cat seed-truth/truth.sha1 2>/dev/null)" = "$TRUTH_INPUTS" ] \
+            || { echo "seed-truth payload stale or missing (want=$TRUTH_INPUTS)"; exit 1; }
+          test -d seed-truth/scenes && test -d seed-truth/world
+          echo "seed-truth ready: $(ls seed-truth/scenes | wc -l) scene file(s)"
+      - name: pack inputs (gradle jars + ladder mods — the F2vPack --build mods dir)
+        if: steps.pack-verify.outputs.hit != 'true'
+        run: |
+          set -euo pipefail
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+          bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
+          mkdir -p srv-wall/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv-wall/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-wall/mods/
+          cp mods-ladder/*.jar srv-wall/mods/
+      - name: restore NeoForge client runtime (nfc for the entity-remap client jar)
+        if: steps.pack-verify.outputs.hit != 'true'
+        id: nfc-cache-pack
+        uses: actions/cache@v4
+        with:
+          path: |
+            nfc
+            truth-client
+          key: neoforge-truth-client-1211-v4
+      - name: fetch the NeoForge client runtime (client cache miss)
+        if: steps.pack-verify.outputs.hit != 'true' && steps.nfc-cache-pack.outputs.cache-hit != 'true'
+        run: |
+          for ATTEMPT in 1 2 3; do
+            python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets && break
+            echo "client fetch attempt $ATTEMPT failed — retrying"
+            [ "$ATTEMPT" = "3" ] && exit 1
+            rm -rf nfc truth-client
+            sleep 20
+          done
+      - name: visual client runtime (cache restore — shared with the ours shards)
+        if: steps.pack-verify.outputs.hit != 'true'
+        id: vc-cache-pack
+        uses: actions/cache/restore@v4
+        with:
+          path: visual-client
+          key: gallery-visual-client-26.3-v1
+      - name: visual client runtime (fetch, cache miss)
+        if: steps.pack-verify.outputs.hit != 'true' && steps.vc-cache-pack.outputs.cache-hit != 'true'
+        run: python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+      - name: visual client runtime (cache save — pristine fetch)
+        if: steps.pack-verify.outputs.hit != 'true' && steps.vc-cache-pack.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: visual-client
+          key: gallery-visual-client-26.3-v1
       - name: 14-ea fluid face sample (the previous run's truth renders)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.pack-verify.outputs.hit != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -904,7 +1040,7 @@ jobs:
             && echo "fluid faces: $(wc -l < seed-pack/f2v/fluidfaces/index.tsv) line(s)"
 
       - name: build plugin (maven) + F2vPack pack (cache miss)
-        if: steps.seed-verify.outputs.hit != 'true'
+        if: steps.pack-verify.outputs.hit != 'true'
         env:
           SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
         run: |
@@ -922,7 +1058,7 @@ jobs:
           # measured run 41126658261)
           [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
           mkdir -p seed-pack/scenes seed-pack/f2v seed-pack/plugin
-          cp -r srv-wall/c-imagine/scenes/. seed-pack/scenes/
+          cp -r seed-truth/scenes/. seed-pack/scenes/
           cp scripts/f2v/visual-items.tsv scripts/f2v/visual-equipment.tsv \
              scripts/f2v/visual-blocks.tsv scripts/f2v/visual-palettes.tsv seed-pack/f2v/
           # the calibration tables ride the pack input dir: absent file =
@@ -981,11 +1117,8 @@ jobs:
           # receipt: the doorway = 207k ae of pure environment mismatch).
           # save-all flushes the region files, the copy rides the seed-pack
           # artifact + the cache, the wall-ours restores it before the boot.
-          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "save-all flush" \
-            > save-all-receipt.log 2>&1 || true
-          sleep 5
           rm -rf seed-pack/world
-          cp -r srv-wall/world seed-pack/world
+          cp -r seed-truth/world seed-pack/world
           echo "seed world: $(du -sh seed-pack/world | cut -f1), $(find seed-pack/world -name '*.mcr' -o -name '*.mca' | wc -l) region file(s)"
           # 14-dy the placeholder ledger: the texture-fidelity audit's named
           # backlog (source sprite + build context + uses per fallback) —
@@ -1070,7 +1203,7 @@ jobs:
           PY
           cp paper-plugin/target/cim-paper-plugin.jar seed-pack/plugin/
           cp paper-plugin/target/selftest-cp.txt seed-pack/plugin/
-          cp srv-wall/boot.log seed-pack/boot-walk.log
+          cp seed-truth/boot-walk.log seed-pack/boot-walk.log
           # the FRESHNESS STAMP: this payload is valid only for THIS input
           # tree; the verify steps (seed + ours shards) compare it against
           # SEED_INPUTS — measured #47: a prefix-restored older pack silently
@@ -1078,19 +1211,19 @@ jobs:
           # the ours leg draws from the same scenes, and the gate masks to this art
           cp srv-wall/c-imagine/f2v/screens.tsv srv-wall/c-imagine/f2v/icons.tsv seed-pack/f2v/ 2>/dev/null || true
           mkdir -p seed-pack/screens
-          cp -r srv-wall/c-imagine/screens/. seed-pack/screens/ 2>/dev/null || true
+          cp -r seed-truth/screens/. seed-pack/screens/ 2>/dev/null || true
           echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
       - name: save seed cache (success-only — a partial seed-pack must never poison the key)
-        if: success() && steps.seed-verify.outputs.hit != 'true'
+        if: success() && steps.pack-verify.outputs.hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: seed-pack
-          key: gallery-seed-v4-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v5-${{ steps.seed-inputs.outputs.hash }}
 
       - name: upload seed-pack artifact (cache-eviction fallback)
-        if: success() && steps.seed-verify.outputs.hit != 'true'
+        if: success() && steps.pack-verify.outputs.hit != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: seed-pack
@@ -1102,9 +1235,6 @@ jobs:
             seed-pack/world
           if-no-files-found: error
 
-      # the pack BYTES themselves, always — local probes must debug the exact
-      # model/composite files the CI render consumed (14-g: the empty-display
-      # cells reproduced nowhere locally, the byte-level diff was the blocker)
       - name: upload seed pack bytes (always)
         if: success()
         uses: actions/upload-artifact@v4
@@ -1121,7 +1251,7 @@ jobs:
           if-no-files-found: error
 
       - name: upload captured meshes and source mappings (also on failure)
-        if: ${{ always() && hashFiles('seed-pack/quads/rows.tsv', 'seed-pack/f2v/quads/rows.tsv', 'srv-wall/c-imagine/scenes/quads/rows.tsv') != '' }}
+        if: ${{ always() && hashFiles('seed-pack/quads/rows.tsv', 'seed-pack/f2v/quads/rows.tsv', 'seed-truth/scenes/quads/rows.tsv') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: seed-captured-meshes
@@ -2074,7 +2204,7 @@ jobs:
     name: gallery ours s${{ matrix.shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
-    needs: [seed]
+    needs: [seed-pack]
     strategy:
       fail-fast: false
       matrix:
@@ -2095,9 +2225,20 @@ jobs:
       # ours shard must serve the pack built from THIS input tree (measured
       # #47: a prefix-restored older pack silently served the stale builder;
       # hashFiles lives in a step — job-level env rejects it, measured #48)
+      # ONE FINGERPRINT FOR BOTH SEED SPLITS (perf(ci), fast-gallery). The truth
+      # walk (real NeoForge server + client) reads only TRUTH_LIST, so its
+      # cache key is the truth hash alone: a plugin or f2v change re-builds the
+      # ours pack (minutes) but never re-walks the truth (~20 min). The pack
+      # is a function of the truth payload AND PACK_LIST, so its key and its
+      # freshness stamp hash both: hash = sha1(truth:pack). The ours shards
+      # compute the SAME string (same lists, same combiner) to verify the stamp.
       - name: seed input fingerprint
         id: seed-inputs
-        run: echo "hash=${{ hashFiles('scripts/f2v/**', 'scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}" >> "$GITHUB_OUTPUT"
+        run: |
+          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', '.github/workflows/gallery.yml') }}"
+          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}"
+          echo "truth=$T" >> "$GITHUB_OUTPUT"
+          echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         id: jdk25
@@ -2110,9 +2251,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: seed-pack
-          key: gallery-seed-v4-${{ steps.seed-inputs.outputs.hash }}
+          key: gallery-seed-v5-${{ steps.seed-inputs.outputs.hash }}
           restore-keys: |
-            gallery-seed-v4-
+            gallery-seed-v5-
 
       - name: seed payload freshness (stale prefix hit -> the artifact)
         id: seed-verify
