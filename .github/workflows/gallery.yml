@@ -1320,16 +1320,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # PERF (fast-gallery): a truth shard is a pure function of the truth inputs, this
+      # job's own recipe (its text in this file, not the whole file: the ours side may
+      # change freely), K and the shard index. A hit restores the shard's outputs and
+      # re-uploads them in ~1 min instead of re-rendering 11-15 min; a passing miss saves.
+      - name: truth shard cache key (truth inputs + this job's recipe + K + shard)
+        id: tshard-key
+        run: |
+          R=$(awk '/^  wall-truth:$/{f=1} /^  wall-ours:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)
+          echo "key=gallery-truth-shard-v1-${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scripts/visual/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$R-k$K-s$SI" >> "$GITHUB_OUTPUT"
+      - name: restore this truth shard (cache)
+        id: tshard
+        uses: actions/cache/restore@v4
+        with:
+          path: truth-shard-cache
+          key: ${{ steps.tshard-key.outputs.key }}
+      - name: put the cached truth shard in place (cache hit)
+        if: steps.tshard.outputs.cache-hit == 'true'
+        run: |
+          cp -a truth-shard-cache/. .
+          echo "truth shard s$SI restored from cache: $(ls truth-shots | wc -l) shot file(s)"
+
       - uses: gradle/actions/setup-gradle@v4
+        if: steps.tshard.outputs.cache-hit != 'true'
         with:
           cache: false
 
       - uses: actions/setup-java@v4
+        if: steps.tshard.outputs.cache-hit != 'true'
         with:
           distribution: temurin
           java-version: 21
 
       - name: restore built scene/test-mod jars (cache)
+        if: steps.tshard.outputs.cache-hit != 'true'
         id: jars-cache
         uses: actions/cache@v4
         with:
@@ -1339,17 +1363,19 @@ jobs:
           key: gallery-jars-v1-${{ hashFiles('test-mods/src/**', 'scene-mod/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}
 
       - name: build cimtest + cimscene (cache miss)
-        if: steps.jars-cache.outputs.cache-hit != 'true'
+        if: (steps.jars-cache.outputs.cache-hit != 'true') && steps.tshard.outputs.cache-hit != 'true'
         run: |
           gradle build --no-daemon -p test-mods
           gradle build --no-daemon -p scene-mod
 
       - name: verify the built jars (stale-cache guard)
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           test -f test-mods/build/libs/cimtest-1.0.0.jar || { echo "cimtest jar missing"; exit 1; }
           test -f scene-mod/build/libs/cimscene-1.0.0.jar || { echo "cimscene jar missing"; exit 1; }
 
       - name: restore NeoForge server layer (cache)
+        if: steps.tshard.outputs.cache-hit != 'true'
         id: layer-cache
         uses: actions/cache@v4
         with:
@@ -1357,16 +1383,18 @@ jobs:
           key: neoforge-layer-21.1.265
 
       - name: download + install NeoForge 21.1.265 server (cache miss)
-        if: steps.layer-cache.outputs.cache-hit != 'true'
+        if: (steps.layer-cache.outputs.cache-hit != 'true') && steps.tshard.outputs.cache-hit != 'true'
         run: |
           curl -sL --max-time 300 -o nf-srv-installer.jar \
             "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
           java -jar nf-srv-installer.jar --installServer layer-srv
 
       - name: fetch ladder mods (locked)
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
 
       - name: mesa debs (cache restore, truth)
+        if: steps.tshard.outputs.cache-hit != 'true'
         id: aptdebs-truth
         uses: actions/cache/restore@v4
         with:
@@ -1374,6 +1402,7 @@ jobs:
           key: aptdebs-truth-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
       - name: launch server (background) + assemble client runtime while it boots
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           # THE OVERLAP (13-b): the server boots in the background while the
@@ -1451,13 +1480,14 @@ jobs:
           export LP_NUM_THREADS=4
 
       - name: mesa debs (cache save, truth)
-        if: always() && steps.aptdebs-truth.outputs.cache-hit != 'true'
+        if: (always() && steps.aptdebs-truth.outputs.cache-hit != 'true') && steps.tshard.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ~/aptdebs
           key: aptdebs-truth-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
       - name: restore NeoForge truth client runtime (cache)
+        if: steps.tshard.outputs.cache-hit != 'true'
         id: nfc-cache
         uses: actions/cache@v4
         with:
@@ -1472,7 +1502,7 @@ jobs:
           key: neoforge-truth-client-1211-v4
 
       - name: verify the client runtime (stale-cache guard)
-        if: steps.nfc-cache.outputs.cache-hit == 'true'
+        if: (steps.nfc-cache.outputs.cache-hit == 'true') && steps.tshard.outputs.cache-hit != 'true'
         run: |
           python3 - <<'PY'
           import pathlib, sys
@@ -1494,13 +1524,14 @@ jobs:
           PY
 
       - name: fetch + assemble the NeoForge client runtime (cache miss)
-        if: steps.nfc-cache.outputs.cache-hit != 'true'
+        if: (steps.nfc-cache.outputs.cache-hit != 'true') && steps.tshard.outputs.cache-hit != 'true'
         run: |
           python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets
           wc -c truth-client/classpath.txt truth-client/launch.txt
           sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
 
       - name: camera pins (RCON after the server settles) + client joins
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           # Runtime caches include game/: fresh inputs MUST be staged after
@@ -1581,6 +1612,7 @@ jobs:
       # (the generic-screen class ceiling, the opener asymmetry) without
       # serializing the whole truth leg behind the ours boot.
       - name: wall walk — GUI first (14-di early art)
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -1655,6 +1687,7 @@ jobs:
           grep -q 'gallery-gui-clear done .*remaining=0 held_empty=true' srv-wall/boot.log
 
       - name: pair this run's GUI manifests with its early screen art
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -1673,6 +1706,7 @@ jobs:
           if-no-files-found: warn
 
       - name: wall walk — STRIDE, fixed camera, page shots (blocks per ladder ns + probes)
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -1859,6 +1893,7 @@ jobs:
           echo "block pages shot: $(ls truth-shots/gal-p-*.png 2>/dev/null | grep -v -- '-again' | wc -l)"
 
       - name: entity walk — STRIDE (MOB pages gate + dyn/large diagnostic + every ladder ns to exhaustion)
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           export DISPLAY=:99
@@ -2207,6 +2242,7 @@ jobs:
           ls truth-shots/ | wc -l
 
       - name: shot listing (the coverage gate joins this, not the bytes)
+        if: steps.tshard.outputs.cache-hit != 'true'
         run: |
           (cd truth-shots && ls *.png > shots.txt.tmp && mv shots.txt.tmp shots.txt)
           wc -l truth-shots/shots.txt
@@ -2237,6 +2273,24 @@ jobs:
             truth-client-deaths/
             truth-screens/
           if-no-files-found: warn
+
+      - name: stage this truth shard for the cache (passing walk, cache miss)
+        if: success() && steps.tshard.outputs.cache-hit != 'true'
+        run: |
+          shopt -s nullglob
+          mkdir -p truth-shard-cache
+          for P in truth-shots truth-screens srv-wall/c-imagine/scenes srv-wall/boot.log srv-wall/crash-reports \
+                   srv-wall/hs_err_pid*.log truth-pins.log ground-fill.log truth-client-mods.sha256 \
+                   truth-client/client.out truth-client-deaths; do
+            [ -e "$P" ] && cp -a --parents "$P" truth-shard-cache/
+          done
+          du -sh truth-shard-cache
+      - name: save this truth shard (cache)
+        if: success() && steps.tshard.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: truth-shard-cache
+          key: ${{ steps.tshard-key.outputs.key }}
 
   # ------------------------------------------------------------ wall-ours --
   # K shards, each = one full ours stack (Paper 26.3 + plugin + pack +
