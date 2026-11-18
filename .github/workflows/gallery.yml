@@ -355,6 +355,13 @@ jobs:
           done
           sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
 
+      - name: mesa debs (cache restore, seed)
+        id: aptdebs-seed
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-seed-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+
       - name: prep the dump client runtime (player-ticket parity, 14-bj)
         if: steps.truth-verify.outputs.hit != 'true'
         run: |
@@ -370,6 +377,13 @@ jobs:
             # is on the runner's resolver, not the repo; ride it out: up to 4 tries
             # with a 30s gap, Acquire::Retries for the packet-level retries.
             local need="$*"
+            # PERF (fast-gallery): the mirror took 6.5 min on one runner (run 44343933723
+            # s0) and seconds on another; a cached .deb set (restored above) installs offline.
+            if ls "$HOME"/aptdebs/*.deb >/dev/null 2>&1 && sudo dpkg -i "$HOME"/aptdebs/*.deb >/dev/null 2>&1; then
+              echo "[apt_retry] installed from the cached debs: $need"
+              return 0
+            fi
+            sudo mkdir -p "$HOME/aptdebs/partial"
             for i in 1 2 3 4; do
               # Keep apt's signed security suite on the official archive if
               # only the security host fails DNS; retries alone cannot fix it.
@@ -377,7 +391,8 @@ jobs:
                  && timeout 10 getent ahosts archive.ubuntu.com >/dev/null 2>&1; then
                 sudo python3 scripts/visual/ubuntu-mirror-fallback.py /etc/apt
               fi
-              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
+              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 -o Dir::Cache::archives="$HOME/aptdebs" install -y -qq $need; then
+                sudo rm -rf "$HOME/aptdebs/partial" "$HOME/aptdebs/lock"; sudo chmod -R a+rX "$HOME/aptdebs"
                 return 0
               fi
               echo "[apt_retry] attempt $i failed — retrying in 30s"
@@ -420,6 +435,13 @@ jobs:
           # The walk step boots it fresh per attempt — a client that died
           # mid-walk must never serve the next attempt.
           sed "s#^java #java -Dcim.screenart=$PWD/srv-wall/c-imagine/screens -Dcim.quaddump=$SCENES -Dcim.quaddump.waitFor=$TRIGGER #" truth-client/launch.txt > launch-dump.txt
+
+      - name: mesa debs (cache save, seed)
+        if: always() && steps.aptdebs-seed.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-seed-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
       - name: server-side walk — block pages under a live client, restart on disconnect (14-bj)
         if: steps.truth-verify.outputs.hit != 'true'
@@ -1344,6 +1366,13 @@ jobs:
       - name: fetch ladder mods (locked)
         run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
 
+      - name: mesa debs (cache restore, truth)
+        id: aptdebs-truth
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-truth-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+
       - name: launch server (background) + assemble client runtime while it boots
         run: |
           set -euo pipefail
@@ -1387,6 +1416,13 @@ jobs:
             # is on the runner's resolver, not the repo; ride it out: up to 4 tries
             # with a 30s gap, Acquire::Retries for the packet-level retries.
             local need="$*"
+            # PERF (fast-gallery): the mirror took 6.5 min on one runner (run 44343933723
+            # s0) and seconds on another; a cached .deb set (restored above) installs offline.
+            if ls "$HOME"/aptdebs/*.deb >/dev/null 2>&1 && sudo dpkg -i "$HOME"/aptdebs/*.deb >/dev/null 2>&1; then
+              echo "[apt_retry] installed from the cached debs: $need"
+              return 0
+            fi
+            sudo mkdir -p "$HOME/aptdebs/partial"
             for i in 1 2 3 4; do
               # Keep apt's signed security suite on the official archive if
               # only the security host fails DNS; retries alone cannot fix it.
@@ -1394,7 +1430,8 @@ jobs:
                  && timeout 10 getent ahosts archive.ubuntu.com >/dev/null 2>&1; then
                 sudo python3 scripts/visual/ubuntu-mirror-fallback.py /etc/apt
               fi
-              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
+              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 -o Dir::Cache::archives="$HOME/aptdebs" install -y -qq $need; then
+                sudo rm -rf "$HOME/aptdebs/partial" "$HOME/aptdebs/lock"; sudo chmod -R a+rX "$HOME/aptdebs"
                 return 0
               fi
               echo "[apt_retry] attempt $i failed — retrying in 30s"
@@ -1412,6 +1449,13 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
+
+      - name: mesa debs (cache save, truth)
+        if: always() && steps.aptdebs-truth.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-truth-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
       - name: restore NeoForge truth client runtime (cache)
         id: nfc-cache
@@ -2344,6 +2388,13 @@ jobs:
           path: visual-client
           key: gallery-visual-client-26.3-v1
 
+      - name: mesa debs (cache restore, ours)
+        id: aptdebs-ours
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-ours-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+
       - name: launch Paper (background, FAST BOOT) + prepare the client while it boots
         run: |
           set -euo pipefail
@@ -2449,6 +2500,13 @@ jobs:
             # is on the runner's resolver, not the repo; ride it out: up to 4 tries
             # with a 30s gap, Acquire::Retries for the packet-level retries.
             local need="$*"
+            # PERF (fast-gallery): the mirror took 6.5 min on one runner (run 44343933723
+            # s0) and seconds on another; a cached .deb set (restored above) installs offline.
+            if ls "$HOME"/aptdebs/*.deb >/dev/null 2>&1 && sudo dpkg -i "$HOME"/aptdebs/*.deb >/dev/null 2>&1; then
+              echo "[apt_retry] installed from the cached debs: $need"
+              return 0
+            fi
+            sudo mkdir -p "$HOME/aptdebs/partial"
             for i in 1 2 3 4; do
               # Keep apt's signed security suite on the official archive if
               # only the security host fails DNS; retries alone cannot fix it.
@@ -2456,7 +2514,8 @@ jobs:
                  && timeout 10 getent ahosts archive.ubuntu.com >/dev/null 2>&1; then
                 sudo python3 scripts/visual/ubuntu-mirror-fallback.py /etc/apt
               fi
-              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 install -y -qq $need; then
+              if sudo apt-get -o Acquire::Retries=5 update -qq && sudo apt-get -o Acquire::Retries=5 -o Dir::Cache::archives="$HOME/aptdebs" install -y -qq $need; then
+                sudo rm -rf "$HOME/aptdebs/partial" "$HOME/aptdebs/lock"; sudo chmod -R a+rX "$HOME/aptdebs"
                 return 0
               fi
               echo "[apt_retry] attempt $i failed — retrying in 30s"
@@ -2594,6 +2653,13 @@ jobs:
           # tutorialStep:none (menus lane, 12a0ec6c): no first-join tutorial overlay in the frames.
           printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
+
+      - name: mesa debs (cache save, ours)
+        if: always() && steps.aptdebs-ours.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-ours-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
       - name: server pins + forceload + client joins (pack accepted)
         run: |
