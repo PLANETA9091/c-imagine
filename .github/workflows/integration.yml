@@ -514,7 +514,7 @@ jobs:
       # The world dir persists (SIGTERM -> Paper saves). A second boot must
       # restore the modded state from the sidecar with the stand-in intact:
       # the zero-orphan-state acceptance for the milestone.
-      - name: restart server (timeout 4 min)
+      - name: restart server (stops at the smoke verdict, cap 4 min)
         id: boot2
         run: |
           set +e
@@ -529,7 +529,19 @@ jobs:
             sleep 2
           done
           pgrep -f onload.pidFile >/dev/null && { pkill -9 -f onload.pidFile || true; sleep 5; }
-          timeout 240 crussty run > boot2.log 2>&1
+          # Stop as soon as the restore contract is decided (the smoke's verdict follows
+          # the sidecar restore): waiting out the 4-minute cap cost 240 s every run.
+          crussty run > boot2.log 2>&1 &
+          SRV=$!
+          for i in $(seq 1 240); do
+            grep -qE "\[c-imagine\] bridge smoke: (ALL OK|.*FAIL)" boot2.log 2>/dev/null && break
+            kill -0 "$SRV" 2>/dev/null || break
+            sleep 1
+          done
+          timeout 90 crussty stop || true
+          for i in $(seq 1 60); do pgrep -f onload.pidFile >/dev/null || break; sleep 1; done
+          pgrep -f onload.pidFile >/dev/null && pkill -9 -f onload.pidFile
+          wait "$SRV" 2>/dev/null
           code=$?
           cd ..
           echo "exit=$code" >> "$GITHUB_OUTPUT"
@@ -760,11 +772,23 @@ jobs:
           max-players=5
           PROPS
 
-      - name: boot real NeoForge server (timeout 5 min)
+      - name: boot real NeoForge server (stops at Done, cap 5 min)
         run: |
           set +e
           cd srv-parity
-          timeout 300 ./run.sh > boot.log 2>&1
+          # Every parity marker lands during setup, before "Done (": stop there instead
+          # of waiting out the 5-minute cap (300 s every run).
+          ./run.sh > boot.log 2>&1 < /dev/null &
+          SRV=$!
+          for i in $(seq 1 300); do
+            grep -q "Done (" boot.log 2>/dev/null && { sleep 2; break; }
+            kill -0 "$SRV" 2>/dev/null || break
+            sleep 1
+          done
+          pkill -TERM -P "$SRV" 2>/dev/null; kill -TERM "$SRV" 2>/dev/null
+          for i in $(seq 1 30); do kill -0 "$SRV" 2>/dev/null || break; sleep 1; done
+          pkill -KILL -P "$SRV" 2>/dev/null; kill -KILL "$SRV" 2>/dev/null
+          wait "$SRV" 2>/dev/null
           code=$?
           cd ..
           echo "exit=$code"
