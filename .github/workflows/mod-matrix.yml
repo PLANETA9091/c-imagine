@@ -168,6 +168,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      # The sweep cache key is computed ONCE, before anything builds: the build writes
+      # under the hashed folders, so a key hashed later (at save) never matched the
+      # key the next run restores with (runs 44359166225 / 44360414741, two keys).
+      - name: gallery sweep cache key (hashed on the pristine checkout)
+        id: sweep-key
+        run: echo "key=mod-matrix-create-sweep-v1-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*', 'gradle/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scripts/cimscene/mods.lock', 'scripts/cimscene/rcon.py', 'scripts/cimscene/fetch-ladder.sh', '.github/workflows/mod-matrix.yml') }}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@v4
         with:
@@ -287,7 +293,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: create-sweep-out
-          key: mod-matrix-create-sweep-v1-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*', 'gradle/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scripts/cimscene/mods.lock', 'scripts/cimscene/rcon.py', 'scripts/cimscene/fetch-ladder.sh', '.github/workflows/mod-matrix.yml') }}
+          key: ${{ steps.sweep-key.outputs.key }}
 
       - name: gallery sweep (truth leg — every Create blockstate)
         if: steps.sweep-cache.outputs.cache-hit != 'true'
@@ -370,7 +376,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: create-sweep-out
-          key: mod-matrix-create-sweep-v1-${{ hashFiles('scene-mod/src/**', 'scene-mod/*.gradle*', 'gradle/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scripts/cimscene/mods.lock', 'scripts/cimscene/rcon.py', 'scripts/cimscene/fetch-ladder.sh', '.github/workflows/mod-matrix.yml') }}
+          key: ${{ steps.sweep-key.outputs.key }}
 
       - name: dump the REAL classpath contract (autopsy telemetry)
         run: |
