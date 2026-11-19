@@ -1501,6 +1501,168 @@ public final class GalleryPack {
         return tint != null ? tint : tintTable.get(canonicalState(state));
     }
 
+    // ---- 14-e161 THE TINT-LANE AO PACK BAKE (the build-time census) ---------
+    // The e153c door lane's measured luma_scale 0.778 = the smooth-lighting
+    // AO gap: the truth's live client renders the wall-embedded composites
+    // through the room's ambient occlusion, the pack's tinted composites ride
+    // the calibrated per-state multiply (visual-tints.tsv) whose median
+    // cannot carry it (the e154 honest note). The e160 audit resolved the
+    // delivery surface = the TINT LANE (the pack's own bake), NOT the
+    // live-lightmap pins — the pin-scale rung walked its own lane (-186 reds,
+    // saturated) and the tint values take the SECOND multiply by the
+    // per-state AO factor.
+    // THE CENSUS = the build-time manifests' cell geometry (the e160 queue's
+    // locked design: "the pack build = the manifests present"): the scenes
+    // dir page manifests carry the wall's filled-cell layout (cell x y z
+    // state rows); the e159 v2 face-mean model over THAT layout — per cell
+    // the camera-facing face's 9 samples = the 4 corner vertices (the 3
+    // in-plane cells each, the both-sides cap) + the 4 edge midpoints (the
+    // 1 side cell each) + the centre; the calibrated table {1.0, 0.8, 0.75,
+    // 0.7} by the filled-neighbor count 0..3; the interior wall-embedded
+    // cell = the measured anchor (4*0.7 + 4*0.8 + 1)/9 = 7/9 = 0.7778.
+    // THE MODEL CENSUS = the filled cell = the occluder (the idealized wall
+    // the walk actually builds), NOT the vanilla isOccluding test — the
+    // e160 honest audit measured the runtime occluder census at the 92-class
+    // because the wall blocks/panes/stairs are vanilla non-occluders too;
+    // the tint lane's anchor = the idealized layout. Per-state factor = the
+    // MEAN over the state's cells (declared honest: the per-cell variance =
+    // the measured follow-up rung if the residual holds). States absent
+    // from the manifests = no row = factor 1.0 = the byte-identical no-op
+    // (the same absent-file contract visual-tints.tsv carries).
+
+    /** The calibrated face-mean table by the filled in-plane neighbor count
+     *  0..3 (the e159 v2 model, the runtime CIM_AO_TABLE's build twin). */
+    private static final double[] STATE_AO_TABLE = {1.0, 0.8, 0.75, 0.7};
+
+    private static final java.util.Map<String, Double> stateAoFactors =
+            new java.util.TreeMap<>();
+
+    /** Fresh table per build; a selftest may re-set between builds. */
+    static void resetStateAoFactors() {
+        stateAoFactors.clear();
+    }
+
+    /** Install the census table (computed once per build by the caller). */
+    static void setStateAoFactors(java.util.Map<String, Double> factors) {
+        stateAoFactors.clear();
+        if (factors != null) {
+            stateAoFactors.putAll(factors);
+        }
+    }
+
+    /** The state's census factor (exact manifest string, then the canonical
+     *  property order — the same rule stateTintFor carries); 1.0 = no row. */
+    private static double stateAoFactor(String state) {
+        if (state == null || stateAoFactors.isEmpty()) {
+            return 1.0;
+        }
+        Double f = stateAoFactors.get(state);
+        if (f == null) {
+            f = stateAoFactors.get(canonicalState(state));
+        }
+        return f == null ? 1.0 : f;
+    }
+
+    /** 22 bits per axis — the walk's wall coordinates are small and the
+     *  packing is injective over that range (the two's-complement low bits). */
+    private static long aoCellKey(long x, long y, long z) {
+        return (x & 0x3FFFFFL) | ((y & 0x3FFFFFL) << 22) | ((z & 0x3FFFFFL) << 44);
+    }
+
+    /** The vanilla ao-0 corner law: both sides occluded = the corner fully
+     *  occluded regardless of the diagonal (the both-sides cap at 3). */
+    private static int aoCornerCount(boolean s1, boolean s2, boolean diag) {
+        if (s1 && s2) {
+            return 3;
+        }
+        return Math.min((s1 ? 1 : 0) + (s2 ? 1 : 0) + (diag ? 1 : 0), 3);
+    }
+
+    /** The e159 v2 face-mean factor for one cell over the filled layout:
+     *  4 corners (the 3 in-plane cells each) + 4 edge midpoints (the 1 side
+     *  cell each) + the centre 1.0, all over 9. */
+    static double cellAoFactor(java.util.Set<Long> filled, long x, long y, long z) {
+        boolean xp = filled.contains(aoCellKey(x + 1, y, z));
+        boolean xn = filled.contains(aoCellKey(x - 1, y, z));
+        boolean yp = filled.contains(aoCellKey(x, y + 1, z));
+        boolean yn = filled.contains(aoCellKey(x, y - 1, z));
+        double c1 = STATE_AO_TABLE[aoCornerCount(xp, yp,
+                filled.contains(aoCellKey(x + 1, y + 1, z)))];
+        double c2 = STATE_AO_TABLE[aoCornerCount(xn, yp,
+                filled.contains(aoCellKey(x - 1, y + 1, z)))];
+        double c3 = STATE_AO_TABLE[aoCornerCount(xn, yn,
+                filled.contains(aoCellKey(x - 1, y - 1, z)))];
+        double c4 = STATE_AO_TABLE[aoCornerCount(xp, yn,
+                filled.contains(aoCellKey(x + 1, y - 1, z)))];
+        double e1 = STATE_AO_TABLE[yp ? 1 : 0];
+        double e2 = STATE_AO_TABLE[xn ? 1 : 0];
+        double e3 = STATE_AO_TABLE[yn ? 1 : 0];
+        double e4 = STATE_AO_TABLE[xp ? 1 : 0];
+        return (c1 + c2 + c3 + c4 + e1 + e2 + e3 + e4 + 1.0) / 9.0;
+    }
+
+    /**
+     * e161: scan the scenes dir page manifests ({@code gallery-<ns>-p<page>.tsv};
+     * the entity/item/fluid/variant/sound/particle namespaces carry hyphens in
+     * their ns segment and cannot match the pattern) and compute the per-state
+     * AO factor over the wall's filled-cell layout. Missing dir = empty map =
+     * the byte-identical build (the same contract as the absent
+     * visual-tints.tsv). Malformed rows are skipped, the schema header row
+     * (cell x y z ...) fails the integer parse and rides the skip.
+     */
+    public static java.util.Map<String, Double> buildStateAoCensus(Path scenesDir,
+                                                                   List<String> warnings) {
+        java.util.Map<String, Double> out = new java.util.TreeMap<>();
+        if (scenesDir == null || !Files.isDirectory(scenesDir)) {
+            return out;
+        }
+        java.util.regex.Pattern pageName =
+                java.util.regex.Pattern.compile("^gallery-([a-z0-9_]+)-p(\\d+)\\.tsv$");
+        java.util.Set<Long> filled = new java.util.HashSet<>();
+        java.util.Map<String, java.util.List<long[]>> stateCells =
+                new java.util.TreeMap<>();
+        try (java.util.stream.Stream<Path> list = Files.list(scenesDir)) {
+            for (Path mf : (Iterable<Path>) list::iterator) {
+                if (!pageName.matcher(mf.getFileName().toString()).matches()) {
+                    continue;
+                }
+                for (String line : Files.readAllLines(mf, StandardCharsets.UTF_8)) {
+                    if (!line.startsWith("cell\t")) {
+                        continue;
+                    }
+                    String[] row = line.split("\t", -1);
+                    if (row.length < 5) {
+                        continue;
+                    }
+                    long x;
+                    long y;
+                    long z;
+                    try {
+                        x = Long.parseLong(row[1].trim());
+                        y = Long.parseLong(row[2].trim());
+                        z = Long.parseLong(row[3].trim());
+                    } catch (NumberFormatException header) {
+                        continue; // the schema header row
+                    }
+                    filled.add(aoCellKey(x, y, z));
+                    stateCells.computeIfAbsent(row[4].trim(),
+                            s -> new ArrayList<>()).add(new long[]{x, y, z});
+                }
+            }
+        } catch (IOException read) {
+            warnings.add("gallery: ao-census scenes read failed: " + read);
+            return out;
+        }
+        for (java.util.Map.Entry<String, java.util.List<long[]>> e : stateCells.entrySet()) {
+            double sum = 0;
+            for (long[] c : e.getValue()) {
+                sum += cellAoFactor(filled, c[0], c[1], c[2]);
+            }
+            out.put(e.getKey(), sum / e.getValue().size());
+        }
+        return out;
+    }
+
     private static void applyStateTint(List<Path> jars, String state,
                                        Map<String, String> textures,
                                        Map<String, double[]> tintTable,
@@ -1512,6 +1674,17 @@ public final class GalleryPack {
         double[] tint = stateTintFor(state, tintTable);
         if (tint == null) {
             return;
+        }
+        // 14-e161 THE TINT-LANE AO PACK BAKE: the calibrated multiply (the
+        // per-state corridor median) carries the wall's smooth-lighting AO
+        // only as far as the median could attribute it — the e153c measured
+        // luma_scale 0.778 on a tint-baked door row. The build-time census
+        // factor = the second multiply (the e160 queue's locked design).
+        double ao = stateAoFactor(state);
+        if (ao < 1.0) {
+            tint = new double[]{tint[0] * ao, tint[1] * ao, tint[2] * ao};
+            bakeLog.add("ao-tint " + state + " f="
+                    + String.format(java.util.Locale.ROOT, "%.4f", ao));
         }
         String suffix = TINT_SUFFIX + "_s" + stateHash(state);
         final double[] ftint = tint; // the bake lambda's capture
@@ -2451,6 +2624,15 @@ public final class GalleryPack {
                 if (!hosted.contains(TINT_SUFFIX)) {
                     double[] stint = stateTintFor(stateKey, tintTable);
                     if (stint != null) {
+                        // 14-e161: the same second multiply the static
+                        // composite route applies — the mesh path's
+                        // state-keyed bake = the same calibrated corridor
+                        // median needing the same census factor.
+                        double qao = stateAoFactor(stateKey);
+                        if (qao < 1.0) {
+                            stint = new double[]{stint[0] * qao, stint[1] * qao,
+                                    stint[2] * qao};
+                        }
                         String sib = bakeTintedSprite(jars, c[0], stint,
                                 TINT_SUFFIX + "_s" + stateHash(stateKey), entries, warnings);
                         if (sib != null) {
