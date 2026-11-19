@@ -163,8 +163,17 @@ def main():
                 else:
                     counts["upper same-block"] += 1
             elif is_doormat:
-                # the doormat's e51 line: the "door"-bearing BE class, no
-                # animation field (anim=?) + the above cell's none-form
+                # 14-e126 THE MEASURED DOORMAT LAW: the doormat's e51 line
+                # fires on the wall rows ABOVE the floor edge and stays
+                # SILENT at y=-60 (measured on the 527: the three mid-wall
+                # doormats (-56 row) emit, the bottom-row doormat
+                # (4,-60,9) = silent — the e55b-era's "4 doormat zero"
+                # receipt = the same class, the floor-edge row's BE path
+                # never reaches the dump's diag). The mechanism = the
+                # pending rung; the expect = encodes the measured law.
+                if y == FLOOR_Y + 1:
+                    counts["doormat-silent-floor-edge"] += 1
+                    continue
                 above = cells.get((x, y + 1, z))
                 if above is None:
                     above = SMOOTH if y + 1 == FLOOR_Y else AIR

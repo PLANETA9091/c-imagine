@@ -641,9 +641,29 @@ def main():
             # id (before "[" / "#q") must match on BOTH sides; the bucket
             # forms ("..._bucket") are distinct bare ids and never match.
             bare_state = state.split("[", 1)[0].split("#q", 1)[0]
+            # 14-e128 THE FLOWING STILL-PROOF ALIAS (the join side): the
+            # manifest's fluid rows carry the REGISTRY flowing variants
+            # ("mekanism:flowing_sulfur_dioxide") while the animation table's
+            # proof rides the STILL state only — the 14-dx-f bake path
+            # records the still ("mekanism:sulfur_dioxide[level=0]", 32
+            # frames) and the e116 pack-side alias covers only the fluids
+            # whose jar textures the 14-dz2 scan sees. The 529 receipt: 17
+            # mekanism chemical flowing rows stayed RED while every still
+            # proof sat in the table (the runtime-composed textures = no jar
+            # files for the scan to widen to — the e116 scan-widening rung =
+            # refuted by evidence). The still's proof = the flowing variant's
+            # proof: the same texture family samples the same per-tick clock
+            # (the e116 law verbatim, no pixel heuristics). RED rows only.
+            still_bare = None
+            if ":flowing_" in bare_state:
+                still_bare = bare_state.replace(":flowing_", ":", 1)
+            elif bare_state.startswith("flowing_"):
+                still_bare = "minecraft:" + bare_state[len("flowing_"):]
             if verdict == "RED" and (state in animated_states
                                      or state.split("#q", 1)[0] in animated_states
-                                     or bare_state in animated_bare_ids):
+                                     or bare_state in animated_bare_ids
+                                     or (still_bare is not None
+                                         and still_bare in animated_bare_ids)):
                 verdict = "ANIMATED"
             if dyn or air:
                 dynamic += 1

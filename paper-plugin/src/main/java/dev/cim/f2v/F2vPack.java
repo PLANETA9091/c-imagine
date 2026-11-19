@@ -224,8 +224,26 @@ public final class F2vPack {
                         entries.put(n, stillFramePng(zf.getInputStream(e).readAllBytes()));
                     }
                     if (animatedStrip) {
-                        GalleryPack.recordAnimatedState(
-                                fluidIdFromTexture(ns, file.substring(file.lastIndexOf('/') + 1)), frames);
+                        String fluidId = fluidIdFromTexture(
+                                ns, file.substring(file.lastIndexOf('/') + 1));
+                        GalleryPack.recordAnimatedState(fluidId, frames);
+                        // 14-e116 THE FLOWING-VARIANT LAW: the join's manifest
+                        // rows carry the REGISTRY state id — the flowing
+                        // variants read "flowing_" + the still's name
+                        // (mekanism:flowing_sulfur_dioxide vs the recorded
+                        // "mekanism:sulfur_dioxide"), so the 14-e16 bare-id
+                        // match missed the whole flowing family and the
+                        // flowing rows red-gated forever (the 525 read:
+                        // 24 flowing REDs, ae 603K-930K, while every still
+                        // row demoted to ANIMATED — the same free-running
+                        // clock, the 14-bw law "animated by construction").
+                        // The alias rides the SAME mcmeta proof (the fluid's
+                        // animation exists; the flowing variant samples the
+                        // same per-tick clock), no pixel heuristics; where a
+                        // dedicated _flow strip is scanned, its own frame
+                        // count merges max over this proxy.
+                        String base = fluidId.substring(fluidId.indexOf(':') + 1);
+                        GalleryPack.recordAnimatedState(ns + ":flowing_" + base, frames);
                     }
                 }
             }
