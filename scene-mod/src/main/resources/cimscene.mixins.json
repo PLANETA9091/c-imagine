@@ -15,6 +15,7 @@
     "MouseParkMixin",
     "EditBoxBlinkMixin",
     "SlotRenderMixin",
-    "PayloadSendMixin"
+    "PayloadSendMixin",
+    "DisplayAoLightMixin"
   ]
 }

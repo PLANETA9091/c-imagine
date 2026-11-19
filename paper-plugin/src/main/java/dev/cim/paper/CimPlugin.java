@@ -2357,6 +2357,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                                 new org.joml.Quaternionf());
                         final float pageCmd = pr.row().cmd();
+                        final int pageAo = cimAoPercentForKeys(world(worldName()),
+                                pr.perCellKeys()); // 14-e155 the group-mean AO census
                         ItemStack pStack = new ItemStack(Material.matchMaterial("paper"));
                         pStack.editMeta(meta -> {
                             CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
@@ -2369,12 +2371,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                     e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                                     e.setTransformation(tr);
                                     e.setBrightness(new org.bukkit.entity.Display.Brightness(pb, ps));
+                                    if (pageAo < 100) { // 14-e155 the AO side-channel
+                                        e.setCustomName("cimao=" + pageAo);
+                                    }
                                 });
                         log().info(LOG_PREFIX + "f2v gallery: page " + page + " PAGE-LANE "
                                 + pr.row().stateId() + " cmd=" + pageCmd
                                 + " anchor=" + pr.ax() + "," + pr.ay() + "," + pr.az()
                                 + " cells=" + pr.cells() + " elements=" + pr.elements()
                                 + " pin=" + pb + "/" + ps
+                                + " ao=" + pageAo
                                 + " rig=" + pageRig
                                 + " uuid=" + display.getUniqueId());
                         groups++;
@@ -2540,12 +2546,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         : capturedLight ? Math.min(15, Math.max(0, r.lightBlock())) : fEmission;
                 final int pinSky = fieldLight != null ? fieldLight[1]
                         : capturedLight ? Math.min(15, Math.max(0, r.lightSky())) : 15;
+                final int aoPct = cimAoPercent(world(worldName()), x, y, z); // 14-e155 the per-cell AO census
                 org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                             e.setTransformation(tr);
                             e.setBrightness(new org.bukkit.entity.Display.Brightness(pinBlock, pinSky));
+                            if (aoPct < 100) { // 14-e155 the AO side-channel (untagged = the exact legacy render)
+                                e.setCustomName("cimao=" + aoPct);
+                            }
                         });
                 // 14-e30(c) THE PIN RECEIPT: the census cannot tell a broken
                 // synched-data bridge from a wrong pin VALUE — the log names
@@ -2566,6 +2576,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + row[1] + "," + row[2] + "," + row[3] + " state=" + state
                         + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId()
                         + " pin=" + pinBlock + "/" + pinSky
+                        + " ao=" + aoPct
                         + " src=" + (fieldLight != null ? "front-air" : capturedLight ? "captured" : "legacy")
                         + " at=" + at.getX() + "," + at.getY() + "," + at.getZ()
                         + " tr=[" + gT.x + "," + gT.y + "," + gT.z
@@ -2630,10 +2641,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                     e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                                     e.setTransformation(tr);
                                     e.setBrightness(new org.bukkit.entity.Display.Brightness(xPinBlock, xPinSky));
+                                    if (aoPct < 100) { // 14-e155 the same cell = the same factor
+                                        e.setCustomName("cimao=" + aoPct);
+                                    }
                                 });
                         log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                                 + row[1] + "," + row[2] + "," + row[3] + " state=" + state
-                                + " extra-mesh cmd=" + xr.cmd() + " uuid=" + xDisplay.getUniqueId());
+                                + " extra-mesh cmd=" + xr.cmd() + " uuid=" + xDisplay.getUniqueId()
+                                + " ao=" + aoPct);
                     }
                 }
             }
@@ -2644,6 +2659,90 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return n;
         });
         return placed == null ? 0 : placed;
+    }
+
+    // 14-e155 THE AO CENSUS (the e154/e154b design, the coarse per-face
+    // rung): the truth's content = the real block at the cell -> the vanilla
+    // smooth-lighting AO darkens its camera-facing face's corners by the
+    // in-plane occluders (the e91v geometry read: the camera-facing
+    // vertices share the edges with the side faces whose occluders = the
+    // adjacent wall cells); ours = the flat composite display = no world AO
+    // (the e153c luma_scale 0.778 = the measured gap for the wall-embedded
+    // class). The census = the 4 corners of the camera-facing (-z) face;
+    // per corner s1/s2 = the in-plane side cells (x±1,y,z / x,y±1,z),
+    // d = the in-plane diagonal (x±1,y±1,z); both sides solid = the vanilla
+    // ao-0 corner = fully occluded; else the solid count / 3. The factor =
+    // 1 - 0.222 * mean (the measured anchor: the wall-embedded cell's mean
+    // = 1.0 -> 0.778 exactly). The occluder test = Material#isOccluding
+    // (the full-cube opacity = the vanilla canOcclude's coarse Bukkit
+    // approximation). The factor rides the display's custom name
+    // side-channel "cimao=NN" (the factor * 100; the name never renders --
+    // customNameVisible stays false) and is consumed by the scene-mod's
+    // DisplayAoLightMixin (the packed-light scale; the CI gradle = the
+    // mixin AP authority, the offline build = -proc:none). aoPct == 100 =
+    // untagged = the exact legacy render (the honest no-op default). The
+    // fullbright companions stay untagged (the truth renders them
+    // fullbright; dimming them = the wrong direction).
+    private boolean cimIsOccluding(World w, int x, int y, int z) {
+        try {
+            return w.getBlockAt(x, y, z).getType().isOccluding();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private double cimAoCorner(World w, int x, int y, int z, int dx, int dy) {
+        boolean s1 = cimIsOccluding(w, x + dx, y, z);
+        boolean s2 = cimIsOccluding(w, x, y + dy, z);
+        boolean d = cimIsOccluding(w, x + dx, y + dy, z);
+        if (s1 && s2) {
+            return 1.0;
+        }
+        return ((s1 ? 1 : 0) + (s2 ? 1 : 0) + (d ? 1 : 0)) / 3.0;
+    }
+
+    private int cimAoPercent(World w, int x, int y, int z) {
+        double mean = 0.0;
+        mean += cimAoCorner(w, x, y, z, -1, -1);
+        mean += cimAoCorner(w, x, y, z, -1, 1);
+        mean += cimAoCorner(w, x, y, z, 1, -1);
+        mean += cimAoCorner(w, x, y, z, 1, 1);
+        mean /= 4.0;
+        return (int) Math.round(100.0 * (1.0 - 0.222 * mean));
+    }
+
+    /**
+     * 14-e155 the page-lane group's mean AO factor over its own cell keys
+     * (the coarse group rung: one display carries the whole group, the
+     * per-cell AO variance collapses to the honest group mean -- the
+     * per-vertex inject = the calibration walk's second increment).
+     */
+    private int cimAoPercentForKeys(World w, java.util.Set<String> keys) {
+        if (keys == null || keys.isEmpty()) {
+            return 100;
+        }
+        double sum = 0.0;
+        int n = 0;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String k : keys) {
+            String[] f = k.split(",");
+            if (f.length < 3) {
+                continue;
+            }
+            String cellKey = f[0] + "," + f[1] + "," + f[2];
+            if (!seen.add(cellKey)) {
+                continue;
+            }
+            try {
+                sum += cimAoPercent(w, Integer.parseInt(f[0].trim()),
+                        Integer.parseInt(f[1].trim()),
+                        Integer.parseInt(f[2].trim()));
+                n++;
+            } catch (NumberFormatException bad) {
+                // the unparsable key: skip from the mean (honest)
+            }
+        }
+        return n == 0 ? 100 : (int) Math.round(sum / n);
     }
 
     /**
