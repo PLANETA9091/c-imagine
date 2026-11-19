@@ -527,7 +527,7 @@ public final class GalleryPack {
                     }
                     String ref = synthesizeComposite(jars, bareState, parts,
                             compositeIdx, entries, warnings, ctCtx, tintTable, bakeLog,
-                            emissiveTable, emissiveLog);
+                            emissiveTable, emissiveLog, null);
                     if (ref == null) {
                         warnings.add("gallery: composite failed for " + state + " — row dropped");
                         continue;
@@ -540,6 +540,37 @@ public final class GalleryPack {
                     }
                     compositeIdx++;
                     out.add(new Resolved(state, cmd, ref, 0, 0, true));
+                    // 14-e167: the per-cell measured variants (the same
+                    // parts, the per-cell tint override, the cell-discriminated
+                    // sibling suffix; the same slide translate the open-door
+                    // plain composite rides). The compound stateId keys the
+                    // placement's per-cell preference (the rung's second half).
+                    if (open) {
+                        double[] slide = slideDoorOffset(bareState);
+                        for (String pc : perCellRowsFor(state)) {
+                            double[] ct = perCellTints.get(pc);
+                            if (ct == null) {
+                                continue;
+                            }
+                            // pc = the full compound (the calibrator's key);
+                            // the suffix discriminator = the CELL part only
+                            String cellId = pc.substring(pc.indexOf('@') + 1);
+                            String cref = synthesizeComposite(jars, bareState, parts,
+                                    compositeIdx, entries, warnings, ctCtx,
+                                    java.util.Map.of(state, ct), bakeLog,
+                                    emissiveTable, emissiveLog,
+                                    "_p" + cellId.replace(':', '_').replace(',', '_'));
+                            if (cref != null) {
+                                if (slide != null) {
+                                    translateCompositeElements(cref, slide, entries);
+                                }
+                                out.add(new Resolved(pc, cmd, cref, 0, 0, true));
+                            }
+                            compositeIdx++;
+                        }
+                    } else {
+                        compositeIdx += perCellRowsFor(state).size();
+                    }
                     cmd += 1.0f;
                     continue;
                 }
@@ -567,7 +598,7 @@ public final class GalleryPack {
                 // 0/0).
                 String ref = synthesizeComposite(jars, bareState, parts,
                         compositeIdx, entries, warnings, ctCtx, tintTable, bakeLog,
-                        emissiveTable, emissiveLog);
+                        emissiveTable, emissiveLog, null);
                 if (ref == null) {
                     warnings.add("gallery: composite failed for " + state + " — row dropped");
                     continue;
@@ -577,6 +608,23 @@ public final class GalleryPack {
                 }
                 compositeIdx++;
                 out.add(new Resolved(state, cmd, ref, 0, 0, true));
+                // 14-e167: the per-cell measured variants (the plain path).
+                for (String pc : perCellRowsFor(state)) {
+                    double[] ct = perCellTints.get(pc);
+                    if (ct == null) {
+                        continue;
+                    }
+                    String cellId = pc.substring(pc.indexOf('@') + 1);
+                    String cref = synthesizeComposite(jars, bareState, parts,
+                            compositeIdx, entries, warnings, ctCtx,
+                            java.util.Map.of(state, ct), bakeLog,
+                            emissiveTable, emissiveLog,
+                            "_p" + cellId.replace(':', '_').replace(',', '_'));
+                    if (cref != null) {
+                        out.add(new Resolved(pc, cmd, cref, 0, 0, true));
+                    }
+                    compositeIdx++;
+                }
                 cmd += 1.0f;
             } catch (Exception e) {
                 warnings.add("gallery: " + state + " resolution failed: " + e);
@@ -1261,7 +1309,8 @@ public final class GalleryPack {
                                               Map<String, double[]> tintTable,
                                               List<String> bakeLog,
                                               Map<String, Integer> emissiveTable,
-                                              List<String> emissiveLog) throws IOException {
+                                              List<String> emissiveLog,
+                                              String tintSuffixExtra) throws IOException {
         JsonArray mergedElements = new JsonArray();
         Map<String, String> textures = new TreeMap<>();
         double displayScale = 1;
@@ -1309,7 +1358,7 @@ public final class GalleryPack {
         // siblings — the shared vanilla texture keeps serving the vanilla
         // block (the per-texture pass above never touches vanilla-namespace
         // sprites, the calibrator routes them here instead).
-        applyStateTint(jars, state, textures, tintTable, entries, bakeLog);
+        applyStateTint(jars, state, textures, tintTable, entries, bakeLog, tintSuffixExtra);
         // EMISSIVE-BAKE (visual-emissive.tsv): set the tabled state's
         // light_emission on EVERY merged element BEFORE the wrapper is
         // emitted — the element property rides the emitted JSON verbatim.
@@ -1501,11 +1550,77 @@ public final class GalleryPack {
         return tint != null ? tint : tintTable.get(canonicalState(state));
     }
 
+    // ---- 14-e167 THE PER-CELL MEASURED CALIBRATION (the R-a delivery) -------
+    // The e164b design: the calibrator's per-cell rows (visual-tints-cells.tsv,
+    // keyed state@page:c,r) become PER-CELL WRAPPER VARIANTS of the state's
+    // composite — each cell's baked sibling = the raw texture premultiplied
+    // by THAT cell's measured ratio (the e162b census: the multi-cell door
+    // states' luma spreads to sd 0.369 — the per-state median = the proven
+    // insufficient surface). THE DOUBLE-COUNT GUARD (the e162 law): the
+    // per-cell rows REPLACE the state's plain tint for their cells — the
+    // placement prefers the per-cell ref (the second half of the rung), one
+    // multiply per pixel per cell, never two. Absent file = empty table =
+    // the byte-identical build (the honest absent-input contract).
+
+    /** state -> the per-cell keys (page:c,r) the calibrator measured. */
+    private static final java.util.Map<String, java.util.List<String>> perCellKeys =
+            new java.util.HashMap<>();
+    /** state@cellKey -> the per-cell measured multiply. */
+    private static final java.util.Map<String, double[]> perCellTints =
+            new java.util.HashMap<>();
+
+    /** Fresh tables per build; a selftest may re-set between builds. */
+    static void resetPerCellTints() {
+        perCellKeys.clear();
+        perCellTints.clear();
+    }
+
+    /** Install the per-cell table (the full keys = state@page:c,r). */
+    static void setPerCellTints(java.util.Map<String, double[]> table) {
+        perCellKeys.clear();
+        perCellTints.clear();
+        if (table == null) {
+            return;
+        }
+        for (java.util.Map.Entry<String, double[]> e : table.entrySet()) {
+            int at = e.getKey().indexOf('@');
+            if (at <= 0 || at == e.getKey().length() - 1) {
+                continue;
+            }
+            perCellTints.put(e.getKey(), e.getValue());
+            perCellKeys.computeIfAbsent(e.getKey().substring(0, at),
+                    k -> new ArrayList<>()).add(e.getKey().substring(at + 1));
+        }
+    }
+
+    /** The per-cell compound rows for a state (the exact manifest spelling
+     *  first, then the canonical property order — the same rule stateTintFor
+     *  carries). The returned keys = the FULL compound keys the tint table
+     *  carries. */
+    private static java.util.List<String> perCellRowsFor(String state) {
+        if (perCellKeys.isEmpty() || state == null) {
+            return List.of();
+        }
+        String canon = canonicalState(state);
+        for (java.util.Map.Entry<String, java.util.List<String>> e : perCellKeys.entrySet()) {
+            if (e.getKey().equals(state)
+                    || (canon != null && canonicalState(e.getKey()).equals(canon))) {
+                java.util.List<String> out = new ArrayList<>();
+                for (String cell : e.getValue()) {
+                    out.add(e.getKey() + "@" + cell);
+                }
+                return out;
+            }
+        }
+        return List.of();
+    }
+
     private static void applyStateTint(List<Path> jars, String state,
                                        Map<String, String> textures,
                                        Map<String, double[]> tintTable,
                                        TreeMap<String, byte[]> entries,
-                                       List<String> bakeLog) {
+                                       List<String> bakeLog,
+                                       String tintSuffixExtra) {
         if (tintTable == null || tintTable.isEmpty() || textures.isEmpty()) {
             return;
         }
@@ -1513,7 +1628,11 @@ public final class GalleryPack {
         if (tint == null) {
             return;
         }
-        String suffix = TINT_SUFFIX + "_s" + stateHash(state);
+        // 14-e167: the per-cell variants discriminate their siblings by the
+        // cell key (_p<page>:c<col>,r<row> — filesystem-safe); the plain
+        // composite keeps the bare _cimtint_s<hash> suffix.
+        String suffix = TINT_SUFFIX + "_s" + stateHash(state)
+                + (tintSuffixExtra == null ? "" : tintSuffixExtra);
         final double[] ftint = tint; // the bake lambda's capture
         Map<String, String> bakedRefs = new TreeMap<>();
         for (Map.Entry<String, String> e : textures.entrySet()) {

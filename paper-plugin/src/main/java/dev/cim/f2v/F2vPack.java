@@ -2225,6 +2225,14 @@ public final class F2vPack {
                 // pack stays byte-identical to today's build.
                 Map<String, double[]> tintTable =
                         readTintManifest(outDir.resolve("visual-tints.tsv"));
+                // 14-e167 THE PER-CELL MEASURED CALIBRATION (the R-a
+                // delivery): the calibrator's per-cell rows
+                // (visual-tints-cells.tsv, keyed state@page:c,r) become the
+                // per-cell wrapper variants. Absent file = empty table = the
+                // byte-identical build (the honest absent-input contract).
+                GalleryPack.resetPerCellTints();
+                GalleryPack.setPerCellTints(
+                        readTintManifest(outDir.resolve("visual-tints-cells.tsv")));
                 // 14-df RING channel: the same row parser, a separate table
                 // (the ring rows key the STATE to a corridor factor, not a
                 // texture multiply — the ring never rewrites a sprite).
@@ -4309,6 +4317,123 @@ public final class F2vPack {
                     .orElse("");
             expect(failures, !rock6.isEmpty() && !str(stateTintZip, rock6).contains("_cimtint"),
                     "state tint: a state not in the table keeps its raw sprite");
+
+            // -- 14-e167 PER-CELL MEASURED CALIBRATION asserts -------------------
+            // The per-cell rows (visual-tints-cells.tsv) become per-cell
+            // wrapper variants: the compound stateId = state@page:c,r, the
+            // sibling sprite = _cimtint_s<hash>_p<cellkey> premultiplied by
+            // THAT cell's ratio, the plain composite = untouched.
+            Path out6c = tmp.resolve("out6c");
+            Files.createDirectories(out6c);
+            Files.writeString(out6c.resolve("visual-items.tsv"),
+                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out6c.resolve("visual-palettes.tsv"),
+                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
+            Files.writeString(out6c.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
+                    StandardCharsets.UTF_8);
+            Files.writeString(out6c.resolve("visual-tints.tsv"),
+                    Files.readString(out6.resolve("visual-tints.tsv")), StandardCharsets.UTF_8);
+            // the per-cell rows: the glow state at TWO cells — the cell 1
+            // ratio = (0.5,1.0,2.0) x (0.7,0.7,0.7) = (0.35,0.7,1.4), the
+            // cell 2 = (0.4,0.9,1.2); both carry the same guard bars the
+            // per-state fold runs.
+            Files.writeString(out6c.resolve("visual-tints-cells.tsv"),
+                    "# 14-e167 fixture\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]@gallery-fake-p0:c0,r3\t0.35\t0.7\t1.4\tn=900|class=luma+chroma\n"
+                    + "fakemod:glow_bloom[power=7,lit=true]@gallery-fake-p0:c4,r7\t0.4\t0.9\t1.2\tn=800|class=luma+chroma\n",
+                    StandardCharsets.UTF_8);
+            Result r6c = build(mods, out6c, readManifest(out6c.resolve("visual-items.tsv")),
+                    equipment, List.of(), readPaletteManifest(out6c.resolve("visual-palettes.tsv")),
+                    List.of(vanillaJar));
+            String glowPlain6c = r6c.gallery().stream()
+                    .filter(r -> r.stateId().equals("fakemod:glow_bloom[lit=true,power=7]"))
+                    .findFirst()
+                    .map(r -> "assets/c-imagine/models/gallery/"
+                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
+                    .orElse("");
+            expect(failures, !glowPlain6c.isEmpty(), "per-cell: the plain composite rides");
+            // the compound rows = the CALIBRATOR's own spelling (the
+            // fixture deliberately writes a different property order than
+            // the manifest — the canonical fallback binds and the rows
+            // carry the row's own spelling)
+            long perCellRows = r6c.gallery().stream()
+                    .filter(r -> r.stateId().contains("glow_bloom")
+                            && r.stateId().contains("@gallery-fake-p0:"))
+                    .count();
+            expect(failures, perCellRows == 2,
+                    "per-cell: both compound rows ride the resolved manifest");
+            TreeMap<String, byte[]> pcZip = readZip(out6c.resolve("pack.zip"));
+            String pcSprite1 = null;
+            String pcSprite2 = null;
+            if (!glowPlain6c.isEmpty()) {
+                String plainJson = str(pcZip, glowPlain6c);
+                expect(failures, java.util.regex.Pattern
+                                .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}")
+                                .matcher(plainJson).find()
+                                && !plainJson.contains("_p"),
+                        "per-cell: the plain composite keeps the bare suffix");
+                java.util.regex.Matcher m1 = java.util.regex.Pattern
+                        .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}_pgallery-fake-p0_c0_r3")
+                        .matcher(str(pcZip, glowPlain6c));
+                // the plain wrapper must NOT reference the per-cell siblings
+                expect(failures, !m1.find(),
+                        "per-cell: the plain wrapper carries no per-cell refs");
+            }
+            for (GalleryPack.Resolved rr : r6c.gallery()) {
+                if (!rr.stateId().endsWith("@gallery-fake-p0:c0,r3")) continue;
+                String ref = "assets/c-imagine/models/gallery/"
+                        + rr.modelRef().substring(rr.modelRef().lastIndexOf('/') + 1) + ".json";
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}_pgallery-fake-p0_c0_r3")
+                        .matcher(str(pcZip, ref));
+                if (m.find()) pcSprite1 = m.group();
+            }
+            for (GalleryPack.Resolved rr : r6c.gallery()) {
+                if (!rr.stateId().endsWith("@gallery-fake-p0:c4,r7")) continue;
+                String ref = "assets/c-imagine/models/gallery/"
+                        + rr.modelRef().substring(rr.modelRef().lastIndexOf('/') + 1) + ".json";
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}_pgallery-fake-p0_c4_r7")
+                        .matcher(str(pcZip, ref));
+                if (m.find()) pcSprite2 = m.group();
+            }
+            expect(failures, pcSprite1 != null && pcSprite2 != null,
+                    "per-cell: both variants reference their own cell-discriminated siblings");
+            if (pcSprite1 != null && pcSprite2 != null) {
+                java.awt.image.BufferedImage s1 = decodePng(pcZip.get("assets/fakemod/textures/block/"
+                        + pcSprite1.substring(pcSprite1.lastIndexOf('/') + 1) + ".png"));
+                java.awt.image.BufferedImage s2 = decodePng(pcZip.get("assets/fakemod/textures/block/"
+                        + pcSprite2.substring(pcSprite2.lastIndexOf('/') + 1) + ".png"));
+                java.awt.image.BufferedImage raw6c = decodePng(
+                        jarEntries.get("assets/fakemod/textures/block/glow_tex.png"));
+                boolean px = s1.getWidth() == raw6c.getWidth()
+                        && s2.getWidth() == raw6c.getWidth();
+                for (int y = 0; y < raw6c.getHeight() && px; y++) {
+                    for (int x = 0; x < raw6c.getWidth() && px; x++) {
+                        int ra = raw6c.getRGB(x, y);
+                        int c1 = s1.getRGB(x, y);
+                        int c2 = s2.getRGB(x, y);
+                        int w1 = (ra & 0xFF000000)
+                                | (Math.min(255, (int) Math.round(64 * 0.35)) << 16)
+                                | (Math.min(255, (int) Math.round(128 * 0.7)) << 8)
+                                | Math.min(255, (int) Math.round(192 * 1.4));
+                        int w2 = (ra & 0xFF000000)
+                                | (Math.min(255, (int) Math.round(64 * 0.4)) << 16)
+                                | (Math.min(255, (int) Math.round(128 * 0.9)) << 8)
+                                | Math.min(255, (int) Math.round(192 * 1.2));
+                        px &= c1 == w1 && c2 == w2;
+                        if (c1 != w1 || c2 != w2) {
+                            failures.add("per-cell pixel (" + x + "," + y
+                                    + "): want " + Integer.toHexString(w1) + "/"
+                                    + Integer.toHexString(w2)
+                                    + " got " + Integer.toHexString(c1) + "/"
+                                    + Integer.toHexString(c2));
+                        }
+                    }
+                }
+                expect(failures, px,
+                        "per-cell: each sibling = the raw x ITS OWN cell's measured ratio");
+            }
 
             // the texture row WINS over a state row for the same sprite: the
             // composite references the plain _cimtint sibling and NO state
