@@ -2359,6 +2359,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         final float pageCmd = pr.row().cmd();
                         final int pageAo = cimAoPercentForKeys(world(worldName()),
                                 pr.perCellKeys()); // 14-e155 the group-mean AO census
+                        // 14-e155b the AO pin scale — the group's pins ride the
+                        // group-mean factor (the coarse rung; the tint rows ignore
+                        // the override per the 14-cz law = no regression there)
+                        final float pageAoF = pageAo / 100.0f;
+                        final int pbAo = Math.round(pb * pageAoF);
+                        final int psAo = Math.round(ps * pageAoF);
                         ItemStack pStack = new ItemStack(Material.matchMaterial("paper"));
                         pStack.editMeta(meta -> {
                             CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
@@ -2370,7 +2376,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                     e.setItemStack(pStack);
                                     e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                                     e.setTransformation(tr);
-                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(pb, ps));
+                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(pbAo, psAo));
                                     if (pageAo < 100) { // 14-e155 the AO side-channel
                                         e.setCustomName("cimao=" + pageAo);
                                     }
@@ -2379,7 +2385,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 + pr.row().stateId() + " cmd=" + pageCmd
                                 + " anchor=" + pr.ax() + "," + pr.ay() + "," + pr.az()
                                 + " cells=" + pr.cells() + " elements=" + pr.elements()
-                                + " pin=" + pb + "/" + ps
+                                + " pin=" + pbAo + "/" + psAo + " pin0=" + pb + "/" + ps
                                 + " ao=" + pageAo
                                 + " rig=" + pageRig
                                 + " uuid=" + display.getUniqueId());
@@ -2547,12 +2553,27 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 final int pinSky = fieldLight != null ? fieldLight[1]
                         : capturedLight ? Math.min(15, Math.max(0, r.lightSky())) : 15;
                 final int aoPct = cimAoPercent(world(worldName()), x, y, z); // 14-e155 the per-cell AO census
+                // 14-e155b THE AO PIN SCALE (the ACTIVE delivery — the e154b
+                // correction: the ours leg = the VANILLA 26.3 client, "plugin.jar
+                // ONLY — no mod jars, no layer, no scene-mod" per the workflow's
+                // wall-ours contract — so the scene-mod mixin = DORMANT there and
+                // the AO rides the pin levels: the 26.3 client consumes the
+                // Brightness override end-to-end for the live-lightmap composites
+                // (the measured probes), the tinted-composite rows ignore it (the
+                // 14-cz law — their AO = the pack-bake increment, NOT this rung).
+                // The level scale = the coarse rung (the lightmap curve is
+                // non-linear; the calibration walk owns the residual). The rig
+                // decision above stays on the UNSCALED pins (the spawn position
+                // = the geometry, not the render).
+                final float aoF = aoPct / 100.0f;
+                final int pinBlockAo = Math.round(pinBlock * aoF);
+                final int pinSkyAo = Math.round(pinSky * aoF);
                 org.bukkit.entity.ItemDisplay display = world(worldName()).spawn(at,
                         org.bukkit.entity.ItemDisplay.class, e -> {
                             e.setItemStack(stack);
                             e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                             e.setTransformation(tr);
-                            e.setBrightness(new org.bukkit.entity.Display.Brightness(pinBlock, pinSky));
+                            e.setBrightness(new org.bukkit.entity.Display.Brightness(pinBlockAo, pinSkyAo));
                             if (aoPct < 100) { // 14-e155 the AO side-channel (untagged = the exact legacy render)
                                 e.setCustomName("cimao=" + aoPct);
                             }
@@ -2575,7 +2596,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                         + row[1] + "," + row[2] + "," + row[3] + " state=" + state
                         + " cmd=" + r.cmd() + " uuid=" + display.getUniqueId()
-                        + " pin=" + pinBlock + "/" + pinSky
+                        + " pin=" + pinBlockAo + "/" + pinSkyAo + " pin0=" + pinBlock + "/" + pinSky
                         + " ao=" + aoPct
                         + " src=" + (fieldLight != null ? "front-air" : capturedLight ? "captured" : "legacy")
                         + " at=" + at.getX() + "," + at.getY() + "," + at.getZ()
@@ -2640,7 +2661,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                     e.setItemStack(xStack);
                                     e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
                                     e.setTransformation(tr);
-                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(xPinBlock, xPinSky));
+                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(
+                                            Math.round(xPinBlock * aoF), Math.round(xPinSky * aoF)));
                                     if (aoPct < 100) { // 14-e155 the same cell = the same factor
                                         e.setCustomName("cimao=" + aoPct);
                                     }
