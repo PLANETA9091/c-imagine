@@ -924,6 +924,7 @@ jobs:
           cache-disabled: true   # v4 input; "cache: false" was ignored and every shard saved a 216 MB gradle home
       - uses: actions/setup-java@v4
         with:
+          cache: maven   # Maven Central throttles runners (integration 44563929523); ~/.m2 cached
           distribution: temurin
           java-version: 21
       - uses: actions/setup-java@v4

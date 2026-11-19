@@ -115,6 +115,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
+          cache: maven   # Maven Central throttles runners (integration 44563929523); ~/.m2 cached
           # Paper 26.3 API jars are class-file v69 (Java 25); the compiler
           # must read them, so build with JDK 25 (plugin bytecode stays 21).
           distribution: temurin

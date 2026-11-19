@@ -77,6 +77,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
+          cache: maven   # Maven Central throttles runners (integration 44563929523); ~/.m2 cached
           distribution: temurin
           java-version: 25
       - name: resolve newest stable paper-api for 26.3
