@@ -915,7 +915,7 @@ jobs:
         id: seed-inputs
         run: |
           T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$(awk '/^  seed-truth:$/{f=1} /^  seed-pack:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)"   # == seed-truth's key
-          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}"
+          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml', '.github/workflows/gallery.yml') }}"   # 14-e171: the workflow's own pack steps = the pack's inputs too (the e170 lesson: the copy-loop edit was invisible to the key — the stale pack = the honest negative twice)
           echo "truth=$T" >> "$GITHUB_OUTPUT"
           echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
 
