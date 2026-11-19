@@ -1977,8 +1977,22 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 az = Math.min(az, z);
                 String state = row[4];
                 String ctKey = ctByPos.get(row[1] + "," + row[2] + "," + row[3]);
-                dev.cim.f2v.GalleryPack.Resolved pick = dev.cim.f2v.GalleryPack.pickResolved(
-                        byState, byQuadState, byQuadHash, state, ctKey);
+                // 14-e167 THE PER-CELL PREFERENCE (the R-a delivery's second
+                // half): the calibrator's per-cell rows key
+                // state@<page>:c<col>,r<row> — the crop grid = the same law
+                // the join cuts (col = (x+5)/PITCH, row = (y+60)/PITCH,
+                // PITCH=1, the gallery-diff.py GALLERY_X0/Y0 mirror). The
+                // per-cell wrapper = the cell's measured multiply; the plain
+                // chain = the fallback (the e162 double-count law: the
+                // per-cell rows REPLACE the state's plain tint for their
+                // cells, never add to it).
+                dev.cim.f2v.GalleryPack.Resolved pick =
+                        byState.get(state + "@" + base + ":c" + (x + 5)
+                                + ",r" + (y + 60));
+                if (pick == null) {
+                    pick = dev.cim.f2v.GalleryPack.pickResolved(
+                            byState, byQuadState, byQuadHash, state, ctKey);
+                }
                 if (pick == null) {
                     log.add(base + ": no pack CMD for " + state + " — cell "
                             + row[1] + "," + row[2] + "," + row[3] + " rides the page as a hole");
@@ -2448,10 +2462,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 String ctKey = ctByPos.get(row[1] + "," + row[2] + "," + row[3]);
                 // 14-dh: the ONE pick law (CT ctx -> mesh hash -> the exact
                 // state's captured mesh -> the plain composite) lives in
-                // GalleryPack.pickResolved — the selftest holds it
+                // GalleryPack.pickResolved — the selftest holds it. 14-e167:
+                // the per-cell compound row = the FIRST pick (the measured
+                // per-cell multiply), the ONE pick law = the fallback.
+                String manifestBase = manifestName.endsWith(".tsv")
+                        ? manifestName.substring(0, manifestName.length() - 4)
+                        : manifestName;
                 dev.cim.f2v.GalleryPack.Resolved picked =
-                        dev.cim.f2v.GalleryPack.pickResolved(map, byQuadState,
-                                byQuadHash, state, ctKey);
+                        map.get(state + "@" + manifestBase + ":c" + (x + 5)
+                                + ",r" + (y + 60));
+                if (picked == null) {
+                    picked = dev.cim.f2v.GalleryPack.pickResolved(map, byQuadState,
+                            byQuadHash, state, ctKey);
+                }
                 if (picked == null) {
                     log().warning(LOG_PREFIX + "f2v gallery: no pack CMD for " + state
                             + " — cell " + row[1] + "," + row[2] + "," + row[3] + " skipped");
