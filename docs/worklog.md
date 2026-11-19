@@ -13,6 +13,8 @@ Binding rules derived from it:
 3. Work at maximum depth; deep internet analysis and reverse engineering allowed and encouraged.
 4. NO sleep-blocking: monitoring = instant one-shot checks (direct curl / zero-wait monitor), useful work between checks. Old blocking pattern `timeout 590 monitor_tick_runs.py 560` is forbidden.
 5. After every completed task, IMMEDIATELY take the next one (the mechanical sequence at the end of the newest handoff entry).
+6. CRON OFF (user directive, verbatim intent: «...запиши себе в ворклог что бы не забыть и случайно не остановится! и выключи крон»): NO scheduled continuations — the loop runs ONLY inside active user-driven sessions. Zero cron jobs (verified 2026-11-20). Do NOT re-arm any scheduler.
+7. ALL-GREEN HONEST CAMPAIGN (user directive, verbatim intent: «продолжи ещё сильнее что бы были все грин без обмана»): drive the verdict reds to ZERO by honest root-cause fixes only — every number receipted from real data, every correction named (the e122 mislabel precedent = the honesty law), NO fabricated greens, NO gate loosening, NO test disabling, NO claimed fixes without the arbiter's landing read. Red-class owners: R1 structure rows, mek runtime-composed textures, animation-phase lottery, tint-lane AO.
 
 ---
 Task ID: 1
