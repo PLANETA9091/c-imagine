@@ -2550,7 +2550,7 @@ jobs:
           # the per-cell path = the in-run control group; the pre-registered
           # prediction (14-e60): the p16 door reds collapse toward zero IF
           # the context-bleed law is the whole mechanism.
-          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -Dcim.f2v.autoOffer=false -Dcim.f2v.publicUrl=http://127.0.0.1:25580/cim-f2v-pack.zip -Dcim.gallery.pageComposite=create:16 -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          setsid bash -c "java -Xmx3G -Dcim.f2v.fastBoot=true -Dcim.f2v.screenOverlay=true -Dcim.f2v.autoOffer=false -Dcim.f2v.publicUrl=http://127.0.0.1:25580/cim-f2v-pack.zip -Dcim.gallery.staticFamilies=supplementaries:cage,supplementaries:timber_brace -Dcim.gallery.pageComposite=create:16 -jar paper.jar --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
           cd ..
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
           # MEASURED (run 42250969085, all 8 ours shards): the client died

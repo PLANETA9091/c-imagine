@@ -118,10 +118,27 @@ public final class GalleryPack {
      * @param state       the manifest cell's state string (bare)
      * @param ctKey       the position's ctx tile key or null
      */
+    private static final java.util.Set<String> STATIC_FAMILIES = java.util.Set.of(
+            System.getProperty("cim.gallery.staticFamilies", "").isBlank() ? new String[0]
+                    : System.getProperty("cim.gallery.staticFamilies").split(","));
+
     public static Resolved pickResolved(Map<String, Resolved> byState,
                                  Map<String, Resolved> byQuadState,
                                  Map<String, Resolved> byQuadHash,
                                  String state, String ctKey) {
+        // GREEN A/B (cim.gallery.staticFamilies=<block id,...>): these families render the
+        // mod's own static model instead of the captured-mesh composite, to measure which
+        // channel the see-through reds come from (cage / timber_brace: 0/19 red on the
+        // centre columns, 46/46 off-axis).
+        if (!STATIC_FAMILIES.isEmpty()) {
+            int b = state.indexOf('[');
+            if (STATIC_FAMILIES.contains(b < 0 ? state : state.substring(0, b))) {
+                Resolved plain = byState.get(state);
+                if (plain != null) {
+                    return plain;
+                }
+            }
+        }
         Resolved picked = ctKey == null ? null : byState.get(state + "#" + ctKey);
         if (picked == null && ctKey != null) {
             picked = byQuadHash.get(ctKey);
