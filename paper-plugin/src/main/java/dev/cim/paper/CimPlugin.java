@@ -4589,6 +4589,23 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                 }
             }
+            // The truth's clearWall() sets every block of the wall region to air before each
+            // page; this leg only despawned entities, so real blocks survived the page swap.
+            // Measured (run 44559443368): the biome tint rig (grass_block + oak_leaves at
+            // -5/-4,-60,9, persisted in the restored seed world) stood behind every block page
+            // and 320 of 1723 red block cells were its greenery at wall columns 1-2.
+            // The region is the truth's pitch-2 box (a superset of the pitch-1 one).
+            World wall = world(worldName());
+            for (int x = -6; x <= 16; x++) {
+                for (int y = -60; y <= -47; y++) {
+                    for (int z = 8; z <= 10; z++) {
+                        org.bukkit.block.Block b = wall.getBlockAt(x, y, z);
+                        if (!b.getType().isAir()) {
+                            b.setType(Material.AIR, false);
+                        }
+                    }
+                }
+            }
             return n;
         });
         return removed == null ? 0 : removed;
