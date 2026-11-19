@@ -1579,10 +1579,17 @@ jobs:
           # per-block rotation) over the corridor and the whole ground band
           # the camera can see behind the wall (view-distance 6 = 96 blocks).
           # The fill is part of the RIG, identical on both stacks.
+          # GREEN (light_gray_concrete, was smooth_stone): the smooth_stone texture is
+          # pixel-identical in 1.21.1 and 26.3, but its strong tile borders (edge
+          # contrast 11.6) render differently at the floor's grazing angle in the two
+          # clients (mipmap/filter differences), so floor-only row-0 crops read RED
+          # (ae ~60k with no subject in frame; run 44559443368: row 0 = 832 of ~1740
+          # block reds, 15.5% vs 2-4% on the other rows). light_gray_concrete is
+          # identical in both versions and 15x flatter (edge contrast 0.8).
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "forceload add -128 8 128 104" \
-            "fill -40 -61 -2 40 -61 9 minecraft:smooth_stone" \
-            "fill -128 -61 10 128 -61 100 minecraft:smooth_stone" | tee ground-fill.log
+            "fill -40 -61 -2 40 -61 9 minecraft:light_gray_concrete" \
+            "fill -128 -61 10 128 -61 100 minecraft:light_gray_concrete" | tee ground-fill.log
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "gamerule doDaylightCycle false" "time set noon" \
             "gamerule doWeatherCycle false" "weather clear" \
@@ -2762,8 +2769,8 @@ jobs:
             | tee ours-pins.log
           python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
             "forceload add -128 8 128 104" \
-            "fill -40 -61 -2 40 -61 9 minecraft:smooth_stone" \
-            "fill -128 -61 10 128 -61 100 minecraft:smooth_stone" | tee ground-fill.log
+            "fill -40 -61 -2 40 -61 9 minecraft:light_gray_concrete" \
+            "fill -128 -61 10 128 -61 100 minecraft:light_gray_concrete" | tee ground-fill.log
           LAUNCH=$(cat visual-client/launch.txt)
           ARGS="${LAUNCH#java }"
           CLIENT_JAVA="${{ steps.jdk25.outputs.path }}/bin/java"
