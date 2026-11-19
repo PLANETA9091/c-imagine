@@ -1096,7 +1096,7 @@ jobs:
           # byte-identical behavior (readTintManifest/readEmissiveManifest),
           # present = the measured multiplies / light_emission bake
           for T in visual-tints.tsv visual-emissive.tsv visual-fluid-colors.tsv \
-                   visual-rings.tsv; do
+                   visual-rings.tsv visual-tints-cells.tsv; do
             [ -f "scripts/f2v/$T" ] && cp "scripts/f2v/$T" seed-pack/f2v/
           done
           # per-ns pack manifests, then ONE concatenated file per channel —
