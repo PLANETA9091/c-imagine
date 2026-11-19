@@ -342,7 +342,9 @@ def crop_pairs(artifacts: pathlib.Path, gate: float):
     """(state -> [(truth_path, shift, page, col, row)]) for every RED row with
     a saved triptych crop, from the join JSONs under the artifacts root."""
     out: dict[str, list] = defaultdict(list)
-    for join in sorted(artifacts.glob("r*/join-*.json")):
+    # 14-e164: the artifact dirs = gallery-report-N today (the r*/ prefix
+    # = the old extraction layout) — the dir-agnostic glob matches both.
+    for join in sorted(artifacts.glob("*/join-*.json")):
         data = json.loads(join.read_text())
         for row in data.get("rows", []):
             if row.get("verdict") != "RED":
@@ -357,7 +359,7 @@ def crop_pairs(artifacts: pathlib.Path, gate: float):
                 continue
             stem = f"{page}_c{col}_r{rowi}"
             hits = sorted(artifacts.glob(
-                f"r*/diff-{page[len('gallery-'):]}/{stem}_truth.png"))
+                f"*/diff-{page[len('gallery-'):]}/{stem}_truth.png"))
             if not hits:
                 continue
             shift = tuple(row.get("shift") or (0, 0))
@@ -779,6 +781,13 @@ def main(argv=None) -> int:
                          "retry for the shift/MAD-refused states that remain, "
                          "and APPEND the new rows to the OUT file (the "
                          "committed rows stay byte-identical)")
+    ap.add_argument("--per-cell-out", type=pathlib.Path, default=None,
+                    help="14-e164: also write the per-CELL rows (the key = "
+                         "state@page:c,r) for the cells that pass the same "
+                         "guards — the R-a per-cell measured calibration's "
+                         "data product; the pack's per-cell wrapper delivery "
+                         "consumes this file (the per-state median = the "
+                         "e162-proven insufficient surface)")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args(argv)
 
@@ -868,6 +877,59 @@ def main(argv=None) -> int:
         elif reason is not None:
             dropped.append((tex, reason))
             failed_texs.add(tex)
+
+    # 14-e164 THE PER-CELL ROWS (the R-a data product): the same solves the
+    # per-state folds consumed, emitted per CELL with the same guard bars —
+    # the shift <= STATE_SHIFT_MAX, the MAD <= STATE_MAD_MAX, the ratio in
+    # [STATE_BAKE_MIN, BAKE_RATIO_MAX], the class not geometry/px. The key =
+    # state@page:c,r (the placement's own per-cell key, the 14-e71 node
+    # table's law). The per-state median = the e162-proven insufficient
+    # surface: the multi-cell door states' luma spreads to sd 0.369 — the
+    # per-cell rows carry the measured variance the median averages out.
+    if args.per_cell_out is not None:
+        cell_rows = []
+        cell_dropped = []
+        for state, solves in sorted(state_solves.items()):
+            kept = 0
+            for s in solves:
+                r = s["ratio"]
+                mad = s["mad"]
+                shift = s["shift"]
+                cls = s["cls"]
+                if cls == "geometry/px":
+                    cell_dropped.append((state, s["cell"], "geometry/px"))
+                    continue
+                if max(abs(shift[0]), abs(shift[1])) > STATE_SHIFT_MAX:
+                    cell_dropped.append((state, s["cell"], f"shift {shift}"))
+                    continue
+                if mad > STATE_MAD_MAX:
+                    cell_dropped.append((state, s["cell"], f"mad {mad:.3f}"))
+                    continue
+                if min(r) < STATE_BAKE_MIN or max(r) > BAKE_RATIO_MAX:
+                    cell_dropped.append((state, s["cell"],
+                                         f"ratio {r[0]:.3f},{r[1]:.3f},{r[2]:.3f}"))
+                    continue
+                rr, gg, bb = (round(float(x), 4) for x in r)
+                cell_rows.append((f"{state}@{s['page']}:{s['cell']}",
+                                  rr, gg, bb,
+                                  f"n={s['n']}|class={cls}"))
+                kept += 1
+            if solves and kept == 0:
+                cell_dropped.append((state, "*", "all cells refused"))
+        with args.per_cell_out.open("w") as f:
+            f.write("# 14-e164 per-cell measured tint rows (the R-a data "
+                    "product): key = state@page:c,r\n")
+            f.write("# the same guard bars the per-state folds carry "
+                    f"(shift<={STATE_SHIFT_MAX}, mad<={STATE_MAD_MAX}, "
+                    f"ratio in [{STATE_BAKE_MIN},{BAKE_RATIO_MAX}])\n")
+            for k, r, g, b, ev in cell_rows:
+                f.write(f"{k}\t{r}\t{g}\t{b}\t{ev}\n")
+        print(f"14-e164 per-cell rows: {len(cell_rows)} -> {args.per_cell_out}")
+        print(f"  dropped cells: {len(cell_dropped)}"
+              + (" (named below with --verbose)" if cell_dropped else ""))
+        if args.verbose:
+            for s, c, why in cell_dropped:
+                print(f"  cell drop: {s}@{c}: {why}")
 
     # THE 14-db STATE-KEYED FALLBACK: the texture route refused a fold (two
     # lightings on one texture, the out-of-family/unrepresentable medians) or
