@@ -36,6 +36,8 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       - name: build cimscene mod (NeoForge 1.21.1)
         working-directory: scene-mod
@@ -181,6 +183,8 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       - name: build cimtest + cimscene
         run: |
@@ -449,6 +453,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       - name: build rust (release)
         run: cargo build --release --quiet
@@ -645,6 +651,8 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       - name: build cimtest + cimscene
         run: |

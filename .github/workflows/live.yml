@@ -73,6 +73,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
       - name: build cimlive
         run: gradle build --no-daemon -p live-mod
       - name: restore NeoForge server
@@ -135,6 +137,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
       - name: build rust (release)
         run: cargo build --release --quiet
       - name: build java bootstrap
@@ -208,6 +212,8 @@ jobs:
         with:
           node-version: 22
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
       - name: build cimlive
         run: gradle build --no-daemon -p live-mod
       - name: build java bootstrap

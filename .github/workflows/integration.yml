@@ -56,6 +56,8 @@ jobs:
           node-version: 22
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       # --- build artifacts -------------------------------------------------
       - name: build cimtest mod (NeoForge 1.21.1)
@@ -625,6 +627,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       # --- build (all on CI per owner directive) --------------------------
       - name: build rust (release)
@@ -740,6 +744,8 @@ jobs:
           java-version: 21
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       - name: build cimtest mod (NeoForge 1.21.1)
         working-directory: test-mods

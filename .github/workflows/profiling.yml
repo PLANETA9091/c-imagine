@@ -132,6 +132,8 @@ jobs:
           node-version: 22
 
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true   # one writer (ci.yml); per-job 226 MB homes evicted every other cache
 
       - name: build artifacts
         run: |

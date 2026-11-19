@@ -232,14 +232,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: gradle/actions/setup-gradle@v4
         with:
-          cache: false
+          cache-disabled: true   # v4 input; "cache: false" was ignored and every shard saved a 216 MB gradle home
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
       - name: seed input fingerprint (truth walk inputs)
         id: truth-inputs
-        run: echo "hash=${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', '.github/workflows/gallery.yml') }}" >> "$GITHUB_OUTPUT"
+        # The recipe hash covers the seed-truth job's own text only: an edit elsewhere in
+        # this file (the ours side, the verdict) must not re-walk the truth (20 min).
+        run: |
+          R=$(awk '/^  seed-truth:$/{f=1} /^  seed-pack:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)
+          echo "hash=${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$R" >> "$GITHUB_OUTPUT"
       - name: restore seed-truth (cache, restore-only)
         id: truth-cache
         uses: actions/cache/restore@v4
@@ -910,14 +914,14 @@ jobs:
       - name: seed input fingerprint
         id: seed-inputs
         run: |
-          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', '.github/workflows/gallery.yml') }}"
+          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$(awk '/^  seed-truth:$/{f=1} /^  seed-pack:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)"   # == seed-truth's key
           P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}"
           echo "truth=$T" >> "$GITHUB_OUTPUT"
           echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
-          cache: false
+          cache-disabled: true   # v4 input; "cache: false" was ignored and every shard saved a 216 MB gradle home
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -1348,7 +1352,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         if: steps.tshard.outputs.cache-hit != 'true'
         with:
-          cache: false
+          cache-disabled: true   # v4 input; "cache: false" was ignored and every shard saved a 216 MB gradle home
 
       - uses: actions/setup-java@v4
         if: steps.tshard.outputs.cache-hit != 'true'
@@ -2337,7 +2341,7 @@ jobs:
       - name: seed input fingerprint
         id: seed-inputs
         run: |
-          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**', '.github/workflows/gallery.yml') }}"
+          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$(awk '/^  seed-truth:$/{f=1} /^  seed-pack:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)"   # == seed-truth's key
           P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}"
           echo "truth=$T" >> "$GITHUB_OUTPUT"
           echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
