@@ -90,8 +90,11 @@ class CommandLine(unittest.TestCase):
     def test_gate_hard_workflow_calls_opt_into_dynamic_gating(self):
         workflow = pathlib.Path(__file__).resolve().parents[2] / ".github/workflows/gallery.yml"
         logical_lines = workflow.read_text().replace("\\\n", " ").splitlines()
+        # A gated call either ends in `|| GATE=1` or runs through the parallel join pool
+        # as `pjoin 1 ...` (a nonzero rc reds the shard there; `pjoin 0` = diagnostic).
         calls = [line for line in logical_lines
-                 if "python3 scripts/cimscene/gallery-diff.py" in line and "|| GATE=1" in line]
+                 if "python3 scripts/cimscene/gallery-diff.py" in line
+                 and ("|| GATE=1" in line or line.lstrip().startswith("pjoin 1 "))]
         self.assertGreaterEqual(len(calls), 6, "all hard pixel channels must be audited")
         for call in calls:
             with self.subTest(command=call.strip()):
