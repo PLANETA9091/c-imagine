@@ -1442,7 +1442,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * on the truth's face plane. Applied to the wall lanes' translation z
      * only (the spawn pos = the front-air light rig — untouched).
      */
-    static final float GALLERY_DZ = -1.04f;
+    // GREEN: -1.136, the 14-e91m least-squares refinement (the clean y axis: a = 2.2724
+    // over the 45 ae2-p0 cells -> plane delta 0.5 x 2.2724 = 1.136) that was pre-registered
+    // for the next repair but never landed. The -1.04 eyeball fit leaves a residual that
+    // grows with distance from the screen centre (~2 px per column measured on run
+    // 44568769863: supplementaries:cage 0/19 red on the centre columns, 46/46 off-axis).
+    static final float GALLERY_DZ = -1.136f;
 
     /**
      * 14-du THE LIGHT-SPILL LAW: the truth's light-emitting rows light the
