@@ -2683,28 +2683,35 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return placed == null ? 0 : placed;
     }
 
-    // 14-e155 THE AO CENSUS (the e154/e154b design, the coarse per-face
-    // rung): the truth's content = the real block at the cell -> the vanilla
-    // smooth-lighting AO darkens its camera-facing face's corners by the
-    // in-plane occluders (the e91v geometry read: the camera-facing
-    // vertices share the edges with the side faces whose occluders = the
-    // adjacent wall cells); ours = the flat composite display = no world AO
-    // (the e153c luma_scale 0.778 = the measured gap for the wall-embedded
-    // class). The census = the 4 corners of the camera-facing (-z) face;
-    // per corner s1/s2 = the in-plane side cells (x±1,y,z / x,y±1,z),
-    // d = the in-plane diagonal (x±1,y±1,z); both sides solid = the vanilla
-    // ao-0 corner = fully occluded; else the solid count / 3. The factor =
-    // 1 - 0.222 * mean (the measured anchor: the wall-embedded cell's mean
-    // = 1.0 -> 0.778 exactly). The occluder test = Material#isOccluding
-    // (the full-cube opacity = the vanilla canOcclude's coarse Bukkit
-    // approximation). The factor rides the display's custom name
-    // side-channel "cimao=NN" (the factor * 100; the name never renders --
-    // customNameVisible stays false) and is consumed by the scene-mod's
-    // DisplayAoLightMixin (the packed-light scale; the CI gradle = the
-    // mixin AP authority, the offline build = -proc:none). aoPct == 100 =
-    // untagged = the exact legacy render (the honest no-op default). The
-    // fullbright companions stay untagged (the truth renders them
-    // fullbright; dimming them = the wrong direction).
+    // 14-e155 THE AO CENSUS (the e154/e154b design) — SUPERSEDED BY THE
+    // 14-e159 v2 = THE FACE-MEAN MODEL (the e158 audit's calibration): the
+    // wall content = the non-full-cubes (the walls / panes / stairs / doors
+    // = isOccluding == false) = the v1 occlusion census measured the weak
+    // 89-98 classes (the e158 receipt: the 93-dominant tagged histogram)
+    // vs the e153c measured 0.778 — the honest model = the vanilla
+    // smooth-lighting's face mean: the camera-facing (-z) face = the 9
+    // sample points = the 4 corner vertices (the 3 in-plane cells each:
+    // the 2 side cells + the diagonal, the both-sides rule caps the
+    // reachable occluders at 3) + the 4 edge midpoints (the 1 side cell
+    // each) + the centre (unoccluded). THE MEASURED ANCHOR: the interior
+    // wall-embedded cell = the corners (3 occluders) = 0.7, the edges (1
+    // occluder) = 0.8 -> (4*0.7 + 4*0.8 + 1)/9 = 7/9 = 0.7778 = the e153c
+    // luma_scale 0.778 EXACT. The table {1.0, 0.8, 0.75, 0.7} (by the
+    // occluder count 0..3) = the measured-anchor calibration, NOT claimed
+    // vanilla-exact (the arbiter = the truth; the calibration walk owns
+    // the residual). The occluder test stays Material#isOccluding (the
+    // full-cube geometry = the occluder count = honest). The factor rides
+    // the display's custom name side-channel "cimao=NN" (the factor * 100;
+    // the name never renders -- customNameVisible stays false) and is
+    // consumed by the scene-mod's DisplayAoLightMixin (the packed-light
+    // scale; dormant on the ours leg per the e155b contract) AND by the
+    // ACTIVE delivery = the pin levels (the e155b: the per-cell + extras +
+    // page-lane pins scaled). aoPct == 100 = untagged = the exact legacy
+    // render (the honest no-op default). The fullbright companions stay
+    // untagged (the truth renders them fullbright; dimming them = the
+    // wrong direction).
+    private static final double[] CIM_AO_TABLE = {1.0, 0.8, 0.75, 0.7}; // by occluder count 0..3
+
     private boolean cimIsOccluding(World w, int x, int y, int z) {
         try {
             return w.getBlockAt(x, y, z).getType().isOccluding();
@@ -2713,24 +2720,35 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
     }
 
-    private double cimAoCorner(World w, int x, int y, int z, int dx, int dy) {
+    /** One corner vertex of the camera-facing face: the occluder count
+     * over the 3 in-plane cells sharing the vertex (the 2 side cells + the
+     * diagonal; the both-sides rule = the diagonal unreachable behind two
+     * solid sides = the count capped at 3). */
+    private double cimAoVertex(World w, int x, int y, int z, int dx, int dy) {
         boolean s1 = cimIsOccluding(w, x + dx, y, z);
         boolean s2 = cimIsOccluding(w, x, y + dy, z);
         boolean d = cimIsOccluding(w, x + dx, y + dy, z);
+        int occ = (s1 ? 1 : 0) + (s2 ? 1 : 0) + (d ? 1 : 0);
         if (s1 && s2) {
-            return 1.0;
+            occ = 3;
         }
-        return ((s1 ? 1 : 0) + (s2 ? 1 : 0) + (d ? 1 : 0)) / 3.0;
+        return CIM_AO_TABLE[Math.min(occ, 3)];
     }
 
+    /** 14-e159 the per-cell AO percent = the 9-sample face mean of the
+     * camera-facing (-z) face. */
     private int cimAoPercent(World w, int x, int y, int z) {
-        double mean = 0.0;
-        mean += cimAoCorner(w, x, y, z, -1, -1);
-        mean += cimAoCorner(w, x, y, z, -1, 1);
-        mean += cimAoCorner(w, x, y, z, 1, -1);
-        mean += cimAoCorner(w, x, y, z, 1, 1);
-        mean /= 4.0;
-        return (int) Math.round(100.0 * (1.0 - 0.222 * mean));
+        double sum = CIM_AO_TABLE[0]; // the face centre
+        sum += cimAoVertex(w, x, y, z, -1, -1);
+        sum += cimAoVertex(w, x, y, z, -1, 1);
+        sum += cimAoVertex(w, x, y, z, 1, -1);
+        sum += cimAoVertex(w, x, y, z, 1, 1);
+        // the 4 edge midpoints: the left/right (the x sides), the top/bottom (the y sides)
+        sum += CIM_AO_TABLE[cimIsOccluding(w, x - 1, y, z) ? 1 : 0];
+        sum += CIM_AO_TABLE[cimIsOccluding(w, x + 1, y, z) ? 1 : 0];
+        sum += CIM_AO_TABLE[cimIsOccluding(w, x, y - 1, z) ? 1 : 0];
+        sum += CIM_AO_TABLE[cimIsOccluding(w, x, y + 1, z) ? 1 : 0];
+        return (int) Math.round(100.0 * (sum / 9.0));
     }
 
     /**
