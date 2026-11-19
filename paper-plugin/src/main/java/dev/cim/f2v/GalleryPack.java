@@ -564,7 +564,17 @@ public final class GalleryPack {
                                 if (slide != null) {
                                     translateCompositeElements(cref, slide, entries);
                                 }
+                                // 14-e172 THE OWN-CMD LAW: the per-cell
+                                // variant = its OWN cmd — the page lane's
+                                // node table keys the models by cmd (the
+                                // e71 composite-of-nodes page), the shared
+                                // cmd = the plain's node = the measured
+                                // per-cell multiply = INERT (the e171
+                                // landing: 177 RED->RED with the ae +0
+                                // exact — the pack carried the wrappers,
+                                // the lane served the plain nodes).
                                 out.add(new Resolved(pc, cmd, cref, 0, 0, true));
+                                cmd += 1.0f;
                             }
                             compositeIdx++;
                         }
@@ -621,7 +631,11 @@ public final class GalleryPack {
                             emissiveTable, emissiveLog,
                             "_p" + cellId.replace(':', '_').replace(',', '_'));
                     if (cref != null) {
+                        // 14-e172 THE OWN-CMD LAW (see the door branch): the
+                        // per-cell variant = its OWN cmd = its own page-lane
+                        // node = the measured multiply reaches the render.
                         out.add(new Resolved(pc, cmd, cref, 0, 0, true));
+                        cmd += 1.0f;
                     }
                     compositeIdx++;
                 }
