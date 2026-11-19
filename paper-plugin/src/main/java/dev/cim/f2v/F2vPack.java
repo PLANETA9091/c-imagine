@@ -1139,27 +1139,6 @@ public final class F2vPack {
                     }
                 }
             }
-            // 14-e161: the ao-census input rides the verification rebuild too —
-            // the scenes dir = the f2v base's SIBLING (c-imagine/scenes), the
-            // walk's own page manifests. Missing = the empty census (the
-            // honest absent-input contract; the pre-built pack and this
-            // rebuild then agree on the same empty table only when the
-            // pre-built pack ALSO built without scenes — the CI seed always
-            // stages them).
-            Path scenesSource = base.resolveSibling("scenes");
-            if (Files.isDirectory(scenesSource)) {
-                try (var paths = Files.walk(scenesSource)) {
-                    for (Path path : (Iterable<Path>) paths::iterator) {
-                        Path target = scratch.resolve("scenes")
-                                .resolve(scenesSource.relativize(path).toString());
-                        if (Files.isDirectory(path)) {
-                            Files.createDirectories(target);
-                        } else {
-                            Files.copy(path, target);
-                        }
-                    }
-                }
-            }
             Path items = base.resolve("visual-items.tsv");
             // the same carrier plan the pre-boot build persisted (read-only here)
             return build(mods, scratch, Files.isRegularFile(items) ? readManifest(items) : List.of(),
@@ -2246,21 +2225,6 @@ public final class F2vPack {
                 // pack stays byte-identical to today's build.
                 Map<String, double[]> tintTable =
                         readTintManifest(outDir.resolve("visual-tints.tsv"));
-                // 14-e161 THE TINT-LANE AO PACK BAKE: the build-time census
-                // over the scenes dir's page manifests (the wall's filled-cell
-                // layout) = the per-state AO factor the state-keyed tint bakes
-                // multiply by. Input layouts: the real boot build's outDir =
-                // c-imagine/f2v with the scenes at the SIBLING dir; the
-                // verification scratch carries the copied scenes INSIDE. The
-                // first directory that exists wins; NEITHER = the empty table
-                // = the byte-identical build (the honest absent-input
-                // contract visual-tints.tsv also carries).
-                GalleryPack.resetStateAoFactors();
-                Path scenes = Files.isDirectory(outDir.resolve("scenes"))
-                        ? outDir.resolve("scenes")
-                        : outDir.resolveSibling("scenes");
-                GalleryPack.setStateAoFactors(
-                        GalleryPack.buildStateAoCensus(scenes, warnings));
                 // 14-df RING channel: the same row parser, a separate table
                 // (the ring rows key the STATE to a corridor factor, not a
                 // texture multiply — the ring never rewrites a sprite).
@@ -3639,6 +3603,17 @@ public final class F2vPack {
                     + r.entryCount() + " zip entries, sha1=" + r.sha1() + ", "
                     + r.warnings().size() + " warning(s), "
                     + r.placeholders().size() + " placeholder sprite(s) — see placeholders.tsv)");
+            // 14-e162 THE BUILD-RECEIPT CONTRACT: the warnings = the bake
+            // provenance (the tint-bake/emissive/ao-tint receipts, the
+            // placeholder attributions) — the CLI build = the CI's only
+            // build path (the fast boot shards never rebuild), so the
+            // warnings MUST land in pack-build.log or the provenance hole
+            // eats the arbiter's evidence (the e161 landing's own lesson:
+            // the bake fired, the receipts were invisible, the read went
+            // through the pack pixels instead).
+            for (String w : r.warnings()) {
+                System.out.println("f2v pack: warn " + w);
+            }
             return;
         }
         System.err.println("usage: F2vPack --build <modsDir> <outDir> [--manifest <tsv>]"
@@ -4335,149 +4310,6 @@ public final class F2vPack {
             expect(failures, !rock6.isEmpty() && !str(stateTintZip, rock6).contains("_cimtint"),
                     "state tint: a state not in the table keeps its raw sprite");
 
-            // -- 14-e161 TINT-LANE AO PACK BAKE asserts --------------------------
-            // (1) the census arithmetic anchors (the e159 receipts): the
-            // interior = 7/9 (the e153c measured 0.778), the x/y-edge =
-            // the 82-class, the corner = the 88-class, the freestanding =
-            // 1.0; the negative-coordinate packing; the multi-page union;
-            // the entity-ns / non-page-name / skip-row exclusions.
-            Path aoScenes = tmp.resolve("ao-scenes");
-            Files.createDirectories(aoScenes);
-            StringBuilder aoP0 = new StringBuilder();
-            for (int ax = 0; ax <= 2; ax++) {
-                for (int ay = 0; ay <= 2; ay++) {
-                    String who;
-                    if (ax == 1 && ay == 1) {
-                        who = "ao:interior";
-                    } else if (ax == 1 && ay == 0) {
-                        who = "ao:edge";
-                    } else if (ax == 0 && ay == 0) {
-                        who = "ao:corner";
-                    } else {
-                        who = "ao:fill";
-                    }
-                    aoP0.append("cell\t").append(ax).append('\t').append(ay)
-                            .append("\t9\t").append(who).append("\t0\n");
-                }
-            }
-            aoP0.append("cell\t9\t9\t9\tao:freestanding\t0\n");
-            aoP0.append("cell\tx\ty\tz\tao:header\t0\n");
-            aoP0.append("skip\t-1\t-1\t-1\tao:skipped\t0\n");
-            Files.writeString(aoScenes.resolve("gallery-ao-p0.tsv"), aoP0.toString());
-            Files.writeString(aoScenes.resolve("gallery-ao-p1.tsv"),
-                    "cell\tx\ty\tz\tstate\tdyn\n"
-                    + "cell\t-2\t-61\t9\tao:neg\t0\n"
-                    + "cell\t-1\t-61\t9\tao:fill\t0\ncell\t0\t-61\t9\tao:fill\t0\n"
-                    + "cell\t-2\t-60\t9\tao:fill\t0\ncell\t-1\t-60\t9\tao:interior2\t0\n"
-                    + "cell\t0\t-60\t9\tao:fill\t0\n"
-                    + "cell\t-2\t-59\t9\tao:fill\t0\ncell\t-1\t-59\t9\tao:fill\t0\n"
-                    + "cell\t0\t-59\t9\tao:fill\t0\n");
-            Files.writeString(aoScenes.resolve("gallery-entity-ao-p0.tsv"),
-                    "cell\t0\t0\t9\tao:entityPage\t0\n");
-            Files.writeString(aoScenes.resolve("gallery-ao-index.tsv"),
-                    "cell\t0\t0\t9\tao:nonPage\t0\n");
-            List<String> aoWarns = new ArrayList<>();
-            Map<String, Double> aoTable = GalleryPack.buildStateAoCensus(aoScenes, aoWarns);
-            double aoInterior = (4 * 0.7 + 4 * 0.8 + 1.0) / 9.0;
-            double aoEdge = (2 * 0.7 + 5 * 0.8 + 2 * 1.0) / 9.0;
-            double aoCorner = (0.7 + 0.8 + 1.0 + 0.8 + 0.8 + 1.0 + 1.0 + 0.8 + 1.0) / 9.0;
-            expect(failures, Math.abs(aoTable.getOrDefault("ao:interior", 0.0) - aoInterior) < 1e-9,
-                    "ao census: the interior anchor = 7/9 = the e153c 0.778");
-            expect(failures, Math.abs(aoTable.getOrDefault("ao:edge", 0.0) - aoEdge) < 1e-9,
-                    "ao census: the x/y-edge anchor = the 82-class");
-            expect(failures, Math.abs(aoTable.getOrDefault("ao:corner", 0.0) - aoCorner) < 1e-9,
-                    "ao census: the corner anchor = the 88-class");
-            expect(failures, aoTable.getOrDefault("ao:freestanding", 0.0) == 1.0,
-                    "ao census: the freestanding cell = 1.0");
-            expect(failures, Math.abs(aoTable.getOrDefault("ao:interior2", 0.0) - aoInterior) < 1e-9,
-                    "ao census: negative coordinates pack injectively");
-            expect(failures, !aoTable.containsKey("ao:entityPage")
-                            && !aoTable.containsKey("ao:nonPage")
-                            && !aoTable.containsKey("ao:skipped")
-                            && aoTable.size() == 7,
-                    "ao census: entity ns / non-page names / skip rows excluded");
-            // (2) the end-to-end build: the state-keyed bake rides the census
-            // factor — the glow state sits at the interior cell = 7/9, the
-            // baked sibling = raw x (0.5,1.0,2.0) x 7/9 (b clamps at 255).
-            Path out6b = tmp.resolve("out6b");
-            Files.createDirectories(out6b);
-            Files.writeString(out6b.resolve("visual-items.tsv"),
-                    Files.readString(out.resolve("visual-items.tsv")), StandardCharsets.UTF_8);
-            Files.writeString(out6b.resolve("visual-palettes.tsv"),
-                    Files.readString(out.resolve("visual-palettes.tsv")), StandardCharsets.UTF_8);
-            Files.writeString(out6b.resolve("visual-gallery.tsv"), GALLERY_EMISSIVE_TSV,
-                    StandardCharsets.UTF_8);
-            Files.writeString(out6b.resolve("visual-tints.tsv"),
-                    Files.readString(out6.resolve("visual-tints.tsv")), StandardCharsets.UTF_8);
-            Path aoBuildScenes = out6b.resolve("scenes");
-            Files.createDirectories(aoBuildScenes);
-            StringBuilder aoWall = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\n");
-            for (int ax = 0; ax <= 2; ax++) {
-                for (int ay = 0; ay <= 2; ay++) {
-                    aoWall.append("cell\t").append(ax).append('\t').append(ay).append("\t9\t")
-                            .append(ax == 1 && ay == 1
-                                    ? "fakemod:glow_bloom[lit=true,power=7]" : "ao:fill")
-                            .append("\t0\n");
-                }
-            }
-            Files.writeString(aoBuildScenes.resolve("gallery-ao-p0.tsv"), aoWall.toString());
-            Result r6b = build(mods, out6b, readManifest(out6b.resolve("visual-items.tsv")),
-                    equipment, List.of(), readPaletteManifest(out6b.resolve("visual-palettes.tsv")),
-                    List.of(vanillaJar));
-            expect(failures, r6b.warnings().stream().anyMatch(w -> w.startsWith(
-                            "tint-bake applied: ao-tint fakemod:glow_bloom[lit=true,power=7] f=0.7778")),
-                    "ao bake: the boot-log receipt carries the state and the factor");
-            String glow6b = r6b.gallery().stream()
-                    .filter(r -> r.stateId().equals("fakemod:glow_bloom[lit=true,power=7]"))
-                    .findFirst()
-                    .map(r -> "assets/c-imagine/models/gallery/"
-                            + r.modelRef().substring(r.modelRef().lastIndexOf('/') + 1) + ".json")
-                    .orElse("");
-            expect(failures, !glow6b.isEmpty(), "ao bake: glow composite located");
-            TreeMap<String, byte[]> aoZip = readZip(out6b.resolve("pack.zip"));
-            String aoSprite = null;
-            if (!glow6b.isEmpty()) {
-                java.util.regex.Matcher mAo = java.util.regex.Pattern
-                        .compile("fakemod:block/glow_tex_cimtint_s[0-9a-f]{8}")
-                        .matcher(str(aoZip, glow6b));
-                if (mAo.find()) {
-                    aoSprite = mAo.group();
-                }
-            }
-            expect(failures, aoSprite != null,
-                    "ao bake: the state-suffixed sibling ref is recoverable");
-            if (aoSprite != null) {
-                String aoKey = "assets/fakemod/textures/block/"
-                        + aoSprite.substring(aoSprite.lastIndexOf('/') + 1) + ".png";
-                expect(failures, aoZip.containsKey(aoKey),
-                        "ao bake: the multiplied sibling PNG rides the pack");
-                if (aoZip.containsKey(aoKey)) {
-                    java.awt.image.BufferedImage aoBaked = decodePng(aoZip.get(aoKey));
-                    java.awt.image.BufferedImage aoRaw = decodePng(
-                            jarEntries.get("assets/fakemod/textures/block/glow_tex.png"));
-                    double fAo = 7.0 / 9.0;
-                    int aoR = (int) Math.round(64 * 0.5 * fAo);
-                    int aoG = (int) Math.round(128 * 1.0 * fAo);
-                    int aoB = Math.min(255, (int) Math.round(192 * 2.0 * fAo));
-                    boolean aoPx = aoBaked.getWidth() == aoRaw.getWidth()
-                            && aoBaked.getHeight() == aoRaw.getHeight();
-                    for (int y = 0; y < aoRaw.getHeight() && aoPx; y++) {
-                        for (int x = 0; x < aoRaw.getWidth() && aoPx; x++) {
-                            int ra = aoRaw.getRGB(x, y);
-                            int ba = aoBaked.getRGB(x, y);
-                            int want = (ra & 0xFF000000) | (aoR << 16) | (aoG << 8) | aoB;
-                            aoPx &= ba == want;
-                            if (ba != want) {
-                                failures.add("ao bake pixel (" + x + "," + y
-                                        + "): want " + Integer.toHexString(want)
-                                        + " got " + Integer.toHexString(ba));
-                            }
-                        }
-                    }
-                    expect(failures, aoPx,
-                            "ao bake: baked pixels = raw x (0.5,1.0,2.0) x 7/9, alpha preserved");
-                }
-            }
             // the texture row WINS over a state row for the same sprite: the
             // composite references the plain _cimtint sibling and NO state
             // sibling ships
