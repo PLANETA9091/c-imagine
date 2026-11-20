@@ -49,10 +49,45 @@ def cells_map(root):
     return out
 
 
+def update_ledger(base, land, tsv_path, out_path):
+    """O2 THE FEEDBACK LEDGER: drop the keyed cells whose landing ae is
+    WORSE than the baseline's AND still RED (the greens = kept; the
+    neutral = kept; the placement = the plain chain for the dropped =
+    the zero-regression law)."""
+    kept, dropped = [], []
+    for line in open(tsv_path):
+        if line.startswith('#') or not line.strip():
+            continue
+        k = line.split('\t')[0].strip()
+        _, _, rest = k.partition('@')
+        page, _, cell = rest.partition(':')
+        c, _, r = cell.partition(',')
+        key = (page, int(c[1:]), int(r[1:]))
+        b = base.get(key)
+        l = land.get(key)
+        if (b and l and l[1] == 'RED' and (l[2] or 0) > (b[2] or 0)):
+            dropped.append((k, b[2], l[2]))
+        else:
+            kept.append(line)
+    with open(out_path, 'w') as f:
+        f.write("# 14-e175 the per-cell feedback ledger: the cells whose "
+                "measured multiply WORSENED the landing ae are dropped "
+                "(the plain chain rides, the zero-regression law)\n")
+        f.writelines(kept)
+    print(f"ledger update: kept {len(kept)}, dropped {len(dropped)}")
+    for k, b, l in dropped:
+        print(f"  drop {k[:90]}  ae {b} -> {l}")
+    return 0
+
+
 def main():
     if len(sys.argv) < 4:
         print(__doc__)
         return 2
+    if len(sys.argv) >= 6 and sys.argv[4] == '--update-ledger':
+        base = cells_map(sys.argv[1])
+        land = cells_map(sys.argv[2])
+        return update_ledger(base, land, sys.argv[3], sys.argv[5])
     base = cells_map(sys.argv[1])
     land = cells_map(sys.argv[2])
     keyed = []
