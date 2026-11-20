@@ -211,6 +211,19 @@ env:
   # result (--gate-mapped in sound-diff.py). Flip after mapped-identity
   # measured stable on two consecutive full runs.
   SOUND_FLIP: "on"
+  # 14-e179 THE SECOND-FRAME POLICY (one switch): widened = the R-c rung —
+  # t0/t1 on EVERY walked block page, both legs (the policy lives in
+  # scripts/cimscene/second-frames.py, the hashed lane: the wall-truth
+  # shard key hashes the file, so a policy edit re-keys the shards — the
+  # stale-seed trap the inline awk lived in is closed). The NO-PAIR hole
+  # (the e161b forensics census: 533 of 1025 red rows undecidable without
+  # a second frame, 698 by the e178 generation) closes: every RED row
+  # gains a measured self pair, FIDELITY vs ANIM-SELF decidable. Zero
+  # green->red risk by construction (classify: `not over -> GREEN` before
+  # the animated branch; only a RED row demotes, the 14-ag law). The cost
+  # = 2 shots + 2s sleep per block page per leg. legacy = the 14-br law
+  # verbatim (the dyn=1 census pages only) = THE REVERT LEVER.
+  SF_POLICY: "widened"
 
 jobs:
   # ---------------------------------------------------------------- seed --
@@ -1337,7 +1350,7 @@ jobs:
         id: tshard-key
         run: |
           R=$(awk '/^  wall-truth:$/{f=1} /^  wall-ours:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)
-          echo "key=gallery-truth-shard-v1-${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scripts/visual/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$R-k$K-s$SI" >> "$GITHUB_OUTPUT"
+          echo "key=gallery-truth-shard-v1-${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/second-frames.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scripts/visual/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$R-k$K-s$SI" >> "$GITHUB_OUTPUT"
       - name: restore this truth shard (cache)
         id: tshard
         uses: actions/cache/restore@v4
@@ -1832,18 +1845,24 @@ jobs:
               done
               rm -f "truth-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p.png"
-              # ANIM liveness probe (DIAGNOSTIC): kinetic pages only — a
-              # page whose manifest carries dyn=1 cells (manifest-driven,
-              # zero hardcode; the static pages stay one-shot). Two frames
-              # 2s apart per leg; anim-diff.py joins the DELTAS (a
-              # static-but-should-rotate divergence shows as ours-delta ~ 0
-              # while truth-delta > threshold).
-              DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "srv-wall/c-imagine/scenes/gallery-$NS-p$p.tsv")
-              if [ "${DYNC:-0}" -gt 0 ]; then
-                bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t0.png"
+              # 14-e179 THE SECOND-FRAME POLICY (the hashed lane): the
+              # determinism producer moved into
+              # scripts/cimscene/second-frames.py (the wall-truth shard key
+              # hashes the file — the stale-seed trap closed; the inline awk
+              # was invisible to every future edit outside the job text).
+              # The plan decides; bash executes (the 14-e15 coproc law: the
+              # rcon/shot protocol stays here, nothing piped). widened =
+              # t0/t1 on EVERY walked block page — the R-c rung, the
+              # NO-PAIR hole closes (the e161b forensics census); legacy =
+              # the 14-br law verbatim (the dyn=1 census pages only).
+              PROBE=$(python3 scripts/cimscene/second-frames.py plan \
+                --manifest "srv-wall/c-imagine/scenes/gallery-$NS-p$p.tsv" \
+                --ns "$NS" --page "$p" --policy "${SF_POLICY:-widened}")
+              case "$PROBE" in *t0*)
+                bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t0.png";; esac
+              case "$PROBE" in *t1*)
                 sleep 2
-                bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t1.png"
-              fi
+                bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t1.png";; esac
               echo "shot $NS page $p"
             done
             [ "$EXHAUSTED" = "1" ] || { echo "$NS block walk hit the MAXP cap without the exhausted marker — coverage incomplete"; exit 1; }
@@ -2350,7 +2369,7 @@ jobs:
         id: seed-inputs
         run: |
           T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$(awk '/^  seed-truth:$/{f=1} /^  seed-pack:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)"   # == seed-truth's key
-          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml') }}"
+          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml', '.github/workflows/gallery.yml') }}"   # 14-e179: the e171 lesson completed — the pack-side P carried the workflow file, this ours-side twin did not (the seed-verify stamp mismatched every flight and the shards fell to the artifact fallback); the two P lists are now byte-identical
           echo "truth=$T" >> "$GITHUB_OUTPUT"
           echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
 
@@ -3140,15 +3159,19 @@ jobs:
               done
               rm -f "ours-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p.png"
-              # ANIM liveness probe (truth-leg mirror, DIAGNOSTIC): the
-              # SAME manifest drives the decision — identical kinetic-page
-              # selection on both legs, two frames 2s apart
-              DYNC=$(awk -F'\t' '$1=="cell" && $6=="1"{n++} END{print n+0}' "$M")
-              if [ "${DYNC:-0}" -gt 0 ]; then
-                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t0.png"
+              # 14-e179 THE SECOND-FRAME POLICY (truth-leg mirror, the
+              # hashed lane): the SAME manifest drives the producer —
+              # identical probe selection on both legs, two frames 2s
+              # apart; the policy file = scripts/cimscene/second-frames.py
+              # (the hashed lane), the plan decides, bash executes.
+              PROBE=$(python3 scripts/cimscene/second-frames.py plan \
+                --manifest "$M" \
+                --ns "$NS" --page "$p" --policy "${SF_POLICY:-widened}")
+              case "$PROBE" in *t0*)
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t0.png";; esac
+              case "$PROBE" in *t1*)
                 sleep 2
-                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png"
-              fi
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png";; esac
               test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
               echo "shot $NS page $p"
             done
