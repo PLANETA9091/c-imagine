@@ -1,8 +1,13 @@
 package dev.cim.live;
 
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /** Entry point; the sessions themselves are driven from Paper through {@link LiveMenus}. */
 @Mod("cimlive")
@@ -15,6 +20,7 @@ public final class CimLiveMod {
     private void commonSetup(FMLCommonSetupEvent event) {
         // Paper drives sessions through this from now on; registries are complete here.
         LiveProtocol.publish();
+        event.enqueueWork(CimLiveMod::publishItemFoil);
         // Chunk decoration has its own entry and lock: a new chunk never waits for the main thread's tick.
         Worldgen.publish();
         String item = System.getenv("CIM_LIVE_SELFTEST");
@@ -27,5 +33,22 @@ public final class CimLiveMod {
                 org.slf4j.LoggerFactory.getLogger("cimlive").error("[cimlive] selftest FAILED: {}", t.toString(), t);
             }
         }
+    }
+
+    private static void publishItemFoil() {
+        Set<String> foil = new HashSet<>();
+        for (var id : BuiltInRegistries.ITEM.keySet()) {
+            if (id.getNamespace().equals("minecraft")) {
+                continue;
+            }
+            try {
+                if (new ItemStack(BuiltInRegistries.ITEM.get(id)).hasFoil()) {
+                    foil.add(id.toString());
+                }
+            } catch (RuntimeException e) {
+                org.slf4j.LoggerFactory.getLogger("cimlive").warn("[cimlive] item foil probe failed for {}", id, e);
+            }
+        }
+        System.getProperties().put("cim.live.itemFoil", Set.copyOf(foil));
     }
 }

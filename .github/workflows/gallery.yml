@@ -845,6 +845,7 @@ jobs:
           done
           grep "quad dump done" truth-client/client-dump.out || { tail -80 truth-client/client-dump.out; exit 1; }
           test -f "$SCENES/quads/done"
+          test -f "$SCENES/quads/item-foil.tsv"
 
       # THE TRUTH PAYLOAD (perf(ci), fast-gallery): everything the pack and the
       # truth-side walk need, assembled while the real server is still UP (the
@@ -948,7 +949,8 @@ jobs:
           set -euo pipefail
           HIT=false
           if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ] \
-             && [ -f seed-pack/f2v/pack.sha1 ] && [ -f seed-pack/plugin/cim-paper-plugin.jar ]; then
+             && [ -f seed-pack/f2v/pack.sha1 ] && [ -f seed-pack/plugin/cim-paper-plugin.jar ] \
+             && [ -f seed-pack/f2v/visual-item-foil.resolved.tsv ]; then
             HIT=true
           fi
           if [ "$HIT" = "true" ]; then
@@ -1169,6 +1171,7 @@ jobs:
           test -f seed-pack/f2v/visual-gallery.resolved.tsv
           test -f seed-pack/f2v/visual-items.resolved.tsv
           test -f seed-pack/f2v/visual-items.allocated.tsv
+          test -f seed-pack/f2v/visual-item-foil.resolved.tsv
           # 14-dx-f: the animated-sprite states manifest rides the build (the
           # file is ABSENT, not empty, when no animated sprite was baked — the
           # join treats a missing file as the empty law)
@@ -1279,6 +1282,7 @@ jobs:
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
             seed-pack/f2v/visual-items.allocated.tsv
+            seed-pack/f2v/visual-item-foil.resolved.tsv
           if-no-files-found: error
 
       - name: upload captured meshes and source mappings (also on failure)
@@ -1305,6 +1309,7 @@ jobs:
             seed-pack/f2v/visual-gallery-animation.tsv
             seed-pack/f2v/visual-items.resolved.tsv
             seed-pack/f2v/visual-items.allocated.tsv
+            seed-pack/f2v/visual-item-foil.resolved.tsv
             seed-pack/f2v/pack.sha1
             seed-pack/f2v/inputs.sha1
             pack-build.log
@@ -2378,7 +2383,8 @@ jobs:
           SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
         run: |
           set -euo pipefail
-          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ]; then
+          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ] \
+             && [ -f seed-pack/f2v/visual-item-foil.resolved.tsv ]; then
             echo "hit=true" >> "$GITHUB_OUTPUT"
             echo "seed payload fresh: inputs=$SEED_INPUTS"
           else
@@ -2397,6 +2403,7 @@ jobs:
       - name: verify the seed payload
         run: |
           set -euo pipefail
+          test -f seed-pack/f2v/visual-item-foil.resolved.tsv
           test -f seed-pack/f2v/pack.sha1 || { echo "seed payload stale: no pack.sha1"; exit 1; }
           test -f seed-pack/plugin/cim-paper-plugin.jar || { echo "seed payload stale: no plugin jar"; exit 1; }
           # block manifests of EVERY ladder namespace (per-ns glob is exact)

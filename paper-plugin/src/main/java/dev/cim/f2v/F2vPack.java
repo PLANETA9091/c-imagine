@@ -1209,6 +1209,22 @@ public final class F2vPack {
         return rows;
     }
 
+    /** Default item foil from the native capture, read by Paper when the live layer is absent. */
+    public static final String RESOLVED_ITEM_FOIL = "visual-item-foil.resolved.tsv";
+
+    public static Set<String> readItemFoil(Path file) throws IOException {
+        Set<String> foil = new TreeSet<>();
+        if (Files.isRegularFile(file)) {
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                String id = line.strip();
+                if (ALLOCATABLE.matcher(id).matches() && !id.startsWith("minecraft:")) {
+                    foil.add(id);
+                }
+            }
+        }
+        return foil;
+    }
+
     // ---- allocated mod items (boot-time, no manifest row) ------------------------
 
     /** The item_model namespace of an allocated mod item: {@code c-imagine:<ns>/<path>}. */
@@ -2544,6 +2560,8 @@ public final class F2vPack {
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
         writeIfChanged(outDir.resolve(ALLOCATED_ITEMS), allocatedText(allocatedIds));
+        Set<String> foil = readItemFoil(outDir.resolve("quads/item-foil.tsv"));
+        writeIfChanged(outDir.resolve(RESOLVED_ITEM_FOIL), String.join("\n", foil) + (foil.isEmpty() ? "" : "\n"));
         // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
         // (sprite, context, uses) — the texture-fidelity audit's named
         // backlog, written next to the manifest and summarized in the
@@ -6246,6 +6264,7 @@ public final class F2vPack {
             Path mods = Files.createDirectory(root.resolve("mods"));
             TreeMap<String, byte[]> files = new TreeMap<>();
             files.put("assets/fixture/textures/fluid/water_still.png", f2vSelftestPng(2, 2));
+            files.put("assets/fixture/models/item/a.json", "{}".getBytes(StandardCharsets.UTF_8));
             writeJar(mods.resolve("fluid.jar"), files);
             Path out = root.resolve("missing/pack");
             build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
@@ -6304,6 +6323,21 @@ public final class F2vPack {
                     "verification: captured quads and overlay participate in the same deterministic build");
             expect(failures, java.util.Arrays.equals(stored, Files.readAllBytes(out.resolve("pack.zip"))),
                     "verification: served pack bytes are untouched");
+            String allocated = Files.readString(out.resolve(ALLOCATED_ITEMS));
+            expect(failures, readAllocatedItems(out).equals(List.of("fixture:a")),
+                    "foil: fixture exercises a real allocated item");
+            Files.writeString(out.resolve("quads/item-foil.tsv"),
+                    "fixture:z\nfixture:a\nfixture:z\nminecraft:paper\ninvalid\n");
+            Result withFoil = build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
+            expect(failures, Files.readString(out.resolve(RESOLVED_ITEM_FOIL)).equals("fixture:a\nfixture:z\n"),
+                    "foil: captured mod item ids are normalized and sorted");
+            expect(failures, withFoil.sha1().equals(original.sha1())
+                            && Files.readString(out.resolve(ALLOCATED_ITEMS)).equals(allocated),
+                    "foil: adding capture metadata preserves the pack SHA and allocated item ids");
+            Files.delete(out.resolve("quads/item-foil.tsv"));
+            build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
+            expect(failures, readItemFoil(out.resolve(RESOLVED_ITEM_FOIL)).isEmpty(),
+                    "foil: a rebuild without input clears stale captured foil");
             try (var paths = Files.list(out)) {
                 expect(failures, paths.noneMatch(p -> p.getFileName().toString().startsWith("verify-")),
                         "verification: scratch input/output tree is cleaned");

@@ -1066,6 +1066,7 @@ final class QuadDump {
             manifests = s.filter(p -> p.getFileName().toString().matches("gallery-item-.+-p\\d+\\.tsv")).sorted().toList();
         }
         StringBuilder rows = new StringBuilder();
+        java.util.Set<String> foil = new java.util.TreeSet<>();
         int items = 0;
         int empty = 0;
         int failed = 0;
@@ -1079,9 +1080,13 @@ final class QuadDump {
                 items++;
                 try {
                     ResourceLocation id = ResourceLocation.parse(c[4]);
+                    ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
+                    if (stack.hasFoil()) {
+                        foil.add(c[4]);
+                    }
                     ItemCapture capture = new ItemCapture(sprites, 0.5f);
                     Minecraft.getInstance().getItemRenderer().renderStatic(
-                            new ItemStack(BuiltInRegistries.ITEM.get(id)), ItemDisplayContext.NONE,
+                            stack, ItemDisplayContext.NONE,
                             LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, new PoseStack(), capture, null, 0);
                     capture.flush();
                     foreign += capture.foreign;
@@ -1103,6 +1108,7 @@ final class QuadDump {
             }
         }
         Files.writeString(out.resolve("items.tsv"), rows.toString(), StandardCharsets.UTF_8);
+        Files.write(out.resolve("item-foil.tsv"), foil, StandardCharsets.UTF_8);
         LOGGER.info("[cimscene] quad dump items={} empty={} failed={} foreign_quads={}", items, empty, failed, foreign);
     }
 
