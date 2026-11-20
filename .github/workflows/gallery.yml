@@ -2087,6 +2087,8 @@ jobs:
               sleep 1   # static item displays settle like the block pages
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-i-$NS$p.png"
+              sleep 2   # 14-e181 the item self-consistency pair (the 14-aj mob / 14-bw fluid / 14-br block pattern): the e179 arbiter census = the item lane 122 NO-PAIR reds (the biggest residual after the block class closed 888/888 FIDELITY) — the second shot ~2s later names the time-varying item cells (ANIMATED with evidence) and lets the stable ones classify FIDELITY; a static item cell stays gated exactly as before
+              bash scripts/visual/shot.sh "truth-shots/gal-i-$NS$p-self.png"
               # HELD leg (DIAGNOSTIC, 2026-11-04): stage the page's FIRST
               # item into the viewer's hotbar slot 0 over RCON (the SAME
               # manifest row the ours plugin replay reads), restore the HUD
@@ -3333,6 +3335,8 @@ jobs:
               sleep 1   # static item displays settle like the block pages
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-i-$NS$p.png"
+              sleep 2   # 14-e181 the item self-consistency pair (truth-leg mirror, the 14-bw pattern): the SAME page, the second frame 2s later, identical probe selection on both legs
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-i-$NS$p-self.png"
               # HELD replay (truth-leg mirror, DIAGNOSTIC): the plugin
               # stages the SAME manifest row's item as the pack CMD carrier
               # into hotbar slot 0; restore the HUD, press "1", shoot
@@ -3931,11 +3935,16 @@ jobs:
               O="ours-shots/ours-gal-i-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth item shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours item shot p$p"; GATE=1; continue; }
+              # 14-e181 the item self-consistency pairs (the file-existence wiring, the block-join law verbatim): a RED row that moves against itself demotes to ANIMATED with evidence, a stable one classifies FIDELITY — classify: `not over -> GREEN` first, zero green->red risk
+              SELF_T=""; SELF_O=""
+              [ -f "truth-shots/gal-i-$NS$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-i-$NS$p-self.png"
+              [ -f "ours-shots/ours-gal-i-$NS$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-i-$NS$p-self.png"
               pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-item-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-item-$NS-p$p" \
                 --anim-floor 1000 \
-                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv
+                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
+                $SELF_T $SELF_O
             done
           done
           echo "=== PARTICLE pages: diagnostic join (dyn class, fixed 1s shot window) ==="
