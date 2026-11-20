@@ -1256,8 +1256,8 @@ jobs:
           path: seed-pack
           key: gallery-seed-v5-${{ steps.seed-inputs.outputs.hash }}
 
-      - name: upload seed-pack artifact (cache-eviction fallback)
-        if: success() && steps.pack-verify.outputs.hit != 'true'
+      - name: upload verified seed-pack artifact (cache fallback)
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: seed-pack
