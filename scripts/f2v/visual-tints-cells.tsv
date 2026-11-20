@@ -11,7 +11,6 @@ ae2:quartz_brick_stairs@gallery-item-ae2-p3:c7,r3	1.0583	1.0658	1.0645	n=2552|cl
 ae2:quartz_wall[east=tall,north=tall,south=low,up=true,waterlogged=false,west=low]@gallery-ae2-p39:c0,r1	0.9062	0.9	0.8958	n=1924|class=luma+chroma
 biomesoplenty:cypress_leaves@gallery-item-biomesoplenty-p0:c6,r3	1.0417	1.0533	1.0256	n=1324|class=luma+chroma
 biomesoplenty:dead_leaves@gallery-item-biomesoplenty-p0:c6,r4	1.0606	1.0615	1.0	n=1865|class=tint
-biomesoplenty:dead_trapdoor[facing=east,half=top,open=true,powered=true,waterlogged=false]@gallery-biomesoplenty-p20:c1,r1	0.9157	0.9134	0.8992	n=1623|class=luma-uniform
 biomesoplenty:fir_door[facing=east,half=lower,hinge=right,open=false,powered=true]@gallery-biomesoplenty-p27:c9,r4	0.925	0.9206	0.9038	n=1510|class=luma+chroma
 biomesoplenty:glowflower@gallery-item-biomesoplenty-p1:c6,r2	1.0278	1.0678	1.0556	n=1236|class=luma+chroma
 biomesoplenty:hanging_cobweb@gallery-item-biomesoplenty-p1:c4,r3	1.0694	1.0643	1.0638	n=799|class=luma+chroma
@@ -23,7 +22,6 @@ biomesoplenty:mahogany_hanging_sign@gallery-item-biomesoplenty-p2:c8,r2	1.0617	1
 biomesoplenty:maple_stairs@gallery-item-biomesoplenty-p2:c9,r4	1.0633	1.0543	1.0408	n=2257|class=luma+chroma
 biomesoplenty:maple_trapdoor@gallery-item-biomesoplenty-p2:c10,r4	1.0526	1.0426	1.0238	n=459|class=luma+chroma
 biomesoplenty:palm_trapdoor[facing=north,half=bottom,open=true,powered=true,waterlogged=false]@gallery-biomesoplenty-p77:c8,r1	0.9255	0.9219	0.8843	n=1947|class=luma+chroma
-biomesoplenty:pine_door[facing=east,half=upper,hinge=left,open=false,powered=true]@gallery-biomesoplenty-p79:c2,r1	0.9213	0.9179	0.8857	n=1833|class=luma+chroma
 biomesoplenty:pine_fence@gallery-item-biomesoplenty-p3:c8,r1	1.06	1.061	1.0238	n=2533|class=luma+chroma
 biomesoplenty:redwood_leaves[distance=4,persistent=false,waterlogged=false]@gallery-biomesoplenty-p88:c8,r2	0.9355	0.9231	0.9322	n=648|class=luma+chroma
 biomesoplenty:redwood_leaves[distance=5,persistent=false,waterlogged=false]@gallery-biomesoplenty-p88:c1,r3	0.9355	0.9231	0.9322	n=633|class=luma+chroma
@@ -41,11 +39,9 @@ create:creative_fluid_tank[bottom=false,shape=window,top=true]@gallery-create-p3
 create:creative_fluid_tank[bottom=true,shape=window,top=false]@gallery-create-p35:c3,r5	0.9241	0.9091	0.9176	n=2586|class=luma+chroma
 create:crimson_window@gallery-item-create-p1:c2,r4	1.06	1.0333	1.0351	n=2030|class=luma+chroma
 create:exposed_copper_shingle_slab@gallery-item-create-p3:c3,r4	1.064	1.0571	1.0506	n=2079|class=luma+chroma
-create:light_gray_seat@gallery-item-create-p4:c2,r4	1.0625	1.0569	1.0543	n=2336|class=luma-uniform
 create:lime_seat@gallery-item-create-p4:c7,r4	1.0526	1.0619	1.0	n=1676|class=tint
 create:mangrove_window@gallery-item-create-p4:c9,r5	1.0562	1.0227	1.025	n=2348|class=luma+chroma
 create:oak_window_pane@gallery-item-create-p5:c3,r1	1.0638	1.0612	1.0417	n=2312|class=luma+chroma
-create:ornate_iron_window_pane[east=false,north=true,south=true,waterlogged=false,west=true]@gallery-create-p220:c1,r1	0.9213	0.9141	0.8908	n=1831|class=luma-uniform
 create:packager[facing=up,linked=false,powered=false]@gallery-create-p222:c8,r5	0.9252	0.9238	0.9244	n=1775|class=luma-uniform
 create:packager[facing=up,linked=false,powered=false]@gallery-create-p222:c10,r5	0.9245	0.9216	0.913	n=1863|class=luma-uniform
 create:rare_simi_package@gallery-item-create-p6:c1,r4	1.0692	1.064	1.0556	n=2163|class=luma+chroma
@@ -55,7 +51,6 @@ create:small_granite_brick_wall@gallery-item-create-p7:c7,r3	1.0678	1.0568	1.055
 create:small_limestone_brick_slab@gallery-item-create-p7:c9,r3	1.0667	1.0658	1.0615	n=2028|class=luma+chroma
 create:small_ochrum_brick_slab@gallery-item-create-p7:c2,r4	1.0638	1.0575	1.04	n=1895|class=luma+chroma
 create:small_scorchia_brick_slab@gallery-item-create-p7:c7,r4	1.2	1.2	1.1852	n=932|class=luma-uniform
-create:track[shape=cr_d,turn=true,waterlogged=false]@gallery-create-p388:c4,r0	0.9206	0.9206	0.906	n=2909|class=luma-uniform
 create:train_door@gallery-item-create-p8:c2,r1	1.064	1.0488	1.0392	n=1157|class=luma+chroma
 create:train_door[facing=east,half=lower,hinge=right,open=true,powered=false,visible=true]@gallery-create-p390:c1,r0	0.9286	0.9286	0.9145	n=1913|class=luma-uniform
 farmersdelight:pasta_with_mutton_chop@gallery-item-farmersdelight-p1:c4,r3	1.0625	1.0476	1.0408	n=1121|class=luma+chroma
@@ -75,10 +70,8 @@ mekanism:scuba_mask@gallery-item-mekanism-p4:c7,r0	0.944	0.9365	0.9224	n=3075|cl
 supplementaries:blackboard[facing=east,waterlogged=false]@gallery-supplementaries-p15:c9,r5	0.9815	0.9818	0.975	n=662|class=luma+chroma
 supplementaries:crank@gallery-item-supplementaries-p1:c7,r3	1.0548	1.0521	1.0405	n=797|class=luma+chroma
 supplementaries:deepslate_lamp@gallery-item-supplementaries-p1:c2,r4	1.061	1.0606	1.0448	n=2528|class=luma-uniform
-supplementaries:flower_box[face=ceiling,facing=east,light_level=12,waterlogged=false]@gallery-supplementaries-p118:c2,r1	1.0	1.0	0.9688	n=1479|class=luma+chroma
 supplementaries:flower_box[face=ceiling,facing=west,light_level=0,waterlogged=false]@gallery-supplementaries-p117:c1,r3	0.975	0.9682	0.9512	n=856|class=luma+chroma
 supplementaries:flower_box[face=floor,facing=east,light_level=11,waterlogged=false]@gallery-supplementaries-p114:c8,r5	0.9744	0.9773	0.9487	n=679|class=luma+chroma
-supplementaries:gold_bars[east=false,north=true,south=false,waterlogged=false,west=true]@gallery-supplementaries-p121:c8,r1	0.931	0.9217	0.8992	n=1960|class=luma+chroma
 supplementaries:gold_gate[facing=east,in_wall=false,open=true,powered=false,waterlogged=false]@gallery-supplementaries-p122:c9,r6	0.934	0.927	0.8846	n=1182|class=luma+chroma
 supplementaries:netherite_door[facing=north,half=upper,hinge=left,open=true,powered=true]@gallery-supplementaries-p148:c0,r5	0.9178	0.9359	0.902	n=567|class=luma-uniform
 supplementaries:netherite_trapdoor[facing=west,half=bottom,lavalogged=false,open=true,powered=true,waterlogged=false]@gallery-supplementaries-p150:c10,r4	0.9184	0.9388	0.8983	n=405|class=luma-uniform
