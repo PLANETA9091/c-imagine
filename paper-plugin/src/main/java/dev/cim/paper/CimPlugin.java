@@ -61,6 +61,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /** F2V 2.0 visual pipeline state (M5.2). */
     private F2vState f2v;
     private dev.cim.f2v.PackHttp visualPack;
+    private java.util.Set<String> itemFoil = java.util.Set.of();
     /** cim.f2v.autoOffer resolved AND server.properties does not pin a resource-pack. */
     private boolean packAutoOffer;
     private boolean packAutoOfferRequired = true;
@@ -211,6 +212,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                                 ? dev.cim.f2v.GalleryPack.readResolvedManifest(
                                         base.resolve("visual-gallery.resolved.tsv"))
                                 : List.of();
+                itemFoil = dev.cim.f2v.F2vPack.readItemFoil(
+                    base.resolve(dev.cim.f2v.F2vPack.RESOLVED_ITEM_FOIL));
                 f2v = new F2vState(fastItems, fastBlocks, fastGallery,
                         readFluidTextureMap(base), readFluidCubeMap(base), cachedSha1);
                 dev.cim.f2v.PackHttp fastHttp = null;
@@ -359,6 +362,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 log().info(LOG_PREFIX + "f2v pack: " + displayed + " mod block(s) on the display family"
                         + " (note and mushroom slots full; barrier + ItemDisplay carriers)");
             }
+            itemFoil = dev.cim.f2v.F2vPack.readItemFoil(
+                    base.resolve(dev.cim.f2v.F2vPack.RESOLVED_ITEM_FOIL));
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
                     readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
             dev.cim.f2v.PackHttp http = startPackServer(packZip, result.sha1());
@@ -1142,6 +1147,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         cmd.setFloats(List.of(visual.cmd()));
                     }
                     meta.setCustomModelDataComponent(cmd);
+                    ItemFoil.apply(meta, moddedItemId, itemFoil);
                 });
                 var leftover = p.getInventory().addItem(stack);
                 // verify: the inventory must hold the host item with the exact CMD
@@ -3461,6 +3467,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     CustomModelDataComponent c = meta.getCustomModelDataComponent();
                     c.setFloats(List.of(cmd));
                     meta.setCustomModelDataComponent(c);
+                    ItemFoil.apply(meta, itemId, itemFoil);
                 });
                 org.bukkit.Location at = new org.bukkit.Location(w,
                         x + 0.5, y + 0.5, z + 0.5);
@@ -4098,6 +4105,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 CustomModelDataComponent c = meta.getCustomModelDataComponent();
                 c.setFloats(List.of(fcmd));
                 meta.setCustomModelDataComponent(c);
+                ItemFoil.apply(meta, fid, itemFoil);
             });
             viewer.getInventory().setItem(0, stack);
             return fid;
@@ -4215,6 +4223,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     CustomModelDataComponent c = meta.getCustomModelDataComponent();
                     c.setFloats(List.of(fcmd));
                     meta.setCustomModelDataComponent(c);
+                    ItemFoil.apply(meta, itemId, itemFoil);
                 });
                 viewer.getInventory().setItem(bukkitSlot, stack);
                 placed++;

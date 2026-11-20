@@ -208,6 +208,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private Map<String, GuiCaptures.Capture> captures;
     private final Path scenesDir;
     private final ItemGlyphs glyphs;
+    private java.util.Set<String> itemFoil = java.util.Set.of();
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
     /** Mod items the pack allocated a definition for (no manifest row): their stacks name it through item_model. */
@@ -295,6 +296,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         allocatedItems.clear();
         allocatedItems.addAll(F2vPack.readAllocatedItems(f2v));
+        itemFoil = F2vPack.readItemFoil(f2v.resolve(F2vPack.RESOLVED_ITEM_FOIL));
         // the rows the pack was built from: the manifest plus the boot-time allocation
         for (F2vPack.VisualBlock row : F2vPack.readEffectiveBlocks(f2v)) {
             blockCarriers.put(row.key(), row.moddedBlockId());
@@ -535,6 +537,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         org.bukkit.inventory.meta.components.CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
         cmd.setFloats(List.of(row.cmd()));
         meta.setCustomModelDataComponent(cmd);
+        dev.cim.paper.ItemFoil.apply(meta, moddedId, itemFoil);
         stack.setItemMeta(meta);
         return stack;
     }
@@ -543,7 +546,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * A stack of an allocated mod item: a vanilla host, named by item_model (its own items/ definition in
      * the pack) and by the leaf name of its id. The id reads back through {@link #itemId}.
      */
-    private static ItemStack allocatedCarrier(String moddedId) {
+    private ItemStack allocatedCarrier(String moddedId) {
         ItemStack stack = new ItemStack(Material.PAPER);
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
         org.bukkit.NamespacedKey model = org.bukkit.NamespacedKey.fromString(F2vPack.allocatedItemModel(moddedId));
@@ -551,6 +554,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             meta.setItemModel(model);
         }
         meta.itemName(net.kyori.adventure.text.Component.text(F2vPack.allocatedItemName(moddedId)));
+        dev.cim.paper.ItemFoil.apply(meta, moddedId, itemFoil);
         stack.setItemMeta(meta);
         return stack;
     }
