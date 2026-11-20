@@ -25,6 +25,7 @@ import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.metadata.animation.AnimationMetadataSection;
 import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -1081,8 +1082,15 @@ final class QuadDump {
                 try {
                     ResourceLocation id = ResourceLocation.parse(c[4]);
                     ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(id));
-                    if (stack.hasFoil()) {
-                        foil.add(c[4]);
+                    try {
+                        if (stack.hasFoil()) {
+                            foil.add(c[4]);
+                        }
+                    } catch (RuntimeException | LinkageError e) {
+                        LOGGER.warn("[cimscene] item foil probe failed for {}", id, e);
+                        // The item renderer also calls hasFoil. Bypass the failed hook
+                        // for this capture so the base mesh can still be recorded.
+                        stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
                     }
                     ItemCapture capture = new ItemCapture(sprites, 0.5f);
                     Minecraft.getInstance().getItemRenderer().renderStatic(
