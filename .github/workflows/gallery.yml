@@ -1833,6 +1833,7 @@ jobs:
               done
               rm -f "truth-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p.png"
+              gallery_repeat_capture block "$NS" "$p" "truth-shots/gal-p-$NS$p.png"
               # ANIM liveness probe (DIAGNOSTIC): kinetic pages only — a
               # page whose manifest carries dyn=1 cells. Two frames
               # 2s apart per leg; anim-diff.py joins the DELTAS (a
@@ -1843,8 +1844,6 @@ jobs:
                 bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t0.png"
                 sleep 2
                 bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t1.png"
-              else
-                gallery_repeat_capture block "$NS" "$p" "truth-shots/gal-p-$NS$p.png"
               fi
               echo "shot $NS page $p"
             done
@@ -3145,6 +3144,7 @@ jobs:
               done
               rm -f "ours-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p.png"
+              gallery_repeat_capture block "$NS" "$p" "ours-shots/ours-gal-p-$NS$p.png"
               # ANIM liveness probe (truth-leg mirror, DIAGNOSTIC): the
               # SAME manifest drives the decision — identical kinetic-page
               # selection on both legs, two frames 2s apart
@@ -3153,8 +3153,6 @@ jobs:
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t0.png"
                 sleep 2
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png"
-              else
-                gallery_repeat_capture block "$NS" "$p" "ours-shots/ours-gal-p-$NS$p.png"
               fi
               test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
               echo "shot $NS page $p"
