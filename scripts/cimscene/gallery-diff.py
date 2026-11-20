@@ -288,6 +288,9 @@ def main():
                          "animations) and demote to the ANIMATED class")
     ap.add_argument("--ours-self",
                     help="the ours leg's second shot (same contract)")
+    ap.add_argument("--measure-self-only", action="store_true",
+                    help="record repeat-frame AE without using it "
+                         "to classify a cell as ANIMATED")
     ap.add_argument("--manifest", action="append", required=True)
     ap.add_argument("--replay-manifests",
                     help="dir of the manifests the OURS leg actually replayed "
@@ -583,7 +586,8 @@ def main():
             # animation channel — the red is honest), and the static light
             # rows (sa_t=44) stay RED for the fidelity lanes (the 14-dv2
             # light calibration owns them).
-            animated = animated_class(sa_t, sa_o, args.gate, args.anim_floor)
+            animated = (not args.measure_self_only
+                        and animated_class(sa_t, sa_o, args.gate, args.anim_floor))
             # 14-ag: spill = a dyn neighbour within its measured reach
             # (manifest-derived, zero pixel heuristics). Only a RED verdict is
             # demoted — a spill neighbour never turns a clean cell RED, and

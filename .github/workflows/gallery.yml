@@ -1337,7 +1337,7 @@ jobs:
         id: tshard-key
         run: |
           R=$(awk '/^  wall-truth:$/{f=1} /^  wall-ours:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)
-          echo "key=gallery-truth-shard-v1-${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scripts/visual/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$R-k$K-s$SI" >> "$GITHUB_OUTPUT"
+          echo "key=gallery-truth-shard-v1-${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/gallery-repeat.py', 'scripts/cimscene/gallery-repeat.tsv', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scripts/visual/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$R-k$K-s$SI" >> "$GITHUB_OUTPUT"
       - name: restore this truth shard (cache)
         id: tshard
         uses: actions/cache/restore@v4
@@ -1772,6 +1772,7 @@ jobs:
           # quiet console pipeline can stall, a Files.writeString cannot).
           # the shared walk helpers (14-di: sourced, not inline — three steps, one law)
           source scripts/cimscene/walk-helpers.sh
+          source scripts/cimscene/gallery-repeat.sh
           EXHAUSTED=0
           for NS in $LADDER_NS; do
             for p in $(seq $SI $K $MAXP); do
@@ -1833,8 +1834,7 @@ jobs:
               rm -f "truth-shots/.settle-$NS-p$p.png"
               bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p.png"
               # ANIM liveness probe (DIAGNOSTIC): kinetic pages only — a
-              # page whose manifest carries dyn=1 cells (manifest-driven,
-              # zero hardcode; the static pages stay one-shot). Two frames
+              # page whose manifest carries dyn=1 cells. Two frames
               # 2s apart per leg; anim-diff.py joins the DELTAS (a
               # static-but-should-rotate divergence shows as ours-delta ~ 0
               # while truth-delta > threshold).
@@ -1843,6 +1843,8 @@ jobs:
                 bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t0.png"
                 sleep 2
                 bash scripts/visual/shot.sh "truth-shots/gal-p-$NS$p-t1.png"
+              else
+                gallery_repeat_capture block "$NS" "$p" "truth-shots/gal-p-$NS$p.png"
               fi
               echo "shot $NS page $p"
             done
@@ -1954,6 +1956,7 @@ jobs:
           # after the command, still inside the shot window).
           # the shared walk helpers (14-di: sourced, not inline — three steps, one law)
           source scripts/cimscene/walk-helpers.sh
+          source scripts/cimscene/gallery-repeat.sh
           # MOB series (the gate): frozen NoAI subjects on the wall. The
           # settle pass (40 ticks) writes the manifest + the done marker.
           for p in $(seq $SI $K $((EPAGES-1))); do
@@ -2068,6 +2071,7 @@ jobs:
               sleep 1   # static item displays settle like the block pages
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "truth-shots/gal-i-$NS$p.png"
+              gallery_repeat_capture item "$NS" "$p" "truth-shots/gal-i-$NS$p.png"
               # HELD leg (DIAGNOSTIC, 2026-11-04): stage the page's FIRST
               # item into the viewer's hotbar slot 0 over RCON (the SAME
               # manifest row the ours plugin replay reads), restore the HUD
@@ -2808,6 +2812,7 @@ jobs:
       - name: wall replay — STRIDE (blocks + probes + isolated displays)
         run: |
           set -euo pipefail
+          source scripts/cimscene/gallery-repeat.sh
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
@@ -3148,6 +3153,8 @@ jobs:
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t0.png"
                 sleep 2
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png"
+              else
+                gallery_repeat_capture block "$NS" "$p" "ours-shots/ours-gal-p-$NS$p.png"
               fi
               test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
               echo "shot $NS page $p"
@@ -3158,6 +3165,7 @@ jobs:
       - name: entity replay — STRIDE (MOB gate + dyn/large diagnostic + every ladder ns)
         run: |
           set -euo pipefail
+          source scripts/cimscene/gallery-repeat.sh
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
@@ -3310,6 +3318,7 @@ jobs:
               sleep 1   # static item displays settle like the block pages
               rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
               bash scripts/visual/shot.sh "ours-shots/ours-gal-i-$NS$p.png"
+              gallery_repeat_capture item "$NS" "$p" "ours-shots/ours-gal-i-$NS$p.png"
               # HELD replay (truth-leg mirror, DIAGNOSTIC): the plugin
               # stages the SAME manifest row's item as the pack CMD carrier
               # into hotbar slot 0; restore the HUD, press "1", shoot
@@ -3690,6 +3699,7 @@ jobs:
       - name: INLINE pixel join — this shard's stride, gate-hard
         run: |
           set -euo pipefail
+          source scripts/cimscene/gallery-repeat.sh
           pip install -q numpy pillow
           mkdir -p gallery-report
           GATE=0
@@ -3772,15 +3782,9 @@ jobs:
                   --ours "ours-shots/ours-gal-p-${NS}0-again.png" --manifest "$M" \
                   --out "gallery-report/determinism-ours-$NS-p0.json"
               fi
-              # 14-br THE BLOCK SELF-CONSISTENCY PAIR: the anim probes already
-              # shoot t0/t1 2s apart on BOTH legs for every dyn=1 page — feed
-              # the second frames to the join so a cell that MOVES AGAINST
-              # ITSELF (either leg) demotes to ANIMATED with evidence, the
-              # 14-bf law's honest escape hatch. Static cells (settled doors,
-              # unpowered machines) keep their self_ae ~0 and stay gated.
-              SELF_T=""; SELF_O=""
-              [ -f "truth-shots/gal-p-$NS$p-t1.png" ] && SELF_T="--truth-self truth-shots/gal-p-$NS$p-t1.png"
-              [ -f "ours-shots/ours-gal-p-$NS$p-t1.png" ] && SELF_O="--ours-self ours-shots/ours-gal-p-$NS$p-t1.png"
+              # Existing kinetic t1 frames feed the animation gate. New
+              # repeat frames for static Create pages populate self_ae only.
+              gallery_repeat_options block "$NS" "$p" "$T" "$O" || GATE=1
               pjoin 1 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
                 --manifest "$M" \
                 --replay-manifests srv-wall/c-imagine/scenes \
@@ -3792,7 +3796,7 @@ jobs:
                 --demote-family '^biomesoplenty:[a-z_0-9]*(leaves|vine)[a-z_0-9]*\[.*mossy=true[,\]]' \
                 --demote-family '^supplementaries:hourglass(?:\[|$)' \
                 --demote-family '^supplementaries:gunpowder\[burning=[1-9]' \
-                $SELF_T $SELF_O
+                "${GALLERY_SELF_ARGS[@]}"
             done
           done
 
@@ -3908,11 +3912,13 @@ jobs:
               O="ours-shots/ours-gal-i-$NS$p.png"
               test -f "$T" || { echo "missing $NS truth item shot p$p"; GATE=1; continue; }
               test -f "$O" || { echo "missing $NS ours item shot p$p"; GATE=1; continue; }
+              gallery_repeat_options item "$NS" "$p" "$T" "$O" || GATE=1
               pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
                 --manifest "$M" --out "gallery-report/join-item-$NS-p$p.json" \
                 --diff-dir "gallery-report/diff-item-$NS-p$p" \
                 --anim-floor 1000 \
-                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv
+                --animated-states srv-wall/c-imagine/f2v/visual-gallery-animation.tsv \
+                "${GALLERY_SELF_ARGS[@]}"
             done
           done
           echo "=== PARTICLE pages: diagnostic join (dyn class, fixed 1s shot window) ==="

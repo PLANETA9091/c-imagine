@@ -1658,18 +1658,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return v == null || v.isBlank() ? null : v.trim();
     }
 
-    /**
-     * 14-e61: one parsed page cell between the manifest read and the group
-     * merge — the resolved pick (+ the multi-mesh extras + the fullbright
-     * companion's wrapper ref) and the cell's computed light pin (the
-     * verbatim galleryPage chain: the shot-time front-air field, then the
-     * 14-cy captured pair, then the legacy emission pin).
-     */
-    private record ParsedCell(int x, int y, int z, String state, String ctKey, int emission,
-                              dev.cim.f2v.GalleryPack.Resolved pick,
-                              java.util.List<dev.cim.f2v.GalleryPack.Resolved> extras,
-                              String fbRef,
-                              int pinBlock, int pinSky) {
+    /** The complete capture selected for this position and its scene light. */
+    private record ParsedCell(int x, int y, int z, String state,
+                              dev.cim.f2v.GalleryPack.Resolved pick, int pinBlock, int pinSky) {
     }
 
     /** 14-e61: one page light group under synthesis; 14-e62: the group
@@ -1860,24 +1851,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return java.util.Map.of();
         }
 
-        // THE PICK MAPS (verbatim from galleryPage: byState / byQuadHash /
-        // byQuadState / byQuadStateAll)
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byState = new java.util.HashMap<>();
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadHash = new java.util.HashMap<>();
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadState = new java.util.HashMap<>();
-        java.util.Map<String, java.util.List<dev.cim.f2v.GalleryPack.Resolved>> byQuadStateAll =
-                new java.util.HashMap<>();
-        java.util.Map<Float, String> byCmd = new java.util.HashMap<>();
         for (dev.cim.f2v.GalleryPack.Resolved r : gallery) {
             byState.putIfAbsent(r.stateId(), r);
-            byCmd.putIfAbsent(r.cmd(), r.modelRef());
             String id = r.stateId();
             int q = id.indexOf("#q");
             if (q >= 0) {
                 byQuadHash.putIfAbsent(id.substring(q + 2), r);
                 byQuadState.putIfAbsent(id.substring(0, q), r);
-                byQuadStateAll.computeIfAbsent(id.substring(0, q),
-                        ignored -> new java.util.ArrayList<>()).add(r);
             }
         }
 
@@ -2013,26 +1996,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         : captured ? Math.min(15, Math.max(0, pick.lightBlock())) : fEmission;
                 final int pinSky = fieldLight != null ? fieldLight[1]
                         : captured ? Math.min(15, Math.max(0, pick.lightSky())) : 15;
-                // THE MULTI-MESH EXTRAS (verbatim guard: only when the pick
-                // rode the bare-state capture row)
-                java.util.List<dev.cim.f2v.GalleryPack.Resolved> extras =
-                        pick == byQuadState.get(state)
-                                ? dev.cim.f2v.GalleryPack.remainingCapturedMeshes(
-                                        byQuadStateAll, pick, state)
-                                : java.util.List.of();
-                // THE FULLBRIGHT COMPANION: the companion's wrapper resolves
-                // through its cmd (the fb display rides the same model ref
-                // lookup the per-cell path does via the item def)
-                String fbRef = null;
-                if (pick.fbCmd() != 0f) {
-                    fbRef = byCmd.get(pick.fbCmd());
-                    if (fbRef == null) {
-                        log.add(base + ": fullbright cmd " + pick.fbCmd()
-                                + " has no wrapper — the companion rides the cell hole");
-                    }
-                }
-                parsed.add(new ParsedCell(x, y, z, state, ctKey, fEmission, pick, extras,
-                        fbRef, pinBlock, pinSky));
+                parsed.add(new ParsedCell(x, y, z, state, pick, pinBlock, pinSky));
             }
             if (parsed.isEmpty()) {
                 log.add(base + ": no resolvable cell — the page lane skipped");
@@ -2072,26 +2036,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             for (ParsedCell c : parsed) {
                 String key = c.x() + "," + c.y() + "," + c.z() + "," + c.state();
                 String node = nodeTable.get(c.pick().cmd());
-                boolean single = isPageEligibleNode(node);
-                if (!single) {
+                // The fullbright component needs its own display with a 15/15 light pin.
+                if (c.pick().fbCmd() != 0f || !isPageEligibleNode(node)) {
                     perCellKeys.add(key);
                     continue;
                 }
                 double dx = c.x() - ax;
                 double dy = c.y() - ay;
-                // 14-e67: the multi-mesh extras ride their own translated
-                // children at the SAME cell offset (their wrappers = the
-                // cell frame too)
-                int ei = 0;
-                for (dev.cim.f2v.GalleryPack.Resolved extra : c.extras()) {
-                    String xnode = nodeTable.get(extra.cmd());
-                    if (!isPageEligibleNode(xnode)) {
-                        perCellKeys.add(key + "#x" + (ei++));
-                        continue;
-                    }
-                    children.add(insertTransformation(xnode, dx, dy, 0.0));
-                    ei++;
-                }
                 children.add(insertTransformation(node, dx, dy, 0.0));
                 eligible++;
             }
@@ -2197,14 +2148,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // First wins: the resolved manifest is sorted, so the representative
         // capture is deterministic across builds.
         java.util.Map<String, dev.cim.f2v.GalleryPack.Resolved> byQuadState = new java.util.HashMap<>();
-        // 14-dt THE MULTI-MESH INDEX: a state's truth render can be SEVERAL
-        // distinct captured meshes (the sliding door's panel + window, the
-        // pillar's shaft + connected caps, the cog's parts — measured 300
-        // states in the seed's resolved manifest carry >1 quad row); the
-        // pick serves the first and the caller spawns the rest, one display
-        // per extra mesh, same cell, same transform, each with its own
-        // captured light fields.
-        java.util.Map<String, java.util.List<dev.cim.f2v.GalleryPack.Resolved>> byQuadStateAll = new java.util.HashMap<>();
         for (dev.cim.f2v.GalleryPack.Resolved r : f2v.gallery()) {
             byState.putIfAbsent(r.stateId(), r);
             String id = r.stateId();
@@ -2212,8 +2155,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             if (q >= 0) {
                 byQuadHash.putIfAbsent(id.substring(q + 2), r);
                 byQuadState.putIfAbsent(id.substring(0, q), r);
-                byQuadStateAll.computeIfAbsent(id.substring(0, q),
-                        ignored -> new java.util.ArrayList<>()).add(r);
             }
         }
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -2419,9 +2360,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 // excluded (ineligible-node) cells spawn per-cell
                 if (pageLaneHybridKeys != null) {
                     String rk = row[1] + "," + row[2] + "," + row[3] + "," + row[4];
-                    boolean isExcluded = pageLaneHybridKeys.contains(rk);
-                    boolean isExtra = pageLaneHybridKeys.contains(rk + "#x0");
-                    if (!isExcluded && !isExtra) {
+                    if (!pageLaneHybridKeys.contains(rk)) {
                         continue;
                     }
                 }
@@ -2649,52 +2588,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
                             + row[1] + "," + row[2] + "," + row[3] + " state=" + state
                             + " fullbright cmd=" + fbCmd + " uuid=" + fbDisplay.getUniqueId());
-                }
-                // 14-dt THE MULTI-MESH EXTRAS: a state whose truth render is
-                // several distinct captured meshes (the door's window, the
-                // pillar's caps) spawns one extra display per remaining mesh
-                // — same cell, same transform, the extra row's own captured
-                // light fields (legacy rows keep the 14-bk pin). GUARD: only
-                // when the pick rode the BARE-STATE capture row — a
-                // position-calibrated 14-ak CT tile or 14-bt ctx hash row
-                // already carries that position's full content, and drawing
-                // the bare state's other meshes on top would double it.
-                if (r == byQuadState.get(state)) {
-                    java.util.List<dev.cim.f2v.GalleryPack.Resolved> extras =
-                            dev.cim.f2v.GalleryPack.remainingCapturedMeshes(byQuadStateAll, r, state);
-                    for (dev.cim.f2v.GalleryPack.Resolved extra : extras) {
-                        final dev.cim.f2v.GalleryPack.Resolved xr = extra;
-                        ItemStack xStack = new ItemStack(material);
-                        xStack.editMeta(meta -> {
-                            CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
-                            cmd.setFloats(List.of(xr.cmd()));
-                            meta.setCustomModelDataComponent(cmd);
-                        });
-                        final boolean xCaptured = xr.lightBlock() >= 0 && xr.lightSky() >= 0;
-                        // 14-ea3: the extras ride the SAME per-cell field pin.
-                        final int[] xFieldLight = frontAirLight(lightField, row[1], row[2], row[3]); // 14-e10
-                        final int xPinBlock = xFieldLight != null ? xFieldLight[0]
-                                : xCaptured
-                                ? Math.min(15, Math.max(0, xr.lightBlock())) : fEmission;
-                        final int xPinSky = xFieldLight != null ? xFieldLight[1]
-                                : xCaptured
-                                ? Math.min(15, Math.max(0, xr.lightSky())) : 15;
-                        org.bukkit.entity.ItemDisplay xDisplay = world(worldName()).spawn(at,
-                                org.bukkit.entity.ItemDisplay.class, e -> {
-                                    e.setItemStack(xStack);
-                                    e.setBillboard(org.bukkit.entity.Display.Billboard.FIXED);
-                                    e.setTransformation(tr);
-                                    e.setBrightness(new org.bukkit.entity.Display.Brightness(
-                                            Math.round(xPinBlock * aoF), Math.round(xPinSky * aoF)));
-                                    if (aoPct < 100) { // 14-e155 the same cell = the same factor
-                                        e.setCustomName("cimao=" + aoPct);
-                                    }
-                                });
-                        log().info(LOG_PREFIX + "f2v gallery: page " + page + " cell "
-                                + row[1] + "," + row[2] + "," + row[3] + " state=" + state
-                                + " extra-mesh cmd=" + xr.cmd() + " uuid=" + xDisplay.getUniqueId()
-                                + " ao=" + aoPct);
-                    }
                 }
             }
             if (deltaSkipped > 0) {

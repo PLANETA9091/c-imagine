@@ -131,6 +131,47 @@ class CommandLine(unittest.TestCase):
                     self.assertEqual(report["rows"][0]["verdict"], expected)
                     self.assertEqual(result, status)
 
+    def test_measurement_only_reports_both_self_deltas_and_preserves_the_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            random = np.random.default_rng(19)
+            truth = random.integers(0, 256, (gd.H, gd.W, 3), dtype=np.uint8)
+            ours = truth.copy()
+            _, (x0, y0, x1, y1) = gd.crop_cell(truth, 0, 0)
+            ours[y0:y1, x0:x1] = random.integers(
+                0, 256, (y1 - y0, x1 - x0, 3), dtype=np.uint8)
+            truth_repeat = truth.copy()
+            truth_repeat[y0:y1, x0:x1] = random.integers(
+                0, 256, (y1 - y0, x1 - x0, 3), dtype=np.uint8)
+            Image.fromarray(truth).save(root / "truth.png")
+            Image.fromarray(ours).save(root / "ours.png")
+            Image.fromarray(truth_repeat).save(root / "truth-repeat.png")
+            Image.fromarray(ours).save(root / "ours-repeat.png")
+            manifest = root / "gallery-create-p0.tsv"
+            manifest.write_text("cell\tx\ty\tz\tstate\tdyn\tnote\n"
+                                "cell\t-5\t-60\t9\tcreate:test\t0\tok\n")
+            out = root / "report.json"
+            arguments = ["gallery-diff.py", "--truth", str(root / "truth.png"),
+                         "--ours", str(root / "ours.png"), "--manifest", str(manifest),
+                         "--out", str(out), "--gate-dyn"]
+            pair = ["--truth-self", str(root / "truth-repeat.png"),
+                    "--ours-self", str(root / "ours-repeat.png")]
+
+            def join(extra, status, verdict):
+                with patch.object(sys, "argv", arguments + extra), contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(gd.main(), status)
+                row = json.loads(out.read_text())["rows"][0]
+                self.assertEqual(row["verdict"], verdict)
+                return row
+
+            baseline = join([], 2, "RED")
+            animation = join(pair, 0, "ANIMATED")
+            measurement = join(pair + ["--measure-self-only"], 2, "RED")
+            self.assertEqual(measurement["self_ae"], animation["self_ae"])
+            self.assertGreater(measurement["self_ae"][0], 60000)
+            self.assertEqual(measurement["self_ae"][1], 0)
+            self.assertEqual({**measurement, "self_ae": [None, None]}, baseline)
+
 
 class DissolvedRace(unittest.TestCase):
     """14-dr: a truth CELL the replay's own input names dissolved is the walk's

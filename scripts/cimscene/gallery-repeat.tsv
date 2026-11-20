@@ -1,0 +1,21 @@
+# Run 44653679914. Regenerate with python3 scripts/cimscene/gallery-repeat.py 44653679914 gallery-report-*
+# Kind	Namespace	Page	Baseline RED rows missing a self pair
+block	create	144	1
+block	create	160	1
+block	create	177	1
+block	create	220	2
+block	create	315	1
+block	create	330	1
+block	create	345	1
+block	create	357	1
+block	create	392	2
+block	create	403	1
+item	create	0	7
+item	create	1	6
+item	create	2	1
+item	create	3	12
+item	create	4	8
+item	create	5	6
+item	create	6	6
+item	create	7	6
+item	create	8	5
