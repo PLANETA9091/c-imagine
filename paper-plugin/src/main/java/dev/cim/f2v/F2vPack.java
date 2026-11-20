@@ -1628,29 +1628,43 @@ public final class F2vPack {
         return new Result(r.items(), r.blocks(), r.sha1(), r.entryCount(), warnings, r.gallery(), r.placeholders(), r.tally());
     }
 
+    private record CarrierModel(String ref, int xRot, int yRot, boolean uvlock) {
+        CarrierModel(String ref) {
+            this(ref, 0, 0, false);
+        }
+
+        JsonObject application() {
+            JsonObject apply = new JsonObject();
+            apply.addProperty("model", ref);
+            if (xRot != 0) apply.addProperty("x", xRot);
+            if (yRot != 0) apply.addProperty("y", yRot);
+            if (uvlock) apply.addProperty("uvlock", true);
+            return apply;
+        }
+    }
+
     /**
-     * The block model a note-block carrier renders: the mod's own blockstate DEFAULT
-     * variant (the "" key, else the first sorted key; a multipart's first part), copied
-     * with its parent graph. A block without a usable blockstate falls back to the
-     * models/block/&lt;path&gt; probe that manifest rows always used.
+     * Resolves the carrier's representative blockstate application and copies its model graph.
+     * A missing model falls back to the direct models/block/&lt;path&gt; probe.
      */
-    private static String resolveBlockModel(JarCache cache, List<Path> jars, String moddedId,
-                                            TreeMap<String, byte[]> entries, List<String> warnings)
+    private static CarrierModel resolveCarrierModel(JarCache cache, List<Path> jars, String moddedId,
+                                                    TreeMap<String, byte[]> entries, List<String> warnings)
             throws IOException {
         int colon = moddedId.indexOf(':');
         if (colon > 0) {
             byte[] bs = cache.read("assets/" + moddedId.substring(0, colon) + "/blockstates/"
                     + moddedId.substring(colon + 1) + ".json");
-            String model = bs == null ? null : defaultBlockstateModel(new String(bs, StandardCharsets.UTF_8));
+            CarrierModel model = bs == null ? null : defaultBlockstateModel(new String(bs, StandardCharsets.UTF_8));
             if (model != null) {
-                String ref = copyModelRef(cache, model, entries, warnings);
+                String ref = copyModelRef(cache, model.ref(), entries, warnings);
                 if (ref != null) {
-                    return ref;
+                    return model;
                 }
-                warnings.add("blockstate model missing in jars: " + model + " (" + moddedId + ")");
+                warnings.add("blockstate model missing in jars: " + model.ref() + " (" + moddedId + ")");
             }
         }
-        return resolveAndCopyBlockGraph(jars, moddedId, entries, warnings);
+        String ref = resolveAndCopyBlockGraph(jars, moddedId, entries, warnings);
+        return ref == null ? null : new CarrierModel(ref);
     }
 
     /** Copies a {@code ns:path} model's parent graph from the first jar carrying it; vanilla refs pass through. */
@@ -1676,8 +1690,8 @@ public final class F2vPack {
         return null;
     }
 
-    /** The default state's model ref in a blockstate JSON, or null when there is none or it does not parse. */
-    static String defaultBlockstateModel(String json) {
+    /** Selects the empty variant, first sorted variant, or first usable multipart application. */
+    private static CarrierModel defaultBlockstateModel(String json) {
         try {
             JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
             if (obj.has("variants") && obj.get("variants").isJsonObject()) {
@@ -1696,7 +1710,7 @@ public final class F2vPack {
             if (obj.has("multipart") && obj.get("multipart").isJsonArray()) {
                 for (JsonElement part : obj.getAsJsonArray("multipart")) {
                     if (part.isJsonObject() && part.getAsJsonObject().has("apply")) {
-                        String model = modelOf(part.getAsJsonObject().get("apply"));
+                        CarrierModel model = modelOf(part.getAsJsonObject().get("apply"));
                         if (model != null) {
                             return model;
                         }
@@ -1709,18 +1723,35 @@ public final class F2vPack {
         }
     }
 
-    private static String modelOf(JsonElement e) {
+    private static CarrierModel modelOf(JsonElement e) {
         if (e == null) {
             return null;
         }
         if (e.isJsonArray()) {
             return e.getAsJsonArray().isEmpty() ? null : modelOf(e.getAsJsonArray().get(0));
         }
-        if (e.isJsonObject() && e.getAsJsonObject().has("model")
-                && e.getAsJsonObject().get("model").isJsonPrimitive()) {
-            return e.getAsJsonObject().get("model").getAsString();
+        if (e.isJsonObject()) {
+            JsonObject model = e.getAsJsonObject();
+            JsonElement ref = model.get("model");
+            if (ref != null && ref.isJsonPrimitive()) {
+                JsonElement uvlock = model.get("uvlock");
+                return new CarrierModel(ref.getAsString(), carrierRotation(model.get("x")),
+                        carrierRotation(model.get("y")), uvlock != null && uvlock.isJsonPrimitive()
+                                && uvlock.getAsBoolean());
+            }
         }
         return null;
+    }
+
+    /** Both clients interpret quarter-turn angles modulo 360. Keep the model if metadata is malformed. */
+    private static int carrierRotation(JsonElement angle) {
+        if (angle != null && angle.isJsonPrimitive() && angle.getAsJsonPrimitive().isNumber()) {
+            int degrees = angle.getAsInt();
+            if (angle.getAsDouble() == degrees && degrees % 90 == 0) {
+                return Math.floorMod(degrees, 360);
+            }
+        }
+        return 0;
     }
 
     /**
@@ -2394,18 +2425,20 @@ public final class F2vPack {
         // block channel (parity matrix "blocks", block-channel-26-3.md):
         // note_block stand-in slots -> the modded block models, ONE merged
         // blockstates override, manifest-driven slot allocation
-        List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
-        Map<String, Map<Integer, String>> mushroomModels = new TreeMap<>();
+        List<Map.Entry<String, CarrierModel>> blockVariants = new ArrayList<>();
+        Map<String, Map<Integer, CarrierModel>> mushroomModels = new TreeMap<>();
         List<VisualBlock> emittedBlocks = new ArrayList<>();
         try (JarCache blockJars = new JarCache(jars)) {
             for (VisualBlock block : blockRows) {
+                CarrierModel model = resolveCarrierModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
                 if (block.isDisplay()) {
                     // display family: no slot, an items/ definition of the block's own model (the
                     // ItemDisplay on the barrier host renders it; see DisplayCarriers in the HUD)
-                    String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
+                    String ref = model == null ? null : model.ref();
                     if (ref != null && GalleryPack.chainHasElements(jars, ref, warnings)) {
-                        // block-geometry models ride a standalone composite on the item channel (as allocated items do)
-                        String comp = safeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                        // Bake the blockstate transform into the item composite's geometry and UVs.
+                        String comp = safeItemComposite(jars, ref, model.xRot(), model.yRot(), model.uvlock(),
+                                compositeNo[0]++, entries, warnings);
                         if (comp != null) {
                             ref = comp;
                         }
@@ -2420,23 +2453,21 @@ public final class F2vPack {
                     }
                     continue;
                 }
-                String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(),
-                        entries, warnings);
-                if (ref != null && block.isMushroom()) {
+                if (model != null && block.isMushroom()) {
                     mushroomModels.computeIfAbsent(block.instrument(), h -> new TreeMap<>())
-                            .put(block.note(), ref);
+                            .put(block.note(), model);
                     emittedBlocks.add(block);
-                } else if (ref != null) {
+                } else if (model != null) {
                     blockVariants.add(Map.entry(
                             "instrument=" + block.instrument() + ",note=" + block.note(),
-                            ref));
+                            model));
                     emittedBlocks.add(block);
                 } else {
                     warnings.add("no block model found for " + block.moddedBlockId()
                             + " in any mod jar — block row dropped");
                 }
             }
-            for (Map.Entry<String, Map<Integer, String>> host : mushroomModels.entrySet()) {
+            for (Map.Entry<String, Map<Integer, CarrierModel>> host : mushroomModels.entrySet()) {
                 byte[] vanilla = blockJars.read("assets/minecraft/blockstates/" + host.getKey() + ".json");
                 String state = vanilla == null ? null
                         : mushroomBlockState(new String(vanilla, StandardCharsets.UTF_8), host.getValue());
@@ -2782,7 +2813,7 @@ public final class F2vPack {
      * and each carrier gets one part of its own. Null when the vanilla JSON is not a multipart
      * of plain property maps (the caller then drops the carriers instead).
      */
-    static String mushroomBlockState(String vanillaJson, Map<Integer, String> carriers) {
+    private static String mushroomBlockState(String vanillaJson, Map<Integer, CarrierModel> carriers) {
         JsonObject root;
         try {
             root = JsonParser.parseString(vanillaJson).getAsJsonObject();
@@ -2841,12 +2872,10 @@ public final class F2vPack {
             rewritten.add("apply", part.get("apply"));
             out.add(rewritten);
         }
-        for (Map.Entry<Integer, String> carrier : new TreeMap<>(carriers).entrySet()) {
-            JsonObject apply = new JsonObject();
-            apply.addProperty("model", carrier.getValue());
+        for (Map.Entry<Integer, CarrierModel> carrier : new TreeMap<>(carriers).entrySet()) {
             JsonObject part = new JsonObject();
             part.add("when", mushroomWhen(carrier.getKey()));
-            part.add("apply", apply);
+            part.add("apply", carrier.getValue().application());
             out.add(part);
         }
         JsonObject root2 = new JsonObject();
@@ -2871,14 +2900,13 @@ public final class F2vPack {
      * (VariantSelector measured, block-channel-26-3.md §3) — the note
      * property pins the slot, powered stays unspecified.
      */
-    static String blockStateDef(List<Map.Entry<String, String>> variants) {
+    private static String blockStateDef(List<Map.Entry<String, CarrierModel>> variants) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n  \"variants\": {\n");
         for (int i = 0; i < variants.size(); i++) {
-            Map.Entry<String, String> e = variants.get(i);
+            Map.Entry<String, CarrierModel> e = variants.get(i);
             sb.append("    \"").append(e.getKey())
-              .append("\": {\"model\": \"").append(e.getValue())
-              .append("\"}");
+              .append("\": ").append(e.getValue().application());
             sb.append(i + 1 < variants.size() ? ",\n" : "\n");
         }
         sb.append("  }\n}\n");
@@ -4745,11 +4773,11 @@ public final class F2vPack {
                     "wand row resolved as select:wand");
             // BLOCK channel (parity matrix "blocks"): the note_block
             // blockstate override maps the stand-in slot to the modded model
-            String nb = str(entries, "assets/minecraft/blockstates/note_block.json");
-            expect(failures, nb.contains("\"instrument=creeper,note=13\""),
-                    "note_block variant key instrument=creeper,note=13");
-            expect(failures, nb.contains("\"model\": \"fakemod:block/rock\""),
-                    "note_block variant points at the modded block model");
+            JsonObject noteVariants = JsonParser.parseString(str(entries, "assets/minecraft/blockstates/note_block.json"))
+                    .getAsJsonObject().getAsJsonObject("variants");
+            expect(failures, new CarrierModel("fakemod:block/rock").application()
+                            .equals(noteVariants.get("instrument=creeper,note=13")),
+                    "note_block creeper note 13 points at the modded block model");
             expect(failures, entries.containsKey(
                     "assets/fakemod/models/block/rock.json"), "block model copied");
             expect(failures, entries.containsKey(
@@ -5134,7 +5162,7 @@ public final class F2vPack {
                 "fakemod:block/globe", CMD_BASE, "g0", 0, 0, true);
         GalleryPack.Resolved capture = new GalleryPack.Resolved(
                 "fakemod:block/globe#qabc123", CMD_BASE + 1, "g1", 0, 0, true, 3, 15, 0f);
-        GalleryPack.Resolved doorWindow = new GalleryPack.Resolved(
+        GalleryPack.Resolved doorCapture = new GalleryPack.Resolved(
                 "fakemod:block/door#qdef456", CMD_BASE + 4, "g4", 0, 0, true, 3, 15, 0f);
         GalleryPack.Resolved ct = new GalleryPack.Resolved(
                 "fakemod:block/globe#i0,i1", CMD_BASE + 2, "g2", 0, 0, true);
@@ -5171,29 +5199,26 @@ public final class F2vPack {
                         "fakemod:block/plain", null) == plain,
                 "14-dh: a sibling state without its own capture rides the plain composite");
 
-        // 14-dt THE MULTI-MESH LAW: a state with several captured meshes
-        // (the door's panel + window) replays ALL of them — the pick serves
-        // the first, remainingCapturedMeshes returns the rest, in order,
-        // excluded by identity (a CT/ctx pick of the same row adds nothing).
-        java.util.Map<String, java.util.List<GalleryPack.Resolved>> byQuadStateAll =
-                new java.util.HashMap<>();
-        byQuadStateAll.put("fakemod:block/door", java.util.List.of(capture, doorWindow));
+        // Native .ctx.tsv encodes q<hash>, including when one complete mesh
+        // serves a different state alias. It must beat a plain-model fallback.
+        byQuadHash.put("def456", doorCapture);
+        byState.put("fakemod:block/door_alias", plain);
         expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, capture,
-                        "fakemod:block/door").equals(java.util.List.of(doorWindow)),
-                "14-dt: the state's second captured mesh rides as the extra display");
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/door_alias", "qdef456") == doorCapture,
+                "native capture: q-prefixed context selects the complete mesh for a state alias");
         expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, doorWindow,
-                        "fakemod:block/door").equals(java.util.List.of(capture)),
-                "14-dt: whichever mesh the pick served, the others ride");
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fakemod:block/globe", "qabc123") == capture,
+                "native capture: context may select the canonical object without adding alternatives");
+        GalleryPack.Resolved emptyCapture = new GalleryPack.Resolved(
+                "fixture:door[half=upper,visible=false]#qa6b018eb65daa308", CMD_BASE + 5, "g5", 0, 0, true);
+        byQuadHash.put("a6b018eb65daa308", emptyCapture);
+        byState.put("fixture:other_empty_door", plain);
         expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, ct,
-                        "fakemod:block/globe").isEmpty(),
-                "14-dt: a state with one captured mesh has no extras");
-        expect(failures,
-                GalleryPack.remainingCapturedMeshes(byQuadStateAll, plain,
-                        "fakemod:block/plain").isEmpty(),
-                "14-dt: a state with no captures has no extras");
+                GalleryPack.pickResolved(byState, byQuadState, byQuadHash,
+                        "fixture:other_empty_door", "qa6b018eb65daa308") == emptyCapture,
+                "native capture: observed empty context outranks a phantom plain model");
     }
 
     private static void capturedSpriteSelftest(List<String> failures) throws IOException {
@@ -5545,8 +5570,13 @@ public final class F2vPack {
      */
     private static String safeItemComposite(List<Path> jars, String ref, int no,
                                             TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
+        return safeItemComposite(jars, ref, 0, 0, false, no, entries, warnings);
+    }
+
+    private static String safeItemComposite(List<Path> jars, String ref, int xRot, int yRot, boolean uvlock, int no,
+                                            TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
         try {
-            return GalleryPack.synthesizeItemComposite(jars, ref, no, entries, warnings);
+            return GalleryPack.synthesizeItemComposite(jars, ref, xRot, yRot, uvlock, no, entries, warnings);
         } catch (RuntimeException e) {
             warnings.add("item composite skipped for " + ref + ": " + e);
             return null;
@@ -5620,8 +5650,9 @@ public final class F2vPack {
                     .append(f).append("\":\"false\"}}");
         }
         vanilla.append("]}");
-        Map<Integer, String> carriers = new TreeMap<>(Map.of(1, "fakemod:block/c1", 42, "fakemod:block/c42",
-                63 - 1, "fakemod:block/c62"));
+        Map<Integer, CarrierModel> carriers = Map.of(1, new CarrierModel("fakemod:block/c1"),
+                42, new CarrierModel("fakemod:block/c42", 90, 270, true),
+                62, new CarrierModel("fakemod:block/c62"));
         String out = mushroomBlockState(vanilla.toString(), carriers);
         expect(failures, out != null, "the vanilla multipart rewrites");
         if (out != null) {
@@ -5637,7 +5668,7 @@ public final class F2vPack {
                 }
                 List<String> want = new ArrayList<>();
                 if (carriers.containsKey(mask)) {
-                    want.add(carriers.get(mask));
+                    want.add(carriers.get(mask).ref());
                 } else {
                     for (int i = 0; i < MUSHROOM_FACES.size(); i++) {
                         boolean on2 = (mask >> i & 1) == 1;
@@ -5724,8 +5755,9 @@ public final class F2vPack {
         }
     }
 
-    private static void carrierSelftest(List<String> failures) {
+    private static void carrierSelftest(List<String> failures) throws IOException {
         mushroomSelftest(failures);
+        carrierTransformSelftest(failures);
         VisualBlock manifestRock = new VisualBlock("fakemod:rock", "creeper", 13);
         // an earlier boot's ledger: old keeps harp:5; gone is in no jar any more
         List<VisualBlock> ledger = List.of(new VisualBlock("fakemod:old", "harp", 5),
@@ -5796,17 +5828,80 @@ public final class F2vPack {
                 "the display item_model key inverts to its mod id and is not an allocated item key");
         expect(failures, displayItemDefPath("create:depot").equals("assets/c-imagine/items/_display/create/depot.json"),
                 "the display items/ definition path");
-        expect(failures, "c:d".equals(defaultBlockstateModel(
+        expect(failures, new CarrierModel("c:d").equals(defaultBlockstateModel(
                 "{\"variants\":{\"facing=north\":{\"model\":\"a:b\"},\"\":{\"model\":\"c:d\"}}}")),
-                "the empty variant key is the default state");
-        expect(failures, "e:f".equals(defaultBlockstateModel(
+                "the empty variant key supplies the representative model");
+        expect(failures, new CarrierModel("e:f").equals(defaultBlockstateModel(
                 "{\"variants\":{\"facing=west\":[{\"model\":\"a:b\"}],\"facing=north\":{\"model\":\"e:f\"}}}")),
-                "without an empty key the first sorted variant wins, arrays take their first entry");
-        expect(failures, "x:y".equals(defaultBlockstateModel(
-                "{\"multipart\":[{\"apply\":[{\"model\":\"x:y\"},{\"model\":\"z:w\"}]}]}")),
-                "multipart takes the first part's model");
+                "without an empty key the first sorted variant wins");
+        expect(failures, new CarrierModel("x:y", 270, 0, true).equals(defaultBlockstateModel(
+                "{\"multipart\":[{\"apply\":[{\"model\":\"x:y\",\"x\":-90,\"uvlock\":true},{\"model\":\"z:w\"}]}]}")),
+                "multipart takes the first model application and normalizes signed rotation");
+        expect(failures, new CarrierModel("x:y", 0, 90, false).equals(defaultBlockstateModel(
+                "{\"variants\":{\"\":{\"model\":\"x:y\",\"x\":{},\"y\":90}}}")),
+                "malformed rotation metadata leaves the usable model and valid angle in place");
         expect(failures, defaultBlockstateModel("{") == null && defaultBlockstateModel("[]") == null,
                 "malformed blockstates resolve to no model");
+    }
+
+    private static void carrierTransformSelftest(List<String> failures) throws IOException {
+        Path tmp = Files.createTempDirectory("f2v-carrier-transform");
+        try {
+            Path mods = Files.createDirectory(tmp.resolve("mods"));
+            Path out = Files.createDirectory(tmp.resolve("out"));
+            var jarEntries = new TreeMap<String, byte[]>();
+            String model = """
+                    {"textures":{"top":"fixture:block/top"},
+                     "elements":[{"from":[1,2,3],"to":[4,6,8],"faces":{"up":{"texture":"#top"}}}]}
+                    """;
+            String app = "{\"model\":\"fixture:block/shape\",\"x\":90,\"y\":90,\"uvlock\":true}";
+            String state = "{\"variants\":{\"axis=x\":" + app + ",\"axis=y\":{\"model\":\"fixture:block/shape\"}}}";
+            for (String id : List.of("note", "mushroom", "display")) {
+                jarEntries.put("assets/fixture/blockstates/" + id + ".json", state.getBytes(StandardCharsets.UTF_8));
+            }
+            jarEntries.put("assets/fixture/models/block/shape.json", model.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fixture/models/block/fallback.json", model.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fixture/textures/block/top.png", testPng());
+            jarEntries.put("assets/fixture/blockstates/fallback.json", """
+                    {"variants":{"":{"model":"fixture:block/missing","x":90,"uvlock":true}}}
+                    """.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/minecraft/blockstates/brown_mushroom_block.json", """
+                    {"multipart":[{"when":{"north":"true"},"apply":{"model":"minecraft:block/brown_mushroom_block"}}]}
+                    """.getBytes(StandardCharsets.UTF_8));
+            writeJar(mods.resolve("fixture.jar"), jarEntries);
+            Files.writeString(out.resolve("visual-blocks.tsv"),
+                    "fixture:note\tharp\t1\nfixture:fallback\tharp\t2\nfixture:mushroom\tbrown_mushroom_block\t100000\n");
+            Files.writeString(out.resolve(CARRIER_LEDGER), "fixture:display\tdisplay\t0\n");
+
+            Result built = build(mods, out, List.of());
+            TreeMap<String, byte[]> pack = readZip(out.resolve("pack.zip"));
+            JsonObject variants = JsonParser.parseString(str(pack, "assets/minecraft/blockstates/note_block.json"))
+                    .getAsJsonObject().getAsJsonObject("variants");
+            JsonElement expected = JsonParser.parseString(app);
+            expect(failures, expected.equals(variants.get("instrument=harp,note=1")),
+                    "note carrier emits the selected x/y/uvlock application");
+            expect(failures, new CarrierModel("fixture:block/fallback").application()
+                            .equals(variants.get("instrument=harp,note=2")),
+                    "the direct-model fallback has no transform from the missing model");
+            JsonArray mushroom = JsonParser.parseString(str(pack, "assets/minecraft/blockstates/brown_mushroom_block.json"))
+                    .getAsJsonObject().getAsJsonArray("multipart");
+            expect(failures, expected.equals(mushroom.get(mushroom.size() - 1).getAsJsonObject().get("apply")),
+                    "mushroom carrier emits the selected x/y/uvlock application");
+            String displayRef = JsonParser.parseString(str(pack, displayItemDefPath("fixture:display")))
+                    .getAsJsonObject().getAsJsonObject("model").get("model").getAsString();
+            JsonObject baked = JsonParser.parseString(str(pack, "assets/"
+                            + displayRef.replace(":", "/models/") + ".json"))
+                    .getAsJsonObject().getAsJsonArray("elements").get(0).getAsJsonObject();
+            expect(failures, JsonParser.parseString("[2,3,1]").equals(baked.get("from"))
+                            && JsonParser.parseString("[6,8,4]").equals(baked.get("to"))
+                            && baked.getAsJsonObject("faces").has("east"),
+                    "display carrier bakes x then y around the block center");
+            Result verified = rebuildForVerification(mods, out);
+            expect(failures, built.sha1().equals(verified.sha1()) && built.blocks().equals(verified.blocks()),
+                    "carrier transforms yield the same pack and rows on verification rebuild");
+        } finally {
+            deleteRecursively(tmp);
+        }
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
