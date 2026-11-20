@@ -45,7 +45,7 @@ public final class CimLiveMod {
                 if (new ItemStack(BuiltInRegistries.ITEM.get(id)).hasFoil()) {
                     foil.add(id.toString());
                 }
-            } catch (RuntimeException e) {
+            } catch (RuntimeException | LinkageError e) {
                 org.slf4j.LoggerFactory.getLogger("cimlive").warn("[cimlive] item foil probe failed for {}", id, e);
             }
         }
