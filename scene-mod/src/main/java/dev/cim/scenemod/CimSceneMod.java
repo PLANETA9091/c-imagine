@@ -1075,6 +1075,30 @@ public final class CimSceneMod {
         for (java.util.Map.Entry<BlockPos, BlockState> e : placed) {
             level.setBlock(e.getKey(), e.getValue(), 3);
         }
+        // 14-e249 THE BOUNDED FIXPOINT: the e248 pass = ONE probe, measured
+        // -10.2% on the two-sample offline join (511 -> 459 reds over the
+        // s0+s3 quartets, 58 cells improved / 6 regressed, the like-with-like
+        // pipeline) — the walls/fence-gates class moved but did NOT close
+        // (459 reds = 9.37% remain), the fixpoint = one update short on the
+        // remaining placements. Up to two more identical probes, each with
+        // the moved-state counter receipted in the boot log (the counter =
+        // the convergence measure: 0 moved = the fixpoint reached, the
+        // remaining reds = the walk-order surface, the named neighbor-aware
+        // build order = the next direction). The e248 probe above = iter 0.
+        for (int iter = 1; iter <= 2; iter++) {
+            int moved = 0;
+            for (java.util.Map.Entry<BlockPos, BlockState> e : placed) {
+                BlockState cur = level.getBlockState(e.getKey());
+                level.setBlock(e.getKey(), e.getValue(), 3);
+                if (level.getBlockState(e.getKey()) != cur) {
+                    moved++;
+                }
+            }
+            LOGGER.info("[cimscene] gallery-ours: convergence probe {} moved {}", iter, moved);
+            if (moved == 0) {
+                break;
+            }
+        }
         java.nio.file.Path out = scenesDir.resolve(stem + "-ours.tsv");
         try {
             java.nio.file.Files.write(out, (String.join("\n", manifestRows) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
