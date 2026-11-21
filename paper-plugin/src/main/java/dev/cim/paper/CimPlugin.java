@@ -74,6 +74,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         log().info(LOG_PREFIX + "paper plugin enabled (bridge lifecycle owner)");
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
         getServer().getPluginManager().registerEvents(this, this);
+        getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         netWatch = new NetWatch(this);
         f2vInit();
         f2vAutoOfferInit();
@@ -1101,7 +1102,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * (ItemMeta#getCustomModelDataComponent + CustomModelDataComponent
      * floats). Logs the inventory-verified marker the CI asserts.
      */
-    private void giveVisualItem(String playerName, String moddedItemId) {
+    List<String> f2vItemIds() {
+        F2vState state = f2v;
+        if (state == null || state.items() == null) {
+            return List.of();
+        }
+        return state.items().stream()
+                .map(dev.cim.f2v.F2vPack.VisualItem::moddedId)
+                .toList();
+    }
+
+    void giveVisualItem(String playerName, String moddedItemId) {
         try {
             if (f2v == null) {
                 log().warning(LOG_PREFIX + "f2v item: give skipped (pipeline not ready)");
