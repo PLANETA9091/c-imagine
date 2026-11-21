@@ -794,7 +794,15 @@ public final class CimSceneMod {
         String stem = "gallery-ours-" + namespace + "-p" + page;
         java.nio.file.Path scenesDir = level.getServer().getServerDirectory()
                 .resolve("c-imagine").resolve("scenes");
-        java.nio.file.Path manifest = scenesDir.resolve(stem + ".tsv");
+        // 14-e239 THE MANIFEST-STEM SPLIT (measured 44921416363: the ours-
+        // prefixed manifest never exists — the seed's scenes = the TRUTH
+        // walk's own manifests, the e221 quest-2 contract — the handler
+        // exhausted at page 0 and the lane shot 0 frames; the error log's
+        // own text says it: "the truth walk owns it"). The MARKERS stay the
+        // ours stems (the e226 audit contract); the MANIFEST + the .light
+        // sibling = the truth stems the seed actually ships.
+        java.nio.file.Path manifest = scenesDir.resolve(
+                "gallery-" + namespace + "-p" + page + ".tsv");
         if (!java.nio.file.Files.exists(manifest)) {
             LOGGER.error("[cimscene] gallery-ours: no manifest {} (the truth walk owns it)", manifest);
             writeDoneMarkerFile(stem, true);
@@ -806,7 +814,8 @@ public final class CimSceneMod {
         // manifest's sibling .light): the whole measured field as
         // "x,y,z" -> {block, sky}, every row kept (the dark rows pin too)
         java.util.Map<String, int[]> lightField = new java.util.HashMap<>();
-        java.nio.file.Path lightMf = manifest.resolveSibling(stem + ".light");
+        java.nio.file.Path lightMf = manifest.resolveSibling(
+                "gallery-" + namespace + "-p" + page + ".light");
         if (java.nio.file.Files.isRegularFile(lightMf)) {
             try (java.io.BufferedReader lr = java.nio.file.Files.newBufferedReader(lightMf)) {
                 String lline;
@@ -1060,7 +1069,12 @@ public final class CimSceneMod {
         }
         LOGGER.info("[cimscene] gallery-ours done ns={} page={} built={} failed={} displayed={} noref={}",
                 namespace, page, built, failed, displayed, noref);
-        writeDoneMarkerFile(stem, true);
+        // 14-e239 THE SUCCESS MARKER: the route-1 replay = ONE complete page
+        // per command — the .done (rc0) lets the lane's stride continue to
+        // the next page; the .exhausted here made every page terminal
+        // (measured 44921416363 alongside the manifest-stem bug). The
+        // exhausted path = the missing manifest above only.
+        writeDoneMarkerFile(stem, false);
         return 1;
     }
 
