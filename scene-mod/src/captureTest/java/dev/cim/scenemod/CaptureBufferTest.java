@@ -65,7 +65,46 @@ public final class CaptureBufferTest {
         checkNamedEntityMaterial(type, ctor, getBuffer, flush);
         checkNativeMaterialStrings(type);
         checkChunkMaterialStreams(type, ctor, flush);
+        checkItemFlatNormals(type, getBuffer);
         System.out.println("capture retained/interleaved buffer and native lighting tests: ALL OK");
+    }
+
+    private static void checkItemFlatNormals(Class<?> type, java.lang.reflect.Method getBuffer) throws Exception {
+        var ctor = type.getDeclaredConstructor(List.class, net.minecraft.world.phys.Vec3.class,
+                boolean.class, boolean.class);
+        ctor.setAccessible(true);
+        Object item = ctor.newInstance(List.of(), net.minecraft.world.phys.Vec3.ZERO, false, true);
+        VertexConsumer buffer = (VertexConsumer) getBuffer.invoke(item, new Object(),
+                "minecraft:entity_translucent_cull", true);
+        field(buffer.getClass(), "texture").set(buffer, "fixture:textures/item.png");
+        var pose = new com.mojang.blaze3d.vertex.PoseStack();
+        pose.mulPose(com.mojang.math.Axis.YP.rotationDegrees(30));
+        int[] vertices = new int[32];
+        float[][] positions = {{0, 1, 1}, {1, 1, 1}, {1, 0, 0}, {0, 0, 0}};
+        for (int i = 0; i < 4; i++) {
+            for (int axis = 0; axis < 3; axis++) {
+                vertices[8 * i + axis] = Float.floatToRawIntBits(positions[i][axis]);
+            }
+            vertices[8 * i + 3] = -1;
+            vertices[8 * i + 7] = (90 << 8) | (166 << 16); // signed +90 Y, -90 Z
+        }
+        var quad = new net.minecraft.client.renderer.block.model.BakedQuad(
+                vertices, -1, net.minecraft.core.Direction.UP, null, true);
+        float[] brightness = {1, 1, 1, 1};
+        int[] light = {(3 << 4) | (12 << 20), 0, 0, 0};
+        buffer.putBulkData(pose.last(), quad, brightness, 1, 1, 1, 1, light, 0, false);
+        vertices[31] = 127; // A different per-vertex normal cannot be represented by one plane.
+        buffer.putBulkData(pose.last(), quad, brightness, 1, 1, 1, 1, light, 0, false);
+        vertices[31] = vertices[7];
+        vertices[26] = Float.floatToRawIntBits(.25f); // Same normals, but nonplanar geometry.
+        buffer.putBulkData(pose.last(), quad, brightness, 1, 1, 1, 1, light, 0, false);
+        String[] rows = field(type, "out").get(item).toString().split("\n");
+        if (rows.length != 3 || !rows[0].endsWith("\ttranslucent\t3\t12\tflat_normal")
+                || !rows[1].endsWith("\ttranslucent\t3\t12")
+                || !rows[2].endsWith("\ttranslucent\t3\t12")) {
+            throw new AssertionError("item normal does not match the signed, posed, planar capture: "
+                    + Arrays.toString(rows));
+        }
     }
 
     private static void checkNativeMaterialStrings(Class<?> type) throws Exception {

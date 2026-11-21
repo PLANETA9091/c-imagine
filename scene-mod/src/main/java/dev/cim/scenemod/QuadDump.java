@@ -1092,7 +1092,7 @@ final class QuadDump {
                         // for this capture so the base mesh can still be recorded.
                         stack.set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, false);
                     }
-                    ItemCapture capture = new ItemCapture(sprites, 0.5f);
+                    ItemCapture capture = new ItemCapture(sprites, new Vec3(.5, .5, .5), false, true);
                     Minecraft.getInstance().getItemRenderer().renderStatic(
                             stack, ItemDisplayContext.NONE,
                             LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY, new PoseStack(), capture, null, 0);
@@ -1158,6 +1158,7 @@ final class QuadDump {
         final List<TextureAtlasSprite> sprites;
         final Vec3 origin;
         final boolean blockEntity;
+        final boolean itemNormals;
         long foreign;
         private final Map<Object, RecordingBuffer> buffers = new java.util.LinkedHashMap<>();
         private final VertexConsumer discard = new Discard();
@@ -1174,9 +1175,14 @@ final class QuadDump {
         }
 
         ItemCapture(List<TextureAtlasSprite> sprites, Vec3 origin, boolean blockEntity) {
+            this(sprites, origin, blockEntity, false);
+        }
+
+        ItemCapture(List<TextureAtlasSprite> sprites, Vec3 origin, boolean blockEntity, boolean itemNormals) {
             this.sprites = sprites;
             this.origin = origin;
             this.blockEntity = blockEntity;
+            this.itemNormals = itemNormals;
         }
 
         @Override
@@ -1210,6 +1216,34 @@ final class QuadDump {
             for (RecordingBuffer buffer : buffers.values()) {
                 buffer.flush();
             }
+        }
+
+        private static boolean flatDiagonalNormal(int[] vertices, PoseStack.Pose pose, float[][] positions) {
+            // NeoForge's applyBakedNormals reads three signed bytes from the
+            // last word of each vertex, then multiplies by pose.normal().
+            int packed = vertices[7] & 0x00ffffff;
+            if (packed == 0) return false;
+            for (int i = 1; i < 4; i++) {
+                if ((vertices[i * STRIDE + 7] & 0x00ffffff) != packed) return false;
+            }
+            Vector3f normal = new Vector3f((byte) packed / 127f, (byte) (packed >> 8) / 127f,
+                    (byte) (packed >> 16) / 127f).mul(pose.normal());
+            Vector3f p0 = new Vector3f(positions[0]);
+            Vector3f edge = new Vector3f(positions[1]).sub(p0);
+            Vector3f diagonal = new Vector3f(positions[2]).sub(p0);
+            Vector3f other = new Vector3f(positions[3]).sub(p0);
+            Vector3f winding = edge.cross(diagonal, new Vector3f()).add(diagonal.cross(other, new Vector3f()));
+            if (winding.lengthSquared() < 1e-12f || normal.lengthSquared() < 1e-12f) return false;
+            winding.normalize();
+            normal.normalize();
+            float maxLength = Math.max(edge.length(), Math.max(diagonal.length(), other.length()));
+            if (Math.abs(winding.dot(edge)) > 1e-6f * maxLength
+                    || Math.abs(winding.dot(diagonal)) > 1e-6f * maxLength
+                    || Math.abs(winding.dot(other)) > 1e-6f * maxLength) return false;
+            // Allow for the precision of signed 8-bit normals, but require
+            // a verifiably flat geometry normal for an item-layer rotation.
+            return winding.distanceSquared(normal) <= .0001f
+                    && Math.max(Math.abs(winding.x), Math.max(Math.abs(winding.y), Math.abs(winding.z))) < .999f;
         }
 
         /** The replay material for the entity layers the pack can name; null = legacy encoding.
@@ -1336,6 +1370,7 @@ final class QuadDump {
                     t[i][1] = Float.intBitsToFloat(v[o + UV + 1]);
                     bakedColor(c[i], v[o + 3], brightness[i], r, g, b, a, readAlpha);
                 }
+                int rowStart = out.length();
                 if (texture != null) {
                     appendRow(out, texture, rawShade && q.isShade(), q.getTintIndex(), p, t, c,
                             texture.startsWith("~") ? LightTexture.FULL_BRIGHT : quadLight, material);
@@ -1345,6 +1380,10 @@ final class QuadDump {
                             material)) {
                         foreign++;
                     }
+                }
+                if (itemNormals && rawShade && q.isShade() && out.length() > rowStart
+                        && flatDiagonalNormal(v, pose, p)) {
+                    out.insert(out.length() - 1, "\tflat_normal");
                 }
             }
 

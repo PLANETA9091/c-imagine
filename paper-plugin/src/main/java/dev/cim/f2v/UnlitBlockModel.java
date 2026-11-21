@@ -17,6 +17,31 @@ final class UnlitBlockModel {
     }
 
     /**
+     * Bake a south-facing rectangle and move its rotation to the item layer.
+     * The layer rotates both the surface and the cardinal normal sent to the
+     * item shader. Keep the same element pivot and oversized-mesh scale.
+     */
+    static Plane rotateItemPlane(JsonObject source, double scale) {
+        JsonObject rotation = source.getAsJsonObject("rotation");
+        double[][] columns = ObjMesh.columnsOf(angle(rotation, "x"), angle(rotation, "y"), angle(rotation, "z"));
+        double[] pivot = vector(rotation, "origin", 1.0 / 16);
+        double[] rotatedPivot = apply(transpose(columns), pivot);
+        JsonArray matrix = new JsonArray();
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 3; col++) {
+                matrix.add(scale * columns[col][row]);
+            }
+            matrix.add(scale * (pivot[row] - rotatedPivot[row]) + (1 - scale) / 2);
+        }
+        for (double value : new double[]{0, 0, 0, 1}) {
+            matrix.add(value);
+        }
+        JsonObject element = source.deepCopy();
+        element.remove("rotation");
+        return new Plane(element, matrix);
+    }
+
+    /**
      * Keep all surface points, UVs and colors. Bake the plane within 30
      * degrees of south, then restore positions with a supported item-local
      * affine transform whose normal is fully lit. This represents BLOCK

@@ -3488,9 +3488,14 @@ public final class F2vPack {
           .append("    \"cases\": [\n");
         for (int i = 0; i < cases.size(); i++) {
             Map.Entry<String, String> e = cases.get(i);
-            sb.append("      {\"when\": \"").append(e.getKey())
-              .append("\", \"model\": {\"type\": \"minecraft:model\", \"model\": \"")
-              .append(e.getValue()).append('"').append(scaleField(e.getValue())).append("}}");
+            sb.append("      {\"when\": \"").append(e.getKey()).append("\", \"model\": ");
+            JsonObject override = GalleryPack.itemNode(e.getValue());
+            if (override != null) {
+                sb.append(override).append('}');
+            } else {
+                sb.append("{\"type\": \"minecraft:model\", \"model\": \"")
+                  .append(e.getValue()).append('"').append(scaleField(e.getValue())).append("}}");
+            }
             sb.append(i + 1 < cases.size() ? ",\n" : "\n");
         }
         sb.append("    ],\n")
@@ -4948,6 +4953,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        itemNormalSelftest(failures);
         carrierSelftest(failures);
         itemAllocationSelftest(failures);
         rawCaptureTextureSelftest(failures);
@@ -6344,6 +6350,70 @@ public final class F2vPack {
             }
         } finally {
             deleteRecursively(root);
+        }
+    }
+
+    private static void itemNormalSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-item-normal-selftest");
+        try {
+            // A diagonal edge from the native Create empty blaze burner OBJ.
+            String row = "minecraft:block/stone\t1\t-1"
+                    + "\t15\t5\t15\t0.5\t8\t1\t5\t15\t7.5\t8"
+                    + "\t1\t4\t14\t7.5\t7.5\t15\t4\t14\t0.5\t7.5"
+                    + "\t1".repeat(16) + "\ttranslucent\t15\t15";
+            Files.writeString(quads.resolve("native.tsv"), row + "\n" + row + "\tflat_normal\n" + row + "\n");
+            Files.writeString(quads.resolve("legacy.tsv"), row + "\n");
+            Files.writeString(quads.resolve("items.tsv"), "fixture:item\tnative\nfixture:legacy\tlegacy\n");
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(quads);
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            entries.put("assets/minecraft/textures/block/stone.png", f2vSelftestPng(16, 16));
+            String ref = GalleryPack.synthesizeItemQuads(List.of(), "fixture:item", 0, entries, new ArrayList<>());
+            String legacy = GalleryPack.synthesizeItemQuads(List.of(), "fixture:legacy", 1, entries, new ArrayList<>());
+            expect(failures, legacy != null && GalleryPack.itemNode(legacy) == null,
+                    "item normal: older captures retain their single-layer rendering");
+            JsonObject composite = ref == null ? null : GalleryPack.itemNode(ref);
+            expect(failures, composite != null, "item normal: marked capture has a composite");
+            if (composite == null) return;
+            JsonObject selected = JsonParser.parseString(selectDef("paper", List.of(Map.entry("native", ref))))
+                    .getAsJsonObject().getAsJsonObject("model").getAsJsonArray("cases")
+                    .get(0).getAsJsonObject().getAsJsonObject("model");
+            expect(failures, composite.equals(selected), "item normal: string-selected carriers use the native layers");
+            JsonArray children = composite.getAsJsonArray("models");
+            expect(failures, children.size() == 3 && !children.get(0).getAsJsonObject().has("transformation")
+                            && !children.get(2).getAsJsonObject().has("transformation"),
+                    "item normal: rotation affects only the marked face and preserves draw order");
+            if (children.size() != 3) return;
+            JsonObject node = children.get(1).getAsJsonObject();
+            JsonObject child = JsonParser.parseString(new String(entries.get("assets/"
+                    + node.get("model").getAsString().replace(":", "/models/") + ".json"),
+                    StandardCharsets.UTF_8)).getAsJsonObject();
+            expect(failures, child.has("display") && "minecraft:translucent".equals(child.get("render_type").getAsString()),
+                    "item normal: GUI transform and explicit translucent material survive the light tail");
+            JsonObject element = child.getAsJsonArray("elements").get(0).getAsJsonObject();
+            expect(failures, !element.has("rotation"), "item normal: the child bakes a cardinal south face");
+            JsonArray matrix = node.getAsJsonArray("transformation");
+            double diagonal = Math.sqrt(.5);
+            expect(failures, Math.abs(matrix.get(2).getAsDouble()) < 1e-6
+                            && Math.abs(matrix.get(6).getAsDouble() + diagonal) < 1e-6
+                            && Math.abs(matrix.get(10).getAsDouble() - diagonal) < 1e-6,
+                    "item normal: the layer rotates SOUTH to the verified native diagonal");
+            double[] expectedCenter = {.5, 4.5 / 16, 14.5 / 16};
+            for (int i = 0; i < 3; i++) {
+                double center = matrix.get(i * 4 + 3).getAsDouble();
+                for (int col = 0; col < 3; col++) {
+                    double from = element.getAsJsonArray("from").get(col).getAsDouble();
+                    double to = element.getAsJsonArray("to").get(col).getAsDouble();
+                    double coordinate = (col == 2 ? to : (from + to) / 2) / 16;
+                    center += matrix.get(i * 4 + col).getAsDouble() * coordinate;
+                }
+                expect(failures, Math.abs(center - expectedCenter[i]) < .002,
+                        "item normal: the visible plane center remains at the native capture position");
+            }
+        } finally {
+            GalleryPack.resetModelScales();
+            GalleryPack.setQuadDir(null);
+            deleteRecursively(quads);
         }
     }
 

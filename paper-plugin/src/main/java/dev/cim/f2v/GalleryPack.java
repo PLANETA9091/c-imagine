@@ -2462,6 +2462,7 @@ public final class GalleryPack {
         }
         List<ObjMesh.Face> faces = new ArrayList<>();
         List<int[]> flags = new ArrayList<>();
+        java.util.BitSet flatNormalRows = new java.util.BitSet();
         List<String> faceMaterials = new ArrayList<>();
         List<String> rowKeys = new ArrayList<>();
         String material = null;
@@ -2477,6 +2478,10 @@ public final class GalleryPack {
         boolean hasFullbright = false;
         java.util.Map<Long, Integer> litCounts = new java.util.HashMap<>();
         for (String line : capturedRows) {
+            boolean flatNormal = !block && line.endsWith("\tflat_normal");
+            if (flatNormal) {
+                line = line.substring(0, line.length() - "\tflat_normal".length());
+            }
             String[] c = line.split("\t");
             if (c.length < 23) {
                 continue;
@@ -2625,6 +2630,9 @@ public final class GalleryPack {
                         colors[i][3] = Float.parseFloat(c[35 + i]);
                     }
                 }
+            }
+            if (flatNormal) {
+                flatNormalRows.set(faces.size());
             }
             faces.add(new ObjMesh.Face(verts, "#" + key, colors));
             rowKeys.add(key);
@@ -2798,6 +2806,7 @@ public final class GalleryPack {
         // already owns the row.
         List<double[]> elementLightTints = new ArrayList<>();
         List<String> elementMaterials = new ArrayList<>();
+        java.util.BitSet flatNormalElements = new java.util.BitSet();
         for (int i = 0; i < faces.size(); i++) {
             // A non-planar source quad emits multiple triangles. All pieces
             // inherit this face's metadata; output indices are not face IDs.
@@ -2903,6 +2912,9 @@ public final class GalleryPack {
                         }
                     }
                 }
+                if (flatNormalRows.get(i)) {
+                    flatNormalElements.set(elements.size());
+                }
                 elements.add(el);
                 elementTints.add(rowTint);
                 if (rowTint == null && rb >= 0 && rs >= 0 && litBlock >= 0 && litSky >= 0
@@ -2977,8 +2989,59 @@ public final class GalleryPack {
         entries.put(modelFile, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         if (block) {
             registerUnlitBlockLayers(jars, wrapper, ref, k, entries, elementTints, elementMaterials, elementLightTints);
+        } else if (!flatNormalElements.isEmpty()) {
+            registerItemNormalLayers(wrapper, ref, k, flatNormalElements, entries);
         }
         return ref;
+    }
+
+    private static void registerItemNormalLayers(JsonObject wrapper, String ref, double scale,
+                                                 java.util.BitSet flatNormals, TreeMap<String, byte[]> entries) {
+        JsonArray children = new JsonArray();
+        JsonArray ordinary = new JsonArray();
+        JsonArray elements = wrapper.getAsJsonArray("elements");
+        for (int i = 0; i < elements.size(); i++) {
+            JsonObject element = elements.get(i).getAsJsonObject();
+            if (!flatNormals.get(i) || !element.has("rotation")) {
+                ordinary.add(element);
+                continue;
+            }
+            if (!ordinary.isEmpty()) {
+                addItemNormalLayer(wrapper, ref, scale, entries, children, ordinary, null);
+                ordinary = new JsonArray();
+            }
+            UnlitBlockModel.Plane plane = UnlitBlockModel.rotateItemPlane(element, scale);
+            JsonArray one = new JsonArray();
+            one.add(plane.element());
+            addItemNormalLayer(wrapper, ref, scale, entries, children, one, plane.transformation());
+        }
+        if (!ordinary.isEmpty()) {
+            addItemNormalLayer(wrapper, ref, scale, entries, children, ordinary, null);
+        }
+        JsonObject composite = new JsonObject();
+        composite.addProperty("type", "minecraft:composite");
+        composite.add("models", children);
+        ITEM_NODES.put(ref, composite);
+    }
+
+    private static void addItemNormalLayer(JsonObject wrapper, String ref, double scale,
+                                           TreeMap<String, byte[]> entries, JsonArray children,
+                                           JsonArray elements, JsonArray transformation) {
+        JsonObject layer = new JsonObject();
+        for (var attribute : wrapper.entrySet()) {
+            if (!attribute.getKey().equals("elements")) {
+                layer.add(attribute.getKey(), attribute.getValue());
+            }
+        }
+        layer.add("elements", elements);
+        String layerRef = ref + "_normal" + children.size();
+        entries.put(modelPath(layerRef), layer.toString().getBytes(StandardCharsets.UTF_8));
+        recordScale(layerRef, scale);
+        JsonObject child = transformation == null ? F2vPack.itemModelNode(layerRef) : modelNode(layerRef);
+        if (transformation != null) {
+            child.add("transformation", transformation);
+        }
+        children.add(child);
     }
 
     /**
