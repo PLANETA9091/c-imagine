@@ -72,6 +72,77 @@ final class NativeModCommands implements Listener {
         return List.copyOf(out);
     }
 
+    /**
+     * Automatically appends any missing {@code assets/<ns>/models/item/<name>.json}
+     * entries from {@code mods/*.jar} into {@code c-imagine/f2v/visual-items.tsv}
+     * before F2V pack synthesis runs, so modded items are available to {@code /give}
+     * without manual manifest editing.
+     */
+    static int syncVisualItemsManifest() {
+        File modsDir = new File(System.getProperty("user.dir"), "mods");
+        File[] jars = modsDir.listFiles((d, name) -> name.endsWith(".jar"));
+        if (jars == null || jars.length == 0) {
+            return 0;
+        }
+        java.nio.file.Path manifest = java.nio.file.Path.of(
+                System.getProperty("user.dir"), "c-imagine", "f2v", "visual-items.tsv");
+        try {
+            java.nio.file.Files.createDirectories(manifest.getParent());
+            java.util.Set<String> existing = new java.util.HashSet<>();
+            if (java.nio.file.Files.isRegularFile(manifest)) {
+                for (String line : java.nio.file.Files.readAllLines(manifest)) {
+                    String s = line.trim();
+                    if (!s.isEmpty() && !s.startsWith("#")) {
+                        int tab = s.indexOf('\t');
+                        existing.add(tab > 0 ? s.substring(0, tab) : s);
+                    }
+                }
+            }
+            TreeSet<String> toAdd = new TreeSet<>();
+            for (File jar : jars) {
+                try (JarFile jf = new JarFile(jar)) {
+                    Enumeration<JarEntry> entries = jf.entries();
+                    while (entries.hasMoreElements()) {
+                        String name = entries.nextElement().getName();
+                        if (!name.startsWith("assets/") || !name.endsWith(".json")) {
+                            continue;
+                        }
+                        int idx = name.indexOf("/models/item/");
+                        if (idx <= 7) {
+                            continue;
+                        }
+                        String ns = name.substring(7, idx);
+                        if (ns.equals("minecraft") || ns.contains("/")) {
+                            continue;
+                        }
+                        String item = name.substring(idx + "/models/item/".length(), name.length() - 5);
+                        if (!item.isEmpty() && !item.contains("/")) {
+                            String id = ns + ":" + item;
+                            if (!existing.contains(id)) {
+                                toAdd.add(id);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) {
+                    // skip unreadable jar
+                }
+            }
+            if (toAdd.isEmpty()) {
+                return 0;
+            }
+            StringBuilder sb = new StringBuilder();
+            for (String id : toAdd) {
+                sb.append(id).append("\tminecraft:paper\n");
+            }
+            java.nio.file.Files.writeString(manifest, sb.toString(),
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+            return toAdd.size();
+        } catch (Exception ignored) {
+            return 0;
+        }
+    }
+
     private static boolean isModdedId(String token) {
         if (token == null) {
             return false;

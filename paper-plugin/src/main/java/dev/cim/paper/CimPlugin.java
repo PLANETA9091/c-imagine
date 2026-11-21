@@ -76,6 +76,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         netWatch = new NetWatch(this);
+        int syncedItems = NativeModCommands.syncVisualItemsManifest();
+        if (syncedItems > 0) {
+            log().info(LOG_PREFIX + "f2v items: auto-synced " + syncedItems + " modded item(s) into visual-items.tsv");
+        }
         f2vInit();
         f2vAutoOfferInit();
         // Slice 1 of mod world generation: new overworld chunks get the mods' biome-modifier features.
@@ -419,9 +423,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     /** Offer the served pack to one player; logs the deterministic offer marker. */
     private void offerVisualPack(Player player, boolean required) {
-        player.setResourcePack(visualPack.url(),
+        String url = visualPack.url();
+        if (player.getAddress() != null && player.getAddress().getAddress() != null
+                && player.getAddress().getAddress().isLoopbackAddress()) {
+            url = url.replaceFirst("://[^:/]+", "://127.0.0.1");
+        }
+        player.setResourcePack(url,
                 java.util.HexFormat.of().parseHex(visualPack.sha1()), required);
-        log().info(LOG_PREFIX + "f2v pack: offered " + player.getName() + " url=" + visualPack.url());
+        log().info(LOG_PREFIX + "f2v pack: offered " + player.getName() + " url=" + url);
     }
 
     /**
