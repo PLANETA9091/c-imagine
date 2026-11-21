@@ -4414,8 +4414,17 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\n' > visual-client/game/options.txt
-          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\n' > visual-client/game/options.txt
+          # the launch-line + the game dir = the wall-ours lane's own
+          # contract (the pristine-fetch cache holds NEITHER the sed'd
+          # launch line NOR game/ — measured 44910960917: the splice
+          # dropped the mkdir and all 16 shards died at the options
+          # write "visual-client/game/options.txt: No such file or
+          # directory"; every job re-applies both on its restored copy)
+          [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+          wc -c visual-client/classpath.txt visual-client/launch.txt
+          sed -i 's/^java /java -Xmx5G /' visual-client/launch.txt
+          mkdir -p visual-client/game
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
           LAUNCH=$(cat visual-client/launch.txt)
           ARGS="${LAUNCH#java }"
