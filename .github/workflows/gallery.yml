@@ -4355,33 +4355,58 @@ jobs:
           setsid bash -c "cd srv-wall/c-imagine/f2v && python3 -m http.server 25580 --bind 127.0.0.1 > http.log 2>&1" < /dev/null > /dev/null 2>&1 &
           javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
 
-      # the client runtime = the wall-ours lane's own (the 26.3 fetch +
-      # the xvfb/mesa stack — the GLX strictness law carried; the client
-      # steps port from the wall-ours lane verbatim: the
-      # fetch-visual-client.py runtime, the Xvfb :99, the apt_retry law)
-      # PERF (fast-gallery): the 26.3 visual-client fetch (client jar + the
-      # assets index) is a pure function of the version pin. It was re-fetched
-      # on every shard (~minutes of Mojang downloads). Restore it from the
-      # cache; on a miss fetch it and save IMMEDIATELY (before the launch-line
-      # sed and the options writes below mutate the dir) so the saved tree is
-      # the pristine fetch and every later restore starts from it.
-      - name: visual client runtime (cache restore)
-        id: vc-cache
+      # THE TRUTH-CLIENT PIVOT (measured 44919207515: the 26.3 client booted
+      # fully — the P0 window up on the ladder's first probe — logged
+      # "Connecting to 127.0.0.1, 25565" and then SILENTLY STALLED for the
+      # whole 90s poll: a 26.3 client cannot complete a NeoForge 1.21.1
+      # login, the protocol gap is structural, no ladder or JVM fixes it).
+      # The route-1 lane's client = the TRUTH lane's own NeoForge 1.21.1
+      # client — the modded handshake + the protocol match the modded
+      # server, proven 16/16 every flight; the f2v pack rides the
+      # server.properties offer (the vanilla protocol flow, acceptTextures
+      # =1 in the pre-seeded servers.dat). The runtime trio = the truth
+      # lane's own (nfc + truth-client, the classpath-verified cache).
+      - name: truth client runtime (cache restore)
+        id: nfc-cache-sm
         uses: actions/cache/restore@v4
         with:
-          path: visual-client
-          key: gallery-visual-client-26.3-v1
+          # fetch-truth-client.py nfc truth-client puts the RUNTIME
+          # (libraries/classpath/launch) in nfc/ and the game dir in
+          # truth-client/ — the classpath references nfc/...; caching only
+          # truth-client shipped a client whose jars were never there
+          path: |
+            nfc
+            truth-client
+          key: neoforge-truth-client-1211-v4
 
-      - name: visual client runtime (fetch, cache miss)
-        if: steps.vc-cache.outputs.cache-hit != 'true'
-        run: python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+      - name: truth client runtime (verify the stale cache guard)
+        if: steps.nfc-cache-sm.outputs.cache-hit == 'true'
+        run: |
+          python3 - <<'PY'
+          import pathlib, sys
+          missing = []
+          cp = pathlib.Path('truth-client/classpath.txt')
+          if not cp.is_file():
+              print('classpath.txt missing'); sys.exit(1)
+          missing += [p for p in cp.read_text().split(':')
+                      if p.strip() and not pathlib.Path(p).is_file()]
+          launch = pathlib.Path('truth-client/launch.txt').read_text()
+          if '-p ' in launch:
+              seg = launch.split('-p ', 1)[1].split()[0]
+              missing += [p for p in seg.split(':')
+                          if p.strip() and not pathlib.Path(p).is_file()]
+          if missing:
+              print('runtime jars MISSING (stale cache):', missing[:8])
+              sys.exit(1)
+          print('client runtime classpath verified')
+          PY
 
-      - name: visual client runtime (cache save — pristine fetch)
-        if: steps.vc-cache.outputs.cache-hit != 'true' && success()
-        uses: actions/cache/save@v4
-        with:
-          path: visual-client
-          key: gallery-visual-client-26.3-v1
+      - name: truth client runtime (fetch, cache miss)
+        if: steps.nfc-cache-sm.outputs.cache-hit != 'true'
+        run: |
+          python3 scripts/truth/fetch-truth-client.py nfc truth-client --assets
+          wc -c truth-client/classpath.txt truth-client/launch.txt
+          sed -i 's/^java /java -Xmx2G /' truth-client/launch.txt
 
       - name: mesa debs (cache restore, ours)
         id: aptdebs-ours
@@ -4390,28 +4415,14 @@ jobs:
           path: ~/aptdebs
           key: aptdebs-ours-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
-      # THE SPLIT-JVM LAW (measured 44912179211: the 26.3 client died at the
-      # main-class load — UnsupportedClassVersionError "class file version
-      # 69.0" under the job's temurin 21; the paper lane never hits this
-      # because its WHOLE lane rides jdk25 — paper 26.3 server+client are
-      # both class 69). This lane = the modded 21.1.265 server on Java 21
-      # (the boot step ran BEFORE this point) + the 26.3 client on Java 25 —
-      # put jdk25 on PATH AFTER the server boot, BEFORE the client launch.
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 25    # the 26.3 client is class 69
-
       - name: client joins (pack auto-accepted)
         run: |
           set -euo pipefail
-          # THE MESA LAW (measured 42250969085 + the 43046583185 DNS incident):
-          # the 26.3 client's GLX requirements = stricter than the truth's
-          # 1.21.1 client, and the runner image's pre-installed mesa rolls —
-          # install UNCONDITIONALLY (the apt version), ride out the runner
-          # resolver (up to 4 tries, 30s gaps), then Xvfb :99.
+          # THE MESA LAW (the runner image's mesa rolls; the 1.21.1 client =
+          # the looser GLX contract — the truth shards prove it every flight
+          # — but the roll still bites, keep the honest retry loop)
           NEED=""
-          for pkg in libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 mesa-utils; do
+          for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6; do
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
           done
           if [ -n "${NEED:-}" ]; then
@@ -4426,92 +4437,52 @@ jobs:
           export LIBGL_ALWAYS_SOFTWARE=1
           export GALLIUM_DRIVER=llvmpipe
           export LP_NUM_THREADS=4
-          # the launch-line + the game dir = the wall-ours lane's own
-          # contract (the pristine-fetch cache holds NEITHER the sed'd
-          # launch line NOR game/ — measured 44910960917: the splice
-          # dropped the mkdir and all 16 shards died at the options
-          # write "visual-client/game/options.txt: No such file or
-          # directory"; every job re-applies both on its restored copy)
-          [ -f visual-client/launch.txt ] || python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
-          wc -c visual-client/classpath.txt visual-client/launch.txt
-          sed -i 's/^java /java -Xmx5G /' visual-client/launch.txt
-          mkdir -p visual-client/game
-          # THE 14-bo GL LADDER (the v2 hardening, measured 44914597536: the
-          # v1 launch died at the backend creation — "Couldn't find matching
-          # GLX visual" + "Vulkan is not supported: ... VK_KHR_surface" —
-          # the named 8/8 kill class's own signature; the paper lane survives
-          # the same image roll via this ladder, ported verbatim with the
-          # mesa-vulkan-drivers + mesa-utils package additions above)
-          GLXV=$(glxinfo -B 2>/dev/null | grep -c "GLX Visuals" || true)
-          OPENGLV=$(glxinfo -B 2>/dev/null | grep -E "OpenGL version" || true)
-          echo "GLX probe: visuals_block=$GLXV | $OPENGLV"
-          [ -n "$OPENGLV" ] || { echo "GLX probe FAILED — no OpenGL renderer on :99 (the 26.3 client would crash opengl_missing)"; glxinfo -display :99 2>&1 | head -20; exit 1; }
-          probe_client() {
-            OUT=$(mktemp)
-            env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
-              $(cat visual-client/launch.txt) > "$OUT" 2>&1 &
-            CPID=$!
-            VERDICT=inconclusive
-            for i in $(seq 1 150); do
-              if grep -q "opengl_missing" "$OUT"; then VERDICT=missing; break; fi
-              if grep -qE "Sound engine started|Backend: OpenGL|Created: .*atlas" "$OUT"; then VERDICT=up; break; fi
-              kill -0 "$CPID" 2>/dev/null || break
-              sleep 0.5
-            done
-            kill "$CPID" 2>/dev/null || true
-            sleep 1; kill -9 "$CPID" 2>/dev/null || true
-            wait "$CPID" 2>/dev/null || true
-            if [ "$VERDICT" = "missing" ]; then
-              echo "PROBE: opengl_missing on $1"
-              tail -4 "$OUT" | sed 's/^/PROBE: /'
-              rm -f "$OUT"; return 3
-            fi
-            if [ "$VERDICT" = "up" ]; then
-              echo "PROBE: window up on $1"
-              rm -f "$OUT"; return 0
-            fi
-            echo "PROBE: inconclusive on $1 (no backend verdict in 75s) — keeping the current backend"
-            tail -4 "$OUT" | sed 's/^/PROBE: /'
-            rm -f "$OUT"; return 0
-          }
-          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
-          GLBACKEND=opengl
-          if ! probe_client "opengl/24bit"; then
-            # fallback 1: a 32-bit screen exposes RGBA visuals a 24-bit one lacks
-            pkill -f "Xvfb :99" 2>/dev/null || true
+          # THE TRUTH CLIENT JOIN (the truth lane's own contract, verbatim:
+          # the mods sync [the modded handshake = the mod list match], the
+          # options, the servers.dat pre-seed, the launch line with the
+          # nomouse + screenart flags, the 90s join poll; NO GL ladder —
+          # the 1.21.1 client needs none)
+          # Runtime caches include game/: fresh inputs MUST be staged after
+          # restore, or old jars overwrite the server's current mod/channel set.
+          mkdir -p truth-client/game/mods
+          find truth-client/game/mods -maxdepth 1 -type f -name '*.jar' -delete
+          cp srv-wall/mods/*.jar truth-client/game/mods/
+          for JAR in srv-wall/mods/*.jar; do
+            cmp "$JAR" "truth-client/game/mods/$(basename "$JAR")"
+          done
+          sha256sum truth-client/game/mods/*.jar > truth-client-mods.sha256
+          cat truth-client-mods.sha256
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\n' > truth-client/game/options.txt
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\n' > truth-client/game/options.txt
+          # the pack = the server.properties offer (step 16): the 1.21.1
+          # vanilla flow fetches it from 127.0.0.1:25580 at the login
+          # configuration phase; acceptTextures=1 = the pre-seeded accept
+          python3 scripts/visual/make_servers_dat.py truth-client/game
+          # world pins FIRST (they also prove the server's RCON is up)
+          R=""
+          for i in $(seq 1 180); do
+            R=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            [ -n "$R" ] && break
             sleep 1
-            Xvfb :99 -screen 0 1280x720x32 +extension GLX +render -noreset &
-            sleep 2
-            if probe_client "opengl/32bit"; then
-              echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
-            else
-              # fallback 2: the rolled image's GLX cannot serve the client at
-              # all — flip the pin to vulkan (lavapipe, no GLX involved),
-              # VERIFY the flip with the same probe, let the gate MEASURE.
-              printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > visual-client/game/options.txt
-              if probe_client "vulkan/32bit"; then
-                GLBACKEND=vulkan
-                echo "GLPROBE: FLIPPED to vulkan and verified — this run's ours parity rides lavapipe"
-              else
-                echo "GLPROBE: neither backend can start the 26.3 client on this image"
-                exit 1
-              fi
-            fi
-          else
-            echo "GLPROBE: the opengl pin stands (the client's window came up)"
-          fi
-          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
-          python3 scripts/visual/make_servers_dat.py visual-client/game
-          LAUNCH=$(cat visual-client/launch.txt)
-          ARGS="${LAUNCH#java }"
-          setsid bash -c "cd visual-client && java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
+          done
+          [ -n "$R" ] || { tail -60 srv-wall/boot.log; exit 1; }
+          echo "modded server up: $R"
+          mkdir -p truth-screens
+          # delimiter '#': $PWD is /-joined, a /-delimited sed program dies on it
+          LAUNCH=$(sed "s#^java #java -Dcim.nomouse=true -Dcim.screenart=$PWD/truth-screens #" truth-client/launch.txt)
+          setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
           for i in $(seq 1 90); do
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             case "$L" in *cimviewer*) break;; esac
             sleep 1
           done
           case "$L" in *cimviewer*) echo "cim client joined: $L";;
-            *) tail -30 visual-client/client.out; exit 1;; esac
+            *) tail -80 truth-client/client.out; exit 1;; esac
+          for i in $(seq 1 30); do
+            grep -qE "Loaded [0-9]+ advancements" truth-client/client.out 2>/dev/null && break
+            sleep 1
+          done
+          sleep 8   # first chunk render on llvmpipe
 
       # the server pins = the TRUTH leg's own (the modded 1.21.1 server =
       # the OLD gamerule names — the 14-at law's other half)
@@ -4618,11 +4589,13 @@ jobs:
         with:
           name: wall-truth-meta-${{ matrix.shard }}
           path: truth-meta
-      # [the 26.3 visual-client runtime = the wall-ours lane's verbatim port:
-      # the cache-restore/fetch/save trio on gallery-visual-client-26.3-v1,
-      # the launch.txt + the options prep (fov 0.0, clouds off, the
-      # onboardAccessibility law), the Xvfb :99 + the GLX probe + the
-      # apt_retry law — copied 1:1 at the implementation commit]
+      # [the CLIENT RUNTIME = THE TRUTH-CLIENT PIVOT (measured 44919207515:
+      # the 26.3 client cannot complete a NeoForge 1.21.1 login — the
+      # protocol gap is structural): the nfc + truth-client runtime trio =
+      # the wall-truth lane's own verbatim port, the join = the truth
+      # contract (the mods sync, the options, the servers.dat pre-seed,
+      # the nomouse/screenart launch line, the 90s poll); the f2v pack
+      # rides the server.properties offer — the vanilla protocol flow]
       #
       # [the join tail = the wall-ours lane's verbatim port: the truth-shots
       # + truth-meta download, the atlas-bake/atlas-upload fast-fail greps,
