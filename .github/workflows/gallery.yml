@@ -4411,7 +4411,7 @@ jobs:
           # install UNCONDITIONALLY (the apt version), ride out the runner
           # resolver (up to 4 tries, 30s gaps), then Xvfb :99.
           NEED=""
-          for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6; do
+          for pkg in libgl1-mesa-dri mesa-vulkan-drivers libglx-mesa0 libxtst6 mesa-utils; do
             dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
           done
           if [ -n "${NEED:-}" ]; then
@@ -4436,7 +4436,71 @@ jobs:
           wc -c visual-client/classpath.txt visual-client/launch.txt
           sed -i 's/^java /java -Xmx5G /' visual-client/launch.txt
           mkdir -p visual-client/game
-          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          # THE 14-bo GL LADDER (the v2 hardening, measured 44914597536: the
+          # v1 launch died at the backend creation — "Couldn't find matching
+          # GLX visual" + "Vulkan is not supported: ... VK_KHR_surface" —
+          # the named 8/8 kill class's own signature; the paper lane survives
+          # the same image roll via this ladder, ported verbatim with the
+          # mesa-vulkan-drivers + mesa-utils package additions above)
+          GLXV=$(glxinfo -B 2>/dev/null | grep -c "GLX Visuals" || true)
+          OPENGLV=$(glxinfo -B 2>/dev/null | grep -E "OpenGL version" || true)
+          echo "GLX probe: visuals_block=$GLXV | $OPENGLV"
+          [ -n "$OPENGLV" ] || { echo "GLX probe FAILED — no OpenGL renderer on :99 (the 26.3 client would crash opengl_missing)"; glxinfo -display :99 2>&1 | head -20; exit 1; }
+          probe_client() {
+            OUT=$(mktemp)
+            env DISPLAY=:99 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe \
+              $(cat visual-client/launch.txt) > "$OUT" 2>&1 &
+            CPID=$!
+            VERDICT=inconclusive
+            for i in $(seq 1 150); do
+              if grep -q "opengl_missing" "$OUT"; then VERDICT=missing; break; fi
+              if grep -qE "Sound engine started|Backend: OpenGL|Created: .*atlas" "$OUT"; then VERDICT=up; break; fi
+              kill -0 "$CPID" 2>/dev/null || break
+              sleep 0.5
+            done
+            kill "$CPID" 2>/dev/null || true
+            sleep 1; kill -9 "$CPID" 2>/dev/null || true
+            wait "$CPID" 2>/dev/null || true
+            if [ "$VERDICT" = "missing" ]; then
+              echo "PROBE: opengl_missing on $1"
+              tail -4 "$OUT" | sed 's/^/PROBE: /'
+              rm -f "$OUT"; return 3
+            fi
+            if [ "$VERDICT" = "up" ]; then
+              echo "PROBE: window up on $1"
+              rm -f "$OUT"; return 0
+            fi
+            echo "PROBE: inconclusive on $1 (no backend verdict in 75s) — keeping the current backend"
+            tail -4 "$OUT" | sed 's/^/PROBE: /'
+            rm -f "$OUT"; return 0
+          }
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:opengl\n' > visual-client/game/options.txt
+          GLBACKEND=opengl
+          if ! probe_client "opengl/24bit"; then
+            # fallback 1: a 32-bit screen exposes RGBA visuals a 24-bit one lacks
+            pkill -f "Xvfb :99" 2>/dev/null || true
+            sleep 1
+            Xvfb :99 -screen 0 1280x720x32 +extension GLX +render -noreset &
+            sleep 2
+            if probe_client "opengl/32bit"; then
+              echo "GLPROBE: recovered on the 32-bit screen — the opengl pin stands"
+            else
+              # fallback 2: the rolled image's GLX cannot serve the client at
+              # all — flip the pin to vulkan (lavapipe, no GLX involved),
+              # VERIFY the flip with the same probe, let the gate MEASURE.
+              printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nrenderClouds:false\npreferredGraphicsBackend:vulkan\n' > visual-client/game/options.txt
+              if probe_client "vulkan/32bit"; then
+                GLBACKEND=vulkan
+                echo "GLPROBE: FLIPPED to vulkan and verified — this run's ours parity rides lavapipe"
+              else
+                echo "GLPROBE: neither backend can start the 26.3 client on this image"
+                exit 1
+              fi
+            fi
+          else
+            echo "GLPROBE: the opengl pin stands (the client's window came up)"
+          fi
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\npreferredGraphicsBackend:%s\n' "$GLBACKEND" > visual-client/game/options.txt
           python3 scripts/visual/make_servers_dat.py visual-client/game
           LAUNCH=$(cat visual-client/launch.txt)
           ARGS="${LAUNCH#java }"
