@@ -4390,6 +4390,18 @@ jobs:
           path: ~/aptdebs
           key: aptdebs-ours-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
 
+      # THE SPLIT-JVM LAW (measured 44912179211: the 26.3 client died at the
+      # main-class load — UnsupportedClassVersionError "class file version
+      # 69.0" under the job's temurin 21; the paper lane never hits this
+      # because its WHOLE lane rides jdk25 — paper 26.3 server+client are
+      # both class 69). This lane = the modded 21.1.265 server on Java 21
+      # (the boot step ran BEFORE this point) + the 26.3 client on Java 25 —
+      # put jdk25 on PATH AFTER the server boot, BEFORE the client launch.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25    # the 26.3 client is class 69
+
       - name: client joins (pack auto-accepted)
         run: |
           set -euo pipefail
