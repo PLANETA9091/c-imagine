@@ -58,6 +58,10 @@ public final class LiveProtocol {
                 net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
                 return real == null || real instanceof FacadeServer || !real.isReady() ? "wait\n" : "ready\n";
             }
+            if (head[0].equals("item-ids")) {
+                return "item-ids\n" + net.minecraft.core.registries.BuiltInRegistries.ITEM.keySet().stream()
+                        .map(Object::toString).sorted().collect(java.util.stream.Collectors.joining("\n"));
+            }
             // The mod recipes of the real server, once its data is loaded (no player, no uuid).
             if (head[0].equals("recipes")) {
                 return recipes();
@@ -204,29 +208,44 @@ public final class LiveProtocol {
                     net.minecraft.world.item.ItemStack stack = player.getItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND);
                     net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
                             net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5), face, pos, false);
-                    net.minecraft.world.InteractionResult r = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
-                            player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
-                    if (!r.consumesAction() && player.opened() == null) {
-                        stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                    var store = level.store();
+                    store.beginPlacement();
+                    java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> writes;
+                    try {
+                        var result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
+                                player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+                        if (!result.consumesAction() && player.opened() == null) {
+                            stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                        }
+                    } finally {
+                        player.setShiftKeyDown(false);
+                        writes = store.endPlacement();
                     }
-                    player.setShiftKeyDown(false);
                     StringBuilder out = new StringBuilder(state(player, player.opened()));
-                    for (net.minecraft.core.BlockPos p : new net.minecraft.core.BlockPos[]{into, pos}) {
-                        net.minecraft.world.level.block.state.BlockState now = level.getBlockState(p);
-                        boolean changed = p.equals(into) ? !now.isAir() : now != stand;
-                        if (!changed || now.isAir()) {
+                    for (var write : writes.entrySet()) {
+                        var p = write.getKey();
+                        var now = level.getBlockState(p);
+                        if (now == write.getValue()) {
                             continue;
                         }
                         out.append("placed\t").append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(now.getBlock()))
-                                .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ()).append('\n');
-                        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+                                .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ())
+                                .append('\t').append(net.minecraft.commands.arguments.blocks.BlockStateParser.serialize(now))
+                                .append('\n');
+                        for (var box : now.getCollisionShape(level, p, net.minecraft.world.phys.shapes.CollisionContext.empty()).toAabbs()) {
+                            out.append("placedbox\t").append(box.minX).append('\t').append(box.minY)
+                                    .append('\t').append(box.minZ).append('\t').append(box.maxX)
+                                    .append('\t').append(box.maxY).append('\t').append(box.maxZ).append('\n');
+                        }
+                        var be = level.getBlockEntity(p);
                         if (be != null) {
                             out.append("placedbe\t").append(be.saveWithFullMetadata(level.registryAccess())).append('\n');
                         }
-                        break;
                     }
                     if (player.opened() == null) {
-                        // Paper's world keeps what was placed; the facade forgets it.
+                        for (var write : writes.entrySet()) {
+                            level.setBlock(write.getKey(), write.getValue(), 3);
+                        }
                         level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                         level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                         BLOCKS.remove(id);

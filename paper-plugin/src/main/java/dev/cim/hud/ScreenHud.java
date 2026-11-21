@@ -230,9 +230,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      */
     private final java.util.concurrent.CompletableFuture<Object[]> liveScan;
 
+    private final dev.cim.f2v.ItemText itemText;
+
     public ScreenHud(Logger log, Path modsDir) {
         this.log = log;
         this.modsDir = modsDir;
+        itemText = new dev.cim.f2v.ItemText(modsDir, log);
         this.liveScan = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
             // The layer loads its mods on its own thread: wait for cimlive, but not forever.
             for (int i = 0; i < 600 && !LiveBridge.available(); i++) {
@@ -369,7 +372,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** True when {@code moddedId} is a display-family block in this build's rows. */
     private boolean knownDisplay(String moddedId) {
         F2vPack.VisualBlock row = blockCarrierRows.get(moddedId);
-        return row != null && row.isDisplay();
+        return row != null && (row.isDisplay()
+                || (plugin instanceof dev.cim.paper.CimPlugin cim && cim.usesBlockDisplay(moddedId)));
     }
 
     /**
@@ -522,9 +526,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     /** The real stack that shows as a modded item, or air when there is none. */
     ItemStack carrier(String moddedId) {
+        if (moddedId != null && plugin instanceof dev.cim.paper.CimPlugin cim) {
+            Material host = Material.matchMaterial(cim.commandItems().getOrDefault(moddedId, "minecraft:air"));
+            if (host != null && !host.isAir()) {
+                return allocatedCarrier(moddedId, host);
+            }
+        }
         F2vPack.VisualItem row = moddedId == null ? null : carrierRows.get(moddedId);
         if (row == null && moddedId != null && allocatedItems.contains(moddedId)) {
-            return allocatedCarrier(moddedId);
+            return allocatedCarrier(moddedId, Material.PAPER);
         }
         Material host = row == null ? null : Material.matchMaterial(row.hostItem());
         if (host == null) {
@@ -543,14 +553,20 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * A stack of an allocated mod item: a vanilla host, named by item_model (its own items/ definition in
      * the pack) and by the leaf name of its id. The id reads back through {@link #itemId}.
      */
-    private static ItemStack allocatedCarrier(String moddedId) {
-        ItemStack stack = new ItemStack(Material.PAPER);
+    private ItemStack allocatedCarrier(String moddedId, Material host) {
+        ItemStack stack = new ItemStack(host);
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
         org.bukkit.NamespacedKey model = org.bukkit.NamespacedKey.fromString(F2vPack.allocatedItemModel(moddedId));
         if (model != null) {
             meta.setItemModel(model);
         }
-        meta.itemName(net.kyori.adventure.text.Component.text(F2vPack.allocatedItemName(moddedId)));
+        meta.itemName(net.kyori.adventure.text.Component.text(itemText.name(moddedId)));
+        var lore = itemText.lore(moddedId);
+        if (!lore.isEmpty()) {
+            meta.lore(lore.stream().<net.kyori.adventure.text.Component>map(line ->
+                    net.kyori.adventure.text.Component.text(line).decoration(
+                            net.kyori.adventure.text.format.TextDecoration.ITALIC, false)).toList());
+        }
         stack.setItemMeta(meta);
         return stack;
     }
@@ -1657,6 +1673,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (modded == null) {
             return;
         }
+        if (isAndesiteDoor(block)) {
+            Block other = otherDoorHalf(block, (org.bukkit.block.data.type.Door) block.getBlockData());
+            if (isAndesiteDoor(other)) {
+                other.setType(Material.AIR, false);
+            }
+            if (event.isDropItems() && event.getPlayer().getGameMode() == org.bukkit.GameMode.SURVIVAL) {
+                block.getWorld().dropItemNaturally(block.getLocation(), carrier(modded));
+            }
+            event.setDropItems(false);
+            return;
+        }
         // the barrier goes with the break (the event is not cancelled): its display goes too
         boolean display = block.getType() == Material.BARRIER;
         LiveBridge bridge = live();
@@ -1837,6 +1864,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (block == null || blockCarriers.isEmpty()) {
             return null;
         }
+        if (isAndesiteDoor(block)) {
+            return "create:andesite_door";
+        }
         if (block.getType() == Material.BARRIER) {
             String id = DisplayCarriers.idAt(block);
             return id != null && knownDisplay(id) ? id : null;
@@ -1862,6 +1892,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Neighbor updates (redstone, a block set below) must not re-tune a carrier. */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onCarrierPhysics(org.bukkit.event.block.BlockPhysicsEvent event) {
+        if (isAndesiteDoor(event.getBlock())) {
+            event.setCancelled(true);
+            return;
+        }
         if (isCarrierType(event.getChangedType()) && carried(event.getBlock()) != null) {
             event.setCancelled(true);
         }
@@ -1937,6 +1971,21 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         String opener = null;
         Block block = event.getClickedBlock();
         String modded = carried(block);
+        if (isAndesiteDoor(block) && !player.isSneaking()) {
+            var door = (org.bukkit.block.data.type.Door) block.getBlockData();
+            Block other = otherDoorHalf(block, door);
+            if (isAndesiteDoor(other)) {
+                boolean open = !door.isOpen();
+                for (Block half : List.of(block, other)) {
+                    var data = (org.bukkit.block.data.type.Door) half.getBlockData();
+                    data.setOpen(open);
+                    data.setPowered(!open);
+                    half.setBlockData(data, false);
+                }
+                event.setCancelled(true);
+                return;
+            }
+        }
         if (modded != null) {
             opener = "block:" + modded;
             LiveBridge bridge = liveReady();
@@ -1992,14 +2041,27 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[cim-screen] live use-on failed: " + result.state().error());
             return false;
         }
+        if (result.placements().size() == 2 && placeAndesiteDoor(clicked.getWorld(), result.placements())) {
+            bridge.applyInventory(player, result.state());
+            log.info("[cim-screen] " + player.getName() + " placed both halves of create:andesite_door");
+            return true;
+        }
+        if (result.placements().size() > 1) {
+            log.info("[cim-screen] Multi-block placement needs a complete projection: "
+                    + result.placements().stream()
+                    .map(p -> p.state() + " collision=" + p.collision()).toList());
+            return false;
+        }
         boolean did = false;
         if (result.placedId() != null) {
             F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
             Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
             if (row != null && (at.getType().isAir() || at.isReplaceable())) {
-                at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
-                if (row.isDisplay()) {
+                if (knownDisplay(row.moddedBlockId())) {
+                    at.setType(Material.BARRIER, false);
                     DisplayCarriers.place(at, row.moddedBlockId());
+                } else {
+                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
                 }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
                 if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
@@ -2018,6 +2080,47 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             bridge.applyInventory(player, result.state());
         }
         return did;
+    }
+
+    private boolean isAndesiteDoor(Block block) {
+        return plugin instanceof dev.cim.paper.CimPlugin cim && cim.hasAndesiteDoorProjection()
+                && block != null && block.getType() == Material.IRON_DOOR
+                && block.getBlockData() instanceof org.bukkit.block.data.type.Door door
+                && door.isOpen() != door.isPowered();
+    }
+
+    private boolean placeAndesiteDoor(org.bukkit.World world, List<LiveBridge.Placement> placements) {
+        if (!(plugin instanceof dev.cim.paper.CimPlugin cim) || !cim.hasAndesiteDoorProjection()
+                || placements.stream().anyMatch(p -> !p.id().equals("create:andesite_door"))) {
+            return false;
+        }
+        var lower = placements.stream().filter(p -> p.state().contains("half=lower")).findFirst().orElse(null);
+        var upper = placements.stream().filter(p -> p.state().contains("half=upper")).findFirst().orElse(null);
+        if (lower == null || upper == null || lower.x() != upper.x() || lower.y() + 1 != upper.y()
+                || lower.z() != upper.z() || lower.y() < world.getMinHeight() || upper.y() >= world.getMaxHeight()) {
+            return false;
+        }
+        Block bottom = world.getBlockAt(lower.x(), lower.y(), lower.z());
+        Block top = world.getBlockAt(upper.x(), upper.y(), upper.z());
+        if (!bottom.isReplaceable() || !top.isReplaceable()) {
+            return false;
+        }
+        var bottomData = andesiteDoorData(lower.state());
+        var topData = andesiteDoorData(upper.state());
+        bottom.setBlockData(bottomData, false);
+        top.setBlockData(topData, false);
+        return true;
+    }
+
+    private static org.bukkit.block.data.BlockData andesiteDoorData(String state) {
+        return org.bukkit.Bukkit.createBlockData(state.replace("create:andesite_door", "minecraft:iron_door")
+                .replaceFirst(",?visible=(true|false)", "")
+                .replaceFirst("powered=(true|false)", "powered=" + !state.contains("open=true")));
+    }
+
+    private static Block otherDoorHalf(Block block, org.bukkit.block.data.type.Door door) {
+        return block.getRelative(door.getHalf() == org.bukkit.block.data.Bisected.Half.BOTTOM
+                ? org.bukkit.block.BlockFace.UP : org.bukkit.block.BlockFace.DOWN);
     }
 
     private ScreenPack.Scene sceneForOpener(String opener) {

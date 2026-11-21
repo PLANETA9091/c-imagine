@@ -1263,6 +1263,63 @@ public final class GalleryPack {
         return WRAPPER_NS + ":items/i" + itemNo;
     }
 
+    static String blockAlphaRenderType(List<Path> jars, String ref, List<String> warnings,
+                                       Map<String, String> alphaBySprite) throws IOException {
+        ModelGraph graph = resolveModelGraph(jars, ref, warnings);
+        if (graph == null || graph.elements == null) {
+            return "solid";
+        }
+        String result = "solid";
+        for (var texture : graph.textures.entrySet()) {
+            String sprite = texture.getValue();
+            if (texture.getKey().equals("particle") || sprite.isEmpty() || sprite.startsWith("#")) {
+                continue;
+            }
+            String type = alphaBySprite.get(sprite);
+            if (type == null) {
+                byte[] png = readPngFromJars(jars, spritePathPng(sprite));
+                type = alphaRenderType(png);
+                alphaBySprite.put(sprite, type);
+            }
+            if (type.equals("translucent")) {
+                return type;
+            }
+            if (type.equals("cutout")) {
+                result = type;
+            }
+        }
+        return result;
+    }
+
+    private static String alphaRenderType(byte[] png) throws IOException {
+        if (png == null) {
+            return "solid";
+        }
+        var image = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
+        if (image == null || !image.getColorModel().hasAlpha()) {
+            return "solid";
+        }
+        boolean cutout = false;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int alpha = image.getRGB(x, y) >>> 24;
+                if (alpha > 0 && alpha < 255) {
+                    return "translucent";
+                }
+                cutout |= alpha == 0;
+            }
+        }
+        return cutout ? "cutout" : "solid";
+    }
+
+    static void setCompositeRenderType(TreeMap<String, byte[]> entries, String model, String type) {
+        String path = "assets/" + model.replace(":", "/models/") + ".json";
+        JsonObject json = JsonParser.parseString(new String(entries.get(path), StandardCharsets.UTF_8))
+                .getAsJsonObject();
+        json.addProperty("render_type", "minecraft:" + type);
+        entries.put(path, json.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
     /** {@code ns:block/foo} -> {@code block/foo} (the textures/ sub path). */
     private static String spritePathOf(String sprite) {
         int c = sprite.indexOf(':');

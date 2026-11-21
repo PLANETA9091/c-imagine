@@ -273,11 +273,31 @@ final class LiveBridge {
         }
     }
 
+    private java.util.Set<String> layerItemIds;
+
+    private boolean isPaperOnly(ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            return false;
+        }
+        if (layerItemIds == null) {
+            String answer = call("item-ids");
+            if (!answer.startsWith("item-ids\n")) {
+                return false;
+            }
+            layerItemIds = java.util.Set.copyOf(answer.lines().skip(1).toList());
+        }
+        String id = moddedId.apply(stack);
+        return id.startsWith("minecraft:") && !layerItemIds.contains(id);
+    }
+
     private void appendInventory(StringBuilder in, Player player, boolean heldFirst) {
         ItemStack[] contents = player.getInventory().getStorageContents();
         int held = player.getInventory().getHeldItemSlot();
         for (int i = 0; i < contents.length; i++) {
             int to = !heldFirst ? i : i == held ? 0 : i == 0 ? held : i;
+            if (isPaperOnly(contents[i])) {
+                continue;
+            }
             String stack = toLayer(contents[i]);
             if (!stack.equals("-")) {
                 in.append("\ninv\t").append(to).append('\t').append(stack);
@@ -296,7 +316,16 @@ final class LiveBridge {
     }
 
     /** What a right click with a mod item on a block did: a menu, and/or a block it placed. */
-    record UseOn(State state, String placedId, int x, int y, int z, String placedBlockEntity) {
+    record Placement(String id, int x, int y, int z, String state, String blockEntity,
+                     List<org.bukkit.util.BoundingBox> collision) {
+    }
+
+    record UseOn(State state, List<Placement> placements) {
+        String placedId() { return placements.isEmpty() ? null : placements.getFirst().id(); }
+        int x() { return placements.getFirst().x(); }
+        int y() { return placements.getFirst().y(); }
+        int z() { return placements.getFirst().z(); }
+        String placedBlockEntity() { return placements.getFirst().blockEntity(); }
     }
 
     /**
@@ -316,27 +345,29 @@ final class LiveBridge {
         appendInventory(in, player, true);
         heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         String answer = call(in.toString());
-        String placed = null;
-        String be = null;
-        int x = 0;
-        int y = 0;
-        int z = 0;
+        List<Placement> placements = new ArrayList<>();
         for (String line : answer.split("\n")) {
             if (line.startsWith("placed\t")) {
-                String[] p = line.split("\t");
-                placed = p[1];
-                x = Integer.parseInt(p[2]);
-                y = Integer.parseInt(p[3]);
-                z = Integer.parseInt(p[4]);
-            } else if (line.startsWith("placedbe\t")) {
-                be = line.substring("placedbe\t".length());
+                String[] p = line.split("\t", 6);
+                placements.add(new Placement(p[1], Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                        Integer.parseInt(p[4]), p.length == 6 ? p[5] : p[1], null, new ArrayList<>()));
+            } else if (line.startsWith("placedbox\t") && !placements.isEmpty()) {
+                String[] p = line.split("\t", 7);
+                placements.getLast().collision().add(new org.bukkit.util.BoundingBox(
+                        Double.parseDouble(p[1]), Double.parseDouble(p[2]), Double.parseDouble(p[3]),
+                        Double.parseDouble(p[4]), Double.parseDouble(p[5]), Double.parseDouble(p[6])));
+            } else if (line.startsWith("placedbe\t") && !placements.isEmpty()) {
+                Placement last = placements.removeLast();
+                placements.add(new Placement(last.id(), last.x(), last.y(), last.z(), last.state(),
+                        line.substring(9), last.collision()));
             }
         }
         State state = parse(answer);
-        if (state.open() && placed == null) {
+        if (state.open() && placements.isEmpty()) {
             openBlocks.remove(player.getUniqueId());
         }
-        return new UseOn(state, placed, x, y, z, be);
+        return new UseOn(state, placements.stream().map(p -> new Placement(
+                p.id(), p.x(), p.y(), p.z(), p.state(), p.blockEntity(), List.copyOf(p.collision()))).toList());
     }
 
     /** What breaking a mod block did: the stacks it spilled, the player's inventory after. */
@@ -553,12 +584,27 @@ final class LiveBridge {
     /** The layer's inventory back on Paper, slot for slot (the held swap undone). */
     void applyInventory(Player player, State state) {
         int heldSlot = heldSlots.getOrDefault(player.getUniqueId(), 0);
-        ItemStack[] out = new ItemStack[player.getInventory().getStorageContents().length];
+        var inventory = player.getInventory();
+        ItemStack[] original = inventory.getStorageContents();
+        ItemStack[] out = new ItemStack[original.length];
+        List<ItemStack> displaced = new ArrayList<>();
         for (int i = 0; i < out.length && i < state.inventory().length; i++) {
             int to = i == 0 ? heldSlot : i == heldSlot ? 0 : i;
             out[to] = toPaper(state.inventory()[i]);
         }
-        player.getInventory().setStorageContents(out);
+        for (int slot = 0; slot < original.length; slot++) {
+            if (isPaperOnly(original[slot])) {
+                if (out[slot] != null) {
+                    displaced.add(out[slot]);
+                }
+                out[slot] = original[slot];
+            }
+        }
+        inventory.setStorageContents(out);
+        for (ItemStack stack : displaced) {
+            inventory.addItem(stack).values().forEach(leftover ->
+                    player.getWorld().dropItem(player.getLocation(), leftover));
+        }
         // What the mod's code dropped from its player falls where the real player stands.
         for (String json : state.dropped()) {
             ItemStack stack = toPaper(json);

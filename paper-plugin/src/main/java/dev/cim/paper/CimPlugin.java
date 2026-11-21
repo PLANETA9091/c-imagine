@@ -62,6 +62,53 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private F2vState f2v;
     private dev.cim.f2v.PackHttp visualPack;
     /** cim.f2v.autoOffer resolved AND server.properties does not pin a resource-pack. */
+    private Map<String, String> commandItems = Map.of();
+    private java.util.Set<String> blockDisplays = java.util.Set.of();
+    private boolean andesiteDoorProjection;
+
+    public Map<String, String> commandItems() {
+        return commandItems;
+    }
+
+    public boolean usesBlockDisplay(String id) {
+        return blockDisplays.contains(id);
+    }
+
+    public boolean hasAndesiteDoorProjection() {
+        return andesiteDoorProjection;
+    }
+
+    private void loadCommandItems(Path pack) throws IOException {
+        Map<String, String> hosts = new java.util.HashMap<>();
+        for (var row : f2v.items()) {
+            hosts.put(row.moddedId(), row.hostItem());
+        }
+        Map<String, String> items = new java.util.TreeMap<>();
+        var displays = new java.util.HashSet<String>();
+        String prefix = "assets/c-imagine/items/";
+        try (var zip = new java.util.zip.ZipFile(pack.toFile())) {
+            andesiteDoorProjection = zip.getEntry("assets/minecraft/blockstates/iron_door.json") != null;
+            var entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                String path = entries.nextElement().getName();
+                if (!path.startsWith(prefix) || !path.endsWith(".json")) {
+                    continue;
+                }
+                String model = "c-imagine:" + path.substring(prefix.length(), path.length() - 5);
+                String display = dev.cim.f2v.F2vPack.moddedIdOfDisplayItemModel(model);
+                if (display != null) {
+                    displays.add(display);
+                }
+                String id = dev.cim.f2v.F2vPack.moddedIdOfItemModel(model);
+                if (id != null) {
+                    items.put(id, hosts.getOrDefault(id, "minecraft:paper"));
+                }
+            }
+        }
+        commandItems = java.util.Collections.unmodifiableMap(items);
+        blockDisplays = java.util.Set.copyOf(displays);
+    }
+
     private boolean packAutoOffer;
     private boolean packAutoOfferRequired = true;
 
@@ -74,13 +121,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         log().info(LOG_PREFIX + "paper plugin enabled (bridge lifecycle owner)");
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
         getServer().getPluginManager().registerEvents(this, this);
-        getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         netWatch = new NetWatch(this);
-        int syncedItems = NativeModCommands.syncVisualItemsManifest();
-        if (syncedItems > 0) {
-            log().info(LOG_PREFIX + "f2v items: auto-synced " + syncedItems + " modded item(s) into visual-items.tsv");
-        }
         f2vInit();
+        getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         f2vAutoOfferInit();
         // Slice 1 of mod world generation: new overworld chunks get the mods' biome-modifier features.
         dev.cim.worldgen.ModWorldgen.start(this, f2v == null ? List.of() : f2v.blocks());
@@ -323,6 +366,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 fastHttp = startPackServer(servedZip, servedSha1);
                 visualPack = fastHttp;
+                loadCommandItems(servedZip);
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
                         + "serving " + servedZip.getFileName() + ", sha1=" + visualPack.sha1()
                         + ", " + fastGallery.size() + " gallery row(s), "
@@ -334,7 +378,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + " sha1=" + visualPack.sha1());
                 return;
             }
-            if (Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
+            if (!serverProperties().getProperty("resource-pack", "").isBlank()
+                    && Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
                 String preSha1 = Files.readString(base.resolve("pack.sha1")).trim();
                 result = dev.cim.f2v.F2vPack.rebuildForVerification(modsDir, base);
                 boolean match = result.sha1().equals(preSha1);
@@ -366,8 +411,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
                     readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
-            dev.cim.f2v.PackHttp http = startPackServer(packZip, result.sha1());
+            dev.cim.f2v.PackHttp http = startPackServer(packZip, Files.readString(base.resolve("pack.sha1")).trim());
             visualPack = http;
+            loadCommandItems(packZip);
             log().info(LOG_PREFIX + "f2v pack: serving " + http.localUrl()
                     + " bind=" + http.bindHost() + " public=" + http.url()
                     + " sha1=" + result.sha1());

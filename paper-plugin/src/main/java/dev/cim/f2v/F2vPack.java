@@ -2146,6 +2146,10 @@ public final class F2vPack {
                     continue;
                 }
                 manifestResolved++;
+                if (ALLOCATABLE.matcher(row.moddedId()).matches()) {
+                    entries.put(allocatedItemDefPath(row.moddedId()),
+                            allocatedItemDef(found).getBytes(StandardCharsets.UTF_8));
+                }
                 if (floatKind) {
                     entriesForHost.add(Map.entry(row.cmd(), found));
                     if (hostItem.equals("minecraft:paper")) {
@@ -2397,31 +2401,31 @@ public final class F2vPack {
         List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
         Map<String, Map<Integer, String>> mushroomModels = new TreeMap<>();
         List<VisualBlock> emittedBlocks = new ArrayList<>();
+        Map<String, String> alphaBySprite = new HashMap<>();
         try (JarCache blockJars = new JarCache(jars)) {
             for (VisualBlock block : blockRows) {
-                if (block.isDisplay()) {
-                    // display family: no slot, an items/ definition of the block's own model (the
-                    // ItemDisplay on the barrier host renders it; see DisplayCarriers in the HUD)
-                    String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
-                    if (ref != null && GalleryPack.chainHasElements(jars, ref, warnings)) {
-                        // block-geometry models ride a standalone composite on the item channel (as allocated items do)
-                        String comp = safeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
-                        if (comp != null) {
-                            ref = comp;
+                String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
+                if (ref != null) {
+                    String renderType = GalleryPack.blockAlphaRenderType(jars, ref, warnings, alphaBySprite);
+                    if (block.isDisplay() || !renderType.equals("solid")) {
+                        String model = ref;
+                        if (GalleryPack.chainHasElements(jars, ref, warnings)) {
+                            String composite = safeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                            if (composite != null) {
+                                model = composite;
+                                if (!renderType.equals("solid")) {
+                                    GalleryPack.setCompositeRenderType(entries, composite, renderType);
+                                }
+                            }
                         }
-                    }
-                    if (ref != null) {
                         entries.put(displayItemDefPath(block.moddedBlockId()),
-                                allocatedItemDef(ref).getBytes(StandardCharsets.UTF_8));
-                        emittedBlocks.add(block);
-                    } else {
-                        warnings.add("no block model found for " + block.moddedBlockId()
-                                + " in any mod jar — display row dropped");
+                                allocatedItemDef(model).getBytes(StandardCharsets.UTF_8));
                     }
+                }
+                if (block.isDisplay() && ref != null) {
+                    emittedBlocks.add(block);
                     continue;
                 }
-                String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(),
-                        entries, warnings);
                 if (ref != null && block.isMushroom()) {
                     mushroomModels.computeIfAbsent(block.instrument(), h -> new TreeMap<>())
                             .put(block.note(), ref);
@@ -2448,6 +2452,32 @@ public final class F2vPack {
                 }
                 entries.put("assets/minecraft/blockstates/" + host.getKey() + ".json",
                         state.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+        if (emittedBlocks.stream().anyMatch(row -> row.moddedBlockId().equals("create:andesite_door"))) {
+            try (JarCache cache = new JarCache(jars)) {
+                byte[] source = cache.read("assets/create/blockstates/andesite_door.json");
+                byte[] vanilla = cache.read("assets/minecraft/blockstates/iron_door.json");
+                if (source != null && vanilla != null) {
+                    JsonObject iron = JsonParser.parseString(new String(vanilla, StandardCharsets.UTF_8))
+                            .getAsJsonObject().getAsJsonObject("variants");
+                    JsonObject door = JsonParser.parseString(new String(source, StandardCharsets.UTF_8))
+                            .getAsJsonObject().getAsJsonObject("variants");
+                    JsonObject variants = new JsonObject();
+                    for (var variant : iron.entrySet()) {
+                        String key = variant.getKey();
+                        boolean open = key.contains("open=true");
+                        variants.add(key + ",powered=" + open, variant.getValue());
+                        JsonObject modded = door.getAsJsonObject(key + ",visible=true");
+                        boolean available = modded != null && copyModelRef(cache,
+                                modded.get("model").getAsString(), entries, warnings) != null;
+                        variants.add(key + ",powered=" + !open, available ? modded : variant.getValue());
+                    }
+                    JsonObject merged = new JsonObject();
+                    merged.add("variants", variants);
+                    entries.put("assets/minecraft/blockstates/iron_door.json",
+                            merged.toString().getBytes(StandardCharsets.UTF_8));
+                }
             }
         }
         blockVariants.sort(Map.Entry.comparingByKey());
