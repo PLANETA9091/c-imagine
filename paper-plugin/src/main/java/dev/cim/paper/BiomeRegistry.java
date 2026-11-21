@@ -106,6 +106,12 @@ final class BiomeRegistry {
         Class<?> componentMap = Class.forName("net.minecraft.core.component.DataComponentMap");
         Object emptyComponents = componentMap.getField("EMPTY").get(null);
         Method bindComponents = holderRef.getMethod("bindComponents", componentMap);
+        // A holder with unbound tags throws inside HolderSet.contains/freeze-time
+        // variant checks (measured: "Tags not bound" during spawnOriginalMobs on
+        // chicken variant selection). Empty tags are correct: the modded biomes
+        // carry no datapack tags.
+        Method bindTags = holderRef.getDeclaredMethod("bindTags", java.util.Collection.class);
+        bindTags.setAccessible(true);
 
         int added = 0;
         List<String> failed = new ArrayList<>();
@@ -125,6 +131,7 @@ final class BiomeRegistry {
                     Object holder = register.invoke(registry, key, biome, builtIn);
                     bindValue.invoke(holder, biome);
                     bindComponents.invoke(holder, emptyComponents);
+                    bindTags.invoke(holder, java.util.List.of());
                     added++;
                 } catch (Throwable t) {
                     failed.add(id + ":" + t.getCause());
