@@ -136,6 +136,9 @@ public final class ModWorldgen {
                 // A FRESH chunk through the real path: the populator writes
                 // the biome map and then decorates with the biome's modded
                 // features. This is what exploration triggers.
+                String raw = ask("biomes\t0\t0\t" + world.getSeed());
+                log.info(LOG_PREFIX + "worldgen: biome raw answer -> "
+                        + (raw == null ? "null" : raw.substring(0, Math.min(160, raw.length())).replace('\n', '|')));
                 world.getChunkAt(8, 8);
                 log.info(LOG_PREFIX + "worldgen: self-check after chunk 8,8: display=" + DISPLAY.get()
                         + " queued=" + DISPLAY_QUEUE.size() + " sets=" + SETS.get());
@@ -367,6 +370,7 @@ public final class ModWorldgen {
 
     /** Resolved Bukkit biomes by registry id (the plugin registered the modded ones at enable). */
     private static final Map<String, Biome> BIOME_BY_ID = new ConcurrentHashMap<>();
+    private static final AtomicBoolean BIOME_LOOKUP_LOGGED = new AtomicBoolean();
 
     /**
      * Writes the layer's modded biome map into the chunk.
@@ -538,13 +542,20 @@ public final class ModWorldgen {
             if (key == null) {
                 return null;
             }
-            Biome biome = io.papermc.paper.registry.RegistryAccess.registryAccess()
-                    .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME).get(key);
+            org.bukkit.Registry<Biome> registry = io.papermc.paper.registry.RegistryAccess.registryAccess()
+                    .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME);
+            Biome biome = registry.get(key);
             if (biome != null) {
                 BIOME_BY_ID.put(id, biome);
+            } else if (BIOME_LOOKUP_LOGGED.compareAndSet(false, true)) {
+                log.warning(LOG_PREFIX + "worldgen: biome lookup MISS for " + id
+                        + " (registry size=" + registry.size() + ")");
             }
             return biome;
         } catch (RuntimeException e) {
+            if (BIOME_LOOKUP_LOGGED.compareAndSet(false, true)) {
+                log.warning(LOG_PREFIX + "worldgen: biome lookup failed for " + id + ": " + e);
+            }
             return null;
         }
     }
