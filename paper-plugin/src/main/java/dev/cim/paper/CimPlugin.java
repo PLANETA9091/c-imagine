@@ -2362,11 +2362,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         final int ps = Math.min(15, Math.max(0, pr.row().lightSky()));
                         final boolean pageRig = pb == 0 && ps >= 14;
                         final float pageShift = pageRig ? 1.0f : 0.0f;
+                        // 14-e184 THE R-B1 INTEGER-GRID SNAP (the e183
+                        // pre-registered experiment, content-invariant): the
+                        // entity position rides EXACT integers — the same
+                        // block as the legacy .5-center spawn (the
+                        // positional-light identity lives in the block, not
+                        // the fraction), the pose-stack translation absorbs
+                        // the fractional remainder, the rendered net anchor
+                        // (ax+0.5, ay+0.5, az-0.54) pixel-identical. The only
+                        // flight variable = the integer entity pipeline (the
+                        // raster-shift hypothesis isolated); scale stays 1.0,
+                        // billboard FIXED; the reassociation bound = sub-ULP
+                        // (~1e-8 blocks = ~1e-7 px, 6+ orders below a crop
+                        // pixel); the geometry receipt logs the true chain.
                         org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
-                                pr.ax() + 0.5, pr.ay() + 0.5, pr.az() + 0.5 - pageShift);
+                                pr.ax(), pr.ay(), pr.az() - pageShift);
                         org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
-                                new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
-                                        GALLERY_TZ + pageShift + GALLERY_DZ),
+                                new org.joml.Vector3f(GALLERY_TX + 0.5f, GALLERY_TY + 0.5f,
+                                        GALLERY_TZ + pageShift + 0.5f + GALLERY_DZ),
                                 new org.joml.Quaternionf().rotateY((float) Math.PI),
                                 new org.joml.Vector3f(GALLERY_SCALE, GALLERY_SCALE, GALLERY_SCALE),
                                 new org.joml.Quaternionf());
@@ -2529,11 +2542,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         : faCaptured ? Math.min(15, Math.max(0, r.lightSky())) : 15;
                 final boolean frontAirRig = faPinBlock == 0 && faPinSky >= 14;
                 final float rigShift = frontAirRig ? 1.0f : 0.0f;
+                // 14-e184 THE R-B1 INTEGER-GRID SNAP (the e183
+                // pre-registered experiment, content-invariant): the entity
+                // position rides EXACT integers — the same block as the
+                // legacy .5-center spawn (the positional-light identity
+                // lives in the block, not the fraction), the pose-stack
+                // translation absorbs the fractional remainder, the rendered
+                // net anchor (x+0.5, y+0.5, z-0.54) pixel-identical. The
+                // only flight variable = the integer entity pipeline (the
+                // raster-shift hypothesis isolated); scale stays 1.0,
+                // billboard FIXED; the reassociation bound = sub-ULP
+                // (~1e-8 blocks = ~1e-7 px); the rig block identity and the
+                // DZ depth law untouched; the geometry receipt (14-e91g)
+                // logs the true snapped chain for the arbiter's boot diff.
                 org.bukkit.Location at = new org.bukkit.Location(world(worldName()),
-                        x + 0.5, y + 0.5, z + 0.5 - rigShift);
+                        x, y, z - rigShift);
                 org.bukkit.util.Transformation tr = new org.bukkit.util.Transformation(
-                        new org.joml.Vector3f(GALLERY_TX, GALLERY_TY,
-                                GALLERY_TZ + rigShift + GALLERY_DZ),
+                        new org.joml.Vector3f(GALLERY_TX + 0.5f, GALLERY_TY + 0.5f,
+                                GALLERY_TZ + rigShift + 0.5f + GALLERY_DZ),
                         // MEASURED (run 9 vs the truth leg): vanilla blockstate
                         // x=90 is R_x(-90) — joml rotationXYZ applies +angles,
                         // so the variant rotations ride NEGATED (a positive
