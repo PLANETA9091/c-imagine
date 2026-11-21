@@ -815,3 +815,18 @@ not that the mod reacted.
 
 Ongoing at every milestone: the test→fix loop across the whole matrix, with the
 profiling report driving optimization of whatever hurts most.
+
+## Survival playtest blockers (2026-11-21)
+
+Observed while running a live survival server with Create + Biomes O' Plenty:
+
+- [ ] **Modded `/give` (item command bridge):** Vanilla `/give` only exposes Paper 26.3's
+      vanilla item registry. Wire modded item IDs (tab-completion + execution) into `/give`
+      (and/or `/cim give <player> <moddedItemId>`) backed by the F2V item channel.
+- [ ] **Modded `/summon` (entity command & ticking bridge):** Vanilla `/summon` does not
+      list or spawn modded entities. Needs both command-registry exposure and full
+      modded entity spawning/ticking in the Paper world (beyond visual `ItemDisplay` rigs).
+- [ ] **Modded `/locate` & biome worldgen bridge:** Biomes O' Plenty (and other worldgen
+      mods) are not yet bridged into Paper's biome registry or chunk/world generator
+      (`Paper has no modded-biome surface`), so modded biomes do not generate in the
+      overworld and `/locate biome <modded_id>` cannot resolve them.
