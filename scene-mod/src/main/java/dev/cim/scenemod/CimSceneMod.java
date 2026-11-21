@@ -890,12 +890,22 @@ public final class CimSceneMod {
                     // (the measured 14-v compensation). The per-state variant
                     // rotations (the negated x/y/z law) = the second cut's
                     // surface — the straight states carry the identity.
-                    CompoundTag trn = new CompoundTag();
-                    trn.putFloatArray("translation", new float[]{0.5f, 0.5f, 0.46f});
-                    trn.putFloatArray("left_rotation", new float[]{0f, 1f, 0f, 0f});
-                    trn.putFloatArray("right_rotation", new float[]{0f, 0f, 0f, 1f});
-                    trn.putFloatArray("scale", new float[]{1f, 1f, 1f});
-                    nbt.put("transformation", trn);
+                    // 14-e217 THE VANILLA WRITER (the e215 putFloatArray guess
+                    // was WRONG — javac + javap receipts: CompoundTag carries
+                    // byte/int/long array writers ONLY, no float form; the
+                    // decompiled Display.addAdditionalSaveData writes this
+                    // compound via Transformation.EXTENDED_CODEC.encodeStart
+                    // (NbtOps.INSTANCE, ...).ifSuccess(put) — mirrored here
+                    // byte-identically, the same route the vanilla loader
+                    // parses (EXTENDED_CODEC.decode off "transformation")).
+                    com.mojang.math.Transformation trn = new com.mojang.math.Transformation(
+                            new org.joml.Vector3f(0.5f, 0.5f, 0.46f),
+                            new org.joml.Quaternionf(0f, 1f, 0f, 0f),
+                            new org.joml.Vector3f(1f, 1f, 1f),
+                            new org.joml.Quaternionf(0f, 0f, 0f, 1f));
+                    com.mojang.math.Transformation.EXTENDED_CODEC
+                            .encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, trn)
+                            .ifSuccess(tag -> nbt.put("transformation", tag));
                     disp.load(nbt);
                     disp.setPos(x, y, z - 1); // the rigShift = 1.0 front-air form
                     disp.addTag("cimgallery");
