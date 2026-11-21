@@ -1701,6 +1701,17 @@ jobs:
               sleep 0.5
               bash scripts/visual/shot.sh "truth-shots/gal-gui-$NS$p.png" \
                 || echo "$NS gui page $p shot failed (diagnostic tolerated)"
+              # 14-e205 the menu self-consistency pair (the 14-aj mob / 14-bw
+              # fluid pattern): the menu screens render time-varying content
+              # (the boiler gauges' fluid levels, the scrolling labels) — the
+              # second shot ~2s later gives menu-sheet.py the truth's own
+              # t0/t1 delta, so the time-varying menus demote to the named
+              # ANIMATED verdict with measured evidence and a stable menu
+              # stays gated exactly as before. The menu stays open through
+              # this shot (the ESC below closes it for the next page).
+              sleep 2
+              bash scripts/visual/shot.sh "truth-shots/gal-gui-$NS${p}_t1.png" \
+                || echo "$NS gui page $p second shot failed (diagnostic tolerated)"
               # ESC closes the open screen before the next page (the next
               # command also closeContainer()s server-side — belt, braces)
               java -cp vtools Key ESC || true

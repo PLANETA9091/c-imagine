@@ -56,6 +56,14 @@ for label, got, want in [
     ("menu the opener refused", m.judge("x", False, "open-failed:no-opener:UnsupportedOperationException", m.compare(a, b, slots, 3))[0], "OPEN-FAILED"),
     ("open-failed rows carry red=0", str(int(m.judge("x", False, "open-failed:no-opener:x", m.compare(a, b, slots, 3))[0] == "RED")), "0"),
     ("missing frame", m.judge("x", True, "", m.compare(a, "/nonexistent", slots, 3))[0], "RED"),
+    # 14-e205: the menu self-pair — the truth's own t0/t1 delta demotes a RED
+    # to the named ANIMATED class; a stable menu (no delta) stays gated.
+    ("self-pair demotes a RED with a measured delta", m.gate_verdict("RED", "1 of 100 pixels differ", 42)[0], "ANIMATED"),
+    ("self-pair verdict carries red=0", str(int(m.gate_verdict("RED", "1 of 100 pixels differ", 42)[0] == "RED")), "0"),
+    ("stable menu stays gated", m.gate_verdict("RED", "1 of 100 pixels differ", 0)[0], "RED"),
+    ("no second frame changes nothing", m.gate_verdict("RED", "1 of 100 pixels differ", None)[0], "RED"),
+    ("GREEN never demoted", m.gate_verdict("GREEN", "pixel identical", 99)[0], "GREEN"),
+    ("self-pair why carries the evidence", str("42" in m.gate_verdict("RED", "1 of 100 pixels differ", 42)[1]), "True"),
 ]:
     ok = got == want
     bad += not ok

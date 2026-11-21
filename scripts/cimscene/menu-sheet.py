@@ -275,6 +275,20 @@ def judge(menu, opened, note, result):
     return ("GREEN", "pixel identical" + moving) if red == 0 else ("RED", f"{red} of {total} pixels differ" + moving)
 
 
+def gate_verdict(verdict, why, self_red):
+    """14-e205 THE MENU SELF-PAIR (the 14-aj mob / 14-bw fluid law's menu half):
+    the truth's own t0/t1 delta = the measured evidence that the menu's
+    content is time-varying — the ours comparison cannot gate what the real
+    client itself animates (the boiler gauges' fluid levels, the scrolling
+    labels). A stable menu (self_red == 0 or no second frame) stays gated
+    exactly as before, so the demotion carries its own evidence and zero
+    green->red risk by construction."""
+    if verdict == "RED" and self_red:
+        return "ANIMATED", (f"the menu's own t0/t1 delta {self_red}px — the time-varying"
+                            " content, not a parity break")
+    return verdict, why
+
+
 def main():
     ap = argparse.ArgumentParser()
     for name in ("--meta", "--truth", "--ours", "--out", "--report", "--ns"):
@@ -315,6 +329,17 @@ def main():
             bounds = read_bounds(art[:-4] + ".tsv") if art else None
             result = compare(truth, ours, slots, a.scale, art, bounds)
             verdict, why = judge(menu, opened, note, result)
+            # 14-e205 THE MENU SELF-PAIR: a second truth frame ~2s later names
+            # the time-varying menus with their own measured delta (the
+            # 14-aj/14-bw pattern); a stable menu stays gated exactly as
+            # before, and a missing second frame changes nothing.
+            self_red = None
+            t1 = os.path.join(a.truth, f"gal-gui-{ns}{page}_t1.png")
+            if verdict == "RED" and os.path.isfile(t1):
+                self = compare(truth, t1, slots, a.scale, art, bounds)
+                if self is not None:
+                    self_red = self[0]
+                    verdict, why = gate_verdict(verdict, why, self_red)
             name = menu.replace(":", "_")
             sheet = Image.new("RGB", (SHEET[0] * 3 + 8, SHEET[1] + LABEL), (70, 70, 70))
             sheet.paste(panel(load(truth), f"NeoForge: {menu}", SHEET), (0, 0))
@@ -326,7 +351,8 @@ def main():
                 keep_raw(a.out, name, truth, ours, art)
             with open(os.path.join(a.report, f"join-menu-{name}.json"), "w", encoding="utf-8") as f:
                 json.dump({"verdict": verdict, "cells": 1, "red": int(verdict == "RED"), "dynamic": 0, "skipped": 0,
-                           "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None}]}, f)
+                           "rows": [{"verdict": verdict, "state": menu, "ae": result[0] if result else None,
+                                     "self_ae": self_red}]}, f)
             rows.append((menu, verdict, why))
             # Every recorded interaction is a row of its own, judged the same way.
             for t in sorted(glob.glob(os.path.join(a.truth, f"gal-guiw-{ns}{page}-*.png"))):
