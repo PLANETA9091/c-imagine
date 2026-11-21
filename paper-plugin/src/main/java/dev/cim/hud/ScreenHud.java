@@ -360,6 +360,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (!displayFamily) {
             return; // no display rows in this build: no chunk PDC to read
         }
+        // Worldgen just placed display-family blocks (BOP leaves and friends):
+        // the populator cannot spawn entities, so it queued them by position.
+        // Writing the chunk PDC first lets the adopt below create the displays.
+        try {
+            int queued = dev.cim.worldgen.ModWorldgen.flushDisplays(chunk);
+            if (queued > 0 && ModWorldgenDebug()) {
+                log.info("[c-imagine] live: chunk " + chunk.getX() + "," + chunk.getZ()
+                        + " carried " + queued + " display(s) from worldgen");
+            }
+        } catch (RuntimeException e) {
+            log.warning("[c-imagine] live: display flush failed: " + e);
+        }
         if (chunk.isEntitiesLoaded() || plugin == null) {
             DisplayCarriers.adopt(chunk, this::knownDisplay);
             return;
@@ -369,6 +381,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 DisplayCarriers.adopt(chunk, this::knownDisplay);
             }
         });
+    }
+
+    /** The worldgen debug switch (the same {@code -Dcim.worldgen.debug} flag). */
+    private static boolean ModWorldgenDebug() {
+        return Boolean.getBoolean("cim.worldgen.debug");
     }
 
     /** True when {@code moddedId} is a display-family block in this build's rows. */

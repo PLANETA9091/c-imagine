@@ -136,6 +136,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
         getServer().getPluginManager().registerEvents(this, this);
         netWatch = new NetWatch(this);
+        // Modded biomes as REAL server registry entries (definitions built by
+        // the Rust module). Runs before the world loads, so chunks can carry
+        // the modded biome ids and the client gets them through the normal
+        // configuration sync.
+        dev.cim.paper.BiomeRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         f2vInit();
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         f2vAutoOfferInit();

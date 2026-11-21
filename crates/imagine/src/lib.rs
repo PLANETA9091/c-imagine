@@ -10,8 +10,11 @@
 
 use std::ffi::c_char;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::{Mutex, OnceLock};
 
-use cplug_abi::{CPluginApi, JavaVmPtr};
+use cim_biome::Rewriter;
+use cplug_abi::{CPacketRewrite, CPluginApi, JavaVmPtr};
 
 mod bundled;
 mod kernel_bridge;
@@ -74,6 +77,15 @@ pub unsafe extern "C" fn cplugin_init(
     // method-entry hooks (channelInactive, setupInboundProtocol); the other
     // rule classes verify fine today — the hook list below covers them
     // defensively and is a no-op unless a foreign prefix is actually present.
+    // The repair exists for the LEGACY runtime weave (a 4-byte entry prefix
+    // with broken StackMapTable shifts). Platform table v2+ weaves typed
+    // hooks correctly, so stripping them would delete a working probe and
+    // parse a shape this stripper does not own.
+    let legacy_weave = unsafe { api.as_ref() }
+        .and_then(|a| unsafe { a.platform.as_ref() })
+        .map(|p| p.version < 2)
+        .unwrap_or(true);
+    if legacy_weave {
     for pattern in [
         "net/minecraft/server/network/ServerHandshakePacketListenerImpl",
         "net/minecraft/network/Connection",
@@ -112,8 +124,18 @@ pub unsafe extern "C" fn cplugin_init(
             }
         });
     }
+    } else {
+        eprintln!(
+            "{} weave repair: runtime platform v2+ (typed hooks; legacy prefix strip disabled)",
+            cim_core::LOG_PREFIX
+        );
+    }
 
     let opts = options::parse_options(options);
+
+    // The modded-biome channel (F2V v2 outbound + the server-registry defs
+    // hand-off): arm it before the kernel accepts connections.
+    install_biome_channel(api, &opts);
 
     // Raw JavaVM* is process-global and thread-safe to attach from; wrap it in
     // a Send newtype for the loader thread.
@@ -435,4 +457,146 @@ fn serde_options_json(
         layer_dir.replace('\\', "/"),
         module_lib.replace('\\', "/"),
     )
+}
+
+
+// ---------------------------------------------------------------------------
+// Modded-biome wire channel + server-registry hand-off
+// ---------------------------------------------------------------------------
+
+/// The live translator (modded biome definitions + the vanilla→modded alias
+/// built when the client's biome registry packet goes by).
+static BIOMES: OnceLock<Mutex<Rewriter>> = OnceLock::new();
+
+/// `<root>/c-imagine/biome-registry.ok` — written by the plugin once the
+/// modded biomes are real entries in Paper's server registry.
+static SERVER_REGISTRY_MARKER: OnceLock<PathBuf> = OnceLock::new();
+/// 0 = unknown, 1 = server registry owns the biomes, 2 = wire overlay needed.
+static SERVER_REGISTRY: AtomicU8 = AtomicU8::new(0);
+
+thread_local! {
+    /// The replacement payload handed to the runtime (copied before return).
+    static SCRATCH: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn install_biome_channel(api: *const CPluginApi, opts: &options::ModuleOptions) {
+    let platform = unsafe { api.as_ref() }.and_then(|a| unsafe { a.platform.as_ref() });
+    let Some(platform) = platform else {
+        eprintln!(
+            "{} biome channel: runtime has no platform table (skipped)",
+            cim_core::LOG_PREFIX
+        );
+        return;
+    };
+    if platform.version < 2 {
+        eprintln!(
+            "{} biome channel: runtime platform table v{} predates the payload-rewrite seam (skipped)",
+            cim_core::LOG_PREFIX,
+            platform.version
+        );
+        return;
+    }
+    let Some(add) = platform.network_add_rewrite_hook else {
+        eprintln!(
+            "{} biome channel: runtime has no payload-rewrite seam (skipped)",
+            cim_core::LOG_PREFIX
+        );
+        return;
+    };
+    let mods = opts
+        .mods_dir
+        .clone()
+        .unwrap_or_else(|| opts.server_root().join("mods"));
+    let defs = cim_biome::load_mod_biomes(&mods);
+    if defs.is_empty() {
+        eprintln!(
+            "{} biome channel: no modded biomes in {} (skipped)",
+            cim_core::LOG_PREFIX,
+            mods.display()
+        );
+        return;
+    }
+    let n = defs.len();
+    let dir = opts.server_root().join("c-imagine");
+    let _ = std::fs::create_dir_all(&dir);
+    let defs_json: Vec<serde_json::Value> = defs
+        .iter()
+        .map(|d| serde_json::json!({"id": d.name, "definition": d.json}))
+        .collect();
+    match serde_json::to_vec_pretty(&defs_json) {
+        Ok(bytes) => {
+            let path = dir.join("biome-defs.json");
+            match std::fs::write(&path, bytes) {
+                Ok(()) => eprintln!(
+                    "{} biome defs: {n} -> {}",
+                    cim_core::LOG_PREFIX,
+                    path.display()
+                ),
+                Err(e) => eprintln!(
+                    "{} biome defs: write {} failed: {e}",
+                    cim_core::LOG_PREFIX,
+                    path.display()
+                ),
+            }
+        }
+        Err(e) => eprintln!("{} biome defs: encode failed: {e}", cim_core::LOG_PREFIX),
+    }
+    let _ = SERVER_REGISTRY_MARKER.set(dir.join("biome-registry.ok"));
+    let _ = BIOMES.set(Mutex::new(Rewriter::new(defs)));
+    let rc = unsafe { add(biome_rewrite, std::ptr::null_mut()) };
+    eprintln!(
+        "{} biome channel armed: {n} modded biomes from {} (rewrite hook rc={rc})",
+        cim_core::LOG_PREFIX,
+        mods.display()
+    );
+}
+
+unsafe extern "C" fn biome_rewrite(pkt: *mut CPacketRewrite, _ctx: *mut std::ffi::c_void) -> i32 {
+    let Some(p) = (unsafe { pkt.as_mut() }) else {
+        return 0;
+    };
+    if p.payload.is_null() || p.payload_len == 0 {
+        return 0;
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(p.payload, p.payload_len) };
+    match bytes[0] {
+        7 | 46 => {}
+        _ => return 0,
+    }
+    if SERVER_REGISTRY.load(Ordering::Relaxed) == 0 {
+        let ok = SERVER_REGISTRY_MARKER
+            .get()
+            .map(|p| p.exists())
+            .unwrap_or(false);
+        SERVER_REGISTRY.store(if ok { 1 } else { 2 }, Ordering::Relaxed);
+        if ok {
+            eprintln!(
+                "{} biome channel: server registry owns the biomes (wire overlay off)",
+                cim_core::LOG_PREFIX
+            );
+        }
+    }
+    if SERVER_REGISTRY.load(Ordering::Relaxed) == 1 {
+        return 0;
+    }
+    let Some(lock) = BIOMES.get() else {
+        return 0;
+    };
+    let rewritten = {
+        let mut guard = lock.lock().unwrap_or_else(|e| e.into_inner());
+        guard.rewrite(bytes)
+    };
+    let Some(out) = rewritten else {
+        return 0;
+    };
+    if out.is_empty() {
+        return 0;
+    }
+    SCRATCH.with(|s| {
+        let mut buf = s.borrow_mut();
+        *buf = out;
+        p.out_payload = buf.as_ptr();
+        p.out_len = buf.len();
+    });
+    0
 }

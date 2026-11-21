@@ -1048,6 +1048,22 @@ pub fn strip_invokestatic_prefix(
     // by (pos desc, kind order) with Del ranking first at equal pos.
     edits.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.is_del().cmp(&b.1.is_del())));
     for (pos, e) in edits {
+        // Defensive: an editor that points past the buffer means the class
+        // shape is not one this stripper understands (e.g. a newer injector
+        // wrote typed hooks). Bail out instead of panicking across the
+        // class-load callback — a panic there aborts the host JVM.
+        let in_range = match e {
+            Edit::Set1(_) => pos < bytes.len(),
+            Edit::Set2(_) => pos + 2 <= bytes.len(),
+            Edit::Set4(_) => pos + 4 <= bytes.len(),
+            Edit::Del(len) => pos + len <= bytes.len(),
+        };
+        if !in_range {
+            return Err(format!(
+                "strip: edit at {pos} past the {}-byte class",
+                bytes.len()
+            ));
+        }
         match e {
             Edit::Set1(v) => bytes[pos] = v,
             Edit::Set2(v) => bytes[pos..pos + 2].copy_from_slice(&v.to_be_bytes()),

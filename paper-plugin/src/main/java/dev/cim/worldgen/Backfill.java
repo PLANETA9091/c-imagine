@@ -242,6 +242,8 @@ final class Backfill implements Listener {
             complete(at, false);
             return;
         }
+        // The biome map first: the decorate below filters by the cell biome.
+        ModWorldgen.writeBiomes(world, at.x(), at.z());
         int sets = ModWorldgen.apply(answer, at.x(), at.z(), (x, y, z, data) -> {
             Block block = world.getBlockAt(x, y, z);
             if (block.getType() != job.snapshot().getBlockType(Math.floorMod(x, 16), y, Math.floorMod(z, 16))) {

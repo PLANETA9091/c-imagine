@@ -143,7 +143,7 @@ implements Listener {
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
         String raw = event.getMessage().substring(1);
-        if (unavailableBiome(event.getPlayer(), raw)) {
+        if (interceptLocate(event.getPlayer(), raw)) {
             event.setCancelled(true);
             return;
         }
@@ -160,7 +160,7 @@ implements Listener {
 
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void onServerCommand(ServerCommandEvent event) {
-        if (unavailableBiome(event.getSender(), event.getCommand())) {
+        if (interceptLocate(event.getSender(), event.getCommand())) {
             event.setCancelled(true);
             return;
         }
@@ -169,22 +169,39 @@ implements Listener {
         event.setCommand(match.find() && this.plugin.commandItems().containsKey(match.group(1)) ? this.rewriteSummon(raw, match) : raw);
     }
 
-    private boolean unavailableBiome(org.bukkit.command.CommandSender sender, String command) {
+    /**
+     * {@code /locate biome <id>} for a MODDED biome: the vanilla command searches
+     * the world generator's biome source, which knows only vanilla biomes, so it
+     * could never find one. The layer's biome source (the same map the chunks
+     * get) answers instead, through the worldgen channel.
+     */
+    private boolean interceptLocate(org.bukkit.command.CommandSender sender, String command) {
         Matcher match = LOCATE_BIOME.matcher(command);
         if (!match.matches() || !sender.hasPermission("minecraft.command.locate")) {
             return false;
         }
         String id = match.group(1);
         if (!biomes.contains(id)) {
-            return false;
+            return false; // a vanilla biome: the server's own search is correct
         }
-        var registry = io.papermc.paper.registry.RegistryAccess.registryAccess()
-                .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME);
-        var key = org.bukkit.NamespacedKey.fromString(id);
-        if (key == null || registry.get(key) != null) {
-            return false;
+        org.bukkit.Location at = sender instanceof org.bukkit.entity.Player player
+                ? player.getLocation()
+                : org.bukkit.Bukkit.getWorlds().get(0).getSpawnLocation();
+        String answer = dev.cim.worldgen.ModWorldgen.ask("locate\t" + id + "\t" + at.getBlockX()
+                + "\t" + at.getBlockZ() + "\t" + 6400 + "\t" + at.getWorld().getSeed());
+        if (answer == null || answer.startsWith("wait")) {
+            sender.sendMessage(Component.text("The layer is not ready yet; try again in a moment.",
+                    net.kyori.adventure.text.format.NamedTextColor.RED));
+            return true;
         }
-        sender.sendMessage(Component.text(id + " is provided by a mod but is unavailable in this server's biome registry.",
+        if (answer.startsWith("found\t")) {
+            String[] f = answer.trim().split("\t");
+            if (f.length >= 3) {
+                sender.sendMessage(Component.text("The nearest " + id + " is at [" + f[1] + ", ~, " + f[2] + "]"));
+                return true;
+            }
+        }
+        sender.sendMessage(Component.text("Could not find " + id + " within 6400 blocks",
                 net.kyori.adventure.text.format.NamedTextColor.RED));
         return true;
     }
