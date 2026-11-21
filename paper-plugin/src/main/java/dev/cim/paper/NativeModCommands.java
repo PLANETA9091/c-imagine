@@ -1,10 +1,15 @@
 package dev.cim.paper;
 
 import com.destroystokyo.paper.event.server.AsyncTabCompleteEvent;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
+import java.util.TreeSet;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.command.CommandSender;
@@ -24,9 +29,47 @@ import org.bukkit.event.server.ServerCommandEvent;
 final class NativeModCommands implements Listener {
 
     private final CimPlugin plugin;
+    private final List<String> moddedBiomeIds;
 
     NativeModCommands(CimPlugin plugin) {
         this.plugin = plugin;
+        this.moddedBiomeIds = scanModdedBiomeIds();
+    }
+
+    private static List<String> scanModdedBiomeIds() {
+        TreeSet<String> out = new TreeSet<>();
+        File modsDir = new File(System.getProperty("user.dir"), "mods");
+        File[] jars = modsDir.listFiles((d, name) -> name.endsWith(".jar"));
+        if (jars == null) {
+            return List.of();
+        }
+        for (File jar : jars) {
+            try (JarFile jf = new JarFile(jar)) {
+                Enumeration<JarEntry> entries = jf.entries();
+                while (entries.hasMoreElements()) {
+                    String name = entries.nextElement().getName();
+                    // data/<ns>/worldgen/biome/<id>.json
+                    if (!name.startsWith("data/") || !name.endsWith(".json")) {
+                        continue;
+                    }
+                    int idx = name.indexOf("/worldgen/biome/");
+                    if (idx <= 5) {
+                        continue;
+                    }
+                    String ns = name.substring(5, idx);
+                    if (ns.equals("minecraft") || ns.contains("/")) {
+                        continue;
+                    }
+                    String path = name.substring(idx + "/worldgen/biome/".length(), name.length() - 5);
+                    if (!path.isEmpty()) {
+                        out.add(ns + ":" + path);
+                    }
+                }
+            } catch (Exception ignored) {
+                // skip unreadable jar
+            }
+        }
+        return List.copyOf(out);
     }
 
     private static boolean isModdedId(String token) {
@@ -179,6 +222,14 @@ final class NativeModCommands implements Listener {
         if (cmd.equals("summon") && ((parts.length == 1 && trailingSpace) || (parts.length == 2 && !trailingSpace))) {
             String prefix = (parts.length == 2 && !trailingSpace) ? parts[1].toLowerCase(Locale.ROOT) : "";
             addCompletions(event, plugin.f2vItemIds(), prefix);
+            return;
+        }
+
+        // /locate biome <modded:biome>
+        if (cmd.equals("locate") && parts.length >= 2 && parts[1].equalsIgnoreCase("biome")
+                && ((parts.length == 2 && trailingSpace) || (parts.length == 3 && !trailingSpace))) {
+            String prefix = (parts.length == 3 && !trailingSpace) ? parts[2].toLowerCase(Locale.ROOT) : "";
+            addCompletions(event, moddedBiomeIds, prefix);
         }
     }
 
