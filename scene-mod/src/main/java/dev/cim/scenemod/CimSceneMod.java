@@ -793,7 +793,7 @@ public final class CimSceneMod {
         ServerLevel level = src.getLevel();
         String stem = "gallery-ours-" + namespace + "-p" + page;
         java.nio.file.Path scenesDir = level.getServer().getServerDirectory()
-                .toPath().resolve("c-imagine").resolve("scenes");
+                .resolve("c-imagine").resolve("scenes");
         java.nio.file.Path manifest = scenesDir.resolve(stem + ".tsv");
         if (!java.nio.file.Files.exists(manifest)) {
             LOGGER.error("[cimscene] gallery-ours: no manifest {} (the truth walk owns it)", manifest);
@@ -868,15 +868,19 @@ public final class CimSceneMod {
                         idx++;
                         continue;
                     }
-                    // the front-air rig = the e184 snapped law: the entity at
-                    // the exact integers, the translation carries the fraction
+                    // the f2v overlay = the NBT load route (the vanilla's own
+                    // serialization contract — the 1.21.1 mojmap keeps the
+                    // item/billboard setters private, the load = public)
                     ItemDisplay disp = new ItemDisplay(EntityType.ITEM_DISPLAY, level);
+                    CompoundTag nbt = new CompoundTag();
+                    nbt.putString("billboard", "fixed");
+                    nbt.putBoolean("Invulnerable", true);
+                    CompoundTag item = new CompoundTag();
+                    item.putString("id", ref);
+                    item.putInt("count", 1);
+                    nbt.put("item", item);
+                    disp.load(nbt);
                     disp.setPos(x, y, z);
-                    ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
-                            ResourceLocation.tryParse(ref)));
-                    disp.setItemStack(stack);
-                    disp.setBillboardConstraints(Display.BillboardConstraints.FIXED);
-                    disp.setInvulnerable(true);
                     disp.addTag("cimgallery");
                     if (level.addFreshEntity(disp)) {
                         displayed++;
