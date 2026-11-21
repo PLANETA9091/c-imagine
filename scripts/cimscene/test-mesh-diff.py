@@ -32,6 +32,11 @@ ok = len(quads) == 1 and quads[0]["sprite"] == "fixture:block/glass" \
 bad += not ok
 print(("ok   " if ok else "FAIL ") + "42-col row loads with material+light+bounds")
 
+open(mesh, "w").write(row + "\tflat_normal\n")
+ok = m.load_mesh(mesh) == quads
+bad += not ok
+print(("ok   " if ok else "FAIL ") + "item normal marker preserves material and light")
+
 # The legacy 39-col row (no material, no light).
 legacy = row.split("\tcutout\t13\t15")[0]
 open(mesh, "w").write(legacy + "\n")

@@ -46,6 +46,8 @@ def load_mesh(path):
             if not line or line.startswith("#"):
                 continue
             c = line.split("\t")
+            if c[-1] == "flat_normal":
+                c.pop()
             if len(c) < 23:
                 continue
             sprite = c[0]
