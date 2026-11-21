@@ -4194,6 +4194,378 @@ jobs:
           path: gallery-report/
           if-no-files-found: warn
 
+  # ------------------------------------------- wall-ours-scenemod --
+  # 14-e222 THE ROUTE-1 PORT'S HARNESS WIRING (the R-b2 route-1 ours leg):
+  # K shards, each = the MODDED 1.21.1 server (the wall-truth lane's own
+  # boot skeleton — the scene-mod rides the real NeoForge, NOT the paper
+  # wall) replaying the SAME stride via /cimscene gallery ours <ns> <p>,
+  # the F2vPack pack served on the vanilla-surface route (server.properties
+  # + the make_servers_dat.py auto-accept — the bytecode-proven chain),
+  # then the SAME truth download + the inline per-page join as wall-ours.
+  # The three members already coded in CimSceneMod.galleryOurs (the
+  # transformation codec route = the e217 vanilla writer, the variant
+  # chain = the e218 paper law, the light pins = the e219 chain verbatim).
+  wall-ours-sm:
+    name: gallery ours-sm s${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    needs: [seed-pack]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    env:
+      SI: ${{ matrix.shard }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: runner telemetry sampler
+        run: |
+          mkdir -p gallery-report-sm
+          { echo "nproc=$(nproc)"; free -m | sed -n 2p; } > gallery-report-sm/runner-info.txt 2>&1 || true
+
+      # the SAME seed-inputs fingerprint contract (the T = the truth-hash
+      # only, the P = the pack-side; the lane's own edits ride the P — the
+      # e171 lesson's deliberate surface)
+      - name: seed input fingerprint
+        id: seed-inputs
+        run: |
+          T="${{ hashFiles('scripts/cimscene/*.sh', 'scripts/cimscene/rcon.py', 'scripts/cimscene/cim-gallery-walk.py', 'scripts/cimscene/gallery-walk.py', 'scripts/cimscene/mods.lock', 'scripts/truth/**', 'scene-mod/src/**', 'test-mods/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}-$(awk '/^  seed-truth:$/{f=1} /^  seed-pack:$/{f=0} f' .github/workflows/gallery.yml | sha256sum | cut -c1-16)"
+          P="${{ hashFiles('scripts/f2v/**', 'scripts/resolve-paper-version.sh', 'scripts/fetch-visual-client.py', 'paper-plugin/src/**', 'paper-plugin/pom.xml', '.github/workflows/gallery.yml') }}"
+          echo "truth=$T" >> "$GITHUB_OUTPUT"
+          echo "hash=$(printf '%s:%s' "$T" "$P" | sha1sum | cut -c1-40)" >> "$GITHUB_OUTPUT"
+
+      # the modded-gradle toolchain + the scene-mod jar (the truth lane's
+      # own build cache keys — the jars are the SAME build)
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: restore seed (cache, restore-only)
+        id: seed-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: seed-pack
+          key: gallery-seed-v5-${{ steps.seed-inputs.outputs.hash }}
+          restore-keys: |
+            gallery-seed-v5-
+
+      - name: seed payload freshness (stale prefix hit -> the artifact)
+        id: seed-verify
+        env:
+          SEED_INPUTS: ${{ steps.seed-inputs.outputs.hash }}
+        run: |
+          set -euo pipefail
+          if [ -f seed-pack/f2v/inputs.sha1 ] && [ "$(cat seed-pack/f2v/inputs.sha1)" = "$SEED_INPUTS" ]; then
+            echo "hit=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hit=false" >> "$GITHUB_OUTPUT"
+            rm -rf seed-pack
+          fi
+
+      - name: seed artifact fallback (cache eviction / staleness)
+        if: steps.seed-verify.outputs.hit != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: seed-pack
+          path: seed-pack
+
+      - name: verify the seed payload
+        run: |
+          set -euo pipefail
+          test -f seed-pack/f2v/pack.sha1 || { echo "seed payload stale: no pack.sha1"; exit 1; }
+          N=$(ls seed-pack/scenes/gallery-*-p*.tsv 2>/dev/null | wc -l || true)
+          [ "${N:-0}" -gt 100 ] || { echo "seed payload stale: only $N block manifests"; exit 1; }
+          L=$(ls seed-pack/scenes/*.light 2>/dev/null | wc -l || true)
+          echo "seed ready: pack.sha1=$(cat seed-pack/f2v/pack.sha1), $N manifests, $L light fields"
+
+      - name: restore built scene/test-mod jars (cache)
+        id: jars-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            test-mods/build/libs
+            scene-mod/build/libs
+          key: gallery-jars-v1-${{ hashFiles('test-mods/src/**', 'scene-mod/src/**', 'test-mods/*.gradle*', 'scene-mod/*.gradle*', 'gradle/**') }}
+
+      - name: build cimtest + cimscene (cache miss)
+        if: steps.jars-cache.outputs.cache-hit != 'true'
+        run: |
+          gradle build --no-daemon -p test-mods
+          gradle build --no-daemon -p scene-mod
+
+      - name: verify the built jars (stale-cache guard)
+        run: |
+          test -f test-mods/build/libs/cimtest-1.0.0.jar || { echo "cimtest jar missing"; exit 1; }
+          test -f scene-mod/build/libs/cimscene-1.0.0.jar || { echo "cimscene jar missing"; exit 1; }
+
+      - name: restore NeoForge server layer (cache)
+        id: layer-cache
+        uses: actions/cache@v4
+        with:
+          path: layer-srv
+          key: neoforge-layer-21.1.265
+
+      - name: download + install NeoForge 21.1.265 server (cache miss)
+        if: steps.layer-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sL --max-time 300 -o nf-srv-installer.jar \
+            "https://maven.neoforged.net/releases/net/neoforged/neoforge/21.1.265/neoforge-21.1.265-installer.jar"
+          java -jar nf-srv-installer.jar --installServer layer-srv
+
+      - name: fetch ladder mods (locked)
+        run: bash scripts/cimscene/fetch-ladder.sh mods-ladder $LADDER_SLUGS
+
+      - name: launch server (background) + assemble client runtime while it boots
+        run: |
+          set -euo pipefail
+          cp -r layer-srv srv-wall
+          mkdir -p srv-wall/mods
+          cp test-mods/build/libs/cimtest-1.0.0.jar srv-wall/mods/
+          cp scene-mod/build/libs/cimscene-1.0.0.jar srv-wall/mods/
+          cp mods-ladder/*.jar srv-wall/mods/
+          echo "eula=true" > srv-wall/eula.txt
+          PACK_SHA=$(cat seed-pack/f2v/pack.sha1)
+          mkdir -p srv-wall/c-imagine/scenes srv-wall/c-imagine/f2v
+          cp -r seed-pack/scenes/. srv-wall/c-imagine/scenes/
+          cp seed-pack/f2v/pack.zip srv-wall/c-imagine/f2v/pack.zip
+          cat > srv-wall/server.properties <<PROPS
+          online-mode=false
+          white-list=false
+          difficulty=peaceful
+          level-type=minecraft:flat
+          level-seed=42
+          view-distance=6
+          simulation-distance=4
+          spawn-protection=0
+          max-players=5
+          enable-rcon=true
+          rcon.port=25575
+          rcon.password=cimgate
+          resource-pack=http://127.0.0.1:25580/pack.zip
+          resource-pack-sha1=$PACK_SHA
+          PROPS
+          cd srv-wall
+          rm -rf world world_nether world_the_end
+          setsid bash -c "java -Xmx2G @libraries/net/neoforged/neoforge/21.1.265/unix_args.txt --nogui >> boot.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          cd ..
+          # the pack HTTP surface (the loopback static route — the file the
+          # server.properties URL names)
+          setsid bash -c "cd srv-wall/c-imagine/f2v && python3 -m http.server 25580 --bind 127.0.0.1 > http.log 2>&1" < /dev/null > /dev/null 2>&1 &
+          javac -d vtools scripts/visual/Shot.java scripts/visual/ShotD.java scripts/visual/Key.java
+
+      # the client runtime = the wall-ours lane's own (the 26.3 fetch +
+      # the xvfb/mesa stack — the GLX strictness law carried; the client
+      # steps port from the wall-ours lane verbatim: the
+      # fetch-visual-client.py runtime, the Xvfb :99, the apt_retry law)
+      # PERF (fast-gallery): the 26.3 visual-client fetch (client jar + the
+      # assets index) is a pure function of the version pin. It was re-fetched
+      # on every shard (~minutes of Mojang downloads). Restore it from the
+      # cache; on a miss fetch it and save IMMEDIATELY (before the launch-line
+      # sed and the options writes below mutate the dir) so the saved tree is
+      # the pristine fetch and every later restore starts from it.
+      - name: visual client runtime (cache restore)
+        id: vc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: visual-client
+          key: gallery-visual-client-26.3-v1
+
+      - name: visual client runtime (fetch, cache miss)
+        if: steps.vc-cache.outputs.cache-hit != 'true'
+        run: python3 scripts/fetch-visual-client.py 26.3 visual-client --assets
+
+      - name: visual client runtime (cache save — pristine fetch)
+        if: steps.vc-cache.outputs.cache-hit != 'true' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: visual-client
+          key: gallery-visual-client-26.3-v1
+
+      - name: mesa debs (cache restore, ours)
+        id: aptdebs-ours
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/aptdebs
+          key: aptdebs-ours-v1-${{ runner.os }}-${{ env.ImageOS }}-${{ env.ImageVersion }}
+
+      - name: client joins (pack auto-accepted)
+        run: |
+          set -euo pipefail
+          # THE MESA LAW (measured 42250969085 + the 43046583185 DNS incident):
+          # the 26.3 client's GLX requirements = stricter than the truth's
+          # 1.21.1 client, and the runner image's pre-installed mesa rolls —
+          # install UNCONDITIONALLY (the apt version), ride out the runner
+          # resolver (up to 4 tries, 30s gaps), then Xvfb :99.
+          NEED=""
+          for pkg in libgl1-mesa-dri libglx-mesa0 libxtst6; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || NEED="$NEED $pkg"
+          done
+          if [ -n "${NEED:-}" ]; then
+            for i in 1 2 3 4; do
+              sudo apt-get install -y $NEED && break || { echo "[apt_retry] attempt $i failed"; sleep 30; }
+            done
+          fi
+          dpkg -s libgl1-mesa-dri >/dev/null 2>&1 || { echo "mesa stack missing — the client cannot boot (the named 8/8 kill class)"; exit 1; }
+          Xvfb :99 -screen 0 1280x720x24 +extension GLX +render -noreset &
+          sleep 1
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export LP_NUM_THREADS=4
+          printf 'onboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\n' > visual-client/game/options.txt
+          printf 'tutorialStep:none\nonboardAccessibility:false\nfov:0.0\npauseOnLostFocus:false\nmipmapLevels:0\nrenderClouds:false\n' > visual-client/game/options.txt
+          python3 scripts/visual/make_servers_dat.py visual-client/game
+          LAUNCH=$(cat visual-client/launch.txt)
+          ARGS="${LAUNCH#java }"
+          setsid bash -c "cd visual-client && java $ARGS > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
+          for i in $(seq 1 90); do
+            L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
+            case "$L" in *cimviewer*) break;; esac
+            sleep 1
+          done
+          case "$L" in *cimviewer*) echo "cim client joined: $L";;
+            *) tail -30 visual-client/client.out; exit 1;; esac
+
+      # the server pins = the TRUTH leg's own (the modded 1.21.1 server =
+      # the OLD gamerule names — the 14-at law's other half)
+      - name: server pins + ground neutralization
+        run: |
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "gamerule doDaylightCycle false" "time set noon" \
+            "gamerule doWeatherCycle false" "weather clear" \
+            "gamerule doMobSpawning false" "gamerule randomTickSpeed 0" | tee ours-sm-pins.log
+          python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate \
+            "forceload add -128 8 128 104" \
+            "fill -40 -61 -2 40 -61 9 minecraft:light_gray_concrete" \
+            "fill -128 -61 10 128 -61 100 minecraft:light_gray_concrete" | tee ground-fill-sm.log
+
+      # the walk = the truth stride's per-page protocol with the scene-mod
+      # replay command (the coproc law, the marker law, the settle chain,
+      # the camera re-pin, the lightpoke re-verify, the second-frames plan)
+      - name: wall walk — scene-mod replay stride
+        run: |
+          set -euo pipefail
+          export DISPLAY=:99
+          coproc RCON { python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate --batch; }
+          rcon() {
+            local c line out ok
+            for c in "$@"; do
+              [ -n "$c" ] || continue
+              printf '%s\n' "$c" >&"${RCON[1]}" || { echo "rcon driver died (send: $c)" >&2; return 1; }
+              out=""; ok=0
+              while IFS= read -r line <&"${RCON[0]}"; do
+                if [ "$line" = "__RCON_RESP_END__" ]; then ok=1; break; fi
+                out+="$line"$'\n'
+              done
+              [ "$ok" = "1" ] || { echo "rcon driver died (read: $c)" >&2; return 1; }
+              printf '%s' "$out"
+            done
+          }
+          read -r -t 60 RCON_HELLO <&"${RCON[0]}" || { echo "rcon driver failed to start" >&2; exit 1; }
+          [ "$RCON_HELLO" = "__RCON_READY__" ] || { echo "rcon driver handshake: $RCON_HELLO" >&2; exit 1; }
+          mkdir -p ours-shots
+          source scripts/cimscene/walk-helpers.sh
+          EXHAUSTED=0
+          for NS in $LADDER_NS; do
+            for p in $(seq $SI $K $MAXP); do
+              base_of "gallery-ours-$NS-p$p"
+              # THE ROUTE-1 REPLAY COMMAND (the e210 handler)
+              rcon "cimscene gallery ours $NS $p"
+              RC=0; wait_done "gallery-ours-$NS-p$p" "$V0D" "$V0E" || RC=$?
+              [ "$RC" = "2" ] && { echo "$NS page $p no done marker"; tail -10 srv-wall/boot.log; exit 1; }
+              [ "$RC" = "1" ] && { echo "$NS block walk exhausted at page $p"; EXHAUSTED=1; break; }
+              sleep 1
+              # the 14-y two-identical settle + the 14-dz lightpoke re-verify
+              PREV=""
+              SETTLE_ROUNDS=0
+              while [ "$SETTLE_ROUNDS" -lt 3 ]; do
+                SETTLE_ROUNDS=$((SETTLE_ROUNDS+1))
+                for i in $(seq 1 8); do
+                  rcon "tp cimviewer 0.5 -60 0.5 0 0" >/dev/null 2>&1
+                  bash scripts/visual/shot.sh "ours-shots/.settle-$NS-p$p.png"
+                  CUR=$(md5sum "ours-shots/.settle-$NS-p$p.png" | cut -d' ' -f1)
+                  if [ -n "$PREV" ] && [ "$CUR" = "$PREV" ]; then break; fi
+                  PREV="$CUR"
+                done
+                rcon "cimscene lightpoke 0 0" > poke-receipt-sm.log 2>&1
+                tail -1 poke-receipt-sm.log
+                bash scripts/visual/shot.sh "ours-shots/.settle-post-$NS-p$p.png"
+                POST=$(md5sum "ours-shots/.settle-post-$NS-p$p.png" | cut -d' ' -f1)
+                rm -f "ours-shots/.settle-post-$NS-p$p.png"
+                if [ "$POST" = "$CUR" ]; then break; fi
+                PREV="$POST"
+              done
+              rm -f "ours-shots/.settle-$NS-p$p.png"
+              bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p.png"
+              PROBE=$(python3 scripts/cimscene/second-frames.py plan \
+                --manifest "srv-wall/c-imagine/scenes/gallery-$NS-p$p.tsv" \
+                --ns "$NS" --page "$p" --policy "${SF_POLICY:-widened}" 2>/dev/null || echo none)
+              case "$PROBE" in *t0*)
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t0.png";; esac
+              case "$PROBE" in *t1*)
+                sleep 2
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png";; esac
+              test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
+            done
+            [ "$EXHAUSTED" = "1" ] && break
+          done
+          echo "ours-sm walk done: $(ls ours-shots/ours-gal-p-*.png 2>/dev/null | grep -v t1 | wc -l) shots"
+
+      # THE SCOPE LAW (the route-1 v1): the lane = the BLOCK stride only —
+      # the truth download (the 14-aa race guard at gallery.yml 3514-3531 +
+      # the two downloads) + the INLINE BLOCK join with the diag- prefix
+      # (the e32 law: report-only, the shard gate blind until the R-b2
+      # joint call); the ISO diagnostic + the ENTITY lanes = the paper
+      # wall's lanes, NOT ported in v1 (the named delta). The splice
+      # material = staged verbatim from the wall-ours lane:
+      # /tmp/port_client.yml + /tmp/port_client2.yml (the client runtime
+      # + the 236-line pins/join step) + /tmp/port_join.yml (the join tail).
+      - name: download this shard's truth artifacts (shots + meta)
+        uses: actions/download-artifact@v4
+        with:
+          name: wall-truth-shots-${{ matrix.shard }}
+          path: truth-shots
+
+      - name: download this shard's truth meta (manifests + boot log)
+        uses: actions/download-artifact@v4
+        with:
+          name: wall-truth-meta-${{ matrix.shard }}
+          path: truth-meta
+      # [the 26.3 visual-client runtime = the wall-ours lane's verbatim port:
+      # the cache-restore/fetch/save trio on gallery-visual-client-26.3-v1,
+      # the launch.txt + the options prep (fov 0.0, clouds off, the
+      # onboardAccessibility law), the Xvfb :99 + the GLX probe + the
+      # apt_retry law — copied 1:1 at the implementation commit]
+      #
+      # [the join tail = the wall-ours lane's verbatim port: the truth-shots
+      # + truth-meta download, the atlas-bake/atlas-upload fast-fail greps,
+      # the BLOCK loop with the determinism probes + the 14-br self pairs +
+      # the gate-dyn/anim-floor/demote-family contract, the ISO diagnostic
+      # loop, the ENTITY loop — copied 1:1 at the implementation commit;
+      # the shots' names = identical (ours-gal-p-*), the manifest source =
+      # the truth-meta's own (the FRESH truth manifests ARE the page set)]
+      - name: upload ours-sm shots
+        uses: actions/upload-artifact@v4
+        with:
+          name: wall-ours-sm-shots-${{ matrix.shard }}
+          path: ours-shots
+          if-no-files-found: error
+
+      - name: upload ours-sm meta (boot log + the scene-mod replay receipts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wall-ours-sm-meta-${{ matrix.shard }}
+          path: |
+            srv-wall/boot.log
+            srv-wall/c-imagine/scenes/gallery-ours-*.tsv
+            srv-wall/c-imagine/scenes/*.light
+            gallery-report-sm/
+            ours-sm-pins.log
+            ground-fill-sm.log
+
   # ---------------------------------------------------------- wall-verdict --
   # THE JOIN: coverage gate over the MERGED ledger (manifests fresh from the
   # truth shards, boot logs merged across shards, shot LISTS per the
