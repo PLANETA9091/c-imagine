@@ -879,8 +879,25 @@ public final class CimSceneMod {
                     item.putString("id", ref);
                     item.putInt("count", 1);
                     nbt.put("item", item);
+                    // 14-e215 THE RIG LAW'S SECOND MEMBER (the e214 extracted
+                    // contract, the front-air rigShift=1 form): the translation
+                    // = (TX+0.5, TY+0.5, TZ + rigShift + 0.5 + GALLERY_DZ) =
+                    // (0.5, 0.5, 0.46) at the defaults (TX=TY=TZ=0, DZ=-1.04) —
+                    // the rendered net anchor = (x+0.5, y+0.5, z-0.54)
+                    // pixel-identical to the paper wall's chain; the left
+                    // rotation = (0,1,0,0) = the entity-space counter-yaw that
+                    // lands LEFT of the 26.3 renderer's own PI-around-Y
+                    // (the measured 14-v compensation). The per-state variant
+                    // rotations (the negated x/y/z law) = the second cut's
+                    // surface — the straight states carry the identity.
+                    CompoundTag trn = new CompoundTag();
+                    trn.putFloatArray("translation", new float[]{0.5f, 0.5f, 0.46f});
+                    trn.putFloatArray("left_rotation", new float[]{0f, 1f, 0f, 0f});
+                    trn.putFloatArray("right_rotation", new float[]{0f, 0f, 0f, 1f});
+                    trn.putFloatArray("scale", new float[]{1f, 1f, 1f});
+                    nbt.put("transformation", trn);
                     disp.load(nbt);
-                    disp.setPos(x, y, z);
+                    disp.setPos(x, y, z - 1); // the rigShift = 1.0 front-air form
                     disp.addTag("cimgallery");
                     if (level.addFreshEntity(disp)) {
                         displayed++;
