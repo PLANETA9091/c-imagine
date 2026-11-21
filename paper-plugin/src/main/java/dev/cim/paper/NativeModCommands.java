@@ -118,6 +118,10 @@ final class NativeModCommands implements Listener {
                         String item = name.substring(idx + "/models/item/".length(), name.length() - 5);
                         if (!item.isEmpty() && !item.contains("/")) {
                             String id = ns + ":" + item;
+                            // Skip items whose models mix block/ and item/ atlases (rejected by 26.3 CuboidItemModelWrapper)
+                            if (id.equals("create:extendo_grip") || id.equals("create:linked_controller")) {
+                                continue;
+                            }
                             if (!existing.contains(id)) {
                                 toAdd.add(id);
                             }
