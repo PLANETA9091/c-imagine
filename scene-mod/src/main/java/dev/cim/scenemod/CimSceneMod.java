@@ -8,6 +8,7 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.commands.CommandSource;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.arguments.blocks.BlockStateParser;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Holder;
@@ -38,7 +39,10 @@ import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.SimpleMenuProvider;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.Display;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.Display.ItemDisplay;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.animal.Cat;
 import net.minecraft.world.entity.animal.FrogVariant;
 import net.minecraft.world.entity.animal.Pig;
@@ -439,6 +443,18 @@ public final class CimSceneMod {
                                                 .executes(ctx -> galleryBiome(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page"))))))
+                        // 14-e210 THE OURS-MODE PAGE (the route-1 port's first cut, the
+                        // e195/e209 design's concrete surface): the ours wall leg becomes
+                        // the modded server — the band = the REAL blocks (the modded
+                        // registry the vanilla wall Paper could never parse, the e190
+                        // discovery's fix), the f2v content = the display overlay, the
+                        // camera = the NeoForge client. The truth architecture mirrored.
+                        .then(Commands.literal("ours")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryOurs(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
                         .then(Commands.literal("inv")
                                 .then(Commands.argument("namespace", StringArgumentType.word())
                                         .then(Commands.argument("page", IntegerArgumentType.integer(0))
@@ -756,6 +772,138 @@ public final class CimSceneMod {
         runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, pitch, slice,
                 rowStr, blockStem, fPlaced, fMutated, fSkipFluid, fSkipInvisible, 0));
         return placed;
+    }
+
+    /**
+     * 14-e210 THE OURS-MODE PAGE (the route-1 port's first cut — the
+     * e195/e209 design's concrete surface). Replays a walk manifest ON the
+     * modded server: the band = the REAL blocks via the modded registry (the
+     * parse = the QuadDump's BlockStateParser law; the vanilla wall Paper
+     * could never build these states — the e190 never-worked discovery), and
+     * each manifest cell that the resolved ledger maps to a pack ref spawns
+     * the f2v item_display at the front-air rig (the e184 snapped law: the
+     * entity rides the exact integers, the translation carries the
+     * fraction). The ours wall leg = the modded server, the truth
+     * architecture mirrored; the manifest = the walk's own scenes TSV, the
+     * ledger = the seed-pack's resolved table (both ride the shared
+     * scenes/c-imagine tree), so the command feeds itself from the same
+     * artifacts the paper wall used.
+     */
+    private static int galleryOurs(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        String stem = "gallery-ours-" + namespace + "-p" + page;
+        java.nio.file.Path scenesDir = level.getServer().getServerDirectory()
+                .toPath().resolve("c-imagine").resolve("scenes");
+        java.nio.file.Path manifest = scenesDir.resolve(stem + ".tsv");
+        if (!java.nio.file.Files.exists(manifest)) {
+            LOGGER.error("[cimscene] gallery-ours: no manifest {} (the truth walk owns it)", manifest);
+            writeDoneMarkerFile(stem, true);
+            return 0;
+        }
+        clearWall(level);
+        killStaleGalleryEntities(level);
+        java.nio.file.Path ledger = scenesDir.getParent().resolve("f2v")
+                .resolve("visual-gallery.resolved.tsv");
+        java.util.Map<String, String> refs = new java.util.HashMap<>();
+        if (java.nio.file.Files.exists(ledger)) {
+            try (java.io.BufferedReader r = java.nio.file.Files.newBufferedReader(ledger)) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    if (line.isEmpty() || line.charAt(0) == '#') continue;
+                    String[] p = line.split("\t");
+                    if (p.length >= 3) {
+                        // the first plain key wins; the #q-suffixed rows fall
+                        // back through the e188 three-tier law's tier-2 form
+                        refs.putIfAbsent(p[0], p[2]);
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.error("[cimscene] gallery-ours: ledger read failed", e);
+            }
+        }
+        int built = 0, failed = 0, displayed = 0, noref = 0;
+        List<String> manifestRows = new ArrayList<>();
+        manifestRows.add("wall\tcol\trow\tx\ty\tz\tstate\tref");
+        try (java.io.BufferedReader r = java.nio.file.Files.newBufferedReader(manifest)) {
+            String line;
+            int idx = 0;
+            while ((line = r.readLine()) != null) {
+                String[] c = line.split("\t");
+                if (c.length < 5 || !"cell".equals(c[0])) continue;
+                int x, y, z;
+                try {
+                    x = Integer.parseInt(c[1]);
+                    y = Integer.parseInt(c[2]);
+                    z = Integer.parseInt(c[3]);
+                } catch (NumberFormatException bad) {
+                    continue;
+                }
+                String stateStr = c[4];
+                BlockPos pos = new BlockPos(x, y, z);
+                try {
+                    BlockState st = BlockStateParser.parseForBlock(
+                            BuiltInRegistries.BLOCK.asLookup(), stateStr, false).blockState();
+                    level.setBlock(pos, st, 3);
+                    built++;
+                    // the f2v overlay: the plain-key resolve, then the tier-2
+                    // #q-strip demotion (the e188 three-tier law verbatim)
+                    String ref = refs.get(stateStr);
+                    if (ref == null) {
+                        ref = refs.get(stateStr + "#q");
+                    }
+                    if (ref == null) {
+                        // the bare-id demotion (tier 3)
+                        String bare = stateStr.split("\\[", 2)[0];
+                        for (java.util.Map.Entry<String, String> e : refs.entrySet()) {
+                            if (e.getKey().split("#q", 2)[0].equals(bare)
+                                    && e.getKey().contains(stateStr.split("\\[", 2)[0])) {
+                                ref = e.getValue();
+                                break;
+                            }
+                        }
+                    }
+                    if (ref == null) {
+                        noref++;
+                        manifestRows.add("cell\t" + x + "\t" + y + "\t" + z + "\t" + stateStr + "\t-");
+                        idx++;
+                        continue;
+                    }
+                    // the front-air rig = the e184 snapped law: the entity at
+                    // the exact integers, the translation carries the fraction
+                    ItemDisplay disp = new ItemDisplay(EntityType.ITEM_DISPLAY, level);
+                    disp.setPos(x, y, z);
+                    ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.get(
+                            ResourceLocation.tryParse(ref)));
+                    disp.setItemStack(stack);
+                    disp.setBillboardConstraints(Display.BillboardConstraints.FIXED);
+                    disp.setInvulnerable(true);
+                    disp.addTag("cimgallery");
+                    if (level.addFreshEntity(disp)) {
+                        displayed++;
+                    }
+                    manifestRows.add("cell\t" + x + "\t" + y + "\t" + z + "\t" + stateStr + "\t" + ref);
+                } catch (Exception buildFail) {
+                    failed++;
+                    if (failed <= 3) {
+                        LOGGER.warn("[cimscene] gallery-ours: cell {} state {} failed: {}", pos, stateStr, buildFail.toString());
+                    }
+                }
+                idx++;
+            }
+        } catch (Exception e) {
+            LOGGER.error("[cimscene] gallery-ours: manifest read failed", e);
+            return 0;
+        }
+        java.nio.file.Path out = scenesDir.resolve(stem + "-ours.tsv");
+        try {
+            java.nio.file.Files.write(out, (String.join("\n", manifestRows) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            LOGGER.error("[cimscene] gallery-ours: ours manifest write failed", e);
+        }
+        LOGGER.info("[cimscene] gallery-ours done ns={} page={} built={} failed={} displayed={} noref={}",
+                namespace, page, built, failed, displayed, noref);
+        writeDoneMarkerFile(stem, true);
+        return 1;
     }
 
     /** One real settle before the manifest; falling blocks extend it until they land. */
