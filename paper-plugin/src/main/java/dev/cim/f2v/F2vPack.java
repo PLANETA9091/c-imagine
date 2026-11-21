@@ -2610,35 +2610,36 @@ public final class F2vPack {
                                        int[] compositeNo, Set<String> authoredObjItems) throws IOException {
         // 14-dy: the placeholder ledger attributes item-model fallbacks to the modded item id
         GalleryPack.placeholderContext(moddedId);
-        String found = null;
-        // These Create items were checked against their native item renderers. An OBJ
-        // parent alone cannot rule out a Java-side renderer or a model event wrapper.
-        if ((moddedId.equals("create:empty_blaze_burner") || moddedId.equals("create:flywheel"))
-                && !emissiveTable.containsKey(moddedId)) {
-            found = resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
-            if (found != null) {
-                try {
-                    String authored = GalleryPack.synthesizeAuthoredObjItem(
-                            jars, found, compositeNo[0], entries, warnings);
-                    if (authored != null) {
-                        authoredObjItems.add(moddedId);
-                        compositeNo[0]++;
-                        return authored;
-                    }
-                } catch (RuntimeException bad) {
-                    warnings.add("authored OBJ item skipped for " + moddedId + ": " + bad);
-                }
+        // For these native-verified models the gallery also exercises the JAR path.
+        // Other staged captures can include runtime model wrappers absent from the assets.
+        boolean preferAuthored = moddedId.equals("create:empty_blaze_burner") || moddedId.equals("create:flywheel");
+        if (!preferAuthored) {
+            String capture = GalleryPack.synthesizeItemQuads(jars, moddedId, compositeNo[0], entries, warnings);
+            if (capture != null) {
+                compositeNo[0]++;
+                return capture;
             }
         }
-        String quadModel = GalleryPack.synthesizeItemQuads(jars, moddedId, compositeNo[0], entries, warnings);
-        if (quadModel != null) {
-            compositeNo[0]++;
+        String found = resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+        if (found != null && !emissiveTable.containsKey(moddedId)) {
+            try {
+                String authored = GalleryPack.synthesizeAuthoredObjItem(
+                        jars, found, compositeNo[0], entries, warnings);
+                if (authored != null) {
+                    authoredObjItems.add(moddedId);
+                    compositeNo[0]++;
+                    return authored;
+                }
+            } catch (RuntimeException bad) {
+                warnings.add("authored OBJ item skipped for " + moddedId + ": " + bad);
+            }
         }
-        if (quadModel != null) {
-            return quadModel;
-        }
-        if (found == null) {
-            found = resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+        if (preferAuthored) {
+            String capture = GalleryPack.synthesizeItemQuads(jars, moddedId, compositeNo[0], entries, warnings);
+            if (capture != null) {
+                compositeNo[0]++;
+                return capture;
+            }
         }
         // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see GalleryPack.synthesizeItemComposite):
         // block-geometry item models ride a standalone composite; sprite-driven models stay vanilla-shaped.
@@ -6413,6 +6414,8 @@ public final class F2vPack {
             files.put("assets/create/models/item/flywheel.json", """
                     {"parent":"create:item/test_obj","display":{"gui":{"scale":[0.4,0.4,0.4]}}}
                     """.getBytes(StandardCharsets.UTF_8));
+            files.put("assets/fixture/models/item/unlisted.json",
+                    "{\"parent\":\"create:item/test_obj\"}".getBytes(StandardCharsets.UTF_8));
             files.put("assets/create/models/item/test_obj.json", """
                     {"parent":"minecraft:block/block","loader":"neoforge:obj","model":"create:models/item/test.obj",
                      "flip_v":true,"gui_light":"side","textures":{"face":"create:block/test"},
@@ -6426,6 +6429,9 @@ public final class F2vPack {
             Result fresh = build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
             expect(failures, Files.readString(out.resolve("build-report.txt")).contains("authored OBJ item normals: " + id),
                     "authored OBJ normals: a fresh build selects the mod jar model");
+            expect(failures, Files.readString(out.resolve("build-report.txt"))
+                            .contains("authored OBJ item normals: fixture:unlisted"),
+                    "authored OBJ normals: an unlisted item automatically uses its mod JAR");
             try (ZipFile pack = new ZipFile(out.resolve("pack.zip").toFile())) {
                 JsonObject composite = JsonParser.parseString(new String(pack.getInputStream(
                         pack.getEntry(allocatedItemDefPath(id))).readAllBytes(), StandardCharsets.UTF_8))
