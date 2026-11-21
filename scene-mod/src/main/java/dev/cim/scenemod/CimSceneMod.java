@@ -802,6 +802,32 @@ public final class CimSceneMod {
         }
         clearWall(level);
         killStaleGalleryEntities(level);
+        // 14-e219 THE LIGHT FIELD (the parseLightField law verbatim, the
+        // manifest's sibling .light): the whole measured field as
+        // "x,y,z" -> {block, sky}, every row kept (the dark rows pin too)
+        java.util.Map<String, int[]> lightField = new java.util.HashMap<>();
+        java.nio.file.Path lightMf = manifest.resolveSibling(stem + ".light");
+        if (java.nio.file.Files.isRegularFile(lightMf)) {
+            try (java.io.BufferedReader lr = java.nio.file.Files.newBufferedReader(lightMf)) {
+                String lline;
+                while ((lline = lr.readLine()) != null) {
+                    if (lline.isBlank() || lline.charAt(0) == '#') continue;
+                    String[] lp = lline.trim().split("\\s+");
+                    if (lp.length < 5) continue;
+                    try {
+                        int lx = Integer.parseInt(lp[0]), ly = Integer.parseInt(lp[1]), lz = Integer.parseInt(lp[2]);
+                        int lb = Integer.parseInt(lp[3]), ls = Integer.parseInt(lp[4]);
+                        if (lb >= 0 && lb <= 15 && ls >= 0 && ls <= 15) {
+                            lightField.putIfAbsent(lx + "," + ly + "," + lz, new int[]{lb, ls});
+                        }
+                    } catch (NumberFormatException malformed) {
+                        // the header or a partial trailing row: skip, never abort
+                    }
+                }
+            } catch (Exception readFail) {
+                LOGGER.warn("[cimscene] gallery-ours: .light read failed: {}", lightMf);
+            }
+        }
         java.nio.file.Path ledger = scenesDir.getParent().resolve("f2v")
                 .resolve("visual-gallery.resolved.tsv");
         java.util.Map<String, String[]> refs = new java.util.HashMap<>();
@@ -817,9 +843,14 @@ public final class CimSceneMod {
                         // 14-e218 the ledger's xRot/yRot columns (the paper
                         // replay's own readResolvedManifest contract, cols
                         // 4/5) ride along — the second cut's variant chain
+                        // 14-e219 the captured light pair (cols 7/8 of the
+                        // 8-column shape — the readResolvedManifest law) rides
+                        // for the pin chain's captured tier
                         refs.putIfAbsent(p[0], new String[]{p[2],
                                 p.length >= 4 ? p[3] : "0",
-                                p.length >= 5 ? p[4] : "0"});
+                                p.length >= 5 ? p[4] : "0",
+                                p.length >= 7 ? p[6] : "-1",
+                                p.length >= 8 ? p[7] : "-1"});
                     }
                 }
             } catch (Exception e) {
@@ -859,6 +890,7 @@ public final class CimSceneMod {
                         row0 = refs.get(stateStr + "#q");
                     }
                     int xRot = 0, yRot = 0;
+                    int capBlock = -1, capSky = -1;
                     String ref = null;
                     if (row0 != null) {
                         ref = row0[0];
@@ -871,6 +903,16 @@ public final class CimSceneMod {
                             yRot = Integer.parseInt(row0[2].trim());
                         } catch (NumberFormatException bad) {
                             yRot = 0;
+                        }
+                        try {
+                            capBlock = Integer.parseInt(row0[3].trim());
+                        } catch (NumberFormatException bad) {
+                            capBlock = -1;
+                        }
+                        try {
+                            capSky = Integer.parseInt(row0[4].trim());
+                        } catch (NumberFormatException bad) {
+                            capSky = -1;
                         }
                     }
                     if (ref == null) {
@@ -889,6 +931,16 @@ public final class CimSceneMod {
                                     yRot = Integer.parseInt(e.getValue()[2].trim());
                                 } catch (NumberFormatException bad) {
                                     yRot = 0;
+                                }
+                                try {
+                                    capBlock = Integer.parseInt(e.getValue()[3].trim());
+                                } catch (NumberFormatException bad) {
+                                    capBlock = -1;
+                                }
+                                try {
+                                    capSky = Integer.parseInt(e.getValue()[4].trim());
+                                } catch (NumberFormatException bad) {
+                                    capSky = -1;
                                 }
                                 break;
                             }
@@ -948,6 +1000,37 @@ public final class CimSceneMod {
                     com.mojang.math.Transformation.EXTENDED_CODEC
                             .encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, trn)
                             .ifSuccess(tag -> nbt.put("transformation", tag));
+                    // 14-e219 THE LIGHT PINS (the third member, the e214
+                    // contract's remainder — the paper chain verbatim): the
+                    // front-air-first field read (the truth faces sample the
+                    // front air at (x,y,z-1) — the 14-e10 law), then the
+                    // cell's own row, then the ledger's captured pair (cols
+                    // 7/8), then the legacy (fEmission, 15); the Brightness
+                    // compound = the loader's own contract ({block: X, sky: Y}
+                    // — the codec round-trip receipt; the vanilla Display
+                    // parses "brightness" via Brightness.CODEC.decode).
+                    int emission = 0;
+                    if (c.length > 6) {
+                        try {
+                            emission = Integer.parseInt(c[6].trim());
+                        } catch (NumberFormatException bad) {
+                            emission = 0;
+                        }
+                    }
+                    final int fEmission = Math.min(15, Math.max(0, emission));
+                    int[] faField = lightField.get(x + "," + y + "," + z);
+                    int[] frontAir = lightField.get(x + "," + y + "," + (z - 1));
+                    if (frontAir != null) {
+                        faField = frontAir; // the 14-e10 front-air-first law
+                    }
+                    final int pinBlock = faField != null ? faField[0]
+                            : capBlock >= 0 ? Math.min(15, Math.max(0, capBlock)) : fEmission;
+                    final int pinSky = faField != null ? faField[1]
+                            : capSky >= 0 ? Math.min(15, Math.max(0, capSky)) : 15;
+                    CompoundTag br = new CompoundTag();
+                    br.putInt("block", pinBlock);
+                    br.putInt("sky", pinSky);
+                    nbt.put("brightness", br);
                     disp.load(nbt);
                     disp.setPos(x, y, z - 1); // the rigShift = 1.0 front-air form
                     disp.addTag("cimgallery");
@@ -955,7 +1038,8 @@ public final class CimSceneMod {
                         displayed++;
                     }
                     manifestRows.add("cell\t" + x + "\t" + y + "\t" + z + "\t" + stateStr + "\t" + ref
-                            + "\t" + xRot + "\t" + yRot);
+                            + "\t" + xRot + "\t" + yRot
+                            + "\t" + pinBlock + "\t" + pinSky);
                 } catch (Exception buildFail) {
                     failed++;
                     if (failed <= 3) {
