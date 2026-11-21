@@ -46,6 +46,7 @@ implements Listener {
     private static final String ID = "[a-z0-9_.-]+:[a-z0-9_./-]+";
     private static final Pattern GIVE = Pattern.compile("((?:minecraft:)?give +.+? +)([a-z0-9_.-]+:[a-z0-9_./-]+)( +[0-9]+)?");
     private static final Pattern SUMMON = Pattern.compile("(?:minecraft:)?summon +([a-z0-9_.-]+:[a-z0-9_./-]+)(?= |$)");
+    private static final Pattern LOCATE_BIOME = Pattern.compile("(?:minecraft:)?locate +biome +(" + ID + ") *");
     private final CimPlugin plugin;
     private final ItemText itemText;
     private final List<String> biomes;
@@ -104,7 +105,7 @@ implements Listener {
             suggestions.setAccessible(true);
             NativeModCommands.install(dispatcher.getRoot(), suggestions, this.plugin.commandItems().keySet(), new String[]{"give", "targets", "item"});
             NativeModCommands.install(dispatcher.getRoot(), suggestions, this.plugin.commandItems().keySet(), new String[]{"summon", "entity"});
-            NativeModCommands.install(dispatcher.getRoot(), suggestions, this.biomes, new String[]{"locate", "biome", "biome"});
+            // The vanilla biome argument already suggests the live Paper registry.
             NativeModCommands.install(dispatcher.getRoot(), suggestions, this.structures, new String[]{"locate", "structure", "structure"});
             this.plugin.getServer().getOnlinePlayers().forEach(player -> player.updateCommands());
         }
@@ -142,6 +143,10 @@ implements Listener {
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
         String raw = event.getMessage().substring(1);
+        if (unavailableBiome(event.getPlayer(), raw)) {
+            event.setCancelled(true);
+            return;
+        }
         String rewritten = this.rewriteGive(raw);
         if (!rewritten.equals(raw)) {
             event.setMessage("/" + rewritten);
@@ -155,9 +160,33 @@ implements Listener {
 
     @EventHandler(priority=EventPriority.HIGHEST, ignoreCancelled=true)
     public void onServerCommand(ServerCommandEvent event) {
+        if (unavailableBiome(event.getSender(), event.getCommand())) {
+            event.setCancelled(true);
+            return;
+        }
         String raw = this.rewriteGive(event.getCommand());
         Matcher match = SUMMON.matcher(raw);
         event.setCommand(match.find() && this.plugin.commandItems().containsKey(match.group(1)) ? this.rewriteSummon(raw, match) : raw);
+    }
+
+    private boolean unavailableBiome(org.bukkit.command.CommandSender sender, String command) {
+        Matcher match = LOCATE_BIOME.matcher(command);
+        if (!match.matches() || !sender.hasPermission("minecraft.command.locate")) {
+            return false;
+        }
+        String id = match.group(1);
+        if (!biomes.contains(id)) {
+            return false;
+        }
+        var registry = io.papermc.paper.registry.RegistryAccess.registryAccess()
+                .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME);
+        var key = org.bukkit.NamespacedKey.fromString(id);
+        if (key == null || registry.get(key) != null) {
+            return false;
+        }
+        sender.sendMessage(Component.text(id + " is provided by a mod but is unavailable in this server's biome registry.",
+                net.kyori.adventure.text.format.NamedTextColor.RED));
+        return true;
     }
 
     private String rewriteGive(String command) {
