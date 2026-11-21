@@ -4571,7 +4571,12 @@ jobs:
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-p-$NS$p-t1.png";; esac
               test -s "ours-shots/ours-gal-p-$NS$p.png" || { echo "$NS page $p shot empty/missing"; exit 1; }
             done
-            [ "$EXHAUSTED" = "1" ] && break
+            # THE NS-LOOP UN-BREAK (measured 44929467113 + the e244 sample:
+            # the first ns's exhaustion stopped the WHOLE walk — s0 walked
+            # 26 create pages only; the truth's own walk CONTINUES past
+            # each ns's end (its s0 = the shots across every ns) — the
+            # exhaustion = one ns's natural end, the loop = the next ns;
+            # the EXHAUSTED flag = the diagnostic echo only)
           done
           echo "ours-sm walk done: $(ls ours-shots/ours-gal-p-*.png 2>/dev/null | grep -v t1 | wc -l) shots"
 
