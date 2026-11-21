@@ -1153,9 +1153,32 @@ public final class GalleryPack {
     static String synthesizeItemComposite(List<Path> jars, String modelRef, int xRot, int yRot, boolean uvlock,
                                           int itemNo, TreeMap<String, byte[]> entries,
                                           List<String> warnings) throws IOException {
-        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
+        return synthesizeItemComposite(jars, modelRef, xRot, yRot, uvlock, itemNo, entries, warnings, false);
+    }
+
+    static String synthesizeAuthoredObjItem(List<Path> jars, String modelRef, int itemNo,
+                                            TreeMap<String, byte[]> entries,
+                                            List<String> warnings) throws IOException {
+        return synthesizeItemComposite(jars, modelRef, 0, 0, false, itemNo, entries, warnings, true);
+    }
+
+    private static String synthesizeItemComposite(List<Path> jars, String modelRef, int xRot, int yRot,
+                                                   boolean uvlock, int itemNo, TreeMap<String, byte[]> entries,
+                                                   List<String> warnings, boolean authoredObj) throws IOException {
+        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings, authoredObj);
         if (mg == null || mg.elements == null || mg.elements.size() == 0) {
             return null;
+        }
+        java.util.BitSet flatNormals = new java.util.BitSet();
+        if (authoredObj) {
+            for (int i = 0; i < mg.elements.size(); i++) {
+                if (mg.elements.get(i).getAsJsonObject().remove(ObjMesh.FLAT_NORMAL) != null) {
+                    flatNormals.set(i);
+                }
+            }
+            if (flatNormals.isEmpty()) {
+                return null;
+            }
         }
         materializeCutouts(jars, mg, entries, warnings);
         Map<String, String> textures = new TreeMap<>();
@@ -1205,38 +1228,51 @@ public final class GalleryPack {
         }
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
-        // THE GUI IDENTITY (measured on the #302 gal-inv-ae20 pair: the hotbar
-        // cube matched at ae 5585 while every main-slot item rendered oversized
-        // and rotated — the quad dump captures the item meshes ALREADY in the
-        // gui frame (the same ItemRenderer output the truth leg draws), and the
-        // block/block parent's gui transform (30/225/0.625) re-rotated and
-        // re-scaled them. The identity gui display draws the captured mesh 1:1
-        // in the 16-gui square — the vanilla inventory renders what the dump
-        // captured, exactly what the truth leg renders. The item PAGE renders
-        // ride display-entity contexts (fixed/thirdperson) — untouched.
-        JsonObject gui = new JsonObject();
-        JsonArray rot = new JsonArray();
-        rot.add(0); rot.add(0); rot.add(0);
-        gui.add("rotation", rot);
-        JsonArray tr = new JsonArray();
-        tr.add(0.0); tr.add(0.0); tr.add(0.0);
-        gui.add("translation", tr);
-        JsonArray sc = new JsonArray();
-        sc.add(1.0); sc.add(1.0); sc.add(1.0);
-        gui.add("scale", sc);
-        JsonObject display = new JsonObject();
-        display.add("gui", gui);
-        wrapper.add("display", display);
+        if (authoredObj) {
+            // Both source items use the alpha-blended item sheet, including cutout sprites
+            // generated for OBJ faces with UVs that cannot map to a vanilla rectangle.
+            wrapper.addProperty("render_type", "minecraft:translucent");
+            wrapper.add("display", mg.display());
+            if (mg.guiLight() != null) {
+                wrapper.add("gui_light", mg.guiLight());
+            }
+        } else {
+            // THE GUI IDENTITY (measured on the #302 gal-inv-ae20 pair: the hotbar
+            // cube matched at ae 5585 while every main-slot item rendered oversized
+            // and rotated — the quad dump captures the item meshes ALREADY in the
+            // gui frame (the same ItemRenderer output the truth leg draws), and the
+            // block/block parent's gui transform (30/225/0.625) re-rotated and
+            // re-scaled them. The identity gui display draws the captured mesh 1:1
+            // in the 16-gui square — the vanilla inventory renders what the dump
+            // captured, exactly what the truth leg renders. The item PAGE renders
+            // ride display-entity contexts (fixed/thirdperson) — untouched.
+            JsonObject gui = new JsonObject();
+            JsonArray rot = new JsonArray();
+            rot.add(0); rot.add(0); rot.add(0);
+            gui.add("rotation", rot);
+            JsonArray tr = new JsonArray();
+            tr.add(0.0); tr.add(0.0); tr.add(0.0);
+            gui.add("translation", tr);
+            JsonArray sc = new JsonArray();
+            sc.add(1.0); sc.add(1.0); sc.add(1.0);
+            gui.add("scale", sc);
+            JsonObject display = new JsonObject();
+            display.add("gui", gui);
+            wrapper.add("display", display);
+        }
         JsonObject texObj = new JsonObject();
         for (Map.Entry<String, String> t : textures.entrySet()) {
             texObj.addProperty(t.getKey(), t.getValue());
         }
         wrapper.add("textures", texObj);
         wrapper.add("elements", bakeRotation(mg.elements, xRot, yRot, uvlock));
-        recordScale(WRAPPER_NS + ":items/i" + itemNo, mg.displayScale());
-        String file = "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json";
-        entries.put(file, wrapper.toString().getBytes(StandardCharsets.UTF_8));
-        return WRAPPER_NS + ":items/i" + itemNo;
+        String ref = WRAPPER_NS + ":items/i" + itemNo;
+        recordScale(ref, mg.displayScale());
+        entries.put(modelPath(ref), wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        if (authoredObj) {
+            registerItemNormalLayers(wrapper, ref, mg.displayScale(), flatNormals, entries);
+        }
+        return ref;
     }
 
     /** {@code ns:block/foo} -> {@code block/foo} (the textures/ sub path). */
@@ -4003,7 +4039,7 @@ public final class GalleryPack {
     /** {@code displayScale}: the shrink an oversized OBJ mesh took to fit the
      *  element limits, undone by the item definition's transformation. */
     private record ModelGraph(Map<String, String> textures, JsonArray elements,
-                              double displayScale) {
+                              double displayScale, JsonObject display, JsonElement guiLight) {
     }
 
     private static boolean isObjModel(JsonObject json) {
@@ -4013,7 +4049,11 @@ public final class GalleryPack {
 
     /** The {@code neoforge:obj} geometry as elements, or null when its files are missing. */
     private static ObjGeometry readObjGeometry(List<Path> jars, JsonObject json,
-                                               List<String> warnings) throws IOException {
+                                               List<String> warnings, boolean authoredObj) throws IOException {
+        if (authoredObj && (json.has("mtl_override")
+                || (json.has("shade_quads") && !json.get("shade_quads").getAsBoolean()))) {
+            return null;
+        }
         String ref = json.get("model").getAsString();
         int c = ref.indexOf(':');
         String file = "assets/" + ref.substring(0, c) + "/" + ref.substring(c + 1);
@@ -4029,12 +4069,16 @@ public final class GalleryPack {
                 String mtl = file.substring(0, file.lastIndexOf('/') + 1) + line.substring(7).trim();
                 byte[] bytes = readPngFromJars(jars, mtl);
                 if (bytes != null) {
-                    materials.putAll(ObjMesh.parseMtl(new String(bytes, StandardCharsets.UTF_8)));
+                    String source = new String(bytes, StandardCharsets.UTF_8);
+                    if (authoredObj && !ObjMesh.supportsAuthoredMaterials(source)) {
+                        return null;
+                    }
+                    materials.putAll(ObjMesh.parseMtl(source));
                 }
             }
         }
         boolean flipV = json.has("flip_v") && json.get("flip_v").getAsBoolean();
-        List<ObjMesh.Face> faces = ObjMesh.parse(text, materials, flipV);
+        List<ObjMesh.Face> faces = ObjMesh.parse(text, materials, flipV, authoredObj);
         double k = ObjMesh.fitElements(faces);
         return new ObjGeometry(ObjMesh.toElements(faces, k), k);
     }
@@ -4157,10 +4201,17 @@ public final class GalleryPack {
      */
     static ModelGraph resolveModelGraph(List<Path> jars, String ref,
                                         List<String> warnings) throws IOException {
+        return resolveModelGraph(jars, ref, warnings, false);
+    }
+
+    private static ModelGraph resolveModelGraph(List<Path> jars, String ref, List<String> warnings,
+                                                 boolean authoredObj) throws IOException {
         int colon = ref.indexOf(':');
         String ns = colon > 0 ? ref.substring(0, colon) : "minecraft";
         Map<String, String> textures = new LinkedHashMap<>();
         JsonArray elements = null;
+        JsonObject display = authoredObj ? new JsonObject() : null;
+        JsonElement guiLight = null;
         double displayScale = 1;
         String cur = ref;
         int depth = 0;
@@ -4196,6 +4247,23 @@ public final class GalleryPack {
                 warnings.add("gallery: model missing in jar chain: " + file);
                 break;
             }
+            if (authoredObj) {
+                if (json.has("overrides") || json.has("transform") || json.has("render_type")
+                        || (elements == null && (json.has("elements") || json.has("children")
+                                || (json.has("loader") && !isObjModel(json))))) {
+                    return null;
+                }
+                if (json.has("display")) {
+                    for (var transform : json.getAsJsonObject("display").entrySet()) {
+                        if (!display.has(transform.getKey())) {
+                            display.add(transform.getKey(), transform.getValue());
+                        }
+                    }
+                }
+                if (guiLight == null) {
+                    guiLight = json.get("gui_light");
+                }
+            }
             if (json.has("textures")) {
                 for (Map.Entry<String, JsonElement> t : json.getAsJsonObject("textures").entrySet()) {
                     String sv = textureValue(t.getValue(), file + ":" + t.getKey(), warnings);
@@ -4208,7 +4276,10 @@ public final class GalleryPack {
                 elements = mergeModelGeometry(jars, json, "", textures, warnings, 0);
             }
             if (elements == null && isObjModel(json)) {
-                ObjGeometry g = readObjGeometry(jars, json, warnings);
+                ObjGeometry g = readObjGeometry(jars, json, warnings, authoredObj);
+                if (authoredObj && g == null) {
+                    return null;
+                }
                 if (g != null) {
                     elements = g.elements();
                     displayScale = g.scale();
@@ -4217,7 +4288,7 @@ public final class GalleryPack {
             cur = json.has("parent") ? json.get("parent").getAsString() : null;
         }
         if (elements == null) {
-            return new ModelGraph(textures, null, 1);
+            return new ModelGraph(textures, null, 1, display, guiLight);
         }
         // resolve #ref chains to concrete sprite ids
         Map<String, String> resolved = new LinkedHashMap<>();
@@ -4233,7 +4304,7 @@ public final class GalleryPack {
             }
             resolved.put(t.getKey(), v);
         }
-        return new ModelGraph(resolved, elements, displayScale);
+        return new ModelGraph(resolved, elements, displayScale, display, guiLight);
     }
 
     /**

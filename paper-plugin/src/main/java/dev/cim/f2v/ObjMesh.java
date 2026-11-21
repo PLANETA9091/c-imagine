@@ -37,6 +37,9 @@ final class ObjMesh {
     /** Element marker for a polygon awaiting its cutout sprite. */
     static final String POLY = "_cimPoly";
 
+    /** Element marker consumed by the item-layer builder before JSON emission. */
+    static final String FLAT_NORMAL = "_cimFlatNormal";
+
     /** The face plane's offset from the element's back: a zero-depth box bakes fat on 26.3. */
     private static final double DEPTH = 0.02;
 
@@ -53,7 +56,10 @@ final class ObjMesh {
     }
 
     /** Per-vertex RGB or RGBA multipliers (ambient occlusion x tint, optional opacity). */
-    record Face(List<Vert> verts, String tex, float[][] colors) {
+    record Face(List<Vert> verts, String tex, float[][] colors, boolean flatNormal) {
+        Face(List<Vert> verts, String tex, float[][] colors) {
+            this(verts, tex, colors, false);
+        }
         Face(List<Vert> verts, String tex) {
             this(verts, tex, null);
         }
@@ -87,8 +93,41 @@ final class ObjMesh {
         return out;
     }
 
+    /** The item layer replays diffuse textures with white vertex color and no baked emission. */
+    static boolean supportsAuthoredMaterials(String mtl) {
+        for (String raw : mtl.split("\n")) {
+            String[] fields = raw.strip().split("\\s+");
+            switch (fields[0]) {
+                case "Ka", "Kd" -> {
+                    double expected = fields[0].equals("Ka") ? 0 : 1;
+                    if (fields.length != 4 || Double.parseDouble(fields[1]) != expected
+                            || Double.parseDouble(fields[2]) != expected
+                            || Double.parseDouble(fields[3]) != expected) {
+                        return false;
+                    }
+                }
+                case "map_Kd" -> {
+                    if (fields.length != 2 || !fields[1].startsWith("#")) {
+                        return false;
+                    }
+                }
+                case "forge_TintIndex", "neoforge_TintIndex", "d", "Tr" -> {
+                    return false;
+                }
+                default -> {
+                }
+            }
+        }
+        return true;
+    }
+
     static List<Face> parse(String obj, Map<String, String> materials, boolean flipV) {
+        return parse(obj, materials, flipV, false);
+    }
+
+    static List<Face> parse(String obj, Map<String, String> materials, boolean flipV, boolean trackNormals) {
         List<double[]> pos = new ArrayList<>();
+        List<double[]> normals = new ArrayList<>();
         List<double[]> uvs = new ArrayList<>();
         List<Face> faces = new ArrayList<>();
         String tex = null;
@@ -101,17 +140,34 @@ final class ObjMesh {
                     double v = Double.parseDouble(p[2]);
                     uvs.add(new double[]{Double.parseDouble(p[1]) * 16, (flipV ? 1 - v : v) * 16});
                 }
+                case "vn" -> {
+                    if (trackNormals) {
+                        normals.add(new double[]{Double.parseDouble(p[1]), Double.parseDouble(p[2]),
+                                Double.parseDouble(p[3])});
+                    }
+                }
                 case "usemtl" -> tex = materials.get(p[1]);
                 case "f" -> {
+                    if (trackNormals && (tex == null || p.length < 4 || p.length > 5)) {
+                        throw new IllegalArgumentException("unsupported OBJ face or material");
+                    }
                     List<Vert> vs = new ArrayList<>();
+                    List<double[]> authored = trackNormals ? new ArrayList<>() : List.of();
                     for (int i = 1; i < p.length; i++) {
                         String[] idx = p[i].split("/");
                         int pi = index(idx[0], pos.size());
                         int ti = idx.length > 1 && !idx[1].isEmpty() ? index(idx[1], uvs.size()) : -1;
                         vs.add(new Vert(pos.get(pi), ti >= 0 ? uvs.get(ti) : new double[]{0, 0}, pi, ti));
+                        if (trackNormals) {
+                            if (ti < 0 || idx.length > 3) {
+                                throw new IllegalArgumentException("unsupported OBJ vertex texture or color");
+                            }
+                            int ni = idx.length > 2 && !idx[2].isEmpty() ? index(idx[2], normals.size()) : -1;
+                            authored.add(ni >= 0 && ni < normals.size() ? normals.get(ni) : null);
+                        }
                     }
                     if (tex != null) {
-                        faces.add(new Face(vs, tex));
+                        faces.add(new Face(vs, tex, null, trackNormals && flatDiagonal(vs, authored)));
                     }
                 }
                 default -> {
@@ -119,6 +175,31 @@ final class ObjMesh {
             }
         }
         return faces;
+    }
+
+    /** Only a single normal agreeing with the face winding is representable by a layer rotation. */
+    private static boolean flatDiagonal(List<Vert> verts, List<double[]> authored) {
+        if (verts.size() < 3 || verts.size() > 4 || !planar(verts)) {
+            return false;
+        }
+        double[] winding = normal(verts);
+        for (double component : winding) {
+            if (Math.abs(component) >= 0.999) {
+                return false;
+            }
+        }
+        double[] first = null;
+        for (double[] value : authored) {
+            if (value == null || !(Math.abs(len(value) - 1) <= 1e-3)) {
+                return false;
+            }
+            if (!(len(sub(value, winding)) <= 1e-3)
+                    || (first != null && !(len(sub(value, first)) <= 1e-6))) {
+                return false;
+            }
+            first = value;
+        }
+        return true;
     }
 
     private static int index(String s, int size) {
@@ -206,7 +287,7 @@ final class ObjMesh {
                 double[] p = {8 + (v.p()[0] - 8) / k, 8 + (v.p()[1] - 8) / k, 8 + (v.p()[2] - 8) / k};
                 vs.add(new Vert(p, v.uv(), v.pi(), v.ti()));
             }
-            faces.add(new Face(vs, f.tex(), f.colors()));
+            faces.add(new Face(vs, f.tex(), f.colors(), f.flatNormal()));
         }
         JsonArray out = new JsonArray();
         List<Face> tris = new ArrayList<>();
@@ -216,7 +297,11 @@ final class ObjMesh {
             } else if (f.verts().size() == 3) {
                 tris.add(f);
             } else {
+                int first = out.size();
                 emit(out, f.verts(), f.tex());
+                if (f.flatNormal()) {
+                    out.get(first).getAsJsonObject().addProperty(FLAT_NORMAL, true);
+                }
             }
         }
         mergeTriangles(out, tris);
@@ -258,7 +343,11 @@ final class ObjMesh {
                 Vert b = t.get((e + 1) % 3);
                 Vert c = t.get((e + 2) % 3);
                 for (int m : byEdge.get(edgeKey(a, b))) {
-                    if (used.contains(m) || !tris.get(m).tex().equals(f.tex())) {
+                    Face partner = tris.get(m);
+                    if (used.contains(m) || !partner.tex().equals(f.tex())
+                            || f.flatNormal() != partner.flatNormal()
+                            || (f.flatNormal()
+                                    && dot(normal(t), normal(partner.verts())) < 0.99999)) {
                         continue;
                     }
                     Vert d = opposite(tris.get(m).verts(), a, b);
@@ -272,11 +361,11 @@ final class ObjMesh {
                     }
                 }
             }
-            if (merged != null) {
-                out.add(rectElement(merged, f.tex()));
-            } else {
-                out.add(polyElement(t, f.tex()));
+            JsonObject element = merged != null ? rectElement(merged, f.tex()) : polyElement(t, f.tex());
+            if (f.flatNormal()) {
+                element.addProperty(FLAT_NORMAL, true);
             }
+            out.add(element);
         }
     }
 

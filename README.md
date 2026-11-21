@@ -107,6 +107,11 @@ then required. `CIM_F2V_BIND`, `CIM_F2V_PORT`, `CIM_F2V_AUTO_OFFER=false` and
 `CIM_F2V_AUTO_OFFER_REQUIRED` override the defaults. A `resource-pack=` line in
 `server.properties` turns the module's own offer off.
 
+Create's Empty Blaze Burner and Flywheel use the normals authored in their OBJ
+models. The server reads them directly from the installed Create JAR when it
+builds the resource pack. These items need no NeoForge client capture. The
+gallery uses a NeoForge client as the visual reference.
+
 Boot log markers to look for:
 
 ``[c-imagine] module init`` → `[c-imagine] bootstrap ready` →

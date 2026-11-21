@@ -2171,6 +2171,7 @@ public final class F2vPack {
         List<String> itemEmissiveBakeLog = new ArrayList<>();
         List<Map.Entry<Float, String>> paperFloatEntries = new ArrayList<>();
         int[] compositeNo = {0};
+        Set<String> authoredObjItems = new TreeSet<>();
         int manifestResolved = 0;
         int manifestFailed = 0;
         for (Map.Entry<String, List<VisualItem>> host : byHost.entrySet()) {
@@ -2185,7 +2186,7 @@ public final class F2vPack {
             List<Map.Entry<String, String>> casesForHost = new ArrayList<>();
             for (VisualItem row : host.getValue()) {
                 String found = itemModelRef(row.moddedId(), jars, entries, warnings,
-                        paletteByVariantId, emissiveTable, itemEmissiveBakeLog, compositeNo);
+                        paletteByVariantId, emissiveTable, itemEmissiveBakeLog, compositeNo, authoredObjItems);
                 if (found == null) {
                     warnings.add("no item model found for " + row.moddedId()
                             + " in any mod jar — row dropped");
@@ -2232,7 +2233,7 @@ public final class F2vPack {
         int allocFailed = 0;
         for (String id : itemCandidates(discoverItemIds(listJars(modsDir)), manifestIds)) {
             String found = itemModelRef(id, jars, entries, warnings, Map.of(),
-                    emissiveTable, itemEmissiveBakeLog, compositeNo);
+                    emissiveTable, itemEmissiveBakeLog, compositeNo, authoredObjItems);
             if (found == null) {
                 allocFailed++;
                 continue;
@@ -2580,6 +2581,9 @@ public final class F2vPack {
                 .append("warnings:        ").append(warnings.size()).append('\n')
                 .append("placeholders:    ").append(placeholders.size())
                 .append(" (see placeholders.tsv — a placeholder is NOT supported content)\n");
+        for (String item : authoredObjItems) {
+            report.append("  authored OBJ item normals: ").append(item).append('\n');
+        }
         for (String[] ph : placeholders) {
             report.append("  placeholder: ").append(ph[0]).append(" for ").append(ph[1])
                     .append(" x").append(ph[2]).append('\n');
@@ -2603,24 +2607,48 @@ public final class F2vPack {
     private static String itemModelRef(String moddedId, List<Path> jars, TreeMap<String, byte[]> entries,
                                        List<String> warnings, Map<String, PaletteRow> paletteByVariantId,
                                        Map<String, Integer> emissiveTable, List<String> emissiveBakeLog,
-                                       int[] compositeNo) throws IOException {
+                                       int[] compositeNo, Set<String> authoredObjItems) throws IOException {
         // 14-dy: the placeholder ledger attributes item-model fallbacks to the modded item id
         GalleryPack.placeholderContext(moddedId);
+        String found = null;
+        // These Create items were checked against their native item renderers. An OBJ
+        // parent alone cannot rule out a Java-side renderer or a model event wrapper.
+        if ((moddedId.equals("create:empty_blaze_burner") || moddedId.equals("create:flywheel"))
+                && !emissiveTable.containsKey(moddedId)) {
+            found = resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+            if (found != null) {
+                try {
+                    String authored = GalleryPack.synthesizeAuthoredObjItem(
+                            jars, found, compositeNo[0], entries, warnings);
+                    if (authored != null) {
+                        authoredObjItems.add(moddedId);
+                        compositeNo[0]++;
+                        return authored;
+                    }
+                } catch (RuntimeException bad) {
+                    warnings.add("authored OBJ item skipped for " + moddedId + ": " + bad);
+                }
+            }
+        }
         String quadModel = GalleryPack.synthesizeItemQuads(jars, moddedId, compositeNo[0], entries, warnings);
         if (quadModel != null) {
             compositeNo[0]++;
         }
-        String found = quadModel != null ? quadModel
-                : resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+        if (quadModel != null) {
+            return quadModel;
+        }
+        if (found == null) {
+            found = resolveAndCopyModelGraph(jars, moddedId, entries, warnings, paletteByVariantId);
+        }
         // THE 26.3 ITEM-CHANNEL SHAPE (measured #49/#50, see GalleryPack.synthesizeItemComposite):
         // block-geometry item models ride a standalone composite; sprite-driven models stay vanilla-shaped.
-        if (quadModel == null && found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
+        if (found != null && GalleryPack.chainHasElements(jars, found, warnings)) {
             String comp = safeItemComposite(jars, found, compositeNo[0]++, entries, warnings);
             if (comp != null) {
                 // THE ITEM EMISSIVE-BAKE: a tabled modded item's composite carries light_emission
                 found = GalleryPack.applyItemEmissive(moddedId, comp, emissiveTable, emissiveBakeLog);
             }
-        } else if (quadModel == null && found != null) {
+        } else if (found != null) {
             // THE SPRITE EMISSIVE UPGRADE: a tabled sprite model becomes a flat-quad composite + light_emission
             String upgraded = GalleryPack.synthesizeSpriteEmissive(
                     jars, found, moddedId, compositeNo[0], emissiveTable, entries, warnings);
@@ -4954,6 +4982,7 @@ public final class F2vPack {
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
         itemNormalSelftest(failures);
+        authoredObjItemSelftest(failures);
         carrierSelftest(failures);
         itemAllocationSelftest(failures);
         rawCaptureTextureSelftest(failures);
@@ -6348,6 +6377,81 @@ public final class F2vPack {
                 expect(failures, paths.noneMatch(p -> p.getFileName().toString().startsWith("verify-")),
                         "verification: scratch input/output tree is cleaned");
             }
+        } finally {
+            deleteRecursively(root);
+        }
+    }
+
+    private static void authoredObjItemSelftest(List<String> failures) throws IOException {
+        String diagonal = """
+                mtllib test.mtl
+                v 0 0 0
+                v 1 0 0
+                v 1 1 1
+                v 0 1 1
+                vt 0 0
+                vt 1 0
+                vt 1 1
+                vt 0 1
+                vn 0 -.707107 .707107
+                vn 0 -.706900 .707314
+                vn 0 .707107 -.707107
+                usemtl material
+                """;
+        var materials = Map.of("material", "#face");
+        for (String invalid : List.of("f 1/1 2/2 3/3 4/4", "f 1/1/1 2/2/1 3/3/1 4/4",
+                "f 1/1/1 2/2/2 3/3/1 4/4/1", "f 1/1/3 2/2/3 3/3/3 4/4/3")) {
+            expect(failures, !ObjMesh.parse(diagonal + invalid, materials, true, true).getFirst().flatNormal(),
+                    "authored OBJ normals: missing, smooth and inverted normals retain the ordinary layer");
+        }
+        Path root = Files.createTempDirectory("f2v-authored-obj");
+        try {
+            String id = "create:flywheel";
+            Path mods = Files.createDirectory(root.resolve("mods"));
+            Path out = root.resolve("out");
+            TreeMap<String, byte[]> files = new TreeMap<>();
+            files.put("assets/create/models/item/flywheel.json", """
+                    {"parent":"create:item/test_obj","display":{"gui":{"scale":[0.4,0.4,0.4]}}}
+                    """.getBytes(StandardCharsets.UTF_8));
+            files.put("assets/create/models/item/test_obj.json", """
+                    {"parent":"minecraft:block/block","loader":"neoforge:obj","model":"create:models/item/test.obj",
+                     "flip_v":true,"gui_light":"side","textures":{"face":"create:block/test"},
+                     "display":{"fixed":{"rotation":[90,0,0]},"gui":{"scale":[0.5,0.5,0.5]}}}
+                    """.getBytes(StandardCharsets.UTF_8));
+            files.put("assets/create/models/item/test.obj",
+                    (diagonal + "f 1/1/-3 2/2/-3 3/3/-3 4/4/-3\n").getBytes(StandardCharsets.UTF_8));
+            files.put("assets/create/models/item/test.mtl", "newmtl material\nmap_Kd #face\n".getBytes(StandardCharsets.UTF_8));
+            files.put("assets/create/textures/block/test.png", f2vSelftestPng(16, 16));
+            writeJar(mods.resolve("fixture.jar"), files);
+            Result fresh = build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
+            expect(failures, Files.readString(out.resolve("build-report.txt")).contains("authored OBJ item normals: " + id),
+                    "authored OBJ normals: a fresh build selects the mod jar model");
+            try (ZipFile pack = new ZipFile(out.resolve("pack.zip").toFile())) {
+                JsonObject composite = JsonParser.parseString(new String(pack.getInputStream(
+                        pack.getEntry(allocatedItemDefPath(id))).readAllBytes(), StandardCharsets.UTF_8))
+                        .getAsJsonObject().getAsJsonObject("model");
+                JsonArray children = composite.getAsJsonArray("models");
+                expect(failures, children != null && children.size() == 1, "authored OBJ normals: one layer for one face");
+                if (children != null && children.size() == 1) {
+                    JsonObject node = children.get(0).getAsJsonObject();
+                    expect(failures, node.has("transformation"), "authored OBJ normals: negative indices resolve to a diagonal layer");
+                    String ref = node.get("model").getAsString();
+                    JsonObject model = JsonParser.parseString(new String(pack.getInputStream(pack.getEntry(
+                            "assets/" + ref.replace(":", "/models/") + ".json")).readAllBytes(),
+                            StandardCharsets.UTF_8)).getAsJsonObject();
+                    JsonObject display = model.getAsJsonObject("display");
+                    expect(failures, display.getAsJsonObject("gui").getAsJsonArray("scale").get(0).getAsDouble() == 0.4
+                                    && display.getAsJsonObject("fixed").getAsJsonArray("rotation").get(0).getAsInt() == 90
+                                    && "side".equals(model.get("gui_light").getAsString()),
+                            "authored OBJ normals: child and inherited display settings reach the diagonal layer");
+                }
+            }
+            Files.createDirectory(out.resolve("quads"));
+            Files.writeString(out.resolve("quads/items.tsv"), id + "\tmocked_capture\n");
+            Files.writeString(out.resolve("quads/mocked_capture.tsv"), "# cimscene native empty mesh v1\n");
+            Result staged = build(mods, out, List.of(), List.of(), List.of(), List.of(), List.of());
+            expect(failures, fresh.sha1().equals(staged.sha1()),
+                    "authored OBJ normals: a staged capture cannot shadow the asset-derived model");
         } finally {
             deleteRecursively(root);
         }

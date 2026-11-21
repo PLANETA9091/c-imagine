@@ -1262,6 +1262,13 @@ jobs:
           echo "$SEED_INPUTS" > seed-pack/f2v/inputs.sha1
           echo "seed built: sha1=$(cat seed-pack/f2v/pack.sha1)"
 
+      - name: verify JAR-derived Create item lighting
+        run: |
+          set -euo pipefail
+          for item in create:empty_blaze_burner create:flywheel; do
+            grep -Fx "  authored OBJ item normals: $item" seed-pack/f2v/build-report.txt
+          done
+
       - name: save seed cache (success-only — a partial seed-pack must never poison the key)
         if: success() && steps.pack-verify.outputs.hit != 'true'
         uses: actions/cache/save@v4
