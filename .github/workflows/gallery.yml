@@ -4471,7 +4471,13 @@ jobs:
           # delimiter '#': $PWD is /-joined, a /-delimited sed program dies on it
           LAUNCH=$(sed "s#^java #java -Dcim.nomouse=true -Dcim.screenart=$PWD/truth-screens #" truth-client/launch.txt)
           setsid bash -c "cd truth-client && $LAUNCH > client.out 2>&1" < /dev/null > /dev/null 2>&1 &
-          for i in $(seq 1 90); do
+          # THE POLL BUDGET = 300 (measured 44925075330: 10/16 shards joined
+          # inside the paper lane's 90s budget and 6 died at the poll's
+          # expiry while the client was still LOADING — the modded client
+          # boots the full ladder's assets, heavier than the paper's; 16
+          # concurrent boots on the throttled pool = the slow shards need
+          # ~150s. The join = the same poll contract, a wider budget.)
+          for i in $(seq 1 300); do
             L=$(python3 scripts/cimscene/rcon.py 127.0.0.1 25575 cimgate "list" 2>/dev/null | tail -1 || true)
             case "$L" in *cimviewer*) break;; esac
             sleep 1
