@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """14-e186 THE R-B3 STEP-0 NO-REF JOIN — the e183 named tool ("one command off
-the visual-tints-cells ledger").
+the visual-tints-cells ledger"), CORRECTED at 14-e188 by the boot-log dive.
 
 Joins a flight's block-lane RED rows to the seed-pack ledgers:
   1. visual-gallery.resolved.tsv  (state -> ref) — the resolved-ref identity;
-  2. visual-gallery-scales.tsv    (ref  -> k)   — the scale attribution;
+  2. visual-gallery-scales.tsv    (ref  -> k)   — the scale attribution
+     (the missing ref defaults to k=1.0 — the unscale table carries only
+     the compensation entries);
   3. visual-tints-cells.tsv       (state@page:cX,rY -> factor) — the per-cell
      tint identity for the states the resolved ledger does not carry.
 
+THE THREE-TIER JOIN LAW (the e188 correction — the boot-log dive proved the
+ledger keys come in TWO formats, plain `state[props]` and hash-suffixed
+`state[props]#q<hex>`; 35,594 of the 96,529 #566 ledger keys are #q-suffixed
+and the original two-tier law mis-filed every #q-keyed state as "no-ref"):
+  tier 1  exact    — the RED state string == a plain ledger key;
+  tier 2  #q-strip — the RED state string == a ledger key minus its #q suffix;
+  tier 3  bare-id  — the gallery-diff demotion (state minus [props] and #q).
+Under the three-tier law the #566 block lane = 769 + 119 + 0: the "119-row
+no-resolve class" of e183/e186 = the #q key-format artifact, the TRUE no-ref
+count = 0.
+
 Outputs the mass-ranked attribution:
-  - resolved at the exact state, resolved at the bare-id demotion
-    (state.split("[",1)[0].split("#q",1)[0] — the gallery-diff demotion law),
-  - the k split over the resolved (the e183 rescale falsification re-check),
-  - the no-ref set, split into: per-cell tinted (the state@page hits the
-    tints-cells ledger) vs the bare remainder (the vanilla-namespace class).
+  - the three resolved tiers, the k split over all resolved rows,
+  - the per-cell tinted subset (state@page hits the tints-cells ledger).
 
 Usage:
   python3 scripts/cimscene/noref-join.py --vp /tmp/vp566_read \
@@ -57,7 +67,9 @@ def load_join_reds(vp, lane):
 
 
 def load_resolved(path):
+    """(plain_exact, q_stripped) — the two ledger key formats, one lookup each."""
     m = {}
+    q = {}
     with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.rstrip("\n")
@@ -66,7 +78,8 @@ def load_resolved(path):
             parts = line.split("\t")
             if len(parts) >= 3:
                 m[parts[0]] = parts[2]
-    return m
+                q.setdefault(parts[0].split("#q", 1)[0], parts[2])
+    return m, q
 
 
 def load_scales(path):
@@ -110,7 +123,8 @@ def main():
     ap.add_argument("--top", type=int, default=15)
     a = ap.parse_args()
 
-    resolved = load_resolved(os.path.join(a.ledgers, "visual-gallery.resolved.tsv"))
+    resolved, resolved_q = load_resolved(
+        os.path.join(a.ledgers, "visual-gallery.resolved.tsv"))
     scales = load_scales(os.path.join(a.ledgers, "visual-gallery-scales.tsv"))
     tints_exact, tints_sp = load_tints_cells(os.path.join(a.ledgers, "visual-tints-cells.tsv"))
 
@@ -118,6 +132,7 @@ def main():
     print(f"lane={a.lane} RED rows: {len(reds)}")
 
     exact_ref = 0
+    qstrip_ref = 0
     bare_ref = 0
     k_dist = collections.Counter()
     k1_rows = 0
@@ -128,6 +143,7 @@ def main():
     noref_states = set()
     tinted_rows = 0
     tinted_states = set()
+    tinted_tier = collections.Counter()
     vanilla_noref = collections.Counter()
     state_rows = collections.Counter()
 
@@ -136,14 +152,19 @@ def main():
         ref = resolved.get(state)
         how = None
         if ref is not None:
-            how = "exact"
+            how = "exact-plain"
             exact_ref += 1
         else:
-            b = bare(state)
-            ref = resolved.get(b)
+            ref = resolved_q.get(state)
             if ref is not None:
-                how = "bare"
-                bare_ref += 1
+                how = "q-strip"
+                qstrip_ref += 1
+            else:
+                b = bare(state)
+                ref = resolved.get(b) or resolved_q.get(b)
+                if ref is not None:
+                    how = "bare"
+                    bare_ref += 1
         if ref is not None:
             k = scales.get(ref, 1.0)
             k_dist[k] += 1
@@ -167,10 +188,13 @@ def main():
 
     states_total = len(state_rows)
     print(f"distinct states: {states_total}")
-    print(f"resolved exact: {exact_ref} rows; bare-demotion: {bare_ref} rows")
+    print(f"tier1 exact-plain:  {exact_ref} rows")
+    print(f"tier2 q-strip:      {qstrip_ref} rows")
+    print(f"tier3 bare-demotion: {bare_ref} rows")
     print(f"k=1 (no rescale): {k1_rows} rows / {len(k1_states)} states")
     print(f"k>1 (rescaled):   {kgt1_rows} rows / {len(kgt1_states)} states")
-    print(f"no-resolved-ref:  {len(noref_rows)} rows / {len(noref_states)} states")
+    print(f"no-resolved-ref (TRUE, post-e188):  {len(noref_rows)} rows / "
+          f"{len(noref_states)} states")
     print(f"  of which per-cell-tinted (state@page in tints-cells): "
           f"{tinted_rows} rows / {len(tinted_states)} states")
     print(f"  bare remainder by namespace: {dict(vanilla_noref.most_common(8))}")
