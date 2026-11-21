@@ -804,7 +804,7 @@ public final class CimSceneMod {
         killStaleGalleryEntities(level);
         java.nio.file.Path ledger = scenesDir.getParent().resolve("f2v")
                 .resolve("visual-gallery.resolved.tsv");
-        java.util.Map<String, String> refs = new java.util.HashMap<>();
+        java.util.Map<String, String[]> refs = new java.util.HashMap<>();
         if (java.nio.file.Files.exists(ledger)) {
             try (java.io.BufferedReader r = java.nio.file.Files.newBufferedReader(ledger)) {
                 String line;
@@ -814,7 +814,12 @@ public final class CimSceneMod {
                     if (p.length >= 3) {
                         // the first plain key wins; the #q-suffixed rows fall
                         // back through the e188 three-tier law's tier-2 form
-                        refs.putIfAbsent(p[0], p[2]);
+                        // 14-e218 the ledger's xRot/yRot columns (the paper
+                        // replay's own readResolvedManifest contract, cols
+                        // 4/5) ride along — the second cut's variant chain
+                        refs.putIfAbsent(p[0], new String[]{p[2],
+                                p.length >= 4 ? p[3] : "0",
+                                p.length >= 5 ? p[4] : "0"});
                     }
                 }
             } catch (Exception e) {
@@ -847,17 +852,44 @@ public final class CimSceneMod {
                     built++;
                     // the f2v overlay: the plain-key resolve, then the tier-2
                     // #q-strip demotion (the e188 three-tier law verbatim)
-                    String ref = refs.get(stateStr);
-                    if (ref == null) {
-                        ref = refs.get(stateStr + "#q");
+                    // 14-e218 THE VARIANT CHAIN'S INPUTS (the ledger's cols
+                    // 4/5 = the paper replay's own xRot/yRot contract)
+                    String[] row0 = refs.get(stateStr);
+                    if (row0 == null) {
+                        row0 = refs.get(stateStr + "#q");
+                    }
+                    int xRot = 0, yRot = 0;
+                    String ref = null;
+                    if (row0 != null) {
+                        ref = row0[0];
+                        try {
+                            xRot = Integer.parseInt(row0[1].trim());
+                        } catch (NumberFormatException bad) {
+                            xRot = 0;
+                        }
+                        try {
+                            yRot = Integer.parseInt(row0[2].trim());
+                        } catch (NumberFormatException bad) {
+                            yRot = 0;
+                        }
                     }
                     if (ref == null) {
                         // the bare-id demotion (tier 3)
                         String bare = stateStr.split("\\[", 2)[0];
-                        for (java.util.Map.Entry<String, String> e : refs.entrySet()) {
+                        for (java.util.Map.Entry<String, String[]> e : refs.entrySet()) {
                             if (e.getKey().split("#q", 2)[0].equals(bare)
                                     && e.getKey().contains(stateStr.split("\\[", 2)[0])) {
-                                ref = e.getValue();
+                                ref = e.getValue()[0];
+                                try {
+                                    xRot = Integer.parseInt(e.getValue()[1].trim());
+                                } catch (NumberFormatException bad) {
+                                    xRot = 0;
+                                }
+                                try {
+                                    yRot = Integer.parseInt(e.getValue()[2].trim());
+                                } catch (NumberFormatException bad) {
+                                    yRot = 0;
+                                }
                                 break;
                             }
                         }
@@ -898,9 +930,19 @@ public final class CimSceneMod {
                     // (NbtOps.INSTANCE, ...).ifSuccess(put) — mirrored here
                     // byte-identically, the same route the vanilla loader
                     // parses (EXTENDED_CODEC.decode off "transformation")).
+                    // 14-e218 THE VARIANT CHAIN (the verbatim paper law, the
+                    // CimPlugin placement receipt): the variant rotations ride
+                    // NEGATED (the vanilla x=90 = R_x(-90) — the chain-drive
+                    // receipt) and the entity-space counter-yaw lands LEFT of
+                    // the 26.3 ItemDisplayRenderer's own PI-around-Y —
+                    // rotationXYZ(-x, -y, 0).rotateY(PI); straight states keep
+                    // the (0,1,0,0) form exactly (x=y=0 collapses to it).
                     com.mojang.math.Transformation trn = new com.mojang.math.Transformation(
                             new org.joml.Vector3f(0.5f, 0.5f, 0.46f),
-                            new org.joml.Quaternionf(0f, 1f, 0f, 0f),
+                            new org.joml.Quaternionf().rotationXYZ(
+                                    -(float) Math.toRadians(xRot),
+                                    -(float) Math.toRadians(yRot), 0f)
+                                    .rotateY((float) Math.PI),
                             new org.joml.Vector3f(1f, 1f, 1f),
                             new org.joml.Quaternionf(0f, 0f, 0f, 1f));
                     com.mojang.math.Transformation.EXTENDED_CODEC
@@ -912,7 +954,8 @@ public final class CimSceneMod {
                     if (level.addFreshEntity(disp)) {
                         displayed++;
                     }
-                    manifestRows.add("cell\t" + x + "\t" + y + "\t" + z + "\t" + stateStr + "\t" + ref);
+                    manifestRows.add("cell\t" + x + "\t" + y + "\t" + z + "\t" + stateStr + "\t" + ref
+                            + "\t" + xRot + "\t" + yRot);
                 } catch (Exception buildFail) {
                     failed++;
                     if (failed <= 3) {
