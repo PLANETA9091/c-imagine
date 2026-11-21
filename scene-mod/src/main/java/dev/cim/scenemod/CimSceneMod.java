@@ -867,6 +867,9 @@ public final class CimSceneMod {
             }
         }
         int built = 0, failed = 0, displayed = 0, noref = 0;
+        // 14-e248 THE CONVERGENCE PASS's input (the placed cells, the loop
+        // collects them for the post-build re-set below)
+        java.util.List<java.util.Map.Entry<BlockPos, BlockState>> placed = new java.util.ArrayList<>();
         List<String> manifestRows = new ArrayList<>();
         manifestRows.add("wall\tcol\trow\tx\ty\tz\tstate\tref");
         try (java.io.BufferedReader r = java.nio.file.Files.newBufferedReader(manifest)) {
@@ -890,6 +893,7 @@ public final class CimSceneMod {
                             BuiltInRegistries.BLOCK.asLookup(), stateStr, false).blockState();
                     level.setBlock(pos, st, 3);
                     built++;
+                    placed.add(java.util.Map.entry(pos, st));
                     // the f2v overlay: the plain-key resolve, then the tier-2
                     // #q-strip demotion (the e188 three-tier law verbatim)
                     // 14-e218 THE VARIANT CHAIN'S INPUTS (the ledger's cols
@@ -1060,6 +1064,16 @@ public final class CimSceneMod {
         } catch (Exception e) {
             LOGGER.error("[cimscene] gallery-ours: manifest read failed", e);
             return 0;
+        }
+        // 14-e248 THE CONVERGENCE PASS (measured the e244/e247 joins: the
+        // wall-connection states = the ONE red class cross-family — the
+        // vanilla wall's connection state machine rides the flag-3 shape
+        // updates and the batch's fixpoint can land one update short of the
+        // truth's own settled walk; the re-set re-fires the update chain =
+        // the idempotent convergence probe — the flight MEASURES whether
+        // the pass closes the class)
+        for (java.util.Map.Entry<BlockPos, BlockState> e : placed) {
+            level.setBlock(e.getKey(), e.getValue(), 3);
         }
         java.nio.file.Path out = scenesDir.resolve(stem + "-ours.tsv");
         try {
