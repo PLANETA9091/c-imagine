@@ -1309,6 +1309,28 @@ public final class F2vPack {
     }
 
     /** The items/ definition of an allocated item: the mod's own model (or its composite), as the model node. */
+    private static void emitDoorOutlineAsset(Map<String, byte[]> entries) throws IOException {
+        String asset = "c-imagine:_door/outline";
+        var texture = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        var pixels = new int[16 * 16];
+        java.util.Arrays.fill(pixels, 0xff181818);
+        texture.setRGB(0, 0, 16, 16, pixels, 0, 16);
+        var png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(texture, "png", png);
+        entries.put("assets/c-imagine/textures/block/_door/outline.png", png.toByteArray());
+        // Dedicated dye variant used by the invisible shulker collision entities.
+        png.reset();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(1, 1,
+                java.awt.image.BufferedImage.TYPE_INT_ARGB), "png", png);
+        entries.put("assets/minecraft/textures/entity/shulker/shulker_magenta.png", png.toByteArray());
+        entries.put("assets/c-imagine/models/_door/outline.json", """
+                {"parent":"minecraft:block/cube_all","textures":{"all":"c-imagine:block/_door/outline"},
+                "ambientocclusion":false,"gui_light":"front"}
+                """.getBytes(StandardCharsets.UTF_8));
+        entries.put("assets/c-imagine/items/_door/outline.json",
+                allocatedItemDef(asset).getBytes(StandardCharsets.UTF_8));
+    }
+
     static String allocatedItemDef(String ref) {
         JsonObject node = GalleryPack.itemNode(ref);
         return "{\n  \"model\": " + (node != null ? node : itemModelNode(ref)) + "\n}\n";
@@ -2454,30 +2476,99 @@ public final class F2vPack {
                         state.getBytes(StandardCharsets.UTF_8));
             }
         }
-        if (emittedBlocks.stream().anyMatch(row -> row.moddedBlockId().equals("create:andesite_door"))) {
-            try (JarCache cache = new JarCache(jars)) {
-                byte[] source = cache.read("assets/create/blockstates/andesite_door.json");
-                byte[] vanilla = cache.read("assets/minecraft/blockstates/iron_door.json");
-                if (source != null && vanilla != null) {
-                    JsonObject iron = JsonParser.parseString(new String(vanilla, StandardCharsets.UTF_8))
-                            .getAsJsonObject().getAsJsonObject("variants");
-                    JsonObject door = JsonParser.parseString(new String(source, StandardCharsets.UTF_8))
-                            .getAsJsonObject().getAsJsonObject("variants");
-                    JsonObject variants = new JsonObject();
-                    for (var variant : iron.entrySet()) {
-                        String key = variant.getKey();
-                        boolean open = key.contains("open=true");
-                        variants.add(key + ",powered=" + open, variant.getValue());
-                        JsonObject modded = door.getAsJsonObject(key + ",visible=true");
-                        boolean available = modded != null && copyModelRef(cache,
-                                modded.get("model").getAsString(), entries, warnings) != null;
-                        variants.add(key + ",powered=" + !open, available ? modded : variant.getValue());
-                    }
-                    JsonObject merged = new JsonObject();
-                    merged.add("variants", variants);
-                    entries.put("assets/minecraft/blockstates/iron_door.json",
-                            merged.toString().getBytes(StandardCharsets.UTF_8));
+        try (JarCache cache = new JarCache(jars)) {
+            StringBuilder doors = new StringBuilder();
+            for (String id : emittedBlocks.stream().map(VisualBlock::moddedBlockId).distinct().sorted().toList()) {
+                int colon = id.indexOf(':');
+                String namespace = id.substring(0, colon);
+                String path = id.substring(colon + 1);
+                String asset = namespace + "/" + path;
+                String modelPath = "assets/" + namespace + "/models/block/" + path + "/fold_";
+                boolean folding = cache.read(modelPath + "left.json") != null
+                        && cache.read(modelPath + "right.json") != null;
+                byte[] source = cache.read("assets/" + namespace + "/blockstates/" + path + ".json");
+                if (source == null) {
+                    continue;
                 }
+                com.google.gson.JsonElement state;
+                try {
+                    state = JsonParser.parseString(new String(source, StandardCharsets.UTF_8));
+                } catch (com.google.gson.JsonParseException invalidState) {
+                    warnings.add("Invalid door blockstate: " + id);
+                    continue;
+                }
+                if (!state.isJsonObject()) {
+                    continue;
+                }
+                var variants = state.getAsJsonObject().get("variants");
+                if (variants == null || !variants.isJsonObject() || variants.getAsJsonObject().keySet().stream()
+                        .noneMatch(key -> key.contains("half=upper") && key.contains("open=true"))) {
+                    continue;
+                }
+                var doorVariants = variants.getAsJsonObject();
+                Map<String, String> models = new TreeMap<>();
+                if (folding) {
+                    String model = namespace + ":block/" + path + "/fold_";
+                    models.put("left", model + "left");
+                    models.put("right", model + "right");
+                } else {
+                    // The sliding renderer draws the closed, visible block model for each half.
+                    for (String half : List.of("lower", "upper")) {
+                        var required = List.of("facing=east", "half=" + half,
+                                "hinge=left", "open=false", "visible=true");
+                        var variant = doorVariants.entrySet().stream()
+                                .filter(entry -> List.of(entry.getKey().split(",")).containsAll(required))
+                                .map(Map.Entry::getValue).findFirst().orElse(null);
+                        if (variant != null && variant.isJsonObject()) {
+                            var model = variant.getAsJsonObject().get("model");
+                            if (model != null && model.isJsonPrimitive() && model.getAsJsonPrimitive().isString()) {
+                                models.put(half, model.getAsString());
+                            }
+                        }
+                    }
+                }
+                if (models.size() != 2) {
+                    continue;
+                }
+                Map<String, String> panels = new TreeMap<>();
+                for (var model : models.entrySet()) {
+                    String ref = copyModelRef(cache, model.getValue(), entries, warnings);
+                    String panel = ref == null ? null : safeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                    if (panel != null) {
+                        GalleryPack.setCompositeRenderType(entries, panel, "cutout");
+                        panels.put(model.getKey(), panel);
+                    }
+                }
+                if (panels.size() == 2) {
+                    doors.append(id).append('\t').append(folding ? "folding" : "sliding").append('\n');
+                    for (var panel : panels.entrySet()) {
+                        entries.put("assets/c-imagine/items/_door/" + asset + "/" + panel.getKey() + ".json",
+                                allocatedItemDef(panel.getValue()).getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+            }
+            byte[] vanilla = cache.read("assets/minecraft/blockstates/iron_door.json");
+            if (!doors.isEmpty() && vanilla != null) {
+                JsonObject iron = JsonParser.parseString(new String(vanilla, StandardCharsets.UTF_8))
+                        .getAsJsonObject().getAsJsonObject("variants");
+                String empty = "c-imagine:block/door_projection_empty";
+                entries.put("assets/c-imagine/models/block/door_projection_empty.json",
+                        "{\"elements\":[]}".getBytes(StandardCharsets.UTF_8));
+                JsonObject variants = new JsonObject();
+                for (var variant : iron.entrySet()) {
+                    String key = variant.getKey();
+                    boolean open = key.contains("open=true");
+                    variants.add(key + ",powered=" + open, variant.getValue());
+                    JsonObject hidden = new JsonObject();
+                    hidden.addProperty("model", empty);
+                    variants.add(key + ",powered=" + !open, hidden);
+                }
+                JsonObject merged = new JsonObject();
+                merged.add("variants", variants);
+                entries.put("assets/minecraft/blockstates/iron_door.json",
+                        merged.toString().getBytes(StandardCharsets.UTF_8));
+                emitDoorOutlineAsset(entries);
+                entries.put("c-imagine/door-projections.tsv", doors.toString().getBytes(StandardCharsets.UTF_8));
             }
         }
         blockVariants.sort(Map.Entry.comparingByKey());
@@ -3183,7 +3274,7 @@ public final class F2vPack {
         if (me != null) {
             meta = zf.getInputStream(me).readAllBytes();
         }
-        entries.put(texFile, GalleryPack.stillFrameCrop(ref, bytes, meta, warnings));
+        GalleryPack.writeTexture(entries, texFile, ref, bytes, meta, warnings);
         if (!automatic) atlasReferencedTexture(ref, entries);
     }
 

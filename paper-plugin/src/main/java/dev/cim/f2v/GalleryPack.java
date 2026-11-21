@@ -3486,7 +3486,9 @@ public final class GalleryPack {
             byte[] meta = readPngFromJars(jars, png + ".mcmeta");
             // 14-dr: putIfAbsent keeps a frame-0 crop a priori writer made
             // (the same source sprite may already be hosted by copyTextureRef)
-            entries.putIfAbsent(png, stillFrameCrop(sprite, bytes, meta, warnings));
+            if (!entries.containsKey(png)) {
+                writeTexture(entries, png, sprite, bytes, meta, warnings);
+            }
             return sprite;
         }
         String key = "items/" + (sprite.startsWith("@") ? "raw_" + sprite.substring(1) : sprite)
@@ -3522,7 +3524,75 @@ public final class GalleryPack {
                                   TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
         String hosted = "assets/" + WRAPPER_NS + "/textures/block/" + key + ".png";
         byte[] meta = readPngFromJars(jars, sourcePng + ".mcmeta");
-        entries.put(hosted, stillFrameCrop(sourcePng, bytes, meta, warnings));
+        writeTexture(entries, hosted, sourcePng, bytes, meta, warnings);
+    }
+
+    static void writeTexture(TreeMap<String, byte[]> entries, String path, String sprite,
+                             byte[] png, byte[] metadata, List<String> warnings) {
+        if (metadata != null && Boolean.getBoolean("cim.f2v.animatedTextures")) {
+            byte[] animation = sanitizeAnimationMetadata(sprite, png, metadata, warnings);
+            if (animation != null) {
+                entries.put(path, png);
+                entries.put(path + ".mcmeta", animation);
+                return;
+            }
+        }
+        entries.put(path, stillFrameCrop(sprite, png, metadata, warnings));
+    }
+
+    private static byte[] sanitizeAnimationMetadata(String sprite, byte[] png, byte[] meta,
+                                            List<String> warnings) {
+        int[] dims = pngDims(png);
+        if (dims == null) {
+            warnings.add("gallery: animation metadata dropped (unreadable PNG): " + sprite);
+            return null;
+        }
+        JsonObject root;
+        try {
+            root = JsonParser.parseString(new String(meta, StandardCharsets.UTF_8)).getAsJsonObject();
+        } catch (RuntimeException bad) {
+            warnings.add("gallery: animation metadata dropped (unparseable mcmeta): " + sprite);
+            return null;
+        }
+        if (!root.has("animation") || !root.get("animation").isJsonObject()) {
+            return meta;
+        }
+        JsonObject anim = root.getAsJsonObject("animation");
+        int frameW = anim.has("width") ? anim.get("width").getAsInt() : dims[0];
+        int frameH = anim.has("height") ? anim.get("height").getAsInt() : dims[0];
+        if (frameW <= 0 || frameH <= 0 || dims[0] % frameW != 0 || dims[1] % frameH != 0) {
+            warnings.add("gallery: animation metadata dropped (strip " + dims[0] + "x" + dims[1]
+                    + " does not tile " + frameW + "x" + frameH + "): " + sprite);
+            return null;
+        }
+        int total = (dims[0] / frameW) * (dims[1] / frameH);
+        if (total <= 1 || !anim.has("frames") || !anim.get("frames").isJsonArray()) {
+            return meta;
+        }
+        int defaultTime = anim.has("frametime") ? anim.get("frametime").getAsInt() : 1;
+        int valid = 0;
+        for (JsonElement e : anim.getAsJsonArray("frames")) {
+            int index;
+            int time;
+            if (e.isJsonObject()) {
+                JsonObject f = e.getAsJsonObject();
+                index = f.has("index") ? f.get("index").getAsInt() : -1;
+                time = f.has("time") ? f.get("time").getAsInt() : defaultTime;
+            } else {
+                index = e.isJsonPrimitive() && e.getAsJsonPrimitive().isNumber() ? e.getAsInt() : -1;
+                time = defaultTime;
+            }
+            if (index >= 0 && index < total && time > 0) {
+                valid++;
+            }
+        }
+        if (valid >= 2) {
+            return meta;
+        }
+        warnings.add("gallery: animation frames list (" + valid + " valid of " + total
+                + ") would render the strip static — animating sequentially: " + sprite);
+        anim.remove("frames");
+        return root.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     /**

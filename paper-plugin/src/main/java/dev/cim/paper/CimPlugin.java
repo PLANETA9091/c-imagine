@@ -64,7 +64,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /** cim.f2v.autoOffer resolved AND server.properties does not pin a resource-pack. */
     private Map<String, String> commandItems = Map.of();
     private java.util.Set<String> blockDisplays = java.util.Set.of();
-    private boolean andesiteDoorProjection;
+    private Map<String, Boolean> projectedDoors = Map.of();
+
+    public boolean hasDoorProjection(String id) {
+        return id != null && projectedDoors.containsKey(id);
+    }
+
+    public boolean isSlidingDoorProjection(String id) {
+        return projectedDoors.getOrDefault(id, false);
+    }
 
     public Map<String, String> commandItems() {
         return commandItems;
@@ -72,10 +80,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     public boolean usesBlockDisplay(String id) {
         return blockDisplays.contains(id);
-    }
-
-    public boolean hasAndesiteDoorProjection() {
-        return andesiteDoorProjection;
     }
 
     private void loadCommandItems(Path pack) throws IOException {
@@ -87,11 +91,21 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         var displays = new java.util.HashSet<String>();
         String prefix = "assets/c-imagine/items/";
         try (var zip = new java.util.zip.ZipFile(pack.toFile())) {
-            andesiteDoorProjection = zip.getEntry("assets/minecraft/blockstates/iron_door.json") != null;
+            var doors = zip.getEntry("c-imagine/door-projections.tsv");
+            var doorTypes = new java.util.HashMap<String, Boolean>();
+            if (doors != null) {
+                try (var input = zip.getInputStream(doors)) {
+                    new String(input.readAllBytes(), StandardCharsets.UTF_8).lines().forEach(line -> {
+                        String[] fields = line.split("\t", 2);
+                        doorTypes.put(fields[0], fields.length == 2 && fields[1].equals("sliding"));
+                    });
+                }
+            }
+            projectedDoors = Map.copyOf(doorTypes);
             var entries = zip.entries();
             while (entries.hasMoreElements()) {
                 String path = entries.nextElement().getName();
-                if (!path.startsWith(prefix) || !path.endsWith(".json")) {
+                if (!path.startsWith(prefix) || !path.endsWith(".json") || path.startsWith(prefix + "_door/")) {
                     continue;
                 }
                 String model = "c-imagine:" + path.substring(prefix.length(), path.length() - 5);

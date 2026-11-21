@@ -316,6 +316,19 @@ final class LiveBridge {
     }
 
     /** What a right click with a mod item on a block did: a menu, and/or a block it placed. */
+    String doorOutline(String nativeState) {
+        return call("door-outline\t" + nativeState);
+    }
+
+    Boolean useDoor(Player player, org.bukkit.block.Block bottom, String lowerState, String upperState,
+                    org.bukkit.block.BlockFace face) {
+        String reply = call("door-use\t" + player.getUniqueId() + "\t" + player.getName()
+                + "\t" + bottom.getX() + "\t" + bottom.getY() + "\t" + bottom.getZ()
+                + "\t" + lowerState + "\t" + upperState
+                + "\t" + face.name().toLowerCase(java.util.Locale.ROOT));
+        return reply.startsWith("door\t") ? Boolean.parseBoolean(reply.substring(5)) : null;
+    }
+
     record Placement(String id, int x, int y, int z, String state, String blockEntity,
                      List<org.bukkit.util.BoundingBox> collision) {
     }
