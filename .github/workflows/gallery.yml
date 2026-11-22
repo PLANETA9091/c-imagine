@@ -1063,8 +1063,14 @@ jobs:
           fi
           echo "sampling faces from run $PREV"
           python3 -m pip install -q pillow numpy
-          ARTS=$(curl -sf -H "Authorization: Bearer $GH_TOKEN" \
-            "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/$PREV/artifacts?per_page=100")
+          # 14-e250 PAGINATION FIX: a gallery run uploads >100 artifacts, and
+          # the listing hides everything past the 100-newest cutoff from a
+          # page-1-only read (the tenth flight: 133 artifacts, wall-truth-meta-0
+          # invisible to a page-1 reader while it existed) — fetch pages 1..3
+          # and merge before find-artifact.py reads the stream.
+          ARTS=$( { for P in 1 2 3; do curl -sf -H "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/$PREV/artifacts?per_page=100&page=$P" || true; echo; done; } \
+            | python3 scripts/f2v/artifacts-across-pages.py)
           for S in $(seq 0 $((K-1))); do
             for KIND in meta shots; do
               AID=$(echo "$ARTS" | python3 scripts/f2v/find-artifact.py "$KIND" "$S")
@@ -2447,10 +2453,14 @@ jobs:
         run: |
           set -euo pipefail
           FOUND=""
+          # 14-e250 PAGINATION FIX: the same hole as the join's race guard —
+          # page 1 only holds the 100 newest artifacts; a mid-flood poll must
+          # page through (the merged count across pages 1..3) or the screens
+          # artifact can sit hidden past the cutoff forever.
           for i in $(seq 1 80); do
-            N=$(curl -sf -m 30 -H "Authorization: Bearer ${{ github.token }}" \
-                  "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
-                | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for a in d['artifacts'] if a['name']=='wall-truth-screens-${{ matrix.shard }}' and not a['expired']))" || echo 0)
+            N=$( { for P in 1 2 3; do curl -sf -m 30 -H "Authorization: Bearer ${{ github.token }}" \
+                  "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100&page=$P" || true; echo; done; } \
+                | python3 scripts/f2v/artifacts-across-pages.py "wall-truth-screens-${{ matrix.shard }}" || echo 0)
             if [ "${N:-0}" -ge 1 ]; then FOUND=1; echo "truth art landed after ~$((i*30))s"; break; fi
             sleep 30
           done
@@ -3519,12 +3529,18 @@ jobs:
           # "Artifact not found" (the ours leg overtook the truth leg and the
           # download raced a not-yet-registered artifact). Poll the API until
           # BOTH artifacts exist, bounded 30 min.
+          # 14-e250 PAGINATION FIX (the measured s0 loss): the poll read ONLY
+          # page 1 of the run-artifacts listing; the tenth flight's run crossed
+          # 100 uploads (133 total) and wall-truth-meta-0 — registered 26 min
+          # before the wait began — sat on page 2, invisible to all 90 polls
+          # (30 min burned, join_pages=0). Page through 1..3 (a run's upload
+          # flood is bounded well below 300) and count across the merged pages.
           for ART in "wall-truth-shots-${{ matrix.shard }}" "wall-truth-meta-${{ matrix.shard }}"; do
             OK=""
             for i in $(seq 1 90); do
-              N=$(curl -sf -H "Authorization: Bearer ${{ github.token }}" \
-                    "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
-                  | python3 -c "import json,sys; d=json.load(sys.stdin); print(sum(1 for a in d['artifacts'] if a['name']=='$ART' and not a['expired']))" || echo 0)
+              N=$( { for P in 1 2 3; do curl -sf -H "Authorization: Bearer ${{ github.token }}" \
+                    "$GITHUB_API_URL/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100&page=$P" || true; echo; done; } \
+                  | python3 scripts/f2v/artifacts-across-pages.py "$ART" || echo 0)
               if [ "${N:-0}" -ge 1 ]; then OK=1; echo "artifact $ART present"; break; fi
               sleep 20
             done
