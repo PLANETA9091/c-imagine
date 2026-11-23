@@ -21,8 +21,9 @@ import java.util.function.Consumer;
  * a running MinecraftServer with a ServerLevel. So none is constructed: the object is
  * allocated, and every field a Player has (inventory, menus, synced data, attributes) is
  * taken from a plain {@link SessionPlayer} built on the facade level, with that player's
- * back-references pointed here. ServerPlayer's own fields stay empty; the methods that
- * would read them (game mode, the network) are answered by this class.
+ * back-references pointed here. ServerPlayer's own fields stay empty except the ones
+ * {@link #create} sets; the methods that would read them (game mode, the network) are
+ * answered by this class.
  *
  * <p>Memory: one Player's worth of objects, the same as the template it replaces.
  */
@@ -74,6 +75,12 @@ public final class SessionServerPlayer extends ServerPlayer {
             net.minecraft.server.level.ServerPlayerGameMode mode = new net.minecraft.server.level.ServerPlayerGameMode(self);
             mode.changeGameModeForPlayer(net.minecraft.world.level.GameType.SURVIVAL);
             gameMode.set(self, mode);
+            // ServerPlayer's constructor sets this to Vec3.ZERO. The allocation above skips the
+            // constructor, so it stayed null, and Player.getKnownMovement()'s callers (item use:
+            // ThrowablePotionItem.use -> Projectile.shootFromRotation reads .x) threw an NPE.
+            Field knownMovement = ServerPlayer.class.getDeclaredField("lastKnownClientMovement");
+            knownMovement.setAccessible(true);
+            knownMovement.set(self, net.minecraft.world.phys.Vec3.ZERO);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("cannot bind the session player's server", e);
         }
