@@ -520,6 +520,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return scene != null;
     }
 
+    /** True when the id is in the allocated set read at boot (the ids {@link #allocatedCarrier} serves). */
+    public boolean isAllocatedItem(String moddedId) {
+        return moddedId != null && allocatedItems.contains(moddedId);
+    }
+
     /** The real stack that shows as a modded item, or air when there is none. */
     ItemStack carrier(String moddedId) {
         F2vPack.VisualItem row = moddedId == null ? null : carrierRows.get(moddedId);
@@ -543,7 +548,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * A stack of an allocated mod item: a vanilla host, named by item_model (its own items/ definition in
      * the pack) and by the leaf name of its id. The id reads back through {@link #itemId}.
      */
-    private static ItemStack allocatedCarrier(String moddedId) {
+    public static ItemStack allocatedCarrier(String moddedId) {
         ItemStack stack = new ItemStack(Material.PAPER);
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
         org.bukkit.NamespacedKey model = org.bukkit.NamespacedKey.fromString(F2vPack.allocatedItemModel(moddedId));

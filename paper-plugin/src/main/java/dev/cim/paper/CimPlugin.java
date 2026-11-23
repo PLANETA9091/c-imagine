@@ -1126,23 +1126,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
             // inventory ops are main-thread-only (the net leg runs async)
-            String bare = visual.hostItem().substring(visual.hostItem().indexOf(':') + 1);
             boolean selectRow = !visual.isFloatDispatch();
             String verifiedLine = callSync(() -> {
-                Material material = Material.matchMaterial(bare);
-                if (material == null) {
+                ItemStack stack = manifestStack(visual);
+                if (stack == null) {
                     return "unknown host material " + visual.hostItem();
                 }
-                ItemStack stack = new ItemStack(material);
-                stack.editMeta(meta -> {
-                    CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
-                    if (selectRow) {
-                        cmd.setStrings(List.of(visual.selectValue()));
-                    } else {
-                        cmd.setFloats(List.of(visual.cmd()));
-                    }
-                    meta.setCustomModelDataComponent(cmd);
-                });
+                Material material = stack.getType();
                 var leftover = p.getInventory().addItem(stack);
                 // verify: the inventory must hold the host item with the exact CMD
                 boolean verified = false;
@@ -1176,6 +1166,97 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         } catch (Throwable t) {
             log().warning(LOG_PREFIX + "f2v item: give FAILED: " + t);
         }
+    }
+
+    /**
+     * The manifest carrier of one visual item: the host vanilla item with its
+     * custom_model_data component (strings for a select row, floats otherwise).
+     * Null when the host material is unknown. Shared by giveVisualItem and
+     * {@code /cim give}.
+     */
+    private static ItemStack manifestStack(dev.cim.f2v.F2vPack.VisualItem visual) {
+        String bare = visual.hostItem().substring(visual.hostItem().indexOf(':') + 1);
+        Material material = Material.matchMaterial(bare);
+        if (material == null) {
+            return null;
+        }
+        boolean selectRow = !visual.isFloatDispatch();
+        ItemStack stack = new ItemStack(material);
+        stack.editMeta(meta -> {
+            CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+            if (selectRow) {
+                cmd.setStrings(List.of(visual.selectValue()));
+            } else {
+                cmd.setFloats(List.of(visual.cmd()));
+            }
+            meta.setCustomModelDataComponent(cmd);
+        });
+        return stack;
+    }
+
+    /**
+     * {@code /cim give <player> <moddedItemId> [count]} — operator hand-out of a
+     * modded item. The id resolves through the manifest first (the stack
+     * giveVisualItem builds), then the allocated set (the stack ScreenHud's
+     * carrier builds). The count is split into stacks of the item's max stack
+     * size; anything the inventory cannot hold is reported as leftover.
+     * Runs on the server thread (command dispatch), so inventory ops are direct.
+     */
+    private void giveModdedItem(CommandSender sender, String playerName, String moddedId, String countArg) {
+        int count;
+        try {
+            count = Integer.parseInt(countArg);
+        } catch (NumberFormatException nfe) {
+            count = 0;
+        }
+        if (count < 1 || count > 4096) {
+            sender.sendMessage(LOG_PREFIX + "give: count must be 1..4096, got " + countArg);
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(playerName);
+        if (target == null) {
+            sender.sendMessage(LOG_PREFIX + "give: unknown player (not online): " + playerName);
+            return;
+        }
+        dev.cim.f2v.F2vPack.VisualItem row = null;
+        if (f2v != null) {
+            for (dev.cim.f2v.F2vPack.VisualItem r : f2v.items()) {
+                if (r.moddedId().equals(moddedId)) {
+                    row = r;
+                    break;
+                }
+            }
+        }
+        ItemStack template;
+        if (row != null) {
+            template = manifestStack(row);
+            if (template == null) {
+                sender.sendMessage(LOG_PREFIX + "give: unknown host material " + row.hostItem()
+                        + " for " + moddedId);
+                return;
+            }
+        } else if (dev.cim.hud.HudBootstrap.hasAllocatedItem(moddedId)) {
+            template = dev.cim.hud.ScreenHud.allocatedCarrier(moddedId);
+        } else {
+            sender.sendMessage(LOG_PREFIX + "give: unknown modded item id: " + moddedId
+                    + " (not in the manifest or the allocated set)");
+            return;
+        }
+        int max = Math.max(1, template.getMaxStackSize());
+        java.util.List<ItemStack> stacks = new java.util.ArrayList<>();
+        for (int remaining = count; remaining > 0; remaining -= max) {
+            ItemStack s = template.clone();
+            s.setAmount(Math.min(max, remaining));
+            stacks.add(s);
+        }
+        int left = 0;
+        for (ItemStack rest : target.getInventory().addItem(stacks.toArray(new ItemStack[0])).values()) {
+            left += rest.getAmount();
+        }
+        sender.sendMessage(LOG_PREFIX + "give: " + (count - left) + " x " + moddedId
+                + " -> " + target.getName() + (left > 0 ? " (" + left + " did not fit)" : ""));
+        log().info(LOG_PREFIX + "give: " + moddedId + " x" + (count - left) + " to " + target.getName()
+                + " by " + sender.getName());
     }
 
     /**
@@ -4899,6 +4980,20 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + " -> " + result);
             return true;
         }
+        // /cim give <player> <moddedItemId> [count] — operator hand-out of a
+        // modded item (manifest carrier first, then the allocated set).
+        if (args.length >= 1 && args[0].equalsIgnoreCase("give")) {
+            if (!sender.isOp()) {
+                sender.sendMessage(LOG_PREFIX + "give: operator required");
+                return true;
+            }
+            if (args.length < 3 || args.length > 4) {
+                sender.sendMessage(LOG_PREFIX + "give: usage /cim give <player> <moddedItemId> [count]");
+                return true;
+            }
+            giveModdedItem(sender, args[1], args[2], args.length == 4 ? args[3] : "1");
+            return true;
+        }
         // /cim placeblock <player> [moddedId] — the parity matrix "blocks"
         // pixel-leg surface: the note_block stand-in placed in the viewer's
         // front (block-channel-26-3.md).
@@ -5237,6 +5332,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "native module: loaded by CRUSSTY runtime before kernel classes");
         sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));
         sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
+        sender.sendMessage(LOG_PREFIX + "give: /cim give <player> <moddedItemId> [count]");
         sender.sendMessage(LOG_PREFIX + "blocks: /cim placeblock <player> [moddedId]");
         sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
         sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> "
