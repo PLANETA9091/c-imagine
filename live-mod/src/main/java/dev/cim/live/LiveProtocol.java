@@ -475,8 +475,45 @@ public final class LiveProtocol {
                 default -> "error\tunknown command " + head[0];
             };
         } catch (Throwable t) {
-            return "error\t" + t.getClass().getSimpleName() + ": " + t.getMessage();
+            return "error\t" + t.getClass().getSimpleName() + ": " + oneLine(t.getMessage()) + trace(t);
         }
+    }
+
+    /**
+     * A message or frame text as one reply field: the reply is split on newlines and tabs, so
+     * neither may survive into it.
+     */
+    private static String oneLine(String s) {
+        return s == null ? "null" : s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ');
+    }
+
+    /**
+     * The top five frames of a throwable and of its cause, on one line for an error reply:
+     * {@code  at Class.method(File:line) <- Class.method(File:line) ... caused by Cls: msg at ...}.
+     */
+    private static String trace(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        Throwable cur = t;
+        for (int depth = 0; cur != null && depth < 2; depth++) {
+            if (depth == 0) {
+                sb.append(" at ");
+            } else {
+                sb.append(" caused by ").append(cur.getClass().getSimpleName()).append(": ")
+                        .append(oneLine(cur.getMessage())).append(" at ");
+            }
+            StackTraceElement[] frames = cur.getStackTrace();
+            for (int i = 0; i < Math.min(5, frames.length); i++) {
+                if (i > 0) {
+                    sb.append(" <- ");
+                }
+                StackTraceElement f = frames[i];
+                sb.append(oneLine(f.getClassName())).append('.').append(oneLine(f.getMethodName())).append('(')
+                        .append(f.getFileName() == null ? "?" : oneLine(f.getFileName())).append(':')
+                        .append(f.getLineNumber()).append(')');
+            }
+            cur = cur.getCause();
+        }
+        return sb.toString();
     }
 
     /**
