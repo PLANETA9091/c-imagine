@@ -468,11 +468,31 @@ public final class Worldgen {
         }
     }
 
+    /** Vanilla {@code /locate biome} steps: ServerLevel.findClosestBiome3d(pos, 6400, 32, 64). */
+    private static final int LOCATE_HORIZONTAL_STEP = 32;
+    private static final int LOCATE_VERTICAL_STEP = 64;
+    /** A locate gives up after this long; the answer is then "none" (not found). */
+    private static final long LOCATE_BUDGET_NANOS = 30_000_000_000L;
+
+    /** Thrown from inside the biome predicate to stop the search at the time budget. */
+    private static final class LocateTimeout extends RuntimeException {
+        LocateTimeout() {
+            super(null, null, false, false);
+        }
+    }
+
     /**
      * {@code locate TAB biomeId TAB x TAB z TAB radius TAB seed} — the nearest
      * position of a modded biome, from the same biome source the chunk map uses.
      * The plugin intercepts {@code /locate biome <modded id>} and answers with
      * this, because the vanilla command searches the generator's vanilla source.
+     *
+     * <p>Runs on the caller's thread (the plugin calls it from an async task, never
+     * from Paper's main thread). The lock is held only to read the sampler and the
+     * world, NOT during the search: a search under {@link #LOCK} would stall every
+     * {@code biomes} call of the chunk threads. The sampler is the shared one that
+     * chunk generation also reads from several threads, so the search reads it the
+     * same way.
      */
     private static String locate(String[] head) {
         MinecraftServer real = realServer();
@@ -484,28 +504,44 @@ public final class Worldgen {
         int z = Integer.parseInt(head[3]);
         int radius = Integer.parseInt(head[4]);
         long seed = Long.parseLong(head[5]);
+        ServerLevel overworld;
+        BiomeSource source;
+        RandomState state;
+        Registry<Biome> registry;
         synchronized (LOCK) {
-            ServerLevel overworld = real.overworld();
+            overworld = real.overworld();
             ChunkGenerator generator = overworld.getChunkSource().getGenerator();
-            if (!(generator instanceof NoiseBasedChunkGenerator noise)) {
+            if (!(generator instanceof NoiseBasedChunkGenerator)) {
                 return "error\tgenerator is " + generator.getClass().getSimpleName() + "\n";
             }
             if (randomState == null || randomStateSeed != seed) {
                 return "wait\n";
             }
-            ResourceLocation want = ResourceLocation.parse(id);
-            Registry<Biome> registry = overworld.registryAccess().registryOrThrow(Registries.BIOME);
-            com.mojang.datafixers.util.Pair<BlockPos, Holder<Biome>> found =
-                    generator.getBiomeSource().findBiomeHorizontal(
-                            x, 63, z, radius,
-                            holder -> want.equals(registry.getKey(holder.value())),
-                            new WorldgenRandom(new XoroshiroRandomSource(seed)), randomState.sampler());
-            if (found == null) {
-                return "none\n";
-            }
-            BlockPos at = found.getFirst();
-            return "found\t" + at.getX() + "\t" + at.getZ() + "\n";
+            source = generator.getBiomeSource();
+            state = randomState;
+            registry = overworld.registryAccess().registryOrThrow(Registries.BIOME);
         }
+        ResourceLocation want = ResourceLocation.parse(id);
+        long deadline = System.nanoTime() + LOCATE_BUDGET_NANOS;
+        com.mojang.datafixers.util.Pair<BlockPos, Holder<Biome>> found;
+        try {
+            found = source.findClosestBiome3d(
+                    new BlockPos(x, 63, z), radius, LOCATE_HORIZONTAL_STEP, LOCATE_VERTICAL_STEP,
+                    holder -> {
+                        if (System.nanoTime() - deadline > 0) {
+                            throw new LocateTimeout();
+                        }
+                        return want.equals(registry.getKey(holder.value()));
+                    },
+                    state.sampler(), overworld);
+        } catch (LocateTimeout timeout) {
+            return "none\n";
+        }
+        if (found == null) {
+            return "none\n";
+        }
+        BlockPos at = found.getFirst();
+        return "found\t" + at.getX() + "\t" + at.getZ() + "\n";
     }
 
     /** Run-length form of one biome column: {@code i:n,i:n,...}. */

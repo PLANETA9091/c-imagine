@@ -47,6 +47,8 @@ implements Listener {
     private static final Pattern GIVE = Pattern.compile("((?:minecraft:)?give +.+? +)([a-z0-9_.-]+:[a-z0-9_./-]+)( +[0-9]+)?");
     private static final Pattern SUMMON = Pattern.compile("(?:minecraft:)?summon +([a-z0-9_.-]+:[a-z0-9_./-]+)(?= |$)");
     private static final Pattern LOCATE_BIOME = Pattern.compile("(?:minecraft:)?locate +biome +(" + ID + ") *");
+    /** Senders with a modded locate still running: one at a time per sender (main thread only). */
+    private final java.util.Set<String> locating = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final CimPlugin plugin;
     private final ItemText itemText;
     private final List<String> biomes;
@@ -174,6 +176,11 @@ implements Listener {
      * the world generator's biome source, which knows only vanilla biomes, so it
      * could never find one. The layer's biome source (the same map the chunks
      * get) answers instead, through the worldgen channel.
+     *
+     * <p>The layer search takes seconds, so it runs on an async task, never on the
+     * server thread (a blocked server thread trips the Paper watchdog). The sender
+     * location is read here, on the server thread; the answer is delivered back on
+     * the server thread. One locate per sender at a time.
      */
     private boolean interceptLocate(org.bukkit.command.CommandSender sender, String command) {
         Matcher match = LOCATE_BIOME.matcher(command);
@@ -184,26 +191,52 @@ implements Listener {
         if (!biomes.contains(id)) {
             return false; // a vanilla biome: the server's own search is correct
         }
+        String senderKey = sender instanceof org.bukkit.entity.Player player
+                ? player.getUniqueId().toString() : "console";
+        if (!this.locating.add(senderKey)) {
+            sender.sendMessage(Component.text("A locate is already running for you; wait for its answer.",
+                    net.kyori.adventure.text.format.NamedTextColor.RED));
+            return true;
+        }
         org.bukkit.Location at = sender instanceof org.bukkit.entity.Player player
                 ? player.getLocation()
                 : org.bukkit.Bukkit.getWorlds().get(0).getSpawnLocation();
-        String answer = dev.cim.worldgen.ModWorldgen.ask("locate\t" + id + "\t" + at.getBlockX()
-                + "\t" + at.getBlockZ() + "\t" + 6400 + "\t" + at.getWorld().getSeed());
+        String request = "locate\t" + id + "\t" + at.getBlockX() + "\t" + at.getBlockZ() + "\t" + 6400
+                + "\t" + at.getWorld().getSeed();
+        sender.sendMessage(Component.text("Locating...", net.kyori.adventure.text.format.NamedTextColor.GRAY));
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(this.plugin, () -> {
+            String answer;
+            try {
+                answer = dev.cim.worldgen.ModWorldgen.ask(request);
+            } catch (RuntimeException e) {
+                answer = null;
+            }
+            String finalAnswer = answer;
+            org.bukkit.Bukkit.getScheduler().runTask(this.plugin, () -> {
+                this.locating.remove(senderKey);
+                if (sender instanceof org.bukkit.entity.Player player && !player.isOnline()) {
+                    return;
+                }
+                sender.sendMessage(locateMessage(id, finalAnswer));
+            });
+        });
+        return true;
+    }
+
+    /** The answer text of a locate; the same wording as the vanilla command. */
+    private static Component locateMessage(String id, String answer) {
         if (answer == null || answer.startsWith("wait")) {
-            sender.sendMessage(Component.text("The layer is not ready yet; try again in a moment.",
-                    net.kyori.adventure.text.format.NamedTextColor.RED));
-            return true;
+            return Component.text("The layer is not ready yet; try again in a moment.",
+                    net.kyori.adventure.text.format.NamedTextColor.RED);
         }
         if (answer.startsWith("found\t")) {
             String[] f = answer.trim().split("\t");
             if (f.length >= 3) {
-                sender.sendMessage(Component.text("The nearest " + id + " is at [" + f[1] + ", ~, " + f[2] + "]"));
-                return true;
+                return Component.text("The nearest " + id + " is at [" + f[1] + ", ~, " + f[2] + "]");
             }
         }
-        sender.sendMessage(Component.text("Could not find " + id + " within 6400 blocks",
-                net.kyori.adventure.text.format.NamedTextColor.RED));
-        return true;
+        return Component.text("Could not find " + id + " within 6400 blocks",
+                net.kyori.adventure.text.format.NamedTextColor.RED);
     }
 
     private String rewriteGive(String command) {
