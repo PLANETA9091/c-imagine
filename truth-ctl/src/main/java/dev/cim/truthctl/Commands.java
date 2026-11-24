@@ -836,6 +836,7 @@ final class Commands {
             o.addProperty("screen", screenName(mc.screen));
             JsonObject po = new JsonObject();
             po.add("position", vec(p.position()));
+            po.add("velocity", vec(p.getDeltaMovement()));
             po.addProperty("health", p.getHealth());
             o.add("player", po);
             o.addProperty("health", p.getHealth());
@@ -1316,6 +1317,7 @@ final class Commands {
             o.addProperty("pitch", p.getXRot());
             JsonObject po = new JsonObject();
             po.add("position", vec(p.position()));
+            po.add("velocity", vec(p.getDeltaMovement()));
             po.addProperty("health", p.getHealth());
             po.addProperty("food", p.getFoodData().getFoodLevel());
             po.addProperty("saturation", p.getFoodData().getSaturationLevel());

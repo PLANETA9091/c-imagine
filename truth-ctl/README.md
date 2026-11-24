@@ -47,6 +47,7 @@ click-slot, open-inventory, close, command, chat, messages, entities, screenshot
   `LocalPlayer.respawn()` (the Respawn button path), closes the death screen and waits up
   to 10 s for the player to be alive in world. Reply: `{ok, respawned:true, screen,
   player{position,health}, health}`. If not dead: `{ok:true, respawned:false}`.
+- `state` also reports `player.velocity` ([x,y,z], blocks per tick, `getDeltaMovement`).
 - `use-item [--hold TICKS]`: without `--hold`, one `useItem` click (reply after 5 ticks,
   `inventory_change`). With `--hold TICKS` (default 40 if the number is omitted, 1..72000),
   a held right-click: `useItem` on the first tick, `keyUse` kept pressed, released with
