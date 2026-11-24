@@ -39,6 +39,11 @@ public final class HudBootstrap {
         return what.equals("move") ? screens.move(player) : screens.press(player, Integer.parseInt(what));
     }
 
+    /** True when the id is an allocated mod item (false while the HUD layer is not up). */
+    public static boolean hasAllocatedItem(String moddedId) {
+        return screens != null && screens.isAllocatedItem(moddedId);
+    }
+
     public static java.util.List<String> listForHarness() {
         return screens == null ? java.util.List.of() : screens.listForHarness();
     }
