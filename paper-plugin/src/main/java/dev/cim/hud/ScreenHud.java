@@ -220,6 +220,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Mod block id to the note block that stands for it in Paper's world. */
     private final Map<String, F2vPack.VisualBlock> blockCarrierRows = new HashMap<>();
     private final Map<UUID, Session> open = new HashMap<>();
+    /** Vanilla client's rightClickDelay: no use from the client sooner than this many ticks after the last. */
+    static final int RIGHT_CLICK_DELAY_TICKS = 4;
+    /** Server tick of each player's last modded block or air use, for the follow-up guard in onUse. */
+    private final Map<UUID, Long> moddedUseTick = new HashMap<>();
 
     private final Path modsDir;
 
@@ -2023,9 +2027,40 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
     }
 
-    /** Opens the screen the walk saw this block or item open, or passes the click to it. */
+    /**
+     * The follow-up guard. A vanilla client sends ServerboundUseItemOnPacket first; when its own
+     * prediction passes (a carrier, which the client does not know) it also sends
+     * ServerboundUseItemPacket in the same call. On a real server that second use ray-traces onto
+     * the block the first use just placed and fires a new RIGHT_CLICK_BLOCK. The client also never
+     * sends a use sooner than 4 ticks after the last one (rightClickDelay), so a modded use within
+     * {@link #RIGHT_CLICK_DELAY_TICKS} of the player's last modded use is that follow-up and is denied.
+     */
     @EventHandler(priority = EventPriority.HIGH)
     public void onUse(PlayerInteractEvent event) {
+        Action action = event.getAction();
+        if ((action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK) && moddedHeld(event)) {
+            Player player = event.getPlayer();
+            long now = org.bukkit.Bukkit.getCurrentTick();
+            Long last = moddedUseTick.get(player.getUniqueId());
+            if (last != null && now - last < RIGHT_CLICK_DELAY_TICKS) {
+                event.setCancelled(true);
+                event.setUseInteractedBlock(org.bukkit.event.Event.Result.DENY);
+                event.setUseItemInHand(org.bukkit.event.Event.Result.DENY);
+                return;
+            }
+            moddedUseTick.put(player.getUniqueId(), now);
+        }
+        handleUse(event);
+    }
+
+    /** True when the event's item is a mod item (not a minecraft: one), as the handlers below read it. */
+    private boolean moddedHeld(PlayerInteractEvent event) {
+        ItemStack item = event.getItem();
+        return item != null && !item.getType().isAir() && !itemId(item).startsWith("minecraft:");
+    }
+
+    /** Opens the screen the walk saw this block or item open, or passes the click to it. */
+    private void handleUse(PlayerInteractEvent event) {
         Player player = event.getPlayer();
         if (busy.test(player)) {
             return;
@@ -2727,6 +2762,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         updateDoorOutline(event.getPlayer(), null);
         close(event.getPlayer());
         endDigging(event.getPlayer());
+        moddedUseTick.remove(event.getPlayer().getUniqueId());
     }
 
     private static int check(boolean ok, String what) {
