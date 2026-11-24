@@ -2070,6 +2070,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return;
         }
         if (open.containsKey(player.getUniqueId())) {
+            // A click while a screen is open is taken by that screen: say so, so a use that never
+            // reaches its block is visible in the log rather than silent.
+            log.info("[cim-screen] " + player.getName() + " " + event.getAction() + " taken by the open screen");
             event.setCancelled(true);
             if (event.getHand() == EquipmentSlot.HAND
                     && (event.getAction() == Action.RIGHT_CLICK_AIR || event.getAction() == Action.RIGHT_CLICK_BLOCK)) {
