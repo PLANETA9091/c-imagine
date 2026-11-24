@@ -2159,6 +2159,104 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     /**
+     * Puts every block the layer's use placed, or removed (minecraft:air), into Paper's world. Checked
+     * first, then applied, so a refusal changes nothing: a cell Paper holds something the layer did not
+     * expect (not air, replaceable, a carrier, or the clicked carrier itself), a mod block with no carrier
+     * row, or a vanilla state Paper cannot read. A mod block is its carrier (a display family block gets its
+     * barrier and look); a vanilla block is its exact state and no mod tracking; air clears the cell.
+     */
+    private boolean applyPlacements(Player player, LiveBridge bridge, Block clicked, LiveBridge.UseOn result) {
+        var world = clicked.getWorld();
+        for (LiveBridge.Placement p : result.placements()) {
+            Block at = world.getBlockAt(p.x(), p.y(), p.z());
+            boolean inPlace = at.equals(clicked) && carried(clicked) != null;
+            boolean free = at.getType().isAir() || at.isReplaceable() || inPlace || carrierCell(at);
+            if (!free || projectedDoor(at) != null) {
+                log.info("[cim-screen] " + p.id() + " at " + p.x() + "," + p.y() + "," + p.z()
+                        + " lands on " + at.getBlockData().getAsString() + ", not a free cell: refused");
+                return false;
+            }
+            switch (placementKind(p.id())) {
+                case "mod" -> {
+                    if (blockCarrierRows.get(p.id()) == null) {
+                        log.info("[cim-screen] " + p.id() + " placed in the layer has no carrier here");
+                        return false;
+                    }
+                }
+                case "vanilla" -> {
+                    if (!readableState(p.state())) {
+                        log.info("[cim-screen] " + p.state() + " placed in the layer is not a Paper state: refused");
+                        return false;
+                    }
+                }
+                default -> { }
+            }
+        }
+        StringBuilder placed = new StringBuilder();
+        for (LiveBridge.Placement p : result.placements()) {
+            Block at = world.getBlockAt(p.x(), p.y(), p.z());
+            String kind = placementKind(p.id());
+            if (kind.equals("mod")) {
+                F2vPack.VisualBlock row = blockCarrierRows.get(p.id());
+                if (knownDisplay(row.moddedBlockId())) {
+                    at.setType(Material.BARRIER, false);
+                    DisplayCarriers.place(at, row.moddedBlockId(), p.state());
+                } else {
+                    if (at.getType() == Material.BARRIER) {
+                        DisplayCarriers.remove(at);
+                    }
+                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
+                }
+                bridge.keepPlaced(at, p.id(), p.blockEntity());
+                bridge.keepPlacedState(at, p.state());
+                if (bridge.track(at, p.id(), p.blockEntity())) {
+                    logTicking();
+                }
+            } else {
+                // A vanilla block or air is not a mod block: its carrier (if any) and the layer's tracking go.
+                if (carrierCell(at)) {
+                    if (at.getType() == Material.BARRIER) {
+                        DisplayCarriers.remove(at);
+                    }
+                    bridge.forgetPlacedState(at);
+                    bridge.release(at, null);
+                }
+                at.setBlockData(org.bukkit.Bukkit.createBlockData(kind.equals("air") ? "minecraft:air" : p.state()), false);
+            }
+            placed.append(p.id()).append(" at ").append(at.getX()).append(',').append(at.getY()).append(',')
+                    .append(at.getZ()).append("; ");
+        }
+        log.info("[cim-screen] " + player.getName() + " placed " + placed.toString().trim());
+        return true;
+    }
+
+    /** A carrier Paper holds in this cell: a note block, or a barrier with its item display. */
+    private boolean carrierCell(Block at) {
+        return DisplayCarriers.idAt(at) != null || carried(at) != null;
+    }
+
+    /** "air" for a removed cell, "vanilla" for a minecraft: block, else "mod" (the id a mod block carries). */
+    static String placementKind(String id) {
+        if (id.equals("minecraft:air") || id.equals("minecraft:cave_air") || id.equals("minecraft:void_air")) {
+            return "air";
+        }
+        return id.startsWith("minecraft:") ? "vanilla" : "mod";
+    }
+
+    /** True when Paper reads this state text (a vanilla state from the layer, in Paper's format). */
+    private static boolean readableState(String state) {
+        if (state == null) {
+            return false;
+        }
+        try {
+            org.bukkit.Bukkit.createBlockData(state);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
      * The held mod item used on a block by its own code. A block it placed is put down in
      * Paper's world as its note-block carrier, with its block entity's data kept for the
      * first opening; a menu it opened is shown. True when the click did something.
@@ -2193,41 +2291,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.info("[cim-screen] " + player.getName() + " placed both halves of " + result.placements().getFirst().id());
             return true;
         }
-        if (result.placements().size() > 1) {
-            log.info("[cim-screen] Multi-block placement needs a complete projection: "
-                    + result.placements().stream()
-                    .map(p -> p.state() + " collision=" + p.collision()).toList());
-            return false;
-        }
-        boolean did = false;
-        if (result.placedId() != null) {
-            F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
-            Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
-            // The clicked carrier itself may change in place (an axe strips the log it hit): its new
-            // carrier replaces the old one, the old display with it.
-            boolean inPlace = at.equals(clicked) && carried(clicked) != null;
-            if (row != null && (at.getType().isAir() || at.isReplaceable() || inPlace) && projectedDoor(at) == null) {
-                if (knownDisplay(row.moddedBlockId())) {
-                    at.setType(Material.BARRIER, false);
-                    DisplayCarriers.place(at, row.moddedBlockId(), result.placedState());
-                } else {
-                    if (at.getType() == Material.BARRIER) {
-                        DisplayCarriers.remove(at);
-                    }
-                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
-                }
-                bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
-                bridge.keepPlacedState(at, result.placedState());
-                if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
-                    logTicking();
-                }
-                log.info("[cim-screen] " + player.getName() + " placed " + result.placedId() + " at "
-                        + at.getX() + "," + at.getY() + "," + at.getZ());
-                did = true;
-            } else {
-                log.info("[cim-screen] " + result.placedId() + " placed in the layer has no carrier here");
-            }
-        }
+        // Every block the layer's use placed or removed goes into Paper's world (the layer is the authority for the
+        // whole click); a refused plan leaves the world as it was and the click falls through as before.
+        boolean did = !result.placements().isEmpty() && applyPlacements(player, bridge, clicked, result);
         if (result.state().open()) {
             // A menu the clicked carrier's own use opened is the block's (its capture is keyed by block:);
             // any other menu is the held item's.
@@ -2913,6 +2979,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(playerIndex(0) == 9 && playerIndex(26) == 35 && playerIndex(27) == 0,
                 "player slots map main inventory then hotbar");
         bad += liveResolutionSelftest();
+        bad += check("air".equals(placementKind("minecraft:air")) && "air".equals(placementKind("minecraft:cave_air"))
+                && "vanilla".equals(placementKind("minecraft:stone")) && "mod".equals(placementKind("create:shaft"))
+                && "mod".equals(placementKind("dynamictrees:branch")),
+                "a placed id is air, vanilla or mod, so the multi-placement apply knows which carrier to put");
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
     }

@@ -470,7 +470,12 @@ final class LiveBridge {
                 .append('\t').append(feet.getX()).append('\t').append(feet.getY()).append('\t').append(feet.getZ())
                 .append('\t').append(feet.getYaw()).append('\t').append(feet.getPitch());
         if (moddedAt != null) {
-            for (String line : neighbourLines(clicked.getRelative(face), moddedAt)) {
+            // Both boxes: the target's (a placed block's neighbours) and the clicked block's (its own use, e.g. a
+            // sapling's bone meal, reads the soil under the clicked block, which the target's box does not reach).
+            java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>(
+                    neighbourLines(clicked.getRelative(face), moddedAt));
+            lines.addAll(neighbourLines(clicked, moddedAt));
+            for (String line : lines) {
                 in.append('\n').append(line);
             }
         }
