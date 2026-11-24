@@ -632,12 +632,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     /** The screen for a menu: its own capture first, then a scan of its class. */
     private ScreenPack.Scene sceneFor(String menuId, String menuClass) {
-        ScreenPack.Scene own = scenes.stream().filter(s -> s.className().equals(menuId)).findFirst().orElse(null);
-        if (own != null || menuClass == null) {
-            return own;
-        }
-        String wanted = menuClass.replace('.', '/');
-        return scenes.stream().filter(s -> wanted.equals(s.menu())).findFirst().orElse(null);
+        return sceneOf(scenes, menuId, menuClass);
     }
 
     private GuiCaptures.Capture captureOf(ScreenPack.Scene scene) {
@@ -649,8 +644,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     public void open(Player player, ScreenPack.Scene scene) {
+        open(player, scene, captureOf(scene));
+    }
+
+    /** Opens a scene with the slots it draws: its capture's, or the live menu's own for a scanned scene. */
+    private void open(Player player, ScreenPack.Scene scene, GuiCaptures.Capture capture) {
         log.info("[cim-screen] " + player.getName() + " opened " + scene.shortName());
-        GuiCaptures.Capture capture = captureOf(scene);
         open.put(player.getUniqueId(), new Session(scene, capture,
                 new Pointer(POINTER_X, POINTER_Y, player.getYaw(), player.getPitch())));
         if (camera != null && !harnessFrame) {
@@ -1431,16 +1430,20 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             live.keepBlockEntity(player, live.close(player));
             return false;
         }
-        ScreenPack.Scene scene = sceneFor(state.menuType(), null);
-        if (scene == null && opener != null) {
-            scene = sceneForOpener(opener);
-        }
+        ScreenPack.Scene scene = resolveLiveScene(state.menuType(), state.menuClass(), opener, scenes, captures);
         if (scene == null) {
             live.keepBlockEntity(player, live.close(player));
             log.warning("[cim-screen] live menu " + state.menuType() + " has no screen to draw");
             return false;
         }
-        open(player, scene);
+        boolean captured = isCaptured(scene, captures);
+        if (sourceLogged.add(state.menuType())) {
+            log.info("[cim-screen] live menu " + state.menuType() + " -> " + (captured ? "captured" : "scanned")
+                    + " scene " + scene.shortName());
+        }
+        // A scanned scene has no capture: the layer's own slots (its positions, owners and
+        // indices) stand in for it, so the menu's slots are drawn and clicked as a capture's are.
+        open(player, scene, captured ? captureOf(scene) : liveCapture(state));
         Session s = open.get(player.getUniqueId());
         s.live = true;
         applyLive(player, s, state);
@@ -2745,6 +2748,75 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return null;
     }
 
+    /** Live menus already logged their screen source (once per menu id). */
+    private final java.util.Set<String> sourceLogged = new java.util.HashSet<>();
+
+    /**
+     * The screen of a live menu, in this order: a capture by the registry id; a capture whose
+     * openers name the click; then a scene by the menu CLASS the layer reports (the scan rows
+     * carry it), a capture of that class before a scanned guess. Null when none matches.
+     * Pure: the selftest holds the order.
+     */
+    static ScreenPack.Scene resolveLiveScene(String menuType, String menuClass, String opener,
+            List<ScreenPack.Scene> scenes, Map<String, GuiCaptures.Capture> captures) {
+        ScreenPack.Scene own = scenes.stream().filter(s -> s.className().equals(menuType)).findFirst().orElse(null);
+        if (own != null && isCaptured(own, captures)) {
+            return own;
+        }
+        if (opener != null) {
+            for (GuiCaptures.Capture c : captures.values()) {
+                if (c.openers().contains(opener)) {
+                    ScreenPack.Scene s = sceneOf(scenes, c.menuId(), c.menuClass());
+                    if (s != null) {
+                        return s;
+                    }
+                }
+            }
+        }
+        if (menuClass == null) {
+            return null;
+        }
+        String wanted = menuClass.replace('.', '/');
+        ScreenPack.Scene scanned = null;
+        for (ScreenPack.Scene s : scenes) {
+            if (!wanted.equals(s.menu())) {
+                continue;
+            }
+            if (isCaptured(s, captures)) {
+                return s;
+            }
+            if (scanned == null) {
+                scanned = s;
+            }
+        }
+        return scanned;
+    }
+
+    /** True when the scene has a capture: the pack's captured art, or a GUI capture of it. */
+    static boolean isCaptured(ScreenPack.Scene scene, Map<String, GuiCaptures.Capture> captures) {
+        return scene.captured() != null || captures.containsKey(scene.className())
+                || (scene.menu() != null && captures.values().stream().anyMatch(c -> scene.menu().equals(c.menuClass())));
+    }
+
+    /** A scene by its own id, else by its menu class (the slash form the scan uses). */
+    static ScreenPack.Scene sceneOf(List<ScreenPack.Scene> scenes, String menuId, String menuClass) {
+        ScreenPack.Scene own = scenes.stream().filter(s -> s.className().equals(menuId)).findFirst().orElse(null);
+        if (own != null || menuClass == null) {
+            return own;
+        }
+        String wanted = menuClass.replace('.', '/');
+        return scenes.stream().filter(s -> wanted.equals(s.menu())).findFirst().orElse(null);
+    }
+
+    /** The layer's slots of a live menu as a capture: the slots a scanned scene draws and clicks. */
+    static GuiCaptures.Capture liveCapture(LiveBridge.State state) {
+        List<GuiCaptures.Slot> slots = new ArrayList<>();
+        for (LiveBridge.Slot l : state.slots()) {
+            slots.add(new GuiCaptures.Slot(l.x(), l.y(), l.player(), l.containerSlot(), l.menuIndex()));
+        }
+        return new GuiCaptures.Capture(state.menuType(), state.menuClass(), null, List.of(), slots);
+    }
+
     /** {@code minecraft:note_block[instrument=harp,note=5,...]} to {@code harp:5}; a mushroom host to {@code host:111111}. */
     static String carrierKey(String state) {
         return F2vPack.carrierKeyOf(state);
@@ -2811,7 +2883,76 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(c != null && c.slots().size() == 2 && c.slots().get(1).player(), "slots keep their owner");
         bad += check(playerIndex(0) == 9 && playerIndex(26) == 35 && playerIndex(27) == 0,
                 "player slots map main inventory then hotbar");
+        bad += liveResolutionSelftest();
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
+    }
+
+    /** The live menu screen order, on synthetic scan rows, captures and layer replies. */
+    private static int liveResolutionSelftest() {
+        int bad = 0;
+        String toolboxMenu = "com/simibubi/create/content/equipment/toolbox/ToolboxMenu";
+        String toolboxClass = "com.simibubi.create.content.equipment.toolbox.ToolboxMenu";
+        ScreenPack.Scene toolbox = new ScreenPack.Scene("com/simibubi/create/content/equipment/toolbox/ToolboxScreen",
+                toolboxMenu, 188, 171, false, List.of(), List.of(), null);
+        ScreenPack.Scene toolboxSmall = new ScreenPack.Scene("com/simibubi/create/content/equipment/toolbox/ToolboxScreen",
+                toolboxMenu, 176, 108, false, List.of(), List.of(), null);
+        ScreenPack.Scene table = new ScreenPack.Scene("com/simibubi/create/content/schematics/table/SchematicTableScreen",
+                "com/simibubi/create/content/schematics/table/SchematicTableMenu", 214, 85, true, List.of(), List.of(), null);
+        String filterMenu = "com/simibubi/create/content/logistics/filter/FilterMenu";
+        ScreenPack.Scene filterScanned = new ScreenPack.Scene(
+                "com/simibubi/create/content/logistics/filter/FilterScreen", filterMenu, 214, 99, true,
+                List.of(), List.of(), null);
+        ScreenPack.Scene filterCaptured = new ScreenPack.Scene(
+                "com/simibubi/create/content/logistics/filter/FilterScreen", filterMenu, 214, 99, true,
+                List.of(), List.of(), new ScreenPack.Captured(-107, -49, List.of(), Map.of(), null));
+        List<ScreenPack.Scene> scanOnly = List.of(toolbox, toolboxSmall, table, filterScanned);
+        Map<String, GuiCaptures.Capture> none = Map.of();
+
+        ScreenPack.Scene r = resolveLiveScene("create:toolbox", toolboxClass, null, scanOnly, none);
+        bad += check(r == toolbox, "a scanned menu resolves by its class, the first scan row");
+        bad += check(!isCaptured(r, none), "a scanned scene is not a capture");
+        bad += check(resolveLiveScene("create:toolbox", null, null, scanOnly, none) == null,
+                "no menu class and no capture: no screen");
+        bad += check(resolveLiveScene("create:nothing", "com.example.NoMenu", null, scanOnly, none) == null,
+                "an unknown class has no screen");
+        bad += check(resolveLiveScene("create:schematic_table",
+                "com.simibubi.create.content.schematics.table.SchematicTableMenu", null, scanOnly, none) == table,
+                "the schematic table resolves by its class");
+
+        List<ScreenPack.Scene> withCapture = List.of(toolbox, filterScanned, filterCaptured);
+        bad += check(resolveLiveScene("create:filter", filterClass(), null, withCapture, none) == filterCaptured,
+                "a captured scene of the class wins over the scanned guess");
+        bad += check(resolveLiveScene("create:filter", filterClass(), null,
+                List.of(filterScanned, filterCaptured), none) == filterCaptured,
+                "the order of the scene list does not change the capture-first rule");
+
+        GuiCaptures.Capture byOpener = new GuiCaptures.Capture("create:filter", filterMenu, "List Filter",
+                List.of("item:create:filter"), List.of());
+        Map<String, GuiCaptures.Capture> opened = Map.of("filter", byOpener);
+        bad += check(resolveLiveScene("create:other", null, "item:create:filter", List.of(filterScanned), opened)
+                == filterScanned, "an opener's capture resolves its scene (here the scanned guess by class)");
+        bad += check(resolveLiveScene("create:other", null, "item:create:other", List.of(filterScanned), opened) == null,
+                "an opener no capture names resolves nothing without a class");
+
+        bad += check(resolveLiveScene("create:toolbox", toolboxClass, null, List.of(toolboxSmall, toolbox), none)
+                == toolboxSmall, "several scan rows of a class: the first one, as the scan lists them");
+
+        LiveBridge.State state = new LiveBridge.State("create:toolbox", toolboxClass, List.of(
+                new LiveBridge.Slot(0, false, 0, "-", 8, 20, true),
+                new LiveBridge.Slot(1, true, 9, "-", 8, 97, true)), "-", new String[41], List.of(), null, null, null);
+        GuiCaptures.Capture live = liveCapture(state);
+        bad += check(live.slots().size() == 2 && live.slots().get(0).menuIndex() == 0
+                && live.slots().get(0).x() == 8 && live.slots().get(0).y() == 20 && !live.slots().get(0).player(),
+                "a live slot keeps its menu index and place");
+        bad += check(live.slots().get(1).player() && live.slots().get(1).index() == 9,
+                "a player slot keeps its owner and container slot");
+        bad += check(toolboxMenu.equals(live.menuClass()) || toolboxClass.equals(live.menuClass()),
+                "the live capture keeps the menu class");
+        return bad;
+    }
+
+    private static String filterClass() {
+        return "com.simibubi.create.content.logistics.filter.FilterMenu";
     }
 }
