@@ -220,6 +220,17 @@
       "seconds": 2
     },
     {
+      "observe": "be",
+      "pos": [
+        308,
+        125,
+        310
+      ],
+      "fields": [
+        "Speed"
+      ]
+    },
+    {
       "observe": "block",
       "pos": [
         308,
@@ -248,6 +259,17 @@
       ]
     },
     {
+      "observe": "be",
+      "pos": [
+        308,
+        125,
+        310
+      ],
+      "fields": [
+        "Speed"
+      ]
+    },
+    {
       "observe": "block",
       "pos": [
         308,
@@ -270,5 +292,5 @@
       "observe": "inventory"
     }
   ],
-  "todo": "Gearbox output rotation and clutch disengage are only visible in screenshots: no speed observe on either stack. Lever is placed on a stone block set by setup fill, so the place adapter must pick it as the neighbour."
+  "todo": "Gearbox output Speed before and after the lever is read by the be observe (field name Speed UNVERIFIED on first run). Clutch disengage is still judged from the clutch block state and screenshots."
 }

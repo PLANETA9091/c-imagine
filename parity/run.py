@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import heal  # noqa: E402
 import lanes  # noqa: E402
 import stacks  # noqa: E402
+import be_observe  # noqa: E402  (observe "be": block-entity NBT, see be_observe.py)
 
 PLATFORM_ORIGIN = (308, 121, 308)
 SETTLE_TICKS = 10
@@ -201,6 +202,10 @@ def run_step(stack, step, shots_dir, idx, rec):
             return stack.observe_player()
         if kind == "motion":
             return stack.motion()
+        # block-entity observe (be_observe.py): truth via /data get, ours via /cim inspect be
+        if kind == "be":
+            rec["source"] = "server"
+            return be_observe.observe(stack, step)
         raise ValueError("unknown observe: %s" % kind)
 
     do = step["do"]

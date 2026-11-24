@@ -121,6 +121,17 @@
       ]
     },
     {
+      "observe": "be",
+      "pos": [
+        305,
+        122,
+        310
+      ],
+      "fields": [
+        "Speed"
+      ]
+    },
+    {
       "observe": "inventory"
     },
     {
@@ -151,6 +162,28 @@
       ]
     },
     {
+      "observe": "be",
+      "pos": [
+        307,
+        121,
+        310
+      ],
+      "fields": [
+        "HeldItem"
+      ]
+    },
+    {
+      "observe": "be",
+      "pos": [
+        307,
+        122,
+        310
+      ],
+      "fields": [
+        "Speed"
+      ]
+    },
+    {
       "observe": "block",
       "pos": [
         307,
@@ -173,5 +206,5 @@
       "observe": "screen"
     }
   ],
-  "todo": "The depot contents and the press/wheel speed are not observable (depot items are block-entity storage; the sheet is observed only after the empty-hand take). Press facing from the placement yaw is unverified: the place adapter may re-aim the player."
+  "todo": "Depot HeldItem and press/wheel Speed are read by the be observe (fields named from the Create 6 NBT: HeldItem and Speed are UNVERIFIED, first run: check with fields [\"*\"] in the diff). Milling/pressing progress is not observable. Press facing from the placement yaw is unverified."
 }

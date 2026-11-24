@@ -75,6 +75,17 @@
       ]
     },
     {
+      "observe": "be",
+      "pos": [
+        308,
+        123,
+        310
+      ],
+      "fields": [
+        "*"
+      ]
+    },
+    {
       "observe": "inventory"
     },
     {
@@ -242,6 +253,28 @@
       "seconds": 6
     },
     {
+      "observe": "be",
+      "pos": [
+        308,
+        123,
+        310
+      ],
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "observe": "be",
+      "pos": [
+        308,
+        122,
+        310
+      ],
+      "fields": [
+        "Speed"
+      ]
+    },
+    {
       "observe": "block",
       "pos": [
         308,
@@ -264,5 +297,5 @@
       "observe": "screen"
     }
   ],
-  "todo": "Milling bonus rolls are random: flour count may differ between runs. Millstone progress and the crank speed are not observable."
+  "todo": "Milling bonus rolls are random: flour count may differ between runs. The millstone holds its items in its NBT: the first run uses fields [\"*\"] (discovery) to learn the names; the flour/wheat check stays on the inventory. Crank/shaft Speed is read from the shaft at (308,122,310) (UNVERIFIED field name use)."
 }

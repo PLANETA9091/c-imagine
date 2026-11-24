@@ -101,6 +101,17 @@
       "seconds": 4
     },
     {
+      "observe": "be",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "fields": [
+        "Items"
+      ]
+    },
+    {
       "do": "interact",
       "pos": [
         308,
@@ -115,5 +126,5 @@
       "observe": "inventory"
     }
   ],
-  "todo": "Funnel direction on placement (output into the chest) is unverified: if the funnel points the wrong way the chest stays empty and the verdict is a real difference to triage, not a harness error. Chute item storage is not observable beyond the funnel/chest end state."
+  "todo": "Funnel direction on placement (output into the chest) is unverified: if the funnel points the wrong way the chest stays empty and the verdict is a real difference to triage, not a harness error. The chest's Items (id, count, slot) are read by the be observe; chute item storage is not observable beyond the funnel/chest end state."
 }

@@ -70,7 +70,7 @@ REQUIRED = {
     "command": [("text",)],
     "food_to": [("value",)],
 }
-OBSERVE_REQUIRED = {"block": [("pos",)], "inventory": [], "screen": [], "player": [], "motion": []}
+OBSERVE_REQUIRED = {"block": [("pos",)], "be": [("pos",)], "inventory": [], "screen": [], "player": [], "motion": []}
 POS_KEYS = ("pos", "point")
 SLOT_RE = re.compile(r"^(result|input|fuel|output|offhand|(grid|hotbar|main|container|armor):\d+)$")
 SLOT_MAX = {"grid": 8, "hotbar": 8, "armor": 3}
@@ -102,8 +102,8 @@ def validate_step(step, do_names, obs_names):
         for alts in OBSERVE_REQUIRED.get(name, [("__unknown__",)]):
             if not any(k in step for k in alts):
                 raise ValueError("observe %s needs %s" % (name, alts))
-        if name == "block":
-            _pos(step["pos"], "observe block pos")
+        if name in ("block", "be"):
+            _pos(step["pos"], "observe %s pos" % name)
         return
     name = step["do"]
     if name not in do_names:
