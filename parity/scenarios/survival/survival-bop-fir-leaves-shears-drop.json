@@ -1,0 +1,48 @@
+{
+  "id": "survival-bop-fir-leaves-shears-drop",
+  "notes": "biomesoplenty:fir_leaves broken with shears. TRUTH: fir_leaves loot table (data/biomesoplenty/loot_table/blocks/fir_leaves.json) gives the leaves block itself when the tool is in #biomesoplenty:shears (or silk touch), and nothing else. Expect biomesoplenty:fir_leaves x1 picked up, the cell becomes air. Check that minecraft:shears is in the shears tag (unverified here).",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 310 biomesoplenty:fir_leaves",
+    "give {player} minecraft:shears 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "minecraft:shears"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "break",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

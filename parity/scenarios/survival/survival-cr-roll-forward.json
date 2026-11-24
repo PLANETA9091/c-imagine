@@ -1,0 +1,47 @@
+{
+  "id": "survival-cr-roll-forward",
+  "notes": "Roll key tapped once on flat ground at full food, facing +z (yaw 0). TRUTH: keybind keybinds.combat_roll.roll defaults to GLFW key 82 (R). RollManager gates on: cooldown available, on ground, food level > food_level_required (6). Roll moves the player forward (about roll_duration 8 ticks); exhaustion +0.1 per roll (exhaust_on_roll), so food and saturation are unchanged after one roll. Expected position: z increases; exact distance not verified.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air"
+  ],
+  "steps": [
+    {
+      "do": "food_to",
+      "value": 20,
+      "max_ticks": 600
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    },
+    {
+      "observe": "player"
+    }
+  ],
+  "todo": "Roll key: truth-ctl 'key' takes the KeyMapping name; OURS fails for mod keybinds (runner: a mod KeyMapping fails on OURS). Needs the mod key bridge (feat/mod-key-bridge)."
+}

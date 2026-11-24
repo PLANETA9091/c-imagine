@@ -1,0 +1,34 @@
+{
+  "id": "survival-bop-craft-fir-planks-from-log",
+  "notes": "Craft biomesoplenty:fir_planks from one fir log in the inventory 2x2 grid. TRUTH: data/biomesoplenty/recipe/fir_planks.json is shapeless from #biomesoplenty:fir_logs and yields 4 planks, so the log is consumed and 4 fir_planks are in the inventory.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} biomesoplenty:fir_log 1"
+  ],
+  "steps": [
+    {
+      "do": "open_inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "result",
+      "mode": "shift"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

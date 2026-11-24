@@ -1,0 +1,95 @@
+{
+  "id": "survival-create-wrench-craft",
+  "notes": "Create wrench on a crafting table: 3 gold sheets, 1 cogwheel, 1 stick in the 3x3 grid. Pattern GG / GP / ' S' (grid slots 0,1,3 = gold, 4 = cogwheel, 7 = stick). TRUTH: data/create/recipe/crafting/kinetics/wrench.json, key G=#c:plates/gold, P=create:cogwheel, S=#c:rods/wooden, result create:wrench x1.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 312 minecraft:crafting_table",
+    "give {player} create:golden_sheet 3",
+    "give {player} create:cogwheel 1",
+    "give {player} minecraft:stick 1"
+  ],
+  "steps": [
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        312
+      ],
+      "face": "up"
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left",
+      "in": "inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:0",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:1",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:3",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:1",
+      "mode": "left",
+      "in": "inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:4",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:2",
+      "mode": "left",
+      "in": "inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:7",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "result",
+      "mode": "shift",
+      "in": "crafting"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

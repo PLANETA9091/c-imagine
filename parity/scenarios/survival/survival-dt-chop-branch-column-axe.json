@@ -1,0 +1,64 @@
+{
+  "id": "survival-dt-chop-branch-column-axe",
+  "notes": "A 3-block dynamictrees:oak_branch column on a dirt base, chopped at the base with an iron axe. TRUTH (Dynamic Trees felling): the trunk is felled as a whole (FallingTreeEntity), so the branch cells are gone, the drops are oak_log (count from dynamictrees:multiply_logs_count, scales with branch radius) and sticks (branch loot pool), and the seeds are not from branches (seeds come from leaves). Source: dynamictrees data/trees/branches/oak loot table. Felling of a hand-placed branch column (no leaves, no root) is NOT verified; expected results are the loot table, not a checked felling.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 120 310 minecraft:dirt",
+    "setblock 308 121 310 dynamictrees:oak_branch",
+    "setblock 308 122 310 dynamictrees:oak_branch",
+    "setblock 308 123 310 dynamictrees:oak_branch",
+    "give {player} minecraft:iron_axe 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "minecraft:iron_axe"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "break",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Felling completion and item-entity drops are not observed directly; the drop counts come from the break reply and inventory after collect."
+}

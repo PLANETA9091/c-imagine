@@ -1,0 +1,44 @@
+{
+  "id": "survival-bop-rose-bare-hand",
+  "notes": "biomesoplenty:rose on grass broken by hand. TRUTH: data/biomesoplenty/loot_table/blocks/rose.json has no tool condition, so the rose drops itself every time (1 x biomesoplenty:rose). The flower needs grass below it.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 120 310 minecraft:grass_block",
+    "setblock 308 121 310 biomesoplenty:rose"
+  ],
+  "steps": [
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "break",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

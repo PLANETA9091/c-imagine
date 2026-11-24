@@ -1,0 +1,45 @@
+{
+  "id": "survival-create-cogwheel-from-shaft-planks",
+  "notes": "Cogwheel from one create:shaft and one oak planks (shapeless, 2x2 grid). TRUTH: data/create/recipe/crafting/kinetics/cogwheel.json is shapeless shaft + #minecraft:planks, result create:cogwheel x1; the shaft and planks are consumed.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} create:shaft 1",
+    "give {player} minecraft:oak_planks 1"
+  ],
+  "steps": [
+    {
+      "do": "open_inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:0",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:1",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:1",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "result",
+      "mode": "shift"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

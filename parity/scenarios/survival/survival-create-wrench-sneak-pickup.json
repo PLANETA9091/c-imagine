@@ -1,0 +1,51 @@
+{
+  "id": "survival-create-wrench-sneak-pickup",
+  "notes": "Sneak plus right-click with a wrench picks up a placed create:shaft into the inventory. TRUTH: WrenchItem.useOn: when isShiftKeyDown and canWrenchPickup(state), the block is removed and the item returned (create:shaft). The step below presses the sneak key as a tap, which does not hold it through the right-click.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 310 create:shaft[axis=y]",
+    "give {player} create:wrench 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:wrench"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "key",
+      "key": "key.sneak",
+      "ticks": 1
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "face": "up"
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Needs a hold modifier: sneak held while interact runs (run.py only has tap keys). Without it the sneak is not active during the click."
+}

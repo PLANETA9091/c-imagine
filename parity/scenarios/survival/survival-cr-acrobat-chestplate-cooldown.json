@@ -1,0 +1,67 @@
+{
+  "id": "survival-cr-acrobat-chestplate-cooldown",
+  "notes": "Iron chestplate with combat_roll:acrobat level 3 equipped in the chest slot (armor:1, head is armor:0). TRUTH: acrobat adds 0.2 + 0.2*(level-1) = 0.6 to the recharge attribute (add_multiplied_base), so the cooldown is shorter (about 80/1.6 = 50 ticks). A roll 60 ticks after the first one should succeed. Without the enchantment (same timing) it would fail. The 60-tick value is derived from the attribute math; not verified in game.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} minecraft:iron_chestplate[enchantments={levels:{\"combat_roll:acrobat\":3}}] 1"
+  ],
+  "steps": [
+    {
+      "do": "food_to",
+      "value": 20,
+      "max_ticks": 600
+    },
+    {
+      "do": "open_inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "armor:1",
+      "mode": "left"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 60
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    }
+  ],
+  "todo": "Enchantment gap: OURS may not register combat_roll enchantments (data-driven, from the mod jar). The stacks give rewrite only handles stored_enchantments, not enchantments={levels:...} on armour."
+}

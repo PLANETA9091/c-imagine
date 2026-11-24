@@ -1,0 +1,89 @@
+{
+  "id": "survival-create-goggles-craft",
+  "notes": "Create goggles on a crafting table. Pattern ' S ' / 'GPG': string at grid 1, glass at 3 and 5, golden sheet at 4. TRUTH: data/create/recipe/crafting/kinetics/goggles.json: key G=#c:glass_blocks, P=#c:plates/gold, S=#c:strings, result create:goggles x1.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 312 minecraft:crafting_table",
+    "give {player} create:golden_sheet 1",
+    "give {player} minecraft:glass 2",
+    "give {player} minecraft:string 1"
+  ],
+  "steps": [
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        312
+      ],
+      "face": "up"
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left",
+      "in": "inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:4",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:1",
+      "mode": "left",
+      "in": "inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:3",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:5",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:2",
+      "mode": "left",
+      "in": "inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:1",
+      "mode": "right",
+      "in": "crafting"
+    },
+    {
+      "do": "click_slot",
+      "slot": "result",
+      "mode": "shift",
+      "in": "crafting"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

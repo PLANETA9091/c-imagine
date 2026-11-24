@@ -1,0 +1,55 @@
+{
+  "id": "survival-create-andesite-alloy-craft",
+  "notes": "Andesite alloy from 2 andesite and 2 iron nuggets in the 2x2 grid, pattern BA/AB. TRUTH: data/create/recipe/crafting/materials/andesite_alloy.json is shaped, key A=minecraft:andesite, B=#c:nuggets/iron, result create:andesite_alloy x1. Expected: 1 create:andesite_alloy in the inventory, no andesite or nuggets left.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} minecraft:andesite 2",
+    "give {player} minecraft:iron_nugget 2"
+  ],
+  "steps": [
+    {
+      "do": "open_inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:1",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:2",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:1",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:0",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:3",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "result",
+      "mode": "shift"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "survival-create-goggles-equip-head",
+  "notes": "Create goggles worn on the head: a stack in hotbar 0 clicked onto the head armour slot (armor:0). TRUTH: create:goggles is a head armour item, so the click puts it in the head slot; the inventory armour list shows create:goggles at head and the hotbar slot is empty.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} create:goggles 1"
+  ],
+  "steps": [
+    {
+      "do": "open_inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "armor:0",
+      "mode": "left"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

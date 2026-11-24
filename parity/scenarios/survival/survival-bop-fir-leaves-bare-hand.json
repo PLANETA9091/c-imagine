@@ -1,0 +1,37 @@
+{
+  "id": "survival-bop-fir-leaves-bare-hand",
+  "notes": "biomesoplenty:fir_leaves broken by hand. TRUTH: no shears, no silk touch, so the leaves are not dropped. Loot is random: fir_sapling at 5% (table_bonus chance 0.05 at fortune 0) and minecraft:stick at 2% (1-2 sticks). Compared with block_only: the cell is air after the break; the drops are random and not compared.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 310 biomesoplenty:fir_leaves"
+  ],
+  "steps": [
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "break",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "block_only": true
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    }
+  ]
+}

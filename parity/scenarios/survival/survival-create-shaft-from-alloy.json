@@ -1,0 +1,39 @@
+{
+  "id": "survival-create-shaft-from-alloy",
+  "notes": "Create shafts from 2 andesite alloy in a vertical pair (2x2 grid column). TRUTH: data/create/recipe/crafting/kinetics/shaft.json pattern A/A (vertical), result create:shaft x8.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} create:andesite_alloy 2"
+  ],
+  "steps": [
+    {
+      "do": "open_inventory"
+    },
+    {
+      "do": "click_slot",
+      "slot": "hotbar:0",
+      "mode": "left"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:0",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "grid:2",
+      "mode": "right"
+    },
+    {
+      "do": "click_slot",
+      "slot": "result",
+      "mode": "shift"
+    },
+    {
+      "do": "close"
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

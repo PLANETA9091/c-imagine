@@ -1,0 +1,64 @@
+{
+  "id": "survival-bop-fir-log-strip-iron-axe",
+  "notes": "biomesoplenty:fir_log placed by the player and stripped with an iron axe (survival flow, the placement is part of the scenario). TRUTH: stripped_fir_log exists in the jar (loot table data/biomesoplenty/loot_table/blocks/stripped_fir_log.json); the strip mapping is registered in code, not data, so the expected block is biomesoplenty:stripped_fir_log with the same axis (vanilla axe rule). Same as scenario 37 but with the survival setup.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} biomesoplenty:fir_log 1",
+    "give {player} minecraft:iron_axe 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:fir_log"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "minecraft:iron_axe"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

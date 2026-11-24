@@ -1,0 +1,69 @@
+{
+  "id": "survival-cr-roll-cooldown",
+  "notes": "Second roll pressed about 30 ticks after the first (fails), then a third roll after 100 ticks (succeeds). TRUTH: roll_cooldown is 4.0 (ServerConfig default) and the RollManager cooldown length is 20x that value scaled by the recharge attribute (base 20), i.e. about 80 ticks at defaults. The 30-tick roll must not move the player; the 100-tick roll must.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air"
+  ],
+  "steps": [
+    {
+      "do": "food_to",
+      "value": 20,
+      "max_ticks": 600
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    },
+    {
+      "do": "wait",
+      "ticks": 100
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    }
+  ],
+  "todo": "Same as survival-cr-roll-forward: needs the mod key bridge on OURS. Cooldown value (about 80 ticks) is from code reading, unverified in game."
+}

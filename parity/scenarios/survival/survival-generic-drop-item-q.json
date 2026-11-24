@@ -1,0 +1,36 @@
+{
+  "id": "survival-generic-drop-item-q",
+  "notes": "Drop one create:andesite_alloy with the drop key (Q) from a stack of 3. TRUTH: vanilla key.drop drops one item of the selected stack; 2 remain in the inventory and one item entity appears in front of the player. Runner maps key.drop to q on OURS.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} create:andesite_alloy 3"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:andesite_alloy"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "key",
+      "key": "key.drop",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

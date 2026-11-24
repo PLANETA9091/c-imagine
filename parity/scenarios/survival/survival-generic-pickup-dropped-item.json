@@ -1,0 +1,48 @@
+{
+  "id": "survival-generic-pickup-dropped-item",
+  "notes": "Drop a create:andesite_alloy with Q, then walk onto the drop to pick it up again. TRUTH: the dropped item lands in front of the player (about 1-2 blocks along +z); walking over it picks it up, so the inventory returns to 3 alloy. The landing cell is not verified (collect walks to 308,121,310).",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} create:andesite_alloy 3"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:andesite_alloy"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "key",
+      "key": "key.drop",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "do": "collect",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

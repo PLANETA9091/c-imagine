@@ -1,0 +1,27 @@
+{
+  "id": "survival-generic-death-keeps-nothing",
+  "notes": "Death with mod items in the inventory (default gamerule keepInventory=false). TRUTH: the stacks drop at the death point as their modded ids (create:andesite_alloy, create:wrench, dynamictrees:oak_seed) and the inventory is empty after respawn. Respawn is not a run.py step.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "give {player} create:andesite_alloy 3",
+    "give {player} create:wrench 1",
+    "give {player} dynamictrees:oak_seed 2"
+  ],
+  "steps": [
+    {
+      "do": "command",
+      "text": "kill {player}"
+    },
+    {
+      "do": "wait",
+      "ticks": 60
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "No 'respawn' step in run.py (heal only runs before a scenario). Also needs an entities observe to check the dropped mod items."
+}

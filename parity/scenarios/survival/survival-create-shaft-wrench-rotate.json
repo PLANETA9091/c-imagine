@@ -1,0 +1,45 @@
+{
+  "id": "survival-create-shaft-wrench-rotate",
+  "notes": "A placed create:shaft (axis y) right-clicked with a wrench (no sneak). TRUTH: non-sneak wrench use goes to IWrenchable.onWrenched (WrenchItem bytecode); for the shaft the axis changes (ShaftBlock uses Rotation to rotate). The exact new axis is not verified from code; expected only that the axis changes, and the wrench is not consumed.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 310 create:shaft[axis=y]",
+    "give {player} create:wrench 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:wrench"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "face": "up"
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    }
+  ]
+}

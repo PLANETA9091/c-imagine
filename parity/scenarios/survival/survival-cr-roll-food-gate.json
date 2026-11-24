@@ -1,0 +1,46 @@
+{
+  "id": "survival-cr-roll-food-gate",
+  "notes": "Roll pressed at food 6 (not above the threshold). TRUTH: RollManager requires FoodData.getFoodLevel() > ServerConfig.food_level_required (6.0), so food 6 is refused and the player does not move; food stays 6, saturation 0.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air"
+  ],
+  "steps": [
+    {
+      "do": "food_to",
+      "value": 6,
+      "max_ticks": 4000
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    },
+    {
+      "do": "key",
+      "key": "keybinds.combat_roll.roll",
+      "ticks": 1
+    },
+    {
+      "do": "wait",
+      "ticks": 20
+    },
+    {
+      "observe": "motion"
+    },
+    {
+      "observe": "player"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "id": "survival-bop-fir-sapling-bonemeal",
+  "notes": "biomesoplenty:fir_sapling placed on grass and bone meal used on it. TRUTH: the sapling is placed on grass; a bone meal use is random growth (vanilla sapling rules; BOP sapling class not checked in code here). Compared with block_only; the bone meal count drops by 1.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 120 310 minecraft:grass_block",
+    "give {player} biomesoplenty:fir_sapling 1",
+    "give {player} minecraft:bone_meal 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:fir_sapling"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "minecraft:bone_meal"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "face": "up",
+      "block_only": true
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Tree shape needs a box-count observe ('blocks'); not in run.py."
+}
