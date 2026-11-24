@@ -21,7 +21,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerAnimationEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
@@ -3013,6 +3016,54 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         moddedUseTick.remove(event.getPlayer().getUniqueId());
     }
 
+    /**
+     * Ways a session ends when the server's own view ends. A live menu's container closed by the client
+     * (ESC, the inventory key) has already run its removed() and its give-back, so the session is only
+     * dropped; anything else is closed as a sneak or a quit closes it, which gives the held items back.
+     */
+    enum EndWay { NONE, DROP, CLOSE }
+
+    static EndWay endWay(boolean hasSession, boolean live, boolean vanillaClosed) {
+        if (!hasSession) {
+            return EndWay.NONE;
+        }
+        return vanillaClosed && live ? EndWay.DROP : EndWay.CLOSE;
+    }
+
+    /**
+     * A vanilla container close (ESC, the inventory key, a teleport) never reaches this class otherwise. A session
+     * left behind keeps the camera seated and the view frozen and swallows every right click and swing until a
+     * sneak, so the server's close ends it here.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        Session s = open.get(player.getUniqueId());
+        switch (endWay(s != null, s != null && s.live, true)) {
+            case DROP -> {
+                open.remove(player.getUniqueId());
+                if (camera != null) {
+                    camera.release(player, "screen");
+                }
+                log.info("[cim-screen] " + player.getName() + " closed the live menu on the server; session ended");
+            }
+            case CLOSE -> close(player);
+            case NONE -> { }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDeath(PlayerDeathEvent event) {
+        close(event.getEntity());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        close(event.getPlayer());
+    }
+
     private static int check(boolean ok, String what) {
         System.out.println((ok ? "ok   " : "FAIL ") + what);
         return ok ? 0 : 1;
@@ -3070,6 +3121,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(placementAllowed(true, true, false), "a placement inside the neighbourhood into air applies");
         bad += check(!placementAllowed(false, false, false), "a placement outside the neighbourhood over dirt is refused");
         bad += check(placementAllowed(false, true, false), "a placement outside the neighbourhood into air applies");
+        bad += check(endWay(false, false, true) == EndWay.NONE && endWay(false, true, true) == EndWay.NONE,
+                "no session, nothing to end, whatever the close");
+        bad += check(endWay(true, true, true) == EndWay.DROP,
+                "a live menu the client closed is dropped, its own removed() already gave items back");
+        bad += check(endWay(true, false, true) == EndWay.CLOSE && endWay(true, true, false) == EndWay.CLOSE,
+                "a non-live session, or a close not from the server's container, closes as a sneak does");
         bad += check(!placementAllowed(true, true, true) && !placementAllowed(false, true, true),
                 "a projected door cell is refused either way");
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
