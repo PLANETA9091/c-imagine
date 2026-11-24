@@ -3072,6 +3072,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(placementAllowed(false, true, false), "a placement outside the neighbourhood into air applies");
         bad += check(!placementAllowed(true, true, true) && !placementAllowed(false, true, true),
                 "a projected door cell is refused either way");
+        // A ticking entry whose carrier Paper no longer holds is stale (a fill, a piston, a plugin); a carrier that
+        // still stands is not. The layer's facade drops the stale cell (release gone), so the next use sees air.
+        bad += check(LiveBridge.staleCarrier("dynamictrees:oak_branch", null), "a ticking block gone from Paper is stale");
+        bad += check(LiveBridge.staleCarrier("dynamictrees:oak_branch", "dynamictrees:oak_sapling"),
+                "a ticking block replaced by another carrier is stale");
+        bad += check(!LiveBridge.staleCarrier("dynamictrees:oak_branch", "dynamictrees:oak_branch"),
+                "a ticking block whose carrier still stands is kept");
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
     }

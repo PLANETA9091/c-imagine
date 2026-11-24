@@ -245,12 +245,21 @@ final class LiveBridge {
      * chunk unload), else the block is gone (broken). True when the set shrank.
      */
     boolean release(org.bukkit.block.Block block, org.bukkit.Chunk keepIn) {
+        return release(block, keepIn, false);
+    }
+
+    /**
+     * As {@link #release(Block, Chunk)}. {@code gone}: Paper no longer holds a block there (a command's fill,
+     * an explosion, a piston), so the layer's facade drops its block at the cell too, not only the ticking entry.
+     */
+    boolean release(org.bukkit.block.Block block, org.bukkit.Chunk keepIn, boolean gone) {
         String at = where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
         Tracked t = ticking.get(at);
         if (t == null) {
             return false;
         }
-        State state = parse(call("release\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()));
+        State state = parse(call("release\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()
+                + (gone ? "\tgone" : "")));
         if (keepIn != null && state.blockEntity() != null) {
             put(keepIn.getPersistentDataContainer(), block, t.blockId(), state.blockEntity());
         }
@@ -299,6 +308,39 @@ final class LiveBridge {
         return shrank;
     }
 
+    /** True when a ticking entry for {@code tracked} no longer matches the carrier Paper holds ({@code carriedNow}, null for none). */
+    static boolean staleCarrier(String tracked, String carriedNow) {
+        return tracked != null && !tracked.equals(carriedNow);
+    }
+
+    /**
+     * The layer's ticking entries among the cells around a use (see {@link #neighbourCentres}) whose carrier
+     * Paper no longer holds are released as gone. Paper's own edits (a fill, a piston, a plugin) never tell the
+     * layer; without this its facade keeps the block of the cell, and the next use reads it as occupied.
+     */
+    void dropStale(org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face,
+                   java.util.function.Function<org.bukkit.block.Block, String> carriedId) {
+        if (ticking.isEmpty()) {
+            return;
+        }
+        for (org.bukkit.util.BlockVector c : neighbourCentres(clicked, face)) {
+            org.bukkit.block.Block centre = clicked.getWorld().getBlockAt(c.getBlockX(), c.getBlockY(), c.getBlockZ());
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dz = -1; dz <= 1; dz++) {
+                        org.bukkit.block.Block cell = centre.getRelative(dx, dy, dz);
+                        Tracked t = ticking.get(where(cell.getWorld().getName(), cell.getX(), cell.getY(), cell.getZ()));
+                        if (t != null && staleCarrier(t.blockId(), carriedId.apply(cell))) {
+                            cell.getChunk().getPersistentDataContainer().remove(blockKey(cell, t.blockId()));
+                            forgetPlacedState(cell);
+                            release(cell, null, true);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /** A ticking block's data as it is now, kept in its chunk, before a menu or a break reads the chunk. */
     private void saveFresh(org.bukkit.block.Block block, String blockId) {
         Tracked t = ticking.get(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()));
@@ -327,7 +369,7 @@ final class LiveBridge {
             if (!t.blockId().equals(carriedId.apply(block))) {
                 block.getChunk().getPersistentDataContainer().remove(blockKey(block, t.blockId()));
                 forgetPlacedState(block);
-                shrank |= release(block, null);
+                shrank |= release(block, null, true);
                 continue;
             }
             State state = parse(call("save\t" + t.x() + "\t" + t.y() + "\t" + t.z()));
@@ -495,6 +537,7 @@ final class LiveBridge {
                 .append('\t').append(feet.getX()).append('\t').append(feet.getY()).append('\t').append(feet.getZ())
                 .append('\t').append(feet.getYaw()).append('\t').append(feet.getPitch());
         if (moddedAt != null) {
+            dropStale(clicked, face, moddedAt);
             // Both boxes: the target's (a placed block's neighbours) and the clicked block's (its own use, e.g. a
             // sapling's bone meal, reads the soil under the clicked block, which the target's box does not reach).
             java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>(
@@ -566,8 +609,8 @@ final class LiveBridge {
 
     /**
      * The real neighbourhood of a use-on's target cell: every non-air block in the 3x3x3 box around it
-     * (the clicked block is one of them), as {@code nb TAB x TAB y TAB z TAB state} lines for the layer's
-     * Neighbour. A mod block (moddedAt non-null) sends the state it was placed with, else its id; a vanilla
+     * (the clicked block is one of them, air included), as {@code nb TAB x TAB y TAB z TAB state} lines for the
+     * layer's Neighbour. A mod block (moddedAt non-null) sends the state it was placed with, else its id; a vanilla
      * block sends Paper's 26.3 state text as it is, which the layer translates (Neighbour.layerState, the
      * bootstrap's drift table).
      */
@@ -577,12 +620,13 @@ final class LiveBridge {
             for (int dy = -1; dy <= 1; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
                     org.bukkit.block.Block cell = target.getRelative(dx, dy, dz);
-                    if (cell.getType().isAir()) {
-                        continue;
-                    }
-                    String modded = moddedAt.apply(cell);
+                    // Air is sent too: a cell Paper holds as air must be air in the facade, whatever the
+                    // layer kept there from an earlier placement (only non-air cells used to be sent).
+                    String modded = cell.getType().isAir() ? null : moddedAt.apply(cell);
                     String state;
-                    if (modded != null) {
+                    if (cell.getType().isAir()) {
+                        state = "minecraft:air";
+                    } else if (modded != null) {
                         String placed = placedState(cell);
                         state = placed != null ? placed : modded;
                     } else {
