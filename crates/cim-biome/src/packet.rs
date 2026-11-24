@@ -139,7 +139,7 @@ pub fn rewrite_chunk(payload: &[u8], remap: &HashMap<u32, u32>) -> Option<Vec<u8
     r.i32().ok()?; // x
     r.i32().ok()?; // z
     let maps = r.varint().ok()?;
-    if maps < 0 || maps > 64 {
+    if !(0..=64).contains(&maps) {
         return None;
     }
     for _ in 0..maps {
@@ -356,76 +356,6 @@ pub fn biome_blob(json: &serde_json::Value) -> Option<Vec<u8>> {
     Some(w.into_bytes())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn biome(name: &str) -> BiomeDef {
-        BiomeDef {
-            name: name.to_string(),
-            temperature: 0.5,
-            downfall: 0.5,
-            nbt: NbtWriter::new()
-                .root_compound()
-                .float("temperature", 0.5)
-                .end()
-                .into_bytes(),
-            json: serde_json::json!({"temperature": 0.5, "downfall": 0.5}),
-        }
-    }
-
-    fn registry_payload(entries: &[(&str, f32, f32)]) -> Vec<u8> {
-        let mut out = Vec::new();
-        nbt::write_varint(&mut out, "minecraft:worldgen/biome".len() as i32);
-        out.extend_from_slice(b"minecraft:worldgen/biome");
-        nbt::write_varint(&mut out, entries.len() as i32);
-        for (name, t, d) in entries {
-            nbt::write_varint(&mut out, name.len() as i32);
-            out.extend_from_slice(name.as_bytes());
-            out.push(1);
-            out.extend_from_slice(
-                &NbtWriter::new()
-                    .root_compound()
-                    .float("temperature", *t)
-                    .float("downfall", *d)
-                    .end()
-                    .into_bytes(),
-            );
-        }
-        out
-    }
-
-    #[test]
-    fn registry_parses_climate_and_appends() {
-        let payload = registry_payload(&[
-            ("minecraft:plains", 0.8, 0.4),
-            ("minecraft:taiga", 0.25, 0.8),
-        ]);
-        let reg = parse_registry(&payload).unwrap().unwrap();
-        assert_eq!(reg.entries.len(), 2);
-        assert_eq!(reg.entries[0].temperature, Some(0.8));
-        let (out, ids) = append_biomes(&payload, &reg, &[biome("biomesoplenty:prairie")]).unwrap();
-        assert_eq!(ids["biomesoplenty:prairie"], 2);
-        let reg2 = parse_registry(&out).unwrap().unwrap();
-        assert_eq!(reg2.entries.len(), 3);
-        assert_eq!(reg2.entries[2].name, "biomesoplenty:prairie");
-        assert_eq!(reg2.entries[2].temperature, Some(0.5));
-        // appending twice must not duplicate
-        let (out2, ids2) = append_biomes(&out, &reg2, &[biome("biomesoplenty:prairie")]).unwrap();
-        assert_eq!(out2, out);
-        assert_eq!(ids2["biomesoplenty:prairie"], 2);
-    }
-
-    #[test]
-    fn non_biome_registry_is_ignored() {
-        let mut payload = Vec::new();
-        nbt::write_varint(&mut payload, 8);
-        payload.extend_from_slice(b"minecraft:item");
-        nbt::write_varint(&mut payload, 0);
-        assert!(parse_registry(&payload).unwrap().is_none());
-    }
-}
-
 /// Step-by-step parse report for one chunk payload (debugging aid).
 pub fn dissect(payload: &[u8]) -> String {
     let mut out = String::new();
@@ -436,7 +366,7 @@ pub fn dissect(payload: &[u8]) -> String {
     let maps = r.varint();
     out.push_str(&format!("heightmaps={maps:?}\n"));
     if let Ok(m) = maps {
-        if m >= 0 && m < 64 {
+        if (0..64).contains(&m) {
             for _ in 0..m {
                 let _ = r.varint();
                 if let Ok(len) = r.varint() {
@@ -567,4 +497,74 @@ pub fn biome_json(json: &serde_json::Value) -> Option<serde_json::Value> {
     out.insert("carvers".into(), j!([]));
     out.insert("features".into(), j!([]));
     Some(Value::Object(out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn biome(name: &str) -> BiomeDef {
+        BiomeDef {
+            name: name.to_string(),
+            temperature: 0.5,
+            downfall: 0.5,
+            nbt: NbtWriter::new()
+                .root_compound()
+                .float("temperature", 0.5)
+                .end()
+                .into_bytes(),
+            json: serde_json::json!({"temperature": 0.5, "downfall": 0.5}),
+        }
+    }
+
+    fn registry_payload(entries: &[(&str, f32, f32)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        nbt::write_varint(&mut out, "minecraft:worldgen/biome".len() as i32);
+        out.extend_from_slice(b"minecraft:worldgen/biome");
+        nbt::write_varint(&mut out, entries.len() as i32);
+        for (name, t, d) in entries {
+            nbt::write_varint(&mut out, name.len() as i32);
+            out.extend_from_slice(name.as_bytes());
+            out.push(1);
+            out.extend_from_slice(
+                &NbtWriter::new()
+                    .root_compound()
+                    .float("temperature", *t)
+                    .float("downfall", *d)
+                    .end()
+                    .into_bytes(),
+            );
+        }
+        out
+    }
+
+    #[test]
+    fn registry_parses_climate_and_appends() {
+        let payload = registry_payload(&[
+            ("minecraft:plains", 0.8, 0.4),
+            ("minecraft:taiga", 0.25, 0.8),
+        ]);
+        let reg = parse_registry(&payload).unwrap().unwrap();
+        assert_eq!(reg.entries.len(), 2);
+        assert_eq!(reg.entries[0].temperature, Some(0.8));
+        let (out, ids) = append_biomes(&payload, &reg, &[biome("biomesoplenty:prairie")]).unwrap();
+        assert_eq!(ids["biomesoplenty:prairie"], 2);
+        let reg2 = parse_registry(&out).unwrap().unwrap();
+        assert_eq!(reg2.entries.len(), 3);
+        assert_eq!(reg2.entries[2].name, "biomesoplenty:prairie");
+        assert_eq!(reg2.entries[2].temperature, Some(0.5));
+        // appending twice must not duplicate
+        let (out2, ids2) = append_biomes(&out, &reg2, &[biome("biomesoplenty:prairie")]).unwrap();
+        assert_eq!(out2, out);
+        assert_eq!(ids2["biomesoplenty:prairie"], 2);
+    }
+
+    #[test]
+    fn non_biome_registry_is_ignored() {
+        let mut payload = Vec::new();
+        nbt::write_varint(&mut payload, 8);
+        payload.extend_from_slice(b"minecraft:item");
+        nbt::write_varint(&mut payload, 0);
+        assert!(parse_registry(&payload).unwrap().is_none());
+    }
 }
