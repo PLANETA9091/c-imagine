@@ -2226,7 +2226,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
         }
         if (result.state().open()) {
-            did |= openLive(player, result.state(), "item:" + itemId(player.getInventory().getItemInMainHand()));
+            // A menu the clicked carrier's own use opened is the block's (its capture is keyed by block:);
+            // any other menu is the held item's.
+            String opener = clickedId != null ? "block:" + clickedId
+                    : "item:" + itemId(player.getInventory().getItemInMainHand());
+            did |= openLive(player, result.state(), opener);
         } else if (did || result.blockActed()) {
             // What the layer's use consumed or put down is the truth: the inventory follows it.
             bridge.applyInventory(player, result.state());
