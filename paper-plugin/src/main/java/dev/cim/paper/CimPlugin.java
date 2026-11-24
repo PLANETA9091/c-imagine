@@ -1362,7 +1362,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * and the server log. Runs on the server thread (command dispatch).
      */
     private void inspect(CommandSender sender, String[] args) {
-        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r>";
+        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
         try {
             switch (args[1].toLowerCase(Locale.ROOT)) {
                 case "block" -> {
@@ -1379,6 +1379,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         return;
                     }
                     inspectInventory(sender, args[2]);
+                }
+                case "screen" -> {
+                    if (args.length != 3) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    inspectScreen(sender, args[2]);
                 }
                 case "entities" -> {
                     if (args.length != 6) {
@@ -1618,6 +1625,41 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         com.google.gson.JsonObject o = new com.google.gson.JsonObject();
         o.addProperty("kind", "inv");
         o.addProperty("player", p.getName());
+        o.add("slots", slots);
+        emitInspect(sender, o);
+    }
+
+    /**
+     * {@code inspect screen <player>}: the menu that is OPEN on the server (a mod menu the HUD draws counts
+     * too), by registry id and class, with its scene name and the slots as the menu holds them.
+     */
+    private void inspectScreen(CommandSender sender, String playerName) {
+        Player p = Bukkit.getPlayerExact(playerName);
+        if (p == null) {
+            sender.sendMessage(LOG_PREFIX + "inspect: unknown player (not online): " + playerName);
+            return;
+        }
+        dev.cim.hud.ScreenHud.InspectScreen v = dev.cim.hud.HudBootstrap.inspectScreenForHarness(p,
+                this::moddedIdOfStack);
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "screen");
+        o.addProperty("player", p.getName());
+        o.addProperty("open", v.open());
+        o.add("menu_type", v.menuType() == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(v.menuType()));
+        o.add("menu_class", v.menuClass() == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(v.menuClass()));
+        o.addProperty("screen", v.screen());
+        o.add("title", v.title() == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(v.title()));
+        com.google.gson.JsonArray slots = new com.google.gson.JsonArray();
+        for (dev.cim.hud.ScreenHud.InspectSlot s : v.slots()) {
+            com.google.gson.JsonObject so = new com.google.gson.JsonObject();
+            so.addProperty("index", s.index());
+            so.addProperty("item", s.item());
+            so.addProperty("count", s.count());
+            slots.add(so);
+        }
         o.add("slots", slots);
         emitInspect(sender, o);
     }

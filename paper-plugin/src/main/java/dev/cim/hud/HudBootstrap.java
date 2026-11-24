@@ -39,6 +39,15 @@ public final class HudBootstrap {
         return what.equals("move") ? screens.move(player) : screens.press(player, Integer.parseInt(what));
     }
 
+    /** The open screen of a player for /cim inspect screen (the menu that is open, see ScreenHud). */
+    public static ScreenHud.InspectScreen inspectScreenForHarness(org.bukkit.entity.Player player,
+            java.util.function.Function<org.bukkit.inventory.ItemStack, String> moddedId) {
+        if (screens == null || player == null) {
+            return ScreenHud.InspectScreen.CLOSED;
+        }
+        return screens.inspectScreen(player, moddedId);
+    }
+
     /** The display-family mod block id a barrier stands for (its chunk key), or null. For /cim inspect. */
     public static String displayIdAt(org.bukkit.block.Block block) {
         return DisplayCarriers.idAt(block);

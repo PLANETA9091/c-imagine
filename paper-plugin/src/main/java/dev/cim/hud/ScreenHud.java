@@ -123,6 +123,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         final java.util.Set<Integer> desynced = new java.util.HashSet<>();
         /** The layer menu's class, which picks the scanned buttons that belong to it. */
         String liveMenuClass;
+        /** The layer menu's registry id (e.g. create:toolbox), for /cim inspect screen. */
+        String menuType;
         /** Live state of the menu's stateful widgets, by scene widget index: {active, visible}. */
         java.util.Map<Integer, boolean[]> liveWidgets = java.util.Map.of();
         /** The recorded state on screen, after the last press that has one. */
@@ -799,6 +801,67 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         log.info("[cim-screen] live harness opened " + menuId + " by " + opener + " (" + state.slots().size() + " slots)"
                 + pairing(s));
         return true;
+    }
+
+    /** One slot of an inspected screen: the menu index, the modded (or vanilla) id and the count. */
+    public record InspectSlot(int index, String item, int count) {
+    }
+
+    /**
+     * The open screen of a player for {@code /cim inspect screen}: the menu that is OPEN (registry id and
+     * class of the server's menu), not the client widget. {@code screen} is the scene class simple name,
+     * lowercased, the same spelling the client side reports for its Screen.
+     */
+    public record InspectScreen(boolean open, String menuType, String menuClass, String screen, String title,
+                                List<InspectSlot> slots) {
+        static final InspectScreen CLOSED = new InspectScreen(false, null, null, "playing", null, List.of());
+    }
+
+    private static final java.util.regex.Pattern INSPECT_ID =
+            java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
+    private static final java.util.regex.Pattern INSPECT_COUNT =
+            java.util.regex.Pattern.compile("\"count\"\\s*:\\s*(\\d+)");
+
+    /** The player's open screen, or {@link InspectScreen#CLOSED}. Slots come from the layer's menu when it runs the screen. */
+    public InspectScreen inspectScreen(Player player, java.util.function.Function<ItemStack, String> moddedId) {
+        Session s = open.get(player.getUniqueId());
+        if (s == null) {
+            return InspectScreen.CLOSED;
+        }
+        List<InspectSlot> slots = new ArrayList<>();
+        if (s.live && s.liveSlots != null && !s.liveSlots.isEmpty()) {
+            for (LiveBridge.Slot slot : s.liveSlots) {
+                String json = slot.stack();
+                if (json == null || json.equals("-")) {
+                    continue;
+                }
+                java.util.regex.Matcher id = INSPECT_ID.matcher(json);
+                if (!id.find()) {
+                    continue;
+                }
+                java.util.regex.Matcher count = INSPECT_COUNT.matcher(json);
+                slots.add(new InspectSlot(slot.menuIndex(), id.group(1),
+                        count.find() ? Integer.parseInt(count.group(1)) : 1));
+            }
+        } else {
+            for (int k = 0; k < s.held.length && k < s.capture.slots().size(); k++) {
+                ItemStack stack = s.held[k];
+                if (stack == null || stack.getType().isAir()) {
+                    continue;
+                }
+                String item = moddedId.apply(stack);
+                if (item == null) {
+                    item = stack.getType().getKey().toString();
+                }
+                slots.add(new InspectSlot(s.capture.slots().get(k).index(), item, stack.getAmount()));
+            }
+        }
+        String menuType = s.menuType != null ? s.menuType : (s.capture != null ? s.capture.menuId() : null);
+        String menuClass = s.liveMenuClass != null ? s.liveMenuClass
+                : s.capture != null && s.capture.menuClass() != null ? s.capture.menuClass() : s.scene.menu();
+        String title = s.capture != null ? s.capture.title() : null;
+        return new InspectScreen(true, menuType, menuClass,
+                s.scene.shortName().toLowerCase(java.util.Locale.ROOT), title, slots);
     }
 
     /** Opens the screen of one menu; the gallery's ours leg uses this. */
@@ -1660,6 +1723,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         s.liveSlots = state.slots();
         if (state.menuClass() != null) {
             s.liveMenuClass = state.menuClass();
+        }
+        if (state.menuType() != null) {
+            s.menuType = state.menuType();
         }
         s.liveWidgets = widgetStates(player, s);
         if (s.liveHeld == null || s.liveHeld.length != s.held.length) {
