@@ -1,0 +1,240 @@
+{
+  "id": "kinetics-04b-encased-fan-blasting-lava",
+  "notes": "Same chain as 04a with lava (minecraft:lava) in front of the fan. Create's blasting catalyst tag for fans is lava and flowing lava (create:fan_processing_catalysts/blasting). The fan runs the vanilla blasting recipes (raw iron -> iron ingot). Note: lava is blasting, not smelting, and the smoking catalysts are fire, campfires and blaze burners. Expected truth: raw iron comes out as iron ingot ahead of the fan. Same UNSURE as 04a on the fluid side, and the item is summoned by command.",
+  "setup": [
+    "fill 306 121 310 306 121 310 minecraft:stone",
+    "fill 309 121 310 309 121 310 minecraft:lava",
+    "give {player} create:hand_crank 1",
+    "give {player} create:encased_fan 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 90.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:encased_fan"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "command",
+      "text": "summon minecraft:item 310.5 121.5 310.5 {Item:{id:\"minecraft:raw_iron\",count:1}}"
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 8
+    },
+    {
+      "observe": "block",
+      "pos": [
+        309,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "do": "collect",
+      "pos": [
+        312,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "UNSURE geometry (catalyst side) and the item is summoned by a command. Lava placement by setup fill is terrain, the same as water."
+}

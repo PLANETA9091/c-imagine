@@ -1,0 +1,119 @@
+{
+  "id": "kinetics-06-andesite-funnel-chute-chest",
+  "notes": "Chest on the platform (308,121,310), andesite funnel on its top (308,122,310), chute above the funnel (308,123,310). An iron ingot is put into the chute with interact (ingot in hand). The chute drops it into the funnel, the funnel into the chest. Wait 4 s, then the chest is opened with an empty hand and its screen and slots are read. Truth expectation: chest slot holds one iron_ingot. The funnel and the chute pass items with no power, so the outcome needs no crank.",
+  "setup": [
+    "give {player} minecraft:chest 1",
+    "give {player} create:andesite_funnel 1",
+    "give {player} create:chute 1",
+    "give {player} minecraft:iron_ingot 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "minecraft:chest"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:andesite_funnel"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:chute"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "select",
+      "item": "minecraft:iron_ingot"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "wait",
+      "seconds": 4
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Funnel direction on placement (output into the chest) is unverified: if the funnel points the wrong way the chest stays empty and the verdict is a real difference to triage, not a harness error. Chute item storage is not observable beyond the funnel/chest end state."
+}

@@ -1,0 +1,177 @@
+{
+  "id": "kinetics-02-water-wheel-shaft-press-depot-sheet",
+  "notes": "Flowing water (minecraft:water level 1) fill at x 302-304, y 121-123, z 308-312 (setup terrain, not a Create block). Water wheel (305,122,310) on the west face of a shaft (306,122,310); shaft on the west face of the mechanical press (307,122,310); depot (307,121,310) under the press. Pieces placed in the order depot, press, shaft, wheel so each place step has a solid neighbour. Press faces along X (player at yaw 270) so its axis is X and the shaft mates with its back. One iron ingot on the depot by interact; wait 8 s (recipe timer ~5 s at 32 rpm, 8 s gives margin); the iron sheet is taken from the depot with an empty hand. Truth expectation: create:iron_sheet x1 in inventory. Ingot count goes 1 -> 0 on both.",
+  "setup": [
+    "fill 302 121 308 304 123 312 minecraft:water[level=1]",
+    "give {player} create:water_wheel 1",
+    "give {player} create:shaft 1",
+    "give {player} create:mechanical_press 1",
+    "give {player} create:depot 1",
+    "give {player} minecraft:iron_ingot 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:depot"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:mechanical_press"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 270.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        306,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        306,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:water_wheel"
+    },
+    {
+      "do": "place",
+      "pos": [
+        305,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        305,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "select",
+      "item": "minecraft:iron_ingot"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "wait",
+      "seconds": 8
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "observe": "screen"
+    }
+  ],
+  "todo": "The depot contents and the press/wheel speed are not observable (depot items are block-entity storage; the sheet is observed only after the empty-hand take). Press facing from the placement yaw is unverified: the place adapter may re-aim the player."
+}

@@ -1,0 +1,274 @@
+{
+  "id": "kinetics-07-clutch-gearbox-redstone-lever",
+  "notes": "Hand crank (308,121,310, Y) -> shaft (308,122,310) -> clutch (308,123,310) -> shaft (308,124,310) -> gearbox (308,125,310). Stone (306,123,310) carries a lever on its east face at (307,123,310) that is adjacent to the clutch. Crank turned 12 times to spin up, then the lever is turned on with interact (empty hand), then 3 s wait. Observable: clutch block state powered=false -> true (create:clutch[axis=y,powered=true]), lever state. The rotation stop itself is not observable in the runner (no speed); only screenshots show the clutch disengaged.",
+  "setup": [
+    "fill 306 123 310 306 123 310 minecraft:stone",
+    "give {player} create:hand_crank 1",
+    "give {player} create:shaft 2",
+    "give {player} create:clutch 1",
+    "give {player} create:gearbox 1",
+    "give {player} minecraft:lever 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:clutch"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        124,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:gearbox"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        125,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        125,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "minecraft:lever"
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        123,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 3
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        125,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Gearbox output rotation and clutch disengage are only visible in screenshots: no speed observe on either stack. Lever is placed on a stone block set by setup fill, so the place adapter must pick it as the neighbour."
+}

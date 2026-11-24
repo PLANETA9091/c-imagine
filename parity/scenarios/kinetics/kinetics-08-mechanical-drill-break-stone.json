@@ -1,0 +1,224 @@
+{
+  "id": "kinetics-08-mechanical-drill-break-stone",
+  "notes": "Stone wall (306,121,310); hand crank on its east face (307,121,310, facing east); mechanical drill (308,121,310) facing east, its back on the crank; stone target at (309,121,310) in front of the drill (setup terrain). Crank turned 16 times, wait 10 s, the drill mines the stone and the cobblestone drop is walked over with collect. Truth expectation: block at (309,121,310) becomes air, cobblestone 1 in inventory. Drop chance and break time depend on the drill speed; the walk-over collect makes the pickup deterministic on both stacks.",
+  "setup": [
+    "fill 306 121 310 306 121 310 minecraft:stone",
+    "fill 309 121 310 309 121 310 minecraft:stone",
+    "give {player} create:hand_crank 1",
+    "give {player} create:mechanical_drill 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 90.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:mechanical_drill"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 10
+    },
+    {
+      "observe": "block",
+      "pos": [
+        309,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "do": "collect",
+      "pos": [
+        309,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Drill break timing is not measured; the 10 s wait is a guess. Drill speed is not observable. The collect target may be the air cell after the break, which is the expected drop point."
+}

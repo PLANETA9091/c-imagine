@@ -1,0 +1,140 @@
+{
+  "id": "kinetics-10-steam-engine-tank-blaze-burner",
+  "notes": "Blaze burner on the platform (308,121,310) fuelled with create:blaze_cake (interact with the cake in hand); fluid tank on top of the burner (308,122,310); water filled into the tank with a water bucket (use_at on the tank face); steam engine on top of the tank (308,123,310). Survival only: every item comes from give (no creative), placements are place steps. Expected truth: engine block placed, tank holds water, burner lit (create:lit_blaze_burner). Steam engine output shaft is not set up.",
+  "setup": [
+    "give {player} create:blaze_burner 1",
+    "give {player} create:blaze_cake 1",
+    "give {player} create:fluid_tank 1",
+    "give {player} create:steam_engine 1",
+    "give {player} minecraft:water_bucket 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:blaze_burner"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:blaze_cake"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "select",
+      "item": "create:fluid_tank"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "minecraft:water_bucket"
+    },
+    {
+      "do": "use_at",
+      "point": [
+        308.5,
+        122.5,
+        310.2
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "select",
+      "item": "create:steam_engine"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 8
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Steam engine boiler rules (tank water level, burner heat, engine attach face) are not verified in source; the fluid level and steam output are not observable (fluid tank has no block state). A pass here proves placement only. Blaze burner ignition by blaze cake is unverified."
+}

@@ -1,0 +1,268 @@
+{
+  "id": "kinetics-03-millstone-hand-crank-wheat",
+  "notes": "Hand crank (308,121,310), shaft (308,122,310, Y), millstone (308,123,310) on top of the shaft. One wheat placed in the millstone with interact (wheat in hand), then the crank is turned 20 times with an empty hand, then 6 s wait. Milling recipe create:milling wheat: processing_time 150 ticks (7.5 s at 32 rpm), result create:wheat_flour x1 guaranteed, plus a 25% chance of a second flour and a 25% chance of wheat seeds. Output is taken with an empty hand. Expected truth: create:wheat_flour count 1 or more, wheat count 0. Bonus rolls are random, so the inventory check uses block_only only where needed (here flour count can differ by chance: compared as-is, expect a DIFFERENT only from RNG).",
+  "setup": [
+    "give {player} create:hand_crank 1",
+    "give {player} create:shaft 1",
+    "give {player} create:millstone 1",
+    "give {player} minecraft:wheat 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:millstone"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "minecraft:wheat"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 6
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        123,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "observe": "screen"
+    }
+  ],
+  "todo": "Milling bonus rolls are random: flour count may differ between runs. Millstone progress and the crank speed are not observable."
+}

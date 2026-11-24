@@ -1,0 +1,223 @@
+{
+  "id": "kinetics-01-hand-crank-shaft-cogwheel",
+  "notes": "Hand crank on the platform top (308,121,310, axis Y), shaft on top of it (308,122,310, axis Y), cogwheel on the east side of the shaft (309,122,310, axis must follow the shaft = Y). Crank is then turned 12 times with an empty hand. Block states of all three are compared (static: facing/axis only). Rotation is NOT in any block state: the only evidence is the crank animation and speed in screenshots. Create speed (goggles tooltip) needs goggles worn, not set up here.",
+  "setup": [
+    "give {player} create:hand_crank 1",
+    "give {player} create:shaft 1",
+    "give {player} create:cogwheel 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:cogwheel"
+    },
+    {
+      "do": "place",
+      "pos": [
+        309,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        309,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        309,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Speed/rotation not observable on either stack in the runner (no block-entity or speed observe; OURS /cim inspect block returns block state only, see gaps in the report)."
+}

@@ -1,0 +1,241 @@
+{
+  "id": "kinetics-04a-encased-fan-splashing-water",
+  "notes": "Washing with a fan. Stone wall (306,121,310); hand crank on its east face (307,121,310, axis X, facing east); encased fan (308,121,310) facing east (player at yaw 90 so the block faces east), its back touches the crank. Water source placed in the first block in front of the fan (309,121,310), the crushed raw iron item is summoned on the ground beyond it (310,121,310). Splashing (washing) recipe for create:crushed_raw_iron: 9 minecraft:iron_nugget + 75% minecraft:redstone. Fan catalyst tag for splashing is water and flowing water (create:fan_processing_catalysts/splashing). Expected truth: the item is washed; the nuggets appear in the air current and end up on the ground ahead (walk over the output to pick it up). Output location is not known in advance, so the collect target is a guess. UNSURE: whether Create reads the catalyst fluid in front of the fan (used here) or behind it (the crank side).",
+  "setup": [
+    "fill 306 121 310 306 121 310 minecraft:stone",
+    "fill 309 121 310 309 121 310 minecraft:water",
+    "give {player} create:hand_crank 1",
+    "give {player} create:encased_fan 1",
+    "give {player} create:crushed_raw_iron 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 90.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:encased_fan"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "command",
+      "text": "summon minecraft:item 310.5 121.5 310.5 {Item:{id:\"minecraft:crushed_raw_iron\",count:1}}"
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 8
+    },
+    {
+      "observe": "block",
+      "pos": [
+        309,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "do": "collect",
+      "pos": [
+        312,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "UNSURE geometry (catalyst side) and the item is summoned by a command, not placed by the player: the runner has no item-entity observe. Walked-to collect point is a guess. Replace the summon when a player item-drop step exists."
+}

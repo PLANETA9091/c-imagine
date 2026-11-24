@@ -1,0 +1,225 @@
+{
+  "id": "kinetics-09-deployer-hoe-on-dirt",
+  "notes": "Stone wall (306,121,310); hand crank on its east face (307,121,310, facing east); deployer (308,121,310) facing east, back on the crank; dirt in front at (309,121,310) (setup terrain). Stone hoe put into the deployer with interact (hoe in hand), crank turned 16 times, wait 8 s. Deployer uses the held item on the block in front: hoe on dirt -> farmland. Truth expectation: block at (309,121,310) is minecraft:farmland. Hoe stays in the deployer, not in the inventory; durability is not observable (see report).",
+  "setup": [
+    "fill 306 121 310 306 121 310 minecraft:stone",
+    "fill 309 121 310 309 121 310 minecraft:dirt",
+    "give {player} create:hand_crank 1",
+    "give {player} create:deployer 1",
+    "give {player} minecraft:stone_hoe 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 90.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:deployer"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "select",
+      "item": "minecraft:stone_hoe"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 8
+    },
+    {
+      "observe": "block",
+      "pos": [
+        309,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Deployer filter/hoe insertion by interact is unverified; if the hoe is refused the scenario ends at the inventory check (a real difference, not a harness error). Deployer use timing is a guess."
+}

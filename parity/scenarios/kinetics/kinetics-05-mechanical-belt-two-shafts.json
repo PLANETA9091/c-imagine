@@ -1,0 +1,287 @@
+{
+  "id": "kinetics-05-mechanical-belt-two-shafts",
+  "notes": "Belt between two shafts. Stone wall (307,121,308); hand crank on its south face (307,121,309, axis Z); pulley shaft (307,121,310, axis Z) in front of the crank; belt pieces on top of the pulley shafts at y=122 along X (307..311, z=310); second pulley shaft (311,121,310, axis Z) under the far end. Belt pieces placed with yaw 270 so the belt runs along X. An iron ingot is put on the belt start (307,122,310) by interact with the ingot in hand; crank turned 12 times; wait 6 s; the belt end (311,122,310) is the drop point. Truth expectation: the ingot leaves the belt end and lands on the ground beyond it (or in the ground stack after the last piece). Output location is not known in advance. The belt item is block-entity storage: its position is not observable in the runner.",
+  "setup": [
+    "fill 307 121 308 307 121 308 minecraft:stone",
+    "give {player} create:hand_crank 1",
+    "give {player} create:shaft 2",
+    "give {player} create:belt 5",
+    "give {player} minecraft:iron_ingot 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:hand_crank"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        308.5
+      ],
+      "yaw": 270.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        311,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        311,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "select",
+      "item": "create:belt"
+    },
+    {
+      "do": "place",
+      "pos": [
+        307,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        309,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        310,
+        122,
+        310
+      ]
+    },
+    {
+      "do": "place",
+      "pos": [
+        311,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        307,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        311,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "select",
+      "item": "minecraft:iron_ingot"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "interact",
+      "pos": [
+        307,
+        121,
+        309
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 6
+    },
+    {
+      "observe": "block",
+      "pos": [
+        311,
+        122,
+        310
+      ]
+    },
+    {
+      "observe": "screen"
+    },
+    {
+      "do": "collect",
+      "pos": [
+        312,
+        121,
+        310
+      ]
+    },
+    {
+      "do": "wait",
+      "seconds": 2
+    },
+    {
+      "observe": "inventory"
+    }
+  ],
+  "todo": "Belt geometry (pulley axis, belt facing) is from the Create docs, not verified in the source. Belt item position is not observable; the outcome is the ground item at the end, observed by collect only. Second pulley shaft is not powered by the crank directly: it depends on the belt."
+}
