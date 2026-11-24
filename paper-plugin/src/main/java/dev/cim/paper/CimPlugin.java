@@ -89,7 +89,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             hosts.put(row.moddedId(), row.hostItem());
         }
         Map<String, String> items = new java.util.TreeMap<>();
-        var displays = new java.util.HashSet<String>();
         String prefix = "assets/c-imagine/items/";
         try (var zip = new java.util.zip.ZipFile(pack.toFile())) {
             var doors = zip.getEntry("c-imagine/door-projections.tsv");
@@ -110,14 +109,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
                 String model = "c-imagine:" + path.substring(prefix.length(), path.length() - 5);
-                String display = dev.cim.f2v.F2vPack.moddedIdOfDisplayItemModel(model);
-                if (display != null) {
-                    displays.add(display);
-                }
                 String id = dev.cim.f2v.F2vPack.moddedIdOfItemModel(model);
                 if (id != null) {
                     items.put(id, hosts.getOrDefault(id, "minecraft:paper"));
                 }
+            }
+        }
+        // 14-e253 THE DISPLAY SET IS THE ROWS' TRUTH: the pack also carries
+        // _display/ item defs for NON-SOLID note-carrier blocks (the
+        // renderType branch of the block channel — create:depot's cutout
+        // model), and the old zip-side parse flipped every such block to
+        // barrier placement while its resolved row said a note slot: the
+        // survival smoke placed "carrier key null state barrier" against the
+        // ledger's xylophone:15 (run 45484928686). The display family is
+        // what visual-blocks.resolved.tsv says, nothing else.
+        var displays = new java.util.HashSet<String>();
+        for (dev.cim.f2v.F2vPack.VisualBlock row : f2v.blocks()) {
+            if (row.isDisplay()) {
+                displays.add(row.moddedBlockId());
             }
         }
         commandItems = java.util.Collections.unmodifiableMap(items);
