@@ -1641,26 +1641,61 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         dev.cim.hud.ScreenHud.InspectScreen v = dev.cim.hud.HudBootstrap.inspectScreenForHarness(p,
                 this::moddedIdOfStack);
+        // A vanilla-container-backed menu (schematic table, furnace) has no HUD session: its top slots are
+        // the container's own, mapped back to modded ids the same way as inspect inv.
+        org.bukkit.inventory.InventoryView view = p.getOpenInventory();
+        org.bukkit.inventory.Inventory top = view == null ? null : view.getTopInventory();
+        // The player's own 2x2 crafting view is CRAFTING with 5 slots; a furnace (3 slots) or a bigger
+        // grid is a container.
+        boolean container = top != null && (top.getSize() > 5
+                || top.getType() != org.bukkit.event.inventory.InventoryType.CRAFTING)
+                && (!v.open() || v.slots().isEmpty());
         com.google.gson.JsonObject o = new com.google.gson.JsonObject();
         o.addProperty("kind", "screen");
         o.addProperty("player", p.getName());
-        o.addProperty("open", v.open());
-        o.add("menu_type", v.menuType() == null ? com.google.gson.JsonNull.INSTANCE
-                : new com.google.gson.JsonPrimitive(v.menuType()));
+        o.addProperty("open", v.open() || container);
+        String menuType = v.menuType();
+        if (container && menuType == null) {
+            menuType = top.getType().name().toLowerCase(java.util.Locale.ROOT);
+        }
+        o.add("menu_type", menuType == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(menuType));
         // The simple class name (ToolboxMenu), as the spec and the runner's notes use it.
         String cls = v.menuClass() == null ? null
                 : v.menuClass().substring(Math.max(v.menuClass().lastIndexOf('.'), v.menuClass().lastIndexOf('$')) + 1);
         o.add("menu_class", cls == null ? com.google.gson.JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(cls));
-        o.addProperty("screen", v.screen());
-        o.add("title", v.title() == null ? com.google.gson.JsonNull.INSTANCE
-                : new com.google.gson.JsonPrimitive(v.title()));
+        o.addProperty("screen", container && !v.open() ? "container" : v.screen());
+        String title = v.title();
+        if (container && title == null && view != null) {
+            title = view.getTitle();
+        }
+        o.add("title", title == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(title));
         com.google.gson.JsonArray slots = new com.google.gson.JsonArray();
-        for (dev.cim.hud.ScreenHud.InspectSlot s : v.slots()) {
-            com.google.gson.JsonObject so = new com.google.gson.JsonObject();
-            so.addProperty("index", s.index());
-            so.addProperty("item", s.item());
-            so.addProperty("count", s.count());
-            slots.add(so);
+        if (container) {
+            for (int i = 0; i < top.getSize(); i++) {
+                ItemStack stack = top.getItem(i);
+                if (stack == null || stack.getType().isAir()) {
+                    continue;
+                }
+                String item = moddedIdOfStack(stack);
+                if (item == null) {
+                    item = stack.getType().getKey().toString();
+                }
+                com.google.gson.JsonObject so = new com.google.gson.JsonObject();
+                so.addProperty("index", i);
+                so.addProperty("item", item);
+                so.addProperty("count", stack.getAmount());
+                slots.add(so);
+            }
+        } else {
+            for (dev.cim.hud.ScreenHud.InspectSlot s : v.slots()) {
+                com.google.gson.JsonObject so = new com.google.gson.JsonObject();
+                so.addProperty("index", s.index());
+                so.addProperty("item", s.item());
+                so.addProperty("count", s.count());
+                slots.add(so);
+            }
         }
         o.add("slots", slots);
         emitInspect(sender, o);
