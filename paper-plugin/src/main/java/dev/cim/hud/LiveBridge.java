@@ -409,6 +409,22 @@ final class LiveBridge {
     }
 
     /**
+     * The point a click on {@code face} of {@code clicked} lands on: the player's eye ray to the block
+     * (what the client aimed at), else the middle of that face.
+     */
+    private static org.bukkit.util.Vector hitOnFace(Player player, org.bukkit.block.Block clicked,
+                                                   org.bukkit.block.BlockFace face) {
+        org.bukkit.Location eye = player.getEyeLocation();
+        org.bukkit.util.RayTraceResult trace = clicked.rayTrace(eye, eye.getDirection(), 6.0,
+                org.bukkit.FluidCollisionMode.NEVER);
+        if (trace != null) {
+            return trace.getHitPosition();
+        }
+        return clicked.getLocation().toVector().add(new org.bukkit.util.Vector(0.5, 0.5, 0.5))
+                .add(face.getDirection().multiply(0.5));
+    }
+
+    /**
      * A right click with the held item on a block of Paper's world, by the item's own code:
      * {@code clickedId} is the mod block clicked, or null for a world block.
      */
@@ -418,10 +434,26 @@ final class LiveBridge {
 
     UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId,
                 boolean sneaking) {
+        return useOn(player, clicked, face, clickedId, sneaking, null);
+    }
+
+    /**
+     * As {@link #useOn(Player, Block, BlockFace, String, boolean)}, with the player's look and the
+     * real hit point on the face: {@code hit} is the absolute world point the click landed on, or null
+     * to find it by a ray from the player's eye (the face centre when that ray misses).
+     */
+    UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId,
+                boolean sneaking, org.bukkit.util.Vector hit) {
         StringBuilder in = new StringBuilder("use-on\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(clicked.getX()).append('\t').append(clicked.getY())
                 .append('\t').append(clicked.getZ()).append('\t').append(face.name().toLowerCase(java.util.Locale.ROOT))
                 .append('\t').append(clickedId == null ? "-" : clickedId).append('\t').append(sneaking ? "1" : "0");
+        // Trailing context (see UseContext on the layer): hit x y z, feet x y z, yaw, pitch.
+        org.bukkit.util.Vector at = hit != null ? hit : hitOnFace(player, clicked, face);
+        org.bukkit.Location feet = player.getLocation();
+        in.append('\t').append(at.getX()).append('\t').append(at.getY()).append('\t').append(at.getZ())
+                .append('\t').append(feet.getX()).append('\t').append(feet.getY()).append('\t').append(feet.getZ())
+                .append('\t').append(feet.getYaw()).append('\t').append(feet.getPitch());
         appendInventory(in, player, true);
         heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         String answer = call(in.toString());

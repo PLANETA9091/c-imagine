@@ -1318,7 +1318,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         player.teleport(at.getLocation().add(2.5, 0, 0.5));
         player.getInventory().clear();
         player.getInventory().setItemInMainHand(bridge.stackOf(itemId, 1));
-        boolean did = placeOrUse(player, bridge, ground, org.bukkit.block.BlockFace.UP, null);
+        boolean did = placeOrUse(player, bridge, ground, org.bukkit.block.BlockFace.UP, null, null);
         if (!did || carried(at) == null) {
             out.add("place " + itemId + " -> refused (carried " + carried(at) + ", block "
                     + at.getBlockData().getAsString() + ")");
@@ -2072,7 +2072,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
                 && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
             LiveBridge bridge = liveReady();
-            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), carried(block))) {
+            // The exact point the click landed on, when it is on the block the event named.
+            org.bukkit.util.Vector clickedAt = null;
+            if (event.getClickedPosition() != null && block.equals(event.getClickedBlock())) {
+                clickedAt = block.getLocation().toVector().add(event.getClickedPosition());
+            }
+            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), carried(block), clickedAt)) {
                 event.setCancelled(true);
                 return;
             }
@@ -2104,8 +2109,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * first opening; a menu it opened is shown. True when the click did something.
      */
     private boolean placeOrUse(Player player, LiveBridge bridge, Block clicked, org.bukkit.block.BlockFace face,
-                               String clickedId) {
-        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId);
+                               String clickedId, org.bukkit.util.Vector hit) {
+        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId, player.isSneaking(), hit);
         if (result.state().error() != null) {
             log.warning("[cim-screen] live use-on failed: " + result.state().error());
             return false;

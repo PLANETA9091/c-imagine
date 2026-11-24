@@ -251,7 +251,8 @@ public final class LiveProtocol {
                     yield out.toString();
                 }
                 case "use-on" -> {
-                    // use-on TAB uuid TAB name TAB x TAB y TAB z TAB face TAB clickedBlock TAB sneaking, then
+                    // use-on TAB uuid TAB name TAB x TAB y TAB z TAB face TAB clickedBlock TAB sneaking
+                    // [TAB hitX TAB hitY TAB hitZ TAB feetX TAB feetY TAB feetZ TAB yaw TAB pitch], then
                     // inv lines (the held stack in slot 0): a right click with a mod item on a block
                     // in Paper's world, done by the item's own code as a client's click is. The
                     // clicked block stands in the facade as itself when it is a mod block, as stone
@@ -278,10 +279,27 @@ public final class LiveProtocol {
                     net.minecraft.core.BlockPos stand_at = into.relative(face, 2);
                     player.setPos(stand_at.getX() + 0.5, stand_at.getY(), stand_at.getZ() + 0.5);
                     player.setShiftKeyDown(head.length > 8 && head[8].equals("1"));
+                    // The real player's place, look and hit point, when Paper sent them (see UseContext).
+                    UseContext context = UseContext.parse(head);
+                    float savedYaw = player.getYRot();
+                    float savedPitch = player.getXRot();
+                    net.minecraft.world.phys.Vec3 hitAt = net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5);
+                    if (context != null) {
+                        player.setPos(context.feetX(), context.feetY(), context.feetZ());
+                        player.setYRot(context.yaw());
+                        player.setXRot(context.pitch());
+                        player.yRotO = context.yaw();
+                        player.xRotO = context.pitch();
+                        player.yHeadRot = context.yaw();
+                        player.yHeadRotO = context.yaw();
+                        player.yBodyRot = context.yaw();
+                        player.yBodyRotO = context.yaw();
+                        hitAt = new net.minecraft.world.phys.Vec3(context.hitX(), context.hitY(), context.hitZ());
+                    }
                     BLOCKS.put(id, pos);
                     net.minecraft.world.item.ItemStack stack = player.getItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND);
                     net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
-                            net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5), face, pos, false);
+                            hitAt, face, pos, false);
                     var store = level.store();
                     store.beginPlacement();
                     java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> writes;
@@ -293,6 +311,16 @@ public final class LiveProtocol {
                         }
                     } finally {
                         player.setShiftKeyDown(false);
+                        if (context != null) {
+                            player.setYRot(savedYaw);
+                            player.setXRot(savedPitch);
+                            player.yRotO = savedYaw;
+                            player.xRotO = savedPitch;
+                            player.yHeadRot = savedYaw;
+                            player.yHeadRotO = savedYaw;
+                            player.yBodyRot = savedYaw;
+                            player.yBodyRotO = savedYaw;
+                        }
                         writes = store.endPlacement();
                     }
                     StringBuilder out = new StringBuilder(state(player, player.opened()));
