@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,9 @@ import java.util.Map;
  * no mod id, screen name, framebuffer capture or client class loading is required.</p>
  */
 public final class GuiSpriteBytecodeScanner {
+    /** The vanilla player-inventory panel width (AbstractContainerScreen's 176-wide chest panel). */
+    private static final int INVENTORY_PANEL_WIDTH = 176;
+
 
     public static final class Sprite {
         public String owner;
@@ -88,6 +92,8 @@ public final class GuiSpriteBytecodeScanner {
         public final List<Sprite> sprites = new ArrayList<>();
         public final List<ScreenBackground> backgrounds = new ArrayList<>();
         public final List<ScreenLayer> layers = new ArrayList<>();
+        /** Background origin {dx, dy} per screen class: layers and widgets are leftPos-relative, the scene is not. */
+        public final Map<String, int[]> backgroundOrigins = new LinkedHashMap<>();
     }
 
     private GuiSpriteBytecodeScanner() {}
@@ -113,6 +119,9 @@ public final class GuiSpriteBytecodeScanner {
         result.sprites.addAll(sprites.values());
         inferRenderedBackgrounds(result, sprites);
         inferLowLevelBlitBackgrounds(nodes, result, sprites);
+        // After background inference: a helper's panel must not become a screen's background.
+        collectCalledHelperLayers(nodes, withStaticAliases(nodes, sprites), result.layers);
+        applyBackgroundOrigins(nodes, result);
         return result;
     }
 
@@ -2365,6 +2374,270 @@ public final class GuiSpriteBytecodeScanner {
         int opcode = instruction.getOpcode();
         if (opcode >= Opcodes.ICONST_M1 && opcode <= Opcodes.ICONST_5) {
             return opcode - Opcodes.ICONST_0;
+        }
+        return null;
+    }
+
+    /** A screen method that calls a helper (its own or inherited, same jar) which blits a sprite
+     * with its own parameters as coordinates draws that sprite too, exactly as Java dispatch does.
+     * ToolboxScreen.renderBg calls the inherited renderPlayerInventory(g, x, y), which blits
+     * AllGuiTextures.PLAYER_INVENTORY at its parameters: the caller gets that panel as an unresolved
+     * (-1, -1) layer, the same floating inventory rule the direct draws use. Only 176-wide sprites
+     * qualify, the vanilla player-inventory panel width. Static aliases (PLAYER = PLAYER_INVENTORY)
+     * resolve through the screen's clinit. The call-site predicate is kept on the copy. */
+    private static void collectCalledHelperLayers(Map<String, ClassNode> nodes, Map<String, Sprite> sprites,
+            List<ScreenLayer> layers) {
+        if (nodes == null || nodes.isEmpty() || layers == null || sprites == null) return;
+        for (ClassNode node : nodes.values()) {
+            if (node == null || node.methods == null || !declaresGuiGraphicsMethod(node)) continue;
+            for (MethodNode method : node.methods) {
+                if (method == null || method.instructions == null || method.desc == null
+                        || !method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
+                for (AbstractInsnNode instruction : method.instructions) {
+                    if (!(instruction instanceof MethodInsnNode call) || call.name == null
+                            || call.name.startsWith("<") || call.owner == null
+                            || !call.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
+                    MethodNode helper = null;
+                    for (String cursor = call.owner; cursor != null && helper == null;) {
+                        ClassNode owner = nodes.get(cursor);
+                        if (owner == null) break;
+                        helper = findMethod(owner, call.name, call.desc);
+                        cursor = owner.superName;
+                    }
+                    if (helper == null || helper.instructions == null || helper.desc == null
+                            || helper == method) continue;
+                    var callPredicate = ClientSurfaceScanner.screenDrawPredicate(node, method, call, nodes);
+                    if (callPredicate != null && callPredicate.op == RendererBytecodeScanner.BooleanOp.CONSTANT
+                            && !callPredicate.constant) continue;
+                    for (AbstractInsnNode helperInstruction : helper.instructions) {
+                        if (!(helperInstruction instanceof MethodInsnNode draw)
+                                || !"render".equals(draw.name)
+                                || !"(Lnet/minecraft/client/gui/GuiGraphics;II)V".equals(draw.desc)) continue;
+                        List<Sym> stack = straightLineStack(helper, draw, sprites, null, null);
+                        if (stack == null || stack.size() < 4) continue;
+                        Sym receiver = stack.get(3), x = stack.get(1), y = stack.get(0);
+                        if (receiver.kind() != Sym.SPRITE || x.kind() == Sym.INT || y.kind() == Sym.INT) continue;
+                        Sprite sprite = sprites.get(receiver.sprite());
+                        if (sprite == null || sprite.width != INVENTORY_PANEL_WIDTH) continue;
+                        boolean exists = layers.stream().anyMatch(existing -> existing != null
+                                && node.name.equals(existing.screenClass)
+                                && sprite.owner.equals(existing.spriteOwner)
+                                && sprite.field.equals(existing.spriteField)
+                                && existing.x < 0);
+                        if (exists) continue;
+                        ScreenLayer copy = new ScreenLayer();
+                        copy.screenClass = node.name;
+                        copy.spriteOwner = sprite.owner;
+                        copy.spriteField = sprite.field;
+                        copy.x = -1; copy.y = -1;
+                        copy.width = sprite.width; copy.height = sprite.height;
+                        copy.predicateAnalyzed = true;
+                        copy.visiblePredicate = callPredicate;
+                        copy.conditional = callPredicate == null
+                                || callPredicate.op != RendererBytecodeScanner.BooleanOp.CONSTANT || !callPredicate.constant;
+                        layers.add(copy);
+                    }
+                }
+            }
+        }
+    }
+
+    /** Sprite map plus each class's own static aliases (PLAYER = AllGuiTextures.PLAYER_INVENTORY),
+     * keyed by the alias owner.name as well, so bytecode that reads the alias resolves. */
+    private static Map<String, Sprite> withStaticAliases(Map<String, ClassNode> nodes, Map<String, Sprite> sprites) {
+        Map<String, Sprite> out = new HashMap<>(sprites);
+        for (ClassNode node : nodes.values()) {
+            MethodNode clinit = node == null ? null : findMethod(node, "<clinit>");
+            if (clinit == null || clinit.instructions == null) continue;
+            String last = null;
+            for (AbstractInsnNode insn : clinit.instructions) {
+                if (!(insn instanceof FieldInsnNode field)) continue;
+                String key = field.owner + '.' + field.name;
+                if (field.getOpcode() == Opcodes.GETSTATIC) {
+                    last = out.containsKey(key) ? key : null;
+                } else if (field.getOpcode() == Opcodes.PUTSTATIC && node.name.equals(field.owner)
+                        && last != null) {
+                    out.putIfAbsent(key, out.get(last));
+                    last = null;
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Abstract value of the straight-line stack model: an int l*leftPos + t*topPos + k, a static
+     * sprite handle, the receiver, or unknown. */
+    private record Sym(int kind, int l, int t, int k, String sprite) {
+        static final int UNKNOWN = 0, INT = 1, SPRITE = 2, THIS = 3;
+        static final Sym UNK = new Sym(UNKNOWN, 0, 0, 0, null);
+        static Sym integer(int k) { return new Sym(INT, 0, 0, k, null); }
+    }
+
+    /** Evaluates one branch-free method up to {@code stop} and returns its operand stack, top first
+     * (null when the code branches or uses an operation outside this model). */
+    private static List<Sym> straightLineStack(MethodNode method, AbstractInsnNode stop,
+            Map<String, Sprite> sprites, Integer imageWidth, Integer imageHeight) {
+        java.util.ArrayDeque<Sym> stack = new java.util.ArrayDeque<>();
+        Map<Integer, Sym> locals = new HashMap<>();
+        locals.put(0, new Sym(Sym.THIS, 0, 0, 0, null));
+        for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn == stop) return new ArrayList<>(stack);
+            int op = insn.getOpcode();
+            if (op < 0) continue;
+            if (op >= Opcodes.ICONST_M1 && op <= Opcodes.ICONST_5) {
+                stack.push(Sym.integer(op - Opcodes.ICONST_0));
+            } else if (insn instanceof IntInsnNode number && (op == Opcodes.BIPUSH || op == Opcodes.SIPUSH)) {
+                stack.push(Sym.integer(number.operand));
+            } else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Integer value) {
+                stack.push(Sym.integer(value));
+            } else if (insn instanceof VarInsnNode var && (op == Opcodes.ILOAD || op == Opcodes.ALOAD)) {
+                stack.push(locals.getOrDefault(var.var, Sym.UNK));
+            } else if (insn instanceof VarInsnNode var && (op == Opcodes.ISTORE || op == Opcodes.ASTORE)) {
+                if (stack.isEmpty()) return null;
+                locals.put(var.var, stack.pop());
+            } else if (op == Opcodes.IADD || op == Opcodes.ISUB) {
+                if (stack.size() < 2) return null;
+                Sym b = stack.pop(), a = stack.pop();
+                if (a.kind() != Sym.INT || b.kind() != Sym.INT) stack.push(Sym.UNK);
+                else if (op == Opcodes.IADD) stack.push(new Sym(Sym.INT, a.l() + b.l(), a.t() + b.t(), a.k() + b.k(), null));
+                else stack.push(new Sym(Sym.INT, a.l() - b.l(), a.t() - b.t(), a.k() - b.k(), null));
+            } else if (op == Opcodes.GETSTATIC && insn instanceof FieldInsnNode field) {
+                Sprite sprite = sprites.get(field.owner + '.' + field.name);
+                stack.push(sprite == null ? Sym.UNK
+                        : new Sym(Sym.SPRITE, 0, 0, 0, sprite.owner + '.' + sprite.field));
+            } else if (op == Opcodes.GETFIELD && insn instanceof FieldInsnNode field) {
+                if (stack.isEmpty()) return null;
+                Sym receiver = stack.pop();
+                Sym value = Sym.UNK;
+                if (receiver.kind() == Sym.THIS) {
+                    if ("leftPos".equals(field.name)) value = new Sym(Sym.INT, 1, 0, 0, null);
+                    else if ("topPos".equals(field.name)) value = new Sym(Sym.INT, 0, 1, 0, null);
+                    else if ("imageWidth".equals(field.name) && imageWidth != null) value = Sym.integer(imageWidth);
+                    else if ("imageHeight".equals(field.name) && imageHeight != null) value = Sym.integer(imageHeight);
+                }
+                stack.push(value);
+            } else if (op == Opcodes.PUTFIELD) {
+                if (stack.size() < 2) return null;
+                stack.pop();
+                stack.pop();
+            } else if (op == Opcodes.POP) {
+                if (stack.isEmpty()) return null;
+                stack.pop();
+            } else if (op == Opcodes.DUP) {
+                if (stack.isEmpty()) return null;
+                stack.push(stack.peek());
+            } else if (insn instanceof MethodInsnNode call
+                    && (op == Opcodes.INVOKEVIRTUAL || op == Opcodes.INVOKESPECIAL
+                        || op == Opcodes.INVOKESTATIC || op == Opcodes.INVOKEINTERFACE)) {
+                Type[] args = Type.getArgumentTypes(call.desc);
+                if (stack.size() < args.length + (op == Opcodes.INVOKESTATIC ? 0 : 1)) return null;
+                Sym receiver = Sym.UNK;
+                for (int i = 0; i < args.length; i++) stack.pop();
+                if (op != Opcodes.INVOKESTATIC) receiver = stack.pop();
+                if (Type.getReturnType(call.desc).getSort() == Type.VOID) continue;
+                Sym result = Sym.UNK;
+                if (receiver.kind() == Sym.SPRITE && args.length == 0 && "()I".equals(call.desc)) {
+                    Sprite sprite = sprites.get(receiver.sprite());
+                    if ("getWidth".equals(call.name) && sprite != null) result = Sym.integer(sprite.width);
+                    if ("getHeight".equals(call.name) && sprite != null) result = Sym.integer(sprite.height);
+                }
+                stack.push(result);
+            } else {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** Where a screen's own background is drawn relative to leftPos/topPos, proven from its
+     * straight-line code: the background's render call takes leftPos + k, with imageWidth and
+     * imageHeight from the screen's own setWindowSize. Returns {dx, dy} or null. */
+    private static int[] backgroundOriginFor(ClassNode node, String spriteOwner, String spriteKey,
+            Map<String, Sprite> sprites) {
+        Integer imageWidth = null, imageHeight = null;
+        for (MethodNode method : node.methods) {
+            if (method == null || method.instructions == null
+                    || !("init".equals(method.name) || "<init>".equals(method.name))) continue;
+            for (AbstractInsnNode insn : method.instructions) {
+                if (!(insn instanceof MethodInsnNode call) || !"setWindowSize".equals(call.name)
+                        || !"(II)V".equals(call.desc)) continue;
+                List<Sym> stack = straightLineStack(method, call, sprites, null, null);
+                if (stack == null || stack.size() < 2) continue;
+                Sym height = stack.get(0), width = stack.get(1);
+                if (width.kind() == Sym.INT && width.l() == 0 && width.t() == 0
+                        && height.kind() == Sym.INT && height.l() == 0 && height.t() == 0) {
+                    imageWidth = width.k();
+                    imageHeight = height.k();
+                }
+            }
+        }
+        if (imageWidth == null || imageHeight == null) return null;
+        for (MethodNode method : node.methods) {
+            if (method == null || method.instructions == null || method.desc == null
+                    || !method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
+            for (AbstractInsnNode insn : method.instructions) {
+                if (!(insn instanceof MethodInsnNode call) || !"render".equals(call.name)
+                        || !spriteOwner.equals(call.owner)
+                        || !"(Lnet/minecraft/client/gui/GuiGraphics;II)V".equals(call.desc)) continue;
+                List<Sym> stack = straightLineStack(method, call, sprites, imageWidth, imageHeight);
+                if (stack == null || stack.size() < 4) break;
+                Sym y = stack.get(0), x = stack.get(1), receiver = stack.get(3);
+                if (receiver.kind() != Sym.SPRITE || !spriteKey.equals(receiver.sprite())) break;
+                if (x.kind() == Sym.INT && x.l() == 1 && x.t() == 0
+                        && y.kind() == Sym.INT && y.l() == 0 && y.t() == 1) {
+                    return new int[]{x.k(), y.k()};
+                }
+                break;
+            }
+        }
+        return null;
+    }
+
+    /** Scene pieces are relative to the background's top left, while bytecode layers are relative
+     * to leftPos/topPos. Each screen's background origin (proven by backgroundOriginFor) is
+     * subtracted from its layers; a layer that inherits its background from an ancestor uses the
+     * ancestor's origin. Unresolved coordinates (-1) stay unresolved. */
+    private static void applyBackgroundOrigins(Map<String, ClassNode> nodes, Result result) {
+        if (nodes == null || result == null || result.backgrounds.isEmpty() || result.layers.isEmpty()) return;
+        Map<String, Sprite> sprites = new HashMap<>();
+        for (Sprite sprite : result.sprites) sprites.put(sprite.owner + '.' + sprite.field, sprite);
+        sprites = withStaticAliases(nodes, sprites);
+        Map<String, int[]> origins = new HashMap<>();
+        for (ScreenBackground background : result.backgrounds) {
+            if (background == null || background.screenClass == null || background.spriteOwner == null
+                    || background.spriteField == null) continue;
+            String screen = normalize(background.screenClass);
+            ClassNode node = nodes.get(screen);
+            if (node == null || origins.containsKey(screen)) continue;
+            int[] origin = backgroundOriginFor(node, background.spriteOwner,
+                    background.spriteOwner + '.' + background.spriteField, sprites);
+            if (origin != null) origins.put(screen, origin);
+        }
+        if (origins.isEmpty()) return;
+        for (ClassNode node : nodes.values()) {
+            if (node == null || node.name == null) continue;
+            int[] origin = inheritedOrigin(normalize(node.name), origins, nodes);
+            if (origin != null && (origin[0] != 0 || origin[1] != 0)) {
+                result.backgroundOrigins.put(normalize(node.name), origin);
+            }
+        }
+        for (ScreenLayer layer : result.layers) {
+            if (layer == null || layer.screenClass == null) continue;
+            int[] origin = result.backgroundOrigins.get(normalize(layer.screenClass));
+            if (origin == null) continue;
+            if (layer.x != -1) layer.x -= origin[0];
+            if (layer.y != -1) layer.y -= origin[1];
+        }
+    }
+
+    private static int[] inheritedOrigin(String screen, Map<String, int[]> origins, Map<String, ClassNode> nodes) {
+        String cursor = screen;
+        for (int depth = 0; cursor != null && depth < 16; depth++) {
+            int[] origin = origins.get(cursor);
+            if (origin != null) return origin;
+            ClassNode node = nodes.get(cursor);
+            if (node == null || declaresGuiGraphicsMethod(node)) return null;
+            cursor = node.superName;
         }
         return null;
     }

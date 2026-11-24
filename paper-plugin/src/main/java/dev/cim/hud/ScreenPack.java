@@ -304,7 +304,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v19");
+        StringBuilder out = new StringBuilder("v21");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -716,13 +716,17 @@ public final class ScreenPack {
                                 || a.widgetYAnchor != ClientSurfaceScanner.WidgetCoordinateAnchor.START) {
                             continue;
                         }
-                        widgets.add(new Widget(a.widgetX, a.widgetY, a.widgetWidth, a.widgetHeight, a.widgetLabel));
+                        // Widget coordinates are leftPos-relative like layers: rebase them onto the background.
+                        int[] origin = profile.guiOrigins.get(slashed(b.screenClass));
+                        int wx = origin == null ? a.widgetX : a.widgetX - origin[0];
+                        int wy = origin == null ? a.widgetY : a.widgetY - origin[1];
+                        widgets.add(new Widget(wx, wy, a.widgetWidth, a.widgetHeight, a.widgetLabel));
                         GuiSpriteBytecodeScanner.Sprite icon = sprites.get(a.widgetVisualOwner + "." + a.widgetVisualField);
                         if (icon != null) {
                             int dx = Math.max(0, (a.widgetWidth - icon.width) / 2);
                             int dy = Math.max(0, (a.widgetHeight - icon.height) / 2);
-                            pieces.add(new Piece(HudPack.BUTTON, a.widgetX, a.widgetY, a.widgetWidth, a.widgetHeight, false));
-                            pieces.addAll(tiles(icon, textures, a.widgetX + dx, a.widgetY + dy, shared, art));
+                            pieces.add(new Piece(HudPack.BUTTON, wx, wy, a.widgetWidth, a.widgetHeight, false));
+                            pieces.addAll(tiles(icon, textures, wx + dx, wy + dy, shared, art));
                         }
                     }
                 }
@@ -1685,6 +1689,13 @@ public final class ScreenPack {
                         e.getKey() + " art from the scanner: " + (s == null ? null : s.width() + "x" + s.height()
                                 + " pieces=" + s.pieces().size() + " menu=" + s.menu()));
             }
+            // fix/menu-look: ToolboxScreen's renderBg calls the inherited renderPlayerInventory (a floating
+            // panel) and draws its toolbox button at leftPos+111 while its background sits at leftPos+30.
+            Scene toolbox = again.stream().filter(x -> x.shortName().equals("ToolboxScreen")
+                    && x.width() == 188).findFirst().orElse(null);
+            bad += check(toolbox != null && toolbox.pieces().stream().anyMatch(Piece::floating)
+                    && toolbox.widgets().stream().anyMatch(w -> w.x() == 81 && w.y() == 69),
+                    "ToolboxScreen: floating player inventory and toolbox button rebased to (81,69)");
         }
         // 14-di the run-capture overlay selftest: a synthetic seed pack, a
         // synthetic ScreenArt dump, the whole merge law offline (numbering,
