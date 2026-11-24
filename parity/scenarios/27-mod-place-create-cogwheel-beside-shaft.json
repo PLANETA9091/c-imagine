@@ -1,6 +1,6 @@
 {
  "id": "27-mod-place-create-cogwheel-beside-shaft",
- "notes": "Shaft placed on the floor, then a cogwheel clicked on the east side of that shaft (air under the cog so the shaft is its only neighbour). Observes both block states: the cog axis and whether the shaft changed.",
+ "notes": "Shaft placed on the floor, then a cogwheel clicked on the EAST face of that shaft (308 121 310), the player standing east of it at 311.5 121 310.5 (yaw 90 = facing west). Air under the cog.",
  "setup": [
   "give {player} create:shaft 1",
   "give {player} create:cogwheel 1",
@@ -42,11 +42,27 @@
    "item": "create:cogwheel"
   },
   {
+   "do": "tp",
+   "pos": [
+    311.5,
+    121,
+    310.5
+   ],
+   "yaw": 90.0,
+   "pitch": 0.0
+  },
+  {
    "do": "place",
    "pos": [
     309,
     121,
     310
+   ],
+   "face": "east",
+   "hit": [
+    0.5,
+    0.5,
+    0.5
    ]
   },
   {

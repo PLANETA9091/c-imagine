@@ -34,6 +34,7 @@ class CarriedCursorTests(unittest.TestCase):
         st = stacks.OursStack.__new__(stacks.OursStack)
         st.ctl = lambda *a, **k: {"screen": "playing", "slots": [], "carried": carried}
         st._server_inv = lambda: server
+        st.inspect = lambda *a, **k: None  # no server in the unit test: container ids are not applied
         return st
 
     def test_cursor_modded_id_replaces_paper(self):

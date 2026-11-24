@@ -43,6 +43,7 @@ Commands: hello, state, wait-ready, block, blocks, inventory, look, look-at-bloc
 select, break, place, interact, use-item, key, use-at, respawn, attack, screen (alias menu),
 click-slot, open-inventory, close, command, chat, messages, entities, screenshot, wait.
 
+- `entities [radius]`: item entities also carry `item` (modded id) and `count` (the dropped stack).
 - `respawn`: if the client is on the DeathScreen (or the player is dead), calls
   `LocalPlayer.respawn()` (the Respawn button path), closes the death screen and waits up
   to 10 s for the player to be alive in world. Reply: `{ok, respawned:true, screen,

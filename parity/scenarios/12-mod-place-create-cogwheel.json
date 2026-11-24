@@ -14,6 +14,12 @@
     308,
     121,
     310
+   ],
+   "face": "up",
+   "hit": [
+    0.5,
+    1.0,
+    0.5
    ]
   },
   {
@@ -27,5 +33,6 @@
   {
    "observe": "inventory"
   }
- ]
+ ],
+ "notes": "Cogwheel clicked on the top face of the floor block (308 120 310), face centre: the face is pinned so the axis is defined on both stacks."
 }
