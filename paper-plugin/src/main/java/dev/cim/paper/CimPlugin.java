@@ -1645,8 +1645,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // the container's own, mapped back to modded ids the same way as inspect inv.
         org.bukkit.inventory.InventoryView view = p.getOpenInventory();
         org.bukkit.inventory.Inventory top = view == null ? null : view.getTopInventory();
-        // The player's own 2x2 crafting view has 5 slots; any larger top inventory is a container.
-        boolean container = top != null && top.getSize() > 5 && (!v.open() || v.slots().isEmpty());
+        // The player's own 2x2 crafting view is CRAFTING with 5 slots; a furnace (3 slots) or a bigger
+        // grid is a container.
+        boolean container = top != null && (top.getSize() > 5
+                || top.getType() != org.bukkit.event.inventory.InventoryType.CRAFTING)
+                && (!v.open() || v.slots().isEmpty());
         com.google.gson.JsonObject o = new com.google.gson.JsonObject();
         o.addProperty("kind", "screen");
         o.addProperty("player", p.getName());
