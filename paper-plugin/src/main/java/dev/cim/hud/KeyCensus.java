@@ -44,6 +44,10 @@ public final class KeyCensus {
     private static final Pattern LANG_ENTRY =
             Pattern.compile("\"((?:[^\"\\\\]|\\\\.)+)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
     private static final int MAX_NESTED_DEPTH = 2;
+    private static final Pattern CTOR_NAME = Pattern.compile("[a-z0-9_-]+(?:\\.[a-z0-9_-]+)+");
+    private static final String KEY_MAPPING_NAME = "net/minecraft/client/KeyMapping";
+    /** Stream marker for {@code new KeyMapping}: the next string pushed is the constructor's name argument. */
+    static final Object NEW_KEY_MAPPING = new Object();
 
     /** One registered binding. {@code defaultKey} is a GLFW code, -1 when unbound. */
     public record ModKey(String modId, String id, String label, String category, int defaultKey) {
@@ -141,11 +145,25 @@ public final class KeyCensus {
                         category = lang.getOrDefault(s, s);
                     }
                 }
+                boolean ctorName = false;
                 for (int i = 0; i < stream.size(); i++) {
-                    if (!(stream.get(i) instanceof String s)) {
+                    Object token = stream.get(i);
+                    if (token == NEW_KEY_MAPPING) {
+                        ctorName = true;
                         continue;
                     }
-                    String id = lang.containsKey(s) && isBindingKey(s) ? s : bySuffix.get(s);
+                    if (token instanceof Integer) {
+                        // The key code follows the name, so a constructor without a literal name ends here.
+                        ctorName = false;
+                    }
+                    if (!(token instanceof String s)) {
+                        continue;
+                    }
+                    // The first string a KeyMapping constructor takes is its name, whatever the prefix.
+                    boolean asCtorName = ctorName && isCtorName(s);
+                    ctorName = false;
+                    String id = asCtorName ? s
+                            : lang.containsKey(s) && isBindingKey(s) ? s : bySuffix.get(s);
                     if (id == null && s.startsWith("key.") && !s.startsWith("key.categories.")
                             && s.indexOf('.', 4) > 0) {
                         id = s;
@@ -168,7 +186,13 @@ public final class KeyCensus {
 
         private static boolean isBindingKey(String key) {
             return (key.startsWith("key.") && !key.startsWith("key.categories."))
+                    || key.startsWith("keybinds.")
                     || key.contains(".keyinfo.");
+        }
+
+        /** A dotted, lower-case name that is not a category; any prefix counts. */
+        private static boolean isCtorName(String s) {
+            return s.length() <= 160 && CTOR_NAME.matcher(s).matches() && !s.startsWith("key.categories.");
         }
 
         private static int nextKeyCode(List<Object> stream, int from) {
@@ -230,6 +254,7 @@ public final class KeyCensus {
             int count = in.readUnsignedShort();
             Object[] pool = new Object[count];
             int[] stringRef = new int[count];
+            int[] classRef = new int[count];
             for (int i = 1; i < count; i++) {
                 int tag = in.readUnsignedByte();
                 switch (tag) {
@@ -240,7 +265,8 @@ public final class KeyCensus {
                         in.readLong();
                         i++;
                     }
-                    case 7, 16, 19, 20 -> in.readUnsignedShort();
+                    case 7 -> classRef[i] = in.readUnsignedShort();
+                    case 16, 19, 20 -> in.readUnsignedShort();
                     case 8 -> stringRef[i] = in.readUnsignedShort();
                     case 9, 10, 11, 12, 17, 18 -> in.readInt();
                     case 15 -> {
@@ -263,7 +289,7 @@ public final class KeyCensus {
                         int len = in.readInt();
                         byte[] body = in.readNBytes(len);
                         if ("Code".equals(name)) {
-                            decode(body, pool, stringRef, tokens);
+                            decode(body, pool, stringRef, classRef, tokens);
                         }
                     }
                 }
@@ -271,7 +297,7 @@ public final class KeyCensus {
             return tokens;
         }
 
-        private static void decode(byte[] attr, Object[] pool, int[] stringRef, List<Object> out) {
+        private static void decode(byte[] attr, Object[] pool, int[] stringRef, int[] classRef, List<Object> out) {
             int start = 8;
             int end = start + (((attr[4] & 255) << 24) | ((attr[5] & 255) << 16)
                     | ((attr[6] & 255) << 8) | (attr[7] & 255));
@@ -284,6 +310,11 @@ public final class KeyCensus {
                     out.add((int) attr[pc + 1]);
                 } else if (op == 0x11) {
                     out.add((int) (short) (((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255)));
+                } else if (op == 0xbb) {
+                    int idx = ((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255);
+                    if (classRef[idx] != 0 && KEY_MAPPING_NAME.equals(pool[classRef[idx]])) {
+                        out.add(NEW_KEY_MAPPING);
+                    }
                 } else if (op == 0x12 || op == 0x13) {
                     int idx = op == 0x12 ? attr[pc + 1] & 255
                             : ((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255);
@@ -317,6 +348,9 @@ public final class KeyCensus {
 
     // ---- selftest ----------------------------------------------------------
 
+    /** Selftest marker: a {@code new net/minecraft/client/KeyMapping} in the fixture class. */
+    private static final Object NEW_KM = new Object();
+
     /** Hand-assembled class: {@code <clinit>} pushes the given ldc strings and sipush ints. */
     static byte[] fixtureClass(Object... pushes) throws IOException {
         ByteArrayOutputStream code = new ByteArrayOutputStream();
@@ -337,7 +371,10 @@ public final class KeyCensus {
         int superClass = next++;
         pool.writeByte(1);
         pool.writeUTF("net/minecraft/client/KeyMapping");
-        next++;
+        int kmUtf = next++;
+        pool.writeByte(7);
+        pool.writeShort(kmUtf);
+        int kmClass = next++;
         pool.writeByte(1);
         pool.writeUTF("<clinit>");
         int clinit = next++;
@@ -348,7 +385,11 @@ public final class KeyCensus {
         pool.writeUTF("Code");
         int codeName = next++;
         for (Object p : pushes) {
-            if (p instanceof String s) {
+            if (p == NEW_KM) {
+                code.write(0xbb);
+                code.write(kmClass >> 8);
+                code.write(kmClass);
+            } else if (p instanceof String s) {
                 pool.writeByte(1);
                 pool.writeUTF(s);
                 int utf = next++;
@@ -424,10 +465,14 @@ public final class KeyCensus {
                         "key.fixmod.dash", 82, "key.categories.fixmod",
                         "enum_style", 342, "Some description",
                         "unbound_one", -1,
-                        "key.fixmod.no_lang", 70),
+                        "key.fixmod.no_lang", 70,
+                        NEW_KM, "keybinds.fixmod.roll", 82, "key.categories.fixmod",
+                        NEW_KM, "fixmod.custom.spin", 90, "key.categories.fixmod",
+                        NEW_KM, "keybinds.fixmod.nolang", -1,
+                        NEW_KM, 70, "key.categories.fixmod"),
                 "{\"key.fixmod.dash\":\"Dash\",\"fixmod.keyinfo.enum_style\":\"Enum Style\","
                         + "\"fixmod.keyinfo.unbound_one\":\"Unbound\",\"key.fixmod.unused\":\"Never registered\","
-                        + "\"key.categories.fixmod\":\"Fix Mod\"}");
+                        + "\"key.categories.fixmod\":\"Fix Mod\",\"keybinds.fixmod.roll\":\"Roll\"}");
         List<ModKey> keys = scanJar(jar);
         ModKey dash = find(keys, "key.fixmod.dash");
         bad += check(dash != null && dash.defaultKey() == 82 && dash.label().equals("Dash"),
@@ -440,6 +485,20 @@ public final class KeyCensus {
         ModKey nl = find(keys, "key.fixmod.no_lang");
         bad += check(nl != null && nl.defaultKey() == 70, "binding without a lang entry survives");
         bad += check(find(keys, "key.fixmod.unused") == null, "lang key no class names is not a binding");
+        ModKey roll = find(keys, "keybinds.fixmod.roll");
+        bad += check(roll != null && roll.defaultKey() == 82 && roll.label().equals("Roll")
+                && roll.category().equals("Fix Mod"), "keybinds.* name after new KeyMapping, with lang and category");
+        ModKey spin = find(keys, "fixmod.custom.spin");
+        bad += check(spin != null && spin.defaultKey() == 90, "constructor name with any prefix (no lang entry)");
+        ModKey nolang = find(keys, "keybinds.fixmod.nolang");
+        bad += check(nolang != null && nolang.defaultKey() == -1 && nolang.label().equals("keybinds.fixmod.nolang"),
+                "keybinds.* unbound constructor name, label falls back to the id");
+        bad += check(find(keys, "key.categories.fixmod") == null,
+                "a category after a computed name (no literal name) is not a binding");
+        if (args.length > 2) {
+            ModKey combatRoll = find(scanJar(Files.readAllBytes(Path.of(args[2]))), "keybinds.combat_roll.roll");
+            bad += check(combatRoll != null && combatRoll.defaultKey() == 82, "real Combat Roll jar: keybinds.combat_roll.roll defaults to R");
+        }
         if (args.length > 1) {
             List<ModKey> real = scanJar(Files.readAllBytes(Path.of(args[1])));
             real.forEach(k -> System.out.println("     " + k));
