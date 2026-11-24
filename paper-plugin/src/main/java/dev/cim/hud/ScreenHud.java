@@ -230,9 +230,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      */
     private final java.util.concurrent.CompletableFuture<Object[]> liveScan;
 
+    private final dev.cim.f2v.ItemText itemText;
+
     public ScreenHud(Logger log, Path modsDir) {
         this.log = log;
         this.modsDir = modsDir;
+        itemText = new dev.cim.f2v.ItemText(modsDir, log);
         this.liveScan = java.util.concurrent.CompletableFuture.supplyAsync(() -> {
             // The layer loads its mods on its own thread: wait for cimlive, but not forever.
             for (int i = 0; i < 600 && !LiveBridge.available(); i++) {
@@ -338,6 +341,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(org.bukkit.event.world.ChunkLoadEvent event) {
         adoptDisplays(event.getChunk());
+        migrateLegacyDoors(event.getChunk());
+        restoreDoorAnchors(event.getChunk());
         if (!LiveBridge.available()) {
             return;
         }
@@ -355,6 +360,18 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (!displayFamily) {
             return; // no display rows in this build: no chunk PDC to read
         }
+        // Worldgen just placed display-family blocks (BOP leaves and friends):
+        // the populator cannot spawn entities, so it queued them by position.
+        // Writing the chunk PDC first lets the adopt below create the displays.
+        try {
+            int queued = dev.cim.worldgen.ModWorldgen.flushDisplays(chunk);
+            if (queued > 0 && ModWorldgenDebug()) {
+                log.info("[c-imagine] live: chunk " + chunk.getX() + "," + chunk.getZ()
+                        + " carried " + queued + " display(s) from worldgen");
+            }
+        } catch (RuntimeException e) {
+            log.warning("[c-imagine] live: display flush failed: " + e);
+        }
         if (chunk.isEntitiesLoaded() || plugin == null) {
             DisplayCarriers.adopt(chunk, this::knownDisplay);
             return;
@@ -366,10 +383,16 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         });
     }
 
+    /** The worldgen debug switch (the same {@code -Dcim.worldgen.debug} flag). */
+    private static boolean ModWorldgenDebug() {
+        return Boolean.getBoolean("cim.worldgen.debug");
+    }
+
     /** True when {@code moddedId} is a display-family block in this build's rows. */
     private boolean knownDisplay(String moddedId) {
         F2vPack.VisualBlock row = blockCarrierRows.get(moddedId);
-        return row != null && row.isDisplay();
+        return row != null && (row.isDisplay()
+                || (plugin instanceof dev.cim.paper.CimPlugin cim && cim.usesBlockDisplay(moddedId)));
     }
 
     /**
@@ -380,6 +403,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         for (org.bukkit.World world : org.bukkit.Bukkit.getWorlds()) {
             for (org.bukkit.Chunk chunk : world.getLoadedChunks()) {
                 adoptDisplays(chunk);
+                migrateLegacyDoors(chunk);
+                restoreDoorAnchors(chunk);
             }
         }
     }
@@ -421,6 +446,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** A chunk unloads: its placed mod blocks stop ticking and keep their data in the chunk. */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkUnload(org.bukkit.event.world.ChunkUnloadEvent event) {
+        var chunk = event.getChunk();
+        for (Block block : List.copyOf(doorCollision.keySet())) {
+            if (block.getWorld().equals(chunk.getWorld()) && block.getX() >> 4 == chunk.getX()
+                    && block.getZ() >> 4 == chunk.getZ()) {
+                removeDoorCollision(block);
+            }
+        }
         if (live != null && live.releaseChunk(event.getChunk())) {
             logTicking();
         }
@@ -437,8 +469,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** The plugin disables: the ticking blocks' data is kept before the server stops. */
     @EventHandler
     public void onPluginDisable(org.bukkit.event.server.PluginDisableEvent event) {
-        if (live != null && event.getPlugin() == plugin) {
-            live.saveAll(this::carried);
+        if (event.getPlugin() == plugin) {
+            for (var view : doorOutlineViews.values()) {
+                view.remove();
+            }
+            doorOutlineViews.clear();
+            List.copyOf(doorCollision.keySet()).forEach(this::removeDoorCollision);
+            if (live != null) {
+                live.saveAll(this::carried);
+            }
         }
     }
 
@@ -454,6 +493,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         org.bukkit.Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (live == null) {
                 return;
+            }
+            if (org.bukkit.Bukkit.getCurrentTick() % 5 == 0) {
+                refreshDoorCollision();
+                for (Player player : org.bukkit.Bukkit.getOnlinePlayers()) {
+                    DoorTarget target = busy.test(player) || open.containsKey(player.getUniqueId())
+                            ? null : doorTarget(player);
+                    updateDoorOutline(player, target);
+                }
             }
             boolean any = false;
             for (Session s : open.values()) {
@@ -527,9 +574,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     /** The real stack that shows as a modded item, or air when there is none. */
     ItemStack carrier(String moddedId) {
+        if (moddedId != null && plugin instanceof dev.cim.paper.CimPlugin cim) {
+            Material host = Material.matchMaterial(cim.commandItems().getOrDefault(moddedId, "minecraft:air"));
+            if (host != null && !host.isAir()) {
+                return allocatedCarrier(moddedId, host);
+            }
+        }
         F2vPack.VisualItem row = moddedId == null ? null : carrierRows.get(moddedId);
         if (row == null && moddedId != null && allocatedItems.contains(moddedId)) {
-            return allocatedCarrier(moddedId);
+            return allocatedCarrier(moddedId, Material.PAPER);
         }
         Material host = row == null ? null : Material.matchMaterial(row.hostItem());
         if (host == null) {
@@ -548,14 +601,20 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      * A stack of an allocated mod item: a vanilla host, named by item_model (its own items/ definition in
      * the pack) and by the leaf name of its id. The id reads back through {@link #itemId}.
      */
-    public static ItemStack allocatedCarrier(String moddedId) {
-        ItemStack stack = new ItemStack(Material.PAPER);
+    private ItemStack allocatedCarrier(String moddedId, Material host) {
+        ItemStack stack = new ItemStack(host);
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
         org.bukkit.NamespacedKey model = org.bukkit.NamespacedKey.fromString(F2vPack.allocatedItemModel(moddedId));
         if (model != null) {
             meta.setItemModel(model);
         }
-        meta.itemName(net.kyori.adventure.text.Component.text(F2vPack.allocatedItemName(moddedId)));
+        meta.itemName(net.kyori.adventure.text.Component.text(itemText.name(moddedId)));
+        var lore = itemText.lore(moddedId);
+        if (!lore.isEmpty()) {
+            meta.lore(lore.stream().<net.kyori.adventure.text.Component>map(line ->
+                    net.kyori.adventure.text.Component.text(line).decoration(
+                            net.kyori.adventure.text.format.TextDecoration.ITALIC, false)).toList());
+        }
         stack.setItemMeta(meta);
         return stack;
     }
@@ -1662,6 +1721,29 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (modded == null) {
             return;
         }
+        if (modded.equals(projectedDoor(block))) {
+            ProjectedDoorOutline outline = doorOutline(block);
+            if (outline != null && outline.trace(block, event.getPlayer().getEyeLocation(),
+                    blockReach(event.getPlayer())) == null) {
+                event.setCancelled(true);
+                return;
+            }
+            var door = doorData(block);
+            Block other = otherDoorHalf(block, door);
+            removeDoorCollision(block);
+            removeDoorCollision(other);
+            removeDoorPanels(door.getHalf() == org.bukkit.block.data.Bisected.Half.BOTTOM ? block : other);
+            forgetDoor(block);
+            if (modded.equals(projectedDoor(other))) {
+                forgetDoor(other);
+                other.setType(Material.AIR, false);
+            }
+            if (event.isDropItems() && event.getPlayer().getGameMode() == org.bukkit.GameMode.SURVIVAL) {
+                block.getWorld().dropItemNaturally(block.getLocation(), carrier(modded));
+            }
+            event.setDropItems(false);
+            return;
+        }
         // the barrier goes with the break (the event is not cancelled): its display goes too
         boolean display = block.getType() == Material.BARRIER;
         LiveBridge bridge = live();
@@ -1842,6 +1924,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (block == null || blockCarriers.isEmpty()) {
             return null;
         }
+        String door = projectedDoor(block);
+        if (door != null) {
+            return door;
+        }
         if (block.getType() == Material.BARRIER) {
             String id = DisplayCarriers.idAt(block);
             return id != null && knownDisplay(id) ? id : null;
@@ -1867,6 +1953,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Neighbor updates (redstone, a block set below) must not re-tune a carrier. */
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
     public void onCarrierPhysics(org.bukkit.event.block.BlockPhysicsEvent event) {
+        if (projectedDoor(event.getBlock()) != null) {
+            event.setCancelled(true);
+            return;
+        }
         if (isCarrierType(event.getChangedType()) && carried(event.getBlock()) != null) {
             event.setCancelled(true);
         }
@@ -1941,7 +2031,24 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         String opener = null;
         Block block = event.getClickedBlock();
+        var face = event.getBlockFace();
+        if (!player.isSneaking()) {
+            DoorTarget target = doorTarget(player);
+            if (target != null) {
+                block = target.block();
+                face = target.face();
+            } else if (projectedDoor(block) != null && doorOutline(block) != null) {
+                event.setCancelled(true);
+                return;
+            }
+        }
         String modded = carried(block);
+        if (modded != null && modded.equals(projectedDoor(block)) && !player.isSneaking()) {
+            if (useProjectedDoor(player, block, modded, face)) {
+                event.setCancelled(true);
+                return;
+            }
+        }
         if (modded != null) {
             opener = "block:" + modded;
             LiveBridge bridge = liveReady();
@@ -1997,14 +2104,27 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[cim-screen] live use-on failed: " + result.state().error());
             return false;
         }
+        if (result.placements().size() == 2 && placeProjectedDoor(clicked.getWorld(), result.placements())) {
+            bridge.applyInventory(player, result.state());
+            log.info("[cim-screen] " + player.getName() + " placed both halves of " + result.placements().getFirst().id());
+            return true;
+        }
+        if (result.placements().size() > 1) {
+            log.info("[cim-screen] Multi-block placement needs a complete projection: "
+                    + result.placements().stream()
+                    .map(p -> p.state() + " collision=" + p.collision()).toList());
+            return false;
+        }
         boolean did = false;
         if (result.placedId() != null) {
             F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
             Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
-            if (row != null && (at.getType().isAir() || at.isReplaceable())) {
-                at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
-                if (row.isDisplay()) {
+            if (row != null && (at.getType().isAir() || at.isReplaceable()) && projectedDoor(at) == null) {
+                if (knownDisplay(row.moddedBlockId())) {
+                    at.setType(Material.BARRIER, false);
                     DisplayCarriers.place(at, row.moddedBlockId());
+                } else {
+                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
                 }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
                 if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
@@ -2023,6 +2143,531 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             bridge.applyInventory(player, result.state());
         }
         return did;
+    }
+
+    private final Map<Block, List<DoorCollision.Proxy>> doorCollision = new HashMap<>();
+    private final Map<UUID, Block> doorShells = new HashMap<>();
+
+    private void removeDoorCollision(Block block) {
+        var proxies = doorCollision.remove(block);
+        if (proxies != null) {
+            for (var proxy : proxies) {
+                doorShells.remove(proxy.shell().getUniqueId());
+                proxy.remove();
+            }
+        }
+    }
+
+    private boolean updateDoorCollision(Block block) {
+        var shape = doorOutline(block);
+        if (shape == null) {
+            return false;
+        }
+        try {
+            var replacement = DoorCollision.spawn(block, shape.collision());
+            removeDoorCollision(block);
+            doorCollision.put(block, replacement);
+            for (var proxy : replacement) {
+                doorShells.put(proxy.shell().getUniqueId(), block);
+            }
+            return true;
+        } catch (RuntimeException failure) {
+            log.warning("[cim-screen] Door collision at " + block.getLocation() + ": " + failure.getMessage());
+            return false;
+        }
+    }
+
+    private void refreshDoorCollision() {
+        for (Block block : List.copyOf(doorCollision.keySet())) {
+            if (!isDoorTargetChunkLoaded(block) || block.getType() != Material.LIGHT || projectedDoor(block) == null) {
+                removeDoorCollision(block);
+            } else if (doorCollision.get(block).stream().anyMatch(proxy -> !proxy.shell().isValid()
+                    || proxy.shell().getVehicle() != proxy.mount())) {
+                updateDoorCollision(block);
+            }
+        }
+    }
+
+    private boolean useProjectedDoor(Player player, Block block, String id, org.bukkit.block.BlockFace face) {
+        var door = doorData(block);
+        Block bottom = door.getHalf() == org.bukkit.block.data.Bisected.Half.BOTTOM
+                ? block : otherDoorHalf(block, door);
+        Block top = bottom.getRelative(org.bukkit.block.BlockFace.UP);
+        LiveBridge bridge = liveReady();
+        if (bridge == null || !id.equals(projectedDoor(bottom)) || !id.equals(projectedDoor(top))) {
+            return false;
+        }
+        if (!movingDoors.contains(bottom.getLocation())) {
+            Boolean open = bridge.useDoor(player, bottom, nativeDoorState(bottom), nativeDoorState(top), face);
+            if (open != null && open != door.isOpen()) {
+                animateProjectedDoor(bottom, top, id, open);
+            }
+        }
+        return true;
+    }
+
+    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    public void onDoorShellUse(org.bukkit.event.player.PlayerInteractEntityEvent event) {
+        if (!doorShells.containsKey(event.getRightClicked().getUniqueId())) {
+            return;
+        }
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        if (event.getHand() != EquipmentSlot.HAND || player.isSneaking() || busy.test(player)) {
+            return;
+        }
+        DoorTarget target = doorTarget(player);
+        if (target != null) {
+            useProjectedDoor(player, target.block(), projectedDoor(target.block()), target.face());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onDoorShellAttack(io.papermc.paper.event.player.PrePlayerAttackEntityEvent event) {
+        if (!doorShells.containsKey(event.getAttacked().getUniqueId())) {
+            return;
+        }
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        if (busy.test(player) || player.getGameMode() == org.bukkit.GameMode.ADVENTURE
+                || player.getGameMode() == org.bukkit.GameMode.SPECTATOR) {
+            return;
+        }
+        DoorTarget target = doorTarget(player);
+        if (target != null && target.block().getType() == Material.LIGHT
+                && target.block().equals(doorShells.get(event.getAttacked().getUniqueId()))) {
+            var block = target.block();
+            var breaking = new org.bukkit.event.block.BlockBreakEvent(block, player);
+            if (breaking.callEvent()) {
+                block.setType(Material.AIR, false);
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.HIGH)
+    public void onDoorAnchorPlace(org.bukkit.event.block.BlockPlaceEvent event) {
+        var replaced = event.getBlockReplacedState();
+        if (replaced.getType() == Material.LIGHT && storedDoorState(replaced.getBlock()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    private final Map<String, ProjectedDoorOutline> doorOutlines = new java.util.HashMap<>();
+    private final java.util.Set<String> missingDoorShapes = new java.util.HashSet<>();
+
+    private record DoorTarget(Block block, org.bukkit.block.BlockFace face, ProjectedDoorOutline outline) {
+    }
+
+    private final Map<UUID, DoorOutlineView> doorOutlineViews = new java.util.HashMap<>();
+
+    private record DoorOutlineView(Block block, ProjectedDoorOutline outline,
+                                   List<org.bukkit.entity.ItemDisplay> displays) {
+        void remove() {
+            displays.forEach(org.bukkit.entity.Entity::remove);
+        }
+    }
+
+    private void updateDoorOutline(Player player, DoorTarget target) {
+        UUID id = player.getUniqueId();
+        DoorOutlineView view = doorOutlineViews.get(id);
+        if (view != null) {
+            if (target != null && view.block().equals(target.block()) && view.outline() == target.outline()) {
+                return;
+            }
+            doorOutlineViews.remove(id);
+            view.remove();
+        }
+        if (target != null) {
+            doorOutlineViews.put(id, new DoorOutlineView(target.block(), target.outline(),
+                    target.outline().show(plugin, player, target.block())));
+        }
+    }
+
+    private ProjectedDoorOutline doorOutline(Block block) {
+        LiveBridge bridge = live;
+        if (bridge == null) {
+            return null;
+        }
+        return doorOutlines.computeIfAbsent(nativeDoorState(block), state -> {
+            if (!LiveBridge.ready()) {
+                return null;
+            }
+            String reply = bridge.doorOutline(state);
+            ProjectedDoorOutline outline = ProjectedDoorOutline.parse(reply);
+            if (outline == null && missingDoorShapes.add(state)) {
+                log.warning("[cim-screen] Could not load native door shape for " + state + ": " + reply);
+            }
+            return outline;
+        });
+    }
+
+    private static double blockReach(Player player) {
+        var attribute = player.getAttribute(org.bukkit.attribute.Attribute.BLOCK_INTERACTION_RANGE);
+        return attribute == null ? 4.5 : attribute.getValue();
+    }
+
+    private DoorTarget doorTarget(Player player) {
+        double reach = blockReach(player);
+        if (reach <= 0) {
+            return null;
+        }
+        var eye = player.getEyeLocation();
+        var origin = eye.toVector();
+        var direction = eye.getDirection();
+        var blocks = new org.bukkit.util.BlockIterator(eye, 0, (int) Math.ceil(reach));
+        var checked = new java.util.HashSet<Block>();
+        DoorTarget target = null;
+        double bestDistanceSquared = reach * reach;
+        double obstructionSquared = Double.POSITIVE_INFINITY;
+        while (blocks.hasNext()) {
+            Block block = blocks.next();
+            if (!isDoorTargetChunkLoaded(block)) {
+                break;
+            }
+            if (projectedDoor(block) == null && !block.getType().isAir()) {
+                var hit = block.rayTrace(eye, direction, reach, org.bukkit.FluidCollisionMode.NEVER);
+                if (hit != null) {
+                    obstructionSquared = Math.min(obstructionSquared, hit.getHitPosition().distanceSquared(origin));
+                }
+            }
+            // A native open door can extend from its anchor into an adjacent horizontal cell.
+            for (org.bukkit.block.BlockFace offset : DOOR_TARGET_OFFSETS) {
+                Block candidate = block.getRelative(offset);
+                if (!isDoorTargetChunkLoaded(candidate) || !checked.add(candidate) || projectedDoor(candidate) == null) {
+                    continue;
+                }
+                ProjectedDoorOutline outline = doorOutline(candidate);
+                var hit = outline == null ? null : outline.trace(candidate, eye, reach);
+                if (hit != null) {
+                    double distanceSquared = hit.getHitPosition().add(candidate.getLocation().toVector())
+                            .distanceSquared(origin);
+                    if (distanceSquared <= bestDistanceSquared) {
+                        bestDistanceSquared = distanceSquared;
+                        target = new DoorTarget(candidate, hit.getHitBlockFace(), outline);
+                    }
+                }
+            }
+        }
+        return bestDistanceSquared < obstructionSquared ? target : null;
+    }
+
+    private static final List<org.bukkit.block.BlockFace> DOOR_TARGET_OFFSETS = List.of(
+            org.bukkit.block.BlockFace.SELF, org.bukkit.block.BlockFace.NORTH, org.bukkit.block.BlockFace.SOUTH,
+            org.bukkit.block.BlockFace.WEST, org.bukkit.block.BlockFace.EAST);
+
+    private static boolean isDoorTargetChunkLoaded(Block block) {
+        return block.getWorld().isChunkLoaded(block.getX() >> 4, block.getZ() >> 4);
+    }
+
+    private final java.util.Set<org.bukkit.Location> movingDoors = new java.util.HashSet<>();
+
+    private List<org.bukkit.entity.ItemDisplay> spawnDoorPanels(Block bottom, String id, float progress) {
+        var door = doorData(bottom);
+        var location = bottom.getLocation();
+        removeDoorPanels(bottom);
+        var panels = new ArrayList<org.bukkit.entity.ItemDisplay>(2);
+        boolean right = door.getHinge() == org.bukkit.block.data.type.Door.Hinge.RIGHT;
+        for (boolean first : List.of(true, false)) {
+            String side = usesSlidingDoor(id) ? (first ? "lower" : "upper")
+                    : (first ^ right ? "left" : "right");
+            var stack = new ItemStack(Material.PAPER);
+            stack.editMeta(meta -> meta.setItemModel(new org.bukkit.NamespacedKey(
+                    "c-imagine", "_door/" + id.replace(':', '/') + "/" + side)));
+            panels.add(bottom.getWorld().spawn(location.clone().add(0.5, 0.5, 0.5),
+                    org.bukkit.entity.ItemDisplay.class, panel -> {
+                        panel.setItemStack(stack);
+                        panel.setItemDisplayTransform(org.bukkit.entity.ItemDisplay.ItemDisplayTransform.NONE);
+                        panel.setInterpolationDuration(1);
+                        panel.addScoreboardTag(doorPanelTag(bottom));
+                        panel.setTransformationMatrix(doorPanelTransform(id, door, first, progress));
+                    }));
+        }
+        return panels;
+    }
+
+    private void animateProjectedDoor(Block bottom, Block top, String id, boolean open) {
+        var door = doorData(bottom);
+        var location = bottom.getLocation();
+        movingDoors.add(location);
+        var panels = spawnDoorPanels(bottom, id, open ? 0 : 1);
+        if (open) {
+            setProjectedDoorOpen(bottom, top, true);
+        }
+        new org.bukkit.scheduler.BukkitRunnable() {
+            private int tick;
+
+            @Override
+            public void run() {
+                if (!id.equals(projectedDoor(bottom)) || !id.equals(projectedDoor(top))) {
+                    panels.forEach(org.bukkit.entity.Entity::remove);
+                    movingDoors.remove(location);
+                    cancel();
+                    return;
+                }
+                float step = Math.min(1, ++tick * 0.15f);
+                float progress = open ? step : 1 - step;
+                for (int i = 0; i < panels.size(); i++) {
+                    var panel = panels.get(i);
+                    panel.setInterpolationDelay(0);
+                    panel.setTransformationMatrix(doorPanelTransform(id, door, i == 0, progress));
+                }
+                if (step == 1) {
+                    if (!open) {
+                        setProjectedDoorOpen(bottom, top, false);
+                    }
+                    movingDoors.remove(location);
+                    cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 1, 1);
+    }
+
+    private static String doorPanelTag(Block bottom) {
+        return "cim-door:" + bottom.getX() + ":" + bottom.getY() + ":" + bottom.getZ();
+    }
+
+    private static void removeDoorPanels(Block bottom) {
+        String tag = doorPanelTag(bottom);
+        for (var entity : bottom.getChunk().getEntities()) {
+            if (entity.getScoreboardTags().contains(tag)) {
+                entity.remove();
+            }
+        }
+    }
+
+    private void setProjectedDoorOpen(Block bottom, Block top, boolean open) {
+        for (Block half : List.of(bottom, top)) {
+            String state = nativeDoorState(half)
+                    .replaceFirst("open=(true|false)", "open=" + open)
+                    .replaceFirst("visible=(true|false)", "visible=" + !open);
+            rememberDoor(half, state);
+            if (half.getType() == Material.LIGHT) {
+                updateDoorCollision(half);
+            } else {
+                half.setBlockData(projectedDoorData(projectedDoor(half), state), false);
+            }
+        }
+    }
+
+    private boolean usesSlidingDoor(String id) {
+        return plugin instanceof dev.cim.paper.CimPlugin cim && cim.isSlidingDoorProjection(id);
+    }
+
+    private org.joml.Matrix4f doorPanelTransform(String id, org.bukkit.block.data.type.Door door,
+                                                boolean first, float progress) {
+        boolean rightHinge = door.getHinge() == org.bukkit.block.data.type.Door.Hinge.RIGHT;
+        return usesSlidingDoor(id)
+                ? DoorPanelTransform.sliding(door.getFacing(), rightHinge, first, progress)
+                : DoorPanelTransform.matrix(door.getFacing(), rightHinge, first, progress);
+    }
+
+    private static final org.bukkit.NamespacedKey DOOR_MIGRATION_KEY =
+            new org.bukkit.NamespacedKey("cim", "door_projection_migrated");
+    private final String legacyDoorId = System.getProperty("cim.f2v.legacyDoorId", "");
+
+    private void migrateLegacyDoors(org.bukkit.Chunk chunk) {
+        if (legacyDoorId.isEmpty() || !(plugin instanceof dev.cim.paper.CimPlugin cim)
+                || !cim.hasDoorProjection(legacyDoorId)
+                || chunk.getPersistentDataContainer().has(DOOR_MIGRATION_KEY)) {
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
+            if (!chunk.isLoaded() || chunk.getPersistentDataContainer().has(DOOR_MIGRATION_KEY)) {
+                return;
+            }
+            if (containsLegacyDoorCarrier(chunk)) {
+                var world = chunk.getWorld();
+                var snapshot = chunk.getChunkSnapshot(false, false, false);
+                for (int y = world.getMinHeight(); y < world.getMaxHeight() - 1; y++) {
+                    for (int x = 0; x < 16; x++) {
+                        for (int z = 0; z < 16; z++) {
+                            if (snapshot.getBlockData(x, y, z) instanceof org.bukkit.block.data.type.Door door
+                                    && door.getMaterial() == Material.IRON_DOOR
+                                    && door.getHalf() == org.bukkit.block.data.Bisected.Half.BOTTOM
+                                    && door.isOpen() != door.isPowered()) {
+                                migrateLegacyDoor(chunk.getBlock(x, y, z), door);
+                            }
+                        }
+                    }
+                }
+            }
+            chunk.getPersistentDataContainer().set(DOOR_MIGRATION_KEY,
+                    org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            restoreDoorAnchors(chunk);
+        });
+    }
+
+    private static boolean containsLegacyDoorCarrier(org.bukkit.Chunk chunk) {
+        var door = (org.bukkit.block.data.type.Door) Material.IRON_DOOR.createBlockData();
+        for (var facing : door.getFaces()) {
+            door.setFacing(facing);
+            for (var hinge : org.bukkit.block.data.type.Door.Hinge.values()) {
+                door.setHinge(hinge);
+                for (boolean open : List.of(false, true)) {
+                    door.setOpen(open);
+                    door.setPowered(!open);
+                    if (chunk.contains(door)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private void migrateLegacyDoor(Block bottom, org.bukkit.block.data.type.Door data) {
+        Block top = otherDoorHalf(bottom, data);
+        if (projectedDoor(bottom) == null && projectedDoor(top) == null
+                && top.getBlockData() instanceof org.bukkit.block.data.type.Door upper
+                && upper.getMaterial() == Material.IRON_DOOR
+                && upper.getHalf() == org.bukkit.block.data.Bisected.Half.TOP
+                && upper.getFacing() == data.getFacing() && upper.getHinge() == data.getHinge()
+                && upper.isOpen() == data.isOpen() && upper.isPowered() == data.isPowered()) {
+            rememberDoor(bottom, legacyDoorState(bottom));
+            rememberDoor(top, legacyDoorState(top));
+            spawnDoorPanels(bottom, legacyDoorId, data.isOpen() ? 1 : 0);
+        }
+    }
+
+    private void restoreDoorAnchors(org.bukkit.Chunk chunk) {
+        if (chunk.getPersistentDataContainer().getKeys().stream().noneMatch(ScreenHud::isDoorStateKey)) {
+            return;
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, new Runnable() {
+            @Override
+            public void run() {
+                if (!chunk.isLoaded()) {
+                    return;
+                }
+                if (liveReady() == null) {
+                    org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, this, 20);
+                    return;
+                }
+                for (var key : chunk.getPersistentDataContainer().getKeys()) {
+                    if (!isDoorStateKey(key)) {
+                        continue;
+                    }
+                    String[] coordinates = key.getKey().substring("door_".length()).split("_");
+                    Block block = chunk.getWorld().getBlockAt(Integer.parseInt(coordinates[0]),
+                            Integer.parseInt(coordinates[1]), Integer.parseInt(coordinates[2]));
+                    if (projectedDoor(block) != null && !doorCollision.containsKey(block) && updateDoorCollision(block)) {
+                        block.setBlockData(doorAnchor(), false);
+                    }
+                }
+            }
+        });
+    }
+
+    private static boolean isDoorStateKey(org.bukkit.NamespacedKey key) {
+        return key.getNamespace().equals("cim") && key.getKey().matches("door_-?\\d+_-?\\d+_-?\\d+");
+    }
+
+    private static org.bukkit.block.data.BlockData doorAnchor() {
+        return org.bukkit.Bukkit.createBlockData("minecraft:light[level=0]");
+    }
+
+    private String projectedDoor(Block block) {
+        if (block == null || (block.getType() != Material.LIGHT && block.getType() != Material.IRON_DOOR)) {
+            return null;
+        }
+        String state = storedDoorState(block);
+        return state == null ? null : state.substring(0, state.indexOf('['));
+    }
+
+    private org.bukkit.block.data.type.Door doorData(Block block) {
+        return projectedDoorData(projectedDoor(block), nativeDoorState(block));
+    }
+
+    private String legacyDoorState(Block block) {
+        var door = (org.bukkit.block.data.type.Door) block.getBlockData();
+        return door.getAsString().replace("minecraft:iron_door", legacyDoorId)
+                .replaceFirst("powered=(true|false)", "powered=false")
+                .replace("]", ",visible=" + !door.isOpen() + "]");
+    }
+
+    private static String nativeDoorState(Block block) {
+        String stored = storedDoorState(block);
+        if (block.getBlockData() instanceof org.bukkit.block.data.type.Door door) {
+            return stored.replaceFirst("open=(true|false)", "open=" + door.isOpen())
+                    .replaceFirst("visible=(true|false)", "visible=" + !door.isOpen());
+        }
+        return stored;
+    }
+
+    private static String storedDoorState(Block block) {
+        return block.getChunk().getPersistentDataContainer().get(doorKey(block),
+                org.bukkit.persistence.PersistentDataType.STRING);
+    }
+
+    private static org.bukkit.NamespacedKey doorKey(Block block) {
+        return new org.bukkit.NamespacedKey("cim", "door_" + block.getX() + "_" + block.getY() + "_" + block.getZ());
+    }
+
+    private static void rememberDoor(Block block, String state) {
+        block.getChunk().getPersistentDataContainer().set(doorKey(block),
+                org.bukkit.persistence.PersistentDataType.STRING, state);
+    }
+
+    private static void forgetDoor(Block block) {
+        block.getChunk().getPersistentDataContainer().remove(doorKey(block));
+    }
+
+    private boolean placeProjectedDoor(org.bukkit.World world, List<LiveBridge.Placement> placements) {
+        String id = placements.getFirst().id();
+        if (!(plugin instanceof dev.cim.paper.CimPlugin cim) || !cim.hasDoorProjection(id)
+                || placements.stream().anyMatch(p -> !id.equals(p.id()))) {
+            return false;
+        }
+        var lower = placements.stream().filter(p -> p.state().contains("half=lower")).findFirst().orElse(null);
+        var upper = placements.stream().filter(p -> p.state().contains("half=upper")).findFirst().orElse(null);
+        if (lower == null || upper == null || lower.x() != upper.x() || lower.y() + 1 != upper.y()
+                || lower.z() != upper.z() || lower.y() < world.getMinHeight() || upper.y() >= world.getMaxHeight()) {
+            return false;
+        }
+        Block bottom = world.getBlockAt(lower.x(), lower.y(), lower.z());
+        Block top = world.getBlockAt(upper.x(), upper.y(), upper.z());
+        if (!bottom.isReplaceable() || !top.isReplaceable()
+                || projectedDoor(bottom) != null || projectedDoor(top) != null) {
+            return false;
+        }
+        var bottomData = projectedDoorData(id, lower.state());
+        var topData = projectedDoorData(id, upper.state());
+        if (bottomData == null || topData == null) {
+            return false;
+        }
+        var previousBottom = bottom.getBlockData();
+        var previousTop = top.getBlockData();
+        bottom.setBlockData(doorAnchor(), false);
+        top.setBlockData(doorAnchor(), false);
+        rememberDoor(bottom, lower.state());
+        rememberDoor(top, upper.state());
+        if (!updateDoorCollision(bottom) || !updateDoorCollision(top)) {
+            removeDoorCollision(bottom);
+            removeDoorCollision(top);
+            forgetDoor(bottom);
+            forgetDoor(top);
+            bottom.setBlockData(previousBottom, false);
+            top.setBlockData(previousTop, false);
+            return false;
+        }
+        spawnDoorPanels(bottom, id, bottomData.isOpen() ? 1 : 0);
+        return true;
+    }
+
+    private static org.bukkit.block.data.type.Door projectedDoorData(String id, String state) {
+        try {
+            return (org.bukkit.block.data.type.Door) org.bukkit.Bukkit.createBlockData(
+                    "minecraft:iron_door" + state.substring(id.length())
+                            .replaceFirst(",?visible=(true|false)", "")
+                            .replaceFirst("powered=(true|false)", "powered=" + !state.contains("open=true")));
+        } catch (IllegalArgumentException invalidState) {
+            return null;
+        }
+    }
+
+    private static Block otherDoorHalf(Block block, org.bukkit.block.data.type.Door door) {
+        return block.getRelative(door.getHalf() == org.bukkit.block.data.Bisected.Half.BOTTOM
+                ? org.bukkit.block.BlockFace.UP : org.bukkit.block.BlockFace.DOWN);
     }
 
     private ScreenPack.Scene sceneForOpener(String opener) {
@@ -2048,6 +2693,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        updateDoorOutline(event.getPlayer(), null);
         close(event.getPlayer());
         endDigging(event.getPlayer());
     }

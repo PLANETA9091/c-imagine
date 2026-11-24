@@ -143,6 +143,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "cim-biome"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "cim-bridge"
 version = "0.1.0"
 dependencies = [
@@ -532,6 +541,7 @@ dependencies = [
 name = "imagine"
 version = "0.1.0"
 dependencies = [
+ "cim-biome",
  "cim-core",
  "cim-modscan",
  "cim-reloc",

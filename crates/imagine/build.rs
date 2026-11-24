@@ -18,6 +18,7 @@ fn main() {
 
     match env::var("CIM_BOOTSTRAP_JAR") {
         Ok(src) => {
+            println!("cargo:rerun-if-changed={src}");
             fs::copy(&src, &dest).unwrap_or_else(|e| panic!("copy CIM_BOOTSTRAP_JAR ({src}): {e}"));
         }
         Err(_) => {

@@ -2,6 +2,7 @@ package dev.cim.live;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.HolderGetter;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
 import net.minecraft.core.RegistryAccess;
@@ -15,6 +16,8 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.biome.BiomeSource;
+import net.minecraft.world.level.biome.Climate;
 import net.minecraft.world.level.biome.FeatureSorter;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSource;
 import net.minecraft.world.level.biome.MultiNoiseBiomeSourceParameterList;
@@ -27,6 +30,9 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.chunk.ProtoChunk;
 import net.minecraft.world.level.chunk.UpgradeData;
 import net.minecraft.world.level.levelgen.Heightmap;
+import net.minecraft.world.level.levelgen.NoiseBasedChunkGenerator;
+import net.minecraft.world.level.levelgen.RandomState;
+import net.minecraft.world.level.levelgen.synth.NormalNoise;
 import net.minecraft.world.level.levelgen.VerticalAnchor;
 import net.minecraft.world.level.levelgen.WorldGenerationContext;
 import net.minecraft.world.level.levelgen.WorldgenRandom;
@@ -144,7 +150,9 @@ public final class Worldgen {
             String[] lines = request.split("\n");
             String[] head = lines[0].split("\t");
             return switch (head[0]) {
-                case "list" -> list();
+                case "list" -> list(head);
+                case "biomes" -> biomes(head);
+                case "locate" -> locate(head);
                 case "decorate" -> decorate(head, lines);
                 default -> "error\tunknown worldgen command " + head[0] + "\n";
             };
@@ -159,17 +167,51 @@ public final class Worldgen {
         if (real == null || real instanceof FacadeServer || real.overworld() == null) {
             return null;
         }
+        // The plan reads the generator's biome source; TerraBlender injects the
+        // modded biomes while the level starts, BEFORE the first tick. Answering
+        // "wait" until then keeps the cached plan from being built vanilla-only.
+        if (real.getTickCount() == 0) {
+            return null;
+        }
         return real;
     }
 
-    private static String list() {
+    private static String list(String[] head) {
         MinecraftServer real = realServer();
         if (real == null) {
             return "wait\n";
         }
         synchronized (LOCK) {
-            return plan(real).listing + "\n";
+            String listing = plan(real).listing;
+            // Warm the biome sampler while the plugin still waits for the plan:
+            // RandomState.create builds every noise instance (~1 s), and the
+            // first chunk must not pay that on Paper's chunk thread.
+            if (head.length > 1) {
+                try {
+                    warm(Long.parseLong(head[1]), real);
+                } catch (NumberFormatException ignored) {
+                    // no seed in the request: the first biomes call warms it
+                }
+            }
+            return listing + "\n";
         }
+    }
+
+    /** Build (or reuse) the layer's biome sampler for one world seed. */
+    private static void warm(long seed, MinecraftServer real) {
+        ServerLevel overworld = real.overworld();
+        ChunkGenerator generator = overworld.getChunkSource().getGenerator();
+        if (!(generator instanceof NoiseBasedChunkGenerator noise)) {
+            return;
+        }
+        if (randomState != null && randomStateSeed == seed) {
+            return;
+        }
+        HolderGetter<NormalNoise.NoiseParameters> noises =
+                overworld.registryAccess().lookupOrThrow(Registries.NOISE);
+        RandomState state = RandomState.create(noise.generatorSettings().value(), noises, seed);
+        randomStateSeed = seed;
+        randomState = state;
     }
 
     /** The plan, built on first use. Caller holds {@link #LOCK}. */
@@ -199,9 +241,17 @@ public final class Worldgen {
                     Registries.MULTI_NOISE_BIOME_SOURCE_PARAMETER_LIST, ResourceLocation.withDefaultNamespace("overworld"));
             Holder<MultiNoiseBiomeSourceParameterList> preset = access.lookupOrThrow(
                     Registries.MULTI_NOISE_BIOME_SOURCE_PARAMETER_LIST).getOrThrow(key);
-            // The vanilla overworld's biomes, in the order its generator lists them (FeatureSorter's input).
-            Set<Holder<Biome>> possible = MultiNoiseBiomeSource.createFromPreset(preset).possibleBiomes();
-            List<Holder<Biome>> biomes = List.copyOf(possible);
+            // EVERY registered biome, not the generator source's memoized set:
+            // a world that was loaded (not created) this boot builds its biome
+            // source before TerraBlender finishes injecting, and the memo then
+            // misses the modded biomes entirely. The registry has them all; the
+            // decorate filters by the chunk's own biomes anyway.
+            Set<Holder<Biome>> possible = Collections.newSetFromMap(new IdentityHashMap<>());
+            List<Holder<Biome>> biomes = new ArrayList<>();
+            for (Holder<Biome> holder : access.registryOrThrow(Registries.BIOME).holders().toList()) {
+                possible.add(holder);
+                biomes.add(holder);
+            }
             List<FeatureSorter.StepFeatureData> steps = FeatureSorter.buildFeaturesPerStep(biomes,
                     b -> b.value().getGenerationSettings().features(), true);
 
@@ -252,6 +302,8 @@ public final class Worldgen {
 
             String reasons = skipped.isEmpty() ? "none" : String.join(",", skipped.entrySet().stream()
                     .map(e -> e.getKey() + "=" + e.getValue()).toList());
+            System.out.println("[cimlive] plan: biomes=" + biomes.size() + " modFeatures=" + mods.size()
+                    + " runnable=" + runnable.size() + " possible=" + possible.size());
             String listing = "ready\t" + runnable.size() + "\t" + modifiers + "\t" + (mods.size() - runnable.size())
                     + "\t" + window[0] + "\t" + window[1] + "\t" + reasons;
             return new Plan(steps, index, possible, runnable, listing);
@@ -344,6 +396,171 @@ public final class Worldgen {
                 return null;
             }
         }
+    }
+
+    /** The layer's overworld biome source, sampled with an explicit seed (Paper's world seed). */
+    private static RandomState randomState;
+    private static long randomStateSeed = Long.MIN_VALUE;
+
+    /**
+     * {@code biomes TAB cx TAB cz TAB seed} — the modded biome of every 4x4x4 cell of a
+     * chunk, computed from the layer's generator with Paper's world seed. The plugin
+     * writes the answer into the Paper chunk ({@code LimitedRegion.setBiome}), so the
+     * chunk carries real modded biome ids and the client renders them.
+     */
+    private static String biomes(String[] head) {
+        MinecraftServer real = realServer();
+        if (real == null) {
+            return "wait\n";
+        }
+        int cx = Integer.parseInt(head[1]);
+        int cz = Integer.parseInt(head[2]);
+        long seed = Long.parseLong(head[3]);
+        synchronized (LOCK) {
+            ServerLevel overworld = real.overworld();
+            ChunkGenerator generator = overworld.getChunkSource().getGenerator();
+            if (!(generator instanceof NoiseBasedChunkGenerator noise)) {
+                return "error\tgenerator is " + generator.getClass().getSimpleName() + "\n";
+            }
+            if (randomState == null || randomStateSeed != seed) {
+                // The plugin sent the world seed with the list request; if this
+                // arrives first the chunk simply has no biome map yet.
+                return "wait\n";
+            }
+            Climate.Sampler sampler = randomState.sampler();
+            BiomeSource source = generator.getBiomeSource();
+            Registry<Biome> registry = overworld.registryAccess().registryOrThrow(Registries.BIOME);
+            int worldMin = overworld.getMinBuildHeight();
+            int worldMax = overworld.getMaxBuildHeight();
+            int quartMin = worldMin >> 2;
+            int quartCount = ((worldMax - 1) >> 2) - quartMin + 1;
+            List<String> palette = new ArrayList<>();
+            Map<String, Integer> ids = new HashMap<>();
+            int[][] columns = new int[16][quartCount];
+            for (int qz = 0; qz < 4; qz++) {
+                for (int qx = 0; qx < 4; qx++) {
+                    int[] column = columns[qz * 4 + qx];
+                    for (int qy = 0; qy < quartCount; qy++) {
+                        Holder<Biome> biome = source.getNoiseBiome(cx * 4 + qx, quartMin + qy, cz * 4 + qz, sampler);
+                        ResourceLocation id = registry.getKey(biome.value());
+                        String key = id == null ? "minecraft:plains" : id.toString();
+                        Integer index = ids.get(key);
+                        if (index == null) {
+                            index = palette.size();
+                            ids.put(key, index);
+                            palette.add(key);
+                        }
+                        column[qy] = index;
+                    }
+                }
+            }
+            StringBuilder out = new StringBuilder();
+            for (int i = 0; i < palette.size(); i++) {
+                out.append("bpal\t").append(i).append('\t').append(palette.get(i)).append('\n');
+            }
+            for (int qz = 0; qz < 4; qz++) {
+                for (int qx = 0; qx < 4; qx++) {
+                    out.append("bio\t").append(qx).append('\t').append(qz).append('\t')
+                            .append(runs(columns[qz * 4 + qx])).append('\n');
+                }
+            }
+            return out.toString();
+        }
+    }
+
+    /** Vanilla {@code /locate biome} steps: ServerLevel.findClosestBiome3d(pos, 6400, 32, 64). */
+    private static final int LOCATE_HORIZONTAL_STEP = 32;
+    private static final int LOCATE_VERTICAL_STEP = 64;
+    /** A locate gives up after this long; the answer is then "none" (not found). */
+    private static final long LOCATE_BUDGET_NANOS = 30_000_000_000L;
+
+    /** Thrown from inside the biome predicate to stop the search at the time budget. */
+    private static final class LocateTimeout extends RuntimeException {
+        LocateTimeout() {
+            super(null, null, false, false);
+        }
+    }
+
+    /**
+     * {@code locate TAB biomeId TAB x TAB z TAB radius TAB seed} — the nearest
+     * position of a modded biome, from the same biome source the chunk map uses.
+     * The plugin intercepts {@code /locate biome <modded id>} and answers with
+     * this, because the vanilla command searches the generator's vanilla source.
+     *
+     * <p>Runs on the caller's thread (the plugin calls it from an async task, never
+     * from Paper's main thread). The lock is held only to read the sampler and the
+     * world, NOT during the search: a search under {@link #LOCK} would stall every
+     * {@code biomes} call of the chunk threads. The sampler is the shared one that
+     * chunk generation also reads from several threads, so the search reads it the
+     * same way.
+     */
+    private static String locate(String[] head) {
+        MinecraftServer real = realServer();
+        if (real == null) {
+            return "wait\n";
+        }
+        String id = head[1];
+        int x = Integer.parseInt(head[2]);
+        int z = Integer.parseInt(head[3]);
+        int radius = Integer.parseInt(head[4]);
+        long seed = Long.parseLong(head[5]);
+        ServerLevel overworld;
+        BiomeSource source;
+        RandomState state;
+        Registry<Biome> registry;
+        synchronized (LOCK) {
+            overworld = real.overworld();
+            ChunkGenerator generator = overworld.getChunkSource().getGenerator();
+            if (!(generator instanceof NoiseBasedChunkGenerator)) {
+                return "error\tgenerator is " + generator.getClass().getSimpleName() + "\n";
+            }
+            if (randomState == null || randomStateSeed != seed) {
+                return "wait\n";
+            }
+            source = generator.getBiomeSource();
+            state = randomState;
+            registry = overworld.registryAccess().registryOrThrow(Registries.BIOME);
+        }
+        ResourceLocation want = ResourceLocation.parse(id);
+        long deadline = System.nanoTime() + LOCATE_BUDGET_NANOS;
+        com.mojang.datafixers.util.Pair<BlockPos, Holder<Biome>> found;
+        try {
+            found = source.findClosestBiome3d(
+                    new BlockPos(x, 63, z), radius, LOCATE_HORIZONTAL_STEP, LOCATE_VERTICAL_STEP,
+                    holder -> {
+                        if (System.nanoTime() - deadline > 0) {
+                            throw new LocateTimeout();
+                        }
+                        return want.equals(registry.getKey(holder.value()));
+                    },
+                    state.sampler(), overworld);
+        } catch (LocateTimeout timeout) {
+            return "none\n";
+        }
+        if (found == null) {
+            return "none\n";
+        }
+        BlockPos at = found.getFirst();
+        return "found\t" + at.getX() + "\t" + at.getZ() + "\n";
+    }
+
+    /** Run-length form of one biome column: {@code i:n,i:n,...}. */
+    private static String runs(int[] column) {
+        StringBuilder sb = new StringBuilder();
+        int at = 0;
+        while (at < column.length) {
+            int value = column[at];
+            int end = at + 1;
+            while (end < column.length && column[end] == value) {
+                end++;
+            }
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(value).append(':').append(end - at);
+            at = end;
+        }
+        return sb.toString();
     }
 
     // ---- decorate -----------------------------------------------------------------------------------
