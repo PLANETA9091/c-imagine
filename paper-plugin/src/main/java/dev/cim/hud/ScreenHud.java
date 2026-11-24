@@ -2160,10 +2160,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
 
     /**
      * Puts every block the layer's use placed, or removed (minecraft:air), into Paper's world. Checked
-     * first, then applied, so a refusal changes nothing: a cell Paper holds something the layer did not
-     * expect (not air, replaceable, a carrier, or the clicked carrier itself), a mod block with no carrier
-     * row, or a vanilla state Paper cannot read. A mod block is its carrier (a display family block gets its
-     * barrier and look); a vanilla block is its exact state and no mod tracking; air clears the cell.
+     * first, then applied, so a refusal changes nothing. A cell inside the neighbourhood the layer was sent
+     * is the layer's to set (whatever Paper holds there, a vanilla block included); a cell outside it must
+     * be free for the placement (air, replaceable, a carrier, or the clicked carrier itself). A projected
+     * door cell is always refused. Also refused: a mod block with no carrier row, or a vanilla state Paper
+     * cannot read. A mod block is its carrier (a display family block gets its barrier and look); a vanilla
+     * block is its exact state and no mod tracking; air clears the cell.
      */
     private boolean applyPlacements(Player player, LiveBridge bridge, Block clicked, LiveBridge.UseOn result) {
         var world = clicked.getWorld();
@@ -2171,7 +2173,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             Block at = world.getBlockAt(p.x(), p.y(), p.z());
             boolean inPlace = at.equals(clicked) && carried(clicked) != null;
             boolean free = at.getType().isAir() || at.isReplaceable() || inPlace || carrierCell(at);
-            if (!free || projectedDoor(at) != null) {
+            if (!placementAllowed(result.covers(p.x(), p.y(), p.z()), free, projectedDoor(at) != null)) {
                 log.info("[cim-screen] " + p.id() + " at " + p.x() + "," + p.y() + "," + p.z()
                         + " lands on " + at.getBlockData().getAsString() + ", not a free cell: refused");
                 return false;
@@ -2213,14 +2215,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     logTicking();
                 }
             } else {
-                // A vanilla block or air is not a mod block: its carrier (if any) and the layer's tracking go.
-                if (carrierCell(at)) {
-                    if (at.getType() == Material.BARRIER) {
-                        DisplayCarriers.remove(at);
-                    }
-                    bridge.forgetPlacedState(at);
-                    bridge.release(at, null);
+                // A vanilla block or air is not a mod block: whatever carrier and tracking the cell had go
+                // (a display, a note carrier, the kept state, the ticking block), whether or not it was a carrier.
+                if (DisplayCarriers.idAt(at) != null) {
+                    DisplayCarriers.remove(at);
                 }
+                bridge.forgetPlacedState(at);
+                bridge.release(at, null);
                 at.setBlockData(org.bukkit.Bukkit.createBlockData(kind.equals("air") ? "minecraft:air" : p.state()), false);
             }
             placed.append(p.id()).append(" at ").append(at.getX()).append(',').append(at.getY()).append(',')
@@ -2233,6 +2234,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** A carrier Paper holds in this cell: a note block, or a barrier with its item display. */
     private boolean carrierCell(Block at) {
         return DisplayCarriers.idAt(at) != null || carried(at) != null;
+    }
+
+    /**
+     * Whether a placement the layer made is applied. Inside the neighbourhood it was sent it always is (a change
+     * there is authoritative); outside it only into a free cell. A projected door cell never is.
+     */
+    static boolean placementAllowed(boolean sent, boolean freeCell, boolean projectedDoor) {
+        return !projectedDoor && (sent || freeCell);
     }
 
     /** "air" for a removed cell, "vanilla" for a minecraft: block, else "mod" (the id a mod block carries). */
@@ -2983,6 +2992,14 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 && "vanilla".equals(placementKind("minecraft:stone")) && "mod".equals(placementKind("create:shaft"))
                 && "mod".equals(placementKind("dynamictrees:branch")),
                 "a placed id is air, vanilla or mod, so the multi-placement apply knows which carrier to put");
+        // A placement inside the sent neighbourhood is applied over any block (the dynamic trees rooty dirt on a
+        // vanilla dirt); outside it only into a free cell; a projected door never.
+        bad += check(placementAllowed(true, false, false), "a placement inside the sent neighbourhood over dirt applies");
+        bad += check(placementAllowed(true, true, false), "a placement inside the neighbourhood into air applies");
+        bad += check(!placementAllowed(false, false, false), "a placement outside the neighbourhood over dirt is refused");
+        bad += check(placementAllowed(false, true, false), "a placement outside the neighbourhood into air applies");
+        bad += check(!placementAllowed(true, true, true) && !placementAllowed(false, true, true),
+                "a projected door cell is refused either way");
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
     }
