@@ -1,0 +1,11 @@
+[package]
+name = "cim-enchant"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Modded enchantments: 1.21.1 data-driven enchantment JSON -> 26.3 definitions (server registry entries)"
+
+[dependencies]
+serde_json = "1"
+thiserror = "2"
+zip = { workspace = true }
