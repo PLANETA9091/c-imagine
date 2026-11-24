@@ -98,7 +98,7 @@ def run_step(stack, step, shots_dir, idx, rec):
     if do == "break":
         return stack.break_(step["pos"], step.get("timeout", 20))
     if do == "place":
-        return stack.place(step["pos"], step.get("item"))
+        return stack.place(step["pos"], step.get("item"), step.get("face"), step.get("hit"))
     if do == "interact":
         return stack.interact(step["pos"], step.get("face"))
     if do == "use_item":

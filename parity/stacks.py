@@ -334,6 +334,68 @@ def _target_pos_face(t):
     return pos, (face.lower() if isinstance(face, str) else None)
 
 
+def _vec3(v):
+    """[x, y, z] floats from a list or {x, y, z} dict; None when absent or malformed."""
+    if isinstance(v, dict):
+        v = [v.get("x"), v.get("y"), v.get("z")]
+    if not isinstance(v, (list, tuple)) or len(v) != 3:
+        return None
+    try:
+        return [float(c) for c in v]
+    except (TypeError, ValueError):
+        return None
+
+
+_FACE_DIRS = {"down": (0, -1, 0), "up": (0, 1, 0), "north": (0, 0, -1), "south": (0, 0, 1),
+              "west": (-1, 0, 0), "east": (1, 0, 0)}
+
+
+def pinned_point(support, face, hit):
+    """World point on the clicked FACE of the supporting block: support is [x, y, z] of that block,
+    hit is a fraction [fx, fy, fz] inside it (None = centre). The coordinate along the face normal is
+    snapped to the face plane, as truth-ctl pinnedHit does."""
+    f = list(hit) if hit else [0.5, 0.5, 0.5]
+    d = _FACE_DIRS[face]
+    for a in range(3):
+        if d[a] > 0:
+            f[a] = 1.0
+        elif d[a] < 0:
+            f[a] = 0.0
+    return [float(support[a]) + float(f[a]) for a in range(3)]
+
+
+def support_of(pos, face):
+    """The supporting block of a placement at pos clicked on FACE: pos minus the face direction."""
+    d = _FACE_DIRS[face]
+    return [int(pos[a]) - d[a] for a in range(3)]
+
+
+def face_from_point(point, eye):
+    """Block [x, y, z] and face name of the solid surface a view from eye through point hits, when
+    the point lies on a block boundary (the fallback when Horizon reports no crosshair target).
+    The axis with a boundary coordinate and the largest eye offset decides; (None, None) otherwise."""
+    best = None
+    for a in range(3):
+        c = point[a]
+        if abs(c - round(c)) > 1e-6:
+            continue
+        off = abs(eye[a] - c) if eye else 0.0
+        if best is None or off > best[0]:
+            best = (off, a)
+    if best is None:
+        return None, None
+    a = best[1]
+    names = [("west", "east"), ("down", "up"), ("north", "south")][a]
+    blk = [int(v // 1) for v in point]
+    if eye and eye[a] > point[a]:
+        blk[a] = int(round(point[a])) - 1
+        face = names[1]
+    else:
+        blk[a] = int(round(point[a]))
+        face = names[0]
+    return blk, face
+
+
 # Vanilla KeyMapping translation key -> (horizon-ctl command, key or button name).
 OURS_KEYS = {
     "key.forward": ("key", "w"), "key.back": ("key", "s"), "key.left": ("key", "a"),
@@ -374,7 +436,7 @@ class Stack:
     def break_(self, pos, timeout=20):
         raise NotImplementedError
 
-    def place(self, pos, item=None):
+    def place(self, pos, item=None, face=None, hit=None):
         raise NotImplementedError
 
     def interact(self, pos, face=None):
@@ -526,8 +588,12 @@ class TruthStack(Stack):
         return sum(1 for e in r.get("entities") or []
                    if e.get("type") == "minecraft:item" and _in_radius(e.get("pos") or [0, 0, 0], pos))
 
-    def place(self, pos, item=None):
+    def place(self, pos, item=None, face=None, hit=None):
         args = self._p(pos) + ([item] if item else [])
+        if face:
+            args += ["--face", face]
+        if hit:
+            args += ["--hit"] + [str(float(v)) for v in hit]
         r = self.call("place", args)
         return {
             "block_after": block_id(r.get("block")),
@@ -815,6 +881,7 @@ class OursStack(Stack):
     def _apply_server_ids(self, scr):
         """Replace carrier ids (paper, note_block...) in player slots with the server's modded id.
         Only when the counts agree, so a slot the server and client disagree on stays as the client shows it."""
+        self._apply_container_ids(scr)
         srv = self._server_inv()
         if not srv:
             return scr
@@ -833,6 +900,27 @@ class OursStack(Stack):
             entry = by_index.get(sidx)
             if entry is not None and int(entry.get("count") or 0) == s["count"]:
                 entry["item"] = s["id"]
+        return scr
+
+    def _apply_container_ids(self, scr):
+        """Modded ids for a vanilla-container menu (furnace, schematic table): /cim inspect screen lists the
+        container's top slots by menu index. Applied only when the counts agree, as for player slots."""
+        insp = self.inspect("screen", self.player)
+        if not insp or not insp.get("open") or not insp.get("slots"):
+            return scr
+        srv = {}
+        for s in insp["slots"]:
+            try:
+                srv[int(s.get("index"))] = s
+            except (TypeError, ValueError):
+                continue
+        for entry in scr.get("slots") or []:
+            s = srv.get(entry.get("slot", entry.get("index")))
+            if s is None:
+                continue
+            nid = norm_id(s.get("item"))
+            if nid and MODDED_NS_RE.match(nid) and int(entry.get("count") or 0) == int(s.get("count") or 0):
+                entry["item"] = nid
         return scr
 
     # ---- actions
@@ -887,7 +975,9 @@ class OursStack(Stack):
                 out[nid] = out.get(nid, 0) + int(it.get("count", 1) or 1)
         return out, n
 
-    def place(self, pos, item=None):
+    def place(self, pos, item=None, face=None, hit=None):
+        if face:
+            return self._place_pinned(pos, item, face, hit)
         before = self._counts()
         args = ["place", *self._p(pos)]
         if item:
@@ -903,6 +993,22 @@ class OursStack(Stack):
             bid = norm_id(blk.get("block") if isinstance(blk, dict) else blk)
         after = self._counts()
         return {"block_after": bid, "inventory_change": self._delta(before, after)}
+
+    def _place_pinned(self, pos, item, face, hit):
+        """horizon-ctl place has no face or hit point: look at the point on the clicked face of the
+        supporting block, then right-click (the held item lands on the crosshair's face)."""
+        before = self._counts()
+        if item:
+            self.select(item)
+        support = support_of(pos, face)
+        point = pinned_point(support, face, hit)
+        self.ctl("look-at", *[str(v) for v in point])
+        self.ctl("wait", 1)
+        self.ctl("mouse", "right", "down")
+        self.ctl("mouse", "right", "up")
+        self._settle(6)
+        bid = self._server_block_id(pos)
+        return {"block_after": bid, "inventory_change": self._delta(before, self._counts())}
 
     def interact(self, pos, face=None):
         args = ["interact", *self._p(pos)] + ([face] if face else [])
@@ -923,8 +1029,22 @@ class OursStack(Stack):
         turn (what the click uses); block and inventory are then read like place."""
         before = self._counts()
         self.ctl("look-at", *[str(float(v)) for v in point])
-        self.ctl("wait", 1)  # the crosshair target refreshes on the next client tick
-        hit_pos, hit_face = _target_pos_face(self.ctl("state").get("target"))
+        # The crosshair target refreshes on the client tick; Horizon's target is None for a few ticks
+        # after look-at (TRIAGE-3 32/33), so retry it, then fall back to the face under the aim point.
+        t_pos, t_face, eye = None, None, None
+        for _ in range(6):
+            self.ctl("wait", 1)
+            st = self.ctl("state")
+            t_pos, t_face = _target_pos_face(st.get("target"))
+            eye = _vec3(st.get("eye")) or _vec3(st.get("position"))
+            if t_pos is not None:
+                break
+        fb_pos, fb_face = face_from_point([float(v) for v in point], eye)
+        if t_pos is None:
+            hit_pos, hit_face = fb_pos, fb_face
+        else:
+            hit_pos = t_pos
+            hit_face = t_face or (fb_face if fb_pos == t_pos else None)
         self.ctl("mouse", "right", "down")
         self.ctl("mouse", "right", "up")
         self._settle(5)  # same reply point as truth-ctl use-at: 5 ticks

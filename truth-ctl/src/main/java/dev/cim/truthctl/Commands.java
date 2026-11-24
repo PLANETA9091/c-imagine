@@ -209,8 +209,27 @@ final class Commands {
             }
             case "place": {
                 BlockPos pos = pos(args, 0);
-                String item = args.size() > 3 ? normItem(args.get(3)) : null;
-                return TruthCtl.install(new PlaceTask(pos, item));
+                // place X Y Z [ITEM] [--face NAME] [--hit FX FY FZ]: the clicked face of the supporting
+                // block (target minus face) and the hit point as a fraction of that block.
+                Direction face = null;
+                double[] hit = null;
+                List<String> rest = new ArrayList<>();
+                for (int i = 3; i < args.size(); i++) {
+                    String a = args.get(i);
+                    if (a.equals("--face")) {
+                        face = Direction.byName(arg(args, ++i).toLowerCase());
+                        if (face == null) {
+                            throw new TruthCtl.CmdError("bad face: " + args.get(i), "bad_request");
+                        }
+                    } else if (a.equals("--hit")) {
+                        hit = new double[] {dbl(args, i + 1), dbl(args, i + 2), dbl(args, i + 3)};
+                        i += 3;
+                    } else {
+                        rest.add(a);
+                    }
+                }
+                String item = rest.isEmpty() ? null : normItem(rest.get(0));
+                return TruthCtl.install(new PlaceTask(pos, item, face, hit));
             }
             case "interact": {
                 BlockPos pos = pos(args, 0);
@@ -437,14 +456,18 @@ final class Commands {
     static final class PlaceTask extends TruthCtl.Task {
         private final BlockPos target;
         private final String item;
+        private final Direction face;
+        private final double[] fraction;
         private String before;
         private Map<String, Integer> invBefore;
         private String result;
 
-        PlaceTask(BlockPos target, String item) {
+        PlaceTask(BlockPos target, String item, Direction face, double[] fraction) {
             super("place", 5 + 20);
             this.target = target;
             this.item = item;
+            this.face = face;
+            this.fraction = fraction;
         }
 
         @Override
@@ -454,7 +477,9 @@ final class Commands {
             if (item != null) {
                 selectByItem(p, item);
             }
-            BlockHitResult hit = placementHit(p, lvl, target);
+            BlockHitResult hit = face == null
+                    ? placementHit(p, lvl, target)
+                    : pinnedHit(p, lvl, target, face, fraction);
             p.lookAt(EntityAnchorArgument.Anchor.EYES, hit.getLocation());
             before = blockId(lvl.getBlockState(target));
             invBefore = invCounts(p.getInventory());
@@ -1120,6 +1145,41 @@ final class Commands {
     /** Point at the centre of the given face of the block. */
     static Vec3 faceCenter(BlockPos pos, Direction face) {
         return Vec3.atCenterOf(pos).add(Vec3.atLowerCornerOf(face.getNormal()).scale(0.5));
+    }
+
+    /**
+     * Click on the given face of the block target - face (the supporting block), at the fraction
+     * (x, y, z in 0..1 of that block; the coordinate along the face normal is snapped to the face).
+     */
+    static BlockHitResult pinnedHit(LocalPlayer p, ClientLevel lvl, BlockPos target, Direction face,
+            double[] fraction) throws TruthCtl.CmdError {
+        BlockPos support = target.relative(face.getOpposite());
+        BlockState ss = lvl.getBlockState(support);
+        if (ss.isAir() || ss.canBeReplaced()) {
+            throw new TruthCtl.CmdError("no solid block on the " + face.getName() + " side of " + target,
+                    "not_found");
+        }
+        double[] f = fraction == null ? new double[] {0.5, 0.5, 0.5} : fraction.clone();
+        Vec3 out = Vec3.atLowerCornerOf(face.getNormal());
+        // The face plane: the support block's boundary on the side of target.
+        Vec3 origin = Vec3.atLowerCornerOf(support);
+        double[] c = f;
+        if (face.getAxis() == Direction.Axis.X) {
+            c[0] = face.getStepX() > 0 ? 1.0 : 0.0;
+        } else if (face.getAxis() == Direction.Axis.Y) {
+            c[1] = face.getStepY() > 0 ? 1.0 : 0.0;
+        } else {
+            c[2] = face.getStepZ() > 0 ? 1.0 : 0.0;
+        }
+        Vec3 hitPoint = origin.add(c[0], c[1], c[2]);
+        Vec3 eye = p.getEyePosition();
+        if (eye.subtract(hitPoint).dot(out) <= 0) {
+            throw new TruthCtl.CmdError("the " + face.getName() + " face of " + support + " is not visible", "not_found");
+        }
+        if (eye.distanceTo(hitPoint) > REACH) {
+            throw new TruthCtl.CmdError("the hit point is out of reach", "not_found");
+        }
+        return new BlockHitResult(hitPoint, face, support, false);
     }
 
     /**
