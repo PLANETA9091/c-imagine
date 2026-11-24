@@ -170,5 +170,83 @@ class InfraVerdictTest(unittest.TestCase):
         self.assertEqual(verdict, "missing")
 
 
+class TeardownAndGhostTests(unittest.TestCase):
+    """Scenario teardown (heal ready=False) and the OURS ghost-container close (stacks.OursStack.heal_close)."""
+
+    def test_teardown_closes_and_skips_wait_ready(self):
+        st = FakeStack([INV])
+        r = heal.heal(st, ready=False)
+        self.assertTrue(r["ok"], r)
+        self.assertEqual(r["actions"], ["close inventory"])
+        self.assertNotIn("wait-ready", st.calls)
+        self.assertEqual(r["screen"], "playing")
+
+    def test_teardown_reports_a_screen_it_could_not_close(self):
+        st = FakeStack([INV], close_fixes=False)
+        r = heal.heal(st, ready=False)
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["screen"], "inventory")
+
+    def _ours(self, ctl_fn, hud_states, key_calls):
+        import stacks
+
+        st = object.__new__(stacks.OursStack)
+        st.player = "Lane_B"
+        st.ctl = ctl_fn
+        st.key = lambda name, ticks=1: key_calls.append((name, ticks))
+        states = list(hud_states)
+        st._hud_menu = lambda: states.pop(0) if len(states) > 1 else states[0]
+        return st
+
+    def test_ours_ghost_container_closed_by_horizon_close(self):
+        sent = []
+
+        def ctl(*args, **kw):
+            sent.append(args[0])
+            if args[0] == "screen":
+                return {"screen": "playing"}
+            return {"screen": "playing"}
+
+        keys = []
+        # server has the furnace open before the close and not after it
+        st = self._ours(ctl, [{"open": True, "menu_type": "furnace"}, None], keys)
+        r = st.heal_close()
+        self.assertEqual(r["closed"], "server-ghost")
+        self.assertEqual(sent, ["screen", "close"])
+        self.assertEqual(keys, [])
+
+    def test_ours_hud_menu_falls_back_to_sneak(self):
+        import stacks
+
+        sent = []
+
+        def ctl(*args, **kw):
+            sent.append(args[0])
+            if args[0] == "screen":
+                return {"screen": "playing"}
+            raise RuntimeError("horizon-ctl close rc=1: no menu open")
+
+        keys = []
+        open_hud = {"open": True, "menu_type": "create:toolbox"}
+        st = self._ours(ctl, [open_hud, open_hud], keys)
+        r = st.heal_close()
+        self.assertEqual(r["closed"], "sneak")
+        self.assertEqual(keys, [("key.sneak", 1)])
+        self.assertIn("close", sent)
+
+    def test_ours_world_with_no_menu_only_closes_once(self):
+        sent = []
+
+        def ctl(*args, **kw):
+            sent.append(args[0])
+            return {"screen": "playing"}
+
+        keys = []
+        st = self._ours(ctl, [None], keys)
+        st.heal_close()
+        self.assertEqual(sent, ["screen", "close"])
+        self.assertEqual(keys, [])
+
+
 if __name__ == "__main__":
     unittest.main()

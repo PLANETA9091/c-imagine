@@ -391,6 +391,12 @@ def main(argv=None):
                 rec["shot_error"] = str(e)
         out["steps"].append(rec)
 
+    # teardown: every scenario ends with no screen open on either stack. A container the last step left open
+    # is a ghost on OURS (client shows the world, the server still has it) and stalled the next heal.
+    # heal.heal probes the client (and on OURS the server, /cim inspect screen) and closes what it finds.
+    out["teardown"] = heal.heal(stack, ready=False)
+    if not out["teardown"]["ok"]:
+        print("%s %s: teardown did not close the screen: %s" % (args.stack, sc["id"], out["teardown"]["error"]))
     out["wall_s"] = round(time.time() - t0, 1)
     if hasattr(stack, "inspect_hits"):
         out["inspect"] = {"hits": stack.inspect_hits, "misses": stack.inspect_misses}

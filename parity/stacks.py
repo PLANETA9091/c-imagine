@@ -1059,10 +1059,19 @@ class OursStack(Stack):
         # shows the world can an open menu be one ScreenHud draws on the HUD (closed by sneak).
         if ours_kind(self.ctl("screen")) != "playing":
             return self.ctl("close")
-        if self._hud_menu() is not None:
-            self.key("key.sneak", 1)
-            return {"closed": "sneak"}
-        return self.ctl("close")
+        if self._hud_menu() is None:
+            return self.ctl("close")
+        # The client shows the world but the server still has a menu open: a ghost container (the client
+        # dropped its screen, the server kept it). horizon-ctl close sends the close packet for it; ScreenHud's
+        # sneak closes only its own HUD sessions (a vanilla furnace or chest has none), so it is the fallback.
+        try:
+            horizon = self.ctl("close")
+        except RuntimeError as e:  # no client screen to close: a HUD menu, closed by sneak below
+            horizon = {"error": str(e)[-200:]}
+        if self._hud_menu() is None:
+            return {"closed": "server-ghost", "horizon": horizon}
+        self.key("key.sneak", 1)
+        return {"closed": "sneak", "horizon": horizon}
 
     def heal_click(self, label):
         return self.ctl("click-button", label)

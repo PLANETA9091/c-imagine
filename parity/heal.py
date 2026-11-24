@@ -43,12 +43,16 @@ def classify(probe):
     return "screen"
 
 
-def heal(stack):
-    """Bring the stack back to 'playing' in the world. Returns {"ok", "actions", "error"}."""
-    result = {"ok": True, "actions": [], "error": None}
+def heal(stack, ready=True):
+    """Bring the stack back to 'playing' in the world. Returns {"ok", "actions", "error", "screen"}.
+
+    ready=False is the scenario teardown: close whatever screen is open and verify it, no wait-ready.
+    "screen" is the kind of the last probe that decided the outcome."""
+    result = {"ok": True, "actions": [], "error": None, "screen": None}
     try:
         for _ in range(MAX_ROUNDS):
             probe = stack.heal_probe()
+            result["screen"] = probe.get("kind")
             state = classify(probe)
             if state == "playing":
                 break
@@ -67,10 +71,13 @@ def heal(stack):
                 stack.heal_close()
                 result["actions"].append("close %s" % kind)
         else:
-            if classify(stack.heal_probe()) != "playing":
+            final = stack.heal_probe()
+            result["screen"] = final.get("kind")
+            if classify(final) != "playing":
                 raise HealError("still not playing after %d heal rounds" % MAX_ROUNDS)
-        stack.wait_ready(READY_S)
-        result["actions"].append("wait-ready")
+        if ready:
+            stack.wait_ready(READY_S)
+            result["actions"].append("wait-ready")
     except Exception as e:  # infra: recorded, never raised
         result["ok"] = False
         result["error"] = "%s: %s" % (type(e).__name__, e)
