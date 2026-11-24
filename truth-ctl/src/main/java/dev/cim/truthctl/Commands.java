@@ -459,6 +459,11 @@ final class Commands {
             before = blockId(lvl.getBlockState(target));
             invBefore = invCounts(p.getInventory());
             InteractionResult r = mc.gameMode.useItemOn(p, HAND, hit);
+            // Vanilla Minecraft.startUseItem: a useItemOn that passes falls through to the held item's own
+            // use (a bucket places its fluid in the cell beside the aimed face).
+            if (r == InteractionResult.PASS && !p.getItemInHand(HAND).isEmpty()) {
+                r = mc.gameMode.useItem(p, HAND);
+            }
             if (r.consumesAction()) {
                 p.swing(HAND);
             }
@@ -669,6 +674,11 @@ final class Commands {
             blockBefore = blockId(lvl.getBlockState(h.getBlockPos()));
             invBefore = invCounts(p.getInventory());
             InteractionResult r = mc.gameMode.useItemOn(p, HAND, h);
+            // Vanilla Minecraft.startUseItem: a useItemOn that passes falls through to the held item's own
+            // use (a bucket places its fluid in the cell beside the aimed face).
+            if (r == InteractionResult.PASS && !p.getItemInHand(HAND).isEmpty()) {
+                r = mc.gameMode.useItem(p, HAND);
+            }
             if (r.consumesAction()) {
                 p.swing(HAND);
             }
