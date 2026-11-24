@@ -1996,6 +1996,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return bridge == null ? null : bridge.blockAt(block);
     }
 
+    /** The layer's block entity JSON at a block, or null (no layer, or it holds none there). For /cim inspect be. */
+    String layerBlockEntityAt(Block block) {
+        LiveBridge bridge = liveReady();
+        return bridge == null ? null : bridge.blockEntityAt(block);
+    }
+
     /** The live bridge, only once the layer's real server is up (else null). */
     private LiveBridge liveReady() {
         LiveBridge bridge = live();

@@ -1362,7 +1362,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * and the server log. Runs on the server thread (command dispatch).
      */
     private void inspect(CommandSender sender, String[] args) {
-        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
+        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | be <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
         try {
             switch (args[1].toLowerCase(Locale.ROOT)) {
                 case "block" -> {
@@ -1372,6 +1372,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                     inspectBlock(sender, inspectWorld(sender), Integer.parseInt(args[2]),
                             Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+                }
+                case "be" -> {
+                    if (args.length != 5) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    inspectBlockEntity(sender, Integer.parseInt(args[2]), Integer.parseInt(args[3]),
+                            Integer.parseInt(args[4]));
                 }
                 case "inv" -> {
                     if (args.length != 3) {
@@ -1553,6 +1561,29 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             o.addProperty("state", state);
             o.addProperty("source", "paper");
         }
+        emitInspect(sender, o);
+    }
+
+    /**
+     * {@code /cim inspect be x y z}: the layer's real block entity there, as its saveWithFullMetadata JSON
+     * under {@code nbt} ({@code id} is the BE type id; both null when the layer holds none).
+     */
+    private void inspectBlockEntity(CommandSender sender, int x, int y, int z) {
+        World world = inspectWorld(sender);
+        Block block = world.getBlockAt(x, y, z);
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "be");
+        com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
+        pos.add(x);
+        pos.add(y);
+        pos.add(z);
+        o.add("pos", pos);
+        String json = dev.cim.hud.HudBootstrap.layerBlockEntityAt(block);
+        com.google.gson.JsonElement nbt = json == null ? null : com.google.gson.JsonParser.parseString(json);
+        String type = nbt != null && nbt.isJsonObject() && nbt.getAsJsonObject().has("id")
+                ? nbt.getAsJsonObject().get("id").getAsString() : null;
+        o.addProperty("id", type);
+        o.add("nbt", nbt == null ? com.google.gson.JsonNull.INSTANCE : nbt);
         emitInspect(sender, o);
     }
 
