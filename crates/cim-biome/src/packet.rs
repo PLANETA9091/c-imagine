@@ -269,8 +269,10 @@ fn rewrite_container(
     let n = longs_for(bits, entries)?;
     let raw = r.bytes(n * 8).ok()?;
     let mut longs: Vec<u64> = raw
-        .chunks_exact(8)
-        .map(|c| u64::from_be_bytes(c.try_into().unwrap()))
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .map(|c| u64::from_be_bytes(*c))
         .collect();
     if bits > 32 {
         return None;
