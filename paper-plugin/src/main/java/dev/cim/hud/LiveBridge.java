@@ -398,7 +398,12 @@ final class LiveBridge {
                      List<org.bukkit.util.BoundingBox> collision) {
     }
 
-    record UseOn(State state, List<Placement> placements) {
+    /**
+     * A use-on's answer: the layer's state, the blocks it placed, and whether the clicked mod block's own
+     * interaction (useItemOn / useWithoutItem) consumed the click (blockActed): then the layer's inventory
+     * and block entity are the truth, and Paper does not run the vanilla use of the same click.
+     */
+    record UseOn(State state, List<Placement> placements, boolean blockActed) {
         String placedId() { return placements.isEmpty() ? null : placements.getFirst().id(); }
         int x() { return placements.getFirst().x(); }
         int y() { return placements.getFirst().y(); }
@@ -469,12 +474,26 @@ final class LiveBridge {
                 in.append('\n').append(line);
             }
         }
+        if (clickedId != null) {
+            // The clicked mod block's kept block entity: the layer loads it before the block's own code runs.
+            String kept = clicked.getChunk().getPersistentDataContainer().get(blockKey(clicked, clickedId),
+                    PersistentDataType.STRING);
+            if (kept != null) {
+                in.append("\nclickbe\t").append(kept);
+            }
+        }
         appendInventory(in, player, true);
         heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         String answer = call(in.toString());
         List<Placement> placements = new ArrayList<>();
+        boolean blockActed = false;
         for (String line : answer.split("\n")) {
-            if (line.startsWith("placed\t")) {
+            if (line.equals("blockacted\t1")) {
+                blockActed = true;
+            } else if (line.startsWith("usedbe\t") && clickedId != null) {
+                // The clicked block's block entity after its own interaction: kept for the next opening.
+                put(clicked.getChunk().getPersistentDataContainer(), clicked, clickedId, line.substring("usedbe\t".length()));
+            } else if (line.startsWith("placed\t")) {
                 String[] p = line.split("\t", 6);
                 placements.add(new Placement(p[1], Integer.parseInt(p[2]), Integer.parseInt(p[3]),
                         Integer.parseInt(p[4]), p.length == 6 ? p[5] : p[1], null, new ArrayList<>()));
@@ -492,9 +511,16 @@ final class LiveBridge {
         State state = parse(answer);
         if (state.open() && placements.isEmpty()) {
             openBlocks.remove(player.getUniqueId());
+            openBlockIds.remove(player.getUniqueId());
+            if (blockActed && clickedId != null) {
+                // The menu is the clicked mod block's own (its useWithoutItem): its data is kept on close, as
+                // a menu opened by the block's click is (see keepBlockEntity).
+                openBlocks.put(player.getUniqueId(), clicked);
+                openBlockIds.put(player.getUniqueId(), clickedId);
+            }
         }
         return new UseOn(state, placements.stream().map(p -> new Placement(
-                p.id(), p.x(), p.y(), p.z(), p.state(), p.blockEntity(), List.copyOf(p.collision()))).toList());
+                p.id(), p.x(), p.y(), p.z(), p.state(), p.blockEntity(), List.copyOf(p.collision()))).toList(), blockActed);
     }
 
     /**
