@@ -40,8 +40,8 @@ The log prints `[truthctl] listening on 127.0.0.1:<port>` and every request/repl
   time (`busy` otherwise). Every game access runs on the client main thread.
 
 Commands: hello, state, wait-ready, block, blocks, inventory, look, look-at-block,
-select, break, place, interact, use-item, respawn, attack, screen (alias menu), click-slot,
-open-inventory, close, command, chat, messages, entities, screenshot, wait.
+select, break, place, interact, use-item, key, use-at, respawn, attack, screen (alias menu),
+click-slot, open-inventory, close, command, chat, messages, entities, screenshot, wait.
 
 - `respawn`: if the client is on the DeathScreen (or the player is dead), calls
   `LocalPlayer.respawn()` (the Respawn button path), closes the death screen and waits up
@@ -53,6 +53,19 @@ open-inventory, close, command, chat, messages, entities, screenshot, wait.
   `releaseUsingItem` when the use finishes or TICKS elapse, then 5 settle ticks. Reply:
   `{ok, inventory_change, result, ended_by: finished|hold_elapsed|not_usable, held_ticks,
   food, saturation, health}`.
+- `key NAME [press|release|tap] [--ticks N]`: presses a `KeyMapping` found by name (its
+  translation key, e.g. `key.jump`, `key.sneak`, `keybinds.combat_roll.roll`) in
+  `options.keyMappings`. Uses `KeyMapping.set(key, down)` and `KeyMapping.click(key)` on press,
+  like vanilla input (so a shared physical key presses every mapping bound to it). Mode
+  defaults to `tap`: held for N ticks (default 1, 1..1200), then released; reply after the
+  release. `press` / `release` reply at once. Reply: `{ok, key, mode, ticks}` (`ticks` = held
+  ticks for tap, 0 otherwise). Unknown name: `not_found`; unbound key: `bad_request`.
+- `use-at X Y Z` (block-space doubles): aims the view at the point (`lookAt` from the eye),
+  ray-traces from the eye through the point with `ClipContext.Block.OUTLINE` (ray extended one
+  block past the point), and calls `MultiPlayerGameMode.useItemOn(player, MAIN_HAND, hit)` with
+  that hit. No block on the ray: `not_found`. Reply after 5 ticks: `{ok, hit{pos[x,y,z], face,
+  location[x,y,z]}, block_before, block, inventory_change, result}`; `block` is the state at the
+  hit block position.
 
 ## Python client
 

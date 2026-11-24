@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.screens.DeathScreen;
@@ -43,9 +44,11 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -217,6 +220,12 @@ final class Commands {
             }
             case "use-item":
                 return TruthCtl.install(new UseItemTask(holdTicks(args)));
+            case "key":
+                return keyCmd(args, opts);
+            case "use-at": {
+                Vec3 point = new Vec3(dbl(args, 0), dbl(args, 1), dbl(args, 2));
+                return TruthCtl.install(new UseAtTask(point));
+            }
             case "respawn": {
                 LocalPlayer p = mc.player;
                 if (p == null || mc.level == null) {
@@ -505,6 +514,188 @@ final class Commands {
             JsonObject o = TruthCtl.ok();
             o.addProperty("screen", screenName(mc.screen));
             o.addProperty("block", blockId(level(mc).getBlockState(pos)));
+            o.addProperty("result", result);
+            future.complete(o);
+            return true;
+        }
+    }
+
+    /**
+     * key NAME [press|release|tap] [--ticks N] (default tap, 1 tick). The KeyMapping is found by
+     * its name (the translation key, e.g. key.jump or keybinds.combat_roll.roll) and driven the
+     * way vanilla input drives it: KeyMapping.set(key, down), plus KeyMapping.click(key) on press.
+     */
+    static CompletableFuture<JsonObject> keyCmd(List<String> args, JsonObject opts)
+            throws TruthCtl.CmdError {
+        String name = arg(args, 0);
+        String mode = "tap";
+        if (args.size() > 1 && !args.get(1).startsWith("--")) {
+            mode = args.get(1);
+        }
+        if (!mode.equals("press") && !mode.equals("release") && !mode.equals("tap")) {
+            throw new TruthCtl.CmdError("mode must be press, release or tap: " + mode, "bad_request");
+        }
+        int ticks = 1;
+        int i = args.indexOf("--ticks");
+        if (i >= 0) {
+            ticks = tickCount(arg(args, i + 1));
+        } else if (opts.has("ticks")) {
+            ticks = tickCount(opts.get("ticks").getAsString());
+        }
+        KeyMapping km = keyMapping(Minecraft.getInstance(), name);
+        JsonObject o = TruthCtl.ok();
+        o.addProperty("key", name);
+        o.addProperty("mode", mode);
+        switch (mode) {
+            case "press":
+                pressKey(km);
+                o.addProperty("ticks", 0);
+                return done(o);
+            case "release":
+                releaseKey(km);
+                o.addProperty("ticks", 0);
+                return done(o);
+            default:
+                return TruthCtl.install(new KeyTask(km, name, ticks));
+        }
+    }
+
+    private static int tickCount(String s) throws TruthCtl.CmdError {
+        try {
+            int n = Integer.parseInt(s);
+            if (n < 1 || n > 1200) {
+                throw new TruthCtl.CmdError("--ticks must be 1..1200", "bad_request");
+            }
+            return n;
+        } catch (NumberFormatException e) {
+            throw new TruthCtl.CmdError("--ticks needs a tick count: " + s, "bad_request");
+        }
+    }
+
+    /** Finds a registered KeyMapping by its name (translation key). Mod mappings are in options.keyMappings. */
+    static KeyMapping keyMapping(Minecraft mc, String name) throws TruthCtl.CmdError {
+        if (mc.options == null || mc.options.keyMappings == null) {
+            throw new TruthCtl.CmdError("options not loaded", "no_world");
+        }
+        for (KeyMapping km : mc.options.keyMappings) {
+            if (km.getName().equals(name)) {
+                if (km.isUnbound()) {
+                    throw new TruthCtl.CmdError(name + " is unbound", "bad_request");
+                }
+                return km;
+            }
+        }
+        throw new TruthCtl.CmdError("no KeyMapping named " + name, "not_found");
+    }
+
+    static void pressKey(KeyMapping km) {
+        KeyMapping.set(km.getKey(), true);
+        KeyMapping.click(km.getKey());
+    }
+
+    static void releaseKey(KeyMapping km) {
+        KeyMapping.set(km.getKey(), false);
+    }
+
+    /** Holds a KeyMapping down for a number of client ticks, then releases it. */
+    static final class KeyTask extends TruthCtl.Task {
+        private final KeyMapping km;
+        private final String name;
+        private final int hold;
+
+        KeyTask(KeyMapping km, String name, int hold) {
+            super("key", hold + 20);
+            this.km = km;
+            this.name = name;
+            this.hold = hold;
+        }
+
+        @Override
+        void start(Minecraft mc) {
+            pressKey(km);
+        }
+
+        @Override
+        boolean step(Minecraft mc) {
+            if (ticks < hold) {
+                return false;
+            }
+            releaseKey(km);
+            JsonObject o = TruthCtl.ok();
+            o.addProperty("key", name);
+            o.addProperty("mode", "tap");
+            o.addProperty("ticks", hold);
+            future.complete(o);
+            return true;
+        }
+    }
+
+    /**
+     * use-at X Y Z: aims the view at the block-space point, ray-traces the first block hit from
+     * the eye through the point (Block.OUTLINE) and calls useItemOn with that real hit. Reply after
+     * 5 ticks.
+     */
+    static final class UseAtTask extends TruthCtl.Task {
+        private final Vec3 point;
+        private Map<String, Integer> invBefore;
+        private String blockBefore;
+        private BlockHitResult hit;
+        private String result;
+
+        UseAtTask(Vec3 point) {
+            super("use-at", 5 + 20);
+            this.point = point;
+        }
+
+        @Override
+        void start(Minecraft mc) throws TruthCtl.CmdError {
+            LocalPlayer p = player(mc);
+            ClientLevel lvl = level(mc);
+            p.lookAt(EntityAnchorArgument.Anchor.EYES, point);
+            Vec3 eye = p.getEyePosition();
+            Vec3 dir = point.subtract(eye);
+            double len = dir.length();
+            if (len < 1e-6) {
+                throw new TruthCtl.CmdError("point is at the eye", "bad_request");
+            }
+            // Extend one block past the point so a face lying exactly on the point is still hit.
+            Vec3 end = eye.add(dir.scale((len + 1.0) / len));
+            BlockHitResult h = lvl.clip(new ClipContext(eye, end, ClipContext.Block.OUTLINE,
+                    ClipContext.Fluid.NONE, p));
+            if (h.getType() != HitResult.Type.BLOCK) {
+                throw new TruthCtl.CmdError("no block along the ray from the eye to " + point, "not_found");
+            }
+            hit = h;
+            blockBefore = blockId(lvl.getBlockState(h.getBlockPos()));
+            invBefore = invCounts(p.getInventory());
+            InteractionResult r = mc.gameMode.useItemOn(p, HAND, h);
+            if (r.consumesAction()) {
+                p.swing(HAND);
+            }
+            result = String.valueOf(r);
+        }
+
+        @Override
+        boolean step(Minecraft mc) throws TruthCtl.CmdError {
+            if (ticks < 5) {
+                return false;
+            }
+            LocalPlayer p = player(mc);
+            ClientLevel lvl = level(mc);
+            BlockPos bp = hit.getBlockPos();
+            JsonObject h = new JsonObject();
+            JsonArray pos = new JsonArray();
+            pos.add(bp.getX());
+            pos.add(bp.getY());
+            pos.add(bp.getZ());
+            h.add("pos", pos);
+            h.addProperty("face", hit.getDirection().getName());
+            h.add("location", vec(hit.getLocation()));
+            JsonObject o = TruthCtl.ok();
+            o.add("hit", h);
+            o.addProperty("block_before", blockBefore);
+            o.addProperty("block", blockId(lvl.getBlockState(bp)));
+            o.add("inventory_change", countsJson(signedDelta(invBefore, invCounts(p.getInventory()))));
             o.addProperty("result", result);
             future.complete(o);
             return true;
