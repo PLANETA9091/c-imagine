@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -1745,6 +1746,344 @@ public final class F2vPack {
         return null;
     }
 
+    /** Blockstate visual kinds (per-state visuals, S1). */
+    static final String KIND_SINGLE = "single";
+    static final String KIND_ROTATION = "rotation";
+    static final String KIND_MULTI = "multi";
+    static final String KIND_MULTIPART = "multipart";
+    static final String KIND_NONE = "none";
+
+    /**
+     * One look entry of a blockstate. For a variants entry {@code variantKey} is the
+     * normalized property key ("" for the single key); for a multipart apply alternative it
+     * is the canonical {@code when} JSON ("" when the part is unconditional). {@code model}
+     * is {@code ns:path}; a bare model id is in the minecraft namespace, as the pack reads it.
+     */
+    record BlockstateLook(String variantKey, String model, int x, int y, boolean uvlock, int weight) {
+    }
+
+    /** The looks of one blockstate; {@code kind} is single, rotation, multi, multipart or none. */
+    record BlockstateVisuals(String kind, List<BlockstateLook> looks) {
+        /** Distinct (model, x, y, uvlock) looks: how many different renders the block can show. */
+        int lookCount() {
+            Set<String> distinct = new HashSet<>();
+            for (BlockstateLook l : looks) {
+                distinct.add(l.model() + "|" + l.x() + "|" + l.y() + "|" + l.uvlock());
+            }
+            return distinct.size();
+        }
+    }
+
+    /**
+     * The looks of a modded block, read from its blockstate JSON in the first jar that
+     * carries it. A block without a blockstate, or one that does not parse, is kind none.
+     */
+    static BlockstateVisuals resolveBlockVisuals(JarCache cache, String moddedId) throws IOException {
+        int colon = moddedId.indexOf(':');
+        if (colon <= 0) {
+            return new BlockstateVisuals(KIND_NONE, List.of());
+        }
+        byte[] bs = cache.read("assets/" + moddedId.substring(0, colon) + "/blockstates/"
+                + moddedId.substring(colon + 1) + ".json");
+        return bs == null ? new BlockstateVisuals(KIND_NONE, List.of())
+                : parseBlockstateVisuals(new String(bs, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Parses a blockstate JSON into its looks and classifies it. A {@code variants} object
+     * wins over {@code multipart}, as in the vanilla loader. Pure: no jars, no server classes.
+     */
+    static BlockstateVisuals parseBlockstateVisuals(String json) {
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            List<BlockstateLook> looks = new ArrayList<>();
+            if (obj.has("variants") && obj.get("variants").isJsonObject()) {
+                // keys normalized (props sorted) and merged, then sorted: deterministic order
+                TreeMap<String, List<JsonElement>> byKey = new TreeMap<>();
+                for (Map.Entry<String, JsonElement> v : obj.getAsJsonObject("variants").entrySet()) {
+                    byKey.computeIfAbsent(normalizeVariantKey(v.getKey()), k -> new ArrayList<>())
+                            .addAll(alternatives(v.getValue()));
+                }
+                for (Map.Entry<String, List<JsonElement>> k : byKey.entrySet()) {
+                    for (JsonElement e : k.getValue()) {
+                        BlockstateLook look = look(k.getKey(), e);
+                        if (look != null) {
+                            looks.add(look);
+                        }
+                    }
+                }
+                return new BlockstateVisuals(variantKind(looks), looks);
+            }
+            if (obj.has("multipart") && obj.get("multipart").isJsonArray()) {
+                for (JsonElement p : obj.getAsJsonArray("multipart")) {
+                    if (!p.isJsonObject() || !p.getAsJsonObject().has("apply")) {
+                        continue;
+                    }
+                    JsonObject part = p.getAsJsonObject();
+                    String when = part.has("when") ? canonicalJson(part.get("when")) : "";
+                    for (JsonElement e : alternatives(part.get("apply"))) {
+                        BlockstateLook look = look(when, e);
+                        if (look != null) {
+                            looks.add(look);
+                        }
+                    }
+                }
+                return new BlockstateVisuals(looks.isEmpty() ? KIND_NONE : KIND_MULTIPART, looks);
+            }
+            return new BlockstateVisuals(KIND_NONE, List.of());
+        } catch (RuntimeException e) {
+            return new BlockstateVisuals(KIND_NONE, List.of()); // malformed JSON or wrong shape
+        }
+    }
+
+    /** single: one model, one x/y; rotation: one model, several x/y; multi: several models. */
+    private static String variantKind(List<BlockstateLook> looks) {
+        if (looks.isEmpty()) {
+            return KIND_NONE;
+        }
+        Set<String> models = new HashSet<>();
+        Set<String> rotations = new HashSet<>();
+        for (BlockstateLook l : looks) {
+            models.add(l.model());
+            rotations.add(l.x() + "," + l.y());
+        }
+        if (models.size() > 1) {
+            return KIND_MULTI;
+        }
+        return rotations.size() > 1 ? KIND_ROTATION : KIND_SINGLE;
+    }
+
+    /** Property key with its {@code k=v} pairs sorted; "" stays "" (the single key). */
+    static String normalizeVariantKey(String key) {
+        if (key.isEmpty()) {
+            return "";
+        }
+        List<String> props = new ArrayList<>(List.of(key.split(",")));
+        Collections.sort(props);
+        return String.join(",", props);
+    }
+
+    /** A variant value or multipart apply: one object, or an array of weighted alternatives. */
+    private static List<JsonElement> alternatives(JsonElement e) {
+        List<JsonElement> out = new ArrayList<>();
+        if (e == null) {
+            return out;
+        }
+        if (e.isJsonArray()) {
+            e.getAsJsonArray().forEach(out::add);
+        } else {
+            out.add(e);
+        }
+        return out;
+    }
+
+    private static BlockstateLook look(String variantKey, JsonElement e) {
+        if (!e.isJsonObject()) {
+            return null;
+        }
+        JsonObject o = e.getAsJsonObject();
+        String model = modelOf(o);
+        if (model == null) {
+            return null;
+        }
+        return new BlockstateLook(variantKey, model.indexOf(':') < 0 ? "minecraft:" + model : model,
+                intField(o, "x", 0), intField(o, "y", 0), boolField(o, "uvlock"), intField(o, "weight", 1));
+    }
+
+    private static int intField(JsonObject o, String name, int dflt) {
+        JsonElement v = o.get(name);
+        return v != null && v.isJsonPrimitive() && v.getAsJsonPrimitive().isNumber() ? v.getAsInt() : dflt;
+    }
+
+    private static boolean boolField(JsonObject o, String name) {
+        JsonElement v = o.get(name);
+        return v != null && v.isJsonPrimitive() && v.getAsBoolean();
+    }
+
+    /** Deterministic JSON: object keys sorted, arrays in author order, no whitespace. */
+    static String canonicalJson(JsonElement e) {
+        if (e == null || e.isJsonNull()) {
+            return "null";
+        }
+        if (e.isJsonObject()) {
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<String, JsonElement> m : new TreeMap<>(e.getAsJsonObject().asMap()).entrySet()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append(jsonString(m.getKey())).append(':').append(canonicalJson(m.getValue()));
+            }
+            return sb.append('}').toString();
+        }
+        if (e.isJsonArray()) {
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (JsonElement x : e.getAsJsonArray()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append(canonicalJson(x));
+            }
+            return sb.append(']').toString();
+        }
+        return e.getAsJsonPrimitive().isString() ? jsonString(e.getAsString()) : e.getAsJsonPrimitive().toString();
+    }
+
+    private static String jsonString(String s) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\t' -> sb.append("\\t");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
+    }
+
+    /** The per-look TSV ({@link #BLOCK_VARIANTS}); one row per look, blocks in id order. */
+    static final String BLOCK_VARIANTS = "visual-block-variants.tsv";
+    static final String BLOCK_VARIANTS_HEADER = "block_id\tkind\tvariant_key\tmodel\tx\ty\tuvlock\n";
+
+    static String blockVariantsText(Map<String, BlockstateVisuals> byBlock) {
+        StringBuilder sb = new StringBuilder(BLOCK_VARIANTS_HEADER);
+        for (Map.Entry<String, BlockstateVisuals> b : new TreeMap<>(byBlock).entrySet()) {
+            for (BlockstateLook l : b.getValue().looks()) {
+                sb.append(b.getKey()).append('\t').append(b.getValue().kind()).append('\t')
+                        .append(l.variantKey()).append('\t').append(l.model()).append('\t')
+                        .append(l.x()).append('\t').append(l.y()).append('\t')
+                        .append(l.uvlock() ? "true" : "false").append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    /** The per-look runtime table (S2): {@link #BLOCK_LOOKS}; one row per look alternative of a multi-look block. */
+    static final String BLOCK_LOOKS = "visual-block-looks.tsv";
+    static final String BLOCK_LOOKS_HEADER = "block_id\tvariant_key\tweight\titem_model\trot_x\trot_y\n";
+
+    /** A uvlock look with an x or y rotation: its model is pre-baked (GalleryPack.bakeUvlockDisplayModel). */
+    static boolean isBakedLook(BlockstateLook l) {
+        return l.uvlock() && (l.x() != 0 || l.y() != 0);
+    }
+
+    /** The bake key of a baked look: {@code <ns>/<path>_x<X>_y<Y>} (the models/items path under _display_uv). */
+    static String displayUvKey(String modelRef, int x, int y) {
+        int colon = modelRef.indexOf(':');
+        return modelRef.substring(0, colon) + "/" + modelRef.substring(colon + 1) + "_x" + x + "_y" + y;
+    }
+
+    /** The item_model key of a baked look: {@code c-imagine:_display_uv/<ns>/<path>_x<X>_y<Y>}. */
+    public static String displayUvItemModel(String modelRef, int x, int y) {
+        return ALLOCATED_NS + ":" + GalleryPack.DISPLAY_UV_DIR + "/" + displayUvKey(modelRef, x, y);
+    }
+
+    /** The items/ definition path of a baked look: {@code assets/c-imagine/items/_display_uv/<ns>/<path>_x<X>_y<Y>.json}. */
+    static String displayUvItemDefPath(String modelRef, int x, int y) {
+        return "assets/" + ALLOCATED_NS + "/items/" + GalleryPack.DISPLAY_UV_DIR + "/"
+                + displayUvKey(modelRef, x, y) + ".json";
+    }
+
+    /** The item_model key a look renders with: the baked model, or its base model's display item. */
+    static String lookItemModel(BlockstateLook l) {
+        return isBakedLook(l) ? displayUvItemModel(l.model(), l.x(), l.y()) : displayItemModel(l.model());
+    }
+
+    /**
+     * The look table text: one row per look of every rotation or multi block, in block id then
+     * look order. Baked looks carry rot 0/0 (their geometry is already rotated); the rest carry the
+     * runtime rotation the display transform applies (S3).
+     */
+    static String blockLooksText(Map<String, BlockstateVisuals> byBlock) {
+        StringBuilder sb = new StringBuilder(BLOCK_LOOKS_HEADER);
+        for (Map.Entry<String, BlockstateVisuals> b : new TreeMap<>(byBlock).entrySet()) {
+            String kind = b.getValue().kind();
+            if (!KIND_ROTATION.equals(kind) && !KIND_MULTI.equals(kind)) {
+                continue;
+            }
+            for (BlockstateLook l : b.getValue().looks()) {
+                boolean baked = isBakedLook(l);
+                sb.append(b.getKey()).append('\t').append(l.variantKey()).append('\t')
+                        .append(l.weight()).append('\t').append(lookItemModel(l)).append('\t')
+                        .append(baked ? 0 : l.x()).append('\t').append(baked ? 0 : l.y()).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * S2: the display items of the multi-look blocks. Every base model a non-baked look uses gets an
+     * items/ definition under {@code _display/} (composite when it carries elements, as the display
+     * family does); every baked uvlock look gets its rotated model and an items/ definition under
+     * {@code _display_uv/}. Deterministic: blocks in id order, looks in table order.
+     */
+    private static void emitPerStateDisplays(List<Path> jars, JarCache blockJars, Map<String, BlockstateVisuals> looks,
+                                             TreeMap<String, byte[]> entries, int[] compositeNo,
+                                             Map<String, String> alphaBySprite, List<String> warnings)
+            throws IOException {
+        Set<String> done = new TreeSet<>();
+        for (Map.Entry<String, BlockstateVisuals> b : new TreeMap<>(looks).entrySet()) {
+            String kind = b.getValue().kind();
+            if (!KIND_ROTATION.equals(kind) && !KIND_MULTI.equals(kind)) {
+                continue;
+            }
+            for (BlockstateLook l : b.getValue().looks()) {
+                if (!done.add(lookItemModel(l))) {
+                    continue;
+                }
+                String ref = copyModelRef(blockJars, l.model(), entries, warnings);
+                if (ref == null) {
+                    warnings.add("per-state look: model missing in jars: " + l.model() + " (" + b.getKey() + ")");
+                    continue;
+                }
+                if (isBakedLook(l)) {
+                    String baked = GalleryPack.bakeUvlockDisplayModel(jars, ref, l.x(), l.y(),
+                            displayUvKey(ref, l.x(), l.y()), entries, warnings);
+                    if (baked != null) {
+                        putDisplayItem(entries, displayUvItemDefPath(ref, l.x(), l.y()),
+                                allocatedItemDef(baked).getBytes(StandardCharsets.UTF_8), warnings);
+                    }
+                    continue;
+                }
+                String model = ref;
+                String renderType = GalleryPack.blockAlphaRenderType(jars, ref, warnings, alphaBySprite);
+                if (GalleryPack.chainHasElements(jars, ref, warnings)) {
+                    String composite = safeItemComposite(jars, ref, compositeNo[0]++, entries, warnings);
+                    if (composite != null) {
+                        model = composite;
+                        if (!renderType.equals("solid")) {
+                            GalleryPack.setCompositeRenderType(entries, composite, renderType);
+                        }
+                    }
+                }
+                putDisplayItem(entries, displayItemDefPath(ref), allocatedItemDef(model).getBytes(StandardCharsets.UTF_8),
+                        warnings);
+            }
+        }
+    }
+
+    /** Writes a display items/ definition unless one already holds a different body (then the collision is logged). */
+    private static void putDisplayItem(TreeMap<String, byte[]> entries, String path, byte[] body, List<String> warnings) {
+        byte[] prev = entries.get(path);
+        if (prev == null) {
+            entries.put(path, body);
+        } else if (!Arrays.equals(prev, body)) {
+            warnings.add("per-state display item collision: " + path + " (kept the first)");
+        }
+    }
+
     /**
      * Read {@code visual-equipment.tsv}: {@code assetId<TAB>layer1Path[
      * <TAB>layer2Path]} where the paths are relative to {@code assets/<ns>/}
@@ -2423,8 +2762,12 @@ public final class F2vPack {
         List<Map.Entry<String, String>> blockVariants = new ArrayList<>();
         Map<String, Map<Integer, String>> mushroomModels = new TreeMap<>();
         List<VisualBlock> emittedBlocks = new ArrayList<>();
+        Map<String, BlockstateVisuals> blockLooks = new TreeMap<>();
         Map<String, String> alphaBySprite = new HashMap<>();
         try (JarCache blockJars = new JarCache(jars)) {
+            for (String id : discoverBlockIds(jars)) {
+                blockLooks.put(id, resolveBlockVisuals(blockJars, id));
+            }
             for (VisualBlock block : blockRows) {
                 String ref = resolveBlockModel(blockJars, jars, block.moddedBlockId(), entries, warnings);
                 if (ref != null) {
@@ -2627,6 +2970,11 @@ public final class F2vPack {
                 }
             }
         }
+        // S2 per-state displays run LAST: their composites and ObjMesh sheet cells come after every
+        // other build step, so no existing entry is renumbered or re-packed by them.
+        try (JarCache displayJars = new JarCache(jars)) {
+            emitPerStateDisplays(jars, displayJars, blockLooks, entries, compositeNo, alphaBySprite, warnings);
+        }
         byte[] zip = zip(entries);
         validateDownloadSize(zip.length);
         String sha1 = sha1Hex(zip);
@@ -2634,6 +2982,10 @@ public final class F2vPack {
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
         writeIfChanged(outDir.resolve(ALLOCATED_ITEMS), allocatedText(allocatedIds));
+        // per-state visuals (S1): every modded block's blockstate looks, one TSV row per look.
+        // Read-only over the jars and outside the zip, so the pack sha1 does not move.
+        writeIfChanged(outDir.resolve(BLOCK_VARIANTS), blockVariantsText(blockLooks));
+        writeIfChanged(outDir.resolve(BLOCK_LOOKS), blockLooksText(blockLooks));
         // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
         // (sprite, context, uses) — the texture-fidelity audit's named
         // backlog, written next to the manifest and summarized in the
@@ -5036,6 +5388,8 @@ public final class F2vPack {
         placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
+        blockVariantsSelftest(failures);
+        perStateSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -5045,6 +5399,177 @@ public final class F2vPack {
             System.out.println("  fail: " + f);
         }
         return false;
+    }
+
+    /** Per-state visuals (S1): blockstate looks, classification and the look TSV. Pure JSON, no jars. */
+    private static void blockVariantsSelftest(List<String> failures) {
+        // rotation: one model, axis=x/y/z with x/y rotations (keys come back sorted)
+        BlockstateVisuals rot = parseBlockstateVisuals("{\"variants\":{"
+                + "\"axis=y\":{\"model\":\"fakemod:block/pillar\"},"
+                + "\"axis=x\":{\"model\":\"fakemod:block/pillar\",\"x\":90,\"y\":90},"
+                + "\"axis=z\":{\"model\":\"fakemod:block/pillar\",\"x\":90}}}");
+        expect(failures, rot.kind().equals(KIND_ROTATION), "variants rotation: kind " + rot.kind());
+        expect(failures, rot.lookCount() == 3, "variants rotation: 3 looks, got " + rot.lookCount());
+        expect(failures, rot.looks().size() == 3
+                && rot.looks().get(0).variantKey().equals("axis=x") && rot.looks().get(0).x() == 90
+                && rot.looks().get(0).y() == 90 && !rot.looks().get(0).uvlock()
+                && rot.looks().get(1).variantKey().equals("axis=y") && rot.looks().get(1).x() == 0
+                && rot.looks().get(1).y() == 0
+                && rot.looks().get(2).variantKey().equals("axis=z") && rot.looks().get(2).x() == 90
+                && rot.looks().get(2).y() == 0
+                && rot.looks().get(2).model().equals("fakemod:block/pillar"),
+                "variants rotation: rows in key order with x/y");
+
+        // multi: several models; a weighted array alternative; props sorted in the key
+        BlockstateVisuals multi = parseBlockstateVisuals("{\"variants\":{"
+                + "\"facing=north\":[{\"model\":\"fakemod:block/a\"},{\"model\":\"fakemod:block/b\",\"weight\":2}],"
+                + "\"half=top,facing=east\":{\"model\":\"fakemod:block/c\",\"y\":90,\"uvlock\":true}}}");
+        expect(failures, multi.kind().equals(KIND_MULTI), "variants multi: kind " + multi.kind());
+        expect(failures, multi.lookCount() == 3, "variants multi: 3 looks, got " + multi.lookCount());
+        expect(failures, multi.looks().size() == 3
+                && multi.looks().get(0).variantKey().equals("facing=east,half=top")
+                && multi.looks().get(0).model().equals("fakemod:block/c") && multi.looks().get(0).y() == 90
+                && multi.looks().get(0).uvlock()
+                && multi.looks().get(1).variantKey().equals("facing=north")
+                && multi.looks().get(1).model().equals("fakemod:block/a")
+                && multi.looks().get(2).model().equals("fakemod:block/b")
+                && multi.looks().get(2).weight() == 2,
+                "variants multi: normalized keys, array alternatives, weight");
+
+        // multipart with OR / AND conditions, an array apply, and a multi-key when
+        BlockstateVisuals mp = parseBlockstateVisuals("{\"multipart\":["
+                + "{\"apply\":{\"model\":\"fakemod:block/post\"}},"
+                + "{\"when\":{\"OR\":[{\"north\":\"true\"},{\"south\":\"true\"}]},"
+                + "\"apply\":{\"model\":\"fakemod:block/side\",\"uvlock\":true}},"
+                + "{\"when\":{\"AND\":[{\"east\":\"true\"},{\"west\":\"false\"}]},"
+                + "\"apply\":[{\"model\":\"fakemod:block/arm\",\"y\":90},{\"model\":\"fakemod:block/arm\",\"y\":270}]},"
+                + "{\"when\":{\"up\":\"false\",\"down\":\"true\"},\"apply\":{\"model\":\"fakemod:block/x\"}}]}");
+        expect(failures, mp.kind().equals(KIND_MULTIPART), "multipart: kind " + mp.kind());
+        expect(failures, mp.lookCount() == 5, "multipart: 5 distinct looks, got " + mp.lookCount());
+        expect(failures, mp.looks().size() == 5
+                && mp.looks().get(0).variantKey().isEmpty()
+                && mp.looks().get(1).variantKey().equals("{\"OR\":[{\"north\":\"true\"},{\"south\":\"true\"}]}")
+                && mp.looks().get(1).uvlock()
+                && mp.looks().get(2).variantKey().equals("{\"AND\":[{\"east\":\"true\"},{\"west\":\"false\"}]}")
+                && mp.looks().get(2).y() == 90 && mp.looks().get(3).y() == 270
+                && mp.looks().get(3).variantKey().equals(mp.looks().get(2).variantKey())
+                && mp.looks().get(4).variantKey().equals("{\"down\":\"true\",\"up\":\"false\"}"),
+                "multipart: when canonical JSON (OR/AND, sorted keys), array apply rows");
+
+        // single: one model, one x/y, several keys
+        BlockstateVisuals single = parseBlockstateVisuals("{\"variants\":{"
+                + "\"facing=north\":{\"model\":\"fakemod:block/r\"},"
+                + "\"facing=south\":{\"model\":\"fakemod:block/r\"}}}");
+        expect(failures, single.kind().equals(KIND_SINGLE) && single.lookCount() == 1
+                && single.looks().size() == 2, "variants single: one look over two keys");
+
+        // none: no variants or multipart, or unparseable
+        expect(failures, parseBlockstateVisuals("{\"foo\":1}").kind().equals(KIND_NONE)
+                && parseBlockstateVisuals("not json").kind().equals(KIND_NONE)
+                && parseBlockstateVisuals("not json").looks().isEmpty(), "none: no looks");
+
+        // the TSV: header, row shape, multipart when-key, and order-independence of the input map
+        Map<String, BlockstateVisuals> byBlock = new TreeMap<>(Map.of(
+                "fakemod:pillar", rot, "fakemod:rock", single, "fakemod:mp", mp));
+        String text = blockVariantsText(byBlock);
+        expect(failures, text.startsWith(BLOCK_VARIANTS_HEADER), "variant tsv: header");
+        expect(failures, text.contains("fakemod:pillar\trotation\taxis=x\tfakemod:block/pillar\t90\t90\tfalse\n"),
+                "variant tsv: rotation row");
+        expect(failures, text.contains("fakemod:rock\tsingle\tfacing=north\tfakemod:block/r\t0\t0\tfalse\n"),
+                "variant tsv: single row");
+        expect(failures, text.contains("fakemod:mp\tmultipart\t{\"OR\":[{\"north\":\"true\"},{\"south\":\"true\"}]}"
+                + "\tfakemod:block/side\t0\t0\ttrue\n"), "variant tsv: multipart OR row");
+        Map<String, BlockstateVisuals> reversed = new TreeMap<>();
+        reversed.put("fakemod:mp", mp);
+        reversed.put("fakemod:rock", single);
+        reversed.put("fakemod:pillar", rot);
+        expect(failures, blockVariantsText(reversed).equals(text), "variant tsv: deterministic");
+    }
+
+    /** Per-state visuals (S2): the uvlock bake and element rotation under x/y, and the look table rows. */
+    private static void perStateSelftest(List<String> failures) {
+        // a box with distinct sides, one face of each direction, default uvs (explicit uv on up for the trace)
+        String box = "{\"from\":[2,0,4],\"to\":[6,8,12],\"faces\":{"
+                + "\"down\":{\"texture\":\"#all\"},\"up\":{\"texture\":\"#all\"},"
+                + "\"north\":{\"texture\":\"#all\"},\"south\":{\"texture\":\"#all\"},"
+                + "\"west\":{\"texture\":\"#all\"},\"east\":{\"texture\":\"#all\"}}}";
+        JsonArray x90 = GalleryPack.bakeDisplayElements(JsonParser.parseString("[" + box + "]").getAsJsonArray(), 90, 0);
+        JsonObject e = x90.get(0).getAsJsonObject();
+        // x=90: (x,y,z) -> (x, z, 16-y); the box region is y 4..12, z 8..16
+        expect(failures, e.getAsJsonArray("from").toString().equals("[2.0,4.0,8.0]")
+                && e.getAsJsonArray("to").toString().equals("[6.0,12.0,16.0]"),
+                "display x90: from/to region " + e.get("from") + " " + e.get("to"));
+        // face directions: up->north, north->down, down->south, south->up; west/east stay
+        expect(failures, e.getAsJsonObject("faces").keySet().equals(
+                new TreeSet<>(List.of("north", "down", "south", "up", "west", "east"))),
+                "display x90: face keys " + e.getAsJsonObject("faces").keySet());
+        JsonObject y90 = GalleryPack.bakeDisplayElements(JsonParser.parseString("[" + box + "]").getAsJsonArray(), 0, 90)
+                .get(0).getAsJsonObject();
+        // y=90: (x,y,z) -> (16-z, y, x); region x 4..12, z 2..6
+        expect(failures, y90.getAsJsonArray("from").toString().equals("[4.0,0.0,2.0]")
+                && y90.getAsJsonArray("to").toString().equals("[12.0,8.0,6.0]"),
+                "display y90: from/to region " + y90.get("from") + " " + y90.get("to"));
+        expect(failures, y90.getAsJsonObject("faces").keySet().equals(
+                new TreeSet<>(List.of("east", "south", "west", "north", "up", "down"))),
+                "display y90: face keys " + y90.getAsJsonObject("faces").keySet());
+        // uv of faces whose uvlock matrix is the identity (hand-checked against the default face uv of the box):
+        // x=90 down (-> south) [2,4,6,12], east (-> east) [0,4,8,12] (the u rect mirrors); y=90 north (-> east)
+        // [10,8,14,16], west (-> north) [4,8,12,16], up (-> up) [4,2,12,6] (the uvlock rotation of up under y=90)
+        JsonObject ef = e.getAsJsonObject("faces");
+        expect(failures, ef.getAsJsonObject("south").getAsJsonArray("uv").toString().equals("[2.0,4.0,6.0,12.0]")
+                && ef.getAsJsonObject("east").getAsJsonArray("uv").toString().equals("[0.0,4.0,8.0,12.0]"),
+                "display x90: uvlock uv of the identity faces " + ef);
+        JsonObject yf = y90.getAsJsonObject("faces");
+        expect(failures, yf.getAsJsonObject("east").getAsJsonArray("uv").toString().equals("[10.0,8.0,14.0,16.0]")
+                && yf.getAsJsonObject("south").getAsJsonArray("uv").toString().equals("[4.0,8.0,12.0,16.0]")
+                && yf.getAsJsonObject("up").getAsJsonArray("uv").toString().equals("[4.0,2.0,12.0,6.0]"),
+                "display y90: uvlock uv of the identity faces " + yf);
+
+        // an element with its own rotation: the origin moves with the box, the axis remaps, the angle flips on a negative image
+        String rotEl = "{\"from\":[2,0,4],\"to\":[6,8,12],\"rotation\":{\"origin\":[4,8,12],\"axis\":\"y\",\"angle\":22.5},"
+                + "\"faces\":{\"up\":{\"texture\":\"#all\"}}}";
+        JsonObject r1 = GalleryPack.bakeDisplayElements(JsonParser.parseString("[" + rotEl + "]").getAsJsonArray(), 90, 0)
+                .get(0).getAsJsonObject().getAsJsonObject("rotation");
+        expect(failures, r1.get("origin").toString().equals("[4.0,12.0,8.0]")
+                && r1.get("axis").getAsString().equals("z") && r1.get("angle").getAsDouble() == -22.5,
+                "display rotation x90: origin/axis/angle " + r1);
+        JsonObject r2 = GalleryPack.bakeDisplayElements(JsonParser.parseString(
+                "[{\"from\":[2,0,4],\"to\":[6,8,12],\"rotation\":{\"origin\":[4,8,12],\"axis\":\"x\",\"angle\":45},"
+                + "\"faces\":{\"up\":{\"texture\":\"#all\"}}}]").getAsJsonArray(), 0, 90)
+                .get(0).getAsJsonObject().getAsJsonObject("rotation");
+        expect(failures, r2.get("origin").toString().equals("[4.0,8.0,4.0]")
+                && r2.get("axis").getAsString().equals("z") && r2.get("angle").getAsDouble() == 45.0,
+                "display rotation y90: origin/axis/angle " + r2);
+
+        // the look table: a rotation block (runtime rotation rows), a uvlock block (baked row + base row), a single block (no rows)
+        BlockstateVisuals pillar = parseBlockstateVisuals("{\"variants\":{"
+                + "\"axis=y\":{\"model\":\"fakemod:block/pillar\"},"
+                + "\"axis=x\":{\"model\":\"fakemod:block/pillar\",\"x\":90,\"y\":90},"
+                + "\"axis=z\":{\"model\":\"fakemod:block/pillar\",\"x\":90}}}");
+        BlockstateVisuals stairs = parseBlockstateVisuals("{\"variants\":{"
+                + "\"facing=north\":{\"model\":\"fakemod:block/c\"},"
+                + "\"facing=east\":[{\"model\":\"fakemod:block/c\",\"y\":90,\"uvlock\":true},"
+                + "{\"model\":\"fakemod:block/d\",\"weight\":2}]}}");
+        BlockstateVisuals single = parseBlockstateVisuals("{\"variants\":{\"\":{\"model\":\"fakemod:block/r\"}}}");
+        Map<String, BlockstateVisuals> looks = new TreeMap<>(Map.of(
+                "fakemod:pillar", pillar, "fakemod:stairs", stairs, "fakemod:rock", single));
+        String rows = blockLooksText(looks);
+        expect(failures, rows.startsWith(BLOCK_LOOKS_HEADER), "look rows: header");
+        expect(failures, rows.equals(BLOCK_LOOKS_HEADER
+                + "fakemod:pillar\taxis=x\t1\tc-imagine:_display/fakemod/block/pillar\t90\t90\n"
+                + "fakemod:pillar\taxis=y\t1\tc-imagine:_display/fakemod/block/pillar\t0\t0\n"
+                + "fakemod:pillar\taxis=z\t1\tc-imagine:_display/fakemod/block/pillar\t90\t0\n"
+                + "fakemod:stairs\tfacing=east\t1\tc-imagine:_display_uv/fakemod/block/c_x0_y90\t0\t0\n"
+                + "fakemod:stairs\tfacing=east\t2\tc-imagine:_display/fakemod/block/d\t0\t0\n"
+                + "fakemod:stairs\tfacing=north\t1\tc-imagine:_display/fakemod/block/c\t0\t0\n"),
+                "look rows: rotation and uvlock rows, single block absent: " + rows);
+        expect(failures, !rows.contains("fakemod:rock") && !rows.contains("_display_uv/fakemod/block/c_x90"),
+                "look rows: single block and non-baked uvlock absent");
+        expect(failures, blockLooksText(Map.of("fakemod:stairs", stairs)).equals(BLOCK_LOOKS_HEADER
+                + "fakemod:stairs\tfacing=east\t1\tc-imagine:_display_uv/fakemod/block/c_x0_y90\t0\t0\n"
+                + "fakemod:stairs\tfacing=east\t2\tc-imagine:_display/fakemod/block/d\t0\t0\n"
+                + "fakemod:stairs\tfacing=north\t1\tc-imagine:_display/fakemod/block/c\t0\t0\n"),
+                "look rows: a block alone gives the same rows");
     }
 
     private static void expect(List<String> failures, boolean cond, String what) {

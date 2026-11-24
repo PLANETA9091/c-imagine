@@ -1160,28 +1160,24 @@ public final class GalleryPack {
     }
 
     /**
-     * The 26.3 ITEM-CHANNEL shape (measured #49/#50): an item model whose
-     * chain carries block geometry bakes sprites from the BLOCKS atlas while
-     * the items/*.json wrapper expects the ITEMS atlas — a mixed or
-     * vanilla-sprite set aborts the ENTIRE host def bake ("Multiple atlases
-     * used in model, expected items.png, but also got blocks.png"). The
-     * PROVEN shape (the #49 wall composites rendered textured end to end) is
-     * a standalone composite: inline elements + the model's own textures,
-     * every sprite PACK-SIDE (vanilla sprites are re-hosted under
-     * c-imagine:block/items/ from the client jar). Sprite-driven item models
-     * (item/generated chains) stay vanilla-shaped — items-atlas only.
-     *
-     * @param itemNo deterministic emit index (the file name + sprite keys)
-     * @return the composite model ref, or null when the chain has no elements
+     * The composite's sprite pass (shared with the S2 display bake): every texture of the
+     * graph that is a vanilla or item-path sprite is re-hosted under the blocks atlas as
+     * {@code c-imagine:block/<keyPrefix><n>}; pack block-path sprites keep their ref.
      */
-    static String synthesizeItemComposite(List<Path> jars, String modelRef, int itemNo,
-                                          TreeMap<String, byte[]> entries,
-                                          List<String> warnings) throws IOException {
-        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
-        if (mg == null || mg.elements == null || mg.elements.size() == 0) {
-            return null;
-        }
-        materializeCutouts(jars, mg, entries, warnings);
+    private static Map<String, String> hostCompositeTextures(List<Path> jars, ModelGraph mg, String keyPrefix,
+                                                             String modelRef, TreeMap<String, byte[]> entries,
+                                                             List<String> warnings) throws IOException {
+        return hostCompositeTextures(jars, mg, keyPrefix, false, modelRef, entries, warnings);
+    }
+
+    /**
+     * {@code bySprite} keys each re-hosted sprite by its own name ({@code uv/<ns>/<path>}), so every
+     * baked model that uses the sprite shares one PNG; otherwise the key is {@code keyPrefix + n}.
+     */
+    private static Map<String, String> hostCompositeTextures(List<Path> jars, ModelGraph mg, String keyPrefix,
+                                                             boolean bySprite, String modelRef,
+                                                             TreeMap<String, byte[]> entries,
+                                                             List<String> warnings) throws IOException {
         Map<String, String> textures = new TreeMap<>();
         int texNo = 0;
         for (Map.Entry<String, String> t : mg.textures.entrySet()) {
@@ -1204,7 +1200,7 @@ public final class GalleryPack {
             String spritePath = spritePathOf(sprite);
             boolean itemPathSprite = !vanillaSprite && spritePath.startsWith("item/");
             if (vanillaSprite || itemPathSprite) {
-                String key = "items/t" + itemNo + "_" + texNo;
+                String key = bySprite ? spriteShareKey(sprite) : keyPrefix + texNo;
                 String newSprite = WRAPPER_NS + ":block/" + key;
                 String png = vanillaSprite
                         ? "assets/minecraft/textures/" + spritePath + ".png"
@@ -1223,6 +1219,34 @@ public final class GalleryPack {
                 textures.put(t.getKey(), sprite);
             }
         }
+        return textures;
+    }
+
+    /**
+     * The 26.3 ITEM-CHANNEL shape (measured #49/#50): an item model whose
+     * chain carries block geometry bakes sprites from the BLOCKS atlas while
+     * the items/*.json wrapper expects the ITEMS atlas — a mixed or
+     * vanilla-sprite set aborts the ENTIRE host def bake ("Multiple atlases
+     * used in model, expected items.png, but also got blocks.png"). The
+     * PROVEN shape (the #49 wall composites rendered textured end to end) is
+     * a standalone composite: inline elements + the model's own textures,
+     * every sprite PACK-SIDE (vanilla sprites are re-hosted under
+     * c-imagine:block/items/ from the client jar). Sprite-driven item models
+     * (item/generated chains) stay vanilla-shaped — items-atlas only.
+     *
+     * @param itemNo deterministic emit index (the file name + sprite keys)
+     * @return the composite model ref, or null when the chain has no elements
+     */
+    static String synthesizeItemComposite(List<Path> jars, String modelRef, int itemNo,
+                                          TreeMap<String, byte[]> entries,
+                                          List<String> warnings) throws IOException {
+        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
+        if (mg == null || mg.elements == null || mg.elements.size() == 0) {
+            return null;
+        }
+        materializeCutouts(jars, mg, entries, warnings);
+        Map<String, String> textures = hostCompositeTextures(jars, mg, "items/t" + itemNo + "_", modelRef,
+                entries, warnings);
         if (textures.isEmpty()) {
             warnings.add("item composite without textures: " + modelRef);
             return null;
@@ -4827,6 +4851,110 @@ public final class GalleryPack {
         }
         return a;
     }
+
+    /**
+     * S2 display bake: the element list of a uvlock look rotated by x then y ({@link #bakeRotation}, uvlock on),
+     * with the element rotation's axis sign fixed. A rotation axis that maps onto a NEGATIVE unit axis flips
+     * its angle (Rot(-e, t) = Rot(e, -t)); bakeRotation alone remaps the axis unsigned.
+     */
+    static JsonArray bakeDisplayElements(JsonArray elements, int xRot, int yRot) {
+        JsonArray baked = bakeRotation(elements, xRot, yRot, true);
+        for (int i = 0; i < elements.size(); i++) {
+            JsonObject src = elements.get(i).getAsJsonObject();
+            if (!src.has("rotation") || !src.get("rotation").isJsonObject()) {
+                continue;
+            }
+            JsonObject rot = src.getAsJsonObject("rotation");
+            if (!rot.has("axis") || !rot.has("angle")) {
+                continue;
+            }
+            int k = "xyz".indexOf(rot.get("axis").getAsString());
+            if (k < 0) {
+                continue;
+            }
+            JsonArray centre = new JsonArray();
+            centre.add(8.0);
+            centre.add(8.0);
+            centre.add(8.0);
+            JsonArray tip = new JsonArray();
+            for (int c = 0; c < 3; c++) {
+                tip.add(c == k ? 9.0 : 8.0);
+            }
+            JsonArray a = bakeVec(centre, xRot, yRot);
+            JsonArray b = bakeVec(tip, xRot, yRot);
+            int best = 0;
+            for (int c = 1; c < 3; c++) {
+                if (Math.abs(b.get(c).getAsDouble() - a.get(c).getAsDouble())
+                        > Math.abs(b.get(best).getAsDouble() - a.get(best).getAsDouble())) {
+                    best = c;
+                }
+            }
+            double sign = Math.signum(b.get(best).getAsDouble() - a.get(best).getAsDouble());
+            JsonObject out = baked.get(i).getAsJsonObject();
+            JsonObject newRot = out.getAsJsonObject("rotation").deepCopy();
+            newRot.addProperty("axis", String.valueOf("xyz".charAt(best)));
+            newRot.addProperty("angle", sign * rot.get("angle").getAsDouble());
+            out.add("rotation", newRot);
+        }
+        return baked;
+    }
+
+    /**
+     * S2 display bake: a uvlock look rotated by x/y as a standalone model (no parent) under
+     * {@code c-imagine:_display_uv/<bakeKey>}: the resolved graph's elements rotated by
+     * {@link #bakeDisplayElements}, its textures hosted as the composite does. Returns the model
+     * ref, or null when the chain has no elements or no texture.
+     */
+    static String bakeUvlockDisplayModel(List<Path> jars, String modelRef, int xRot, int yRot, String bakeKey,
+                                         TreeMap<String, byte[]> entries, List<String> warnings) throws IOException {
+        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
+        if (mg == null || mg.elements == null || mg.elements.size() == 0) {
+            return null;
+        }
+        materializeCutouts(jars, mg, entries, warnings);
+        mg = new ModelGraph(resolveTextureChains(mg.textures), mg.elements, mg.displayScale());
+        Map<String, String> textures = hostCompositeTextures(jars, mg, "uv/", true, modelRef, entries, warnings);
+        if (textures.isEmpty()) {
+            warnings.add("display uv bake without textures: " + modelRef);
+            return null;
+        }
+        JsonObject texObj = new JsonObject();
+        for (Map.Entry<String, String> t : textures.entrySet()) {
+            texObj.addProperty(t.getKey(), t.getValue());
+        }
+        JsonObject model = new JsonObject();
+        model.add("textures", texObj);
+        model.add("elements", bakeDisplayElements(mg.elements, xRot, yRot));
+        entries.put("assets/" + WRAPPER_NS + "/models/" + DISPLAY_UV_DIR + "/" + bakeKey + ".json",
+                model.toString().getBytes(StandardCharsets.UTF_8));
+        return WRAPPER_NS + ":" + DISPLAY_UV_DIR + "/" + bakeKey;
+    }
+
+    /** The shared hosted key of a sprite: {@code uv/<ns>/<path>} with the bare name in minecraft. */
+    static String spriteShareKey(String sprite) {
+        int c = sprite.indexOf(':');
+        String ns = c > 0 ? sprite.substring(0, c) : "minecraft";
+        return "uv/" + (ns + "/" + spritePathOf(sprite)).replaceAll("[^A-Za-z0-9_/.-]", "_");
+    }
+
+    /**
+     * Texture keys that name another key ({@code "#casing": "#1"}) resolved to their sprite, bounded
+     * depth; a key that never resolves keeps its {@code #} ref (the checker reports it).
+     */
+    static Map<String, String> resolveTextureChains(Map<String, String> textures) {
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<String, String> t : textures.entrySet()) {
+            String v = t.getValue();
+            for (int depth = 0; depth < 16 && v.startsWith("#") && textures.containsKey(v.substring(1)); depth++) {
+                v = textures.get(v.substring(1));
+            }
+            out.put(t.getKey(), v);
+        }
+        return out;
+    }
+
+    /** The model directory of the S2 baked uvlock display models (under the c-imagine namespace). */
+    static final String DISPLAY_UV_DIR = "_display_uv";
 
     // ---- jar json -----------------------------------------------------------------
 
