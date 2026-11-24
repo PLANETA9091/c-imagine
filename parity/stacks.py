@@ -234,10 +234,27 @@ def ours_kind(reply):
     return canon_kind(raw)
 
 
+def menu_kind(reply):
+    """The modded menu registry id a screen reply names (e.g. 'create:toolbox'), else None.
+    Vanilla ids ('minecraft:*') and no id give None, so vanilla menus keep their screen-name kind.
+    A modded menu is drawn by the client as its own Screen class on truth (toolboxscreen) but as a
+    HUD screen on OURS (playing), so the menu's registry id is the name both sides can agree on."""
+    mt = reply.get("menu_type") if isinstance(reply, dict) else None
+    if not mt:
+        return None
+    mt = str(mt).strip().lower()
+    if ":" not in mt or mt.startswith("minecraft:"):
+        return None
+    return mt
+
+
 def norm_screen(reply, stack_name):
-    """Kind + slots only. menu_type is a registry name (truth 'minecraft:crafting', ours None), not an
-    observable difference, so it is not compared."""
+    """Kind + slots only. A modded menu's kind is its registry id (menu_kind); vanilla menu_type is not
+    compared (truth 'minecraft:crafting' vs ours None)."""
     kind = ours_kind(reply) if stack_name == "ours" else canon_kind(reply.get("screen"))
+    mk = menu_kind(reply)
+    if mk and kind != "playing":
+        kind = mk
     slots = reply.get("slots") or (reply.get("menu") or {}).get("slots") or []
     if kind == "playing":
         # no menu open: a slot list here is stale menu data, not an observable player state
@@ -520,7 +537,12 @@ class TruthStack(Stack):
     def interact(self, pos, face=None):
         args = self._p(pos) + ([face] if face else [])
         r = self.call("interact", args)
-        return {"screen": canon_kind(r.get("screen")), "block_after": block_id(r.get("block"))}
+        kind = canon_kind(r.get("screen"))
+        if kind != "playing":
+            mk = menu_kind(self.call("screen"))
+            if mk:
+                kind = mk
+        return {"screen": kind, "block_after": block_id(r.get("block"))}
 
     def use_item(self, hold=None):
         # hold is in SECONDS (horizon-ctl --hold SECONDS); truth-ctl --hold takes TICKS (20 per second)
@@ -673,7 +695,12 @@ class OursStack(Stack):
         if not isinstance(r, dict):
             raise RuntimeError("horizon-ctl screen returned %r, not an object" % (r,))
         btns = [b for b in (r.get("buttons") or []) if isinstance(b, dict)]
-        return {"kind": ours_kind(r),
+        kind = ours_kind(r)
+        if kind == "playing":
+            insp = self._hud_menu()
+            if insp is not None:
+                kind = menu_kind(insp) or canon_kind(insp.get("screen") or "menu")
+        return {"kind": kind,
                 "buttons": [str(b.get("label")) for b in btns],
                 "enabled": [str(b.get("label")) for b in btns if b.get("enabled")]}
 
@@ -681,6 +708,10 @@ class OursStack(Stack):
         return self.ctl("respawn")
 
     def heal_close(self):
+        if self._hud_menu() is not None:
+            # ScreenHud draws the menu on the HUD and closes it on sneak (Esc is not visible to the server)
+            self.key("key.sneak", 1)
+            return {"closed": "sneak"}
         return self.ctl("close")
 
     def heal_click(self, label):
@@ -872,8 +903,8 @@ class OursStack(Stack):
         args = ["interact", *self._p(pos)] + ([face] if face else [])
         self.ctl(*args)
         self._settle(5)  # truth-ctl reports the screen after 5 ticks; Horizon opens it late
-        scr = self.ctl("screen")
-        return {"screen": ours_kind(scr), "block_after": self._server_block_id(pos)}
+        scr = self._screen_reply()
+        return {"screen": norm_screen(scr, self.name)["kind"], "block_after": self._server_block_id(pos)}
 
     def use_item(self, hold=None):
         before = self._counts()
@@ -963,8 +994,26 @@ class OursStack(Stack):
             return {"counts": {k: v for k, v in counts.items() if v}, "carried": cid, "selected": None}
         return norm_inventory(self.ctl("inventory"))
 
+    def _hud_menu(self):
+        """'/cim inspect screen' for the player when a menu is open on the server (drawn on the HUD by
+        ScreenHud, which horizon-ctl reports as 'playing'), else None."""
+        insp = self.inspect("screen", self.player)
+        return insp if insp and insp.get("open") else None
+
+    def _screen_reply(self):
+        """horizon-ctl screen; when Horizon says 'playing' and the server has a menu open, that menu
+        (menu_type, screen name, slots) in the same shape as a truth-ctl screen reply."""
+        r = self.ctl("screen")
+        if ours_kind(r) != "playing":
+            return r
+        insp = self._hud_menu()
+        if insp is None:
+            return r
+        return {"screen": insp.get("screen"), "menu_type": insp.get("menu_type"),
+                "title": insp.get("title"), "slots": insp.get("slots") or [], "source": "server"}
+
     def observe_screen(self):
-        return norm_screen(self._apply_server_ids(self.ctl("screen")), self.name)
+        return norm_screen(self._apply_server_ids(self._screen_reply()), self.name)
 
     def observe_player(self):
         return norm_player(self.ctl("state"))
