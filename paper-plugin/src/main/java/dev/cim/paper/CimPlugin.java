@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Logger;
+import dev.cim.f2v.F2vPack;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -1257,6 +1258,296 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 + " -> " + target.getName() + (left > 0 ? " (" + left + " did not fit)" : ""));
         log().info(LOG_PREFIX + "give: " + moddedId + " x" + (count - left) + " to " + target.getName()
                 + " by " + sender.getName());
+    }
+
+    // ---- /cim inspect: the server's own view, for the parity harness (OURS observations) ----
+
+    /** The Gson the inspect lines are written with (Paper ships Gson, as the JSON readers above use it). */
+    private static final com.google.gson.Gson INSPECT_GSON = new com.google.gson.Gson();
+    /** The layer's stack JSON carries its own id ({@code {"id":"create:x",...}}). */
+    private static final java.util.regex.Pattern INSPECT_LIVE_ID =
+            java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
+
+    /**
+     * {@code /cim inspect block|inv|entities} — prints one {@code CIM-INSPECT} JSON line to the sender
+     * and the server log. Runs on the server thread (command dispatch).
+     */
+    private void inspect(CommandSender sender, String[] args) {
+        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r>";
+        try {
+            switch (args[1].toLowerCase(Locale.ROOT)) {
+                case "block" -> {
+                    if (args.length != 5) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    inspectBlock(sender, inspectWorld(sender), Integer.parseInt(args[2]),
+                            Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+                }
+                case "inv" -> {
+                    if (args.length != 3) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    inspectInventory(sender, args[2]);
+                }
+                case "entities" -> {
+                    if (args.length != 6) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    double r = Double.parseDouble(args[5]);
+                    if (!(r >= 0 && r <= 128)) {
+                        sender.sendMessage(LOG_PREFIX + "inspect: radius must be 0..128, got " + args[5]);
+                        return;
+                    }
+                    inspectEntities(sender, inspectWorld(sender), Double.parseDouble(args[2]),
+                            Double.parseDouble(args[3]), Double.parseDouble(args[4]), r);
+                }
+                default -> sender.sendMessage(usage);
+            }
+        } catch (NumberFormatException nfe) {
+            sender.sendMessage(LOG_PREFIX + "inspect: bad number in: " + String.join(" ", args));
+        }
+    }
+
+    /** The sender's world when it stands in one, else the main world. */
+    private static World inspectWorld(CommandSender sender) {
+        return sender instanceof Player p ? p.getWorld() : Bukkit.getWorlds().get(0);
+    }
+
+    /** Sends one {@code CIM-INSPECT} line to the sender and logs it at INFO. */
+    private void emitInspect(CommandSender sender, com.google.gson.JsonObject obj) {
+        String line = "CIM-INSPECT " + INSPECT_GSON.toJson(obj);
+        sender.sendMessage(line);
+        log().info(line);
+    }
+
+    /**
+     * The modded id a Paper stack carries, or null for a vanilla stack. Order: the layer's own JSON
+     * kept in the stack's PDC (LiveBridge {@code live_stack}), the allocated item_model, the display
+     * item_model, then the manifest row whose host item and custom_model_data match the stack.
+     */
+    private String moddedIdOfStack(ItemStack stack) {
+        if (stack == null || stack.getType().isAir() || !stack.hasItemMeta()) {
+            return null;
+        }
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        String json = meta.getPersistentDataContainer().get(new org.bukkit.NamespacedKey(this, "live_stack"),
+                org.bukkit.persistence.PersistentDataType.STRING);
+        if (json != null) {
+            java.util.regex.Matcher m = INSPECT_LIVE_ID.matcher(json);
+            if (m.find()) {
+                return m.group(1);
+            }
+        }
+        if (meta.hasItemModel()) {
+            String key = meta.getItemModel().toString();
+            String allocated = F2vPack.moddedIdOfItemModel(key);
+            if (allocated != null && dev.cim.hud.HudBootstrap.hasAllocatedItem(allocated)) {
+                return allocated;
+            }
+            String display = F2vPack.moddedIdOfDisplayItemModel(key);
+            if (display != null) {
+                return display;
+            }
+        }
+        if (f2v != null && meta.hasCustomModelDataComponent()) {
+            CustomModelDataComponent cmd = meta.getCustomModelDataComponent();
+            for (dev.cim.f2v.F2vPack.VisualItem row : f2v.items()) {
+                String bare = row.hostItem().substring(row.hostItem().indexOf(':') + 1);
+                if (Material.matchMaterial(bare) != stack.getType()) {
+                    continue;
+                }
+                if (row.isFloatDispatch()) {
+                    List<Float> floats = cmd.getFloats();
+                    if (!floats.isEmpty() && floats.get(0) == row.cmd()) {
+                        return row.moddedId();
+                    }
+                } else {
+                    List<String> strings = cmd.getStrings();
+                    if (!strings.isEmpty() && strings.get(0).equals(row.selectValue())) {
+                        return row.moddedId();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The modded block a note or mushroom carrier state stands for (its carrier key), or null. */
+    private String moddedBlockOfState(String state) {
+        String key = F2vPack.carrierKeyOf(state);
+        if (key == null || f2v == null) {
+            return null;
+        }
+        for (dev.cim.f2v.F2vPack.VisualBlock row : f2v.blocks()) {
+            if (!row.isDisplay() && row.key().equals(key)) {
+                return row.moddedBlockId();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A Bukkit block-data string in vanilla's form: the id, then its properties sorted by name
+     * ({@code minecraft:oak_stairs[facing=north,half=bottom]}). A property-less state is the bare id.
+     */
+    static String normalizeBlockState(String data) {
+        int open = data.indexOf('[');
+        if (open < 0) {
+            return data;
+        }
+        String name = data.substring(0, open);
+        int close = data.lastIndexOf(']');
+        String body = close > open ? data.substring(open + 1, close) : "";
+        java.util.TreeMap<String, String> props = new java.util.TreeMap<>();
+        for (String pair : body.split(",")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0) {
+                props.put(pair.substring(0, eq), pair.substring(eq + 1));
+            }
+        }
+        if (props.isEmpty()) {
+            return name;
+        }
+        java.util.StringJoiner sj = new java.util.StringJoiner(",", name + "[", "]");
+        props.forEach((k, v) -> sj.add(k + "=" + v));
+        return sj.toString();
+    }
+
+    /**
+     * {@code inspect block}: the block at a position. The layer has no "state at x y z" request (its
+     * blockinfo takes an id; save/open-block answer block entities only), so the answer comes from
+     * the carriers: a display barrier's chunk key, then the note or mushroom state's carrier key. The
+     * carrier states do not hold the mod's properties, so a carrier answer is the id with
+     * {@code partial:true}. Anything else is Paper's own block state, normalized.
+     */
+    private void inspectBlock(CommandSender sender, World world, int x, int y, int z) {
+        Block block = world.getBlockAt(x, y, z);
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "block");
+        com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
+        pos.add(x);
+        pos.add(y);
+        pos.add(z);
+        o.add("pos", pos);
+        String modded = null;
+        if (block.getType() == Material.BARRIER) {
+            modded = dev.cim.hud.HudBootstrap.displayIdAt(block);
+        }
+        if (modded == null) {
+            modded = moddedBlockOfState(block.getBlockData().getAsString());
+        }
+        if (modded != null) {
+            o.addProperty("id", modded);
+            o.addProperty("state", modded);
+            o.addProperty("source", "carrier");
+            o.addProperty("partial", true);
+        } else {
+            String state = normalizeBlockState(block.getBlockData().getAsString());
+            o.addProperty("id", block.getType().getKey().toString());
+            o.addProperty("state", state);
+            o.addProperty("source", "paper");
+        }
+        emitInspect(sender, o);
+    }
+
+    /** One stack as an inspect object: the modded id when it is a carrier, else the vanilla id; plus its count. */
+    private com.google.gson.JsonObject stackJson(ItemStack stack) {
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        String modded = moddedIdOfStack(stack);
+        boolean empty = stack == null || stack.getType().isAir();
+        o.addProperty("id", modded != null ? modded : empty ? "minecraft:air" : stack.getType().getKey().toString());
+        o.addProperty("count", empty ? 0 : stack.getAmount());
+        o.addProperty("modded", modded != null);
+        return o;
+    }
+
+    /** {@code inspect inv <player>}: every slot — hotbar, main, armor, offhand, cursor — as one line. */
+    private void inspectInventory(CommandSender sender, String playerName) {
+        Player p = Bukkit.getPlayerExact(playerName);
+        if (p == null) {
+            sender.sendMessage(LOG_PREFIX + "inspect: unknown player (not online): " + playerName);
+            return;
+        }
+        org.bukkit.inventory.PlayerInventory inv = p.getInventory();
+        com.google.gson.JsonArray slots = new com.google.gson.JsonArray();
+        for (int i = 0; i < 9; i++) {
+            slots.add(inspectSlot("hotbar", i, inv.getItem(i)));
+        }
+        for (int i = 9; i < 36; i++) {
+            slots.add(inspectSlot("main", i, inv.getItem(i)));
+        }
+        String[] armor = {"boots", "leggings", "chestplate", "helmet"};
+        ItemStack[] worn = inv.getArmorContents();
+        for (int k = 0; k < armor.length; k++) {
+            slots.add(inspectSlot("armor." + armor[k], 36 + k, k < worn.length ? worn[k] : null));
+        }
+        slots.add(inspectSlot("offhand", 40, inv.getItemInOffHand()));
+        slots.add(inspectSlot("cursor", -1, p.getItemOnCursor()));
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "inv");
+        o.addProperty("player", p.getName());
+        o.add("slots", slots);
+        emitInspect(sender, o);
+    }
+
+    private com.google.gson.JsonObject inspectSlot(String group, int index, ItemStack stack) {
+        com.google.gson.JsonObject o = stackJson(stack);
+        o.addProperty("slot", group);
+        o.addProperty("index", index);
+        return o;
+    }
+
+    /**
+     * {@code inspect entities <x> <y> <z> <r>}: the entities within r of a point. A display carrier of a
+     * mod block (chunk-keyed, PDC {@code cim:display_id}) reports the modded block id as its type;
+     * everything else reports its vanilla type. Item entities and item displays carry their stack
+     * mapped like an inventory slot. Layer-only mod entities have no Paper entity, so none show here.
+     */
+    private void inspectEntities(CommandSender sender, World world, double x, double y, double z, double r) {
+        org.bukkit.Location centre = new org.bukkit.Location(world, x, y, z);
+        com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+        org.bukkit.NamespacedKey displayId = new org.bukkit.NamespacedKey("cim", "display_id");
+        for (org.bukkit.entity.Entity e : world.getNearbyEntities(centre, r, r, r)) {
+            if (e.getLocation().distanceSquared(centre) > r * r) {
+                continue;
+            }
+            com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+            String vanilla = e.getType().getKey().toString();
+            o.addProperty("uuid", e.getUniqueId().toString());
+            o.addProperty("vanilla", vanilla);
+            o.addProperty("type", vanilla);
+            o.addProperty("modded", false);
+            com.google.gson.JsonArray at = new com.google.gson.JsonArray();
+            at.add(e.getLocation().getX());
+            at.add(e.getLocation().getY());
+            at.add(e.getLocation().getZ());
+            o.add("pos", at);
+            if (e instanceof org.bukkit.entity.ItemDisplay d) {
+                String block = d.getPersistentDataContainer().get(displayId,
+                        org.bukkit.persistence.PersistentDataType.STRING);
+                if (block != null) {
+                    o.addProperty("type", block);
+                    o.addProperty("modded", true);
+                }
+                o.add("item", stackJson(d.getItemStack()));
+            } else if (e instanceof org.bukkit.entity.Item item) {
+                o.add("item", stackJson(item.getItemStack()));
+            }
+            out.add(o);
+        }
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "entities");
+        com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
+        pos.add(x);
+        pos.add(y);
+        pos.add(z);
+        o.add("pos", pos);
+        o.addProperty("r", r);
+        o.add("entities", out);
+        emitInspect(sender, o);
     }
 
     /**
@@ -4980,6 +5271,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + " -> " + result);
             return true;
         }
+        // /cim inspect block|inv|entities — the server's own view (CIM-INSPECT lines) for the parity harness.
+        if (args.length >= 2 && args[0].equalsIgnoreCase("inspect")) {
+            if (!sender.isOp()) {
+                sender.sendMessage(LOG_PREFIX + "inspect: operator required");
+                return true;
+            }
+            inspect(sender, args);
+            return true;
+        }
         // /cim give <player> <moddedItemId> [count] — operator hand-out of a
         // modded item (manifest carrier first, then the allocated set).
         if (args.length >= 1 && args[0].equalsIgnoreCase("give")) {
@@ -5333,6 +5633,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));
         sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
         sender.sendMessage(LOG_PREFIX + "give: /cim give <player> <moddedItemId> [count]");
+        sender.sendMessage(LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r>");
         sender.sendMessage(LOG_PREFIX + "blocks: /cim placeblock <player> [moddedId]");
         sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
         sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> "

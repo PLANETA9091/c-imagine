@@ -39,6 +39,11 @@ public final class HudBootstrap {
         return what.equals("move") ? screens.move(player) : screens.press(player, Integer.parseInt(what));
     }
 
+    /** The display-family mod block id a barrier stands for (its chunk key), or null. For /cim inspect. */
+    public static String displayIdAt(org.bukkit.block.Block block) {
+        return DisplayCarriers.idAt(block);
+    }
+
     /** True when the id is an allocated mod item (false while the HUD layer is not up). */
     public static boolean hasAllocatedItem(String moddedId) {
         return screens != null && screens.isAllocatedItem(moddedId);
