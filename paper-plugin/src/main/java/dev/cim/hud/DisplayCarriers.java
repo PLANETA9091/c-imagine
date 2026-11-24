@@ -19,6 +19,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.logging.Logger;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -118,9 +119,25 @@ final class DisplayCarriers {
         return BlockLooks.resolve(looks, moddedId, state, at.getX(), at.getY(), at.getZ());
     }
 
+    /** Debug flag {@code -Dcim.looks.debug=true}: one INFO line per applied look (off by default). */
+    private static final boolean LOOKS_DEBUG = Boolean.getBoolean("cim.looks.debug");
+    private static final Logger LOOKS_LOG = Logger.getLogger("cim.looks");
+
+    /** Logs the look a display takes for {@code state} (block, state text, chosen row, rotations). */
+    static void debugLook(Block at, String moddedId, String state, BlockLooks.Look look) {
+        if (!LOOKS_DEBUG) {
+            return;
+        }
+        LOOKS_LOG.info("CIM-LOOK block=" + moddedId + " at=" + at.getX() + "," + at.getY() + "," + at.getZ()
+                + " state=" + state + " variant=" + (look == null ? "null" : look.variantKey())
+                + " item_model=" + (look == null ? "null" : look.itemModel())
+                + " rotX=" + (look == null ? 0 : look.rotX()) + " rotY=" + (look == null ? 0 : look.rotY()));
+    }
+
     /** Sets a display to the look of {@code state} at {@code at} (item_model and right rotation). */
     private static void apply(ItemDisplay display, Block at, String moddedId, String state) {
         BlockLooks.Look look = lookAt(at, moddedId, state);
+        debugLook(at, moddedId, state, look);
         display.setItemStack(stack(moddedId, look == null ? null : look.itemModel()));
         display.setTransformation(rig(look == null ? new Quaternionf()
                 : BlockLooks.rotation(look.rotX(), look.rotY())));
@@ -169,6 +186,7 @@ final class DisplayCarriers {
         Location centre = at.getLocation().add(0.5, 0.5, 0.5);
         String where = where(at);
         BlockLooks.Look look = lookAt(at, moddedId, state);
+        debugLook(at, moddedId, state, look);
         return world.spawn(centre, ItemDisplay.class, e -> {
             e.setItemStack(stack(moddedId, look == null ? null : look.itemModel()));
             e.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
