@@ -403,7 +403,22 @@ final class LiveBridge {
      * interaction (useItemOn / useWithoutItem) consumed the click (blockActed): then the layer's inventory
      * and block entity are the truth, and Paper does not run the vanilla use of the same click.
      */
-    record UseOn(State state, List<Placement> placements, boolean blockActed) {
+    record UseOn(State state, List<Placement> placements, boolean blockActed,
+                 List<org.bukkit.util.BlockVector> centres) {
+        /**
+         * True when the cell is inside the neighbourhood the layer was sent: the 3x3x3 box around the clicked
+         * block and the one around its target (see {@link #neighbourCentres}). A change the layer makes there
+         * is authoritative, whatever Paper holds in the cell.
+         */
+        boolean covers(int x, int y, int z) {
+            for (org.bukkit.util.BlockVector c : centres) {
+                if (Math.abs(c.getBlockX() - x) <= 1 && Math.abs(c.getBlockY() - y) <= 1
+                        && Math.abs(c.getBlockZ() - z) <= 1) {
+                    return true;
+                }
+            }
+            return false;
+        }
         String placedId() { return placements.isEmpty() ? null : placements.getFirst().id(); }
         int x() { return placements.getFirst().x(); }
         int y() { return placements.getFirst().y(); }
@@ -470,7 +485,12 @@ final class LiveBridge {
                 .append('\t').append(feet.getX()).append('\t').append(feet.getY()).append('\t').append(feet.getZ())
                 .append('\t').append(feet.getYaw()).append('\t').append(feet.getPitch());
         if (moddedAt != null) {
-            for (String line : neighbourLines(clicked.getRelative(face), moddedAt)) {
+            // Both boxes: the target's (a placed block's neighbours) and the clicked block's (its own use, e.g. a
+            // sapling's bone meal, reads the soil under the clicked block, which the target's box does not reach).
+            java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>(
+                    neighbourLines(clicked.getRelative(face), moddedAt));
+            lines.addAll(neighbourLines(clicked, moddedAt));
+            for (String line : lines) {
                 in.append('\n').append(line);
             }
         }
@@ -520,7 +540,18 @@ final class LiveBridge {
             }
         }
         return new UseOn(state, placements.stream().map(p -> new Placement(
-                p.id(), p.x(), p.y(), p.z(), p.state(), p.blockEntity(), List.copyOf(p.collision()))).toList(), blockActed);
+                p.id(), p.x(), p.y(), p.z(), p.state(), p.blockEntity(), List.copyOf(p.collision()))).toList(), blockActed,
+                neighbourCentres(clicked, face));
+    }
+
+    /**
+     * The centres of the two 3x3x3 boxes a use-on sends (see {@link #neighbourLines}): the clicked block and
+     * its target, the block on {@code face}. Shared by the send and the apply, so both agree on the set.
+     */
+    static List<org.bukkit.util.BlockVector> neighbourCentres(org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face) {
+        org.bukkit.block.Block target = clicked.getRelative(face);
+        return List.of(new org.bukkit.util.BlockVector(clicked.getX(), clicked.getY(), clicked.getZ()),
+                new org.bukkit.util.BlockVector(target.getX(), target.getY(), target.getZ()));
     }
 
     /**
