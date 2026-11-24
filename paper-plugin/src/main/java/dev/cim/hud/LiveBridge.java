@@ -80,10 +80,16 @@ final class LiveBridge {
         StringBuilder in = new StringBuilder("open-block\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(blockId).append('\t')
                 .append(block.getX()).append('\t').append(block.getY()).append('\t').append(block.getZ());
+        // The state it was placed with (a fresh block has none): the layer sets it over the default.
+        String placed = fresh ? null : placedState(block);
+        if (placed != null) {
+            in.append('\t').append(placed);
+        }
         appendInventory(in, player, false);
         org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
         if (fresh) {
             chunk.remove(blockKey(block, blockId));
+            forgetPlacedState(block);
             in.append("\nfresh");
         }
         String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
@@ -110,6 +116,62 @@ final class LiveBridge {
     private NamespacedKey blockKey(org.bukkit.block.Block block, String blockId) {
         return new NamespacedKey(key.getNamespace(),
                 "be_" + block.getX() + "_" + block.getY() + "_" + block.getZ() + "_" + sanitize(blockId));
+    }
+
+    /** Per placed block (world, position): the block state text Paper keeps for it, as the layer reports it. */
+    private final java.util.Map<String, String> placedStates = new java.util.HashMap<>();
+
+    /**
+     * The chunk PDC key of a placed block's state text: {@code bs_x_y_z}, the position only. The state is
+     * kept while the block stands; a block broken or replaced takes it away.
+     */
+    private static String stateKeyName(org.bukkit.block.Block block) {
+        return "bs_" + block.getX() + "_" + block.getY() + "_" + block.getZ();
+    }
+
+    private NamespacedKey stateKey(org.bukkit.block.Block block) {
+        return new NamespacedKey(key.getNamespace(), stateKeyName(block));
+    }
+
+    /** The placed block's state text kept in its chunk (for /cim inspect; no layer needed), or null. */
+    static String placedState(org.bukkit.plugin.Plugin plugin, org.bukkit.block.Block block) {
+        return block.getChunk().getPersistentDataContainer().get(
+                new NamespacedKey(plugin, stateKeyName(block)), PersistentDataType.STRING);
+    }
+
+    /** The placed block's state text as Paper holds it: remembered here and kept in its chunk, or null. */
+    String placedState(org.bukkit.block.Block block) {
+        String known = placedStates.get(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()));
+        if (known != null) {
+            return known;
+        }
+        return block.getChunk().getPersistentDataContainer().get(stateKey(block), PersistentDataType.STRING);
+    }
+
+    /** A mod block Paper now holds: the state it was placed with (null when the layer gave none, which forgets it). */
+    void keepPlacedState(org.bukkit.block.Block block, String state) {
+        if (state == null) {
+            forgetPlacedState(block);
+            return;
+        }
+        placedStates.put(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()), state);
+        block.getChunk().getPersistentDataContainer().set(stateKey(block), PersistentDataType.STRING, state);
+    }
+
+    /** The block at {@code block} is broken, replaced or gone: its kept state goes with it. */
+    void forgetPlacedState(org.bukkit.block.Block block) {
+        placedStates.remove(where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ()));
+        block.getChunk().getPersistentDataContainer().remove(stateKey(block));
+    }
+
+    /** The state the layer's facade holds at {@code block} (its full state text), or null when it holds none. */
+    String blockAt(org.bukkit.block.Block block) {
+        for (String line : call("blockat\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()).split("\n")) {
+            if (line.startsWith("state\t")) {
+                return line.substring("state\t".length());
+            }
+        }
+        return null;
     }
 
     private static String sanitize(String blockId) {
@@ -157,7 +219,9 @@ final class LiveBridge {
                 return false;
             }
         }
+        String placed = placedState(block);
         String in = "adopt\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ() + "\t" + blockId
+                + (placed == null ? "" : "\t" + placed)
                 + (blockEntity == null ? "" : "\nbe\t" + blockEntity);
         if (parse(call(in)).error() != null) {
             return false;
@@ -252,6 +316,7 @@ final class LiveBridge {
             org.bukkit.block.Block block = world.getBlockAt(t.x(), t.y(), t.z());
             if (!t.blockId().equals(carriedId.apply(block))) {
                 block.getChunk().getPersistentDataContainer().remove(blockKey(block, t.blockId()));
+                forgetPlacedState(block);
                 shrank |= release(block, null);
                 continue;
             }
@@ -339,6 +404,8 @@ final class LiveBridge {
         int y() { return placements.getFirst().y(); }
         int z() { return placements.getFirst().z(); }
         String placedBlockEntity() { return placements.getFirst().blockEntity(); }
+        /** The full state text the placed block has (kept by Paper), or null when none was placed. */
+        String placedState() { return placements.isEmpty() ? null : placements.getFirst().state(); }
     }
 
     /**
@@ -400,6 +467,11 @@ final class LiveBridge {
         heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
         String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
+        // The state it was placed with: the layer breaks the block as that state (else its default).
+        String placed = placedState(block);
+        if (placed != null) {
+            in.append("\nstate\t").append(placed);
+        }
         if (kept != null) {
             in.append("\nbe\t").append(kept);
         }
@@ -419,6 +491,7 @@ final class LiveBridge {
         State state = parse(answer);
         if (removed) {
             chunk.remove(blockKey(block, blockId));
+            forgetPlacedState(block);
         }
         return new Broken(removed, spilled, state);
     }

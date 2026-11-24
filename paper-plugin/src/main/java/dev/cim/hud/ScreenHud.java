@@ -1910,6 +1910,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         });
     }
 
+    /** The layer's state at a block (its full state text), or null: for /cim inspect. Needs the layer's real server up. */
+    String layerStateAt(Block block) {
+        LiveBridge bridge = liveReady();
+        return bridge == null ? null : bridge.blockAt(block);
+    }
+
     /** The live bridge, only once the layer's real server is up (else null). */
     private LiveBridge liveReady() {
         LiveBridge bridge = live();
@@ -2105,6 +2111,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             return false;
         }
         if (result.placements().size() == 2 && placeProjectedDoor(clicked.getWorld(), result.placements())) {
+            for (LiveBridge.Placement half : result.placements()) {
+                bridge.keepPlacedState(clicked.getWorld().getBlockAt(half.x(), half.y(), half.z()), half.state());
+            }
             bridge.applyInventory(player, result.state());
             log.info("[cim-screen] " + player.getName() + " placed both halves of " + result.placements().getFirst().id());
             return true;
@@ -2127,6 +2136,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
                 }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
+                bridge.keepPlacedState(at, result.placedState());
                 if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
                     logTicking();
                 }

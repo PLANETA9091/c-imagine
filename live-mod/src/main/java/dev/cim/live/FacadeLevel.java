@@ -120,6 +120,11 @@ public final class FacadeLevel extends Level {
         return states.getOrDefault(pos.asLong(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
     }
 
+    /** The state the facade holds at {@code pos}, or null when it holds none there (no air default). */
+    BlockState heldStateAt(BlockPos pos) {
+        return states.get(pos.asLong());
+    }
+
     @Override
     public net.minecraft.world.level.material.FluidState getFluidState(BlockPos pos) {
         return getBlockState(pos).getFluidState();
