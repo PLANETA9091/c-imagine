@@ -1337,6 +1337,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     + " (not in the manifest or the allocated set)");
             return;
         }
+        // The layer's own data for the item (its max damage, enchantability) when it answers.
+        ItemStack fresh = dev.cim.hud.HudBootstrap.freshStack(moddedId);
+        if (fresh != null && !fresh.getType().isAir()) {
+            template = fresh;
+        }
         int max = Math.max(1, template.getMaxStackSize());
         java.util.List<ItemStack> stacks = new java.util.ArrayList<>();
         for (int remaining = count; remaining > 0; remaining -= max) {

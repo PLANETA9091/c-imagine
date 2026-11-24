@@ -1,6 +1,7 @@
 package dev.cim.live;
 
 import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.resources.RegistryOps;
@@ -85,6 +86,9 @@ public final class LiveProtocol {
             // Stateless answers about blocks and tools: no player, so no uuid.
             if (head[0].equals("blockinfo")) {
                 return blockInfo(head);
+            }
+            if (head[0].equals("fresh")) {
+                return fresh(head);
             }
             if (head[0].equals("digspeed")) {
                 return digSpeed(head);
@@ -1120,7 +1124,40 @@ public final class LiveProtocol {
             return "-";
         }
         RegistryOps<JsonElement> ops = LiveMenus.level().registryAccess().createSerializationContext(JsonOps.INSTANCE);
-        return ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).getOrThrow().toString();
+        return withPrototype(ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).getOrThrow(), stack).toString();
+    }
+
+    /**
+     * A mod item's prototype values the codec leaves out (its components hold only what differs from
+     * them): {@code max_damage} when it is damageable, {@code enchantable} when its enchantment value is
+     * above 0. Paper sets them on the carrier (LayerStackData). Vanilla items are not touched.
+     */
+    static JsonElement withPrototype(JsonElement json, ItemStack stack) {
+        if (!json.isJsonObject() || stack.isEmpty()) {
+            return json;
+        }
+        if (net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).getNamespace().equals("minecraft")) {
+            return json;
+        }
+        JsonObject obj = json.getAsJsonObject();
+        if (stack.isDamageableItem()) {
+            obj.addProperty("max_damage", stack.getMaxDamage());
+        }
+        int enchantable = stack.getItem().getEnchantmentValue();
+        if (enchantable > 0) {
+            obj.addProperty("enchantable", enchantable);
+        }
+        return obj;
+    }
+
+    /** fresh TAB itemId: "fresh TAB stack" for the item at count 1 with its prototype data, or "fresh TAB -". */
+    private static String fresh(String[] head) {
+        net.minecraft.world.item.Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(
+                net.minecraft.resources.ResourceLocation.parse(head[1]));
+        if (item == null || item == net.minecraft.world.item.Items.AIR) {
+            return "fresh\t-\n";
+        }
+        return "fresh\t" + encode(new ItemStack(item)) + "\n";
     }
 
     static ItemStack decode(String json) {
