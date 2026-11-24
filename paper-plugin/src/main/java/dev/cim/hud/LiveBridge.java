@@ -206,6 +206,19 @@ final class LiveBridge {
         return !ticking.isEmpty();
     }
 
+    /** True when a tracked ticking carrier lives in this chunk: the worldgen backfill must not
+     *  drop its plugin chunk ticket while the carrier's block entity ticks there (a ticket drop
+     *  let Paper's chunk GC unload the chunk mid-smoke, the tracker released and re-adopted on
+     *  the reload — the ticking flap the survival smoke's 40-tick window caught). */
+    boolean hasTickingIn(String world, int chunkX, int chunkZ) {
+        for (Tracked t : ticking.values()) {
+            if (t.world().equals(world) && t.chunkX() == chunkX && t.chunkZ() == chunkZ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * The placed mod block at {@code block} starts ticking in the layer, with the data Paper kept
      * for it. True when the set grew; a layer that refuses it leaves the set as it was.

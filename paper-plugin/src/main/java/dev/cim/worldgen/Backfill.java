@@ -83,9 +83,20 @@ final class Backfill implements Listener {
         this.file = new File(plugin.getDataFolder(), FILE);
     }
 
+    private static volatile Backfill instance;
+
+    /** TRUE when nothing is in flight anywhere: the pending set drained and no async load,
+     *  snapshot or layer answer is still out. The harness's awaitBackfill waits for this. */
+    static boolean quiescent() {
+        Backfill b = instance;
+        return b != null && b.queue.isEmpty() && b.jobs.isEmpty() && b.loading.isEmpty()
+                && ModWorldgen.PENDING.isEmpty();
+    }
+
     /** Loads the pending file, listens for chunk loads and runs the tick on the main thread. */
     static void start(Plugin plugin) {
         Backfill backfill = new Backfill(plugin);
+        instance = backfill;
         backfill.load();
         plugin.getServer().getPluginManager().registerEvents(backfill, plugin);
         Bukkit.getScheduler().runTaskTimer(plugin, backfill::tick, 40L, 1L);
@@ -358,6 +369,13 @@ final class Backfill implements Listener {
         try {
             World w = world != null ? world : Bukkit.getWorld(at.world());
             if (w != null && w.isChunkLoaded(at.x(), at.z())) {
+                // 14-e253: a chunk with a tracked ticking carrier keeps its ticket — the ticket
+                // drop let Paper's chunk GC unload the chunk under the carrier mid-smoke (the
+                // tracker released and re-adopted on the reload: the ticking flap). The ticket
+                // rides until the carrier breaks (the tracker releases it then).
+                if (ModWorldgen.tickingIn(w.getName(), at.x(), at.z())) {
+                    return;
+                }
                 w.getChunkAt(at.x(), at.z()).removePluginChunkTicket(plugin);
             }
         } catch (RuntimeException ignored) {

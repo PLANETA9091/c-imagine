@@ -70,6 +70,24 @@ public final class ModWorldgen {
     private static volatile Plan plan;
     /** The owning plugin (set at start): the async callbacks schedule through it. */
     private static volatile Plugin PLUGIN;
+    /** The HUD's ticking-tracker check (set once the screens exist): TRUE when a tracked
+     *  ticking carrier lives in the named chunk — the backfill keeps that chunk's ticket. */
+    public interface TickingCheck {
+        boolean hasTicking(String world, int chunkX, int chunkZ);
+    }
+
+    private static volatile TickingCheck tickingCheck;
+
+    /** The HUD registers its tracker here once the screens exist; null before that. */
+    public static void setTickingCheck(TickingCheck check) {
+        tickingCheck = check;
+    }
+
+    /** TRUE when a tracked ticking carrier lives in this chunk (the backfill keeps its ticket). */
+    static boolean tickingIn(String world, int chunkX, int chunkZ) {
+        TickingCheck check = tickingCheck;
+        return check != null && check.hasTicking(world, chunkX, chunkZ);
+    }
     private static volatile Function<String, String> layer;
     /** The ledger rows by modded id (display rows too: they are counted, not placed). */
     private static volatile Map<String, F2vPack.VisualBlock> rows = Map.of();
@@ -188,7 +206,12 @@ public final class ModWorldgen {
      */
     public static boolean awaitBackfill(long ms) {
         long deadline = System.currentTimeMillis() + ms;
-        while (plan != null && !PENDING.isEmpty() && System.currentTimeMillis() < deadline) {
+        // 14-e253: QUIESCE, not just PENDING-empty — the async backfill keeps chunks in flight
+        // (loading, snapshot taken, the layer's answer on the worker) after PENDING drained, and
+        // the survival smoke raced one: the depot's chunk was still mid-backfill when the harness
+        // placed it, the ticket drop + chunk GC unloaded it under the ticking carrier, and the
+        // 40-tick window caught the release/re-adopt flap (run 45486771378).
+        while (plan != null && !Backfill.quiescent() && System.currentTimeMillis() < deadline) {
             try {
                 Thread.sleep(250L);
             } catch (InterruptedException e) {
@@ -196,7 +219,7 @@ public final class ModWorldgen {
                 return false;
             }
         }
-        return plan != null && PENDING.isEmpty();
+        return plan != null && Backfill.quiescent();
     }
 
     /** The overworld gets the populator; nether and end wait for their own height and biome slice. */

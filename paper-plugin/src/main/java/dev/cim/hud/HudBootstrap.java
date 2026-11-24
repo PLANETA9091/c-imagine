@@ -174,6 +174,13 @@ public final class HudBootstrap {
         HudBootstrap.keyboard = keyboard;
         screens = new ScreenHud(plugin.getLogger(), Path.of(System.getProperty("user.dir"), "mods"));
         plugin.getServer().getPluginManager().registerEvents(screens, plugin);
+        // 14-e253: the worldgen backfill keeps a chunk's ticket while a tracked ticking
+        // carrier lives in it (the ticket drop let Paper's chunk GC unload the chunk under
+        // the carrier mid-smoke — the ticking flap the survival smoke caught).
+        dev.cim.worldgen.ModWorldgen.setTickingCheck((world, chunkX, chunkZ) -> {
+            LiveBridge bridge = screens.liveBridge();
+            return bridge != null && bridge.hasTickingIn(world, chunkX, chunkZ);
+        });
         hud.register(screens);
         screens.busyWhen(keyboard::isOpen);
         screens.useCamera(camera, plugin);
