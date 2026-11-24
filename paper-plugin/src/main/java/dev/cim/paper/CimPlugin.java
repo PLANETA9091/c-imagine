@@ -875,6 +875,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             // Worldgen probe (survival.yml, boot 1): a far square of chunks is generated now, after the
             // layer's listing, and the carriers of the named mod block below y=70 are counted.
+            // 14-e253: the probe loads its chunks ASYNC (the old callSync shape sync-loaded far
+            // chunks on the main thread — the wedge class the survival smoke died of); the probe
+            // logs its [cim-worldgen] lines itself once the square is loaded.
             String worldgenProbe = System.getenv("CIM_WORLDGEN_PROBE");
             if (worldgenProbe != null && !worldgenProbe.isBlank()) {
                 dev.cim.worldgen.ModWorldgen.awaitReady(120_000L);
@@ -883,9 +886,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 dev.cim.worldgen.ModWorldgen.awaitBackfill(120_000L);
                 String carrierId = worldgenProbe.trim();
                 World overworld = getServer().getWorlds().get(0);
-                for (String line : callSync(() -> dev.cim.worldgen.ModWorldgen.probe(overworld, carrierId, 100, 100, 3, 70))) {
-                    log().info("[cim-worldgen] " + line);
-                }
+                dev.cim.worldgen.ModWorldgen.probe(overworld, carrierId, 100, 100, 3, 70);
             }
             // Survival smoke (survival.yml): a carrier placed by the mod item's own use, saved and
             // restarted, adopted again and broken. The first boot places it; the second one (phase

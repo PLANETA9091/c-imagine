@@ -68,6 +68,9 @@ final class Backfill implements Listener {
     private static final java.util.concurrent.atomic.AtomicLong ANSWERS = new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.concurrent.atomic.AtomicLong POLLS = new java.util.concurrent.atomic.AtomicLong();
     private final List<Job> jobs = new ArrayList<>();
+    /** Chunks whose async load is in flight (the callback has not landed yet).
+     *  Main thread only, same as every other field in this class. */
+    private final Set<ModWorldgen.Pending> loading = new HashSet<>();
     private boolean scanned;
     private int finishedSinceLog;
 
@@ -199,21 +202,35 @@ final class Backfill implements Listener {
         while (started < PER_TICK && jobs.size() < IN_FLIGHT && !queue.isEmpty()) {
             ModWorldgen.Pending at = queue.poll();
             queued.remove(at);
-            if (!ModWorldgen.PENDING.contains(at) || busy(at)) {
+            if (!ModWorldgen.PENDING.contains(at) || busy(at) || loading.contains(at)) {
                 continue;
             }
             World world = Bukkit.getWorld(at.world());
             if (world == null) {
                 continue;
             }
-            // LOAD it: a boot-time spawn chunk stays pending until someone
-            // triggers its load, and nobody will — the backfill is the loader.
-            Chunk chunk = world.getChunkAt(at.x(), at.z());
-            if (flagged(chunk) && !forced.contains(at)) {
-                complete(at, false);
-                continue;
-            }
-            start(at, world, chunk);
+            // 14-e253 THE ASYNC LOAD: the old main-thread getChunkAt wedged
+            // the server thread on a mid-generation chunk (survival run
+            // 45427818790: syncLoad parked forever on chunk (-1,4) at
+            // initialize_light with generationTask=null, priority BLOCKING —
+            // the watchdog thread-dumped for 10+ s, the survival harness
+            // never ran, the whole smoke failed). Paper's async loader
+            // schedules the generation through the chunk system and hands
+            // the chunk back later; the start continues in the callback.
+            loading.add(at);
+            world.getChunkAtAsync(at.x(), at.z()).thenAccept(chunk -> {
+                try {
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        loading.remove(at);
+                        loadReady(at, world, chunk);
+                    });
+                } catch (RuntimeException e) {
+                    // the scheduler rejects a task once the plugin disabled
+                    // (IllegalPluginAccessException): the backfill is gone,
+                    // the ticket goes with it
+                    loading.remove(at);
+                }
+            });
             started++;
         }
         persist();
@@ -222,6 +239,18 @@ final class Backfill implements Listener {
                     + " chunk(s), " + ModWorldgen.PENDING.size() + " pending");
             finishedSinceLog = 0;
         }
+    }
+
+    /** Main thread, once the async load lands: the old in-loop start branch. */
+    private void loadReady(ModWorldgen.Pending at, World world, Chunk chunk) {
+        if (!ModWorldgen.PENDING.contains(at) || busy(at)) {
+            return;
+        }
+        if (flagged(chunk) && !forced.contains(at)) {
+            complete(at, false);
+            return;
+        }
+        start(at, world, chunk);
     }
 
     private boolean busy(ModWorldgen.Pending at) {
@@ -321,11 +350,14 @@ final class Backfill implements Listener {
         }
     }
 
-    /** Drop the pin a job put on its chunk (idempotent). */
+    /** Drop the pin a job put on its chunk (idempotent).
+     *  14-e253: the ticket is released ONLY on a loaded chunk — the old
+     *  getChunkAt here sync-loaded an unloaded chunk on the main thread to
+     *  remove a ticket from it (the same wedge class the step loop hit). */
     private void release(World world, ModWorldgen.Pending at) {
         try {
             World w = world != null ? world : Bukkit.getWorld(at.world());
-            if (w != null) {
+            if (w != null && w.isChunkLoaded(at.x(), at.z())) {
                 w.getChunkAt(at.x(), at.z()).removePluginChunkTicket(plugin);
             }
         } catch (RuntimeException ignored) {

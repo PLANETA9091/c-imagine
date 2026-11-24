@@ -68,6 +68,8 @@ public final class ModWorldgen {
     }
 
     private static volatile Plan plan;
+    /** The owning plugin (set at start): the async callbacks schedule through it. */
+    private static volatile Plugin PLUGIN;
     private static volatile Function<String, String> layer;
     /** The ledger rows by modded id (display rows too: they are counted, not placed). */
     private static volatile Map<String, F2vPack.VisualBlock> rows = Map.of();
@@ -122,6 +124,7 @@ public final class ModWorldgen {
      * Paper (no layer) only attaches; nothing is logged for the listing.
      */
     public static void start(Plugin plugin, List<F2vPack.VisualBlock> blocks) {
+        PLUGIN = plugin;
         // One-shot self check once the layer answers: the biome map of the spawn
         // chunk, written into the live chunk. Boot-log proof for the playtest.
         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
@@ -139,9 +142,12 @@ public final class ModWorldgen {
                 String raw = ask("biomes\t0\t0\t" + world.getSeed());
                 log.info(LOG_PREFIX + "worldgen: biome raw answer -> "
                         + (raw == null ? "null" : raw.substring(0, Math.min(160, raw.length())).replace('\n', '|')));
-                world.getChunkAt(8, 8);
-                log.info(LOG_PREFIX + "worldgen: self-check after chunk 8,8: display=" + DISPLAY.get()
-                        + " queued=" + DISPLAY_QUEUE.size() + " sets=" + SETS.get());
+                // 14-e253: the probe chunk loads ASYNC — a sync getChunkAt on
+                // the main thread can wedge the server on a mid-generation
+                // chunk (the survival-run 45427818790 class).
+                world.getChunkAtAsync(8, 8).thenAccept(chunk ->
+                        log.info(LOG_PREFIX + "worldgen: self-check after chunk 8,8: display=" + DISPLAY.get()
+                                + " queued=" + DISPLAY_QUEUE.size() + " sets=" + SETS.get()));
             } catch (RuntimeException e) {
                 log.warning(LOG_PREFIX + "worldgen: biome self-check failed: " + e);
             }
@@ -224,7 +230,6 @@ public final class ModWorldgen {
     static Logger log() {
         return log;
     }
-
     static boolean gaveUp() {
         return gaveUp;
     }
@@ -881,23 +886,62 @@ public final class ModWorldgen {
 
     /**
      * The harness probe (survival.yml): loads a square of chunks, generated now if they are new, and counts
-     * the carriers of {@code carrierId} below {@code yCut}. Runs on the main thread (the chunks load there).
+     * the carriers of {@code carrierId} below {@code yCut}.
+     *
+     * <p>14-e253 THE ASYNC PROBE: the old shape ran on the main thread via
+     * {@code callSync} and loaded the far chunks with sync {@code getChunkAt}
+     * — the same wedge class the backfill's step loop hit (survival run
+     * 45427818790: the server thread parked in syncLoad, the watchdog
+     * thread-dumped, the harness never ran). The loads go through Paper's
+     * async loader now; the scan runs on the main thread once every chunk of
+     * the square is loaded, and the {@code [cim-worldgen] probe:} lines are
+     * logged from here (the caller is fire-and-forget).
      */
-    public static List<String> probe(World world, String carrierId, int chunkX, int chunkZ, int size, int yCut) {
+    public static void probe(World world, String carrierId, int chunkX, int chunkZ, int size, int yCut) {
         Plan p = plan;
         if (p == null) {
-            return List.of("probe: no worldgen plan (the layer did not answer)");
+            log().info("[cim-worldgen] probe: no worldgen plan (the layer did not answer)");
+            return;
         }
         F2vPack.VisualBlock row = rows.get(carrierId);
         if (row == null || row.isDisplay()) {
-            return List.of("probe: no note carrier for " + carrierId);
+            log().info("[cim-worldgen] probe: no note carrier for " + carrierId);
+            return;
+        }
+        List<java.util.concurrent.CompletableFuture<org.bukkit.Chunk>> loads = new ArrayList<>();
+        for (int dx = 0; dx < size; dx++) {
+            for (int dz = 0; dz < size; dz++) {
+                loads.add(world.getChunkAtAsync(chunkX + dx, chunkZ + dz));
+            }
+        }
+        java.util.concurrent.CompletableFuture
+                .allOf(loads.toArray(new java.util.concurrent.CompletableFuture[0]))
+                .thenAccept(v -> {
+                    try {
+                        org.bukkit.Bukkit.getScheduler().runTask(PLUGIN,
+                                () -> scanProbe(world, carrierId, chunkX, chunkZ, size, yCut));
+                    } catch (RuntimeException e) {
+                        // the plugin disabled before the square loaded: no scan, no crash
+                        log().warning("[cim-worldgen] probe: scan dropped (plugin disabled): " + e);
+                    }
+                });
+    }
+
+    /** Main thread, every chunk of the probe square loaded: the old probe scan. */
+    private static void scanProbe(World world, String carrierId, int chunkX, int chunkZ, int size, int yCut) {
+        F2vPack.VisualBlock row = rows.get(carrierId);
+        if (row == null || row.isDisplay()) {
+            log().info("[cim-worldgen] probe: no note carrier for " + carrierId);
+            return;
         }
         BlockData want = Bukkit.createBlockData(F2vPack.carrierState(row));
         long found = 0;
         int loaded = 0;
         for (int dx = 0; dx < size; dx++) {
             for (int dz = 0; dz < size; dz++) {
-                world.getChunkAt(chunkX + dx, chunkZ + dz);
+                if (!world.isChunkLoaded(chunkX + dx, chunkZ + dz)) {
+                    continue; // unloaded between the load and the scan: the chunk waits for its next load
+                }
                 loaded++;
                 int bx = (chunkX + dx) << 4;
                 int bz = (chunkZ + dz) << 4;
@@ -913,7 +957,8 @@ public final class ModWorldgen {
                 }
             }
         }
-        return List.of("probe: " + carrierId + " carriers below y=" + yCut + " in " + loaded + " chunk(s): " + found,
-                "probe: " + stats());
+        log().info("[cim-worldgen] probe: " + carrierId + " carriers below y=" + yCut + " in " + loaded
+                + " chunk(s): " + found);
+        log().info("[cim-worldgen] probe: " + stats());
     }
 }
