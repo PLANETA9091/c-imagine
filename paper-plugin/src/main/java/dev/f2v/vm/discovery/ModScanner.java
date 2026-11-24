@@ -124,6 +124,7 @@ public final class ModScanner {
         public final List<GuiSpriteBytecodeScanner.Sprite> guiSprites = new ArrayList<>();
         public final List<GuiSpriteBytecodeScanner.ScreenBackground> guiBackgrounds = new ArrayList<>();
         public final List<GuiSpriteBytecodeScanner.ScreenLayer> guiLayers = new ArrayList<>();
+        public final Map<String, int[]> guiOrigins = new java.util.HashMap<>();
         /** Declarative recipes for textures that client bootstrap normally assembles into a
          * DynamicTexture. Pack generation replays these directly from source PNGs. */
         public final List<DynamicTextureBytecodeScanner.TextureRecipe> dynamicTextures = new ArrayList<>();
@@ -339,6 +340,7 @@ public final class ModScanner {
             p.guiSprites.addAll(guiSprites.sprites);
             p.guiBackgrounds.addAll(guiSprites.backgrounds);
             p.guiLayers.addAll(guiSprites.layers);
+            p.guiOrigins.putAll(guiSprites.backgroundOrigins);
             p.dynamicTextures.addAll(DynamicTextureBytecodeScanner.scan(graph, p.modId));
             List<String> languageKeyCandidates = ownedLanguageKeyCandidates(jar, p);
             Map<String, String> clientKeyFields = ClientSurfaceScanner.discoverKeyFields(
