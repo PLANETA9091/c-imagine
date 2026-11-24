@@ -1,0 +1,71 @@
+{
+  "id": "survival-generic-lapis-random-count",
+  "notes": "Break a lapis ore with a stone pickaxe. TRUTH: vanilla lapis ore drops minecraft:lapis_lazuli, 4 to 9 per break (uniform, no fortune). The count is random per break, so the drops are compared with a range (keys: lapis 4..9) and the id set must match. The drop is read from the break reply (both stacks) and from observe entities after the sample.",
+  "setup": [
+    "fill 304 121 304 316 130 316 minecraft:air",
+    "setblock 308 121 310 minecraft:lapis_ore",
+    "give {player} minecraft:stone_pickaxe 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "minecraft:stone_pickaxe"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        306.5
+      ],
+      "yaw": 0.0,
+      "pitch": 0.0
+    },
+    {
+      "do": "break",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "compare": {
+        "mode": "range",
+        "field": "drops",
+        "keys": {
+          "minecraft:lapis_lazuli": [
+            4,
+            9
+          ]
+        }
+      }
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "entities",
+      "pos": [
+        308,
+        121,
+        310
+      ],
+      "radius": 4,
+      "type": "minecraft:item",
+      "compare": {
+        "mode": "range",
+        "field": "entities",
+        "keys": {
+          "minecraft:lapis_lazuli": [
+            4,
+            9
+          ]
+        }
+      }
+    }
+  ]
+}

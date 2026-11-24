@@ -208,3 +208,21 @@ The OURS server allows 8 players and the truth server 4 (`max-players` in both `
 side is the limit: the single stand's `TruthA` takes one truth slot, so 3 lanes at most while it is joined and 4 without it.
 The join command above is not run yet (the `--server` flag and the world choice are unverified on this stand).
 
+## Capabilities (hold, respawn, boxes, entities, predicate compare, /keyboard)
+
+- `do` steps `place`, `interact`, `break`, `use_item`, `use_at` take `"sneak": true` or `"hold": ["sneak"]`: the key
+  is held around the action and released after it (truth: `key key.sneak press/release`; OURS: `key shift down/up`,
+  and `place`/`interact` pass horizon-ctl's `--sneak`). `use_item`'s numeric `hold` stays the duration in seconds.
+- `do: respawn`: the death screen's Respawn (truth-ctl `respawn`, horizon-ctl `respawn`); result `{respawned}`.
+- `observe: blocks` with `box` [x1,y1,z1,x2,y2,z2]: `{id: n}` (air dropped). OURS reads carriers (note blocks,
+  barriers) by `/cim inspect block`, one cell at a time, only when the box holds carriers (cap 512 cells).
+- `observe: entities` with `pos`, `radius`, optional `type`: `{"entities": [{type, pos (block-floored), item?, count?}]}`
+  (truth: `entities` plus the item id and count from truth-ctl; OURS: `/cim inspect entities`, displays skipped).
+- `compare` on a `do` or `observe` step: a predicate instead of equality, for random outcomes. See diff.py's
+  docstring: `mode` `range` (same id set, counts in `keys` [min, max]) or `present` (same id set); `field` picks a
+  result key; `ids` restricts the ids. An entity list counts by item id. Verdict is still equal or different.
+- Mod keys on OURS (`keybinds.combat_roll.roll`, see `stacks.MOD_KEY_CODES`): `/keyboard` opens the HUD keyboard, the
+  view is turned so the pointer lands on the keycap (`keyboard_layout.py`, mirrors KeyboardLayout), a left click
+  presses it, `/keyboard` closes it. Needs the server build with VirtualKeyboard and the mod key bridge (feat/mod-key-bridge).
+- Enchantments: `enchantments={levels:{...}}` and `stored_enchantments={levels:{...}}` are rewritten to the 26.3 map form.
+- Tests: `python3 -I test_capabilities.py` (fake stacks, no game).

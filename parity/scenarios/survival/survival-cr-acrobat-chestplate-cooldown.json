@@ -63,5 +63,5 @@
       "observe": "motion"
     }
   ],
-  "todo": "Enchantment gap: OURS may not register combat_roll enchantments (data-driven, from the mod jar). The stacks give rewrite only handles stored_enchantments, not enchantments={levels:...} on armour."
+  "todo": "The enchantments={levels:...} rewrite is done by stacks.translate (1.21.1 form to 26.3). Still open: whether OURS registers combat_roll enchantments from the mod jar (data-driven), and the roll key (Roll key on OURS: stacks._keyboard_tap runs /keyboard, aims the HUD pointer at the R keycap, clicks it and closes it. Needs the server with VirtualKeyboard and the mod key bridge + CombatRollAdapter (feat/mod-key-bridge c6879bf9), which are not in main yet: the OURS side fails until they are deployed.)"
 }

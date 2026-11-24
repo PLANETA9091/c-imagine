@@ -1,6 +1,6 @@
 {
   "id": "survival-dt-chop-branch-column-axe",
-  "notes": "A 3-block dynamictrees:oak_branch column on a dirt base, chopped at the base with an iron axe. TRUTH (Dynamic Trees felling): the trunk is felled as a whole (FallingTreeEntity), so the branch cells are gone, the drops are oak_log (count from dynamictrees:multiply_logs_count, scales with branch radius) and sticks (branch loot pool), and the seeds are not from branches (seeds come from leaves). Source: dynamictrees data/trees/branches/oak loot table. Felling of a hand-placed branch column (no leaves, no root) is NOT verified; expected results are the loot table, not a checked felling.",
+  "notes": "A 3-block dynamictrees:oak_branch column on a dirt base, chopped at the base with an iron axe. TRUTH (Dynamic Trees felling): the trunk is felled as a whole (FallingTreeEntity), so the branch cells are gone, the drops are oak_log (count from dynamictrees:multiply_logs_count, scales with branch radius) and sticks (branch loot pool), and the seeds are not from branches (seeds come from leaves). Source: dynamictrees data/trees/branches/oak loot table. Shape: one observe blocks box over the column (exact counts). Drops: observe entities around the column; only minecraft:oak_log is compared (a range, since the count scales with the branch radius), sticks are random and ignored (ids filter). Felling of a hand-placed branch column (no leaves, no root) is NOT verified; expected results are the loot table, not a checked felling.",
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
     "setblock 308 120 310 minecraft:dirt",
@@ -33,32 +33,42 @@
       ]
     },
     {
-      "observe": "block",
+      "observe": "blocks",
+      "box": [
+        307,
+        120,
+        309,
+        309,
+        124,
+        311
+      ]
+    },
+    {
+      "observe": "entities",
       "pos": [
         308,
         121,
         310
-      ]
-    },
-    {
-      "observe": "block",
-      "pos": [
-        308,
-        122,
-        310
-      ]
-    },
-    {
-      "observe": "block",
-      "pos": [
-        308,
-        123,
-        310
-      ]
+      ],
+      "radius": 6,
+      "type": "minecraft:item",
+      "compare": {
+        "mode": "range",
+        "field": "entities",
+        "ids": [
+          "minecraft:oak_log"
+        ],
+        "keys": {
+          "minecraft:oak_log": [
+            1,
+            16
+          ]
+        }
+      }
     },
     {
       "observe": "inventory"
     }
   ],
-  "todo": "Felling completion and item-entity drops are not observed directly; the drop counts come from the break reply and inventory after collect."
+  "todo": "Felling of a hand-placed branch column is unverified: the oak_log range [1, 16] is the loot-table guess, not a measured count. Both sides must still reach the same block counts."
 }

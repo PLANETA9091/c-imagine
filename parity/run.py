@@ -206,25 +206,35 @@ def run_step(stack, step, shots_dir, idx, rec):
         if kind == "be":
             rec["source"] = "server"
             return be_observe.observe(stack, step)
+        if kind == "blocks":
+            # block counts of a box {id: n} (carriers read as modded ids on OURS, see stacks.observe_blocks)
+            return stack.observe_blocks(step["box"])
+        if kind == "entities":
+            # {"entities": [{type, pos, item?, count?}]} within radius of pos (type: optional filter)
+            return stack.observe_entities(step["pos"], step["radius"], step.get("type"))
         raise ValueError("unknown observe: %s" % kind)
 
     do = step["do"]
     rec["kind"] = "do"
+    holds = stacks.holds_of(step)  # "sneak": true / "hold": [...] around the action (place, interact, break, use)
     if do == "select":
         return stack.select(step.get("item", step.get("slot")))
     if do == "break":
-        return stack.break_(step["pos"], step.get("timeout", 20))
+        return stack.break_(step["pos"], step.get("timeout", 20), holds=holds)
     if do == "place":
-        return stack.place(step["pos"], step.get("item"))
+        return stack.place(step["pos"], step.get("item"), holds=holds)
     if do == "interact":
-        return stack.interact(step["pos"], step.get("face"))
+        return stack.interact(step["pos"], step.get("face"), holds=holds)
     if do == "use_item":
-        return stack.use_item(step.get("hold"))
+        return stack.use_item(step.get("hold"), holds=holds)
     if do == "use_at":
         point = step["point"]
         if not isinstance(point, list) or len(point) != 3:
             raise ValueError("use_at point must be [x, y, z]")
-        return stack.use_at(point)
+        return stack.use_at(point, holds=holds)
+    if do == "respawn":
+        # the death screen's Respawn (truth-ctl respawn / horizon-ctl respawn); no-op when alive
+        return stack.respawn()
     if do == "key":
         return stack.key(step["key"], step.get("ticks", 1))
     if do == "click_slot":

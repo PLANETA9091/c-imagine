@@ -16,13 +16,19 @@ Normalized shapes:
   select:     {"item": id}
   player:     {"health": f, "food": i, "saturation": f}
 """
+import contextlib
 import json
+import math
 import os
 import re
 import socket
 import subprocess
+import sys
 import time
 import glob
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import keyboard_layout  # noqa: E402  (the /keyboard HUD geometry, see keyboard_layout.py)
 
 HOME = os.path.expanduser("~")
 # Paths and ports come from the environment; the defaults are the current stand layout.
@@ -401,9 +407,8 @@ def ours_key_of(name):
     if name in OURS_KEYS:
         return OURS_KEYS[name]
     raise ValueError(
-        "OURS cannot press %s: not a vanilla KeyMapping. Mod KeyMappings are client-side keybinds "
-        "(Combat Roll's roll is one); the Horizon client has no such binding and c-imagine's /keyboard "
-        "only delivers VirtualKeyEvent to the server, so no mod action runs." % name)
+        "OURS cannot press %s: not a vanilla KeyMapping and not in MOD_KEY_CODES (the /keyboard HUD path)"
+        % name)
 
 
 def norm_player(reply):
@@ -431,20 +436,58 @@ class Stack:
     def break_(self, pos, timeout=20):
         raise NotImplementedError
 
-    def place(self, pos, item=None):
+    def place(self, pos, item=None, holds=()):
         raise NotImplementedError
 
-    def interact(self, pos, face=None):
+    def interact(self, pos, face=None, holds=()):
         raise NotImplementedError
 
-    def use_item(self, hold=None):
+    def use_item(self, hold=None, holds=()):
         raise NotImplementedError
 
-    def use_at(self, point):
+    def use_at(self, point, holds=()):
         raise NotImplementedError
 
     def key(self, name, ticks=1):
         raise NotImplementedError
+
+    def respawn(self):
+        raise NotImplementedError
+
+    def observe_blocks(self, box):
+        raise NotImplementedError
+
+    def observe_entities(self, center, radius, type_=None):
+        raise NotImplementedError
+
+    # hold modifiers: a key held down around one action (vanilla sneak for wrench, pickup and place rules)
+    def hold_down(self, name):
+        raise NotImplementedError
+
+    def hold_up(self, name):
+        raise NotImplementedError
+
+    @contextlib.contextmanager
+    def holding(self, holds):
+        """Holds the named modifiers down for the block, then releases them in reverse order. Two ticks after
+        the press, so the input state is set before the action; every release is attempted."""
+        pressed = []
+        try:
+            for name in tuple(holds or ()):
+                self.hold_down(name)
+                pressed.append(name)
+            if pressed:
+                self.wait(2)
+            yield
+        finally:
+            errors = []
+            for name in reversed(pressed):
+                try:
+                    self.hold_up(name)
+                except Exception as e:  # keep releasing the rest
+                    errors.append("%s: %s" % (name, e))
+            if errors:
+                raise RuntimeError("hold release failed: " + "; ".join(errors))
 
     def motion(self):
         raise NotImplementedError
@@ -565,8 +608,9 @@ class TruthStack(Stack):
         r = self.call("select", [item])
         return {"item": norm_id(r.get("item"))}
 
-    def break_(self, pos, timeout=20):
-        r = self.call("break", self._p(pos), {"timeout": str(timeout)}, timeout=timeout + 60)
+    def break_(self, pos, timeout=20, holds=()):
+        with self.holding(holds):
+            r = self.call("break", self._p(pos), {"timeout": str(timeout)}, timeout=timeout + 60)
         self.wait(10)  # same sampling point as OURS: 10 ticks after the break
         n = self.item_entities(pos)
         return {
@@ -584,17 +628,51 @@ class TruthStack(Stack):
         return sum(1 for e in r.get("entities") or []
                    if e.get("type") == "minecraft:item" and _in_radius(e.get("pos") or [0, 0, 0], pos))
 
-    def place(self, pos, item=None):
+    def hold_down(self, name):
+        self.call("key", [HOLD_KEYS[name][0], "press"])
+
+    def hold_up(self, name):
+        self.call("key", [HOLD_KEYS[name][0], "release"])
+
+    def respawn(self):
+        r = self.call("respawn")
+        return {"respawned": r.get("respawned") is True}
+
+    def observe_blocks(self, box):
+        lo, hi = box_bounds(box)
+        r = self.call("blocks", lo + hi)
+        return norm_counts(r.get("counts") or {})
+
+    def observe_entities(self, center, radius, type_=None):
+        """truth-ctl 'entities' measures its box from the PLAYER: ask for the player-to-centre distance plus the
+        radius (a box that holds the sphere), then keep the entities within the sphere."""
+        st = self.call("state")
+        p = _f3((st.get("player") or {}).get("position")) or [float(v) for v in center]
+        dist = math.sqrt(sum((a - (c + 0.5)) ** 2 for a, c in zip(p, center)))
+        r = self.call("entities", [str(round(dist + float(radius) + 1.0, 2))])
+        out = []
+        for e in r.get("entities") or []:
+            pos = e.get("pos") or [0, 0, 0]
+            if not _in_radius(pos, center, float(radius)):
+                continue
+            if type_ and norm_id(type_) != norm_id(e.get("type")):
+                continue
+            out.append(norm_entity(e.get("type"), pos, e.get("item"), e.get("count")))
+        return {"entities": sorted(out, key=_entity_key)}
+
+    def place(self, pos, item=None, holds=()):
         args = self._p(pos) + ([item] if item else [])
-        r = self.call("place", args)
+        with self.holding(holds):
+            r = self.call("place", args)
         return {
             "block_after": block_id(r.get("block")),
             "inventory_change": norm_delta(r.get("inventory_change")),
         }
 
-    def interact(self, pos, face=None):
+    def interact(self, pos, face=None, holds=()):
         args = self._p(pos) + ([face] if face else [])
-        r = self.call("interact", args)
+        with self.holding(holds):
+            r = self.call("interact", args)
         kind = canon_kind(r.get("screen"))
         if kind != "playing":
             mk = menu_kind(self.call("screen"))
@@ -602,16 +680,18 @@ class TruthStack(Stack):
                 kind = mk
         return {"screen": kind, "block_after": block_id(r.get("block"))}
 
-    def use_item(self, hold=None):
+    def use_item(self, hold=None, holds=()):
         # hold is in SECONDS (horizon-ctl --hold SECONDS); truth-ctl --hold takes TICKS (20 per second)
-        if hold:
-            r = self.call("use-item", ["--hold", max(1, int(round(float(hold) * 20)))])
-        else:
-            r = self.call("use-item")
+        with self.holding(holds):
+            if hold:
+                r = self.call("use-item", ["--hold", max(1, int(round(float(hold) * 20)))])
+            else:
+                r = self.call("use-item")
         return {"inventory_change": norm_delta(r.get("inventory_change"))}
 
-    def use_at(self, point):
-        r = self.call("use-at", [str(float(v)) for v in point])
+    def use_at(self, point, holds=()):
+        with self.holding(holds):
+            r = self.call("use-at", [str(float(v)) for v in point])
         hit = r.get("hit") or {}
         pos = hit.get("pos")
         face = hit.get("face")
@@ -685,8 +765,62 @@ class TruthStack(Stack):
 
 
 # ------------------------------------------------------------------ OURS
-_ENCH_LEVELS_RE = re.compile(r"stored_enchantments=\{levels:\{([^{}]*)\}\}")
+# 1.21.1 data components wrap the map in 'levels'; Paper 26.3 takes the bare id->level map.
+_ENCH_LEVELS_RE = re.compile(r"(stored_enchantments|enchantments)=\{levels:\{([^{}]*)\}\}")
 MODDED_NS_RE = re.compile(r"^(create|biomesoplenty|dynamictrees|combat_roll|cimtest):")
+
+# Hold modifiers a do step may carry: "sneak": true or "hold": ["sneak"]. truth-ctl key name, horizon key.
+HOLD_KEYS = {"sneak": ("key.sneak", "shift")}
+# Mod KeyMapping (translation key) -> its default GLFW key code on the /keyboard HUD (census defaultKey).
+MOD_KEY_CODES = {"keybinds.combat_roll.roll": 82}  # R
+BOX_CELL_CAP = 512  # OURS reads a box cell by cell (inspect) only when it holds carriers
+CARRIER_IDS = frozenset(["minecraft:note_block", "minecraft:barrier"])  # what a vanilla client draws for mods
+DISPLAY_TYPES = frozenset(["minecraft:item_display", "minecraft:block_display", "minecraft:text_display",
+                           "minecraft:interaction"])  # carriers and helpers, not entities on the truth side
+
+
+def holds_of(step):
+    """Hold modifiers of a do step as a sorted tuple: "sneak": true and/or "hold": [...]. Unknown names raise."""
+    h = step.get("hold")  # a number is use_item's hold duration (seconds), not a modifier list
+    names = set(h) if isinstance(h, list) else set()
+    if step.get("sneak"):
+        names.add("sneak")
+    unknown = sorted(names - set(HOLD_KEYS))
+    if unknown:
+        raise ValueError("unknown hold modifier(s) %s (known: %s)" % (unknown, sorted(HOLD_KEYS)))
+    return tuple(sorted(names))
+
+
+def box_bounds(box):
+    """[x1, y1, z1, x2, y2, z2] (any corner order) -> (lo, hi) integer corners."""
+    if not (isinstance(box, list) and len(box) == 6 and all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in box)):
+        raise ValueError("box must be [x1, y1, z1, x2, y2, z2] numbers, got %r" % (box,))
+    a = [int(v) for v in box[:3]]
+    b = [int(v) for v in box[3:]]
+    return [min(a[i], b[i]) for i in range(3)], [max(a[i], b[i]) for i in range(3)]
+
+
+def box_cells(lo, hi):
+    for x in range(lo[0], hi[0] + 1):
+        for y in range(lo[1], hi[1] + 1):
+            for z in range(lo[2], hi[2] + 1):
+                yield [x, y, z]
+
+
+def norm_entity(type_, pos, item=None, count=None):
+    """One entity of an 'observe entities' reply: {type, pos (block-floored), item?, count?}. The item id is
+    normalised like every other id; count defaults to 1 when an item is given without one."""
+    out = {"type": norm_id(type_) or str(type_), "pos": [int(math.floor(float(v))) for v in pos]}
+    iid = norm_id(item)
+    if iid:
+        out["item"] = iid
+        out["count"] = int(count or 1)
+    return out
+
+
+def _entity_key(e):
+    return (e["type"], e.get("item") or "", e["pos"])
 
 
 class OursStack(Stack):
@@ -731,10 +865,11 @@ class OursStack(Stack):
 
     # ---- /cim translation (mod ids only). Vanilla commands pass through unchanged.
     def translate(self, text):
-        # Scenarios are written in 1.21.1 data-component syntax (stored_enchantments={levels:{...}}).
-        # Paper 26.3 rejects the 'levels' wrapper ("Malformed minecraft:stored_enchantments ... levels")
-        # and takes the bare id->level map. Only the book's enchantment map changes, not the intent.
-        text = _ENCH_LEVELS_RE.sub(r"stored_enchantments={\1}", text)
+        # Scenarios are written in 1.21.1 data-component syntax (enchantments={levels:{...}} and
+        # stored_enchantments={levels:{...}}). Paper 26.3 rejects the 'levels' wrapper ("Malformed
+        # minecraft:stored_enchantments ... levels") and takes the bare id->level map. Only the map's
+        # wrapper changes, not the intent.
+        text = _ENCH_LEVELS_RE.sub(r"\1={\2}", text)
         parts = text.split()
         if not parts:
             return text
@@ -921,9 +1056,10 @@ class OursStack(Stack):
         held = r.get("held")
         return {"item": norm_id(held.get("item")) if isinstance(held, dict) else norm_id(r.get("item"))}
 
-    def break_(self, pos, timeout=20):
+    def break_(self, pos, timeout=20, holds=()):
         before = self._counts()
-        r = self.ctl("break", *self._p(pos), "--timeout", timeout, timeout=timeout + 120)
+        with self.holding(holds):
+            r = self.ctl("break", *self._p(pos), "--timeout", timeout, timeout=timeout + 120)
         self._settle(10)  # same sampling point as TRUTH: 10 ticks after the break
         drops, n = self._drops_near(pos)
         self.ctl("wait", 20, timeout=120)  # pickup window; the player stands 2 blocks away, so nothing is taken
@@ -957,7 +1093,64 @@ class OursStack(Stack):
                 out[nid] = out.get(nid, 0) + int(it.get("count", 1) or 1)
         return out, n
 
-    def place(self, pos, item=None):
+    def hold_down(self, name):
+        self.ctl("key", HOLD_KEYS[name][1], "down")
+
+    def hold_up(self, name):
+        self.ctl("key", HOLD_KEYS[name][1], "up")
+
+    def respawn(self):
+        r = self.ctl("respawn")
+        return {"respawned": r.get("respawned") is True}
+
+    def observe_entities(self, center, radius, type_=None):
+        """/cim inspect entities (server truth, item stacks with modded ids). Carrier displays are not entities."""
+        insp = self.inspect("entities", *self._p(center), "%g" % (float(radius) + 1.0))
+        if insp is None:
+            raise RuntimeError("inspect entities returned nothing (server log)")
+        out = []
+        for e in insp.get("entities") or []:
+            t, v = norm_id(e.get("type")), norm_id(e.get("vanilla"))
+            if t in DISPLAY_TYPES or v in DISPLAY_TYPES:
+                continue
+            etype = "minecraft:item" if "minecraft:item" in (t, v) else (t or v)
+            pos = e.get("pos") or [0, 0, 0]
+            if not _in_radius(pos, center, float(radius)):
+                continue
+            if type_ and norm_id(type_) != etype:
+                continue
+            it = e.get("item") if isinstance(e.get("item"), dict) else {}
+            out.append(norm_entity(etype, pos, it.get("id"), it.get("count")))
+        return {"entities": sorted(out, key=_entity_key)}
+
+    def observe_blocks(self, box):
+        """Block counts of a box. The client's counts are right for vanilla blocks; carriers (note blocks,
+        barriers) are read per cell with /cim inspect block for the modded id (cap BOX_CELL_CAP cells)."""
+        lo, hi = box_bounds(box)
+        r = self.ctl("blocks", *lo, *hi)
+        raw = r.get("counts") if isinstance(r.get("counts"), dict) else r
+        counts = norm_counts({k: v for k, v in raw.items() if isinstance(v, int)})
+        if not any(k in CARRIER_IDS for k in counts):
+            return counts
+        volume = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+        if volume > BOX_CELL_CAP:
+            raise ValueError("box holds carriers and %d cells; per-cell inspect is capped at %d (split the box)"
+                             % (volume, BOX_CELL_CAP))
+        out = {}
+        for cell in box_cells(lo, hi):
+            c = self.ctl("block", *cell)
+            nid = norm_id(norm_state(c.get("state") or c.get("block")).split("[", 1)[0])
+            if nid is None:
+                continue
+            if nid in CARRIER_IDS:
+                server = self._server_block_id(cell)
+                if server is None:
+                    raise RuntimeError("inspect block missed at %s (carrier %s)" % (cell, nid))
+                nid = server
+            out[nid] = out.get(nid, 0) + 1
+        return out
+
+    def place(self, pos, item=None, holds=()):
         before = self._counts()
         args = ["place", *self._p(pos)]
         if item:
@@ -965,7 +1158,11 @@ class OursStack(Stack):
             if MODDED_NS_RE.match(nid):
                 raise ValueError("select a modded item first; place takes no ITEM for mod ids")
             args += ["--item", nid]
-        r = self.ctl(*args)
+        native = "sneak" in holds  # horizon-ctl place --sneak; other holds are key presses
+        if native:
+            args.append("--sneak")
+        with self.holding(tuple(h for h in holds if h != "sneak")):
+            r = self.ctl(*args)
         self._settle(6)
         bid = self._server_block_id(pos)
         if bid is None:
@@ -974,29 +1171,34 @@ class OursStack(Stack):
         after = self._counts()
         return {"block_after": bid, "inventory_change": self._delta(before, after)}
 
-    def interact(self, pos, face=None):
+    def interact(self, pos, face=None, holds=()):
         args = ["interact", *self._p(pos)] + ([face] if face else [])
-        self.ctl(*args)
+        if "sneak" in holds:
+            args.append("--sneak")  # horizon-ctl interact --sneak
+        with self.holding(tuple(h for h in holds if h != "sneak")):
+            self.ctl(*args)
         self._settle(5)  # truth-ctl reports the screen after 5 ticks; Horizon opens it late
         scr = self._screen_reply()
         return {"screen": norm_screen(scr, self.name)["kind"], "block_after": self._server_block_id(pos)}
 
-    def use_item(self, hold=None):
+    def use_item(self, hold=None, holds=()):
         before = self._counts()
         args = ["use-item"] + (["--hold", hold] if hold else [])
-        self.ctl(*args)
+        with self.holding(holds):
+            self.ctl(*args)
         self._settle(6)
         return {"inventory_change": self._delta(before, self._counts())}
 
-    def use_at(self, point):
+    def use_at(self, point, holds=()):
         """look-at the point, then a right press and release. The hit is the crosshair target after the
         turn (what the click uses); block and inventory are then read like place."""
         before = self._counts()
         self.ctl("look-at", *[str(float(v)) for v in point])
         self.ctl("wait", 1)  # the crosshair target refreshes on the next client tick
         hit_pos, hit_face = _target_pos_face(self.ctl("state").get("target"))
-        self.ctl("mouse", "right", "down")
-        self.ctl("mouse", "right", "up")
+        with self.holding(holds):
+            self.ctl("mouse", "right", "down")
+            self.ctl("mouse", "right", "up")
         self._settle(5)  # same reply point as truth-ctl use-at: 5 ticks
         return {
             "hit_pos": hit_pos,
@@ -1006,6 +1208,8 @@ class OursStack(Stack):
         }
 
     def key(self, name, ticks=1):
+        if name in MOD_KEY_CODES:
+            return self._keyboard_tap(MOD_KEY_CODES[name], int(ticks), name)
         cmd, code = ours_key_of(name)
         ticks = int(ticks)
         self.ctl(cmd, code, "down")
@@ -1014,6 +1218,30 @@ class OursStack(Stack):
         finally:
             self.ctl(cmd, code, "up")
         return {"pressed": True, "ticks": ticks}
+
+    def _keyboard_tap(self, code, ticks, name):
+        """A mod key on OURS, the way a player presses it: /keyboard opens the HUD keyboard (keys page, pointer
+        at the centre of the view at that moment), the view is turned so the pointer lands on the keycap (see
+        keyboard_layout.py), a left click is a swing that VirtualKeyboard turns into the key press, and /keyboard
+        again closes it. Needs the server build with VirtualKeyboard and the mod key bridge (feat/mod-key-bridge)."""
+        if ticks != 1:
+            raise ValueError("%s: a /keyboard press is one click (ticks must be 1)" % name)
+        state = self.ctl("state")
+        view = state.get("player") if isinstance(state.get("player"), dict) else state
+        yaw0, pitch0 = float(view["yaw"]), float(view["pitch"])
+        dyaw, dpitch = keyboard_layout.aim_deltas(*keyboard_layout.cap_aim_point(code))
+        self.ctl("command", "keyboard")
+        try:
+            self.ctl("wait", 4)  # the HUD and the camera lock come up
+            self.ctl("look", "%.4f" % (yaw0 + dyaw), "%.4f" % (pitch0 + dpitch))
+            self.ctl("wait", 3)  # the pointer follows the look on each HUD frame
+            self.ctl("mouse", "left", "click")
+            self.ctl("wait", 5)  # the key press reaches the server as a VirtualKeyEvent
+        finally:
+            self.ctl("command", "keyboard")  # /keyboard toggles: closes the open keyboard and releases the view
+            self.ctl("wait", 3)
+            self.ctl("look", "%.4f" % yaw0, "%.4f" % pitch0)
+        return {"pressed": True, "ticks": 1}
 
     def motion(self):
         r = self.ctl("state")

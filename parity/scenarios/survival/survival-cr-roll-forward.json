@@ -43,5 +43,5 @@
       "observe": "player"
     }
   ],
-  "todo": "Roll key: truth-ctl 'key' takes the KeyMapping name; OURS fails for mod keybinds (runner: a mod KeyMapping fails on OURS). Needs the mod key bridge (feat/mod-key-bridge)."
+  "todo": "Roll key: truth-ctl 'key' takes the KeyMapping name. Roll key on OURS: stacks._keyboard_tap runs /keyboard, aims the HUD pointer at the R keycap, clicks it and closes it. Needs the server with VirtualKeyboard and the mod key bridge + CombatRollAdapter (feat/mod-key-bridge c6879bf9), which are not in main yet: the OURS side fails until they are deployed."
 }

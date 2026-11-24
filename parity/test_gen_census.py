@@ -69,8 +69,12 @@ REQUIRED = {
     "wait": [("ticks", "seconds")],
     "command": [("text",)],
     "food_to": [("value",)],
+    "respawn": [],
 }
-OBSERVE_REQUIRED = {"block": [("pos",)], "be": [("pos",)], "inventory": [], "screen": [], "player": [], "motion": []}
+OBSERVE_REQUIRED = {"block": [("pos",)], "be": [("pos",)], "inventory": [], "screen": [], "player": [], "motion": [],
+                    "blocks": [("box",)], "entities": [("pos",), ("radius",)]}
+HOLD_NAMES = ("sneak",)  # stacks.HOLD_KEYS: a do step may hold these down around its action
+HOLDABLE = ("place", "interact", "break", "use_item", "use_at")
 POS_KEYS = ("pos", "point")
 SLOT_RE = re.compile(r"^(result|input|fuel|output|offhand|(grid|hotbar|main|container|armor):\d+)$")
 SLOT_MAX = {"grid": 8, "hotbar": 8, "armor": 3}
@@ -88,6 +92,17 @@ def _pos(x, key):
         raise ValueError("%s must be [x, y, z] numbers, got %r" % (key, x))
 
 
+def _box(x):
+    if not (isinstance(x, list) and len(x) == 6 and all(_is_num(v) for v in x)):
+        raise ValueError("box must be [x1, y1, z1, x2, y2, z2] numbers, got %r" % (x,))
+
+
+def check_compare(spec):
+    """A compare spec: the rule diff.py applies (compare_rule). Imported lazily so this file stays stdlib."""
+    import diff  # noqa: E402  (parity/diff.py, same directory)
+    diff.check_compare_spec(spec)
+
+
 def validate_step(step, do_names, obs_names):
     """Raise ValueError when run.py would reject or mis-read the step."""
     if not isinstance(step, dict):
@@ -95,6 +110,8 @@ def validate_step(step, do_names, obs_names):
     has_obs, has_do = "observe" in step, "do" in step
     if has_obs == has_do:
         raise ValueError("step needs exactly one of observe/do: %r" % step)
+    if "compare" in step:
+        check_compare(step["compare"])
     if has_obs:
         name = step["observe"]
         if name not in obs_names:
@@ -104,10 +121,25 @@ def validate_step(step, do_names, obs_names):
                 raise ValueError("observe %s needs %s" % (name, alts))
         if name in ("block", "be"):
             _pos(step["pos"], "observe %s pos" % name)
+        if name == "blocks":
+            _box(step["box"])
+        if name == "entities":
+            _pos(step["pos"], "observe entities pos")
+            if not _is_num(step["radius"]) or step["radius"] < 0:
+                raise ValueError("observe entities radius must be a number >= 0")
         return
     name = step["do"]
     if name not in do_names:
         raise ValueError("unknown do %r (run.py: %s)" % (name, sorted(do_names)))
+    if "sneak" in step and not isinstance(step["sneak"], bool):
+        raise ValueError("sneak must be true or false")
+    if isinstance(step.get("hold"), list):  # hold modifiers; a number is use_item's duration (checked below)
+        if not all(h in HOLD_NAMES for h in step["hold"]):
+            raise ValueError("hold modifiers must be among %s" % (HOLD_NAMES,))
+        if name not in HOLDABLE:
+            raise ValueError("hold modifiers are for %s only, not do %s" % (HOLDABLE, name))
+    if step.get("sneak") and name not in HOLDABLE:
+        raise ValueError("sneak is for %s only, not do %s" % (HOLDABLE, name))
     for alts in REQUIRED.get(name, [("__unknown__",)]):
         if not any(k in step for k in alts):
             raise ValueError("do %s needs %s" % (name, " or ".join(alts)))

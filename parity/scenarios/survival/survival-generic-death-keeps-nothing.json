@@ -1,6 +1,6 @@
 {
   "id": "survival-generic-death-keeps-nothing",
-  "notes": "Death with mod items in the inventory (default gamerule keepInventory=false). TRUTH: the stacks drop at the death point as their modded ids (create:andesite_alloy, create:wrench, dynamictrees:oak_seed) and the inventory is empty after respawn. Respawn is not a run.py step.",
+  "notes": "Death with mod items in the inventory (default gamerule keepInventory=false). TRUTH: the stacks drop at the death point as their modded ids (create:andesite_alloy, create:wrench, dynamictrees:oak_seed) and the inventory is empty after respawn. The dropped stacks are read with observe entities (item ids and counts, positions are random scatter so they are not compared); the range compare checks the exact counts. Then respawn (the Respawn button) and the empty inventory and playing screen.",
   "setup": [
     "fill 304 121 304 316 130 316 minecraft:air",
     "give {player} create:andesite_alloy 3",
@@ -14,7 +14,42 @@
     },
     {
       "do": "wait",
-      "ticks": 60
+      "ticks": 40
+    },
+    {
+      "observe": "entities",
+      "pos": [
+        308,
+        121,
+        308
+      ],
+      "radius": 8,
+      "type": "minecraft:item",
+      "compare": {
+        "mode": "range",
+        "field": "entities",
+        "keys": {
+          "create:andesite_alloy": [
+            3,
+            3
+          ],
+          "create:wrench": [
+            1,
+            1
+          ],
+          "dynamictrees:oak_seed": [
+            2,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "do": "respawn"
+    },
+    {
+      "do": "wait",
+      "ticks": 20
     },
     {
       "observe": "screen"
@@ -22,6 +57,5 @@
     {
       "observe": "inventory"
     }
-  ],
-  "todo": "No 'respawn' step in run.py (heal only runs before a scenario). Also needs an entities observe to check the dropped mod items."
+  ]
 }

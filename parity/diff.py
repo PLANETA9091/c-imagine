@@ -13,6 +13,16 @@ Per step (matched by index):
 Verdict: EQUAL (exit 0) when every step is equal and both sides have the same step count;
 DIFFERENT (exit 1) when any step is different or missing; ERROR (exit 2) when there is no
 difference or missing step but some observation is an infra error.
+
+A step may carry "compare" for outcomes that are random on the game side (drop counts, chance drops).
+Then the step is equal by the rule, not by identical results:
+  {"mode": "present"}  the same set of ids on both sides (ids with count > 0)
+  {"mode": "range", "keys": {id: [min, max]}}  the same set of ids, and every count on both sides
+      inside its [min, max]; "min"/"max" give the default for an id not in keys, else counts must be equal.
+      An id whose range admits 0 may be absent on either side (an optional drop).
+  "field": compare only this key of the result (a dict); the other keys must still be equal.
+  "ids": compare only these ids (the rest of the field is ignored, e.g. random sticks beside a log count).
+A result field that is a list of entities ({type, pos, item?, count?}) counts as {item or type: count}.
 """
 import argparse
 import json
@@ -38,6 +48,94 @@ def _side(rec):
     return rec.get("result") if rec.get("result") is not None else rec.get("error")
 
 
+COMPARE_MODES = ("range", "present")
+
+
+def check_compare_spec(spec):
+    """Raise ValueError for a malformed "compare" (run.py records the step, diff.py judges it)."""
+    if not isinstance(spec, dict):
+        raise ValueError("compare must be an object")
+    if spec.get("mode") not in COMPARE_MODES:
+        raise ValueError("compare mode must be one of %s" % (COMPARE_MODES,))
+    if "field" in spec and not isinstance(spec["field"], str):
+        raise ValueError("compare field must be a string")
+    if "ids" in spec and not (isinstance(spec["ids"], list) and all(isinstance(i, str) for i in spec["ids"])):
+        raise ValueError("compare ids must be a list of strings")
+    for id_, rng in (spec.get("keys") or {}).items():
+        if not (isinstance(rng, list) and len(rng) == 2 and rng[0] <= rng[1]):
+            raise ValueError("compare keys[%s] must be [min, max]" % id_)
+
+
+def counts_of(value):
+    """A counts map {id: n}, or an entity list [{type, pos, item?, count?}] as {item or type: n}."""
+    out = {}
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if isinstance(v, (int, float)) and not isinstance(v, bool):
+                out[k] = out.get(k, 0) + int(v)
+        return out
+    if isinstance(value, list):
+        for e in value:
+            if not isinstance(e, dict):
+                raise ValueError("entity list holds %r, not an object" % (e,))
+            if e.get("item"):
+                key, n = e["item"], int(e.get("count") or 1)
+            else:
+                key, n = e.get("type"), 1
+            if key is not None:
+                out[key] = out.get(key, 0) + n
+        return out
+    raise ValueError("compare value is neither a counts map nor an entity list: %r" % (value,))
+
+
+def compare_rule(tres, ores, spec):
+    """(verdict, why) for two results under a compare spec. Verdict is equal or different."""
+    check_compare_spec(spec)
+    field = spec.get("field")
+    tv, ov = tres, ores
+    if field is not None:
+        if not (isinstance(tv, dict) and isinstance(ov, dict) and field in tv and field in ov):
+            return "different", "field %r missing on a side" % field
+        rest_t = {k: v for k, v in tv.items() if k != field}
+        rest_o = {k: v for k, v in ov.items() if k != field}
+        if canon(rest_t) != canon(rest_o):
+            return "different", "results other than %r differ" % field
+        tv, ov = tv[field], ov[field]
+    tc, oc = counts_of(tv), counts_of(ov)
+    if spec.get("ids") is not None:
+        keep = set(spec["ids"])
+        tc = {k: v for k, v in tc.items() if k in keep}
+        oc = {k: v for k, v in oc.items() if k in keep}
+    keys = spec.get("keys") or {}
+    dmin, dmax = spec.get("min"), spec.get("max")
+
+    def bounds(id_):
+        if id_ in keys:
+            return keys[id_]
+        if dmin is not None or dmax is not None:
+            return [dmin if dmin is not None else 0, dmax if dmax is not None else float("inf")]
+        return None
+
+    for id_ in sorted(set(tc) | set(oc)):
+        b = bounds(id_)
+        tn, on = tc.get(id_, 0), oc.get(id_, 0)
+        optional = b is not None and b[0] <= 0
+        if (tn > 0) != (on > 0) and not optional:
+            return "different", "id %s present on one side only (truth %d, ours %d)" % (id_, tn, on)
+        if spec["mode"] == "present":
+            continue
+        if b is None:
+            if tn != on:
+                return "different", "count of %s differs (truth %d, ours %d)" % (id_, tn, on)
+            continue
+        for side, n in (("truth", tn), ("ours", on)):
+            if n == 0 and optional:
+                continue
+            if not (b[0] <= n <= b[1]):
+                return "different", "%s count of %s is %d, outside [%s, %s]" % (side, id_, n, b[0], b[1])
+    return "equal", ""
+
+
 def compare(t, o):
     if t is None or o is None:
         return "missing", "step absent on %s" % ("truth" if t is None else "ours")
@@ -47,6 +145,12 @@ def compare(t, o):
     if t.get("error") or o.get("error"):
         return "missing", "error on %s" % " and ".join(
             side for side, r in (("truth", t), ("ours", o)) if r.get("error"))
+    spec = ((t.get("step") or {}).get("compare")) or ((o.get("step") or {}).get("compare"))
+    if spec:
+        try:
+            return compare_rule(t.get("result"), o.get("result"), spec)
+        except ValueError as e:
+            return "different", "compare: %s" % e
     if canon(t.get("result")) == canon(o.get("result")):
         return "equal", ""
     return "different", ""
