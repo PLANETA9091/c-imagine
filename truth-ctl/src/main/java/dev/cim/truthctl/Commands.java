@@ -1362,6 +1362,10 @@ final class Commands {
         o.addProperty("index", index);
         o.addProperty("item", itemId(st));
         o.addProperty("count", st.getCount());
+        // The client stack's own durability: damage as the stack holds it, max_damage null when the item has none.
+        o.addProperty("damage", st.getDamageValue());
+        int max = st.getMaxDamage();
+        o.add("max_damage", max > 0 ? new com.google.gson.JsonPrimitive(max) : JsonNull.INSTANCE);
         return o;
     }
 

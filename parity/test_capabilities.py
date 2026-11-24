@@ -100,6 +100,78 @@ class HoldTests(unittest.TestCase):
         self.assertEqual(log.calls[-1], ("key", "shift", "up"))
 
 
+class DurabilityObserveTests(unittest.TestCase):
+    """observe inventory with "fields": the compared result carries the stacks' durability; without it, none."""
+
+    CLIENT = {"hotbar": [{"slot": 0, "index": 0, "item": "minecraft:air", "count": 0, "damage": 0,
+                          "max_damage": None},
+                         {"slot": 1, "index": 1, "item": "create:wrench", "count": 1, "damage": 3,
+                          "max_damage": 250}],
+              "main": [{"slot": 9, "index": 9, "item": "minecraft:stone", "count": 4, "damage": 0,
+                        "max_damage": None}],
+              "armor": [{"slot": 3, "index": 3, "item": "minecraft:iron_helmet", "count": 1, "damage": 12,
+                         "max_damage": 165}],
+              "offhand": [{"slot": 0, "index": 0, "item": "minecraft:air", "count": 0, "damage": 0,
+                           "max_damage": None}],
+              "carried": None}
+
+    def test_truth_fields_damage_only(self):
+        st, _ = truth_stack({"inventory": self.CLIENT})
+        out = st.observe_inventory(fields=["damage"])
+        self.assertEqual(out["durability"], [
+            {"slot": "armor.helmet", "item": "minecraft:iron_helmet", "damage": 12},
+            {"slot": "hotbar:1", "item": "create:wrench", "damage": 3},
+            {"slot": "main:9", "item": "minecraft:stone", "damage": 0}])
+
+    def test_truth_fields_max_damage_too(self):
+        st, _ = truth_stack({"inventory": self.CLIENT})
+        out = st.observe_inventory(fields=["max_damage", "damage"])
+        self.assertEqual(out["durability"][1], {"slot": "hotbar:1", "item": "create:wrench", "damage": 3,
+                                                "max_damage": 250})
+
+    def test_no_fields_no_durability_key(self):
+        st, _ = truth_stack({"inventory": self.CLIENT})
+        self.assertNotIn("durability", st.observe_inventory())
+
+    def test_scenario_fields_validated(self):
+        ok = {"observe": "inventory", "fields": ["damage"]}
+        tg.validate_step(ok, set(), {"inventory"})
+        with self.assertRaises(ValueError):
+            tg.validate_step({"observe": "inventory", "fields": ["color"]}, set(), {"inventory"})
+        tg.validate_step({"observe": "be", "pos": [1, 2, 3], "fields": ["x"]}, set(), {"be"})  # BE's own fields
+
+    def test_bad_fields_rejected(self):
+        st, _ = truth_stack({"inventory": self.CLIENT})
+        with self.assertRaises(ValueError):
+            st.observe_inventory(fields=["color"])
+        with self.assertRaises(ValueError):
+            st.observe_inventory(fields=[])
+
+    def test_ours_fields_read_the_server_stacks(self):
+        slots = [{"slot": "hotbar", "index": 1, "id": "create:wrench", "count": 1, "damage": 40,
+                  "max_damage": None, "damage_source": "layer"},
+                 {"slot": "hotbar", "index": 0, "id": None, "count": 0, "damage": 0, "max_damage": None,
+                  "damage_source": None},
+                 {"slot": "armor.helmet", "index": 36, "id": "minecraft:iron_helmet", "count": 1, "damage": 12,
+                  "max_damage": 165, "damage_source": "paper"},
+                 {"slot": "cursor", "index": -1, "id": "minecraft:stone", "count": 1, "damage": 0,
+                  "max_damage": None, "damage_source": None}]
+        st, log = ours_stack({"inventory": self.CLIENT})
+        st._server_inv = lambda: slots
+        out = st.observe_inventory(fields=["damage"])
+        self.assertEqual(out["durability"], [
+            {"slot": "armor.helmet", "item": "minecraft:iron_helmet", "damage": 12},
+            {"slot": "hotbar:1", "item": "create:wrench", "damage": 40}])
+
+    def test_ours_without_fields_is_the_counts_only(self):
+        st, _ = ours_stack({"inventory": self.CLIENT})
+        st._server_inv = lambda: [{"slot": "main", "index": 9, "id": "minecraft:stone", "count": 4,
+                                   "damage": 0, "max_damage": None, "damage_source": "paper"}]
+        out = st.observe_inventory()
+        self.assertNotIn("durability", out)
+        self.assertEqual(out["counts"], {"minecraft:stone": 4})
+
+
 class RespawnBoxEntityTests(unittest.TestCase):
     def test_respawn_both_stacks(self):
         st, _ = truth_stack({"respawn": {"ok": True, "respawned": True}})
@@ -114,10 +186,25 @@ class RespawnBoxEntityTests(unittest.TestCase):
                          {"minecraft:dirt": 1, "dynamictrees:oak_branch": 2})
         self.assertEqual(log.calls[0], ("blocks", "307", "120", "309", "309", "124", "311"))
 
-    def test_ours_blocks_without_carriers_is_the_client_count(self):
+    def test_ours_blocks_without_inspect_is_the_client_count(self):
+        # no CIM-INSPECT line (inspect answers None): the client count, as before
         st, log = ours_stack({"blocks": {"counts": {"minecraft:stone": 4}}})
-        st.inspect = lambda *a, **k: self.fail("no inspect without carriers")
+        st.inspect = lambda *a, **k: None
         self.assertEqual(st.observe_blocks([0, 0, 0, 1, 1, 1]), {"minecraft:stone": 4})
+
+    def test_ours_blocks_uses_the_bulk_inspect(self):
+        st, log = ours_stack({"blocks": {"counts": {"minecraft:stone": 9}}})
+        seen = []
+        st.inspect = lambda *a, **k: seen.append(a) or {"kind": "blocks",
+                                                       "counts": {"create:cogwheel": 1, "minecraft:stone": 3}}
+        self.assertEqual(st.observe_blocks([0, 0, 0, 1, 1, 1]), {"create:cogwheel": 1, "minecraft:stone": 3})
+        self.assertEqual(seen, [("blocks", 0, 0, 0, 1, 1, 1)])
+        self.assertNotIn("blocks", log.names())  # the client count is not read when the bulk answers
+
+    def test_ours_blocks_over_the_bulk_cap_reads_the_client(self):
+        st, log = ours_stack({"blocks": {"counts": {"minecraft:stone": 2}}})
+        st.inspect = lambda *a, **k: self.fail("a box over 4096 cells is not sent to inspect blocks")
+        self.assertEqual(st.observe_blocks([0, 0, 0, 16, 16, 16]), {"minecraft:stone": 2})  # 17^3 = 4913
 
     def test_ours_blocks_reads_carriers_by_inspect(self):
         cells = {}

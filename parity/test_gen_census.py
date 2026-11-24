@@ -121,6 +121,11 @@ def validate_step(step, do_names, obs_names):
                 raise ValueError("observe %s needs %s" % (name, alts))
         if name in ("block", "be"):
             _pos(step["pos"], "observe %s pos" % name)
+        if name == "inventory" and "fields" in step:
+            # the durability fields an inventory observe compares (run.py); other observes keep their own fields
+            if not (isinstance(step["fields"], list) and step["fields"] and all(
+                    f in ("damage", "max_damage") for f in step["fields"])):
+                raise ValueError("observe inventory: fields must be a non-empty list of damage/max_damage")
         if name == "blocks":
             _box(step["box"])
         if name == "entities":

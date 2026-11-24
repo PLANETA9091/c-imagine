@@ -301,6 +301,16 @@ def norm_screen(reply, stack_name):
     return {"kind": kind, "slots": _slot_list(slots, stack_name, kind)}
 
 
+def _server_slot_name(s):
+    """Canonical slot name of a /cim inspect inv slot ({slot: hotbar|main|armor.<name>|offhand|cursor, index})."""
+    group = s.get("slot") or ""
+    if group == "hotbar":
+        return "hotbar:%d" % int(s.get("index") or 0)
+    if group == "main":
+        return "main:%d" % int(s.get("index") or 0)
+    return group  # armor.<name>, offhand, cursor
+
+
 def _in_radius(pos, center, r=3.0):
     """Euclidean distance from block centre (pos + 0.5) <= r."""
     return sum((float(a) - (float(b) + 0.5)) ** 2 for a, b in zip(pos, center)) <= r * r
@@ -366,6 +376,61 @@ def norm_durability(reply):
                         "damage": s.get("damage"), "max_damage": s.get("max_damage")})
     return {"status": "reported" if out else "not_reported", "source": "client",
             "fields": sorted(seen), "stacks": out}
+
+
+DUR_FIELDS = ("damage", "max_damage")
+ARMOR_NAMES = ("boots", "leggings", "chestplate", "helmet")  # armor index 0..3 (feet first), both stacks
+INSPECT_BLOCKS_CAP = 4096  # the plugin's cap for '/cim inspect blocks' (one bulk line per box)
+
+
+def norm_durability_fields(fields):
+    """A step's "fields" list: None (not asked) or the durability keys it compares, in DUR_FIELDS order."""
+    if fields is None:
+        return None
+    bad = [f for f in fields if f not in DUR_FIELDS]
+    if bad or not fields:
+        raise ValueError("observe inventory fields must be a non-empty subset of %s, got %r" % (DUR_FIELDS, fields))
+    return [f for f in DUR_FIELDS if f in fields]
+
+
+def durability_slots(entries, fields):
+    """Compared durability of the non-empty stacks. entries: (slot name, item id, count, damage, max_damage),
+    slot names canonical ("hotbar:N", "main:N", "armor.<name>", "offhand"). Output sorted by slot name; a key
+    is present only when the step asked for it (fields), so a step that does not ask compares no durability."""
+    out = []
+    for name, item, count, damage, max_damage in entries:
+        if not count or item is None:
+            continue
+        row = {"slot": name, "item": item, "damage": int(damage or 0)}
+        if "max_damage" in fields:
+            row["max_damage"] = None if max_damage is None else int(max_damage)
+        out.append(row)
+    return sorted(out, key=lambda r: r["slot"])
+
+
+def truth_dur_entries(reply):
+    """(slot, item, count, damage, max_damage) for a truth-ctl inventory reply (client stacks)."""
+    out = []
+    if not isinstance(reply, dict):
+        return out
+    for group in ("hotbar", "main", "armor", "offhand"):
+        entries = reply.get(group)
+        if isinstance(entries, dict):
+            entries = [entries]
+        for s in entries or []:
+            if not isinstance(s, dict):
+                continue
+            idx = int(s.get("slot") or 0)
+            if group == "hotbar":
+                name = "hotbar:%d" % idx
+            elif group == "main":
+                name = "main:%d" % idx
+            elif group == "armor":
+                name = "armor." + ARMOR_NAMES[idx]
+            else:
+                name = "offhand"
+            out.append((name, norm_id(s.get("item")), int(s.get("count") or 0), s.get("damage"), s.get("max_damage")))
+    return out
 
 
 def norm_held(reply):
@@ -576,7 +641,7 @@ class Stack:
     def observe_block(self, pos):
         raise NotImplementedError
 
-    def observe_inventory(self):
+    def observe_inventory(self, fields=None):
         raise NotImplementedError
 
     def observe_screen(self):
@@ -812,10 +877,14 @@ class TruthStack(Stack):
         st = norm_state(r.get("state") or r.get("block"))
         return {"state": st, "id": st.split("[", 1)[0]}
 
-    def observe_inventory(self):
+    def observe_inventory(self, fields=None):
         raw = self.call("inventory")
         self._inv_raw = raw
-        return norm_inventory(raw)
+        out = norm_inventory(raw)
+        asked = norm_durability_fields(fields)
+        if asked is not None:
+            out["durability"] = durability_slots(truth_dur_entries(raw), asked)
+        return out
 
     def observe_screen(self):
         return norm_screen(self.call("screen"), self.name)
@@ -1056,7 +1125,9 @@ class OursStack(Stack):
         for sl in insp["slots"]:
             cnt = int(sl.get("count") or 0)
             out.append({"slot": sl.get("slot"), "index": sl.get("index"),
-                        "id": norm_id(sl.get("id")) if cnt else None, "count": cnt})
+                        "id": norm_id(sl.get("id")) if cnt else None, "count": cnt,
+                        "damage": sl.get("damage"), "max_damage": sl.get("max_damage"),
+                        "damage_source": sl.get("damage_source")})
         return out
 
     def _server_counts(self):
@@ -1228,12 +1299,17 @@ class OursStack(Stack):
         """Block counts of a box. The client's counts are right for vanilla blocks; carriers (note blocks,
         barriers) are read per cell with /cim inspect block for the modded id (cap BOX_CELL_CAP cells)."""
         lo, hi = box_bounds(box)
+        volume = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
+        # one bulk line from the server (/cim inspect blocks: carriers already as modded ids, air omitted)
+        if volume <= INSPECT_BLOCKS_CAP:
+            bulk = self.inspect("blocks", *lo, *hi)
+            if bulk is not None and isinstance(bulk.get("counts"), dict):
+                return norm_counts(bulk["counts"])
         r = self.ctl("blocks", *lo, *hi)
         raw = r.get("counts") if isinstance(r.get("counts"), dict) else r
         counts = norm_counts({k: v for k, v in raw.items() if isinstance(v, int)})
         if not any(k in CARRIER_IDS for k in counts):
             return counts
-        volume = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1)
         if volume > BOX_CELL_CAP:
             raise ValueError("box holds carriers and %d cells; per-cell inspect is capped at %d (split the box)"
                              % (volume, BOX_CELL_CAP))
@@ -1455,18 +1531,32 @@ class OursStack(Stack):
         st = norm_state(r.get("state") or r.get("block"))
         return {"state": st, "id": st.split("[", 1)[0]}
 
-    def observe_inventory(self):
+    def observe_inventory(self, fields=None):
+        asked = norm_durability_fields(fields)
         raw = self.ctl("inventory")
         self._inv_raw = raw  # client-side reply: the only place durability is reported (see norm_durability)
-        srv = self._server_counts()
+        slots = self._server_inv()
         carried = raw.get("carried")
         cid = norm_id(carried.get("item")) if isinstance(carried, dict) and carried.get("count") else None
-        if srv is not None:
-            counts = dict(srv)
+        if slots is not None:
+            counts = {}
+            for s in slots:
+                if s["id"]:
+                    counts[s["id"]] = counts.get(s["id"], 0) + s["count"]
             if cid:
                 counts[cid] = counts.get(cid, 0) + int(carried.get("count", 0))
-            return {"counts": {k: v for k, v in counts.items() if v}, "carried": cid, "selected": None}
-        return norm_inventory(raw)
+            out = {"counts": {k: v for k, v in counts.items() if v}, "carried": cid, "selected": None}
+        else:
+            out = norm_inventory(raw)
+        if asked is not None:
+            # the server's own stacks (inspect inv): the layer's damage for a modded stack, the carrier's otherwise
+            entries = []
+            for s in slots or []:
+                if s.get("slot") == "cursor":
+                    continue  # the client reply's "carried" is the truth side's cursor; truth lists no cursor slot
+                entries.append((_server_slot_name(s), s["id"], s["count"], s.get("damage"), s.get("max_damage")))
+            out["durability"] = durability_slots(entries, asked)
+        return out
 
     def _hud_menu(self):
         """'/cim inspect screen' for the player when a menu is open on the server (drawn on the HUD by

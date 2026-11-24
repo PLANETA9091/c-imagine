@@ -191,8 +191,10 @@ def run_step(stack, step, shots_dir, idx, rec):
             return stack.observe_block(step["pos"])
         if kind == "inventory":
             rec["source"] = stack.source_of("inventory")
-            res = stack.observe_inventory()
-            # durability is recorded beside the result, not in it: diff.py compares results only
+            # "fields": ["damage"] (and/or "max_damage") adds the stacks' durability to the compared result;
+            # without it the result is the counts alone, as before
+            res = stack.observe_inventory(fields=step.get("fields"))
+            # durability is also recorded beside the result (raw client reply): diff.py compares results only
             rec["durability"] = stack.last_durability()
             return res
         if kind == "screen":
