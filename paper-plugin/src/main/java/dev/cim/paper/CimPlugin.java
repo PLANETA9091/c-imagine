@@ -145,6 +145,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // Modded enchantments as REAL entries of the server enchantment registry
         // (definitions from the Rust module, crates/cim-enchant).
         dev.cim.paper.EnchantRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
+        // Modded damage types (crates/cim-damage): death messages and mod-caused damage.
+        dev.cim.paper.DamageTypeRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         f2vInit();
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         f2vAutoOfferInit();

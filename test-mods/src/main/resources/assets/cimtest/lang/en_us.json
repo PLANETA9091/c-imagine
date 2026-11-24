@@ -3,5 +3,6 @@
   "item.cimtest.test_block": "CIM Test Block",
   "entity.cimtest.test_entity": "CIM Test Entity",
   "enchantment.cimtest.test_enchant": "Test Enchant",
-  "enchantment.cimtest.test_enchant.desc": "CI fixture enchantment"
+  "enchantment.cimtest.test_enchant.desc": "CI fixture enchantment",
+  "death.attack.cimtest.test_damage": "%1$s was hit by the CI fixture damage"
 }

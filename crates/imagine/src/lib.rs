@@ -136,6 +136,8 @@ pub unsafe extern "C" fn cplugin_init(
     // Modded enchantments: the 26.3 definitions the plugin registers into
     // Paper's live enchantment registry (before the world loads).
     write_enchant_defs(&opts);
+    // Modded damage types (death messages, mod-caused damage): the same hand-off.
+    write_damage_defs(&opts);
 
     // The modded-biome channel (F2V v2 outbound + the server-registry defs
     // hand-off): arm it before the kernel accepts connections.
@@ -516,6 +518,43 @@ fn write_enchant_defs(opts: &options::ModuleOptions) {
             ),
         },
         Err(e) => eprintln!("{} enchant defs: encode failed: {e}", cim_core::LOG_PREFIX),
+    }
+}
+
+/// Read the mod jars' damage types, convert them to the 26.3 form and write
+/// `<root>/c-imagine/damage-defs.json` for the plugin (`DamageTypeRegistry`).
+/// Writes nothing when no mod declares a damage type.
+fn write_damage_defs(opts: &options::ModuleOptions) {
+    let mods = opts
+        .mods_dir
+        .clone()
+        .unwrap_or_else(|| opts.server_root().join("mods"));
+    let converted = cim_damage::load_mod_damage_types(&mods);
+    if converted.damage_types.is_empty() {
+        return;
+    }
+    for line in &converted.dropped {
+        eprintln!("{} damage defs: dropped {line}", cim_core::LOG_PREFIX);
+    }
+    let dir = opts.server_root().join("c-imagine");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("damage-defs.json");
+    let doc = cim_damage::defs_document(&converted);
+    match serde_json::to_vec_pretty(&doc) {
+        Ok(bytes) => match std::fs::write(&path, bytes) {
+            Ok(()) => eprintln!(
+                "{} damage defs: {} -> {}",
+                cim_core::LOG_PREFIX,
+                converted.damage_types.len(),
+                path.display()
+            ),
+            Err(e) => eprintln!(
+                "{} damage defs: write {} failed: {e}",
+                cim_core::LOG_PREFIX,
+                path.display()
+            ),
+        },
+        Err(e) => eprintln!("{} damage defs: encode failed: {e}", cim_core::LOG_PREFIX),
     }
 }
 

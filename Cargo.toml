@@ -11,6 +11,7 @@ members = [
     "crates/cim-f2v",
     "crates/cim-biome",
     "crates/cim-enchant",
+    "crates/cim-damage",
     "crates/imagine",
 ]
 exclude = ["third_party/cplug-abi", "third_party/cplug-sdk"]
@@ -33,6 +34,7 @@ cim-bridge = { path = "crates/cim-bridge" }
 cim-f2v = { path = "crates/cim-f2v" }
 cim-biome = { path = "crates/cim-biome" }
 cim-enchant = { path = "crates/cim-enchant" }
+cim-damage = { path = "crates/cim-damage" }
 cplug-abi = { path = "third_party/cplug-abi" }
 cplug-sdk = { path = "third_party/cplug-sdk" }
 
