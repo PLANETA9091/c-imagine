@@ -1,0 +1,19 @@
+{
+ "id": "53-place-stone-on-plain-barrier-top",
+ "notes": "Control for A (parity-place-grow): a plain barrier (no ItemDisplay, no carrier) placed by setblock; vanilla stone clicked onto its top face. Separates Paper placement from the carrier display.",
+ "setup": [
+  "gamemode survival",
+  "give {player} minecraft:stone 8"
+ ],
+ "steps": [
+  {"do": "command", "text": "fill 300 120 300 316 120 316 minecraft:stone"},
+  {"do": "command", "text": "fill 300 121 300 316 130 316 minecraft:air"},
+  {"do": "command", "text": "setblock 308 121 312 minecraft:barrier"},
+  {"do": "tp", "pos": [308.5, 121, 308.5], "yaw": 0.0, "pitch": 0.0},
+  {"do": "select", "item": "minecraft:stone"},
+  {"do": "place", "pos": [308, 122, 312]},
+  {"observe": "block", "pos": [308, 122, 312]},
+  {"observe": "block", "pos": [308, 121, 312]},
+  {"observe": "inventory"}
+ ]
+}

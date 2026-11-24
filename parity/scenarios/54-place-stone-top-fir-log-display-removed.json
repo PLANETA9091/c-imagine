@@ -1,0 +1,23 @@
+{
+ "id": "54-place-stone-top-fir-log-display-removed",
+ "notes": "A split (parity-place-grow): place BOP fir_log (barrier + ItemDisplay), remove only its ItemDisplay by command, then vanilla stone onto the log top face. If the stone now lands, the display is what refuses it.",
+ "setup": [
+  "gamemode survival",
+  "give {player} biomesoplenty:fir_log 1",
+  "give {player} minecraft:stone 8"
+ ],
+ "steps": [
+  {"do": "command", "text": "fill 300 120 300 316 120 316 minecraft:stone"},
+  {"do": "command", "text": "fill 300 121 300 316 130 316 minecraft:air"},
+  {"do": "tp", "pos": [308.5, 121, 308.5], "yaw": 0.0, "pitch": 0.0},
+  {"do": "select", "item": "biomesoplenty:fir_log"},
+  {"do": "place", "pos": [308, 121, 310]},
+  {"do": "wait", "ticks": 5},
+  {"do": "command", "text": "kill @e[type=item_display,x=308,y=121,z=310,distance=..2]"},
+  {"do": "wait", "ticks": 5},
+  {"do": "select", "item": "minecraft:stone"},
+  {"do": "place", "pos": [308, 122, 310]},
+  {"observe": "block", "pos": [308, 122, 310]},
+  {"observe": "inventory"}
+ ]
+}

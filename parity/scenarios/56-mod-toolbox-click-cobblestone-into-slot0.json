@@ -1,0 +1,64 @@
+{
+ "id": "56-mod-toolbox-click-cobblestone-into-slot0",
+ "notes": "fix/menu-look: open a green toolbox, take a cobblestone from the player hotbar (slot 1) with the cursor, place it in toolbox compartment 0. Observes the screen slots and the inventory on both stacks.",
+ "setup": [
+  "give {player} create:green_toolbox 1",
+  "give {player} minecraft:cobblestone 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:green_toolbox"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "click_slot",
+   "in": "toolbox",
+   "slot": "hotbar:1",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "toolbox",
+   "slot": "container:0",
+   "mode": "left"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

@@ -1,0 +1,22 @@
+{
+ "id": "55-place-stone-top-create-shaft",
+ "notes": "A split (parity-place-grow): a note-block carrier (create:shaft, no ItemDisplay) placed on the floor, then vanilla stone onto its top face. Compares with the BOP fir_log display-family carrier (scenario 61).",
+ "setup": [
+  "gamemode survival",
+  "give {player} create:shaft 1",
+  "give {player} minecraft:stone 8"
+ ],
+ "steps": [
+  {"do": "command", "text": "fill 300 120 300 316 120 316 minecraft:stone"},
+  {"do": "command", "text": "fill 300 121 300 316 130 316 minecraft:air"},
+  {"do": "tp", "pos": [308.5, 121, 308.5], "yaw": 0.0, "pitch": 0.0},
+  {"do": "select", "item": "create:shaft"},
+  {"do": "place", "pos": [308, 121, 310]},
+  {"do": "wait", "ticks": 5},
+  {"do": "select", "item": "minecraft:stone"},
+  {"do": "place", "pos": [308, 122, 310]},
+  {"observe": "block", "pos": [308, 122, 310]},
+  {"observe": "block", "pos": [308, 121, 310]},
+  {"observe": "inventory"}
+ ]
+}

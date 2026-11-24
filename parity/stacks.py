@@ -112,7 +112,11 @@ _TRUTH_SLOTS = {
                 "hotbar": (lambda h: 30 + h, 9)},
     "chest": {"container": (lambda n: n, 27), "main": (lambda m: 27 + m, 27),
               "hotbar": (lambda h: 54 + h, 9)},
+    # ToolboxMenu: addSlots() adds the 8 compartment slots first, then MenuBase's player slots (main, hotbar).
+    "toolbox": {"container": (lambda n: n, 8), "main": (lambda m: 8 + m, 27),
+                "hotbar": (lambda h: 35 + h, 9)},
 }
+_TRUTH_SLOTS["create:toolbox"] = _TRUTH_SLOTS["toolbox"]  # the screen kind of a modded menu is its registry id
 _OURS_SLOTS = {
     "inventory": {"result": 200, "grid": (lambda n: 100 + n, 4), "armor": (lambda k: 500 + k, 4),
                   "main": (lambda m: 9 + m, 27), "hotbar": (lambda h: h, 9), "offhand": 504},
@@ -123,7 +127,12 @@ _OURS_SLOTS = {
                 "hotbar": (lambda h: h, 9)},
     "chest": {"container": (lambda n: 300 + n, 27), "main": (lambda m: 9 + m, 27),
               "hotbar": (lambda h: h, 9)},
+    # UNVERIFIED (fix/menu-look scenario 56): toolbox compartments assumed 300+n like the chest; check the live
+    # screen dump. Ported from the live runner copy (hk-menu-look2); the truth table above is from ToolboxMenu.
+    "toolbox": {"container": (lambda n: 300 + n, 8), "main": (lambda m: 9 + m, 27),
+                "hotbar": (lambda h: h, 9)},
 }
+_OURS_SLOTS["create:toolbox"] = _OURS_SLOTS["toolbox"]
 _MAPS = {"truth": _TRUTH_SLOTS, "ours": _OURS_SLOTS}
 
 
