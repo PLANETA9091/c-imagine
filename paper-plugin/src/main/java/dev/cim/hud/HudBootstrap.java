@@ -39,9 +39,32 @@ public final class HudBootstrap {
         return what.equals("move") ? screens.move(player) : screens.press(player, Integer.parseInt(what));
     }
 
+    /** The display-family mod block id a barrier stands for (its chunk key), or null. For /cim inspect. */
+    public static String displayIdAt(org.bukkit.block.Block block) {
+        return DisplayCarriers.idAt(block);
+    }
+
+    /** The state text Paper keeps for a placed mod block (its chunk's PDC), or null. For /cim inspect. */
+    public static String placedStateAt(org.bukkit.plugin.Plugin plugin, org.bukkit.block.Block block) {
+        return LiveBridge.placedState(plugin, block);
+    }
+
+    /** The layer's state text at a block, or null (no layer, or it holds none there). For /cim inspect. */
+    public static String layerStateAt(org.bukkit.block.Block block) {
+        return screens == null ? null : screens.layerStateAt(block);
+    }
+
     /** True when the id is an allocated mod item (false while the HUD layer is not up). */
     public static boolean hasAllocatedItem(String moddedId) {
         return screens != null && screens.isAllocatedItem(moddedId);
+    }
+
+    /**
+     * The stack that shows as the modded item {@code moddedId} (its real host and item_model, name and
+     * lore), or null while the HUD layer is down. Used by {@code /cim give}.
+     */
+    public static org.bukkit.inventory.ItemStack carrierStack(String moddedId) {
+        return screens == null ? null : screens.carrier(moddedId);
     }
 
     public static java.util.List<String> listForHarness() {

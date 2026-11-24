@@ -40,6 +40,12 @@ public final class LiveProtocol {
     private LiveProtocol() {
     }
 
+    private static void appendBounds(StringBuilder out, String type,
+                                     double x1, double y1, double z1, double x2, double y2, double z2) {
+        out.append(type).append('\t').append(x1).append('\t').append(y1).append('\t').append(z1)
+                .append('\t').append(x2).append('\t').append(y2).append('\t').append(z2).append('\n');
+    }
+
     /** Publishes the entry point; called once the registries are complete. */
     static void publish() {
         Function<String, String> call = LiveProtocol::call;
@@ -57,6 +63,10 @@ public final class LiveProtocol {
             if (head[0].equals("ready")) {
                 net.minecraft.server.MinecraftServer real = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
                 return real == null || real instanceof FacadeServer || !real.isReady() ? "wait\n" : "ready\n";
+            }
+            if (head[0].equals("item-ids")) {
+                return "item-ids\n" + net.minecraft.core.registries.BuiltInRegistries.ITEM.keySet().stream()
+                        .map(Object::toString).sorted().collect(java.util.stream.Collectors.joining("\n"));
             }
             // The mod recipes of the real server, once its data is loaded (no player, no uuid).
             if (head[0].equals("recipes")) {
@@ -79,6 +89,30 @@ public final class LiveProtocol {
             if (head[0].equals("digspeed")) {
                 return digSpeed(head);
             }
+            if (head[0].equals("blockat")) {
+                return blockAt(head);
+            }
+            if (head[0].equals("door-outline")) {
+                var lookup = net.minecraft.core.registries.BuiltInRegistries.BLOCK.asLookup();
+                var state = net.minecraft.commands.arguments.blocks.BlockStateParser
+                        .parseForBlock(lookup, head[1], false).blockState();
+                if (!(state.getBlock() instanceof net.minecraft.world.level.block.DoorBlock)) {
+                    return "";
+                }
+                var shape = state.getShape(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,
+                        net.minecraft.core.BlockPos.ZERO);
+                StringBuilder out = new StringBuilder("door-shape\n");
+                for (var box : shape.toAabbs()) {
+                    appendBounds(out, "box", box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+                }
+                for (var box : state.getCollisionShape(net.minecraft.world.level.EmptyBlockGetter.INSTANCE,
+                        net.minecraft.core.BlockPos.ZERO).toAabbs()) {
+                    appendBounds(out, "collision", box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ);
+                }
+                shape.forAllEdges((x1, y1, z1, x2, y2, z2) ->
+                        appendBounds(out, "edge", x1, y1, z1, x2, y2, z2));
+                return out.toString();
+            }
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
@@ -93,6 +127,37 @@ public final class LiveProtocol {
                         player.setShiftKeyDown(false);
                     }
                 }
+                case "door-use" -> {
+                    var player = LiveMenus.session(id, head[2]);
+                    var bottom = pos(head, 3);
+                    var level = LiveMenus.level();
+                    var lookup = net.minecraft.core.registries.BuiltInRegistries.BLOCK.asLookup();
+                    var lower = net.minecraft.commands.arguments.blocks.BlockStateParser
+                            .parseForBlock(lookup, head[6], false).blockState();
+                    var upper = net.minecraft.commands.arguments.blocks.BlockStateParser
+                            .parseForBlock(lookup, head[7], false).blockState();
+                    var direction = net.minecraft.core.Direction.byName(head[8]);
+                    if (direction == null || lower.getBlock() != upper.getBlock()
+                            || !(lower.getBlock() instanceof net.minecraft.world.level.block.DoorBlock)) {
+                        yield "";
+                    }
+                    var top = bottom.above();
+                    var originalLower = level.getBlockState(bottom);
+                    var originalUpper = level.getBlockState(top);
+                    level.setBlock(bottom, lower, 3);
+                    level.setBlock(top, upper, 3);
+                    try {
+                        var hit = new net.minecraft.world.phys.BlockHitResult(
+                                net.minecraft.world.phys.Vec3.atCenterOf(bottom), direction, bottom, false);
+                        var result = lower.useWithoutItem(level, player, hit);
+                        var after = level.getBlockState(bottom);
+                        yield result.consumesAction() && after.hasProperty(net.minecraft.world.level.block.DoorBlock.OPEN)
+                                ? "door\t" + after.getValue(net.minecraft.world.level.block.DoorBlock.OPEN) : "";
+                    } finally {
+                        level.setBlock(top, originalUpper, 3);
+                        level.setBlock(bottom, originalLower, 3);
+                    }
+                }
                 case "open-block" -> {
                     // open-block TAB uuid TAB name TAB blockId TAB x TAB y TAB z, then inv lines and an
                     // optional "be TAB snbt" line: the block entity's data as Paper kept it.
@@ -104,6 +169,12 @@ public final class LiveProtocol {
                     net.minecraft.world.level.block.state.BlockState wanted =
                             net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                                     net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState();
+                    // The state it was placed with (Paper's kept text), when the field is there.
+                    net.minecraft.world.level.block.state.BlockState kept =
+                            placedStateOf(head.length > 7 ? head[7] : null, wanted.getBlock());
+                    if (kept != null) {
+                        wanted = kept;
+                    }
                     FacadeServerLevel level = LiveMenus.level();
                     boolean fresh = false;
                     for (int i = 1; i < lines.length; i++) {
@@ -113,9 +184,7 @@ public final class LiveProtocol {
                         // As just placed: the old block entity goes with the old block.
                         level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                     }
-                    if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
-                        level.setBlock(pos, wanted, 3);
-                    }
+                    setPlaced(level, pos, wanted, kept != null);
                     for (int i = 1; i < lines.length; i++) {
                         if (lines[i].startsWith("be\t")) {
                             // As a chunk loads it: the data first, then the level and onLoad, which
@@ -133,7 +202,9 @@ public final class LiveProtocol {
                     // break TAB uuid TAB name TAB blockId TAB x TAB y TAB z, then inv lines (the held
                     // stack, the tool, in slot 0) and an optional "be TAB snbt" line: the player
                     // breaks a mod block of Paper's world, by the block's own code as a server's
-                    // game mode does. What it spilled comes back as "spill TAB stack" lines.
+                    // game mode does. An optional "state TAB ns:id[k=v,...]" line is the state the block
+                    // was placed with (Paper's kept text): the break runs on that state, else on the
+                    // block's default state. What it spilled comes back as "spill TAB stack" lines.
                     SessionServerPlayer player = LiveMenus.session(id, head[2]);
                     player.closeContainer();
                     readInventory(player, lines);
@@ -141,8 +212,15 @@ public final class LiveProtocol {
                             Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
                     FacadeServerLevel level = LiveMenus.level();
                     level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
-                    level.setBlock(pos, net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-                            net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState(), 3);
+                    net.minecraft.world.level.block.Block breakBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                            net.minecraft.resources.ResourceLocation.parse(head[3]));
+                    net.minecraft.world.level.block.state.BlockState placedAs = null;
+                    for (int i = 1; i < lines.length; i++) {
+                        if (lines[i].startsWith("state\t")) {
+                            placedAs = placedStateOf(lines[i].substring(6), breakBlock);
+                        }
+                    }
+                    level.setBlock(pos, placedAs != null ? placedAs : breakBlock.defaultBlockState(), 3);
                     for (int i = 1; i < lines.length; i++) {
                         if (lines[i].startsWith("be\t")) {
                             loadKept(level, pos, lines[i].substring(3));
@@ -204,29 +282,44 @@ public final class LiveProtocol {
                     net.minecraft.world.item.ItemStack stack = player.getItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND);
                     net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
                             net.minecraft.world.phys.Vec3.atCenterOf(pos).relative(face, 0.5), face, pos, false);
-                    net.minecraft.world.InteractionResult r = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
-                            player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
-                    if (!r.consumesAction() && player.opened() == null) {
-                        stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                    var store = level.store();
+                    store.beginPlacement();
+                    java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> writes;
+                    try {
+                        var result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
+                                player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+                        if (!result.consumesAction() && player.opened() == null) {
+                            stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                        }
+                    } finally {
+                        player.setShiftKeyDown(false);
+                        writes = store.endPlacement();
                     }
-                    player.setShiftKeyDown(false);
                     StringBuilder out = new StringBuilder(state(player, player.opened()));
-                    for (net.minecraft.core.BlockPos p : new net.minecraft.core.BlockPos[]{into, pos}) {
-                        net.minecraft.world.level.block.state.BlockState now = level.getBlockState(p);
-                        boolean changed = p.equals(into) ? !now.isAir() : now != stand;
-                        if (!changed || now.isAir()) {
+                    for (var write : writes.entrySet()) {
+                        var p = write.getKey();
+                        var now = level.getBlockState(p);
+                        if (now == write.getValue()) {
                             continue;
                         }
                         out.append("placed\t").append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(now.getBlock()))
-                                .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ()).append('\n');
-                        net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
+                                .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ())
+                                .append('\t').append(net.minecraft.commands.arguments.blocks.BlockStateParser.serialize(now))
+                                .append('\n');
+                        for (var box : now.getCollisionShape(level, p, net.minecraft.world.phys.shapes.CollisionContext.empty()).toAabbs()) {
+                            out.append("placedbox\t").append(box.minX).append('\t').append(box.minY)
+                                    .append('\t').append(box.minZ).append('\t').append(box.maxX)
+                                    .append('\t').append(box.maxY).append('\t').append(box.maxZ).append('\n');
+                        }
+                        var be = level.getBlockEntity(p);
                         if (be != null) {
                             out.append("placedbe\t").append(be.saveWithFullMetadata(level.registryAccess())).append('\n');
                         }
-                        break;
                     }
                     if (player.opened() == null) {
-                        // Paper's world keeps what was placed; the facade forgets it.
+                        for (var write : writes.entrySet()) {
+                            level.setBlock(write.getKey(), write.getValue(), 3);
+                        }
                         level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                         level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                         BLOCKS.remove(id);
@@ -546,7 +639,10 @@ public final class LiveProtocol {
                 Integer.parseInt(head[at + 2]));
     }
 
-    /** adopt TAB x TAB y TAB z TAB blockId, then an optional "be TAB snbt" line: a placed block starts ticking. */
+    /**
+     * adopt TAB x TAB y TAB z TAB blockId [TAB state], then an optional "be TAB snbt" line: a placed block starts
+     * ticking. The state is the block's full state text as Paper kept it (absent: the block's default state).
+     */
     private static String adopt(String[] head, String[] lines) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         net.minecraft.core.BlockPos pos = pos(head, 1);
         FacadeServerLevel level = LiveMenus.level();
@@ -557,9 +653,11 @@ public final class LiveProtocol {
         if (wanted.isAir() && !head[4].equals("minecraft:air")) {
             return "error\tunknown block " + head[4];
         }
-        if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
-            level.setBlock(pos, wanted, 3);
+        net.minecraft.world.level.block.state.BlockState kept = placedStateOf(head.length > 5 ? head[5] : null, wanted.getBlock());
+        if (kept != null) {
+            wanted = kept;
         }
+        setPlaced(level, pos, wanted, kept != null);
         for (int i = 1; i < lines.length; i++) {
             if (lines[i].startsWith("be\t")) {
                 loadKept(level, pos, lines[i].substring(3));
@@ -718,6 +816,34 @@ public final class LiveProtocol {
         net.minecraft.world.level.block.state.BlockState ref = blockState(head[2]);
         return "digspeed\t" + held.getDestroySpeed(mod) + "\t" + (held.isCorrectToolForDrops(mod) ? 1 : 0) + "\t"
                 + refHeld.getDestroySpeed(ref) + "\n";
+    }
+
+    /**
+     * blockat TAB x TAB y TAB z: "state TAB ns:id[k=v,...]" when the facade holds a state at the position, else "none".
+     */
+    private static String blockAt(String[] head) {
+        net.minecraft.world.level.block.state.BlockState held = LiveMenus.level().store().heldStateAt(pos(head, 1));
+        return held == null ? "none\n" : "state\t" + BlockStates.format(held) + "\n";
+    }
+
+    /** The state {@code text} names when its block is {@code block}, else null (the block's default then). */
+    private static net.minecraft.world.level.block.state.BlockState placedStateOf(String text,
+            net.minecraft.world.level.block.Block block) {
+        net.minecraft.world.level.block.state.BlockState parsed = BlockStates.parse(text);
+        return parsed == null || parsed.getBlock() != block ? null : parsed;
+    }
+
+    /**
+     * Puts a placed block's state into the facade: when the block differs, or when a kept state is to be
+     * set over the one there (Paper's kept state is the placed one). Without a kept state an existing
+     * state of the same block is left as it is.
+     */
+    private static void setPlaced(FacadeServerLevel level, net.minecraft.core.BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState wanted, boolean kept) {
+        net.minecraft.world.level.block.state.BlockState now = level.getBlockState(pos);
+        if (now.getBlock() != wanted.getBlock() || (kept && now != wanted)) {
+            level.setBlock(pos, wanted, 3);
+        }
     }
 
     /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */

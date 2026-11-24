@@ -290,7 +290,8 @@ public final class LayerServerHost {
         if (STARTED.get() || STOPPING.get()) {
             return;
         }
-        Path root = Path.of(System.getProperty("user.dir"), SERVER_DIR);
+        boolean normalWorld = Boolean.getBoolean("cim.layerServer.normalWorld");
+        Path root = Path.of(System.getProperty("user.dir"), normalWorld ? SERVER_DIR + "-normal" : SERVER_DIR);
         Files.createDirectories(root.resolve("mods"));
         try {
             System.out.println(LOG + " about-to-start (dir=" + root + ")");
@@ -298,8 +299,8 @@ public final class LayerServerHost {
             // Main: properties + eula (the layer-owned copies, written once)
             writeOnce(root.resolve("server.properties"), """
                     level-name=layer-world
-                    level-type=minecraft\\:flat
-                    generate-structures=false
+                    level-type=minecraft\\:%s
+                    generate-structures=%s
                     online-mode=false
                     server-port=0
                     max-tick-time=-1
@@ -307,7 +308,7 @@ public final class LayerServerHost {
                     enable-query=false
                     enable-rcon=false
                     enable-command-block=false
-                    """);
+                    """.formatted(normalWorld ? "normal" : "flat", normalWorld));
             writeOnce(root.resolve("eula.txt"), "eula=true\n");
 
             Class<?> settingsCls = Class.forName(DEDICATED_SETTINGS);
@@ -470,8 +471,8 @@ public final class LayerServerHost {
      * Main's world-data supplier, BOTH branches: an existing level dir
      * re-reads its level.dat through the native
      * {@code getLevelDataAndDimensions} path (the second boot must resume
-     * that world, never overwrite it); a fresh dir creates the new superflat
-     * world through the properties.
+     * that world, never overwrite it); a fresh dir uses the world preset from
+     * the layer's dedicated server properties.
      */
     private static Object worldDataFor(Object properties, Object levelTag,
                                        Object context) throws Exception {
