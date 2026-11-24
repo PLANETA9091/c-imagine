@@ -625,6 +625,7 @@ class TruthStack(Stack):
 
 
 # ------------------------------------------------------------------ OURS
+_ENCH_LEVELS_RE = re.compile(r"stored_enchantments=\{levels:\{([^{}]*)\}\}")
 MODDED_NS_RE = re.compile(r"^(create|biomesoplenty|dynamictrees|combat_roll|cimtest):")
 
 
@@ -668,6 +669,10 @@ class OursStack(Stack):
 
     # ---- /cim translation (mod ids only). Vanilla commands pass through unchanged.
     def translate(self, text):
+        # Scenarios are written in 1.21.1 data-component syntax (stored_enchantments={levels:{...}}).
+        # Paper 26.3 rejects the 'levels' wrapper ("Malformed minecraft:stored_enchantments ... levels")
+        # and takes the bare id->level map. Only the book's enchantment map changes, not the intent.
+        text = _ENCH_LEVELS_RE.sub(r"stored_enchantments={\1}", text)
         parts = text.split()
         if not parts:
             return text
@@ -954,6 +959,13 @@ class OursStack(Stack):
             slots[idx] = (norm_id(s.get("item")) if cnt else None, cnt)
         carried = scr.get("carried")
         cid = norm_id(carried.get("item")) if isinstance(carried, dict) and carried.get("count") else None
+        if cid and not MODDED_NS_RE.match(cid):
+            # The cursor stack is a carrier on the client (paper) but the server holds the modded id:
+            # take it from /cim inspect inv 'cursor' when the counts agree (same rule as the slots).
+            for s in self._server_inv() or []:
+                if s["slot"] == "cursor" and s["id"] and MODDED_NS_RE.match(s["id"]) \
+                        and s["count"] == int(carried.get("count") or 0):
+                    cid = s["id"]
         return slots, cid
 
     def click_slot(self, index, mode="left", kind="inventory"):
