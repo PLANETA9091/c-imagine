@@ -1647,8 +1647,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         o.addProperty("open", v.open());
         o.add("menu_type", v.menuType() == null ? com.google.gson.JsonNull.INSTANCE
                 : new com.google.gson.JsonPrimitive(v.menuType()));
-        o.add("menu_class", v.menuClass() == null ? com.google.gson.JsonNull.INSTANCE
-                : new com.google.gson.JsonPrimitive(v.menuClass()));
+        // The simple class name (ToolboxMenu), as the spec and the runner's notes use it.
+        String cls = v.menuClass() == null ? null
+                : v.menuClass().substring(Math.max(v.menuClass().lastIndexOf('.'), v.menuClass().lastIndexOf('$')) + 1);
+        o.add("menu_class", cls == null ? com.google.gson.JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(cls));
         o.addProperty("screen", v.screen());
         o.add("title", v.title() == null ? com.google.gson.JsonNull.INSTANCE
                 : new com.google.gson.JsonPrimitive(v.title()));
