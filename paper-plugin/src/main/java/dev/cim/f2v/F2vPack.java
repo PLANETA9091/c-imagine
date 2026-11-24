@@ -1745,6 +1745,230 @@ public final class F2vPack {
         return null;
     }
 
+    /** Blockstate visual kinds (per-state visuals, S1). */
+    static final String KIND_SINGLE = "single";
+    static final String KIND_ROTATION = "rotation";
+    static final String KIND_MULTI = "multi";
+    static final String KIND_MULTIPART = "multipart";
+    static final String KIND_NONE = "none";
+
+    /**
+     * One look entry of a blockstate. For a variants entry {@code variantKey} is the
+     * normalized property key ("" for the single key); for a multipart apply alternative it
+     * is the canonical {@code when} JSON ("" when the part is unconditional). {@code model}
+     * is {@code ns:path}; a bare model id is in the minecraft namespace, as the pack reads it.
+     */
+    record BlockstateLook(String variantKey, String model, int x, int y, boolean uvlock, int weight) {
+    }
+
+    /** The looks of one blockstate; {@code kind} is single, rotation, multi, multipart or none. */
+    record BlockstateVisuals(String kind, List<BlockstateLook> looks) {
+        /** Distinct (model, x, y, uvlock) looks: how many different renders the block can show. */
+        int lookCount() {
+            Set<String> distinct = new HashSet<>();
+            for (BlockstateLook l : looks) {
+                distinct.add(l.model() + "|" + l.x() + "|" + l.y() + "|" + l.uvlock());
+            }
+            return distinct.size();
+        }
+    }
+
+    /**
+     * The looks of a modded block, read from its blockstate JSON in the first jar that
+     * carries it. A block without a blockstate, or one that does not parse, is kind none.
+     */
+    static BlockstateVisuals resolveBlockVisuals(JarCache cache, String moddedId) throws IOException {
+        int colon = moddedId.indexOf(':');
+        if (colon <= 0) {
+            return new BlockstateVisuals(KIND_NONE, List.of());
+        }
+        byte[] bs = cache.read("assets/" + moddedId.substring(0, colon) + "/blockstates/"
+                + moddedId.substring(colon + 1) + ".json");
+        return bs == null ? new BlockstateVisuals(KIND_NONE, List.of())
+                : parseBlockstateVisuals(new String(bs, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Parses a blockstate JSON into its looks and classifies it. A {@code variants} object
+     * wins over {@code multipart}, as in the vanilla loader. Pure: no jars, no server classes.
+     */
+    static BlockstateVisuals parseBlockstateVisuals(String json) {
+        try {
+            JsonObject obj = JsonParser.parseString(json).getAsJsonObject();
+            List<BlockstateLook> looks = new ArrayList<>();
+            if (obj.has("variants") && obj.get("variants").isJsonObject()) {
+                // keys normalized (props sorted) and merged, then sorted: deterministic order
+                TreeMap<String, List<JsonElement>> byKey = new TreeMap<>();
+                for (Map.Entry<String, JsonElement> v : obj.getAsJsonObject("variants").entrySet()) {
+                    byKey.computeIfAbsent(normalizeVariantKey(v.getKey()), k -> new ArrayList<>())
+                            .addAll(alternatives(v.getValue()));
+                }
+                for (Map.Entry<String, List<JsonElement>> k : byKey.entrySet()) {
+                    for (JsonElement e : k.getValue()) {
+                        BlockstateLook look = look(k.getKey(), e);
+                        if (look != null) {
+                            looks.add(look);
+                        }
+                    }
+                }
+                return new BlockstateVisuals(variantKind(looks), looks);
+            }
+            if (obj.has("multipart") && obj.get("multipart").isJsonArray()) {
+                for (JsonElement p : obj.getAsJsonArray("multipart")) {
+                    if (!p.isJsonObject() || !p.getAsJsonObject().has("apply")) {
+                        continue;
+                    }
+                    JsonObject part = p.getAsJsonObject();
+                    String when = part.has("when") ? canonicalJson(part.get("when")) : "";
+                    for (JsonElement e : alternatives(part.get("apply"))) {
+                        BlockstateLook look = look(when, e);
+                        if (look != null) {
+                            looks.add(look);
+                        }
+                    }
+                }
+                return new BlockstateVisuals(looks.isEmpty() ? KIND_NONE : KIND_MULTIPART, looks);
+            }
+            return new BlockstateVisuals(KIND_NONE, List.of());
+        } catch (RuntimeException e) {
+            return new BlockstateVisuals(KIND_NONE, List.of()); // malformed JSON or wrong shape
+        }
+    }
+
+    /** single: one model, one x/y; rotation: one model, several x/y; multi: several models. */
+    private static String variantKind(List<BlockstateLook> looks) {
+        if (looks.isEmpty()) {
+            return KIND_NONE;
+        }
+        Set<String> models = new HashSet<>();
+        Set<String> rotations = new HashSet<>();
+        for (BlockstateLook l : looks) {
+            models.add(l.model());
+            rotations.add(l.x() + "," + l.y());
+        }
+        if (models.size() > 1) {
+            return KIND_MULTI;
+        }
+        return rotations.size() > 1 ? KIND_ROTATION : KIND_SINGLE;
+    }
+
+    /** Property key with its {@code k=v} pairs sorted; "" stays "" (the single key). */
+    static String normalizeVariantKey(String key) {
+        if (key.isEmpty()) {
+            return "";
+        }
+        List<String> props = new ArrayList<>(List.of(key.split(",")));
+        Collections.sort(props);
+        return String.join(",", props);
+    }
+
+    /** A variant value or multipart apply: one object, or an array of weighted alternatives. */
+    private static List<JsonElement> alternatives(JsonElement e) {
+        List<JsonElement> out = new ArrayList<>();
+        if (e == null) {
+            return out;
+        }
+        if (e.isJsonArray()) {
+            e.getAsJsonArray().forEach(out::add);
+        } else {
+            out.add(e);
+        }
+        return out;
+    }
+
+    private static BlockstateLook look(String variantKey, JsonElement e) {
+        if (!e.isJsonObject()) {
+            return null;
+        }
+        JsonObject o = e.getAsJsonObject();
+        String model = modelOf(o);
+        if (model == null) {
+            return null;
+        }
+        return new BlockstateLook(variantKey, model.indexOf(':') < 0 ? "minecraft:" + model : model,
+                intField(o, "x", 0), intField(o, "y", 0), boolField(o, "uvlock"), intField(o, "weight", 1));
+    }
+
+    private static int intField(JsonObject o, String name, int dflt) {
+        JsonElement v = o.get(name);
+        return v != null && v.isJsonPrimitive() && v.getAsJsonPrimitive().isNumber() ? v.getAsInt() : dflt;
+    }
+
+    private static boolean boolField(JsonObject o, String name) {
+        JsonElement v = o.get(name);
+        return v != null && v.isJsonPrimitive() && v.getAsBoolean();
+    }
+
+    /** Deterministic JSON: object keys sorted, arrays in author order, no whitespace. */
+    static String canonicalJson(JsonElement e) {
+        if (e == null || e.isJsonNull()) {
+            return "null";
+        }
+        if (e.isJsonObject()) {
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<String, JsonElement> m : new TreeMap<>(e.getAsJsonObject().asMap()).entrySet()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append(jsonString(m.getKey())).append(':').append(canonicalJson(m.getValue()));
+            }
+            return sb.append('}').toString();
+        }
+        if (e.isJsonArray()) {
+            StringBuilder sb = new StringBuilder("[");
+            boolean first = true;
+            for (JsonElement x : e.getAsJsonArray()) {
+                if (!first) {
+                    sb.append(',');
+                }
+                first = false;
+                sb.append(canonicalJson(x));
+            }
+            return sb.append(']').toString();
+        }
+        return e.getAsJsonPrimitive().isString() ? jsonString(e.getAsString()) : e.getAsJsonPrimitive().toString();
+    }
+
+    private static String jsonString(String s) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\t' -> sb.append("\\t");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
+    }
+
+    /** The per-look TSV ({@link #BLOCK_VARIANTS}); one row per look, blocks in id order. */
+    static final String BLOCK_VARIANTS = "visual-block-variants.tsv";
+    static final String BLOCK_VARIANTS_HEADER = "block_id\tkind\tvariant_key\tmodel\tx\ty\tuvlock\n";
+
+    static String blockVariantsText(Map<String, BlockstateVisuals> byBlock) {
+        StringBuilder sb = new StringBuilder(BLOCK_VARIANTS_HEADER);
+        for (Map.Entry<String, BlockstateVisuals> b : new TreeMap<>(byBlock).entrySet()) {
+            for (BlockstateLook l : b.getValue().looks()) {
+                sb.append(b.getKey()).append('\t').append(b.getValue().kind()).append('\t')
+                        .append(l.variantKey()).append('\t').append(l.model()).append('\t')
+                        .append(l.x()).append('\t').append(l.y()).append('\t')
+                        .append(l.uvlock() ? "true" : "false").append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
     /**
      * Read {@code visual-equipment.tsv}: {@code assetId<TAB>layer1Path[
      * <TAB>layer2Path]} where the paths are relative to {@code assets/<ns>/}
@@ -2634,6 +2858,15 @@ public final class F2vPack {
         Files.writeString(outDir.resolve("pack.sha1"), sha1 + "\n", StandardCharsets.UTF_8);
         writeResolvedManifest(outDir.resolve("visual-items.resolved.tsv"), rows);
         writeIfChanged(outDir.resolve(ALLOCATED_ITEMS), allocatedText(allocatedIds));
+        // per-state visuals (S1): every modded block's blockstate looks, one TSV row per look.
+        // Read-only over the jars and outside the zip, so the pack sha1 does not move.
+        try (JarCache lookJars = new JarCache(jars)) {
+            Map<String, BlockstateVisuals> blockLooks = new TreeMap<>();
+            for (String id : discoverBlockIds(jars)) {
+                blockLooks.put(id, resolveBlockVisuals(lookJars, id));
+            }
+            writeIfChanged(outDir.resolve(BLOCK_VARIANTS), blockVariantsText(blockLooks));
+        }
         // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
         // (sprite, context, uses) — the texture-fidelity audit's named
         // backlog, written next to the manifest and summarized in the
@@ -5036,6 +5269,7 @@ public final class F2vPack {
         placeholderLedgerSelftest(failures);
         freshOutputSelftest(failures);
         exactFaceTileSelftest(failures);
+        blockVariantsSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -5045,6 +5279,91 @@ public final class F2vPack {
             System.out.println("  fail: " + f);
         }
         return false;
+    }
+
+    /** Per-state visuals (S1): blockstate looks, classification and the look TSV. Pure JSON, no jars. */
+    private static void blockVariantsSelftest(List<String> failures) {
+        // rotation: one model, axis=x/y/z with x/y rotations (keys come back sorted)
+        BlockstateVisuals rot = parseBlockstateVisuals("{\"variants\":{"
+                + "\"axis=y\":{\"model\":\"fakemod:block/pillar\"},"
+                + "\"axis=x\":{\"model\":\"fakemod:block/pillar\",\"x\":90,\"y\":90},"
+                + "\"axis=z\":{\"model\":\"fakemod:block/pillar\",\"x\":90}}}");
+        expect(failures, rot.kind().equals(KIND_ROTATION), "variants rotation: kind " + rot.kind());
+        expect(failures, rot.lookCount() == 3, "variants rotation: 3 looks, got " + rot.lookCount());
+        expect(failures, rot.looks().size() == 3
+                && rot.looks().get(0).variantKey().equals("axis=x") && rot.looks().get(0).x() == 90
+                && rot.looks().get(0).y() == 90 && !rot.looks().get(0).uvlock()
+                && rot.looks().get(1).variantKey().equals("axis=y") && rot.looks().get(1).x() == 0
+                && rot.looks().get(1).y() == 0
+                && rot.looks().get(2).variantKey().equals("axis=z") && rot.looks().get(2).x() == 90
+                && rot.looks().get(2).y() == 0
+                && rot.looks().get(2).model().equals("fakemod:block/pillar"),
+                "variants rotation: rows in key order with x/y");
+
+        // multi: several models; a weighted array alternative; props sorted in the key
+        BlockstateVisuals multi = parseBlockstateVisuals("{\"variants\":{"
+                + "\"facing=north\":[{\"model\":\"fakemod:block/a\"},{\"model\":\"fakemod:block/b\",\"weight\":2}],"
+                + "\"half=top,facing=east\":{\"model\":\"fakemod:block/c\",\"y\":90,\"uvlock\":true}}}");
+        expect(failures, multi.kind().equals(KIND_MULTI), "variants multi: kind " + multi.kind());
+        expect(failures, multi.lookCount() == 3, "variants multi: 3 looks, got " + multi.lookCount());
+        expect(failures, multi.looks().size() == 3
+                && multi.looks().get(0).variantKey().equals("facing=east,half=top")
+                && multi.looks().get(0).model().equals("fakemod:block/c") && multi.looks().get(0).y() == 90
+                && multi.looks().get(0).uvlock()
+                && multi.looks().get(1).variantKey().equals("facing=north")
+                && multi.looks().get(1).model().equals("fakemod:block/a")
+                && multi.looks().get(2).model().equals("fakemod:block/b")
+                && multi.looks().get(2).weight() == 2,
+                "variants multi: normalized keys, array alternatives, weight");
+
+        // multipart with OR / AND conditions, an array apply, and a multi-key when
+        BlockstateVisuals mp = parseBlockstateVisuals("{\"multipart\":["
+                + "{\"apply\":{\"model\":\"fakemod:block/post\"}},"
+                + "{\"when\":{\"OR\":[{\"north\":\"true\"},{\"south\":\"true\"}]},"
+                + "\"apply\":{\"model\":\"fakemod:block/side\",\"uvlock\":true}},"
+                + "{\"when\":{\"AND\":[{\"east\":\"true\"},{\"west\":\"false\"}]},"
+                + "\"apply\":[{\"model\":\"fakemod:block/arm\",\"y\":90},{\"model\":\"fakemod:block/arm\",\"y\":270}]},"
+                + "{\"when\":{\"up\":\"false\",\"down\":\"true\"},\"apply\":{\"model\":\"fakemod:block/x\"}}]}");
+        expect(failures, mp.kind().equals(KIND_MULTIPART), "multipart: kind " + mp.kind());
+        expect(failures, mp.lookCount() == 5, "multipart: 5 distinct looks, got " + mp.lookCount());
+        expect(failures, mp.looks().size() == 5
+                && mp.looks().get(0).variantKey().isEmpty()
+                && mp.looks().get(1).variantKey().equals("{\"OR\":[{\"north\":\"true\"},{\"south\":\"true\"}]}")
+                && mp.looks().get(1).uvlock()
+                && mp.looks().get(2).variantKey().equals("{\"AND\":[{\"east\":\"true\"},{\"west\":\"false\"}]}")
+                && mp.looks().get(2).y() == 90 && mp.looks().get(3).y() == 270
+                && mp.looks().get(3).variantKey().equals(mp.looks().get(2).variantKey())
+                && mp.looks().get(4).variantKey().equals("{\"down\":\"true\",\"up\":\"false\"}"),
+                "multipart: when canonical JSON (OR/AND, sorted keys), array apply rows");
+
+        // single: one model, one x/y, several keys
+        BlockstateVisuals single = parseBlockstateVisuals("{\"variants\":{"
+                + "\"facing=north\":{\"model\":\"fakemod:block/r\"},"
+                + "\"facing=south\":{\"model\":\"fakemod:block/r\"}}}");
+        expect(failures, single.kind().equals(KIND_SINGLE) && single.lookCount() == 1
+                && single.looks().size() == 2, "variants single: one look over two keys");
+
+        // none: no variants or multipart, or unparseable
+        expect(failures, parseBlockstateVisuals("{\"foo\":1}").kind().equals(KIND_NONE)
+                && parseBlockstateVisuals("not json").kind().equals(KIND_NONE)
+                && parseBlockstateVisuals("not json").looks().isEmpty(), "none: no looks");
+
+        // the TSV: header, row shape, multipart when-key, and order-independence of the input map
+        Map<String, BlockstateVisuals> byBlock = new TreeMap<>(Map.of(
+                "fakemod:pillar", rot, "fakemod:rock", single, "fakemod:mp", mp));
+        String text = blockVariantsText(byBlock);
+        expect(failures, text.startsWith(BLOCK_VARIANTS_HEADER), "variant tsv: header");
+        expect(failures, text.contains("fakemod:pillar\trotation\taxis=x\tfakemod:block/pillar\t90\t90\tfalse\n"),
+                "variant tsv: rotation row");
+        expect(failures, text.contains("fakemod:rock\tsingle\tfacing=north\tfakemod:block/r\t0\t0\tfalse\n"),
+                "variant tsv: single row");
+        expect(failures, text.contains("fakemod:mp\tmultipart\t{\"OR\":[{\"north\":\"true\"},{\"south\":\"true\"}]}"
+                + "\tfakemod:block/side\t0\t0\ttrue\n"), "variant tsv: multipart OR row");
+        Map<String, BlockstateVisuals> reversed = new TreeMap<>();
+        reversed.put("fakemod:mp", mp);
+        reversed.put("fakemod:rock", single);
+        reversed.put("fakemod:pillar", rot);
+        expect(failures, blockVariantsText(reversed).equals(text), "variant tsv: deterministic");
     }
 
     private static void expect(List<String> failures, boolean cond, String what) {
