@@ -1,0 +1,69 @@
+{
+ "id": "cr-biomesoplenty-mahogany_pressure_plate",
+ "notes": "recipe biomesoplenty:mahogany_pressure_plate (shaped, result biomesoplenty:mahogany_pressure_plate x1). Ingredients from the mod jar recipe key: biomesoplenty:mahogany_planks x2 (cells [0, 1]). Give order = hotbar order (hotbar:0). Observe screen shows the result slot.",
+ "setup": [
+  "fill 308 120 310 308 120 310 minecraft:stone",
+  "setblock 308 121 310 minecraft:air",
+  "give {player} biomesoplenty:mahogany_planks 2",
+  "give {player} minecraft:crafting_table 1"
+ ],
+ "steps": [
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "item": "minecraft:crafting_table"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:0",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:1",
+   "mode": "right"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "close"
+  }
+ ]
+}

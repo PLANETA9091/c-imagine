@@ -1,0 +1,74 @@
+{
+ "id": "pb-biomesoplenty-pine_planks",
+ "notes": "census biomesoplenty:pine_planks: loot=self, category=decoration, tool wooden_axe (requires_tool=no_tier_tag). Break from 3 blocks, then collect the drops.",
+ "setup": [
+  "fill 308 120 311 308 120 311 minecraft:stone",
+  "setblock 308 121 311 minecraft:air",
+  "give {player} biomesoplenty:pine_planks 1",
+  "give {player} minecraft:wooden_axe 1"
+ ],
+ "steps": [
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "select",
+   "item": "biomesoplenty:pine_planks"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:wooden_axe"
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    311
+   ],
+   "timeout": 20
+  },
+  {
+   "do": "collect",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

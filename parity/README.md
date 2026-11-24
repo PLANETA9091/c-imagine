@@ -142,3 +142,24 @@ a furnace with a modded input. Open items (`todo` fields):
 - Combat Roll roll action (39): needs a key-press command in both adapters.
 
 Not yet run on the stands: all of 23-40 were written and checked for format only.
+
+## Census scenarios (generated) and batch mode
+
+`gen_census.py` makes parity scenarios from the census (`blocks.csv`, `items.csv`, `menus.csv`, `recipes.csv`)
+into `scenarios/census/<family>/<id>.json`: `place-break` (every placeable block item, `pb-*`), `interact`
+(every block opener in `menus.csv`, `ia-*`), `item-use` (food, `fu-*`; tools are skipped, see `_skipped.csv`),
+`craft` (shaped recipes, sampled per mod, `cr-*`). Shaped recipe keys come from the mod jars (the census keeps
+no key mapping). Rules, skips and the reasons are in `_skipped.csv`. Each scenario uses the runner's reset
+prelude and refills its own target cell.
+
+```bash
+python3 -I gen_census.py --census ~/hud-work/horizon-play/census --mods ~/hud-work/horizon-play/mods   # rewrites scenarios/census
+python3 -I test_gen_census.py      # schema check against run.py (ast), synthetic + real census, batch mode on fake stacks
+python3 -I all.py --dir scenarios/census/place-break --shard 2/8 --no-shots --csv results/pb-2of8.csv --resume
+```
+
+`all.py --dir DIR` runs every `*.json` under DIR (recursive); `--shard i/n` runs slice i of n (no overlap);
+`--csv` appends one row per scenario (`scenario, verdict, first_diff_step, reason`); `--resume` skips rows
+already in the CSV. Infrastructure problems are `ERROR`, never `DIFFERENT`: run.py failing or timing out
+(1800 s), a failed setup command (heal, wait-ready, verify-empty, give), or a step error that reads like a
+connection failure. `diff.py --json PATH` writes the verdict and the first differing step (used by `all.py`).

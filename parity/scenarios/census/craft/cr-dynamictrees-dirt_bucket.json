@@ -1,0 +1,76 @@
+{
+ "id": "cr-dynamictrees-dirt_bucket",
+ "notes": "recipe dynamictrees:dirt_bucket (shaped, result dynamictrees:dirt_bucket x1). Ingredients from the mod jar recipe key: minecraft:dirt x1 (cells [0]), minecraft:bucket x1 (cells [3]). Give order = hotbar order (hotbar:0,1). Observe screen shows the result slot.",
+ "setup": [
+  "fill 308 120 310 308 120 310 minecraft:stone",
+  "setblock 308 121 310 minecraft:air",
+  "give {player} minecraft:dirt 1",
+  "give {player} minecraft:bucket 1",
+  "give {player} minecraft:crafting_table 1"
+ ],
+ "steps": [
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "item": "minecraft:crafting_table"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:0",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:1",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:3",
+   "mode": "right"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "close"
+  }
+ ]
+}

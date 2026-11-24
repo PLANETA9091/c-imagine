@@ -1,0 +1,55 @@
+{
+ "id": "ia-toolbox--create-lime_toolbox",
+ "notes": "menus.csv menu 'toolbox' (confidence high, name match; colors from registry). Opener block create:lime_toolbox placed and right-clicked.",
+ "setup": [
+  "fill 308 120 310 308 120 310 minecraft:stone",
+  "setblock 308 121 310 minecraft:air",
+  "give {player} create:lime_toolbox 1"
+ ],
+ "steps": [
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "select",
+   "item": "create:lime_toolbox"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "close"
+  }
+ ]
+}

@@ -1,0 +1,74 @@
+{
+ "id": "pb-create-waxed_exposed_copper_tile_slab",
+ "notes": "census create:waxed_exposed_copper_tile_slab: loot=self, category=decoration, tool stone_pickaxe (requires_tool=yes:stone). Break from 3 blocks, then collect the drops.",
+ "setup": [
+  "fill 308 120 311 308 120 311 minecraft:stone",
+  "setblock 308 121 311 minecraft:air",
+  "give {player} create:waxed_exposed_copper_tile_slab 1",
+  "give {player} minecraft:stone_pickaxe 1"
+ ],
+ "steps": [
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "select",
+   "item": "create:waxed_exposed_copper_tile_slab"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:stone_pickaxe"
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    311
+   ],
+   "timeout": 20
+  },
+  {
+   "do": "collect",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

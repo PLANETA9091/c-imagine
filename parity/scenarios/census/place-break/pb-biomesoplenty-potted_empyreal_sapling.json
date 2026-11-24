@@ -1,0 +1,69 @@
+{
+ "id": "pb-biomesoplenty-potted_empyreal_sapling",
+ "notes": "census biomesoplenty:potted_empyreal_sapling: loot=minecraft:flower_pot+biomesoplenty:empyreal_sapling, category=plant, bare hand (tool_tag=none). Break from 3 blocks, then collect the drops.",
+ "setup": [
+  "fill 308 120 311 308 120 311 minecraft:stone",
+  "setblock 308 121 311 minecraft:air",
+  "give {player} biomesoplenty:potted_empyreal_sapling 1"
+ ],
+ "steps": [
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "select",
+   "item": "biomesoplenty:potted_empyreal_sapling"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    311
+   ],
+   "timeout": 20
+  },
+  {
+   "do": "collect",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

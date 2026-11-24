@@ -1,0 +1,93 @@
+{
+ "id": "cr-create-polished_cut_asurine_stairs",
+ "notes": "recipe create:polished_cut_asurine_stairs (shaped, result create:polished_cut_asurine_stairs x4). Ingredients from the mod jar recipe key: create:polished_cut_asurine x6 (cells [0, 3, 4, 6, 7, 8]). Give order = hotbar order (hotbar:0). Observe screen shows the result slot.",
+ "setup": [
+  "fill 308 120 310 308 120 310 minecraft:stone",
+  "setblock 308 121 310 minecraft:air",
+  "give {player} create:polished_cut_asurine 6",
+  "give {player} minecraft:crafting_table 1"
+ ],
+ "steps": [
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "item": "minecraft:crafting_table"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:0",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:3",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:4",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:6",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:7",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:8",
+   "mode": "right"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "close"
+  }
+ ]
+}

@@ -31,6 +31,13 @@ def describe(step):
     return "%s %s" % (s.get("do", "?"), " ".join(str(x) for x in [s.get("pos", s.get("item", s.get("index", "")))] if x != ""))
 
 
+def _side(rec):
+    """The compared value of one side (its result, else its error), for the JSON summary."""
+    if rec is None:
+        return None
+    return rec.get("result") if rec.get("result") is not None else rec.get("error")
+
+
 def compare(t, o):
     if t is None or o is None:
         return "missing", "step absent on %s" % ("truth" if t is None else "ours")
@@ -54,6 +61,7 @@ def main(argv=None):
     ap.add_argument("truth")
     ap.add_argument("ours")
     ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--json", default=None, help="also write {verdict, counts, first_diff} as JSON")
     args = ap.parse_args(argv)
     with open(args.truth, encoding="utf-8") as f:
         T = json.load(f)
@@ -65,6 +73,7 @@ def main(argv=None):
     counts = {"equal": 0, "different": 0, "missing": 0, "error": 0}
     rows = []
     body = []
+    first = None
     for i in range(n):
         t = ts[i] if i < len(ts) else None
         o = os_[i] if i < len(os_) else None
@@ -72,6 +81,11 @@ def main(argv=None):
         counts[verdict] += 1
         label = describe(t or o or {})
         rows.append("| %d | %s | %s |" % (i, label, verdict + (" (" + why + ")" if why else "")))
+        if verdict != "equal" and first is None:
+            first = {
+                "i": i, "step": label, "verdict": verdict, "why": why,
+                "truth": canon(_side(t)), "ours": canon(_side(o)),
+            }
         if verdict != "equal":
             body.append("### step %d: %s, %s" % (i, label, verdict))
             if why:
@@ -111,6 +125,16 @@ def main(argv=None):
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(text)
+    if args.json:
+        summary = {
+            "scenario": T.get("scenario", "?"),
+            "verdict": verdict_word,
+            "counts": counts,
+            "first_diff": first,
+        }
+        with open(args.json, "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2, sort_keys=True, ensure_ascii=False)
+            f.write("\n")
     print("%s: equal %d different %d missing %d error %d -> %s" % (
         verdict_word, counts["equal"], counts["different"], counts["missing"], counts["error"], args.out))
     return code

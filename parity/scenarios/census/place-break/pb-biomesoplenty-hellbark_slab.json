@@ -1,0 +1,69 @@
+{
+ "id": "pb-biomesoplenty-hellbark_slab",
+ "notes": "census biomesoplenty:hellbark_slab: loot=self, category=decoration, bare hand (tool_tag=none). Break from 3 blocks, then collect the drops.",
+ "setup": [
+  "fill 308 120 311 308 120 311 minecraft:stone",
+  "setblock 308 121 311 minecraft:air",
+  "give {player} biomesoplenty:hellbark_slab 1"
+ ],
+ "steps": [
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "select",
+   "item": "biomesoplenty:hellbark_slab"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    311
+   ],
+   "timeout": 20
+  },
+  {
+   "do": "collect",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}
