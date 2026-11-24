@@ -4,6 +4,11 @@
 Usage:
   python3 -I all.py [--only SUBSTR ...] [--stacks truth,ours] [--no-shots]
   python3 -I all.py --dir scenarios/census/place-break --shard 2/8 --no-shots --csv results/pb-2of8.csv [--resume]
+  python3 -I all.py --dir scenarios/census/place-break --lanes 4 --no-shots [--lanes-file lanes.json]
+
+--lanes K: K lane processes (lanes.json entries 0..K-1, see lanes.py) share one work queue of the
+  scenarios. Each process runs its scenarios as its own lane (its OURS player and hz slot, its TRUTH player
+  and port, its area origin). The main process writes the CSV and SUMMARY as results arrive.
 
 Default (no --dir): every scenarios/*.json (top level), as before.
 --dir DIR: every *.json under DIR, recursively (files starting with '_' are skipped), sorted by path.
@@ -28,6 +33,9 @@ import re
 import subprocess
 import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import lanes  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.environ.get("PARITY_RESULTS", os.path.join(HERE, "results"))  # results/ is not committed
@@ -87,14 +95,16 @@ def short(text, n=90):
     return text if len(text) <= n else text[: n - 3] + "..."
 
 
-def run_stack(path, sid, d, st, shots_dir):
-    """-> (output path or None, infra reason)."""
+def run_stack(path, sid, d, st, shots_dir, lane=None, lanes_file=None):
+    """-> (output path or None, infra reason). lane: lane id from lanes.json, or None for the single stand."""
     out = os.path.join(d, st + ".json")
     if os.path.exists(out):
         os.remove(out)
     cmd = [os.path.join(HERE, "run.py"), "--stack", st, path, "-o", out]
     if shots_dir:
         cmd += ["--shots", shots_dir]
+    if lane is not None:
+        cmd += ["--lane", str(lane), "--lanes-file", lanes_file or lanes.DEFAULT_LANES_FILE]
     t0 = time.time()
     try:
         p = run(cmd)
@@ -129,10 +139,10 @@ def diff_pair(d, truth, ours):
     return info["verdict"], detail, str(first["i"]), reason
 
 
-def scenario_row(path, sid, d, stacks, shots_dir):
+def scenario_row(path, sid, d, stacks, shots_dir, lane=None, lanes_file=None):
     outs = {}
     for st in stacks:
-        out, why = run_stack(path, sid, d, st, shots_dir)
+        out, why = run_stack(path, sid, d, st, shots_dir, lane, lanes_file)
         if why:
             return {"scenario": sid, "verdict": "ERROR", "first_diff_step": "", "reason": why, "detail": ""}
         outs[st] = out
@@ -195,6 +205,9 @@ def main(argv=None):
     ap.add_argument("--shard", type=parse_shard, default=None, help="i/n: run slice i of n")
     ap.add_argument("--csv", default=None, help="CSV report path (default: results/REPORT.csv)")
     ap.add_argument("--resume", action="store_true", help="skip scenarios already in the CSV report")
+    ap.add_argument("--lanes", type=int, default=None, metavar="K",
+                    help="run K lane processes in parallel on one shared queue (lanes.json entries 0..K-1)")
+    ap.add_argument("--lanes-file", default=lanes.DEFAULT_LANES_FILE)
     args = ap.parse_args(argv)
     stacks = args.stacks.split(",")
 
@@ -205,26 +218,69 @@ def main(argv=None):
         paths = shard_items(paths, args.shard[0], args.shard[1])
     csv_path = args.csv or os.path.join(RESULTS, "REPORT.csv")
     done = load_done(csv_path) if args.resume else set()
+    lane_list = lanes.first_k(lanes.load_lanes(args.lanes_file), args.lanes) if args.lanes else None
     report = CsvReport(csv_path)
     suffix = "" if not args.shard else "-%dof%d" % args.shard
     rows = []
+    todo = []
+    for path in paths:
+        sid = os.path.splitext(os.path.basename(path))[0]
+        if sid in done:
+            print("skip (in report): %s" % sid, flush=True)
+            continue
+        todo.append((path, sid))
     try:
-        for path in paths:
-            sid = os.path.splitext(os.path.basename(path))[0]
-            if sid in done:
-                print("skip (in report): %s" % sid, flush=True)
-                continue
-            d = os.path.join(RESULTS, sid)
-            os.makedirs(d, exist_ok=True)
-            shots = None if args.no_shots else os.path.join(d, "shots")
-            row = scenario_row(path, sid, d, stacks, shots)
-            print("VERDICT %s %s %s" % (row["verdict"], sid, row["reason"]), flush=True)
-            report.add(row)
-            rows.append(row)
+        if lane_list:
+            run_lanes(todo, lane_list, args.lanes_file, stacks, args.no_shots, report, rows)
+            rows.sort(key=lambda r: r["scenario"])
+        else:
+            for path, sid in todo:
+                d = os.path.join(RESULTS, sid)
+                os.makedirs(d, exist_ok=True)
+                shots = None if args.no_shots else os.path.join(d, "shots")
+                row = scenario_row(path, sid, d, stacks, shots)
+                print("VERDICT %s %s %s" % (row["verdict"], sid, row["reason"]), flush=True)
+                report.add(row)
+                rows.append(row)
     finally:
         report.close()
     write_summary(rows, "SUMMARY%s.md" % suffix)
     return 0
+
+
+def _lane_work(item, lane):
+    """Pool worker body (module level for pickling): one scenario on the lane this process is pinned to."""
+    path, sid, stacks, no_shots, lanes_file = item
+    d = os.path.join(RESULTS, sid)
+    os.makedirs(d, exist_ok=True)
+    shots = None if no_shots else os.path.join(d, "shots")
+    lane_id = lane["lane"] if lane else None
+    return scenario_row(path, sid, d, stacks, shots, lane_id, lanes_file)
+
+
+def run_lanes(todo, lane_list, lanes_file, stacks, no_shots, report, rows):
+    """Run todo ([(path, sid)]) on K lane processes; the main process writes each finished row."""
+    items = [(path, sid, stacks, no_shots, lanes_file) for path, sid in todo]
+    failed = []
+
+    def on_result(res):
+        sid = res["item"][1]
+        if res["error"] is None:
+            row = res["result"]
+        else:  # a worker exception (not a run.py failure): one ERROR row, the queue goes on
+            last = res["error"].strip().splitlines()[-1]
+            row = {"scenario": sid, "verdict": "ERROR", "first_diff_step": "",
+                   "reason": "worker exception on lane %s: %s" % (res["lane"], short(last, 140)),
+                   "detail": ""}
+        print("VERDICT %s %s [lane %s] %s" % (row["verdict"], sid, res["lane"], row["reason"]), flush=True)
+        report.add(row)
+        rows.append(row)
+        if res["error"] is not None:
+            failed.append(res["error"])
+
+    lanes.run_queue(items, lane_list, _lane_work, on_result)
+    for err in failed:
+        print(err, flush=True)
 
 
 if __name__ == "__main__":

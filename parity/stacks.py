@@ -37,6 +37,29 @@ HZ_SH = os.environ.get("PARITY_HZ", os.path.join(HOME, "hud-work/horizon-play/hz
 HZ_N = os.environ.get("PARITY_HZ_N", "3")
 OURS_SRV_DIR = os.environ.get("PARITY_OURS_LOG_DIR", os.path.join(HOME, "hud-work/horizon-play/srv"))
 OURS_INSPECT_PREFIX = "CIM-INSPECT "
+#   PARITY_INSPECT_LOCK flock file that serializes '/cim inspect' across lane processes on this host
+INSPECT_LOCK = os.environ.get("PARITY_INSPECT_LOCK",
+                              os.path.join(HOME, "hud-work/horizon-play/scratch/parity-inspect.lock"))
+
+
+class inspect_lock(object):
+    """Context manager: exclusive flock on INSPECT_LOCK. No-op when fcntl is unavailable."""
+
+    def __enter__(self):
+        self.f = None
+        try:
+            import fcntl
+        except ImportError:
+            return self
+        os.makedirs(os.path.dirname(INSPECT_LOCK), exist_ok=True)
+        self.f = open(INSPECT_LOCK, "a+")
+        fcntl.flock(self.f.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        if self.f is not None:
+            self.f.close()  # closing the file releases the flock
+        return False
 
 # Canonical screen kinds. Keys are lower-cased raw names from either stack.
 SCREEN_KIND = {
@@ -486,9 +509,10 @@ class TruthStack(Stack):
     name = "truth"
     player = TRUTH_PLAYER
 
-    def __init__(self, port=TRUTH_CTL_PORT, host="127.0.0.1"):
+    def __init__(self, port=TRUTH_CTL_PORT, host="127.0.0.1", player=TRUTH_PLAYER):
         self.port = port
         self.host = host
+        self.player = player  # per lane: the truth player name (see lanes.py)
 
     def call(self, cmd, args=None, opts=None, timeout=300.0):
         req = {"cmd": cmd, "args": [str(a) for a in (args or [])], "opts": opts or {}}
@@ -678,14 +702,16 @@ class OursStack(Stack):
     name = "ours"
     player = OURS_PLAYER
 
-    def __init__(self, use_inspect=True, srv_dir=OURS_SRV_DIR):
+    def __init__(self, use_inspect=True, srv_dir=OURS_SRV_DIR, hz_n=None, player=None):
         self.use_inspect = use_inspect
         self.srv_dir = srv_dir
+        self.hz_n = str(hz_n if hz_n is not None else HZ_N)  # horizon client slot (hz.sh N), per lane
+        self.player = player or OURS_PLAYER
         self.inspect_hits = 0
         self.inspect_misses = 0
 
     def ctl(self, *args, timeout=300):
-        cmd = [HZ_SH, HZ_N, "ctl"] + [str(a) for a in args]
+        cmd = [HZ_SH, self.hz_n, "ctl"] + [str(a) for a in args]
         p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                            timeout=timeout, stdin=subprocess.DEVNULL)
         out = p.stdout.decode("utf-8", "replace").strip()
@@ -764,7 +790,15 @@ class OursStack(Stack):
         return max(logs, key=os.path.getmtime) if logs else None
 
     def inspect(self, *args, wait=8.0):
-        """Run '/cim inspect ARGS' and return the decoded CIM-INSPECT object, or None."""
+        """Run '/cim inspect ARGS' and return the decoded CIM-INSPECT object, or None.
+        Serialized across lanes (one inspect in flight at a time, see INSPECT_LOCK): every lane reads the
+        same server log, so an unlocked reply could be another lane's CIM-INSPECT line."""
+        if not self.use_inspect:
+            return None
+        with inspect_lock():
+            return self._inspect(*args, wait=wait)
+
+    def _inspect(self, *args, wait=8.0):
         if not self.use_inspect:
             return None
         log = self._newest_log()
@@ -1082,9 +1116,15 @@ class OursStack(Stack):
         return None
 
 
-def make_stack(name):
+def make_stack(name, lane=None):
+    """lane: None (the single-client stand: TruthA / Lane_B / hz slot 3 / port 25599) or a lane dict from
+    lanes.py with truth_player, truth_port, ours_player, hz_slot."""
     if name == "truth":
-        return TruthStack()
+        if lane is None:
+            return TruthStack()
+        return TruthStack(port=int(lane["truth_port"]), player=lane["truth_player"])
     if name == "ours":
-        return OursStack()
+        if lane is None:
+            return OursStack()
+        return OursStack(hz_n=lane["hz_slot"], player=lane["ours_player"])
     raise SystemExit("unknown stack: %s" % name)

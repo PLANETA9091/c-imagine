@@ -10,13 +10,16 @@ commands (with {player} substituted), then the steps. Every step writes one reco
 A failing step records "error" and the run continues.
 """
 import argparse
+import copy
 import json
 import os
+import re
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import heal  # noqa: E402
+import lanes  # noqa: E402
 import stacks  # noqa: E402
 
 PLATFORM_ORIGIN = (308, 121, 308)
@@ -35,6 +38,109 @@ RESET = [
 
 def sub(text, player):
     return text.replace("{player}", player)
+
+
+# ------------------------------------------------------------------ lane offset (the one coordinate transform)
+# A lane builds at origin (ox, oy, oz); every ABSOLUTE scenario coordinate is shifted by it. Relative
+# coordinates (~, ^) are left alone: they are measured from the executing entity, which is already in the
+# lane's area. This is the only place coordinates are rewritten. Every position-carrying key and command
+# is listed here; anything else that takes coordinates raises instead of silently building in the wrong place.
+POSITION_KEYS = ("pos", "point")  # scenario step keys holding [x, y, z]
+COORD_COMMANDS = ("setblock", "fill", "tp", "forceload")  # setup/command heads with absolute coords
+UNSUPPORTED_COMMANDS = ("clone", "summon", "execute", "place", "spreadplayers", "setworldspawn",
+                        "spawnpoint", "teleport", "particle", "playsound", "locate")
+SELECTOR_COORD_RE = re.compile(r"(?<=[\[,])([xyz])=(-?\d+(?:\.\d+)?)(?=[,\]])")
+NUM_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
+
+
+def _is_coord(token):
+    return bool(NUM_RE.match(token)) or token.startswith(("~", "^"))
+
+
+def _shift(token, delta):
+    """An absolute number token shifted by delta, keeping its int or float spelling. Relative (~ ^) and
+    non-numeric tokens are returned unchanged."""
+    if not NUM_RE.match(token):
+        return token
+    if "." not in token:
+        return str(int(token) + int(delta))
+    return repr(float(token) + delta)
+
+
+def _coord_indexes(head, tokens):
+    """-> list of (token index, axis 'x'|'y'|'z') for the absolute coordinates of a command."""
+    if head == "setblock":
+        return [(1, "x"), (2, "y"), (3, "z")]
+    if head == "fill":
+        return [(1, "x"), (2, "y"), (3, "z"), (4, "x"), (5, "y"), (6, "z")]
+    if head == "tp":
+        # tp x y z [yaw pitch] | tp target x y z [yaw pitch]; tp target destination (no coordinates) is
+        # left alone. The yaw and pitch after the coordinates are never shifted.
+        if len(tokens) >= 4 and all(_is_coord(t) for t in tokens[1:4]):
+            start = 1  # tp x y z ...
+        elif len(tokens) >= 5 and all(_is_coord(t) for t in tokens[2:5]):
+            start = 2  # tp target x y z ...
+        else:
+            return []
+        return [(start, "x"), (start + 1, "y"), (start + 2, "z")]
+    if head == "forceload":
+        # forceload add|remove x1 z1 [x2 z2] | query [x z]: x and z only (no y)
+        if len(tokens) >= 3 and tokens[1] in ("add", "remove"):
+            return [(2, "x"), (3, "z"), (4, "x"), (5, "z")]
+        if len(tokens) >= 3 and tokens[1] == "query":
+            return [(2, "x"), (3, "z")]
+        return []
+    return []
+
+
+def offset_command(text, origin):
+    """A setup/command string with its absolute coordinates shifted by origin (ox, oy, oz).
+    Also shifts x=/y=/z= inside @-selectors ('kill @e[type=item,x=308,...]'). Non-coordinate numbers
+    (effect durations, counts, distances) are never touched."""
+    ox, oy, oz = origin
+    if not (ox or oy or oz):
+        return text
+    delta = {"x": ox, "y": oy, "z": oz}
+    tokens = text.split()
+    if not tokens:
+        return text
+    head = tokens[0].lstrip("/")
+    if head in UNSUPPORTED_COMMANDS:
+        raise ValueError("lane offset does not support /%s (add it to COORD_COMMANDS with a rule)" % head)
+    for idx, axis in _coord_indexes(head, tokens):
+        if idx < len(tokens):
+            tokens[idx] = _shift(tokens[idx], delta[axis])
+    # selectors: x=, y=, z= inside [...] ('kill @e[type=item,x=308,...]'); distance= and dx= are not shifted
+    joined = SELECTOR_COORD_RE.sub(
+        lambda m: "%s=%s" % (m.group(1), _shift(m.group(2), delta[m.group(1)])), " ".join(tokens))
+    return joined
+
+
+def offset_point(value, origin, key):
+    if not isinstance(value, list) or len(value) != 3 or not all(
+            isinstance(v, (int, float)) and not isinstance(v, bool) for v in value):
+        raise ValueError("%s must be [x, y, z] numbers, got %r" % (key, value))
+    return [value[i] + origin[i] for i in range(3)]
+
+
+def offset_scenario(sc, origin):
+    """A deep copy of scenario sc with every position in its setup, command steps and POSITION_KEYS
+    shifted by the lane origin. A zero origin returns an equal copy (the legacy single-lane run)."""
+    out = copy.deepcopy(sc)
+    if not any(origin):
+        return out
+    out["setup"] = [offset_command(t, origin) for t in sc.get("setup", [])]
+    for st in out.get("steps", []):
+        for key in POSITION_KEYS:
+            if key in st:
+                st[key] = offset_point(st[key], origin, key)
+        if st.get("do") == "command":
+            st["text"] = offset_command(st["text"], origin)
+    return out
+
+
+def offset_reset(commands, origin):
+    return [offset_command(t, origin) for t in commands]
 
 
 CLEAR_TRIES = 3
@@ -173,11 +279,17 @@ def main(argv=None):
     ap.add_argument("-o", "--out", required=True)
     ap.add_argument("--shots", default=None)
     ap.add_argument("--no-reset", action="store_true")
+    ap.add_argument("--lane", type=int, default=None,
+                    help="lane id from the lane file: its player names, hz slot, truth port and area origin")
+    ap.add_argument("--lanes-file", default=lanes.DEFAULT_LANES_FILE)
     args = ap.parse_args(argv)
 
+    lane = lanes.lane_by_id(lanes.load_lanes(args.lanes_file), args.lane) if args.lane is not None else None
+    origin = tuple(lane["origin"]) if lane else (0, 0, 0)  # no lane = the single-client stand, at the origin
+
     with open(args.scenario, encoding="utf-8") as f:
-        sc = json.load(f)
-    stack = stacks.make_stack(args.stack)
+        sc = offset_scenario(json.load(f), origin)
+    stack = stacks.make_stack(args.stack, lane)
     player = stack.player
     shots_dir = None
     if args.shots:
@@ -185,6 +297,7 @@ def main(argv=None):
         os.makedirs(shots_dir, exist_ok=True)
 
     out = {"scenario": sc["id"], "stack": args.stack, "setup": [], "steps": [],
+           "lane": lane["lane"] if lane else None, "origin": list(origin), "player": player,
            "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
     t0 = time.time()
 
@@ -209,10 +322,11 @@ def main(argv=None):
             stack.wait_ready(60)
         except Exception as e:
             out["setup"].append({"cmd": "wait-ready", "ok": False, "error": str(e)})
-        for text in RESET:
+        for text in offset_reset(RESET, origin):
             cmd(sub(text, player))
         try:
-            stack.tp(*PLATFORM_ORIGIN, yaw=sc.get("yaw", 0.0), pitch=sc.get("pitch", 0.0))
+            stack.tp(*offset_point(list(PLATFORM_ORIGIN), origin, "PLATFORM_ORIGIN"),
+                     yaw=sc.get("yaw", 0.0), pitch=sc.get("pitch", 0.0))
             stack.wait(20)
             stack.wait_ready(60)  # client must hold the platform chunks before any observation
         except Exception as e:

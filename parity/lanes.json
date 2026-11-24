@@ -1,0 +1,6 @@
+[
+  {"lane": 0, "ours_player": "Lane_B", "hz_slot": 3, "truth_player": "TruthLane0", "truth_port": 25599, "origin": [0, 0, 0]},
+  {"lane": 1, "ours_player": "Lane_C", "hz_slot": 4, "truth_player": "TruthLane1", "truth_port": 25600, "origin": [64, 0, 0]},
+  {"lane": 2, "ours_player": "Lane_D", "hz_slot": 5, "truth_player": "TruthLane2", "truth_port": 25601, "origin": [128, 0, 0]},
+  {"lane": 3, "ours_player": "Lane_E", "hz_slot": 6, "truth_player": "TruthLane3", "truth_port": 25602, "origin": [192, 0, 0]}
+]

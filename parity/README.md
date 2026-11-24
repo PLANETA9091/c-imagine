@@ -35,6 +35,7 @@ All paths and ports default to the current stand layout; set these to run from a
 | `PARITY_HZ_N` | `3` | horizon client number passed to `hz.sh` (its Xvfb is `:9N`) |
 | `PARITY_OURS_LOG_DIR` | `~/hud-work/horizon-play/srv` | directory with the OURS `boot-*.log` (source of `CIM-INSPECT` lines) |
 | `PARITY_RESULTS` | `parity/results` | output directory of `all.py` (not committed) |
+| `PARITY_INSPECT_LOCK` | `~/hud-work/horizon-play/scratch/parity-inspect.lock` | flock serializing `/cim inspect` across lane processes on one host |
 
 ## Starting the stacks
 
@@ -163,3 +164,47 @@ python3 -I all.py --dir scenarios/census/place-break --shard 2/8 --no-shots --cs
 already in the CSV. Infrastructure problems are `ERROR`, never `DIFFERENT`: run.py failing or timing out
 (1800 s), a failed setup command (heal, wait-ready, verify-empty, give), or a step error that reads like a
 connection failure. `diff.py --json PATH` writes the verdict and the first differing step (used by `all.py`).
+
+## Lanes (parallel clients on the same two servers)
+
+A lane = one OURS player (a Horizon client on its own `hz.sh` slot) + one TRUTH player (a truth client on its
+own truth-ctl port) + one area origin. Lanes build in their own area, so several shards run at once on the
+same Paper and NeoForge servers. The lane table is `parity/lanes.json` (see `lanes.py` for the rules):
+
+| lane | OURS player | hz slot | TRUTH player | truth-ctl port | origin (area) |
+|---|---|---|---|---|---|
+| 0 | `Lane_B` | 3 | `TruthLane0` | 25599 | `[0,0,0]` (scenario coordinates as written) |
+| 1 | `Lane_C` | 4 | `TruthLane1` | 25600 | `[64,0,0]` |
+| 2 | `Lane_D` | 5 | `TruthLane2` | 25601 | `[128,0,0]` |
+| 3 | `Lane_E` | 6 | `TruthLane3` | 25602 | `[192,0,0]` |
+
+- `run.py --lane N` (with `--lanes-file`) runs one scenario as lane N. `offset_scenario` shifts every absolute
+  coordinate by the origin, once, in one place: setup `setblock`/`fill`/`tp`/`forceload` and selector `x=/y=/z=`,
+  step `pos` and `point` keys, and `command` step text. Relative (`~`, `^`) and non-position numbers are left alone,
+  and `clone`/`execute`/`summon`/... raise instead of building in the wrong place. Results record `lane`, `origin`, `player`.
+- `all.py --lanes K` runs K lane processes on one shared queue (`lanes.run_queue`, `imap_unordered`): a lane that
+  finishes early takes the next scenario. The main process is the only CSV writer. A worker exception becomes one
+  ERROR row. `--lanes` can be combined with `--dir`, `--shard`, `--csv` and `--resume`.
+- The default with no `--lane` is the single stand, unchanged (`TruthA`, port 25599, hz slot 3, `Lane_B`).
+- Tests (no game): `python3 -I test_lanes.py` covers the offset transform, the lane config rules, the queue and an end-to-end `--lanes 2` run on a fake `run.py`.
+
+### Truth lanes
+
+`~/hud-work/truth/start-truth-lane.sh K [nvidia|llvmpipe]` starts truth lane K: user `TruthLane<K>`, `-Dtruthctl.port=25599+K`,
+private Xvfb `:(80+K)` (hz slots use `:9N`, so lanes avoid them), own gameDir `~/hud-work/truth/lanes/K/game`
+(mods are one shared copy in `lanes/mods`, symlinked into each lane). The client heap is `-Xmx2500M`. Stop a lane with
+`kill "$(cat ~/hud-work/truth/lanes/K/client.pid)"`. The script is written but was not run in the swarm.
+
+### OURS lanes
+
+Join each extra Horizon client with its own slot and name, then run its ctl (the name is kept in that slot's `horizon-player.txt`):
+
+```bash
+~/hud-work/horizon-play/hz.sh 4 start --name Lane_C --server 127.0.0.1:25565
+~/hud-work/horizon-play/hz.sh 4 ctl click-button Proceed   # the resource-pack prompt (see LESSON in the status log)
+```
+
+The OURS server allows 8 players and the truth server 4 (`max-players` in both `server.properties`), so the truth
+side is the limit: the single stand's `TruthA` takes one truth slot, so 3 lanes at most while it is joined and 4 without it.
+The join command above is not run yet (the `--server` flag and the world choice are unverified on this stand).
+

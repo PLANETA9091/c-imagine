@@ -532,7 +532,7 @@ class TestBatch(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp(prefix="batch-test-")
-        for name in ("all.py", "diff.py"):
+        for name in ("all.py", "diff.py", "lanes.py"):  # all.py imports lanes
             shutil.copy(os.path.join(HERE, name), os.path.join(cls.tmp, name))
         with open(os.path.join(cls.tmp, "run.py"), "w", encoding="utf-8") as f:
             f.write(FAKE_RUN)
