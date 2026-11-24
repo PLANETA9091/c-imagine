@@ -7,6 +7,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.IincInsnNode;
 import org.objectweb.asm.tree.IntInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -1896,51 +1897,162 @@ public final class GuiSpriteBytecodeScanner {
         Map<String, Sprite> known = new HashMap<>(textureConstantSprites(nodes));
         known.putAll(sprites);
         sprites = withStaticAliases(nodes, known);
+        Map<String, List<ClassNode>> children = new HashMap<>();
+        for (ClassNode child : nodes.values()) {
+            if (child != null && child.superName != null) children.computeIfAbsent(child.superName, k -> new ArrayList<>()).add(child);
+        }
         for (ClassNode node : nodes.values()) {
             if (node == null || node.methods == null || !declaresGuiGraphicsMethod(node)) continue;
-            int[] window = windowSizeOf(node, sprites);
-            Map<String, Map<Integer, Sym>> seeds = helperSeeds(node, sprites, window);
-            for (MethodNode method : node.methods) {
-                if (method == null || method.instructions == null || method.desc == null
-                        || !method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
-                Map<Integer, Sym> own = seeds.getOrDefault(method.name + method.desc, Map.of());
-                for (AbstractInsnNode insn : method.instructions) {
-                    if (!(insn instanceof MethodInsnNode render) || !"render".equals(render.name)
-                            || !GUI_ELEMENT_BUILDER.equals(render.owner)
-                            || !"(Lnet/minecraft/client/gui/GuiGraphics;)V".equals(render.desc)) continue;
-                    MethodInsnNode of = guiElementSubjectCall(render);
-                    if (of == null || of.desc.contains(PARTIAL_MODEL)) continue;
-                    String item = null;
-                    FieldInsnNode registryField = registryFieldBefore(of, registry, 24);
-                    if (registryField != null) {
-                        BehaviorBytecodeScanner.RegistryRef ref = registry.get(
-                                registryField.owner + '.' + registryField.name);
-                        if (ref != null && ref.id != null) item = ref.id;
+            // The declaring class, then every subclass that inherits its render code: an abstract screen's
+            // element sits at the concrete screen's own background (AbstractFilterScreen, AbstractStationScreen).
+            List<ClassNode> targets = new ArrayList<>();
+            targets.add(node);
+            java.util.ArrayDeque<String> pending = new java.util.ArrayDeque<>(List.of(node.name));
+            java.util.HashSet<String> visited = new java.util.HashSet<>(List.of(node.name));
+            while (!pending.isEmpty()) {
+                for (ClassNode sub : children.getOrDefault(pending.poll(), List.of())) {
+                    if (visited.add(sub.name)) {
+                        targets.add(sub);
+                        pending.add(sub.name);
                     }
-                    int[] at = guiElementPosition(method, of, render, sprites, window, own);
-                    int scale = guiElementScale(of, render);
-                    var predicate = ClientSurfaceScanner.screenDrawPredicate(node, method, render, nodes);
-                    if (predicate != null && predicate.op == RendererBytecodeScanner.BooleanOp.CONSTANT
-                            && !predicate.constant) continue;
-                    String key = node.name + '|' + item + '@' + (at == null ? "?" : at[0] + "," + at[1]);
-                    if (!seen.add(key)) continue;
-                    ScreenLayer layer = new ScreenLayer();
-                    layer.screenClass = node.name;
-                    layer.guiElement = true;
-                    layer.elementItem = item;
-                    layer.x = at == null ? -1 : at[0];
-                    layer.y = at == null ? -1 : at[1];
-                    layer.width = scale > 0 ? scale : 16;
-                    layer.height = layer.width;
-                    layer.scale = scale;
-                    layer.predicateAnalyzed = true;
-                    layer.visiblePredicate = predicate;
-                    layer.conditional = predicate == null
-                            || predicate.op != RendererBytecodeScanner.BooleanOp.CONSTANT || !predicate.constant;
-                    output.add(layer);
+                }
+            }
+            for (ClassNode target : targets) {
+                Map<String, Sprite> context = instanceSpriteFields(nodes, target, sprites);
+                int[] window = windowSizeIn(target, nodes, context);
+                Map<String, Map<Integer, Sym>> seeds = helperSeeds(node, context, window);
+                for (MethodNode method : node.methods) {
+                    if (method == null || method.instructions == null || method.desc == null
+                            || !method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
+                    // A subclass that overrides the method draws its own layers when it is scanned itself.
+                    if (target != node && declaresMethod(target, method.name, method.desc)) continue;
+                    Map<Integer, Sym> own = seeds.getOrDefault(method.name + method.desc, Map.of());
+                    for (AbstractInsnNode insn : method.instructions) {
+                        if (!(insn instanceof MethodInsnNode render) || !"render".equals(render.name)
+                                || !GUI_ELEMENT_BUILDER.equals(render.owner)
+                                || !"(Lnet/minecraft/client/gui/GuiGraphics;)V".equals(render.desc)) continue;
+                        MethodInsnNode of = guiElementSubjectCall(render);
+                        if (of == null || of.desc.contains(PARTIAL_MODEL)) continue;
+                        String item = null;
+                        FieldInsnNode registryField = registryFieldBefore(of, registry, 24);
+                        if (registryField != null) {
+                            BehaviorBytecodeScanner.RegistryRef ref = registry.get(
+                                    registryField.owner + '.' + registryField.name);
+                            if (ref != null && ref.id != null) item = ref.id;
+                        }
+                        int[] at = guiElementPosition(method, of, render, context, window, own);
+                        // A subclass's copy is kept only where its own background proves the position.
+                        if (target != node && at == null) continue;
+                        int scale = guiElementScale(of, render);
+                        var predicate = ClientSurfaceScanner.screenDrawPredicate(node, method, render, nodes);
+                        if (predicate != null && predicate.op == RendererBytecodeScanner.BooleanOp.CONSTANT
+                                && !predicate.constant) continue;
+                        String key = target.name + '|' + item + '@' + (at == null ? "?" : at[0] + "," + at[1]);
+                        if (!seen.add(key)) continue;
+                        ScreenLayer layer = new ScreenLayer();
+                        layer.screenClass = target.name;
+                        layer.guiElement = true;
+                        layer.elementItem = item;
+                        layer.x = at == null ? -1 : at[0];
+                        layer.y = at == null ? -1 : at[1];
+                        layer.width = scale > 0 ? scale : 16;
+                        layer.height = layer.width;
+                        layer.scale = scale;
+                        layer.predicateAnalyzed = true;
+                        layer.visiblePredicate = predicate;
+                        layer.conditional = predicate == null
+                                || predicate.op != RendererBytecodeScanner.BooleanOp.CONSTANT || !predicate.constant;
+                        output.add(layer);
+                    }
                 }
             }
         }
+    }
+
+    /** Key prefix of a receiver's own sprite-valued instance fields in a sprite map (see instanceSpriteFields). */
+    static final String THIS_FIELD = "#this.";
+
+    /**
+     * The sprite map seen from one concrete screen class: {@code this.F = AllGuiTextures.X} in the class's
+     * own constructor or init (or an ancestor's, the most derived first) makes {@code this.F} a sprite, so
+     * {@code this.background.getWidth()} resolves per screen even when the code that reads it sits in an
+     * abstract base such as AbstractFilterScreen.
+     */
+    static Map<String, Sprite> instanceSpriteFields(Map<String, ClassNode> nodes, ClassNode target,
+                                                    Map<String, Sprite> sprites) {
+        Map<String, Sprite> out = new HashMap<>(sprites);
+        List<ClassNode> chain = new ArrayList<>();
+        for (ClassNode current = target; current != null && chain.size() < 32;
+             current = current.superName == null ? null : nodes.get(current.superName)) {
+            chain.add(current);
+        }
+        // Sprite arguments the subclass constructor passed up (AbstractFilterScreen stores its ctor's sprite).
+        Map<Integer, Sym> passed = Map.of();
+        for (int i = 0; i < chain.size(); i++) {
+            ClassNode owner = chain.get(i);
+            for (MethodNode method : owner.methods == null ? List.<MethodNode>of() : owner.methods) {
+                if (method == null || method.instructions == null
+                        || !("<init>".equals(method.name) || "init".equals(method.name))) continue;
+                boolean constructor = "<init>".equals(method.name);
+                for (AbstractInsnNode insn : method.instructions) {
+                    if (!(insn instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.PUTFIELD) continue;
+                    AbstractInsnNode previous = insn.getPrevious();
+                    while (previous != null && previous.getOpcode() < 0) previous = previous.getPrevious();
+                    Sprite sprite = null;
+                    if (previous instanceof FieldInsnNode source && source.getOpcode() == Opcodes.GETSTATIC) {
+                        sprite = sprites.get(source.owner + '.' + source.name);
+                    } else if (constructor && previous instanceof VarInsnNode var && var.getOpcode() == Opcodes.ALOAD
+                            && passed.get(var.var) != null && passed.get(var.var).kind() == Sym.SPRITE) {
+                        sprite = sprites.get(passed.get(var.var).sprite());
+                    }
+                    if (sprite != null) out.putIfAbsent(THIS_FIELD + field.name, sprite);
+                }
+            }
+            passed = i + 1 < chain.size() ? argumentsPassedToSuper(chain.get(i), chain.get(i + 1).name, sprites) : Map.of();
+        }
+        return out;
+    }
+
+    /** The straight-line argument values a constructor passes to superName's constructor, by JVM slot. */
+    private static Map<Integer, Sym> argumentsPassedToSuper(ClassNode child, String superName, Map<String, Sprite> sprites) {
+        for (MethodNode ctor : child.methods == null ? List.<MethodNode>of() : child.methods) {
+            if (ctor == null || ctor.instructions == null || !"<init>".equals(ctor.name)) continue;
+            for (AbstractInsnNode insn : ctor.instructions) {
+                if (!(insn instanceof MethodInsnNode call) || call.getOpcode() != Opcodes.INVOKESPECIAL
+                        || !"<init>".equals(call.name) || !superName.equals(call.owner)) continue;
+                List<Sym> stack = straightLineStack(ctor, call, sprites, null, null, Map.of(), true);
+                Type[] args = Type.getArgumentTypes(call.desc);
+                if (stack == null || stack.size() < args.length + 1) return Map.of();
+                Map<Integer, Sym> out = new HashMap<>();
+                int slot = 1;
+                for (int i = 0; i < args.length; i++) {
+                    Sym value = stack.get(args.length - 1 - i);
+                    if (value.kind() == Sym.INT || value.kind() == Sym.SPRITE) out.put(slot, value);
+                    slot += args[i].getSize();
+                }
+                return out;
+            }
+        }
+        return Map.of();
+    }
+
+    /** The screen's window size from its own class or the nearest ancestor that calls setWindowSize. */
+    private static int[] windowSizeIn(ClassNode target, Map<String, ClassNode> nodes, Map<String, Sprite> sprites) {
+        ClassNode current = target;
+        for (int depth = 0; current != null && depth < 32; depth++) {
+            int[] size = windowSizeOf(current, sprites);
+            if (size != null) return size;
+            current = current.superName == null ? null : nodes.get(current.superName);
+        }
+        return null;
+    }
+
+    private static boolean declaresMethod(ClassNode node, String name, String desc) {
+        if (node.methods == null) return false;
+        for (MethodNode method : node.methods) {
+            if (method != null && name.equals(method.name) && desc.equals(method.desc)) return true;
+        }
+        return false;
     }
 
     /** Texture-atlas constants built in a class's static init as {@code new T(name, ordinal, file,
@@ -2009,8 +2121,9 @@ public final class GuiSpriteBytecodeScanner {
         }
         AbstractInsnNode anchor = at;
         if (anchor == null) {
-            for (AbstractInsnNode cursor = method.instructions.getFirst(); cursor != null && cursor != of;
-                 cursor = cursor.getNext()) {
+            // The nearest pose translate before the subject (a method may translate many times).
+            for (AbstractInsnNode cursor = of.getPrevious(); cursor != null; cursor = cursor.getPrevious()) {
+                if (cursor instanceof MethodInsnNode call && "render".equals(call.name)) break;
                 if (cursor instanceof MethodInsnNode call && "translate".equals(call.name)
                         && call.desc.startsWith("(FFF)")) {
                     anchor = call;
@@ -2070,7 +2183,7 @@ public final class GuiSpriteBytecodeScanner {
             for (AbstractInsnNode insn : method.instructions) {
                 if (!(insn instanceof MethodInsnNode call) || !"setWindowSize".equals(call.name)
                         || !"(II)V".equals(call.desc)) continue;
-                List<Sym> stack = straightLineStack(method, call, sprites, null, null);
+                List<Sym> stack = straightLineStack(method, call, sprites, null, null, Map.of(), true);
                 if (stack == null || stack.size() < 2) continue;
                 Sym height = stack.get(0), width = stack.get(1);
                 if (width.kind() == Sym.INT && width.l() == 0 && width.t() == 0
@@ -2082,8 +2195,9 @@ public final class GuiSpriteBytecodeScanner {
         return null;
     }
 
-    /** Locals 2 and 3 (x, y) of each helper {@code (GuiGraphics, int, int)} this class calls, from
-     * the first caller whose straight-line arguments are known. Keyed by name+desc. */
+    /** The argument values of each {@code (GuiGraphics, ...)} helper this class calls, from the first caller
+     * whose straight-line arguments are known: every int (x, y, a width) and sprite-valued argument (a
+     * background passed along), at its JVM local slot (receiver 0; wide arguments take two). Keyed by name+desc. */
     private static Map<String, Map<Integer, Sym>> helperSeeds(ClassNode node, Map<String, Sprite> sprites, int[] window) {
         Map<String, Map<Integer, Sym>> out = new HashMap<>();
         for (MethodNode caller : node.methods) {
@@ -2091,18 +2205,26 @@ public final class GuiSpriteBytecodeScanner {
                     || !caller.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
             for (AbstractInsnNode insn : caller.instructions) {
                 if (!(insn instanceof MethodInsnNode call) || !node.name.equals(call.owner)
-                        || call.name.startsWith("<") || !call.desc.startsWith("(Lnet/minecraft/client/gui/GuiGraphics;II")) {
+                        || call.name.startsWith("<") || !call.desc.startsWith("(Lnet/minecraft/client/gui/GuiGraphics;")) {
                     continue;
                 }
                 Type[] args = Type.getArgumentTypes(call.desc);
-                if (args.length < 3 || args[1].getSort() != Type.INT || args[2].getSort() != Type.INT) continue;
+                if (args.length < 2) continue;
                 List<Sym> stack = straightLineStack(caller, call, sprites, window == null ? null : window[0],
                         window == null ? null : window[1], Map.of(), true);
                 if (stack == null || stack.size() < args.length + 1) continue;
-                // The stack top is the last argument: argument i sits at index (args - 1 - i).
-                Sym x = stack.get(args.length - 2), y = stack.get(args.length - 3);
-                if (x.kind() != Sym.INT || y.kind() != Sym.INT) continue;
-                out.putIfAbsent(call.name + call.desc, Map.of(2, x, 3, y));
+                Map<Integer, Sym> seeds = new HashMap<>();
+                int slot = 1;
+                for (int i = 0; i < args.length; i++) {
+                    // The stack top is the last argument: argument i sits at index (args - 1 - i).
+                    if (i > 0) {
+                        Sym value = stack.get(args.length - 1 - i);
+                        if (value.kind() == Sym.INT || value.kind() == Sym.SPRITE) seeds.put(slot, value);
+                    }
+                    slot += args[i].getSize();
+                }
+                if (seeds.isEmpty()) continue;
+                out.putIfAbsent(call.name + call.desc, seeds);
             }
         }
         return out;
@@ -2194,13 +2316,14 @@ public final class GuiSpriteBytecodeScanner {
                 AbstractInsnNode next = nextReal(call);
                 if (!(next instanceof FieldInsnNode store) || store.getOpcode() != Opcodes.PUTSTATIC) continue;
                 String path = null;
-                int remaining = 48;
+                int remaining = 96;
                 for (AbstractInsnNode cursor = call.getPrevious(); cursor != null && remaining-- > 0;
                      cursor = cursor.getPrevious()) {
                     if (cursor.getOpcode() < 0) continue;
                     if (cursor instanceof FieldInsnNode previous && previous.getOpcode() == Opcodes.PUTSTATIC) break;
+                    // "_" and "block" are ModelGen.customItemModel's arguments, not the registry name.
                     if (cursor instanceof LdcInsnNode ldc && ldc.cst instanceof String value
-                            && simpleRegistryPath(value)) path = value;
+                            && simpleRegistryPath(value) && !REGISTRY_PLACEHOLDERS.contains(value)) path = value;
                 }
                 if (path == null) continue;
                 BehaviorBytecodeScanner.RegistryRef ref = new BehaviorBytecodeScanner.RegistryRef();
@@ -2215,6 +2338,8 @@ public final class GuiSpriteBytecodeScanner {
             }
         }
     }
+
+    private static final java.util.Set<String> REGISTRY_PLACEHOLDERS = java.util.Set.of("_", "block");
 
     private static boolean simpleRegistryPath(String value) {
         if (value == null || value.isBlank() || value.length() > 160 || value.indexOf(' ') >= 0) return false;
@@ -2738,7 +2863,14 @@ public final class GuiSpriteBytecodeScanner {
             if (op < 0) continue;
             if (floats && op >= Opcodes.FCONST_0 && op <= Opcodes.FCONST_2) {
                 stack.push(Sym.integer(op - Opcodes.FCONST_0));
-            } else if (floats && (op == Opcodes.IMUL || op == Opcodes.IDIV || op == Opcodes.IREM
+            } else if (floats && op == Opcodes.IMUL) {
+                // Constant products fold (setWindowSize(h, w * 4) gives the window height); others stay unknown.
+                if (stack.size() < 2) return null;
+                Sym b = stack.pop(), a = stack.pop();
+                boolean constant = a.kind() == Sym.INT && b.kind() == Sym.INT
+                        && a.l() == 0 && a.t() == 0 && b.l() == 0 && b.t() == 0;
+                stack.push(constant ? Sym.integer(a.k() * b.k()) : Sym.UNK);
+            } else if (floats && (op == Opcodes.IDIV || op == Opcodes.IREM
                     || op == Opcodes.FMUL || op == Opcodes.FDIV || op == Opcodes.FREM
                     || op == Opcodes.LSUB || op == Opcodes.LADD || op == Opcodes.LMUL || op == Opcodes.LDIV)) {
                 // Arithmetic the layer position does not depend on (its value is unknown here).
@@ -2760,8 +2892,10 @@ public final class GuiSpriteBytecodeScanner {
                 Sym value = locals.getOrDefault(inc.var, Sym.UNK);
                 locals.put(inc.var, value.kind() == Sym.INT
                         ? new Sym(Sym.INT, value.l(), value.t(), value.k() + inc.incr, null) : Sym.UNK);
-            } else if (floats && insn instanceof LdcInsnNode other && !(other.cst instanceof Integer)) {
-                // Doubles, longs and strings: values a position never reads.
+            } else if (floats && insn instanceof LdcInsnNode other && !(other.cst instanceof Integer)
+                    && !(other.cst instanceof Float value && value == Math.rint(value)
+                        && Math.abs(value) < 1 << 20)) {
+                // Doubles, longs, strings and fractional floats: values a position never reads.
                 stack.push(Sym.UNK);
             } else if (floats && insn instanceof JumpInsnNode jump) {
                 // Control flow is read linearly here: a branch's operands are consumed, its arms not followed.
@@ -2801,6 +2935,27 @@ public final class GuiSpriteBytecodeScanner {
                 if (a.kind() != Sym.INT || b.kind() != Sym.INT) stack.push(Sym.UNK);
                 else if (op == Opcodes.IADD) stack.push(new Sym(Sym.INT, a.l() + b.l(), a.t() + b.t(), a.k() + b.k(), null));
                 else stack.push(new Sym(Sym.INT, a.l() - b.l(), a.t() - b.t(), a.k() - b.k(), null));
+            } else if (floats && (op == Opcodes.ANEWARRAY || op == Opcodes.NEWARRAY || op == Opcodes.ARRAYLENGTH
+                    || op == Opcodes.INSTANCEOF)) {
+                // Varargs arrays and type tests: their contents never place a GUI element.
+                if (stack.isEmpty()) return null;
+                stack.pop();
+                stack.push(Sym.UNK);
+            } else if (floats && op == Opcodes.AALOAD) {
+                if (stack.size() < 2) return null;
+                stack.pop();
+                stack.pop();
+                stack.push(Sym.UNK);
+            } else if (floats && op >= Opcodes.IASTORE && op <= Opcodes.SASTORE) {
+                if (stack.size() < 3) return null;
+                stack.pop();
+                stack.pop();
+                stack.pop();
+            } else if (floats && op == Opcodes.PUTSTATIC) {
+                if (stack.isEmpty()) return null;
+                stack.pop();
+            } else if (floats && (op == Opcodes.NEW || op == Opcodes.ACONST_NULL)) {
+                stack.push(Sym.UNK);
             } else if (op == Opcodes.GETSTATIC && insn instanceof FieldInsnNode field) {
                 Sprite sprite = sprites.get(field.owner + '.' + field.name);
                 stack.push(sprite == null ? Sym.UNK
@@ -2810,10 +2965,15 @@ public final class GuiSpriteBytecodeScanner {
                 Sym receiver = stack.pop();
                 Sym value = Sym.UNK;
                 if (receiver.kind() == Sym.THIS) {
-                    if ("leftPos".equals(field.name)) value = new Sym(Sym.INT, 1, 0, 0, null);
-                    else if ("topPos".equals(field.name)) value = new Sym(Sym.INT, 0, 1, 0, null);
+                    // guiLeft/guiTop are the same positions on the GUI path (AbstractSimiScreen); other paths keep leftPos only.
+                    if ("leftPos".equals(field.name) || (floats && "guiLeft".equals(field.name))) value = new Sym(Sym.INT, 1, 0, 0, null);
+                    else if ("topPos".equals(field.name) || (floats && "guiTop".equals(field.name))) value = new Sym(Sym.INT, 0, 1, 0, null);
                     else if ("imageWidth".equals(field.name) && imageWidth != null) value = Sym.integer(imageWidth);
                     else if ("imageHeight".equals(field.name) && imageHeight != null) value = Sym.integer(imageHeight);
+                    else if (sprites.get(THIS_FIELD + field.name) != null) {
+                        Sprite sprite = sprites.get(THIS_FIELD + field.name);
+                        value = new Sym(Sym.SPRITE, 0, 0, 0, sprite.owner + '.' + sprite.field);
+                    }
                 }
                 stack.push(value);
             } else if (op == Opcodes.PUTFIELD) {
@@ -2836,12 +2996,24 @@ public final class GuiSpriteBytecodeScanner {
                 if (op != Opcodes.INVOKESTATIC) receiver = stack.pop();
                 if (Type.getReturnType(call.desc).getSort() == Type.VOID) continue;
                 Sym result = Sym.UNK;
+                if (floats && receiver.kind() == Sym.THIS && args.length == 0 && "()I".equals(call.desc)
+                        && "getGuiLeft".equals(call.name)) {
+                    result = new Sym(Sym.INT, 1, 0, 0, null);
+                } else if (floats && receiver.kind() == Sym.THIS && args.length == 0 && "()I".equals(call.desc)
+                        && "getGuiTop".equals(call.name)) {
+                    result = new Sym(Sym.INT, 0, 1, 0, null);
+                }
                 if (receiver.kind() == Sym.SPRITE && args.length == 0 && "()I".equals(call.desc)) {
                     Sprite sprite = sprites.get(receiver.sprite());
                     if ("getWidth".equals(call.name) && sprite != null) result = Sym.integer(sprite.width);
                     if ("getHeight".equals(call.name) && sprite != null) result = Sym.integer(sprite.height);
                 }
                 stack.push(result);
+            } else if (floats && insn instanceof InvokeDynamicInsnNode indy) {
+                Type[] args = Type.getArgumentTypes(indy.desc);
+                if (stack.size() < args.length) return null;
+                for (int i = 0; i < args.length; i++) stack.pop();
+                if (Type.getReturnType(indy.desc).getSort() != Type.VOID) stack.push(Sym.UNK);
             } else {
                 return null;
             }

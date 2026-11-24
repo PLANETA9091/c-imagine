@@ -44,8 +44,44 @@ public final class GuiElementSelftest {
         bad += check(result.layers.stream().anyMatch(l -> l.guiElement && l.elementItem == null
                 && l.screenClass.endsWith("/SchematicannonScreen") && l.x == 213 && l.y == 93 && l.scale == 5),
                 "SchematicannonScreen: dynamic cannon element at (213,93), scale 5");
+        // Oracles hand-derived from the bytecode and Create's sprite sizes (AllGuiTextures w x h, read
+        // from its static init): the element sits at leftPos + w + k, topPos + h - k, where w/h are the
+        // screen's background sprite and k the constant in renderAdditional/renderBg.
+        bad += check(has(result, "SequencedGearshiftScreen", null, 179, 105, 5),
+                "SequencedGearshiftScreen: SEQUENCER 173x161 -> (173+6, 161-56) at scale 5");
+        bad += check(has(result, "SchematicTableScreen", null, 214, 45, 3),
+                "SchematicTableScreen: SCHEMATIC_TABLE 214x85 -> (214, 85-40) at scale 3");
+        bad += check(has(result, "SchematicEditScreen", "create:schematic", 198, 83, 3),
+                "SchematicEditScreen: SCHEMATIC 192x123 -> (192+6, 123-40), item create:schematic, scale 3");
+        bad += check(has(result, "LinkedControllerScreen", null, 175, 53, 5),
+                "LinkedControllerScreen: LINKED_CONTROLLER 179x109 -> (179-4, 109-56) at scale 5");
+        bad += check(has(result, "PackagePortScreen", null, 226, 26, 4),
+                "PackagePortScreen: FROGPORT_BG 220x82 -> (220+6, 82-56) at scale 4");
+        bad += check(has(result, "ElevatorContactScreen", "create:elevator_contact", 239, 26, 5),
+                "ElevatorContactScreen: ELEVATOR_CONTACT 233x82 -> (233+6, 82-56), id create:elevator_contact");
+        bad += check(has(result, "StockKeeperCategoryScreen", "create:stock_ticker", 204, 92, 3),
+                "StockKeeperCategoryScreen: STOCK_KEEPER_CATEGORY 192x20 -> (192+12, imageHeight-39)");
+        bad += check(has(result, "FilterScreen", null, 222, 47, 4),
+                "FilterScreen (inherits AbstractFilterScreen): FILTER 214x99 -> (214+8, 99-52) at scale 4");
+        bad += check(has(result, "AttributeFilterScreen", null, 249, 33, 4),
+                "AttributeFilterScreen: ATTRIBUTE_FILTER 241x85 -> (241+8, 85-52) at scale 4");
+        bad += check(has(result, "PackageFilterScreen", null, 226, 27, 4),
+                "PackageFilterScreen: PACKAGE_FILTER 218x79 -> (218+8, 79-52) at scale 4");
+        bad += check(result.layers.stream().noneMatch(l -> l.guiElement && l.elementItem != null
+                && l.elementItem.endsWith(":_")),
+                "no GuiGameElement subject keeps the placeholder id create:_");
+        bad += check(result.layers.stream().anyMatch(l -> l.guiElement && l.elementItem == null
+                && l.screenClass.endsWith("/StationScreen") && l.x >= 0 && l.scale == 40),
+                "StationScreen (subclass of AbstractStationScreen): its 40-scale element resolves");
         System.out.println(bad == 0 ? "GuiElementSelftest: ALL PASS" : "GuiElementSelftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
+    }
+
+    /** A guiElement layer on the named screen (suffix match) with the given subject, position and scale. */
+    private static boolean has(GuiSpriteBytecodeScanner.Result result, String screen, String item,
+                               int x, int y, int scale) {
+        return result.layers.stream().anyMatch(l -> l.guiElement && l.screenClass.endsWith("/" + screen)
+                && java.util.Objects.equals(l.elementItem, item) && l.x == x && l.y == y && l.scale == scale);
     }
 
     private static int check(boolean ok, String what) {
