@@ -304,6 +304,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             blockCarrierRows.put(row.moddedBlockId(), row);
             displayFamily |= row.isDisplay();
         }
+        // S3a: the per-state looks of the multi-look blocks (absent before the S2 pack: no looks)
+        DisplayCarriers.setLooks(dev.cim.f2v.BlockLooks.load(f2v));
+    }
+
+    /** The placed state text Paper keeps at {@code block} (chunk PDC {@code bs_x_y_z}), or null. */
+    private String stateAt(Block block) {
+        return plugin == null ? null : LiveBridge.placedState(plugin, block);
     }
 
     private LiveBridge live;
@@ -373,12 +380,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[c-imagine] live: display flush failed: " + e);
         }
         if (chunk.isEntitiesLoaded() || plugin == null) {
-            DisplayCarriers.adopt(chunk, this::knownDisplay);
+            DisplayCarriers.adopt(chunk, this::knownDisplay, this::stateAt);
             return;
         }
         org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
             if (chunk.isLoaded()) {
-                DisplayCarriers.adopt(chunk, this::knownDisplay);
+                DisplayCarriers.adopt(chunk, this::knownDisplay, this::stateAt);
             }
         });
     }
@@ -2110,6 +2117,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[cim-screen] live use-on failed: " + result.state().error());
             return false;
         }
+        // S3a: a display block the use changed (the placement carries its new state) shows that state's look
+        for (LiveBridge.Placement changed : result.placements()) {
+            Block at = clicked.getWorld().getBlockAt(changed.x(), changed.y(), changed.z());
+            String id = DisplayCarriers.idAt(at);
+            if (id != null && knownDisplay(id)) {
+                DisplayCarriers.updateState(at, id, changed.state());
+                bridge.keepPlacedState(at, changed.state());
+            }
+        }
         if (result.placements().size() == 2 && placeProjectedDoor(clicked.getWorld(), result.placements())) {
             for (LiveBridge.Placement half : result.placements()) {
                 bridge.keepPlacedState(clicked.getWorld().getBlockAt(half.x(), half.y(), half.z()), half.state());
@@ -2131,7 +2147,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (row != null && (at.getType().isAir() || at.isReplaceable()) && projectedDoor(at) == null) {
                 if (knownDisplay(row.moddedBlockId())) {
                     at.setType(Material.BARRIER, false);
-                    DisplayCarriers.place(at, row.moddedBlockId());
+                    DisplayCarriers.place(at, row.moddedBlockId(), result.placedState());
                 } else {
                     at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
                 }

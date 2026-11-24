@@ -1,5 +1,6 @@
 package dev.cim.hud;
 
+import dev.cim.f2v.BlockLooks;
 import dev.cim.f2v.F2vPack;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
@@ -22,6 +23,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -42,6 +44,12 @@ import java.util.regex.Pattern;
  * 16-unit block model fills the block at identity scale, centred at the block centre (the gallery
  * rig measured this). The 26.3 renderer yaws every item_display by PI, so the left rotation carries
  * a counter-yaw of PI (the same correction the gallery composites apply).
+ *
+ * <p>Per-state looks (S3a): a display block whose state is known (the placed-state text Paper keeps,
+ * {@code bs_x_y_z}) shows the look {@link BlockLooks#resolve} picks for that state: its item_model,
+ * and as the right rotation the look's x/y ({@link BlockLooks#rotation}). The rig's left rotation is
+ * unchanged, so the renderer's yaw still cancels. A block with no state, or no look row, keeps the
+ * default item and identity right rotation (the pre-S3a display).
  */
 final class DisplayCarriers {
     private static final String NS = "cim";
@@ -52,7 +60,15 @@ final class DisplayCarriers {
     private static final String KEY_PREFIX = "disp_";
     private static final Pattern KEY = Pattern.compile(KEY_PREFIX + "(-?\\d+)_(-?\\d+)_(-?\\d+)");
 
+    /** The per-state look table of the running pack ({@link BlockLooks#load}); empty until set. */
+    private static volatile Map<String, List<BlockLooks.Look>> looks = Map.of();
+
     private DisplayCarriers() {
+    }
+
+    /** Installs the running pack's look table (called where the block rows are read at boot). */
+    static void setLooks(Map<String, List<BlockLooks.Look>> table) {
+        looks = table == null ? Map.of() : table;
     }
 
     /** The mod id of the display at a barrier's position, or null (O(1): the chunk's PDC; no entity scan). */
@@ -70,11 +86,14 @@ final class DisplayCarriers {
         return bar < 0 ? value : value.substring(0, bar);
     }
 
-    /** The display stack: a paper item whose item_model names the block's display items/ definition. */
-    static ItemStack stack(String moddedId) {
+    /**
+     * The display stack: a paper item whose item_model names the display items/ definition. {@code itemModel}
+     * is the look's (null: the block's default display item).
+     */
+    static ItemStack stack(String moddedId, String itemModel) {
         ItemStack stack = new ItemStack(Material.PAPER);
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
-        NamespacedKey model = NamespacedKey.fromString(F2vPack.displayItemModel(moddedId));
+        NamespacedKey model = NamespacedKey.fromString(itemModel != null ? itemModel : F2vPack.displayItemModel(moddedId));
         if (model != null) {
             meta.setItemModel(model);
         }
@@ -82,30 +101,80 @@ final class DisplayCarriers {
         return stack;
     }
 
-    /** The rig: identity scale at the block centre (set by the caller), counter-yawed by PI for the renderer's yaw. */
-    private static Transformation rig() {
+    /**
+     * The rig: identity scale at the block centre (set by the caller), counter-yawed by PI for the renderer's
+     * yaw on the left; {@code look} is the right rotation (the look's x/y, identity for the default).
+     */
+    private static Transformation rig(Quaternionf look) {
         return new Transformation(new Vector3f(0f, 0f, 0f), new Quaternionf().rotateY((float) Math.PI),
-                new Vector3f(1f, 1f, 1f), new Quaternionf());
+                new Vector3f(1f, 1f, 1f), look);
     }
 
-    /** Places the display family's block at {@code at}: the barrier, its display entity and the chunk's key. */
-    static void place(Block at, String moddedId) {
+    /** The look {@code state} shows at {@code at}, or null (no state, or no row matches it). */
+    static BlockLooks.Look lookAt(Block at, String moddedId, String state) {
+        if (state == null) {
+            return null;
+        }
+        return BlockLooks.resolve(looks, moddedId, state, at.getX(), at.getY(), at.getZ());
+    }
+
+    /** Sets a display to the look of {@code state} at {@code at} (item_model and right rotation). */
+    private static void apply(ItemDisplay display, Block at, String moddedId, String state) {
+        BlockLooks.Look look = lookAt(at, moddedId, state);
+        display.setItemStack(stack(moddedId, look == null ? null : look.itemModel()));
+        display.setTransformation(rig(look == null ? new Quaternionf()
+                : BlockLooks.rotation(look.rotX(), look.rotY())));
+    }
+
+    /**
+     * Places the display family's block at {@code at} in {@code state} (the layer's placed state; null when
+     * none): the barrier, its display entity and the chunk's key.
+     */
+    static void place(Block at, String moddedId, String state) {
         remove(at); // a stale display at this position goes first
-        ItemDisplay display = spawn(at, moddedId);
+        ItemDisplay display = spawn(at, moddedId, state);
         at.getChunk().getPersistentDataContainer().set(slot(at), PersistentDataType.STRING,
                 moddedId + "|" + display.getUniqueId());
     }
 
-    /** The display entity for {@code moddedId} at {@code at} (the block centre, the rig, FIXED billboard). */
-    private static ItemDisplay spawn(Block at, String moddedId) {
+    /**
+     * A display block's state changed (the layer's use-on reported the block's new state): its display
+     * shows the new look and the chunk keeps nothing new (the caller keeps the state text). False when the
+     * block has no display entity to update (the chunk reconcile then gives it one with the state).
+     */
+    static boolean updateState(Block at, String moddedId, String state) {
+        Chunk chunk = at.getChunk();
+        String value = chunk.getPersistentDataContainer().get(slot(at), PersistentDataType.STRING);
+        ItemDisplay display = value == null ? null : displayOf(at.getWorld(), value);
+        if (display == null) {
+            String where = where(at);
+            for (Entity e : chunk.getEntities()) {
+                if (e instanceof ItemDisplay d && where.equals(e.getPersistentDataContainer().get(ENTITY_AT,
+                        PersistentDataType.STRING))) {
+                    display = d;
+                    break;
+                }
+            }
+        }
+        if (display == null) {
+            return false;
+        }
+        apply(display, at, moddedId, state);
+        return true;
+    }
+
+    /** The display entity for {@code moddedId} at {@code at} in {@code state} (the block centre, FIXED billboard). */
+    private static ItemDisplay spawn(Block at, String moddedId, String state) {
         World world = at.getWorld();
         Location centre = at.getLocation().add(0.5, 0.5, 0.5);
         String where = where(at);
+        BlockLooks.Look look = lookAt(at, moddedId, state);
         return world.spawn(centre, ItemDisplay.class, e -> {
-            e.setItemStack(stack(moddedId));
+            e.setItemStack(stack(moddedId, look == null ? null : look.itemModel()));
             e.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
             e.setBillboard(Display.Billboard.FIXED);
-            e.setTransformation(rig());
+            e.setTransformation(rig(look == null ? new Quaternionf()
+                    : BlockLooks.rotation(look.rotX(), look.rotY())));
             PersistentDataContainer pdc = e.getPersistentDataContainer();
             pdc.set(ENTITY_ID, PersistentDataType.STRING, moddedId);
             pdc.set(ENTITY_AT, PersistentDataType.STRING, where);
@@ -165,7 +234,7 @@ final class DisplayCarriers {
      * keeps (or gets) exactly one display; every other key goes, with its display. A display no key
      * owns is removed. Does nothing until the chunk's entities are loaded (the caller retries then).
      */
-    static void adopt(Chunk chunk, Predicate<String> known) {
+    static void adopt(Chunk chunk, Predicate<String> known, Function<Block, String> stateOf) {
         if (!chunk.isEntitiesLoaded()) {
             return;
         }
@@ -214,8 +283,11 @@ final class DisplayCarriers {
             if (keep == null && !here.isEmpty()) {
                 keep = here.get(0);
             }
+            String state = stateOf == null ? null : stateOf.apply(at);
             if (keep == null) {
-                keep = spawn(at, id);
+                keep = spawn(at, id, state);
+            } else {
+                apply(keep, at, id, state); // a kept display takes the look of the state it stands in
             }
             for (ItemDisplay d : here) {
                 if (d != keep) {
