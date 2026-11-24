@@ -1566,6 +1566,33 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return o;
     }
 
+    /** An entity transformation as its translation, left/right rotation quaternions (x,y,z,w) and scale. */
+    private static com.google.gson.JsonObject transformationJson(org.bukkit.util.Transformation t) {
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.add("translation", vec3(t.getTranslation().x, t.getTranslation().y, t.getTranslation().z));
+        o.add("left_rotation", quat(t.getLeftRotation()));
+        o.add("scale", vec3(t.getScale().x, t.getScale().y, t.getScale().z));
+        o.add("right_rotation", quat(t.getRightRotation()));
+        return o;
+    }
+
+    private static com.google.gson.JsonArray vec3(float x, float y, float z) {
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        a.add(x);
+        a.add(y);
+        a.add(z);
+        return a;
+    }
+
+    private static com.google.gson.JsonArray quat(org.joml.Quaternionf q) {
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        a.add(q.x);
+        a.add(q.y);
+        a.add(q.z);
+        a.add(q.w);
+        return a;
+    }
+
     /** {@code inspect inv <player>}: every slot — hotbar, main, armor, offhand, cursor — as one line. */
     private void inspectInventory(CommandSender sender, String playerName) {
         Player p = Bukkit.getPlayerExact(playerName);
@@ -1635,6 +1662,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     o.addProperty("modded", true);
                 }
                 o.add("item", stackJson(d.getItemStack()));
+                ItemStack shown = d.getItemStack();
+                String model = shown != null && shown.hasItemMeta() && shown.getItemMeta().hasItemModel()
+                        ? shown.getItemMeta().getItemModel().toString() : null;
+                o.addProperty("item_model", model);
+                o.addProperty("display_transform", d.getItemDisplayTransform().name());
+                o.add("transformation", transformationJson(d.getTransformation()));
             } else if (e instanceof org.bukkit.entity.Item item) {
                 o.add("item", stackJson(item.getItemStack()));
             }
