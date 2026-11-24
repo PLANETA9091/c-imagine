@@ -133,6 +133,10 @@ pub unsafe extern "C" fn cplugin_init(
 
     let opts = options::parse_options(options);
 
+    // Modded enchantments: the 26.3 definitions the plugin registers into
+    // Paper's live enchantment registry (before the world loads).
+    write_enchant_defs(&opts);
+
     // The modded-biome channel (F2V v2 outbound + the server-registry defs
     // hand-off): arm it before the kernel accepts connections.
     install_biome_channel(api, &opts);
@@ -476,6 +480,43 @@ static SERVER_REGISTRY: AtomicU8 = AtomicU8::new(0);
 thread_local! {
     /// The replacement payload handed to the runtime (copied before return).
     static SCRATCH: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Read the mod jars' enchantments and enchantment tags, convert them to the
+/// 26.3 form and write `<root>/c-imagine/enchant-defs.json` for the plugin
+/// (`EnchantRegistry`). Writes nothing when no mod declares an enchantment.
+fn write_enchant_defs(opts: &options::ModuleOptions) {
+    let mods = opts
+        .mods_dir
+        .clone()
+        .unwrap_or_else(|| opts.server_root().join("mods"));
+    let converted = cim_enchant::load_mod_enchantments(&mods);
+    if converted.enchantments.is_empty() {
+        return;
+    }
+    for line in &converted.dropped {
+        eprintln!("{} enchant defs: dropped {line}", cim_core::LOG_PREFIX);
+    }
+    let dir = opts.server_root().join("c-imagine");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("enchant-defs.json");
+    let doc = cim_enchant::defs_document(&converted);
+    match serde_json::to_vec_pretty(&doc) {
+        Ok(bytes) => match std::fs::write(&path, bytes) {
+            Ok(()) => eprintln!(
+                "{} enchant defs: {} -> {}",
+                cim_core::LOG_PREFIX,
+                converted.enchantments.len(),
+                path.display()
+            ),
+            Err(e) => eprintln!(
+                "{} enchant defs: write {} failed: {e}",
+                cim_core::LOG_PREFIX,
+                path.display()
+            ),
+        },
+        Err(e) => eprintln!("{} enchant defs: encode failed: {e}", cim_core::LOG_PREFIX),
+    }
 }
 
 fn install_biome_channel(api: *const CPluginApi, opts: &options::ModuleOptions) {

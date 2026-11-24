@@ -142,6 +142,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // the modded biome ids and the client gets them through the normal
         // configuration sync.
         dev.cim.paper.BiomeRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
+        // Modded enchantments as REAL entries of the server enchantment registry
+        // (definitions from the Rust module, crates/cim-enchant).
+        dev.cim.paper.EnchantRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         f2vInit();
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         f2vAutoOfferInit();
