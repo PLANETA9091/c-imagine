@@ -348,6 +348,11 @@ final class Commands {
                     } else {
                         eo.add("health", JsonNull.INSTANCE);
                     }
+                    if (e instanceof ItemEntity ie) {
+                        // the dropped stack: modded ids are the same on both stacks (parity 'entities' observe)
+                        eo.addProperty("item", itemId(ie.getItem()));
+                        eo.addProperty("count", ie.getItem().getCount());
+                    }
                     arr.add(eo);
                 }
                 JsonObject o = TruthCtl.ok();
