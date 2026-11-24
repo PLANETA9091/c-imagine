@@ -5,6 +5,7 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.IincInsnNode;
 import org.objectweb.asm.tree.IntInsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
@@ -86,6 +87,12 @@ public final class GuiSpriteBytecodeScanner {
         public boolean conditional;
         public boolean predicateAnalyzed;
         public RendererBytecodeScanner.BooleanPredicate visiblePredicate;
+        /** A 3D block or item model drawn through GuiGameElement (not a sprite): x/y are leftPos/topPos
+         * relative when resolved (else -1), {@code scale} is its size in pixels (0: unknown). */
+        public boolean guiElement;
+        /** The registry id the element draws, or null when the screen draws its own dynamic subject. */
+        public String elementItem;
+        public int scale;
     }
 
     public static final class Result {
@@ -116,6 +123,7 @@ public final class GuiSpriteBytecodeScanner {
                 result.layers, result.backgrounds);
         inheritScreenComposition(nodes, result.layers, result.backgrounds);
         collectRegistryItemLayers(nodes, namespace, result.layers);
+        collectGuiElementLayers(nodes, namespace, withStaticAliases(nodes, sprites), result.layers);
         result.sprites.addAll(sprites.values());
         inferRenderedBackgrounds(result, sprites);
         inferLowLevelBlitBackgrounds(nodes, result, sprites);
@@ -1868,6 +1876,238 @@ public final class GuiSpriteBytecodeScanner {
         }
     }
 
+    private static final String GUI_ELEMENT = "net/createmod/catnip/gui/element/GuiGameElement";
+    private static final String GUI_ELEMENT_BUILDER = GUI_ELEMENT + "$GuiRenderBuilder";
+    private static final String PARTIAL_MODEL = "Ldev/engine_room/flywheel/lib/model/baked/PartialModel;";
+
+    /** GuiGameElement draws a 3D block or item model: {@code GuiGameElement.of(subject)} then
+     * {@code at(x,y,z)} or a pose translate, {@code scale}, and {@code render(g)}. The subject is a
+     * registry entry the bytecode names (constant id), or the screen's own field (dynamic: the
+     * opener resolves it at open time). A helper's x/y are seeded from its callers' arguments, so
+     * a toolbox drawn by renderToolbox(g, leftPos + imageWidth + 50, ...) resolves. Partial models
+     * (lids, drawers) are not items and are skipped. */
+    private static void collectGuiElementLayers(Map<String, ClassNode> nodes, String namespace,
+                                                Map<String, Sprite> sprites, List<ScreenLayer> output) {
+        if (nodes == null || output == null) return;
+        Map<String, BehaviorBytecodeScanner.RegistryRef> registry = new LinkedHashMap<>(
+                BehaviorBytecodeScanner.discoverRegistryFields(nodes, namespace));
+        discoverFluentRegistryFields(nodes, namespace, registry);
+        java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+        Map<String, Sprite> known = new HashMap<>(textureConstantSprites(nodes));
+        known.putAll(sprites);
+        sprites = withStaticAliases(nodes, known);
+        for (ClassNode node : nodes.values()) {
+            if (node == null || node.methods == null || !declaresGuiGraphicsMethod(node)) continue;
+            int[] window = windowSizeOf(node, sprites);
+            Map<String, Map<Integer, Sym>> seeds = helperSeeds(node, sprites, window);
+            for (MethodNode method : node.methods) {
+                if (method == null || method.instructions == null || method.desc == null
+                        || !method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
+                Map<Integer, Sym> own = seeds.getOrDefault(method.name + method.desc, Map.of());
+                for (AbstractInsnNode insn : method.instructions) {
+                    if (!(insn instanceof MethodInsnNode render) || !"render".equals(render.name)
+                            || !GUI_ELEMENT_BUILDER.equals(render.owner)
+                            || !"(Lnet/minecraft/client/gui/GuiGraphics;)V".equals(render.desc)) continue;
+                    MethodInsnNode of = guiElementSubjectCall(render);
+                    if (of == null || of.desc.contains(PARTIAL_MODEL)) continue;
+                    String item = null;
+                    FieldInsnNode registryField = registryFieldBefore(of, registry, 24);
+                    if (registryField != null) {
+                        BehaviorBytecodeScanner.RegistryRef ref = registry.get(
+                                registryField.owner + '.' + registryField.name);
+                        if (ref != null && ref.id != null) item = ref.id;
+                    }
+                    int[] at = guiElementPosition(method, of, render, sprites, window, own);
+                    int scale = guiElementScale(of, render);
+                    var predicate = ClientSurfaceScanner.screenDrawPredicate(node, method, render, nodes);
+                    if (predicate != null && predicate.op == RendererBytecodeScanner.BooleanOp.CONSTANT
+                            && !predicate.constant) continue;
+                    String key = node.name + '|' + item + '@' + (at == null ? "?" : at[0] + "," + at[1]);
+                    if (!seen.add(key)) continue;
+                    ScreenLayer layer = new ScreenLayer();
+                    layer.screenClass = node.name;
+                    layer.guiElement = true;
+                    layer.elementItem = item;
+                    layer.x = at == null ? -1 : at[0];
+                    layer.y = at == null ? -1 : at[1];
+                    layer.width = scale > 0 ? scale : 16;
+                    layer.height = layer.width;
+                    layer.scale = scale;
+                    layer.predicateAnalyzed = true;
+                    layer.visiblePredicate = predicate;
+                    layer.conditional = predicate == null
+                            || predicate.op != RendererBytecodeScanner.BooleanOp.CONSTANT || !predicate.constant;
+                    output.add(layer);
+                }
+            }
+        }
+    }
+
+    /** Texture-atlas constants built in a class's static init as {@code new T(name, ordinal, file,
+     * ..., u, v, w, h)} (AllGuiTextures): their size is the last two ints of that constructor, so a
+     * {@code BG_TOP.getWidth()} the layer's position depends on resolves. Keyed owner.field. */
+    private static Map<String, Sprite> textureConstantSprites(Map<String, ClassNode> nodes) {
+        Map<String, Sprite> out = new HashMap<>();
+        for (ClassNode node : nodes.values()) {
+            if (node == null || node.methods == null) continue;
+            for (MethodNode clinit : node.methods) {
+                if (clinit == null || !"<clinit>".equals(clinit.name) || clinit.instructions == null) continue;
+                for (AbstractInsnNode insn : clinit.instructions) {
+                    if (!(insn instanceof MethodInsnNode init) || !"<init>".equals(init.name)
+                            || !init.owner.equals(node.name) || !init.desc.startsWith("(Ljava/lang/String;ILjava/lang/String;")) continue;
+                    Type[] args = Type.getArgumentTypes(init.desc);
+                    int ints = 0;
+                    for (Type t : args) if (t.getSort() == Type.INT) ints++;
+                    if (ints < 4) continue;
+                    List<Sym> stack = straightLineStack(clinit, init, Map.of(), null, null, Map.of(), true);
+                    if (stack == null || stack.size() < args.length + 1) continue;
+                    // stack top = last argument: the constructor's last four ints are u, v, w, h.
+                    Sym height = stack.get(0), width = stack.get(1);
+                    if (height.kind() != Sym.INT || width.kind() != Sym.INT) continue;
+                    FieldInsnNode store = null;
+                    for (AbstractInsnNode after = init.getNext(); after != null; after = after.getNext()) {
+                        if (after instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTSTATIC) {
+                            store = field;
+                            break;
+                        }
+                    }
+                    if (store == null || !store.owner.equals(node.name)) continue;
+                    Sprite sprite = new Sprite();
+                    sprite.owner = node.name;
+                    sprite.field = store.name;
+                    sprite.width = width.k();
+                    sprite.height = height.k();
+                    out.putIfAbsent(node.name + '.' + store.name, sprite);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** The nearest GuiGameElement.of before a render call in its own chain, or null. */
+    private static MethodInsnNode guiElementSubjectCall(MethodInsnNode render) {
+        for (AbstractInsnNode cursor = render.getPrevious(); cursor != null; cursor = cursor.getPrevious()) {
+            if (cursor instanceof MethodInsnNode call && GUI_ELEMENT.equals(call.owner) && "of".equals(call.name)) {
+                return call;
+            }
+            if (cursor instanceof MethodInsnNode call && "render".equals(call.name)) return null;
+        }
+        return null;
+    }
+
+    /** The element's {leftPos-relative x, y}: its builder at(x,y,z) when the chain has one, else the
+     * first pose translate before its subject. Null when either coordinate is not leftPos/topPos
+     * plus a constant. */
+    private static int[] guiElementPosition(MethodNode method, MethodInsnNode of, MethodInsnNode render,
+                                            Map<String, Sprite> sprites, int[] window, Map<Integer, Sym> seeds) {
+        MethodInsnNode at = null;
+        for (AbstractInsnNode cursor = of.getNext(); cursor != null && cursor != render; cursor = cursor.getNext()) {
+            if (cursor instanceof MethodInsnNode call && "at".equals(call.name) && call.desc.startsWith("(FFF)")) {
+                at = call;
+                break;
+            }
+        }
+        AbstractInsnNode anchor = at;
+        if (anchor == null) {
+            for (AbstractInsnNode cursor = method.instructions.getFirst(); cursor != null && cursor != of;
+                 cursor = cursor.getNext()) {
+                if (cursor instanceof MethodInsnNode call && "translate".equals(call.name)
+                        && call.desc.startsWith("(FFF)")) {
+                    anchor = call;
+                    break;
+                }
+            }
+        }
+        if (anchor == null) return null;
+        List<Sym> stack = straightLineStack(method, anchor, sprites, window == null ? null : window[0],
+                window == null ? null : window[1], seeds, true);
+        if (stack == null || stack.size() < 3) return null;
+        Sym x = stack.get(2), y = stack.get(1);
+        if (x.kind() != Sym.INT || y.kind() != Sym.INT || x.t() != 0 || x.l() != 1
+                || y.l() != 0 || y.t() != 1) return null;
+        return new int[]{x.k(), y.k()};
+    }
+
+    /** The element's scale constant: the scale(D) of a builder chain or the scale(F) of a pose
+     * stack, nearest to its subject within the chain (after the previous render), or 0. */
+    private static int guiElementScale(MethodInsnNode of, MethodInsnNode render) {
+        int best = 0;
+        int bestDistance = Integer.MAX_VALUE;
+        int distance = 0;
+        for (AbstractInsnNode cursor = of.getPrevious(); cursor != null; cursor = cursor.getPrevious(), distance++) {
+            if (cursor instanceof MethodInsnNode call && "render".equals(call.name)) break;
+            if (cursor instanceof MethodInsnNode call && "scale".equals(call.name)
+                    && (call.desc.startsWith("(D)") || call.desc.startsWith("(F)"))) {
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = scaleOf(call);
+                }
+            }
+        }
+        for (AbstractInsnNode cursor = of.getNext(); cursor != null && cursor != render; cursor = cursor.getNext()) {
+            if (cursor instanceof MethodInsnNode call && "scale".equals(call.name)
+                    && (call.desc.startsWith("(D)") || call.desc.startsWith("(F)"))) {
+                return scaleOf(call);
+            }
+        }
+        return best;
+    }
+
+    private static int scaleOf(MethodInsnNode call) {
+        AbstractInsnNode arg = call.getPrevious();
+        while (arg != null && arg.getOpcode() < 0) arg = arg.getPrevious();
+        if (arg instanceof LdcInsnNode ldc && ldc.cst instanceof Number value) {
+            return (int) Math.round(value.doubleValue());
+        }
+        return 0;
+    }
+
+    /** The screen's image size from its init setWindowSize, or null (as backgroundOriginFor). */
+    private static int[] windowSizeOf(ClassNode node, Map<String, Sprite> sprites) {
+        for (MethodNode method : node.methods) {
+            if (method == null || method.instructions == null
+                    || !("init".equals(method.name) || "<init>".equals(method.name))) continue;
+            for (AbstractInsnNode insn : method.instructions) {
+                if (!(insn instanceof MethodInsnNode call) || !"setWindowSize".equals(call.name)
+                        || !"(II)V".equals(call.desc)) continue;
+                List<Sym> stack = straightLineStack(method, call, sprites, null, null);
+                if (stack == null || stack.size() < 2) continue;
+                Sym height = stack.get(0), width = stack.get(1);
+                if (width.kind() == Sym.INT && width.l() == 0 && width.t() == 0
+                        && height.kind() == Sym.INT && height.l() == 0 && height.t() == 0) {
+                    return new int[]{width.k(), height.k()};
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Locals 2 and 3 (x, y) of each helper {@code (GuiGraphics, int, int)} this class calls, from
+     * the first caller whose straight-line arguments are known. Keyed by name+desc. */
+    private static Map<String, Map<Integer, Sym>> helperSeeds(ClassNode node, Map<String, Sprite> sprites, int[] window) {
+        Map<String, Map<Integer, Sym>> out = new HashMap<>();
+        for (MethodNode caller : node.methods) {
+            if (caller == null || caller.instructions == null || caller.desc == null
+                    || !caller.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
+            for (AbstractInsnNode insn : caller.instructions) {
+                if (!(insn instanceof MethodInsnNode call) || !node.name.equals(call.owner)
+                        || call.name.startsWith("<") || !call.desc.startsWith("(Lnet/minecraft/client/gui/GuiGraphics;II")) {
+                    continue;
+                }
+                Type[] args = Type.getArgumentTypes(call.desc);
+                if (args.length < 3 || args[1].getSort() != Type.INT || args[2].getSort() != Type.INT) continue;
+                List<Sym> stack = straightLineStack(caller, call, sprites, window == null ? null : window[0],
+                        window == null ? null : window[1], Map.of(), true);
+                if (stack == null || stack.size() < args.length + 1) continue;
+                // The stack top is the last argument: argument i sits at index (args - 1 - i).
+                Sym x = stack.get(args.length - 2), y = stack.get(args.length - 3);
+                if (x.kind() != Sym.INT || y.kind() != Sym.INT) continue;
+                out.putIfAbsent(call.name + call.desc, Map.of(2, x, 3, y));
+            }
+        }
+        return out;
+    }
+
     /** Direct registry-backed item rendering is part of authored GUI composition too. Recover the
      * exact registry id and screen-relative coordinates from the same bytecode graph rather than
      * substituting a semantic icon. This handles blocks exposed through Registrate/DeferredRegister
@@ -2477,19 +2717,79 @@ public final class GuiSpriteBytecodeScanner {
      * (null when the code branches or uses an operation outside this model). */
     private static List<Sym> straightLineStack(MethodNode method, AbstractInsnNode stop,
             Map<String, Sprite> sprites, Integer imageWidth, Integer imageHeight) {
+        return straightLineStack(method, stop, sprites, imageWidth, imageHeight, Map.of(), false);
+    }
+
+    /**
+     * The same straight-line evaluation with two extensions for GUI element positions: {@code seeds}
+     * give locals known on entry (a helper's x and y arguments, the leftPos/topPos bases), and
+     * {@code floats} accepts the float operations a pose or builder call uses (fconst, ldc of an
+     * integral float, i2f, fadd, fsub), each as the integer it denotes.
+     */
+    private static List<Sym> straightLineStack(MethodNode method, AbstractInsnNode stop,
+            Map<String, Sprite> sprites, Integer imageWidth, Integer imageHeight,
+            Map<Integer, Sym> seeds, boolean floats) {
         java.util.ArrayDeque<Sym> stack = new java.util.ArrayDeque<>();
-        Map<Integer, Sym> locals = new HashMap<>();
+        Map<Integer, Sym> locals = new HashMap<>(seeds);
         locals.put(0, new Sym(Sym.THIS, 0, 0, 0, null));
         for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
             if (insn == stop) return new ArrayList<>(stack);
             int op = insn.getOpcode();
             if (op < 0) continue;
-            if (op >= Opcodes.ICONST_M1 && op <= Opcodes.ICONST_5) {
+            if (floats && op >= Opcodes.FCONST_0 && op <= Opcodes.FCONST_2) {
+                stack.push(Sym.integer(op - Opcodes.FCONST_0));
+            } else if (floats && (op == Opcodes.IMUL || op == Opcodes.IDIV || op == Opcodes.IREM
+                    || op == Opcodes.FMUL || op == Opcodes.FDIV || op == Opcodes.FREM
+                    || op == Opcodes.LSUB || op == Opcodes.LADD || op == Opcodes.LMUL || op == Opcodes.LDIV)) {
+                // Arithmetic the layer position does not depend on (its value is unknown here).
+                if (stack.size() < 2) return null;
+                stack.pop();
+                stack.pop();
+                stack.push(Sym.UNK);
+            } else if (floats && (op == Opcodes.INEG || op == Opcodes.FNEG)) {
+                if (stack.isEmpty()) return null;
+                stack.pop();
+                stack.push(Sym.UNK);
+            } else if (floats && (op == Opcodes.LLOAD || op == Opcodes.FLOAD || op == Opcodes.DLOAD)) {
+                stack.push(Sym.UNK);
+            } else if (floats && (op == Opcodes.LSTORE || op == Opcodes.FSTORE || op == Opcodes.DSTORE)) {
+                if (stack.isEmpty()) return null;
+                stack.pop();
+                if (insn instanceof VarInsnNode var) locals.put(var.var, Sym.UNK);
+            } else if (floats && insn instanceof IincInsnNode inc) {
+                Sym value = locals.getOrDefault(inc.var, Sym.UNK);
+                locals.put(inc.var, value.kind() == Sym.INT
+                        ? new Sym(Sym.INT, value.l(), value.t(), value.k() + inc.incr, null) : Sym.UNK);
+            } else if (floats && insn instanceof LdcInsnNode other && !(other.cst instanceof Integer)) {
+                // Doubles, longs and strings: values a position never reads.
+                stack.push(Sym.UNK);
+            } else if (floats && insn instanceof JumpInsnNode jump) {
+                // Control flow is read linearly here: a branch's operands are consumed, its arms not followed.
+                int pops = op == Opcodes.GOTO ? 0
+                        : op >= Opcodes.IF_ICMPEQ && op <= Opcodes.IF_ACMPNE ? 2 : 1;
+                if (stack.size() < pops) return null;
+                for (int i = 0; i < pops; i++) stack.pop();
+            } else if (floats && op == Opcodes.CHECKCAST) {
+                if (stack.isEmpty()) return null;
+            } else if (floats && (op == Opcodes.NEW || op == Opcodes.ACONST_NULL)) {
+                stack.push(Sym.UNK);
+            } else if (floats && op == Opcodes.I2F) {
+                if (stack.isEmpty()) return null;
+            } else if (floats && (op == Opcodes.FADD || op == Opcodes.FSUB)) {
+                if (stack.size() < 2) return null;
+                Sym b = stack.pop(), a = stack.pop();
+                if (a.kind() != Sym.INT || b.kind() != Sym.INT) stack.push(Sym.UNK);
+                else if (op == Opcodes.FADD) stack.push(new Sym(Sym.INT, a.l() + b.l(), a.t() + b.t(), a.k() + b.k(), null));
+                else stack.push(new Sym(Sym.INT, a.l() - b.l(), a.t() - b.t(), a.k() - b.k(), null));
+            } else if (op >= Opcodes.ICONST_M1 && op <= Opcodes.ICONST_5) {
                 stack.push(Sym.integer(op - Opcodes.ICONST_0));
             } else if (insn instanceof IntInsnNode number && (op == Opcodes.BIPUSH || op == Opcodes.SIPUSH)) {
                 stack.push(Sym.integer(number.operand));
             } else if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Integer value) {
                 stack.push(Sym.integer(value));
+            } else if (floats && insn instanceof LdcInsnNode ldc && ldc.cst instanceof Float value
+                    && value == Math.rint(value) && Math.abs(value) < 1 << 20) {
+                stack.push(Sym.integer((int) (float) value));
             } else if (insn instanceof VarInsnNode var && (op == Opcodes.ILOAD || op == Opcodes.ALOAD)) {
                 stack.push(locals.getOrDefault(var.var, Sym.UNK));
             } else if (insn instanceof VarInsnNode var && (op == Opcodes.ISTORE || op == Opcodes.ASTORE)) {

@@ -103,8 +103,25 @@ public final class ScreenPack {
     public static final int MOVE_STATE = 9999;
 
     /** One drawable screen. Glyphs are the same at pack build and at runtime. */
+    /**
+     * A 3D block or item model the screen draws (GuiGameElement), as the item's icon at (x, y)
+     * from the screen's top left. A null item is the screen's own subject: the opener names it.
+     * Drawn as the flat 16px icon (the scale is recorded, not applied).
+     */
+    public record Icon(String item, int x, int y, int scale) {
+    }
+
     public record Scene(String className, String menu, int width, int height, boolean titleCentered,
-                        List<Piece> pieces, List<Widget> widgets, Captured captured) {
+                        List<Piece> pieces, List<Widget> widgets, Captured captured, List<Icon> icons) {
+        public Scene(String className, String menu, int width, int height, boolean titleCentered,
+                     List<Piece> pieces, List<Widget> widgets, Captured captured) {
+            this(className, menu, width, height, titleCentered, pieces, widgets, captured, List.of());
+        }
+
+        public Scene {
+            icons = icons == null ? List.of() : icons;
+        }
+
         public String shortName() {
             return className.substring(Math.max(className.lastIndexOf('/'), className.lastIndexOf('$')) + 1);
         }
@@ -304,7 +321,7 @@ public final class ScreenPack {
     }
 
     private static String stamp(Path modsDir) throws IOException {
-        StringBuilder out = new StringBuilder("v21");
+        StringBuilder out = new StringBuilder("v22");
         if (Files.isDirectory(modsDir)) {
             try (Stream<Path> s = Files.list(modsDir)) {
                 for (Path jar : s.filter(p -> p.toString().endsWith(".jar")).sorted().toList()) {
@@ -380,6 +397,10 @@ public final class ScreenPack {
                 out.append("widget\t").append(w.x()).append('\t').append(w.y()).append('\t').append(w.w())
                         .append('\t').append(w.h()).append('\t').append(w.label() == null ? "" : w.label()).append('\n');
             }
+            for (Icon i : s.icons()) {
+                out.append("icon\t").append(i.item() == null ? "" : i.item()).append('\t').append(i.x()).append('\t')
+                        .append(i.y()).append('\t').append(i.scale()).append('\n');
+            }
         }
         Files.writeString(cache, out.toString(), StandardCharsets.UTF_8);
     }
@@ -388,24 +409,30 @@ public final class ScreenPack {
         List<Scene> out = new ArrayList<>();
         List<Piece> pieces = null;
         List<Widget> widgets = null;
+        List<Icon> icons = null;
         for (String line : lines) {
             String[] p = line.split("\t", -1);
             if (p[0].equals("scene")) {
                 pieces = new ArrayList<>();
                 widgets = new ArrayList<>();
+                icons = new ArrayList<>();
                 out.add(new Scene(p[1], p[2].isEmpty() ? null : p[2], Integer.parseInt(p[3]), Integer.parseInt(p[4]),
-                        Boolean.parseBoolean(p[5]), pieces, widgets, null));
+                        Boolean.parseBoolean(p[5]), pieces, widgets, null, icons));
+            } else if (p[0].equals("icon")) {
+                Scene last = out.get(out.size() - 1);
+                last.icons().add(new Icon(p[1].isEmpty() ? null : p[1], Integer.parseInt(p[2]),
+                        Integer.parseInt(p[3]), Integer.parseInt(p[4])));
             } else if (p[0].equals("captured")) {
                 Scene last = out.remove(out.size() - 1);
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         pieces, widgets, new Captured(Integer.parseInt(p[1]), Integer.parseInt(p[2]), new ArrayList<>(),
-                        new HashMap<>(), null)));
+                        new HashMap<>(), null), last.icons()));
             } else if (p[0].equals("move")) {
                 Scene last = out.remove(out.size() - 1);
                 Captured c = last.captured();
                 out.add(new Scene(last.className(), last.menu(), last.width(), last.height(), last.titleCentered(),
                         last.pieces(), last.widgets(), new Captured(c.originX(), c.originY(), c.slots(), c.states(),
-                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden(), c.fills(), c.placed())));
+                        java.util.Arrays.stream(p).skip(1).mapToInt(Integer::parseInt).toArray(), c.covers(), c.shifts(), c.hidden(), c.fills(), c.placed()), last.icons()));
             } else if (p[0].equals("fill")) {
                 out.get(out.size() - 1).captured().fills().computeIfAbsent(p[1], k -> new ArrayList<>())
                         .add(new Piece((char) Integer.parseInt(p[2]), Integer.parseInt(p[3]), Integer.parseInt(p[4]),
@@ -673,6 +700,7 @@ public final class ScreenPack {
             jars = s.filter(p -> p.toString().endsWith(".jar")).sorted().toList();
         }
         Map<String, List<Piece>> shared = new HashMap<>();
+        Map<String, List<Icon>> iconsByClass = new HashMap<>();
         for (Path jar : jars) {
             Map<String, byte[]> textures = new HashMap<>();
             Map<String, byte[]> classes = new HashMap<>();
@@ -708,6 +736,16 @@ public final class ScreenPack {
                         }
                     }
                 }
+                List<Icon> icons = new ArrayList<>();
+                for (GuiSpriteBytecodeScanner.ScreenLayer l : profile.guiLayers) {
+                    if (l.guiElement && !l.conditional && l.x >= 0 && l.y >= 0
+                            && slashed(l.screenClass).equals(slashed(b.screenClass))) {
+                        icons.add(new Icon(l.elementItem, l.x, l.y, l.scale));
+                    }
+                }
+                if (!icons.isEmpty()) {
+                    iconsByClass.computeIfAbsent(slashed(b.screenClass), k -> new ArrayList<>()).addAll(icons);
+                }
                 List<Widget> widgets = new ArrayList<>();
                 for (ClientSurfaceScanner.ClassSurface surface : profile.clientSurfaces) {
                     for (ClientSurfaceScanner.Action a : surface.actions) {
@@ -733,10 +771,18 @@ public final class ScreenPack {
                 ModScanner.ScreenInfo i = info.get(slashed(b.screenClass));
                 String menu = i == null || i.menuClass == null ? null : slashed(i.menuClass);
                 scenes.add(new Scene(slashed(b.screenClass), menu, bg.width, bg.height,
-                        measuresTitle(slashed(b.screenClass), classes), pieces, widgets, null));
+                        measuresTitle(slashed(b.screenClass), classes), pieces, widgets, null, icons));
             }
         }
         addCaptures(modsDir.resolveSibling("c-imagine").resolve(CAPTURES), scenes, art, heights);
+        for (int i = 0; i < scenes.size(); i++) {
+            Scene scene = scenes.get(i);
+            List<Icon> icons = iconsByClass.get(slashed(scene.className()));
+            if (scene.icons().isEmpty() && icons != null) {
+                scenes.set(i, new Scene(scene.className(), scene.menu(), scene.width(), scene.height(),
+                        scene.titleCentered(), scene.pieces(), scene.widgets(), scene.captured(), icons));
+            }
+        }
         writeCache(modsDir, scenes);
         return new Baked(scenes, art, heights);
     }
@@ -1696,7 +1742,20 @@ public final class ScreenPack {
             bad += check(toolbox != null && toolbox.pieces().stream().anyMatch(Piece::floating)
                     && toolbox.widgets().stream().anyMatch(w -> w.x() == 81 && w.y() == 69),
                     "ToolboxScreen: floating player inventory and toolbox button rebased to (81,69)");
+            // The toolbox's 3D block is a dynamic icon (its opener names it), drawn right of the panel.
+            bad += check(toolbox != null && toolbox.icons().stream().anyMatch(i -> i.item() == null
+                    && i.scale() == 50 && i.x() > toolbox.width() - 8),
+                    "ToolboxScreen: the toolbox block is a dynamic 3D icon right of its panel");
         }
+        // The icon rows of the scene cache: a dynamic subject is an empty item, a constant one its id.
+        List<Scene> cached = parse(List.of("scene\tcom/x/ToolboxScreen\t\t176\t166\tfalse",
+                "icon\t\t238\t183\t50", "icon\tcreate:cogwheel\t1\t2\t5"));
+        bad += check(cached.size() == 1 && cached.get(0).icons().size() == 2
+                && cached.get(0).icons().get(0).item() == null && cached.get(0).icons().get(0).x() == 238
+                && "create:cogwheel".equals(cached.get(0).icons().get(1).item())
+                && cached.get(0).icons().get(1).scale() == 5, "the cache keeps 3D icon rows, dynamic and constant");
+        Scene plain = new Scene("com/x/Plain", null, 10, 10, false, List.of(), List.of(), null);
+        bad += check(plain.icons().isEmpty(), "a scene without icons has an empty icon list");
         // 14-di the run-capture overlay selftest: a synthetic seed pack, a
         // synthetic ScreenArt dump, the whole merge law offline (numbering,
         // skip law, font append, the no-jars merge that replaced the rebake).
