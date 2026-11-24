@@ -202,7 +202,9 @@ public final class LiveProtocol {
                     // break TAB uuid TAB name TAB blockId TAB x TAB y TAB z, then inv lines (the held
                     // stack, the tool, in slot 0) and an optional "be TAB snbt" line: the player
                     // breaks a mod block of Paper's world, by the block's own code as a server's
-                    // game mode does. What it spilled comes back as "spill TAB stack" lines.
+                    // game mode does. An optional "state TAB ns:id[k=v,...]" line is the state the block
+                    // was placed with (Paper's kept text): the break runs on that state, else on the
+                    // block's default state. What it spilled comes back as "spill TAB stack" lines.
                     SessionServerPlayer player = LiveMenus.session(id, head[2]);
                     player.closeContainer();
                     readInventory(player, lines);
@@ -210,8 +212,15 @@ public final class LiveProtocol {
                             Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
                     FacadeServerLevel level = LiveMenus.level();
                     level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
-                    level.setBlock(pos, net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
-                            net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState(), 3);
+                    net.minecraft.world.level.block.Block breakBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                            net.minecraft.resources.ResourceLocation.parse(head[3]));
+                    net.minecraft.world.level.block.state.BlockState placedAs = null;
+                    for (int i = 1; i < lines.length; i++) {
+                        if (lines[i].startsWith("state\t")) {
+                            placedAs = placedStateOf(lines[i].substring(6), breakBlock);
+                        }
+                    }
+                    level.setBlock(pos, placedAs != null ? placedAs : breakBlock.defaultBlockState(), 3);
                     for (int i = 1; i < lines.length; i++) {
                         if (lines[i].startsWith("be\t")) {
                             loadKept(level, pos, lines[i].substring(3));

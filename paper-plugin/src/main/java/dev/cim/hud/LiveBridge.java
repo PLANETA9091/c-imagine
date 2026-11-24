@@ -467,6 +467,11 @@ final class LiveBridge {
         heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         org.bukkit.persistence.PersistentDataContainer chunk = block.getChunk().getPersistentDataContainer();
         String kept = chunk.get(blockKey(block, blockId), PersistentDataType.STRING);
+        // The state it was placed with: the layer breaks the block as that state (else its default).
+        String placed = placedState(block);
+        if (placed != null) {
+            in.append("\nstate\t").append(placed);
+        }
         if (kept != null) {
             in.append("\nbe\t").append(kept);
         }
