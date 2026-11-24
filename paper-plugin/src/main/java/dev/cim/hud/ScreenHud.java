@@ -131,6 +131,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         List<ScreenPack.Piece> pieces;
         /** Which press state that is (its widget index), or -1 for the menu as opened. */
         int stateIndex = -1;
+        /** The opener that opened this screen ({@code block:<id>}, {@code item:<id>}, ...), or null. */
+        String opener;
+
+        /** The item a dynamic icon of this screen draws: the opener's block or item id, else null. */
+        String openerItem() {
+            if (opener == null) {
+                return null;
+            }
+            if (opener.startsWith("block:")) {
+                return opener.substring("block:".length());
+            }
+            return opener.startsWith("item:") ? opener.substring("item:".length()) : null;
+        }
 
         Session(ScreenPack.Scene scene, GuiCaptures.Capture capture, Pointer pointer) {
             this.scene = scene;
@@ -210,6 +223,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private Map<String, GuiCaptures.Capture> captures;
     private final Path scenesDir;
     private final ItemGlyphs glyphs;
+    /** The opener of the screen about to open for a player, read when the session is made. */
+    private final java.util.Map<java.util.UUID, String> pendingOpeners = new java.util.HashMap<>();
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
     /** Mod items the pack allocated a definition for (no manifest row): their stacks name it through item_model. */
@@ -652,8 +667,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Opens a scene with the slots it draws: its capture's, or the live menu's own for a scanned scene. */
     private void open(Player player, ScreenPack.Scene scene, GuiCaptures.Capture capture) {
         log.info("[cim-screen] " + player.getName() + " opened " + scene.shortName());
-        open.put(player.getUniqueId(), new Session(scene, capture,
-                new Pointer(POINTER_X, POINTER_Y, player.getYaw(), player.getPitch())));
+        Session session = new Session(scene, capture,
+                new Pointer(POINTER_X, POINTER_Y, player.getYaw(), player.getPitch()));
+        session.opener = pendingOpeners.remove(player.getUniqueId());
+        open.put(player.getUniqueId(), session);
         if (camera != null && !harnessFrame) {
             // Not during the click that opened it: a mount from inside that event is lost.
             org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1054,6 +1071,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }
                 }
+            }
+        }
+        // 3D element icons (GuiGameElement): the item's flat icon at the recorded place. A dynamic
+        // subject is the opener's block or item.
+        for (ScreenPack.Icon icon : s.scene.icons()) {
+            String id = icon.item() != null ? icon.item() : s.openerItem();
+            String glyph = id == null || glyphs == null ? null : glyphs.glyph(id);
+            if (glyph != null) {
+                frame.free(s.originX + icon.x(), s.originY + icon.y(), glyph, glyphs.advance(id));
             }
         }
         // What a press state (a window) draws over the slots goes over their items, as it does
@@ -1506,6 +1532,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         // A scanned scene has no capture: the layer's own slots (its positions, owners and
         // indices) stand in for it, so the menu's slots are drawn and clicked as a capture's are.
+        if (opener != null) {
+            pendingOpeners.put(player.getUniqueId(), opener.startsWith("sneak+") ? opener.substring(6) : opener);
+        }
         open(player, scene, captured ? captureOf(scene) : liveCapture(state));
         Session s = open.get(player.getUniqueId());
         s.live = true;
@@ -2226,6 +2255,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 : sceneForOpener((player.isSneaking() ? "sneak+" : "") + opener);
         if (scene != null) {
             event.setCancelled(true);
+            pendingOpeners.put(player.getUniqueId(), opener);
             open(player, scene);
         }
     }
@@ -3079,6 +3109,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 "a ticking block replaced by another carrier is stale");
         bad += check(!LiveBridge.staleCarrier("dynamictrees:oak_branch", "dynamictrees:oak_branch"),
                 "a ticking block whose carrier still stands is kept");
+        // A 3D icon's dynamic subject is the opener's block or item; a sneak prefix never reaches here.
+        ScreenPack.Scene bare = new ScreenPack.Scene("com/simibubi/create/content/equipment/toolbox/ToolboxScreen",
+                null, 176, 166, false, List.of(), List.of(), null);
+        Session fromBlock = new Session(bare, null, new Pointer(0, 0, 0, 0));
+        fromBlock.opener = "block:create:brown_toolbox";
+        Session fromItem = new Session(bare, null, new Pointer(0, 0, 0, 0));
+        fromItem.opener = "item:create:wrench";
+        Session fromOther = new Session(bare, null, new Pointer(0, 0, 0, 0));
+        fromOther.opener = "place+item:create:wrench";
+        bad += check("create:brown_toolbox".equals(fromBlock.openerItem())
+                && "create:wrench".equals(fromItem.openerItem()) && fromOther.openerItem() == null
+                && new Session(bare, null, new Pointer(0, 0, 0, 0)).openerItem() == null,
+                "a dynamic 3D icon draws its opener's block or item, and nothing else");
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
     }
