@@ -317,6 +317,16 @@ public final class LiveProtocol {
                         player.yBodyRotO = context.yaw();
                         hitAt = new net.minecraft.world.phys.Vec3(context.hitX(), context.hitY(), context.hitZ());
                     }
+                    // A mod block clicked (its id is named): the block's kept block entity (clickbe, Paper's
+                    // data) is loaded over the seeded one, as a chunk loads it, before its own code runs.
+                    boolean modBlock = !head[7].equals("-");
+                    if (modBlock) {
+                        for (int li = 1; li < lines.length; li++) {
+                            if (lines[li].startsWith("clickbe\t")) {
+                                loadKept(level, pos, lines[li].substring("clickbe\t".length()));
+                            }
+                        }
+                    }
                     BLOCKS.put(id, pos);
                     net.minecraft.world.item.ItemStack stack = player.getItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND);
                     net.minecraft.world.phys.BlockHitResult hit = new net.minecraft.world.phys.BlockHitResult(
@@ -324,11 +334,30 @@ public final class LiveProtocol {
                     var store = level.store();
                     store.beginPlacement();
                     java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> writes;
+                    // NeoForge's ServerPlayerGameMode.useItemOn order, for a mod block clicked with ANY
+                    // held stack (empty included): unless sneaking with a stack in hand, the block's
+                    // useItemOn, then its useWithoutItem when that passes; only then the item's own useOn
+                    // and use (an axe's strip is the item's useOn -> block.getToolModifiedState).
+                    boolean sneak = head.length > 8 && head[8].equals("1");
+                    boolean blockActed = false;
                     try {
-                        var result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
-                                player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
-                        if (!result.consumesAction() && player.opened() == null) {
-                            stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                        boolean bothEmpty = stack.isEmpty() && player.getOffhandItem().isEmpty();
+                        if (modBlock && (!sneak || bothEmpty)) {
+                            var clickedState = level.getBlockState(pos);
+                            var blockResult = clickedState.useItemOn(stack, level, player,
+                                    net.minecraft.world.InteractionHand.MAIN_HAND, hit);
+                            if (blockResult == net.minecraft.world.ItemInteractionResult.PASS_TO_DEFAULT_BLOCK_INTERACTION) {
+                                blockActed = clickedState.useWithoutItem(level, player, hit).consumesAction();
+                            } else {
+                                blockActed = blockResult.consumesAction();
+                            }
+                        }
+                        if (!blockActed) {
+                            var result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(
+                                    player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+                            if (!result.consumesAction() && player.opened() == null) {
+                                stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
+                            }
                         }
                     } finally {
                         player.setShiftKeyDown(false);
@@ -364,6 +393,17 @@ public final class LiveProtocol {
                         if (be != null) {
                             out.append("placedbe\t").append(be.saveWithFullMetadata(level.registryAccess())).append('\n');
                         }
+                    }
+                    // The clicked block's own interaction changed its block entity (a depot took the
+                    // item): its data goes back to Paper, which keeps it on the block.
+                    if (blockActed && modBlock && !writes.containsKey(pos)) {
+                        var usedBe = level.getBlockEntity(pos);
+                        if (usedBe != null) {
+                            out.append("usedbe\t").append(usedBe.saveWithFullMetadata(level.registryAccess())).append('\n');
+                        }
+                    }
+                    if (blockActed) {
+                        out.append("blockacted\t1\n");
                     }
                     if (player.opened() == null) {
                         for (var write : writes.entrySet()) {

@@ -2038,7 +2038,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     @EventHandler(priority = EventPriority.HIGH)
     public void onUse(PlayerInteractEvent event) {
         Action action = event.getAction();
-        if ((action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK) && moddedHeld(event)) {
+        boolean carrierClick = action == Action.RIGHT_CLICK_BLOCK && carried(event.getClickedBlock()) != null;
+        if ((action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK) && (moddedHeld(event) || carrierClick)) {
             Player player = event.getPlayer();
             long now = org.bukkit.Bukkit.getCurrentTick();
             Long last = moddedUseTick.get(player.getUniqueId());
@@ -2097,21 +2098,27 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 return;
             }
         }
+        ItemStack item = event.getItem();
         if (modded != null) {
             opener = "block:" + modded;
+            // A right click on a mod block with ANY held stack (vanilla or none too): the layer runs
+            // NeoForge's useItemOn order on it (the block's own interaction, then the item's use). Its
+            // menus open inside that use; a click it did nothing with falls through to the walk's scene.
             LiveBridge bridge = liveReady();
-            if (bridge != null && !player.isSneaking()) {
-                LiveBridge.State state = bridge.openBlock(player, block, modded);
-                if (openLive(player, state, opener)) {
+            if (bridge != null && event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+                org.bukkit.util.Vector clickedAt = null;
+                if (event.getClickedPosition() != null && block.equals(event.getClickedBlock())) {
+                    clickedAt = block.getLocation().toVector().add(event.getClickedPosition());
+                }
+                if (placeOrUse(player, bridge, block, event.getBlockFace(), modded, clickedAt, player.isSneaking())) {
                     event.setCancelled(true);
                     return;
                 }
             }
         }
-        ItemStack item = event.getItem();
-        // A mod item on a block: its own useOn decides, as on a real server (a block it
-        // places, a backpack set down by a sneaking click, a menu it opens).
-        if (block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
+        // A mod item on a block that is not a mod block: its own useOn decides, as on a real server (a block
+        // it places, a backpack set down by a sneaking click, a menu it opens).
+        if (modded == null && block != null && event.getAction() == Action.RIGHT_CLICK_BLOCK && item != null
                 && !item.getType().isAir() && !itemId(item).startsWith("minecraft:")) {
             LiveBridge bridge = liveReady();
             // The exact point the click landed on, when it is on the block the event named.
@@ -2119,7 +2126,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (event.getClickedPosition() != null && block.equals(event.getClickedBlock())) {
                 clickedAt = block.getLocation().toVector().add(event.getClickedPosition());
             }
-            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), carried(block), clickedAt)) {
+            if (bridge != null && placeOrUse(player, bridge, block, event.getBlockFace(), null, clickedAt)) {
                 event.setCancelled(true);
                 return;
             }
@@ -2152,7 +2159,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      */
     private boolean placeOrUse(Player player, LiveBridge bridge, Block clicked, org.bukkit.block.BlockFace face,
                                String clickedId, org.bukkit.util.Vector hit) {
-        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId, player.isSneaking(), hit, this::carried);
+        return placeOrUse(player, bridge, clicked, face, clickedId, hit, player.isSneaking());
+    }
+
+    private boolean placeOrUse(Player player, LiveBridge bridge, Block clicked, org.bukkit.block.BlockFace face,
+                               String clickedId, org.bukkit.util.Vector hit, boolean sneaking) {
+        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId, sneaking, hit, this::carried);
         if (result.state().error() != null) {
             log.warning("[cim-screen] live use-on failed: " + result.state().error());
             return false;
@@ -2161,7 +2173,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         for (LiveBridge.Placement changed : result.placements()) {
             Block at = clicked.getWorld().getBlockAt(changed.x(), changed.y(), changed.z());
             String id = DisplayCarriers.idAt(at);
-            if (id != null && knownDisplay(id)) {
+            // A carrier the use replaces with another block (a strip) is re-placed below, not re-looked.
+            if (id != null && knownDisplay(id) && (!at.equals(clicked) || changed.id().equals(id))) {
                 DisplayCarriers.updateState(at, id, changed.state());
                 bridge.keepPlacedState(at, changed.state());
             }
@@ -2184,11 +2197,17 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (result.placedId() != null) {
             F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
             Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
-            if (row != null && (at.getType().isAir() || at.isReplaceable()) && projectedDoor(at) == null) {
+            // The clicked carrier itself may change in place (an axe strips the log it hit): its new
+            // carrier replaces the old one, the old display with it.
+            boolean inPlace = at.equals(clicked) && carried(clicked) != null;
+            if (row != null && (at.getType().isAir() || at.isReplaceable() || inPlace) && projectedDoor(at) == null) {
                 if (knownDisplay(row.moddedBlockId())) {
                     at.setType(Material.BARRIER, false);
                     DisplayCarriers.place(at, row.moddedBlockId(), result.placedState());
                 } else {
+                    if (at.getType() == Material.BARRIER) {
+                        DisplayCarriers.remove(at);
+                    }
                     at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
                 }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
@@ -2205,10 +2224,13 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         if (result.state().open()) {
             did |= openLive(player, result.state(), "item:" + itemId(player.getInventory().getItemInMainHand()));
-        } else if (did) {
+        } else if (did || result.blockActed()) {
+            // What the layer's use consumed or put down is the truth: the inventory follows it.
             bridge.applyInventory(player, result.state());
         }
-        return did;
+        // A click the clicked mod block's own code took (a depot's item, a strip) is this click's
+        // use: the vanilla use of the same click is not run on top of it.
+        return did || result.blockActed();
     }
 
     private final Map<Block, List<DoorCollision.Proxy>> doorCollision = new HashMap<>();
