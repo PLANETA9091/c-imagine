@@ -45,8 +45,11 @@ public final class EnchantRegistry {
     record Entry(String id, JsonElement definition) {
     }
 
-    /** The parsed document: enchantments in file order and tag memberships. */
-    record Document(List<Entry> enchantments, Map<String, List<String>> tags) {
+    /**
+     * The parsed document: enchantments in file order, tag memberships, and the
+     * gate (enchantment id -> the mod item ids it applies to; see {@link EnchantGate}).
+     */
+    record Document(List<Entry> enchantments, Map<String, List<String>> tags, Map<String, List<String>> gate) {
     }
 
     /**
@@ -71,7 +74,17 @@ public final class EnchantRegistry {
                 tags.put(tag.getKey(), members);
             }
         }
-        return new Document(entries, tags);
+        Map<String, List<String>> gate = new LinkedHashMap<>();
+        if (doc.has("gate") && doc.get("gate").isJsonObject()) {
+            for (Map.Entry<String, JsonElement> row : doc.getAsJsonObject("gate").entrySet()) {
+                List<String> items = new ArrayList<>();
+                for (JsonElement m : row.getValue().getAsJsonArray()) {
+                    items.add(m.getAsString());
+                }
+                gate.put(row.getKey(), items);
+            }
+        }
+        return new Document(entries, tags, gate);
     }
 
     /**
@@ -86,6 +99,7 @@ public final class EnchantRegistry {
         try {
             String raw = Files.readString(defsPath, StandardCharsets.UTF_8);
             Document doc = parse(raw);
+            EnchantGate.set(doc.gate());
             if (doc.enchantments().isEmpty()) {
                 return 0;
             }
@@ -239,6 +253,21 @@ public final class EnchantRegistry {
         check(d.enchantments().get(0).definition().getAsJsonObject().get("max_level").getAsInt() == 5, "max_level");
         check(d.tags().get("minecraft:non_treasure").equals(List.of("combat_roll:acrobat")), "tag member");
         check(parse("{}").enchantments().isEmpty() && parse("{}").tags().isEmpty(), "empty document");
+        check(parse("{}").gate().isEmpty(), "no gate");
+        Document g = parse("{\"enchantments\":[],\"tags\":{},\"gate\":{\"create:capacity\":[\"create:copper_backtank\"]}}");
+        check(g.gate().get("create:capacity").equals(List.of("create:copper_backtank")), "gate row");
+        Map<String, java.util.Set<String>> rules = Map.of("create:capacity", java.util.Set.of("create:copper_backtank"));
+        check(EnchantGate.allowed(rules, "create:capacity", "create:copper_backtank"), "gated item allowed");
+        check(!EnchantGate.allowed(rules, "create:capacity", null), "vanilla host refused");
+        check(!EnchantGate.allowed(rules, "create:capacity", "create:andesite_alloy"), "other mod item refused");
+        check(EnchantGate.allowed(rules, "minecraft:sharpness", null), "ungated enchantment untouched");
+        String stack = "{\"id\":\"create:copper_backtank\",\"count\":1}";
+        String withAir = EnchantGate.layerJson(stack, Map.of("create:capacity", 3));
+        check(JsonParser.parseString(withAir).getAsJsonObject().getAsJsonObject("components")
+                .getAsJsonObject("minecraft:enchantments").getAsJsonObject("levels")
+                .get("create:capacity").getAsInt() == 3, "layer json carries the level");
+        check(EnchantGate.layerJson(withAir, Map.of()).equals(stack), "stale enchantments removed");
+        check(EnchantGate.layerJson(stack, Map.of()).equals(stack), "no enchantments leaves the json alone");
         System.out.println("enchant registry selftest ok");
     }
 

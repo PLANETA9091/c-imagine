@@ -20,6 +20,14 @@
 //! - attribute modifiers naming a non-vanilla attribute (a mod's own attribute,
 //!   e.g. `combat_roll:recharge`) cannot resolve on the server: those entries
 //!   are dropped and logged. The layer still runs the mod's real effect.
+//! - `supported_items` / `primary_items` naming MOD items or mod item tags
+//!   (Create's `create:potato_cannon`, `#create:pressurized_air_sources`) cannot
+//!   resolve either: the 26.3 item registry holds vanilla items only. The
+//!   enchantment is kept with `supported_items` = [`CARRIER_HOST`] (the vanilla
+//!   host every mod item is carried as) and the mod items it really applies to
+//!   go into [`Converted::gate`]. The plugin's `EnchantGate` refuses the
+//!   enchantment on any stack whose modded id is not in its gate list, so a
+//!   vanilla item with the same host is never offered it.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -80,8 +88,15 @@ pub struct EnchantDef {
 pub struct Converted {
     pub enchantments: Vec<EnchantDef>,
     pub tags: BTreeMap<String, Vec<String>>,
+    /// enchantment id -> the mod item ids it applies to (only enchantments whose
+    /// supported items name mod items; see the module doc).
+    pub gate: BTreeMap<String, Vec<String>>,
     pub dropped: Vec<String>,
 }
+
+/// The vanilla item every mod item carrier stands on when a mod enchantment
+/// has to name a 26.3 item (`commandItems` host of an allocated mod item).
+pub const CARRIER_HOST: &str = "minecraft:paper";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EnchantError {
@@ -220,18 +235,75 @@ fn attribute_263(attr: &str) -> Option<String> {
     Some(format!("minecraft:{path}"))
 }
 
-/// The first `supported_items` / `primary_items` value (tag `#` stripped) that
-/// is not in the `minecraft` namespace.
-fn foreign_item(definition: &Value) -> Option<String> {
-    for key in ["supported_items", "primary_items"] {
-        if let Some(v) = definition.get(key).and_then(Value::as_str) {
-            let id = v.trim_start_matches('#');
-            if !id.starts_with("minecraft:") {
-                return Some(id.to_string());
-            }
+/// A supported-items value naming something outside `minecraft:` (`create:potato_cannon`,
+/// `#create:pressurized_air_sources`).
+fn is_foreign_ref(value: &str) -> bool {
+    !value.trim_start_matches('#').starts_with("minecraft:")
+}
+
+/// The item ids a supported-items value stands for, read from the mod item tag
+/// files. Vanilla members are not returned (the gate only holds mod items).
+fn expand_item_ref(
+    value: &str,
+    item_tags: &BTreeMap<String, Vec<String>>,
+    depth: usize,
+) -> Vec<String> {
+    let Some(tag) = value.strip_prefix('#') else {
+        return vec![value.to_string()];
+    };
+    if tag.starts_with("minecraft:") || depth > 4 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for member in item_tags.get(tag).into_iter().flatten() {
+        if member.starts_with('#') {
+            out.extend(expand_item_ref(member, item_tags, depth + 1));
+        } else if !member.starts_with("minecraft:") && !out.contains(member) {
+            out.push(member.clone());
         }
     }
-    None
+    out
+}
+
+/// Rewrites a definition whose supported/primary items name mod items to the
+/// carrier host, and returns the mod item ids it really applies to. `None` when
+/// the definition names no mod item (nothing to rewrite) or names only mod
+/// items the jars do not define (the caller drops the enchantment).
+fn gate_items(
+    id: &str,
+    definition: &mut Value,
+    item_tags: &BTreeMap<String, Vec<String>>,
+    dropped: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    let mut mod_items: Vec<String> = Vec::new();
+    let mut foreign = false;
+    for key in ["supported_items", "primary_items"] {
+        let Some(value) = definition.get(key).and_then(Value::as_str) else {
+            continue;
+        };
+        if !is_foreign_ref(value) {
+            continue;
+        }
+        foreign = true;
+        for item in expand_item_ref(value, item_tags, 0) {
+            if !mod_items.contains(&item) {
+                mod_items.push(item);
+            }
+        }
+        if let Some(obj) = definition.as_object_mut() {
+            obj.insert(key.to_string(), json!([CARRIER_HOST]));
+        }
+    }
+    if !foreign {
+        return None;
+    }
+    mod_items.sort();
+    if mod_items.is_empty() {
+        dropped.push(format!(
+            "{id}: supported items name no mod item the jars define (enchantment dropped)"
+        ));
+    }
+    Some(mod_items)
 }
 
 /// `data/<ns>/enchantment/<name>.json` -> `ns:name`.
@@ -258,6 +330,17 @@ fn enchantment_tag_id(path: &str) -> Option<String> {
     Some(format!("{ns}:{name}"))
 }
 
+/// `data/<ns>/tags/item/<name>.json` -> `ns:name` (the item tag id).
+fn item_tag_id(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("data/")?;
+    let (ns, rest) = rest.split_once('/')?;
+    let name = rest.strip_prefix("tags/item/")?.strip_suffix(".json")?;
+    if name.is_empty() || name.contains('/') {
+        return None;
+    }
+    Some(format!("{ns}:{name}"))
+}
+
 /// Tag memberships a mod declares: `values` strings (plain ids only; nested
 /// `#tag` references are not expanded and are logged by the caller).
 fn tag_values(json: &Value) -> Vec<String> {
@@ -277,29 +360,49 @@ fn tag_values(json: &Value) -> Vec<String> {
 
 /// Build the conversion from already-parsed sources (testable without jars).
 ///
-/// `enchantments`: `(path-in-jar, json)`; `tags`: `(path-in-jar, json)`.
-/// Enchantments with an unparseable or unconvertible body are dropped; tag
+/// `enchantments`: `(path-in-jar, json)`; `tags`: `(path-in-jar, json)` enchantment
+/// tags. Enchantments with an unparseable or unconvertible body are dropped; tag
 /// entries that name a dropped or unknown enchantment are dropped too.
 pub fn build(enchantments: &[(String, Value)], tag_files: &[(String, Value)]) -> Converted {
+    build_with_item_tags(enchantments, tag_files, &[])
+}
+
+/// [`build`] with the mod item tag files (`data/<ns>/tags/item/*.json`), which
+/// name the mod items a `#ns:tag` supported-items reference expands to.
+pub fn build_with_item_tags(
+    enchantments: &[(String, Value)],
+    tag_files: &[(String, Value)],
+    item_tag_files: &[(String, Value)],
+) -> Converted {
+    let mut item_tags: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (path, json) in item_tag_files {
+        if let Some(tag) = item_tag_id(path) {
+            item_tags.insert(tag, tag_values(json));
+        }
+    }
     let mut out = Converted::default();
     for (path, json) in enchantments {
         let Some(id) = enchantment_id(path) else {
             continue;
         };
         match convert(&id, json, &mut out.dropped) {
-            Ok(definition) => match foreign_item(&definition) {
-                // The 26.3 item registry holds vanilla items and tags only (mod
-                // items live in the layer), so the codec would reject the entry.
-                Some(item) => out.dropped.push(format!(
-                    "{id}: supported item {item} is not a vanilla item or tag (enchantment dropped)"
-                )),
-                None => out.enchantments.push(EnchantDef { id, definition }),
-            },
+            Ok(mut definition) => {
+                match gate_items(&id, &mut definition, &item_tags, &mut out.dropped) {
+                    Some(mod_items) if mod_items.is_empty() => {}
+                    Some(mod_items) => {
+                        out.gate.insert(id.clone(), mod_items);
+                        out.enchantments.push(EnchantDef { id, definition });
+                    }
+                    None => out.enchantments.push(EnchantDef { id, definition }),
+                }
+            }
             Err(e) => out.dropped.push(format!("{id}: {e} (enchantment dropped)")),
         }
     }
     out.enchantments.sort_by(|a, b| a.id.cmp(&b.id));
     out.enchantments.dedup_by(|a, b| a.id == b.id);
+    out.gate
+        .retain(|id, _| out.enchantments.iter().any(|e| &e.id == id));
     let known: Vec<String> = out.enchantments.iter().map(|e| e.id.clone()).collect();
 
     for (path, json) in tag_files {
@@ -344,6 +447,7 @@ pub fn build(enchantments: &[(String, Value)], tag_files: &[(String, Value)]) ->
 pub fn load_mod_enchantments(mods: &Path) -> Converted {
     let mut enchantments = Vec::new();
     let mut tags = Vec::new();
+    let mut item_tags = Vec::new();
     let Ok(dir) = std::fs::read_dir(mods) else {
         return Converted::default();
     };
@@ -366,7 +470,8 @@ pub fn load_mod_enchantments(mods: &Path) -> Converted {
         for name in names {
             let is_ench = enchantment_id(&name).is_some();
             let is_tag = enchantment_tag_id(&name).is_some();
-            if !is_ench && !is_tag {
+            let is_item_tag = item_tag_id(&name).is_some();
+            if !is_ench && !is_tag && !is_item_tag {
                 continue;
             }
             let Ok(mut entry) = zip.by_name(&name) else {
@@ -381,12 +486,14 @@ pub fn load_mod_enchantments(mods: &Path) -> Converted {
             };
             if is_ench {
                 enchantments.push((name, json));
+            } else if is_item_tag {
+                item_tags.push((name, json));
             } else {
                 tags.push((name, json));
             }
         }
     }
-    build(&enchantments, &tags)
+    build_with_item_tags(&enchantments, &tags, &item_tags)
 }
 
 /// The `<root>/c-imagine/enchant-defs.json` document the plugin reads.
@@ -399,6 +506,7 @@ pub fn defs_document(converted: &Converted) -> Value {
     json!({
         "enchantments": enchantments,
         "tags": converted.tags,
+        "gate": converted.gate,
         "dropped": converted.dropped,
     })
 }
@@ -674,25 +782,123 @@ mod tests {
         eprintln!("dropped: {:?}", out.dropped);
     }
 
+    const CAPACITY: &str = r##"{"anvil_cost":1,"description":{"translate":"enchantment.create.capacity"},
+      "max_cost":{"base":45,"per_level_above_first":15},"max_level":3,
+      "min_cost":{"base":15,"per_level_above_first":15},"slots":["mainhand"],
+      "supported_items":"#create:pressurized_air_sources","weight":10}"##;
+
+    const POTATO: &str = r##"{"anvil_cost":1,"description":{"translate":"enchantment.create.potato_recovery"},
+      "effects":{"minecraft:ammo_use":[{"effect":{"type":"minecraft:set","value":{"type":"minecraft:linear",
+        "base":0.0,"per_level_above_first":33.333332}},
+        "requirements":{"condition":"minecraft:match_tool","predicate":{"items":[]}}}]},
+      "max_cost":{"base":45,"per_level_above_first":15},"max_level":3,
+      "min_cost":{"base":15,"per_level_above_first":15},"slots":["mainhand"],
+      "supported_items":"create:potato_cannon","weight":10}"##;
+
+    fn create_item_tags() -> Vec<(String, Value)> {
+        vec![(
+            "data/create/tags/item/pressurized_air_sources.json".to_string(),
+            parse(r##"{"values":["create:copper_backtank","create:netherite_backtank"]}"##),
+        )]
+    }
+
     #[test]
-    fn mod_items_drop_the_enchantment() {
-        let enchantments = vec![
-            (
-                "data/create/enchantment/potato_recovery.json".to_string(),
-                parse(
-                    r##"{"anvil_cost":1,"description":{"translate":"x"},"effects":{},"max_cost":{"base":45,"per_level_above_first":15},"max_level":3,"min_cost":{"base":15,"per_level_above_first":15},"slots":["mainhand"],"supported_items":"create:potato_cannon","weight":10}"##,
-                ),
-            ),
-            (
-                "data/create/enchantment/capacity.json".to_string(),
-                parse(
-                    r##"{"anvil_cost":1,"description":{"translate":"x"},"max_cost":{"base":45,"per_level_above_first":15},"max_level":3,"min_cost":{"base":15,"per_level_above_first":15},"slots":["mainhand"],"supported_items":"#create:pressurized_air_sources","weight":10}"##,
-                ),
-            ),
-        ];
+    fn capacity_is_kept_on_the_carrier_host_with_its_backtank_gate() {
+        let enchantments = vec![(
+            "data/create/enchantment/capacity.json".to_string(),
+            parse(CAPACITY),
+        )];
+        let out = build_with_item_tags(&enchantments, &[], &create_item_tags());
+        assert_eq!(out.enchantments.len(), 1, "{:?}", out.dropped);
+        assert_eq!(out.enchantments[0].id, "create:capacity");
+        assert_eq!(
+            out.enchantments[0].definition["supported_items"],
+            json!([CARRIER_HOST])
+        );
+        assert_eq!(
+            out.gate["create:capacity"],
+            vec!["create:copper_backtank", "create:netherite_backtank"]
+        );
+        assert!(out.dropped.is_empty(), "{:?}", out.dropped);
+    }
+
+    #[test]
+    fn potato_recovery_keeps_its_effect_and_gates_the_cannon() {
+        let enchantments = vec![(
+            "data/create/enchantment/potato_recovery.json".to_string(),
+            parse(POTATO),
+        )];
+        let out = build(&enchantments, &[]);
+        assert_eq!(out.enchantments.len(), 1, "{:?}", out.dropped);
+        let def = &out.enchantments[0].definition;
+        assert_eq!(def["supported_items"], json!([CARRIER_HOST]));
+        assert!(def["effects"].get("minecraft:ammo_use").is_some());
+        assert_eq!(
+            out.gate["create:potato_recovery"],
+            vec!["create:potato_cannon"]
+        );
+    }
+
+    #[test]
+    fn mod_tag_without_jar_definition_drops_the_enchantment() {
+        // Without the item tag file the tag names nothing the jars define.
+        let enchantments = vec![(
+            "data/create/enchantment/capacity.json".to_string(),
+            parse(CAPACITY),
+        )];
         let out = build(&enchantments, &[]);
         assert!(out.enchantments.is_empty());
-        assert_eq!(out.dropped.len(), 2, "{:?}", out.dropped);
-        assert!(out.dropped[1].contains("create:pressurized_air_sources"));
+        assert!(out.gate.is_empty());
+        assert!(out.dropped.iter().any(|d| d.contains("create:capacity")));
+    }
+
+    #[test]
+    fn vanilla_members_of_a_mod_tag_stay_out_of_the_gate() {
+        let tags = vec![
+            (
+                "data/create/tags/item/pressurized_air_sources.json".to_string(),
+                parse(
+                    r##"{"values":["create:copper_backtank","minecraft:paper","#create:more"]}"##,
+                ),
+            ),
+            (
+                "data/create/tags/item/more.json".to_string(),
+                parse(r##"{"values":["create:netherite_backtank"]}"##),
+            ),
+        ];
+        let enchantments = vec![(
+            "data/create/enchantment/capacity.json".to_string(),
+            parse(CAPACITY),
+        )];
+        let out = build_with_item_tags(&enchantments, &[], &tags);
+        assert_eq!(
+            out.gate["create:capacity"],
+            vec!["create:copper_backtank", "create:netherite_backtank"]
+        );
+    }
+
+    #[test]
+    fn vanilla_enchantments_have_no_gate_entry() {
+        let enchantments = vec![(
+            "data/combat_roll/enchantment/acrobat.json".to_string(),
+            parse(ACROBAT),
+        )];
+        let out = build(&enchantments, &[]);
+        assert!(out.gate.is_empty());
+        assert_eq!(out.enchantments.len(), 1);
+    }
+
+    #[test]
+    fn document_carries_the_gate() {
+        let enchantments = vec![(
+            "data/create/enchantment/potato_recovery.json".to_string(),
+            parse(POTATO),
+        )];
+        let out = build(&enchantments, &[]);
+        let doc = defs_document(&out);
+        assert_eq!(
+            doc["gate"]["create:potato_recovery"],
+            json!(["create:potato_cannon"])
+        );
     }
 }
