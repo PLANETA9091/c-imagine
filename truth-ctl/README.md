@@ -35,13 +35,24 @@ The log prints `[truthctl] listening on 127.0.0.1:<port>` and every request/repl
 - Reply: the command's keys with `"ok": true`, or `{"error": "...", "kind": "..."}`.
   Kinds: `bad_json`, `bad_request`, `unknown`, `no_world`, `not_found`, `busy`,
   `timeout`, `exception`.
-- Long actions (`break`, `place`, `interact`, `use-item`, `click-slot`, `screenshot`,
+- Long actions (`break`, `place`, `interact`, `use-item`, `respawn`, `click-slot`, `screenshot`,
   `wait`, `wait-ready`) run as tick-driven tasks from `ClientTickEvent.Post`; one at a
   time (`busy` otherwise). Every game access runs on the client main thread.
 
 Commands: hello, state, wait-ready, block, blocks, inventory, look, look-at-block,
-select, break, place, interact, use-item, attack, screen (alias menu), click-slot,
+select, break, place, interact, use-item, respawn, attack, screen (alias menu), click-slot,
 open-inventory, close, command, chat, messages, entities, screenshot, wait.
+
+- `respawn`: if the client is on the DeathScreen (or the player is dead), calls
+  `LocalPlayer.respawn()` (the Respawn button path), closes the death screen and waits up
+  to 10 s for the player to be alive in world. Reply: `{ok, respawned:true, screen,
+  player{position,health}, health}`. If not dead: `{ok:true, respawned:false}`.
+- `use-item [--hold TICKS]`: without `--hold`, one `useItem` click (reply after 5 ticks,
+  `inventory_change`). With `--hold TICKS` (default 40 if the number is omitted, 1..72000),
+  a held right-click: `useItem` on the first tick, `keyUse` kept pressed, released with
+  `releaseUsingItem` when the use finishes or TICKS elapse, then 5 settle ticks. Reply:
+  `{ok, inventory_change, result, ended_by: finished|hold_elapsed|not_usable, held_ticks,
+  food, saturation, health}`.
 
 ## Python client
 

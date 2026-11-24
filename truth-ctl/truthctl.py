@@ -9,6 +9,8 @@ Examples:
     truthctl.py state
     truthctl.py break 10 64 10 --timeout 20
     truthctl.py select wooden_pickaxe
+    truthctl.py use-item --hold 40
+    truthctl.py respawn
 
 --timeout S (before CMD) sets opts.timeout; a "--timeout S" after CMD is passed
 through in args and interpreted by the mod the same way.

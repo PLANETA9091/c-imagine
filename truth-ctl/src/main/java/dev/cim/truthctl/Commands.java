@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
+import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.client.gui.screens.ReceivingLevelScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.TitleScreen;
@@ -77,6 +78,15 @@ final class Commands {
                 return parseDoubleOr(args.isEmpty() ? "0" : args.get(0), 0) / 20.0 + 15;
             case "break":
                 return 30;
+            case "use-item": {
+                int hold;
+                try {
+                    hold = holdTicks(args);
+                } catch (TruthCtl.CmdError e) {
+                    hold = 0; // dispatch reports the bad argument
+                }
+                return hold > 0 ? hold / 20.0 + 15 : 20;
+            }
             default:
                 return 20;
         }
@@ -206,7 +216,20 @@ final class Commands {
                 return TruthCtl.install(new InteractTask(pos, face));
             }
             case "use-item":
-                return TruthCtl.install(new UseItemTask());
+                return TruthCtl.install(new UseItemTask(holdTicks(args)));
+            case "respawn": {
+                LocalPlayer p = mc.player;
+                if (p == null || mc.level == null) {
+                    throw new TruthCtl.CmdError("not in world", "no_world");
+                }
+                boolean dead = mc.screen instanceof DeathScreen || p.isDeadOrDying() || p.getHealth() <= 0;
+                if (!dead) {
+                    JsonObject o = TruthCtl.ok();
+                    o.addProperty("respawned", false);
+                    return done(o);
+                }
+                return TruthCtl.install(new RespawnTask());
+            }
             case "attack": {
                 LocalPlayer p = player(mc);
                 ClientLevel lvl = level(mc);
@@ -488,13 +511,44 @@ final class Commands {
         }
     }
 
-    /** Use the held item (MultiPlayerGameMode.useItem). */
+    /** Hold ticks from "--hold TICKS" in args (default 40 when the number is omitted), 0 = single click. */
+    static int holdTicks(List<String> args) throws TruthCtl.CmdError {
+        int i = args.indexOf("--hold");
+        if (i < 0) {
+            return 0;
+        }
+        if (i + 1 >= args.size()) {
+            return 40;
+        }
+        try {
+            int n = Integer.parseInt(args.get(i + 1));
+            if (n < 1 || n > 72000) {
+                throw new TruthCtl.CmdError("--hold must be 1..72000 ticks", "bad_request");
+            }
+            return n;
+        } catch (NumberFormatException e) {
+            throw new TruthCtl.CmdError("--hold needs a tick count", "bad_request");
+        }
+    }
+
+    /**
+     * Use the held item (MultiPlayerGameMode.useItem). Without hold: one click, reply after 5
+     * ticks. With hold: a held right-click. The first tick calls useItem, keyUse stays pressed
+     * (vanilla re-starts the use each tick while it is not running), and the use is released
+     * when it finishes or the hold ticks elapse, then 5 settle ticks before the reply.
+     */
     static final class UseItemTask extends TruthCtl.Task {
+        private final int hold;
         private Map<String, Integer> invBefore;
         private String result;
+        private boolean seenUsing;
+        private boolean released;
+        private int releasedAt;
+        private String endedBy;
 
-        UseItemTask() {
-            super("use-item", 5 + 20);
+        UseItemTask(int hold) {
+            super("use-item", hold > 0 ? hold + 40 : 5 + 20);
+            this.hold = hold;
         }
 
         @Override
@@ -506,17 +560,94 @@ final class Commands {
                 p.swing(HAND);
             }
             result = String.valueOf(r);
+            if (hold > 0) {
+                mc.options.keyUse.setDown(true);
+            }
         }
 
         @Override
         boolean step(Minecraft mc) throws TruthCtl.CmdError {
-            if (ticks < 5) {
-                return false;
-            }
             LocalPlayer p = player(mc);
+            if (hold == 0) {
+                return ticks >= 5 && reply(p);
+            }
+            if (!released) {
+                if (p.isUsingItem()) {
+                    seenUsing = true;
+                }
+                if (seenUsing && !p.isUsingItem()) {
+                    endedBy = "finished";
+                } else if (!seenUsing && ticks >= 3) {
+                    endedBy = "not_usable";
+                } else if (ticks >= hold) {
+                    endedBy = "hold_elapsed";
+                } else {
+                    return false;
+                }
+                mc.options.keyUse.setDown(false);
+                if (p.isUsingItem()) {
+                    mc.gameMode.releaseUsingItem(p);
+                }
+                released = true;
+                releasedAt = ticks;
+            }
+            return ticks - releasedAt >= 5 && reply(p);
+        }
+
+        private boolean reply(LocalPlayer p) {
             JsonObject o = TruthCtl.ok();
             o.add("inventory_change", countsJson(signedDelta(invBefore, invCounts(p.getInventory()))));
             o.addProperty("result", result);
+            if (hold > 0) {
+                o.addProperty("ended_by", endedBy);
+                o.addProperty("held_ticks", ticks);
+            }
+            o.addProperty("food", p.getFoodData().getFoodLevel());
+            o.addProperty("saturation", p.getFoodData().getSaturationLevel());
+            o.addProperty("health", p.getHealth());
+            future.complete(o);
+            return true;
+        }
+    }
+
+    /** Respawn like the DeathScreen button: LocalPlayer.respawn() then close the screen. */
+    static final class RespawnTask extends TruthCtl.Task {
+        private boolean requested;
+
+        RespawnTask() {
+            super("respawn", 10 * 20 + 20);
+        }
+
+        @Override
+        void start(Minecraft mc) throws TruthCtl.CmdError {
+            LocalPlayer p = player(mc);
+            p.respawn();
+            requested = true;
+            if (mc.screen instanceof DeathScreen) {
+                mc.setScreen(null);
+            }
+        }
+
+        @Override
+        boolean step(Minecraft mc) {
+            LocalPlayer p = mc.player;
+            if (!requested || ticks < 2 || p == null || mc.level == null) {
+                return false;
+            }
+            if (mc.screen instanceof DeathScreen || !p.isAlive()) {
+                if (mc.screen instanceof DeathScreen) {
+                    mc.setScreen(null);
+                }
+                return false;
+            }
+            JsonObject o = TruthCtl.ok();
+            o.addProperty("respawned", true);
+            o.addProperty("screen", screenName(mc.screen));
+            JsonObject po = new JsonObject();
+            po.add("position", vec(p.position()));
+            po.addProperty("health", p.getHealth());
+            o.add("player", po);
+            o.addProperty("health", p.getHealth());
             future.complete(o);
             return true;
         }
