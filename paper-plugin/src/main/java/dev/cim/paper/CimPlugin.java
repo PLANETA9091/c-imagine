@@ -1412,10 +1412,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return sender instanceof Player p ? p.getWorld() : Bukkit.getWorlds().get(0);
     }
 
-    /** Sends one {@code CIM-INSPECT} line to the sender and logs it at INFO. */
+    /**
+     * Logs one {@code CIM-INSPECT} line at INFO. A player sender gets it in chat only when
+     * {@code -Dcim.inspect.echo=true} is set (the harness reads the server log and the JSON
+     * covers the screenshots); a console sender always gets it.
+     */
     private void emitInspect(CommandSender sender, com.google.gson.JsonObject obj) {
         String line = "CIM-INSPECT " + INSPECT_GSON.toJson(obj);
-        sender.sendMessage(line);
+        if (!(sender instanceof Player) || Boolean.getBoolean("cim.inspect.echo")) {
+            sender.sendMessage(line);
+        }
         log().info(line);
     }
 
