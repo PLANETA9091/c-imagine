@@ -1352,7 +1352,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     // ---- /cim inspect: the server's own view, for the parity harness (OURS observations) ----
 
     /** The Gson the inspect lines are written with (Paper ships Gson, as the JSON readers above use it). */
-    private static final com.google.gson.Gson INSPECT_GSON = new com.google.gson.Gson();
+    private static final com.google.gson.Gson INSPECT_GSON = new com.google.gson.GsonBuilder().disableHtmlEscaping().create();
     /** The layer's stack JSON carries its own id ({@code {"id":"create:x",...}}). */
     private static final java.util.regex.Pattern INSPECT_LIVE_ID =
             java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
