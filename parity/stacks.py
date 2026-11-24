@@ -29,6 +29,7 @@ import glob
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import keyboard_layout  # noqa: E402  (the /keyboard HUD geometry, see keyboard_layout.py)
+import view_ray  # noqa: E402  (the aim ray of use_at, see view_ray.py)
 
 HOME = os.path.expanduser("~")
 # Paths and ports come from the environment; the defaults are the current stand layout.
@@ -1307,25 +1308,27 @@ class OursStack(Stack):
 
     def use_at(self, point, holds=()):
         """look-at the point, then a right press and release. The hit is the crosshair target after the
-        turn (what the click uses); block and inventory are then read like place."""
+        turn when Horizon reports one (what the click uses); otherwise the first solid cell of the view ray
+        from the player's eye along the reported yaw and pitch (view_ray.py). Block and inventory are then read
+        like place."""
         before = self._counts()
         self.ctl("look-at", *[str(float(v)) for v in point])
         # The crosshair target refreshes on the client tick; Horizon's target is None for a few ticks
-        # after look-at (TRIAGE-3 32/33), so retry it, then fall back to the face under the aim point.
-        t_pos, t_face, eye = None, None, None
+        # after look-at (TRIAGE-3 32/33), so retry it, then trace the view ray from the reported look.
+        t_pos, t_face, st = None, None, {}
         for _ in range(6):
             self.ctl("wait", 1)
             st = self.ctl("state")
             t_pos, t_face = _target_pos_face(st.get("target"))
-            eye = _vec3(st.get("eye")) or _vec3(st.get("position"))
             if t_pos is not None:
                 break
-        fb_pos, fb_face = face_from_point([float(v) for v in point], eye)
-        if t_pos is None:
-            hit_pos, hit_face = fb_pos, fb_face
+        if t_pos is not None:
+            hit_pos, hit_face, hit_src = t_pos, t_face, "target"
         else:
-            hit_pos = t_pos
-            hit_face = t_face or (fb_face if fb_pos == t_pos else None)
+            ray = self._view_ray_hit(st)
+            hit_pos, hit_face = (ray["pos"], ray["face"]) if ray else (None, None)
+            hit_src = "ray" if ray else "none"
+        self.last_hit_source = hit_src  # diagnostics only: not part of the observed result
         with self.holding(holds):
             self.ctl("mouse", "right", "down")
             self.ctl("mouse", "right", "up")
@@ -1336,6 +1339,32 @@ class OursStack(Stack):
             "block_after": self._server_block_id(hit_pos) if hit_pos else None,
             "inventory_change": self._delta(before, self._counts()),
         }
+
+    def _view_ray_hit(self, st):
+        """The first solid cell the player's view ray reaches (view_ray.first_solid_cell), read from the client
+        with block queries. None when the player's pose is not in the state reply or nothing solid is in reach
+        (or a cell on the way is not loaded: no hit is better than a wrong one)."""
+        player = st.get("player") if isinstance(st.get("player"), dict) else {}
+        feet = _vec3(player.get("position")) or _vec3(st.get("position"))
+        yaw, pitch = st.get("yaw", player.get("yaw")), st.get("pitch", player.get("pitch"))
+        if feet is None or yaw is None or pitch is None:
+            return None
+        eye = _vec3(st.get("eye"))
+        cache = {}
+
+        def solid(cell):
+            if cell not in cache:
+                r = self.ctl("block", *[str(v) for v in cell])
+                if r.get("loaded") is False or not (r.get("block") or r.get("state")):
+                    cache[cell] = None
+                else:
+                    cache[cell] = not view_ray.is_air_id(r.get("block") or r.get("state"))
+            return cache[cell]
+
+        if eye is not None:
+            direction = view_ray.view_direction(float(yaw), float(pitch))
+            return view_ray.first_solid_cell(tuple(eye), direction, solid)
+        return view_ray.aim_hit(feet, float(yaw), float(pitch), solid)
 
     def key(self, name, ticks=1):
         if name in MOD_KEY_CODES:
