@@ -79,6 +79,9 @@ public final class LiveProtocol {
             if (head[0].equals("digspeed")) {
                 return digSpeed(head);
             }
+            if (head[0].equals("blockat")) {
+                return blockAt(head);
+            }
             UUID id = UUID.fromString(head[1]);
             return switch (head[0]) {
                 case "open-item" -> {
@@ -104,6 +107,12 @@ public final class LiveProtocol {
                     net.minecraft.world.level.block.state.BlockState wanted =
                             net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                                     net.minecraft.resources.ResourceLocation.parse(head[3])).defaultBlockState();
+                    // The state it was placed with (Paper's kept text), when the field is there.
+                    net.minecraft.world.level.block.state.BlockState kept =
+                            placedStateOf(head.length > 7 ? head[7] : null, wanted.getBlock());
+                    if (kept != null) {
+                        wanted = kept;
+                    }
                     FacadeServerLevel level = LiveMenus.level();
                     boolean fresh = false;
                     for (int i = 1; i < lines.length; i++) {
@@ -113,9 +122,7 @@ public final class LiveProtocol {
                         // As just placed: the old block entity goes with the old block.
                         level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                     }
-                    if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
-                        level.setBlock(pos, wanted, 3);
-                    }
+                    setPlaced(level, pos, wanted, kept != null);
                     for (int i = 1; i < lines.length; i++) {
                         if (lines[i].startsWith("be\t")) {
                             // As a chunk loads it: the data first, then the level and onLoad, which
@@ -219,6 +226,8 @@ public final class LiveProtocol {
                         }
                         out.append("placed\t").append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(now.getBlock()))
                                 .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ()).append('\n');
+                        // The full state it was placed with (properties and all), for Paper to keep.
+                        out.append("placedstate\t").append(BlockStates.format(now)).append('\n');
                         net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(p);
                         if (be != null) {
                             out.append("placedbe\t").append(be.saveWithFullMetadata(level.registryAccess())).append('\n');
@@ -546,7 +555,10 @@ public final class LiveProtocol {
                 Integer.parseInt(head[at + 2]));
     }
 
-    /** adopt TAB x TAB y TAB z TAB blockId, then an optional "be TAB snbt" line: a placed block starts ticking. */
+    /**
+     * adopt TAB x TAB y TAB z TAB blockId [TAB state], then an optional "be TAB snbt" line: a placed block starts
+     * ticking. The state is the block's full state text as Paper kept it (absent: the block's default state).
+     */
     private static String adopt(String[] head, String[] lines) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         net.minecraft.core.BlockPos pos = pos(head, 1);
         FacadeServerLevel level = LiveMenus.level();
@@ -557,9 +569,11 @@ public final class LiveProtocol {
         if (wanted.isAir() && !head[4].equals("minecraft:air")) {
             return "error\tunknown block " + head[4];
         }
-        if (level.getBlockState(pos).getBlock() != wanted.getBlock()) {
-            level.setBlock(pos, wanted, 3);
+        net.minecraft.world.level.block.state.BlockState kept = placedStateOf(head.length > 5 ? head[5] : null, wanted.getBlock());
+        if (kept != null) {
+            wanted = kept;
         }
+        setPlaced(level, pos, wanted, kept != null);
         for (int i = 1; i < lines.length; i++) {
             if (lines[i].startsWith("be\t")) {
                 loadKept(level, pos, lines[i].substring(3));
@@ -718,6 +732,34 @@ public final class LiveProtocol {
         net.minecraft.world.level.block.state.BlockState ref = blockState(head[2]);
         return "digspeed\t" + held.getDestroySpeed(mod) + "\t" + (held.isCorrectToolForDrops(mod) ? 1 : 0) + "\t"
                 + refHeld.getDestroySpeed(ref) + "\n";
+    }
+
+    /**
+     * blockat TAB x TAB y TAB z: "state TAB ns:id[k=v,...]" when the facade holds a state at the position, else "none".
+     */
+    private static String blockAt(String[] head) {
+        net.minecraft.world.level.block.state.BlockState held = LiveMenus.level().store().heldStateAt(pos(head, 1));
+        return held == null ? "none\n" : "state\t" + BlockStates.format(held) + "\n";
+    }
+
+    /** The state {@code text} names when its block is {@code block}, else null (the block's default then). */
+    private static net.minecraft.world.level.block.state.BlockState placedStateOf(String text,
+            net.minecraft.world.level.block.Block block) {
+        net.minecraft.world.level.block.state.BlockState parsed = BlockStates.parse(text);
+        return parsed == null || parsed.getBlock() != block ? null : parsed;
+    }
+
+    /**
+     * Puts a placed block's state into the facade: when the block differs, or when a kept state is to be
+     * set over the one there (Paper's kept state is the placed one). Without a kept state an existing
+     * state of the same block is left as it is.
+     */
+    private static void setPlaced(FacadeServerLevel level, net.minecraft.core.BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState wanted, boolean kept) {
+        net.minecraft.world.level.block.state.BlockState now = level.getBlockState(pos);
+        if (now.getBlock() != wanted.getBlock() || (kept && now != wanted)) {
+            level.setBlock(pos, wanted, 3);
+        }
     }
 
     /** save TAB x TAB y TAB z: the block entity's data as it is now, for Paper to keep. */

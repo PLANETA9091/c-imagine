@@ -1828,6 +1828,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         });
     }
 
+    /** The layer's state at a block (its full state text), or null: for /cim inspect. Needs the layer's real server up. */
+    String layerStateAt(Block block) {
+        LiveBridge bridge = liveReady();
+        return bridge == null ? null : bridge.blockAt(block);
+    }
+
     /** The live bridge, only once the layer's real server is up (else null). */
     private LiveBridge liveReady() {
         LiveBridge bridge = live();
@@ -2007,6 +2013,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                     DisplayCarriers.place(at, row.moddedBlockId());
                 }
                 bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
+                bridge.keepPlacedState(at, result.placedState());
                 if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
                     logTicking();
                 }
