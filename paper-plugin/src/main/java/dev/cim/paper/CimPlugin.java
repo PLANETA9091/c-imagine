@@ -63,6 +63,67 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     private F2vState f2v;
     private dev.cim.f2v.PackHttp visualPack;
     /** cim.f2v.autoOffer resolved AND server.properties does not pin a resource-pack. */
+    private Map<String, String> commandItems = Map.of();
+    private java.util.Set<String> blockDisplays = java.util.Set.of();
+    private Map<String, Boolean> projectedDoors = Map.of();
+
+    public boolean hasDoorProjection(String id) {
+        return id != null && projectedDoors.containsKey(id);
+    }
+
+    public boolean isSlidingDoorProjection(String id) {
+        return projectedDoors.getOrDefault(id, false);
+    }
+
+    public Map<String, String> commandItems() {
+        return commandItems;
+    }
+
+    public boolean usesBlockDisplay(String id) {
+        return blockDisplays.contains(id);
+    }
+
+    private void loadCommandItems(Path pack) throws IOException {
+        Map<String, String> hosts = new java.util.HashMap<>();
+        for (var row : f2v.items()) {
+            hosts.put(row.moddedId(), row.hostItem());
+        }
+        Map<String, String> items = new java.util.TreeMap<>();
+        var displays = new java.util.HashSet<String>();
+        String prefix = "assets/c-imagine/items/";
+        try (var zip = new java.util.zip.ZipFile(pack.toFile())) {
+            var doors = zip.getEntry("c-imagine/door-projections.tsv");
+            var doorTypes = new java.util.HashMap<String, Boolean>();
+            if (doors != null) {
+                try (var input = zip.getInputStream(doors)) {
+                    new String(input.readAllBytes(), StandardCharsets.UTF_8).lines().forEach(line -> {
+                        String[] fields = line.split("\t", 2);
+                        doorTypes.put(fields[0], fields.length == 2 && fields[1].equals("sliding"));
+                    });
+                }
+            }
+            projectedDoors = Map.copyOf(doorTypes);
+            var entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                String path = entries.nextElement().getName();
+                if (!path.startsWith(prefix) || !path.endsWith(".json") || path.startsWith(prefix + "_door/")) {
+                    continue;
+                }
+                String model = "c-imagine:" + path.substring(prefix.length(), path.length() - 5);
+                String display = dev.cim.f2v.F2vPack.moddedIdOfDisplayItemModel(model);
+                if (display != null) {
+                    displays.add(display);
+                }
+                String id = dev.cim.f2v.F2vPack.moddedIdOfItemModel(model);
+                if (id != null) {
+                    items.put(id, hosts.getOrDefault(id, "minecraft:paper"));
+                }
+            }
+        }
+        commandItems = java.util.Collections.unmodifiableMap(items);
+        blockDisplays = java.util.Set.copyOf(displays);
+    }
+
     private boolean packAutoOffer;
     private boolean packAutoOfferRequired = true;
 
@@ -76,7 +137,13 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         log().info(LOG_PREFIX + "status: module=native (CRUSSTY), layer=mini NeoForge 1.21.1");
         getServer().getPluginManager().registerEvents(this, this);
         netWatch = new NetWatch(this);
+        // Modded biomes as REAL server registry entries (definitions built by
+        // the Rust module). Runs before the world loads, so chunks can carry
+        // the modded biome ids and the client gets them through the normal
+        // configuration sync.
+        dev.cim.paper.BiomeRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         f2vInit();
+        getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         f2vAutoOfferInit();
         // Slice 1 of mod world generation: new overworld chunks get the mods' biome-modifier features.
         dev.cim.worldgen.ModWorldgen.start(this, f2v == null ? List.of() : f2v.blocks());
@@ -319,6 +386,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 fastHttp = startPackServer(servedZip, servedSha1);
                 visualPack = fastHttp;
+                loadCommandItems(servedZip);
                 log().info(LOG_PREFIX + "f2v pack: FAST BOOT (cim.f2v.fastBoot) — "
                         + "serving " + servedZip.getFileName() + ", sha1=" + visualPack.sha1()
                         + ", " + fastGallery.size() + " gallery row(s), "
@@ -330,7 +398,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                         + " sha1=" + visualPack.sha1());
                 return;
             }
-            if (Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
+            if (!serverProperties().getProperty("resource-pack", "").isBlank()
+                    && Files.isRegularFile(packZip) && Files.isRegularFile(base.resolve("pack.sha1"))) {
                 String preSha1 = Files.readString(base.resolve("pack.sha1")).trim();
                 result = dev.cim.f2v.F2vPack.rebuildForVerification(modsDir, base);
                 boolean match = result.sha1().equals(preSha1);
@@ -362,8 +431,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
             f2v = new F2vState(result.items(), result.blocks(), result.gallery(),
                     readFluidTextureMap(base), readFluidCubeMap(base), result.sha1());
-            dev.cim.f2v.PackHttp http = startPackServer(packZip, result.sha1());
+            dev.cim.f2v.PackHttp http = startPackServer(packZip, Files.readString(base.resolve("pack.sha1")).trim());
             visualPack = http;
+            loadCommandItems(packZip);
             log().info(LOG_PREFIX + "f2v pack: serving " + http.localUrl()
                     + " bind=" + http.bindHost() + " public=" + http.url()
                     + " sha1=" + result.sha1());
@@ -419,9 +489,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
 
     /** Offer the served pack to one player; logs the deterministic offer marker. */
     private void offerVisualPack(Player player, boolean required) {
-        player.setResourcePack(visualPack.url(),
+        String url = visualPack.url();
+        if (player.getAddress() != null && player.getAddress().getAddress() != null
+                && player.getAddress().getAddress().isLoopbackAddress()) {
+            url = url.replaceFirst("://[^:/]+", "://127.0.0.1");
+        }
+        player.setResourcePack(url,
                 java.util.HexFormat.of().parseHex(visualPack.sha1()), required);
-        log().info(LOG_PREFIX + "f2v pack: offered " + player.getName() + " url=" + visualPack.url());
+        log().info(LOG_PREFIX + "f2v pack: offered " + player.getName() + " url=" + url);
     }
 
     /**
@@ -1102,7 +1177,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * (ItemMeta#getCustomModelDataComponent + CustomModelDataComponent
      * floats). Logs the inventory-verified marker the CI asserts.
      */
-    private void giveVisualItem(String playerName, String moddedItemId) {
+    List<String> f2vItemIds() {
+        F2vState state = f2v;
+        if (state == null || state.items() == null) {
+            return List.of();
+        }
+        return state.items().stream()
+                .map(dev.cim.f2v.F2vPack.VisualItem::moddedId)
+                .toList();
+    }
+
+    void giveVisualItem(String playerName, String moddedItemId) {
         try {
             if (f2v == null) {
                 log().warning(LOG_PREFIX + "f2v item: give skipped (pipeline not ready)");
@@ -1237,7 +1322,11 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 return;
             }
         } else if (dev.cim.hud.HudBootstrap.hasAllocatedItem(moddedId)) {
-            template = dev.cim.hud.ScreenHud.allocatedCarrier(moddedId);
+            template = dev.cim.hud.HudBootstrap.carrierStack(moddedId);
+            if (template == null || template.getType().isAir()) {
+                sender.sendMessage(LOG_PREFIX + "give: the HUD layer is not ready; try again in a moment");
+                return;
+            }
         } else {
             sender.sendMessage(LOG_PREFIX + "give: unknown modded item id: " + moddedId
                     + " (not in the manifest or the allocated set)");

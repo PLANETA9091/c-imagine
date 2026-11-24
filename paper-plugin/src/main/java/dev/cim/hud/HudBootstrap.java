@@ -59,6 +59,14 @@ public final class HudBootstrap {
         return screens != null && screens.isAllocatedItem(moddedId);
     }
 
+    /**
+     * The stack that shows as the modded item {@code moddedId} (its real host and item_model, name and
+     * lore), or null while the HUD layer is down. Used by {@code /cim give}.
+     */
+    public static org.bukkit.inventory.ItemStack carrierStack(String moddedId) {
+        return screens == null ? null : screens.carrier(moddedId);
+    }
+
     public static java.util.List<String> listForHarness() {
         return screens == null ? java.util.List.of() : screens.listForHarness();
     }

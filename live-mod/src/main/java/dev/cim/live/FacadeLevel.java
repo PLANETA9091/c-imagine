@@ -103,6 +103,18 @@ public final class FacadeLevel extends Level {
     private final java.util.Map<Long, net.minecraft.world.level.block.entity.BlockEntity> blockEntities =
             new java.util.HashMap<>();
 
+    private java.util.Map<BlockPos, BlockState> placementWrites;
+
+    void beginPlacement() {
+        placementWrites = new java.util.LinkedHashMap<>();
+    }
+
+    java.util.Map<BlockPos, BlockState> endPlacement() {
+        var writes = placementWrites;
+        placementWrites = null;
+        return writes;
+    }
+
     @Override
     public BlockState getBlockState(BlockPos pos) {
         return states.getOrDefault(pos.asLong(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
@@ -124,6 +136,9 @@ public final class FacadeLevel extends Level {
         BlockState old = getBlockState(pos);
         if (old == state) {
             return false;
+        }
+        if (placementWrites != null) {
+            placementWrites.putIfAbsent(pos.immutable(), old);
         }
         if (state.isAir()) {
             states.remove(key);

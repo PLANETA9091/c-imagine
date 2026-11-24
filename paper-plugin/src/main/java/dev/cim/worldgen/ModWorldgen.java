@@ -98,6 +98,18 @@ public final class ModWorldgen {
     private static final AtomicLong WINDOW_WRITES = new AtomicLong();
     private static final AtomicLong PARTIAL_HEIGHTS = new AtomicLong();
     static final AtomicLong BACKFILLED = new AtomicLong();
+    /**
+     * Display-family blocks a chunk's decoration placed, by chunk key: a
+     * populator cannot spawn entities, so the positions wait here until the
+     * chunk loads — {@link #flushDisplays} writes them into the chunk's PDC
+     * (the same key the imported-world path uses) and DisplayCarriers adopts
+     * them into item displays.
+     */
+    static final Map<Long, List<String>> DISPLAY_QUEUE = new ConcurrentHashMap<>();
+
+    /** Chunks whose biome grid was written from the layer's map (slice 1). */
+    static final AtomicLong BIOME_CHUNKS = new AtomicLong();
+    static final AtomicLong BIOME_CELLS = new AtomicLong();
     static final AtomicLong BACKFILL_CONFLICTS = new AtomicLong();
     private static final Map<String, AtomicLong> FAILED = new ConcurrentHashMap<>();
 
@@ -110,6 +122,30 @@ public final class ModWorldgen {
      * Paper (no layer) only attaches; nothing is logged for the listing.
      */
     public static void start(Plugin plugin, List<F2vPack.VisualBlock> blocks) {
+        // One-shot self check once the layer answers: the biome map of the spawn
+        // chunk, written into the live chunk. Boot-log proof for the playtest.
+        org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            try {
+                if (org.bukkit.Bukkit.getWorlds().isEmpty()) {
+                    return;
+                }
+                org.bukkit.World world = org.bukkit.Bukkit.getWorlds().get(0);
+                int cells = writeBiomes(world, 0, 0);
+                log.info(LOG_PREFIX + "worldgen: biome self-check chunk 0,0 -> " + cells
+                        + " cell(s), " + BIOME_BY_ID.size() + " biome(s) resolved");
+                // A FRESH chunk through the real path: the populator writes
+                // the biome map and then decorates with the biome's modded
+                // features. This is what exploration triggers.
+                String raw = ask("biomes\t0\t0\t" + world.getSeed());
+                log.info(LOG_PREFIX + "worldgen: biome raw answer -> "
+                        + (raw == null ? "null" : raw.substring(0, Math.min(160, raw.length())).replace('\n', '|')));
+                world.getChunkAt(8, 8);
+                log.info(LOG_PREFIX + "worldgen: self-check after chunk 8,8: display=" + DISPLAY.get()
+                        + " queued=" + DISPLAY_QUEUE.size() + " sets=" + SETS.get());
+            } catch (RuntimeException e) {
+                log.warning(LOG_PREFIX + "worldgen: biome self-check failed: " + e);
+            }
+        }, 120L);
         log = plugin.getLogger();
         Map<String, F2vPack.VisualBlock> byId = new HashMap<>();
         for (F2vPack.VisualBlock row : blocks) {
@@ -199,7 +235,10 @@ public final class ModWorldgen {
             Function<String, String> fn = entry();
             if (fn != null) {
                 layer = fn;
-                String said = fn.apply("list");
+                long worldSeed = org.bukkit.Bukkit.getWorlds().isEmpty()
+                        ? 0L
+                        : org.bukkit.Bukkit.getWorlds().get(0).getSeed();
+                String said = fn.apply("list\t" + worldSeed);
                 if (!said.startsWith("wait")) {
                     if (!answer(said)) {
                         giveUp();
@@ -301,6 +340,13 @@ public final class ModWorldgen {
                 return;
             }
             long t0 = System.nanoTime();
+            // Slice 1: the chunk's biomes become the layer's modded ones FIRST, so
+            // the decoration below filters features by the modded biome and the
+            // client renders the right grass/sky/water without any wire overlay.
+            int biomeCells = writeBiomes(fn, region, info, chunkX, chunkZ);
+            if (biomeCells > 0) {
+                BIOME_CHUNKS.incrementAndGet();
+            }
             String answer = fn.apply(encode(Cells.of(region), info.getSeed(), info.getMinHeight(), info.getMaxHeight(),
                     chunkX, chunkZ, lo, hi));
             int sets = apply(answer, chunkX, chunkZ, (x, y, z, data) -> {
@@ -320,6 +366,220 @@ public final class ModWorldgen {
                         + dt / 1000 + " us (average " + NANOS.get() / chunks / 1000 + " us over " + chunks + ")");
             }
         }
+    }
+
+    /** Resolved Bukkit biomes by registry id (the plugin registered the modded ones at enable). */
+    private static final Map<String, Biome> BIOME_BY_ID = new ConcurrentHashMap<>();
+    private static final AtomicBoolean BIOME_LOOKUP_LOGGED = new AtomicBoolean();
+
+    /**
+     * Writes the layer's modded biome map into the chunk.
+     *
+     * <p>{@code biomes TAB cx TAB cz TAB seed} asks the layer for its biome source
+     * sampled with THIS world's seed, so biome borders line up with the terrain
+     * Paper generates. The answer is a palette plus 16 run-length columns over the
+     * world's quart rows; every 4x4x4 cell is written with
+     * {@link LimitedRegion#setBiome}.
+     *
+     * @return the number of cells written (0 = the layer has no answer yet)
+     */
+    static int writeBiomes(Function<String, String> fn, LimitedRegion region, WorldInfo info, int chunkX, int chunkZ) {
+        String answer;
+        try {
+            answer = fn.apply("biomes\t" + chunkX + "\t" + chunkZ + "\t" + info.getSeed() + "\n");
+        } catch (RuntimeException e) {
+            return 0;
+        }
+        if (answer == null || answer.startsWith("wait") || answer.startsWith("error") || answer.isBlank()) {
+            return 0;
+        }
+        int quartMin = info.getMinHeight() >> 2;
+        int quartCount = ((info.getMaxHeight() - 1) >> 2) - quartMin + 1;
+        Map<Integer, String> palette = new HashMap<>();
+        int[][] columns = new int[16][];
+        for (String line : answer.split("\n")) {
+            String[] f = line.split("\t", -1);
+            if (f.length < 3) {
+                continue;
+            }
+            if (f[0].equals("bpal")) {
+                palette.put(Integer.parseInt(f[1]), f[2]);
+            } else if (f[0].equals("bio") && f.length >= 4) {
+                int qx = Integer.parseInt(f[1]);
+                int qz = Integer.parseInt(f[2]);
+                int[] column = new int[quartCount];
+                if (fillRuns(f[3], column, quartCount) != quartCount) {
+                    return 0;
+                }
+                columns[qz * 4 + qx] = column;
+            }
+        }
+        if (palette.isEmpty()) {
+            return 0;
+        }
+        int baseX = chunkX << 4;
+        int baseZ = chunkZ << 4;
+        int cells = 0;
+        for (int qz = 0; qz < 4; qz++) {
+            for (int qx = 0; qx < 4; qx++) {
+                int[] column = columns[qz * 4 + qx];
+                if (column == null) {
+                    continue;
+                }
+                for (int qy = 0; qy < quartCount; qy++) {
+                    String id = palette.get(column[qy]);
+                    if (id == null) {
+                        continue;
+                    }
+                    Biome biome = biomeOf(id);
+                    if (biome == null) {
+                        continue;
+                    }
+                    int x = baseX + qx * 4;
+                    int y = (quartMin + qy) * 4;
+                    int z = baseZ + qz * 4;
+                    if (y < info.getMinHeight() || y >= info.getMaxHeight()) {
+                        continue;
+                    }
+                    if (region.isInRegion(x, y, z)) {
+                        region.setBiome(x, y, z, biome);
+                        cells++;
+                    }
+                }
+            }
+        }
+        BIOME_CELLS.addAndGet(cells);
+        if (DEBUG) {
+            log.info(LOG_PREFIX + "worldgen biome map: chunk " + chunkX + "," + chunkZ + ": " + cells
+                    + " cell(s), biomes=" + palette.values());
+        }
+        return cells;
+    }
+
+    /**
+     * The backfill variant of the biome pass: the chunk is already live, so the
+     * cells go through {@link World#setBiome}. Same request, same answer format.
+     */
+    static int writeBiomes(World world, int chunkX, int chunkZ) {
+        Function<String, String> fn = layer;
+        if (fn == null) {
+            return 0;
+        }
+        String answer;
+        try {
+            answer = fn.apply("biomes\t" + chunkX + "\t" + chunkZ + "\t" + world.getSeed() + "\n");
+        } catch (RuntimeException e) {
+            return 0;
+        }
+        if (answer == null || answer.startsWith("wait") || answer.startsWith("error") || answer.isBlank()) {
+            return 0;
+        }
+        int quartMin = world.getMinHeight() >> 2;
+        int quartCount = ((world.getMaxHeight() - 1) >> 2) - quartMin + 1;
+        Map<Integer, String> palette = new HashMap<>();
+        int[][] columns = new int[16][];
+        for (String line : answer.split("\n")) {
+            String[] f = line.split("\t", -1);
+            if (f.length < 3) {
+                continue;
+            }
+            if (f[0].equals("bpal")) {
+                palette.put(Integer.parseInt(f[1]), f[2]);
+            } else if (f[0].equals("bio") && f.length >= 4) {
+                int qx = Integer.parseInt(f[1]);
+                int qz = Integer.parseInt(f[2]);
+                int[] column = new int[quartCount];
+                if (fillRuns(f[3], column, quartCount) != quartCount) {
+                    return 0;
+                }
+                columns[qz * 4 + qx] = column;
+            }
+        }
+        if (palette.isEmpty()) {
+            return 0;
+        }
+        int baseX = chunkX << 4;
+        int baseZ = chunkZ << 4;
+        int cells = 0;
+        for (int qz = 0; qz < 4; qz++) {
+            for (int qx = 0; qx < 4; qx++) {
+                int[] column = columns[qz * 4 + qx];
+                if (column == null) {
+                    continue;
+                }
+                for (int qy = 0; qy < quartCount; qy++) {
+                    String id = palette.get(column[qy]);
+                    if (id == null) {
+                        continue;
+                    }
+                    Biome biome = biomeOf(id);
+                    if (biome == null) {
+                        continue;
+                    }
+                    int x = baseX + qx * 4;
+                    int y = (quartMin + qy) * 4;
+                    int z = baseZ + qz * 4;
+                    if (y < world.getMinHeight() || y >= world.getMaxHeight()) {
+                        continue;
+                    }
+                    world.setBiome(x, y, z, biome);
+                    cells++;
+                }
+            }
+        }
+        BIOME_CELLS.addAndGet(cells);
+        return cells;
+    }
+
+    /** The Bukkit biome for a registry id (null when the registry has no such entry). */
+    private static Biome biomeOf(String id) {
+        Biome cached = BIOME_BY_ID.get(id);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(id);
+            if (key == null) {
+                return null;
+            }
+            org.bukkit.Registry<Biome> registry = io.papermc.paper.registry.RegistryAccess.registryAccess()
+                    .getRegistry(io.papermc.paper.registry.RegistryKey.BIOME);
+            Biome biome = registry.get(key);
+            if (biome != null) {
+                BIOME_BY_ID.put(id, biome);
+            } else if (BIOME_LOOKUP_LOGGED.compareAndSet(false, true)) {
+                log.warning(LOG_PREFIX + "worldgen: biome lookup MISS for " + id
+                        + " (registry size=" + registry.size() + ")");
+            }
+            return biome;
+        } catch (RuntimeException e) {
+            if (BIOME_LOOKUP_LOGGED.compareAndSet(false, true)) {
+                log.warning(LOG_PREFIX + "worldgen: biome lookup failed for " + id + ": " + e);
+            }
+            return null;
+        }
+    }
+
+    /** Fills {@code target} from runs {@code i:n,...}; returns the cells written. */
+    private static int fillRuns(String runs, int[] target, int length) {
+        int at = 0;
+        for (String run : runs.split(",")) {
+            if (run.isEmpty()) {
+                continue;
+            }
+            int colon = run.indexOf(':');
+            if (colon <= 0) {
+                return -1;
+            }
+            int index = Integer.parseInt(run.substring(0, colon));
+            int count = Integer.parseInt(run.substring(colon + 1));
+            if (at + count > length) {
+                return -1;
+            }
+            Arrays.fill(target, at, at + count, index);
+            at += count;
+        }
+        return at;
     }
 
     /** Where a request's blocks and biomes come from: the populator's region, or a backfill's chunk snapshot. */
@@ -478,12 +738,27 @@ public final class ModWorldgen {
             String[] f = line.split("\t", 5);
             switch (f[0]) {
                 case "set" -> {
-                    BlockData data = data(f[4], cache);
+                    int x = baseX + Integer.parseInt(f[1]);
+                    int y = Integer.parseInt(f[2]);
+                    int z = baseZ + Integer.parseInt(f[3]);
+                    String state = f[4];
+                    int bracket = state.indexOf('[');
+                    String id = bracket < 0 ? state : state.substring(0, bracket);
+                    if (!id.startsWith("minecraft:")) {
+                        F2vPack.VisualBlock row = rows.get(id);
+                        if (row != null && row.isDisplay()) {
+                            // No entity from a populator: remember it for the
+                            // chunk-load flush (barrier + item display).
+                            DISPLAY.incrementAndGet();
+                            recordDisplay(chunkX, chunkZ, x, y, z, id);
+                            continue;
+                        }
+                    }
+                    BlockData data = data(state, cache);
                     if (data == null) {
                         continue;
                     }
-                    if (sink.set(baseX + Integer.parseInt(f[1]), Integer.parseInt(f[2]),
-                            baseZ + Integer.parseInt(f[3]), data)) {
+                    if (sink.set(x, y, z, data)) {
                         sets++;
                     }
                 }
@@ -540,6 +815,56 @@ public final class ModWorldgen {
             BAD_STATE.incrementAndGet();
             return null;
         }
+    }
+
+    private static void recordDisplay(int chunkX, int chunkZ, int x, int y, int z, String id) {
+        long key = chunkKey(chunkX, chunkZ);
+        DISPLAY_QUEUE.computeIfAbsent(key, k -> java.util.Collections.synchronizedList(new ArrayList<>()))
+                .add(id + "|" + x + "|" + y + "|" + z);
+    }
+
+    private static long chunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) ^ (chunkZ & 0xFFFF_FFFFL);
+    }
+
+    /**
+     * Writes the chunk's recorded display-family positions into its PDC
+     * ({@code cim:disp_x_y_z = <mod id>}), which is what
+     * {@code dev.cim.hud.DisplayCarriers} reads when it adopts a chunk.
+     * Called from the chunk-load path before the adopt.
+     */
+    public static int flushDisplays(org.bukkit.Chunk chunk) {
+        List<String> queued = DISPLAY_QUEUE.remove(chunkKey(chunk.getX(), chunk.getZ()));
+        if (queued == null || queued.isEmpty()) {
+            return 0;
+        }
+        var pdc = chunk.getPersistentDataContainer();
+        int written = 0;
+        synchronized (queued) {
+            for (String entry : queued) {
+                String[] f = entry.split("\\|");
+                if (f.length != 4) {
+                    continue;
+                }
+                try {
+                    int x = Integer.parseInt(f[1]);
+                    int y = Integer.parseInt(f[2]);
+                    int z = Integer.parseInt(f[3]);
+                    pdc.set(new org.bukkit.NamespacedKey("cim", "disp_" + x + "_" + y + "_" + z),
+                            org.bukkit.persistence.PersistentDataType.STRING, f[0]);
+                    written++;
+                } catch (IllegalArgumentException ignored) {
+                    // an unconvertible key: skip the cell, keep the rest
+                }
+            }
+        }
+        return written;
+    }
+
+    /** One request to the layer (null when it is not up yet). */
+    public static String ask(String request) {
+        Function<String, String> fn = layer;
+        return fn == null ? null : fn.apply(request);
     }
 
     /** The counters since boot, for the harness and the debug log. */

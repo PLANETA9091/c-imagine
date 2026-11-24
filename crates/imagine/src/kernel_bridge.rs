@@ -194,13 +194,19 @@ fn bridge_loop() -> Result<(), String> {
             .l()
             .map_err(|e| format!("class l(): {e}"))?;
         let bridge: JClass = bridge_cls.into();
-        env.call_static_method(
+        // The smoke reports its own failures and may leave a PENDING JNI
+        // exception (the Java side prints "smoke FAILED" and throws). A pending
+        // exception poisons every later JNI call on this thread — the layer
+        // install right below would silently never run. Clear it here.
+        if let Err(e) = env.call_static_method(
             &bridge,
             "runSmoke",
             "(Ljava/lang/Object;)V",
             &[JValue::Object(plugin_obj)],
-        )
-        .map_err(|e| format!("runSmoke: {e}"))?;
+        ) {
+            let _ = env.exception_clear();
+            eprintln!("[c-imagine] bridge smoke: {e} (cleared)");
+        }
         Ok(())
     });
 
@@ -209,7 +215,7 @@ fn bridge_loop() -> Result<(), String> {
     //    thread. Install is best-effort and self-reporting: the Java side
     //    prints its own armed/disabled/FAILED markers (the profiling tick
     //    gate consumes them), a failed install never breaks the boot.
-    let _ = attached("layer server install", |env| {
+    if attached("layer server install", |env| {
         let loader = unsafe { JObject::from_raw(loader_idx as jobject) };
         let name = env
             .new_string("dev.cim.bootstrap.Bootstrap")
@@ -233,6 +239,10 @@ fn bridge_loop() -> Result<(), String> {
         )
         .map_err(|e| format!("install: {e}"))?;
         Ok(())
-    });
+    })
+    .is_none()
+    {
+        eprintln!("[c-imagine] layer server install FAILED (see the attach error above)");
+    }
     Ok(())
 }
