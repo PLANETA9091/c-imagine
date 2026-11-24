@@ -1357,6 +1357,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     /** The Gson the inspect lines are written with (Paper ships Gson, as the JSON readers above use it). */
     private static final com.google.gson.Gson INSPECT_GSON = new com.google.gson.GsonBuilder().disableHtmlEscaping().create();
     /** The layer's stack JSON carries its own id ({@code {"id":"create:x",...}}). */
+    /** The most cells one {@code inspect blocks} box may name. */
+    static final int INSPECT_BLOCKS_CAP = 4096;
     private static final java.util.regex.Pattern INSPECT_LIVE_ID =
             java.util.regex.Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
 
@@ -1365,7 +1367,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * and the server log. Runs on the server thread (command dispatch).
      */
     private void inspect(CommandSender sender, String[] args) {
-        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | be <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
+        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | blocks <x1> <y1> <z1> <x2> <y2> <z2> | be <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
         try {
             switch (args[1].toLowerCase(Locale.ROOT)) {
                 case "block" -> {
@@ -1375,6 +1377,15 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                     inspectBlock(sender, inspectWorld(sender), Integer.parseInt(args[2]),
                             Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+                }
+                case "blocks" -> {
+                    if (args.length != 8) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    inspectBlocks(sender, inspectWorld(sender), Integer.parseInt(args[2]), Integer.parseInt(args[3]),
+                            Integer.parseInt(args[4]), Integer.parseInt(args[5]), Integer.parseInt(args[6]),
+                            Integer.parseInt(args[7]));
                 }
                 case "be" -> {
                     if (args.length != 5) {
@@ -1446,8 +1457,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             return null;
         }
         org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
-        String json = meta.getPersistentDataContainer().get(new org.bukkit.NamespacedKey(this, "live_stack"),
-                org.bukkit.persistence.PersistentDataType.STRING);
+        String json = liveStackOf(stack);
         if (json != null) {
             java.util.regex.Matcher m = INSPECT_LIVE_ID.matcher(json);
             if (m.find()) {
@@ -1486,6 +1496,19 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
         }
         return null;
+    }
+
+    /**
+     * The layer's own stack JSON a Paper stack carries in its PDC ({@code live_stack}; LiveBridge keeps it for
+     * a stand-in or a stack with components), or null when the stack has none (a bare stack: no damage, no
+     * components, its id alone rebuilds it).
+     */
+    private String liveStackOf(ItemStack stack) {
+        if (stack == null || stack.getType().isAir() || !stack.hasItemMeta()) {
+            return null;
+        }
+        return stack.getItemMeta().getPersistentDataContainer().get(new org.bukkit.NamespacedKey(this, "live_stack"),
+                org.bukkit.persistence.PersistentDataType.STRING);
     }
 
     /** The modded block a note or mushroom carrier state stands for (its carrier key), or null. */
@@ -1530,6 +1553,86 @@ public final class CimPlugin extends JavaPlugin implements Listener {
     }
 
     /**
+     * The modded id a block stands for when it is a carrier (a display barrier's chunk key, else a note or
+     * mushroom state's carrier key), or null for anything else.
+     */
+    private String moddedBlockIdAt(Block block) {
+        String modded = null;
+        if (block.getType() == Material.BARRIER) {
+            modded = dev.cim.hud.HudBootstrap.displayIdAt(block);
+        }
+        if (modded == null) {
+            modded = moddedBlockOfState(block.getBlockData().getAsString());
+        }
+        return modded;
+    }
+
+    /**
+     * {@code /cim inspect blocks x1 y1 z1 x2 y2 z2}: the count of each block id in the box (inclusive corners,
+     * any order), capped at {@link #INSPECT_BLOCKS_CAP} cells. Each cell names itself as {@code inspect block}
+     * does (a carrier as its modded id, anything else as its vanilla id); air is omitted.
+     */
+    private void inspectBlocks(CommandSender sender, World world, int x1, int y1, int z1, int x2, int y2, int z2) {
+        int minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+        int minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+        int minZ = Math.min(z1, z2), maxZ = Math.max(z1, z2);
+        long cells = (long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1);
+        if (cells > INSPECT_BLOCKS_CAP) {
+            sender.sendMessage(LOG_PREFIX + "inspect: blocks box has " + cells + " cells; the cap is "
+                    + INSPECT_BLOCKS_CAP);
+            return;
+        }
+        java.util.TreeMap<String, Integer> counts = new java.util.TreeMap<>();
+        // Non-carrier cells with the same block data share one carrier lookup (the lookup scans the pack rows).
+        java.util.HashMap<String, String> vanillaByData = new java.util.HashMap<>();
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    Block block = world.getBlockAt(x, y, z);
+                    if (block.getType().isAir()) {
+                        continue;
+                    }
+                    String id;
+                    if (block.getType() == Material.BARRIER) {
+                        id = moddedBlockIdAt(block);
+                        if (id == null) {
+                            id = block.getType().getKey().toString();
+                        }
+                    } else {
+                        String data = block.getBlockData().getAsString();
+                        id = vanillaByData.get(data);
+                        if (id == null) {
+                            id = moddedBlockOfState(data);
+                            if (id == null) {
+                                id = block.getType().getKey().toString();
+                            }
+                            vanillaByData.put(data, id);
+                        }
+                    }
+                    counts.merge(id, 1, Integer::sum);
+                }
+            }
+        }
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "blocks");
+        o.add("from", vec3i(minX, minY, minZ));
+        o.add("to", vec3i(maxX, maxY, maxZ));
+        o.addProperty("cells", cells);
+        com.google.gson.JsonObject byId = new com.google.gson.JsonObject();
+        counts.forEach(byId::addProperty);
+        o.add("counts", byId);
+        emitInspect(sender, o);
+    }
+
+    private static com.google.gson.JsonArray vec3i(int x, int y, int z) {
+        com.google.gson.JsonArray a = new com.google.gson.JsonArray();
+        a.add(x);
+        a.add(y);
+        a.add(z);
+        return a;
+    }
+
+    /**
      * {@code inspect block}: the block at a position. The layer has no "state at x y z" request (its
      * blockinfo takes an id; save/open-block answer block entities only), so the answer comes from
      * the carriers: a display barrier's chunk key, then the note or mushroom state's carrier key. The
@@ -1545,13 +1648,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         pos.add(y);
         pos.add(z);
         o.add("pos", pos);
-        String modded = null;
-        if (block.getType() == Material.BARRIER) {
-            modded = dev.cim.hud.HudBootstrap.displayIdAt(block);
-        }
-        if (modded == null) {
-            modded = moddedBlockOfState(block.getBlockData().getAsString());
-        }
+        String modded = moddedBlockIdAt(block);
         if (modded != null) {
             // The real state, when Paper kept it (a placed block) or the layer holds it (a ticking one).
             String placed = dev.cim.hud.HudBootstrap.placedStateAt(this, block);
@@ -1745,7 +1842,58 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         com.google.gson.JsonObject o = stackJson(stack);
         o.addProperty("slot", group);
         o.addProperty("index", index);
+        putDurability(o, stack);
         return o;
+    }
+
+    /**
+     * The durability fields of one slot: {@code damage}, {@code max_damage} (null when the item has none) and
+     * {@code damage_source}. A modded stack with the layer's JSON in its PDC answers from the layer
+     * ({@code "layer"}: the {@code minecraft:damage} component, 0 when absent; {@code minecraft:max_damage} when
+     * the layer's patch names one, else null, since the layer's JSON omits the item prototype's max). A modded
+     * stack without that JSON, and any other stack, answers from the Paper item: {@code "carrier"} for a
+     * modded id, {@code "paper"} for a vanilla one. Empty slots carry damage 0, max_damage null, source null.
+     */
+    private void putDurability(com.google.gson.JsonObject o, ItemStack stack) {
+        if (stack == null || stack.getType().isAir()) {
+            o.addProperty("damage", 0);
+            o.add("max_damage", com.google.gson.JsonNull.INSTANCE);
+            o.add("damage_source", com.google.gson.JsonNull.INSTANCE);
+            return;
+        }
+        String live = moddedIdOfStack(stack) != null ? liveStackOf(stack) : null;
+        com.google.gson.JsonObject layer = null;
+        if (live != null) {
+            try {
+                com.google.gson.JsonElement parsed = com.google.gson.JsonParser.parseString(live);
+                layer = parsed.isJsonObject() ? parsed.getAsJsonObject() : null;
+            } catch (RuntimeException badJson) {
+                layer = null;
+            }
+        }
+        if (layer != null) {
+            com.google.gson.JsonObject comps = layer.has("components") && layer.get("components").isJsonObject()
+                    ? layer.getAsJsonObject("components") : new com.google.gson.JsonObject();
+            int damage = comps.has("minecraft:damage") ? comps.get("minecraft:damage").getAsInt() : 0;
+            o.addProperty("damage", damage);
+            if (comps.has("minecraft:max_damage")) {
+                o.addProperty("max_damage", comps.get("minecraft:max_damage").getAsInt());
+            } else {
+                o.add("max_damage", com.google.gson.JsonNull.INSTANCE);
+            }
+            o.addProperty("damage_source", "layer");
+            return;
+        }
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        int damage = meta instanceof org.bukkit.inventory.meta.Damageable d ? d.getDamage() : 0;
+        int max = stack.getType().getMaxDurability();
+        o.addProperty("damage", damage);
+        if (max > 0) {
+            o.addProperty("max_damage", max);
+        } else {
+            o.add("max_damage", com.google.gson.JsonNull.INSTANCE);
+        }
+        o.addProperty("damage_source", moddedIdOfStack(stack) != null ? "carrier" : "paper");
     }
 
     /**
@@ -5887,7 +6035,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         sender.sendMessage(LOG_PREFIX + "bridge: " + (worldReady ? "open" : "closed (world not ready)"));
         sender.sendMessage(LOG_PREFIX + "postfx: /cim postfx <player> <id[,id2]|clear>");
         sender.sendMessage(LOG_PREFIX + "give: /cim give <player> <moddedItemId> [count]");
-        sender.sendMessage(LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r>");
+        sender.sendMessage(LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | blocks <x1> <y1> <z1> <x2> <y2> <z2> | inv <player> | entities <x> <y> <z> <r>");
         sender.sendMessage(LOG_PREFIX + "blocks: /cim placeblock <player> [moddedId]");
         sender.sendMessage(LOG_PREFIX + "entities: /cim display <player> [moddedItemId]");
         sender.sendMessage(LOG_PREFIX + "gallery: /cim gallerypage <ns> <page> "
