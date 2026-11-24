@@ -16,6 +16,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import heal  # noqa: E402
 import stacks  # noqa: E402
 
 PLATFORM_ORIGIN = (308, 121, 308)
@@ -52,7 +53,11 @@ def clear_inventory(stack, out):
             stack.setup_command(sub("clear {player}", stack.player))
         except Exception as e:
             last = "clear: %s" % e
-        stack.wait(4)
+        try:
+            stack.wait(4)
+        except Exception as e:
+            last = "wait: %s" % e
+            continue
         try:
             scr = stack.observe_screen()
             inv = stack.observe_inventory()
@@ -129,7 +134,31 @@ def run_step(stack, step, shots_dir, idx, rec):
     if do == "command":
         stack.setup_command(sub(step["text"], stack.player))
         return {"sent": True}
+    if do == "food_to":
+        return food_to(stack, int(step["value"]), int(step.get("max_ticks", 600)))
     raise ValueError("unknown do: %s" % do)
+
+
+def food_to(stack, value, max_ticks):
+    """Deterministic food prelude (vanilla commands only). Hunger amplifier 3 drains one food point per 200
+    ticks (saturation first), so a 20-tick poll cannot overshoot and the clear (command latency of a few
+    ticks) cannot add a drop: food is exactly `value` and saturation 0 when the effect is cleared.
+    max_ticks bounds the drain; the effect is cleared afterwards."""
+    stack.setup_command(sub("effect give {player} minecraft:hunger 300 3", stack.player))
+    ticks = 0
+    try:
+        p = stack.observe_player()
+        if p["food"] < value:
+            raise RuntimeError("food %s already below %s" % (p["food"], value))
+        while p["food"] > value and ticks < max_ticks:
+            stack.wait(20)
+            ticks += 20
+            p = stack.observe_player()
+    finally:
+        stack.setup_command(sub("effect clear {player} minecraft:hunger", stack.player))
+    if p["food"] != value:
+        raise RuntimeError("food %s after %d ticks, wanted %s" % (p["food"], ticks, value))
+    return {"food": p["food"], "saturation": p["saturation"], "ticks": ticks}
 
 
 def main(argv=None):
@@ -153,6 +182,12 @@ def main(argv=None):
     out = {"scenario": sc["id"], "stack": args.stack, "setup": [], "steps": [],
            "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
     t0 = time.time()
+
+    # pre-scenario heal (heal.py): death screen -> respawn, other GUI -> close, pack prompt -> Proceed,
+    # then wait-ready. Runs before every scenario, with or without the reset prelude.
+    healed = heal.heal(stack)
+    out["setup"].append({"cmd": "heal", "ok": healed["ok"], "actions": healed["actions"],
+                         "error": healed["error"]})
 
     def cmd(text):
         rec = {"cmd": text}
@@ -188,13 +223,20 @@ def main(argv=None):
     for i, step in enumerate(sc["steps"]):
         rec = {"i": i, "step": step, "kind": None, "result": None, "error": None,
                "source": None, "shot": None}
+        is_obs = "observe" in step
         try:
-            rec["result"] = run_step(stack, step, shots_dir, i, rec)
+            res = run_step(stack, step, shots_dir, i, rec)
+            if is_obs and not isinstance(res, dict):
+                raise TypeError("observation returned %s, not an object" % type(res).__name__)
+            rec["result"] = res
             if step.get("block_only") and isinstance(rec["result"], dict):
                 # random drops (seed chance) are not compared; only the block after the action
                 rec["result"] = {"block_after": rec["result"].get("block_after")}
         except Exception as e:
             rec["error"] = "%s: %s" % (type(e).__name__, e)
+            if is_obs:
+                # a failed observation is an infra error, never a parity difference (diff.py ERROR)
+                rec["infra"] = True
         if "do" in step:
             # fixed settle so drops, pickups and block updates land before the next observation
             try:

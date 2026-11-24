@@ -1,31 +1,42 @@
 {
- "id": "22-orient-bop-fir-log-floor",
- "setup": [
-  "give {player} biomesoplenty:fir_log 1"
- ],
- "steps": [
-  {
-   "do": "select",
-   "item": "biomesoplenty:fir_log"
-  },
-  {
-   "do": "place",
-   "pos": [
-    308,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "block",
-   "pos": [
-    308,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "inventory"
-  }
- ]
+  "id": "22-orient-bop-fir-log-floor",
+  "setup": [
+    "give {player} biomesoplenty:fir_log 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:fir_log"
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        313.5
+      ],
+      "yaw": 180.0,
+      "pitch": 0.0,
+      "notes": "framed final shot: 3 blocks south of target, facing north"
+    }
+  ]
 }

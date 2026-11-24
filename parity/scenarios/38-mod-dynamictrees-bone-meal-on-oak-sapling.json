@@ -1,12 +1,19 @@
 {
  "id": "38-mod-dynamictrees-bone-meal-on-oak-sapling",
- "notes": "dynamictrees:oak_seed placed on dirt (becomes dynamictrees:oak_sapling), then bone meal used on it. The growth step is random in vanilla bone meal, so only the block after the use is compared (block_only). Checks the sapling state after one use.",
+ "notes": "3 independent tries. Each: fresh dirt at 308,120,310 (fill clears any earlier tree), oak seed placed with use_at on the dirt top face (-> dynamictrees:oak_sapling at 308,121,310), one bone meal interact. Bone meal growth is random: compared only as block state after the use and the bone meal count before/after each try (block_only). Expected: block stays a Dynamic Trees sapling or grows (branch/trunk), and bone meal count drops by 1 per try if the use is consumed.",
  "setup": [
-  "setblock 308 120 310 minecraft:dirt",
-  "give {player} dynamictrees:oak_seed 1",
-  "give {player} minecraft:bone_meal 1"
+  "give {player} dynamictrees:oak_seed 3",
+  "give {player} minecraft:bone_meal 3"
  ],
  "steps": [
+  {
+   "do": "command",
+   "text": "fill 304 121 306 312 135 314 minecraft:air"
+  },
+  {
+   "do": "command",
+   "text": "setblock 308 120 310 minecraft:dirt"
+  },
   {
    "do": "select",
    "item": "dynamictrees:oak_seed"
@@ -22,11 +29,11 @@
    "pitch": 0.0
   },
   {
-   "do": "place",
-   "pos": [
-    308,
-    121,
-    310
+   "do": "use_at",
+   "point": [
+    308.5,
+    121.0,
+    310.5
    ]
   },
   {
@@ -36,6 +43,9 @@
     121,
     310
    ]
+  },
+  {
+   "observe": "inventory"
   },
   {
    "do": "select",
@@ -58,6 +68,141 @@
     121,
     310
    ]
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "command",
+   "text": "fill 304 121 306 312 135 314 minecraft:air"
+  },
+  {
+   "do": "command",
+   "text": "setblock 308 120 310 minecraft:dirt"
+  },
+  {
+   "do": "select",
+   "item": "dynamictrees:oak_seed"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "use_at",
+   "point": [
+    308.5,
+    121.0,
+    310.5
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "select",
+   "item": "minecraft:bone_meal"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "face": "up",
+   "block_only": true
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "command",
+   "text": "fill 304 121 306 312 135 314 minecraft:air"
+  },
+  {
+   "do": "command",
+   "text": "setblock 308 120 310 minecraft:dirt"
+  },
+  {
+   "do": "select",
+   "item": "dynamictrees:oak_seed"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "use_at",
+   "point": [
+    308.5,
+    121.0,
+    310.5
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "select",
+   "item": "minecraft:bone_meal"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "face": "up",
+   "block_only": true
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
   }
  ]
 }

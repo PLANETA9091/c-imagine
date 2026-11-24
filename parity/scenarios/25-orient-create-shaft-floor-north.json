@@ -1,46 +1,57 @@
 {
- "id": "25-orient-create-shaft-floor-north",
- "notes": "Shaft placed on the platform floor with no horizontal neighbours, looking north (tp yaw 180). Checks the axis state the placement picks when the player looks north.",
- "setup": [
-  "give {player} create:shaft 1",
-  "setblock 307 121 310 minecraft:air",
-  "setblock 309 121 310 minecraft:air",
-  "setblock 308 121 309 minecraft:air",
-  "setblock 308 121 311 minecraft:air"
- ],
- "steps": [
-  {
-   "do": "select",
-   "item": "create:shaft"
-  },
-  {
-   "do": "tp",
-   "pos": [
-    308.5,
-    121,
-    312.5
-   ],
-   "yaw": 180,
-   "pitch": 0.0
-  },
-  {
-   "do": "place",
-   "pos": [
-    308,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "block",
-   "pos": [
-    308,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "inventory"
-  }
- ]
+  "id": "25-orient-create-shaft-floor-north",
+  "notes": "Shaft placed on the platform floor with no horizontal neighbours, looking north (tp yaw 180). Checks the axis state the placement picks when the player looks north.",
+  "setup": [
+    "give {player} create:shaft 1",
+    "setblock 307 121 310 minecraft:air",
+    "setblock 309 121 310 minecraft:air",
+    "setblock 308 121 309 minecraft:air",
+    "setblock 308 121 311 minecraft:air"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "create:shaft"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        312.5
+      ],
+      "yaw": 180,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        313.5
+      ],
+      "yaw": 180.0,
+      "pitch": 0.0,
+      "notes": "framed final shot: 3 blocks south of target, facing north"
+    }
+  ]
 }

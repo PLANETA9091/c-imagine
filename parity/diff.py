@@ -8,7 +8,11 @@ Per step (matched by index):
   different  both sides have a result and they differ (both are printed)
   missing    a step is absent on one side, or either side recorded an error
              (the step is not comparable; both sides are printed)
-Exit code 0 only when every step is equal and both sides have the same step count.
+  error      an observation failed on either side (rec "infra": the call errored or returned
+             a non-object). Infra, not a parity difference.
+Verdict: EQUAL (exit 0) when every step is equal and both sides have the same step count;
+DIFFERENT (exit 1) when any step is different or missing; ERROR (exit 2) when there is no
+difference or missing step but some observation is an infra error.
 """
 import argparse
 import json
@@ -30,6 +34,9 @@ def describe(step):
 def compare(t, o):
     if t is None or o is None:
         return "missing", "step absent on %s" % ("truth" if t is None else "ours")
+    if t.get("infra") or o.get("infra"):
+        return "error", "infra error on %s" % " and ".join(
+            side for side, r in (("truth", t), ("ours", o)) if r.get("infra"))
     if t.get("error") or o.get("error"):
         return "missing", "error on %s" % " and ".join(
             side for side, r in (("truth", t), ("ours", o)) if r.get("error"))
@@ -55,7 +62,7 @@ def main(argv=None):
 
     ts, os_ = T.get("steps", []), O.get("steps", [])
     n = max(len(ts), len(os_))
-    counts = {"equal": 0, "different": 0, "missing": 0}
+    counts = {"equal": 0, "different": 0, "missing": 0, "error": 0}
     rows = []
     body = []
     for i in range(n):
@@ -82,14 +89,20 @@ def main(argv=None):
                     body.append("shot: `%s`" % rec["shot"])
             body.append("")
 
-    ok = counts["different"] == 0 and counts["missing"] == 0 and len(ts) == len(os_)
+    clean = counts["different"] == 0 and counts["missing"] == 0 and len(ts) == len(os_)
+    if clean and counts["error"] == 0:
+        verdict_word, code = "EQUAL", 0
+    elif counts["different"] or counts["missing"] or len(ts) != len(os_):
+        verdict_word, code = "DIFFERENT", 1
+    else:
+        verdict_word, code = "ERROR", 2
     head = [
         "# diff: %s" % T.get("scenario", "?"),
         "",
         "truth: `%s`  ours: `%s`" % (args.truth, args.ours),
         "",
-        "Summary: %d steps, equal %d, different %d, missing %d. Verdict: **%s**" % (
-            n, counts["equal"], counts["different"], counts["missing"], "EQUAL" if ok else "DIFFERENT"),
+        "Summary: %d steps, equal %d, different %d, missing %d, error %d. Verdict: **%s**" % (
+            n, counts["equal"], counts["different"], counts["missing"], counts["error"], verdict_word),
         "",
         "| # | step | verdict |",
         "|---|---|---|",
@@ -98,9 +111,9 @@ def main(argv=None):
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         f.write(text)
-    print("%s: equal %d different %d missing %d -> %s" % (
-        "EQUAL" if ok else "DIFFERENT", counts["equal"], counts["different"], counts["missing"], args.out))
-    return 0 if ok else 1
+    print("%s: equal %d different %d missing %d error %d -> %s" % (
+        verdict_word, counts["equal"], counts["different"], counts["missing"], counts["error"], args.out))
+    return code
 
 
 if __name__ == "__main__":

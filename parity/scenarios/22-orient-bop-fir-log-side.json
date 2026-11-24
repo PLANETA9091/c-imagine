@@ -1,33 +1,44 @@
 {
- "id": "22-orient-bop-fir-log-side",
- "setup": [
-  "give {player} biomesoplenty:fir_log 1",
-  "setblock 310 120 310 minecraft:air",
-  "setblock 311 121 310 minecraft:stone"
- ],
- "steps": [
-  {
-   "do": "select",
-   "item": "biomesoplenty:fir_log"
-  },
-  {
-   "do": "place",
-   "pos": [
-    310,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "block",
-   "pos": [
-    310,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "inventory"
-  }
- ]
+  "id": "22-orient-bop-fir-log-side",
+  "setup": [
+    "give {player} biomesoplenty:fir_log 1",
+    "setblock 310 120 310 minecraft:air",
+    "setblock 311 121 310 minecraft:stone"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:fir_log"
+    },
+    {
+      "do": "place",
+      "pos": [
+        310,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        310,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        310.5,
+        121,
+        313.5
+      ],
+      "yaw": 180.0,
+      "pitch": 0.0,
+      "notes": "framed final shot: 3 blocks south of target, facing north"
+    }
+  ]
 }

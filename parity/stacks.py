@@ -24,12 +24,12 @@ import subprocess
 import time
 import glob
 
+HOME = os.path.expanduser("~")
 # Paths and ports come from the environment; the defaults are the current stand layout.
 #   PARITY_TRUTH_PORT   truth-ctl TCP port on 127.0.0.1 (default 25599, -Dtruthctl.port)
 #   PARITY_HZ           path to the horizon-ctl wrapper hz.sh (default ~/hud-work/horizon-play/hz.sh)
 #   PARITY_HZ_N         horizon client number passed to hz.sh (default 3)
 #   PARITY_OURS_LOG_DIR OURS server directory holding boot-*.log (default ~/hud-work/horizon-play/srv)
-HOME = os.path.expanduser("~")
 TRUTH_CTL_PORT = int(os.environ.get("PARITY_TRUTH_PORT", "25599"))
 TRUTH_PLAYER = "TruthA"
 OURS_PLAYER = "Lane_B"
@@ -408,6 +408,22 @@ class Stack:
     def wait_ready(self, seconds=60):
         return None
 
+    # heal hooks (heal.py): probe the screen, respawn, close, click a button, pause
+    def heal_probe(self):
+        raise NotImplementedError
+
+    def heal_respawn(self):
+        raise NotImplementedError
+
+    def heal_close(self):
+        raise NotImplementedError
+
+    def heal_click(self, label):
+        raise NotImplementedError
+
+    def heal_sleep(self, seconds):
+        time.sleep(seconds)
+
     # sources for observations: "client" = what the client renders/holds,
     # "server" = the server's truth (OURS /cim inspect). Stored per record, never diffed.
     def source_of(self, kind):
@@ -453,6 +469,23 @@ class TruthStack(Stack):
     def wait_ready(self, seconds=60):
         return self.call("wait-ready", [seconds], timeout=seconds + 30)
 
+    def heal_probe(self):
+        # truth-ctl state: "screen" is "playing", "title" or the screen class simple name (DeathScreen).
+        # truth-ctl has no button listing, so no resource-pack prompt is ever detected here.
+        st = self.call("state")
+        if not isinstance(st, dict):
+            raise RuntimeError("truth-ctl state returned %r" % (st,))
+        return {"kind": st.get("screen") or "playing", "buttons": [], "enabled": []}
+
+    def heal_respawn(self):
+        return self.call("respawn")
+
+    def heal_close(self):
+        return self.call("close")
+
+    def heal_click(self, label):
+        raise RuntimeError("truth-ctl cannot click buttons (no click-button command): %s" % label)
+
     def select(self, item):
         r = self.call("select", [item])
         return {"item": norm_id(r.get("item"))}
@@ -490,8 +523,11 @@ class TruthStack(Stack):
         return {"screen": canon_kind(r.get("screen")), "block_after": block_id(r.get("block"))}
 
     def use_item(self, hold=None):
-        # truth-ctl use-item has no hold argument: one right-click (see report, eating is a limitation)
-        r = self.call("use-item")
+        # hold is in SECONDS (horizon-ctl --hold SECONDS); truth-ctl --hold takes TICKS (20 per second)
+        if hold:
+            r = self.call("use-item", ["--hold", max(1, int(round(float(hold) * 20)))])
+        else:
+            r = self.call("use-item")
         return {"inventory_change": norm_delta(r.get("inventory_change"))}
 
     def use_at(self, point):
@@ -629,6 +665,26 @@ class OursStack(Stack):
 
     def wait_ready(self, seconds=60):
         return self.ctl("wait-ready", seconds, timeout=seconds + 30)
+
+    def heal_probe(self):
+        # horizon-ctl screen: "screen" kind, "buttons" (label, enabled). The pack prompt shows as buttons
+        # while 'state' still says playing, so the buttons matter, not only the kind.
+        r = self.ctl("screen")
+        if not isinstance(r, dict):
+            raise RuntimeError("horizon-ctl screen returned %r, not an object" % (r,))
+        btns = [b for b in (r.get("buttons") or []) if isinstance(b, dict)]
+        return {"kind": ours_kind(r),
+                "buttons": [str(b.get("label")) for b in btns],
+                "enabled": [str(b.get("label")) for b in btns if b.get("enabled")]}
+
+    def heal_respawn(self):
+        return self.ctl("respawn")
+
+    def heal_close(self):
+        return self.ctl("close")
+
+    def heal_click(self, label):
+        return self.ctl("click-button", label)
 
     # ---- server truth via /cim inspect (CIM-INSPECT JSON line in the newest boot log)
     def _newest_log(self):

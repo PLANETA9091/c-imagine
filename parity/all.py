@@ -50,7 +50,8 @@ def main(argv=None):
             p = run([os.path.join(HERE, "diff.py"), outs["truth"], outs["ours"], "-o", os.path.join(d, "diff.md")])
             verdict = p.stdout.decode("utf-8", "replace").strip()
             print(verdict, flush=True)
-            rows.append((sid, "EQUAL" if p.returncode == 0 else "DIFFERENT", verdict))
+            word = {0: "EQUAL", 1: "DIFFERENT", 2: "ERROR"}.get(p.returncode, "DIFFERENT")
+            rows.append((sid, word, verdict))
         else:
             rows.append((sid, "NOT-DIFFED", ""))
     write_summary(rows)

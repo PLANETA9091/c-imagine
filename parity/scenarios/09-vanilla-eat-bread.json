@@ -1,13 +1,15 @@
 {
  "id": "09-vanilla-eat-bread",
+ "notes": "Deterministic food prelude: an instant_health effect restores health to 20 (the truth player carried 9 HP from earlier runs), food_to drains hunger (vanilla effect amp 3, one point per 200 ticks) to food 14 with saturation 0 on both stacks, then bread is eaten with a 2 s hold (truth-ctl --hold 40 ticks, horizon-ctl --hold 2.0 s). Vanilla bread: +5 food, +6 saturation -> expect food 19, saturation 6.0.",
  "setup": [
-  "effect give {player} minecraft:hunger 10 9",
+  "effect give {player} minecraft:instant_health 1 10",
   "give {player} minecraft:bread 1"
  ],
  "steps": [
   {
-   "do": "wait",
-   "ticks": 220
+   "do": "food_to",
+   "value": 14,
+   "max_ticks": 4000
   },
   {
    "observe": "player"
@@ -18,7 +20,7 @@
   },
   {
    "do": "use_item",
-   "hold": 1.7
+   "hold": 2.0
   },
   {
    "do": "wait",

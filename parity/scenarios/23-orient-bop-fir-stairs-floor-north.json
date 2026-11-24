@@ -1,42 +1,53 @@
 {
- "id": "23-orient-bop-fir-stairs-floor-north",
- "notes": "Stairs placed on the floor (clicked top face of the platform stone) while looking north (tp yaw 180). Checks the stairs facing state on both stacks. Vanilla stairs face toward the placing player.",
- "setup": [
-  "give {player} biomesoplenty:fir_stairs 1"
- ],
- "steps": [
-  {
-   "do": "select",
-   "item": "biomesoplenty:fir_stairs"
-  },
-  {
-   "do": "tp",
-   "pos": [
-    308.5,
-    121,
-    312.5
-   ],
-   "yaw": 180,
-   "pitch": 0.0
-  },
-  {
-   "do": "place",
-   "pos": [
-    308,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "block",
-   "pos": [
-    308,
-    121,
-    310
-   ]
-  },
-  {
-   "observe": "inventory"
-  }
- ]
+  "id": "23-orient-bop-fir-stairs-floor-north",
+  "notes": "Stairs placed on the floor (clicked top face of the platform stone) while looking north (tp yaw 180). Checks the stairs facing state on both stacks. Vanilla stairs face toward the placing player.",
+  "setup": [
+    "give {player} biomesoplenty:fir_stairs 1"
+  ],
+  "steps": [
+    {
+      "do": "select",
+      "item": "biomesoplenty:fir_stairs"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        312.5
+      ],
+      "yaw": 180,
+      "pitch": 0.0
+    },
+    {
+      "do": "place",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "block",
+      "pos": [
+        308,
+        121,
+        310
+      ]
+    },
+    {
+      "observe": "inventory"
+    },
+    {
+      "do": "tp",
+      "pos": [
+        308.5,
+        121,
+        313.5
+      ],
+      "yaw": 180.0,
+      "pitch": 0.0,
+      "notes": "framed final shot: 3 blocks south of target, facing north"
+    }
+  ]
 }

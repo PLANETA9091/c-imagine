@@ -1,6 +1,6 @@
 {
  "id": "33-mod-water-wheel-with-bucket-water",
- "notes": "create:water_wheel placed on the floor; a water bucket used from above at 308 121 309 (look pitch 60, target stone top at 308 120 309) so water is placed next to the wheel's south side. Checks both blocks and the bucket count. Wheel rotation is not in the block state, so only the block states are observed.",
+ "notes": "Facing check, yaw 0 pitch 0 for the wheel. The wheel is placed with use_at on the top face of stone (308,120,310) -> wheel at 308,121,310; the hit face and the player yaw are recorded. Then a water bucket is used with use_item at pitch 60 (vanilla BucketItem path: the player raycast hits the top face of stone 308,120,309) -> water at 308,121,309 (north neighbour of the wheel). use_at is not used for the bucket: truth-ctl use-at goes through useItemOn, which buckets ignore. Block states of both, player yaw and the bucket count are compared.",
  "setup": [
   "give {player} create:water_wheel 1",
   "give {player} minecraft:water_bucket 1"
@@ -21,11 +21,11 @@
    "pitch": 0.0
   },
   {
-   "do": "place",
-   "pos": [
-    308,
-    121,
-    310
+   "do": "use_at",
+   "point": [
+    308.5,
+    121.0,
+    310.5
    ]
   },
   {
@@ -35,6 +35,9 @@
     121,
     310
    ]
+  },
+  {
+   "observe": "player"
   },
   {
    "do": "select",
