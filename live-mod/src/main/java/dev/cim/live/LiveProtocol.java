@@ -255,8 +255,10 @@ public final class LiveProtocol {
                     // [TAB hitX TAB hitY TAB hitZ TAB feetX TAB feetY TAB feetZ TAB yaw TAB pitch], then
                     // inv lines (the held stack in slot 0): a right click with a mod item on a block
                     // in Paper's world, done by the item's own code as a client's click is. The
-                    // clicked block stands in the facade as itself when it is a mod block, as stone
-                    // otherwise. A block the item placed is reported (id, position, its block
+                    // real neighbourhood (nb lines, see Neighbour) stands in the facade around the
+                    // target cell: the clicked block as itself, as stone only when Paper sent no nb
+                    // line for it (an older Paper). The seeded blocks are cleared after the action
+                    // like the target cell is. A block the item placed is reported (id, position, its block
                     // entity's data) for Paper to put down; a menu it opened is the answer's menu.
                     SessionServerPlayer player = LiveMenus.session(id, head[2]);
                     player.closeContainer();
@@ -273,8 +275,27 @@ public final class LiveProtocol {
                             : net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                                     net.minecraft.resources.ResourceLocation.parse(head[7])).defaultBlockState();
                     net.minecraft.core.BlockPos into = pos.relative(face);
-                    level.setBlock(pos, stand, 3);
-                    level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    // The real neighbourhood of the target, as Paper sent it (see Neighbour); a
+                    // block it sent is seeded as it is, the target cell and the clicked block as
+                    // stone or air only when no line named them.
+                    java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> seeded =
+                            new java.util.LinkedHashMap<>();
+                    for (Neighbour n : Neighbour.parse(lines)) {
+                        net.minecraft.world.level.block.state.BlockState real =
+                                BlockStates.parse(Neighbour.layerState(n.state()));
+                        if (real != null) {
+                            seeded.put(new net.minecraft.core.BlockPos(n.x(), n.y(), n.z()), real);
+                        }
+                    }
+                    for (var seed : seeded.entrySet()) {
+                        level.setBlock(seed.getKey(), seed.getValue(), 3);
+                    }
+                    if (!seeded.containsKey(pos)) {
+                        level.setBlock(pos, stand, 3);
+                    }
+                    if (!seeded.containsKey(into)) {
+                        level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                    }
                     // Out of the way of what it places, facing the clicked face.
                     net.minecraft.core.BlockPos stand_at = into.relative(face, 2);
                     player.setPos(stand_at.getX() + 0.5, stand_at.getY(), stand_at.getZ() + 0.5);
@@ -350,6 +371,9 @@ public final class LiveProtocol {
                         }
                         level.setBlock(into, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                         level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                        for (net.minecraft.core.BlockPos seededAt : seeded.keySet()) {
+                            level.setBlock(seededAt, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+                        }
                         BLOCKS.remove(id);
                     }
                     yield out.toString();

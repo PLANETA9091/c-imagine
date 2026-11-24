@@ -444,6 +444,16 @@ final class LiveBridge {
      */
     UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId,
                 boolean sneaking, org.bukkit.util.Vector hit) {
+        return useOn(player, clicked, face, clickedId, sneaking, hit, null);
+    }
+
+    /**
+     * As {@link #useOn(Player, Block, BlockFace, String, boolean, Vector)}, with the real neighbourhood of
+     * the target cell (see {@link #neighbourLines}): {@code moddedAt} names the mod block a block stands
+     * for (null for a vanilla one), and is null itself when the caller sends no neighbourhood at all.
+     */
+    UseOn useOn(Player player, org.bukkit.block.Block clicked, org.bukkit.block.BlockFace face, String clickedId,
+                boolean sneaking, org.bukkit.util.Vector hit, java.util.function.Function<org.bukkit.block.Block, String> moddedAt) {
         StringBuilder in = new StringBuilder("use-on\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(clicked.getX()).append('\t').append(clicked.getY())
                 .append('\t').append(clicked.getZ()).append('\t').append(face.name().toLowerCase(java.util.Locale.ROOT))
@@ -454,6 +464,11 @@ final class LiveBridge {
         in.append('\t').append(at.getX()).append('\t').append(at.getY()).append('\t').append(at.getZ())
                 .append('\t').append(feet.getX()).append('\t').append(feet.getY()).append('\t').append(feet.getZ())
                 .append('\t').append(feet.getYaw()).append('\t').append(feet.getPitch());
+        if (moddedAt != null) {
+            for (String line : neighbourLines(clicked.getRelative(face), moddedAt)) {
+                in.append('\n').append(line);
+            }
+        }
         appendInventory(in, player, true);
         heldSlots.put(player.getUniqueId(), player.getInventory().getHeldItemSlot());
         String answer = call(in.toString());
@@ -480,6 +495,39 @@ final class LiveBridge {
         }
         return new UseOn(state, placements.stream().map(p -> new Placement(
                 p.id(), p.x(), p.y(), p.z(), p.state(), p.blockEntity(), List.copyOf(p.collision()))).toList());
+    }
+
+    /**
+     * The real neighbourhood of a use-on's target cell: every non-air block in the 3x3x3 box around it
+     * (the clicked block is one of them), as {@code nb TAB x TAB y TAB z TAB state} lines for the layer's
+     * Neighbour. A mod block (moddedAt non-null) sends the state it was placed with, else its id; a vanilla
+     * block sends Paper's 26.3 state text as it is, which the layer translates (Neighbour.layerState, the
+     * bootstrap's drift table).
+     */
+    List<String> neighbourLines(org.bukkit.block.Block target, java.util.function.Function<org.bukkit.block.Block, String> moddedAt) {
+        List<String> out = new ArrayList<>();
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    org.bukkit.block.Block cell = target.getRelative(dx, dy, dz);
+                    if (cell.getType().isAir()) {
+                        continue;
+                    }
+                    String modded = moddedAt.apply(cell);
+                    String state;
+                    if (modded != null) {
+                        String placed = placedState(cell);
+                        state = placed != null ? placed : modded;
+                    } else {
+                        state = cell.getBlockData().getAsString();
+                    }
+                    if (state != null) {
+                        out.add("nb\t" + cell.getX() + "\t" + cell.getY() + "\t" + cell.getZ() + "\t" + state);
+                    }
+                }
+            }
+        }
+        return out;
     }
 
     /** What breaking a mod block did: the stacks it spilled, the player's inventory after. */

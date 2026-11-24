@@ -1241,7 +1241,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         ground.getRelative(org.bukkit.block.BlockFace.UP).setType(Material.AIR, false);
         player.getInventory().clear();
         player.getInventory().setItemInMainHand(bridge.stackOf(itemId, 1));
-        LiveBridge.UseOn result = bridge.useOn(player, ground, org.bukkit.block.BlockFace.UP, null, true);
+        LiveBridge.UseOn result = bridge.useOn(player, ground, org.bukkit.block.BlockFace.UP, null, true, null, this::carried);
         out.add("place " + itemId + " -> " + (result.state().error() != null ? result.state().error()
                 : result.placedId() == null ? "nothing placed" : "placed " + result.placedId() + " with "
                 + (result.placedBlockEntity() == null ? "no" : "its") + " block entity data"));
@@ -2110,7 +2110,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
      */
     private boolean placeOrUse(Player player, LiveBridge bridge, Block clicked, org.bukkit.block.BlockFace face,
                                String clickedId, org.bukkit.util.Vector hit) {
-        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId, player.isSneaking(), hit);
+        LiveBridge.UseOn result = bridge.useOn(player, clicked, face, clickedId, player.isSneaking(), hit, this::carried);
         if (result.state().error() != null) {
             log.warning("[cim-screen] live use-on failed: " + result.state().error());
             return false;
