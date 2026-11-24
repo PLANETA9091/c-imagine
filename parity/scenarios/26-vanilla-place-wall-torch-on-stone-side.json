@@ -1,0 +1,44 @@
+{
+ "id": "26-vanilla-place-wall-torch-on-stone-side",
+ "notes": "minecraft:torch clicked on the west face of a stone block (air below and around the target, so the stone is the only neighbour). Checks wall_torch and its facing on both stacks.",
+ "setup": [
+  "give {player} minecraft:torch 1",
+  "setblock 311 120 310 minecraft:air",
+  "setblock 312 121 310 minecraft:stone"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:torch"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    311,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    311,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

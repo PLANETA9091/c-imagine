@@ -1,0 +1,63 @@
+{
+ "id": "37-mod-strip-bop-fir-log-with-axe",
+ "notes": "biomesoplenty:fir_log placed (axis y from the floor), then an iron axe used on it. Vanilla axe stripping keeps the axis, so the expected result is biomesoplenty:stripped_fir_log with the same axis. Checks the block state.",
+ "setup": [
+  "give {player} biomesoplenty:fir_log 1",
+  "give {player} minecraft:iron_axe 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "biomesoplenty:fir_log"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:iron_axe"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

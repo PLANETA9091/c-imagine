@@ -1,0 +1,63 @@
+{
+ "id": "38-mod-dynamictrees-bone-meal-on-oak-sapling",
+ "notes": "dynamictrees:oak_seed placed on dirt (becomes dynamictrees:oak_sapling), then bone meal used on it. The growth step is random in vanilla bone meal, so only the block after the use is compared (block_only). Checks the sapling state after one use.",
+ "setup": [
+  "setblock 308 120 310 minecraft:dirt",
+  "give {player} dynamictrees:oak_seed 1",
+  "give {player} minecraft:bone_meal 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "dynamictrees:oak_seed"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:bone_meal"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "face": "up",
+   "block_only": true
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  }
+ ]
+}

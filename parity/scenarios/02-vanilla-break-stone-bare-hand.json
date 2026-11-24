@@ -1,0 +1,34 @@
+{
+ "id": "02-vanilla-break-stone-bare-hand",
+ "setup": [],
+ "steps": [
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    120,
+    310
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    120,
+    310
+   ],
+   "timeout": 40
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    120,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

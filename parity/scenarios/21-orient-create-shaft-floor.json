@@ -1,0 +1,31 @@
+{
+ "id": "21-orient-create-shaft-floor",
+ "setup": [
+  "give {player} create:shaft 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:shaft"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

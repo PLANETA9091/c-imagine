@@ -1,0 +1,68 @@
+{
+ "id": "15-mod-place-break-biomesoplenty-fir-log",
+ "setup": [
+  "give {player} biomesoplenty:fir_log 1",
+  "give {player} minecraft:iron_axe 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "biomesoplenty:fir_log"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:iron_axe"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    307.5
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "collect",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

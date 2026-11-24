@@ -1,0 +1,34 @@
+{
+ "id": "09-vanilla-eat-bread",
+ "setup": [
+  "effect give {player} minecraft:hunger 10 9",
+  "give {player} minecraft:bread 1"
+ ],
+ "steps": [
+  {
+   "do": "wait",
+   "ticks": 220
+  },
+  {
+   "observe": "player"
+  },
+  {
+   "do": "select",
+   "item": "minecraft:bread"
+  },
+  {
+   "do": "use_item",
+   "hold": 1.7
+  },
+  {
+   "do": "wait",
+   "ticks": 40
+  },
+  {
+   "observe": "player"
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

@@ -1,0 +1,25 @@
+{
+ "id": "18-mod-open-inventory-modded-stack",
+ "setup": [
+  "give {player} create:cogwheel 5",
+  "give {player} create:shaft 3",
+  "give {player} biomesoplenty:fir_planks 2"
+ ],
+ "steps": [
+  {
+   "do": "open_inventory"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "close"
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

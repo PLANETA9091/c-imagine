@@ -1,0 +1,42 @@
+{
+ "id": "34-mod-open-create-schematic-table-screen",
+ "notes": "create:schematic_table right-clicked after placement. Checks the screen kind and menu_type (census menus.csv: schematic_table, opener block create:schematic_table, high confidence) and the empty slots.",
+ "setup": [
+  "give {player} create:schematic_table 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:schematic_table"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}

@@ -1,0 +1,52 @@
+{
+ "id": "13-mod-wrench-rotate-placed-shaft",
+ "setup": [
+  "give {player} create:wrench 1",
+  "give {player} create:shaft 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:shaft"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "create:wrench"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

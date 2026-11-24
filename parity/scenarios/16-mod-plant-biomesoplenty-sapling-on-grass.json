@@ -1,0 +1,32 @@
+{
+ "id": "16-mod-plant-biomesoplenty-sapling-on-grass",
+ "setup": [
+  "setblock 308 120 310 minecraft:grass_block",
+  "give {player} biomesoplenty:fir_sapling 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "biomesoplenty:fir_sapling"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

@@ -1,0 +1,45 @@
+{
+ "id": "24-orient-bop-fir-slab-side-face-center",
+ "notes": "Slab clicked on the centre of the east-facing side of a stone block (neighbour at 308 121 312, air below so the only solid neighbour is the stone). The face-centre click (hit y 0.5) gives the lower half in vanilla. Checks type=bottom on both stacks.",
+ "todo": "UPPER-HALF click not covered: neither truth-ctl 'place' nor horizon-ctl 'place' takes a hit point, and 'interact' takes only a FACE name (face centre). Needs a hit-point arg in both adapters (add optional 'hit' to the runner place step, then pass it to each ctl). Only the lower-half case is runnable now.",
+ "setup": [
+  "give {player} biomesoplenty:fir_slab 1",
+  "setblock 308 120 311 minecraft:air",
+  "setblock 308 121 312 minecraft:stone"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "biomesoplenty:fir_slab"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

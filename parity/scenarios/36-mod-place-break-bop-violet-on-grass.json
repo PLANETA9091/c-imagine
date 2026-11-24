@@ -1,0 +1,67 @@
+{
+ "id": "36-mod-place-break-bop-violet-on-grass",
+ "notes": "biomesoplenty:violet placed on grass at 308 120 310, broken by hand, then picked up by walking onto the spot. Checks the block after placing and breaking, and the picked-up inventory.",
+ "setup": [
+  "setblock 308 120 310 minecraft:grass_block",
+  "give {player} biomesoplenty:violet 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "biomesoplenty:violet"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "collect",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

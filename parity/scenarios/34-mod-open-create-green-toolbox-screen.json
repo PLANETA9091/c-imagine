@@ -1,0 +1,42 @@
+{
+ "id": "34-mod-open-create-green-toolbox-screen",
+ "notes": "create:green_toolbox right-clicked after placement. Census menus.csv maps menu 'toolbox' to the *_toolbox blocks (name match, not verified in game). Checks the screen kind, menu_type and slot layout.",
+ "setup": [
+  "give {player} create:green_toolbox 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:green_toolbox"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}

@@ -1,0 +1,33 @@
+{
+ "id": "04-vanilla-place-oak-log-side-axis",
+ "setup": [
+  "setblock 308 120 311 minecraft:air",
+  "setblock 308 121 312 minecraft:stone",
+  "give {player} minecraft:oak_log 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:oak_log"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    311
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

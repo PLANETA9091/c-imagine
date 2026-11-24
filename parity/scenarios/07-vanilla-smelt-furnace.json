@@ -1,0 +1,76 @@
+{
+ "id": "07-vanilla-smelt-furnace",
+ "setup": [
+  "give {player} minecraft:raw_iron 1",
+  "give {player} minecraft:coal 1",
+  "give {player} minecraft:furnace 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:furnace"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "input",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "hotbar:1",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "fuel",
+   "mode": "left"
+  },
+  {
+   "do": "wait",
+   "seconds": 12
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "output",
+   "mode": "shift"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}

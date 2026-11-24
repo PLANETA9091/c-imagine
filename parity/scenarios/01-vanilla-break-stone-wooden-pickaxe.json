@@ -1,0 +1,48 @@
+{
+ "id": "01-vanilla-break-stone-wooden-pickaxe",
+ "setup": [
+  "setblock 308 121 310 minecraft:stone",
+  "give {player} minecraft:wooden_pickaxe 1"
+ ],
+ "steps": [
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:wooden_pickaxe"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    307.5
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

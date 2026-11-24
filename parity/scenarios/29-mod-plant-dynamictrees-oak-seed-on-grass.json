@@ -1,0 +1,43 @@
+{
+ "id": "29-mod-plant-dynamictrees-oak-seed-on-grass",
+ "notes": "dynamictrees:oak_seed placed on a grass_block block at 308 120 310. Checks the sapling block and the seed count afterwards. Scenario 19 covers dirt; this adds the soil pair.",
+ "setup": [
+  "setblock 308 120 310 minecraft:grass_block",
+  "give {player} dynamictrees:oak_seed 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "dynamictrees:oak_seed"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

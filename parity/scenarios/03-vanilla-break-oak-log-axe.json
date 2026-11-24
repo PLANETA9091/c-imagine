@@ -1,0 +1,40 @@
+{
+ "id": "03-vanilla-break-oak-log-axe",
+ "setup": [
+  "setblock 308 121 310 minecraft:oak_log[axis=y]",
+  "give {player} minecraft:iron_axe 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:iron_axe"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    307.5
+   ]
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

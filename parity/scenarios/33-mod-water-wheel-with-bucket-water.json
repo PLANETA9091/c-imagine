@@ -1,0 +1,76 @@
+{
+ "id": "33-mod-water-wheel-with-bucket-water",
+ "notes": "create:water_wheel placed on the floor; a water bucket used from above at 308 121 309 (look pitch 60, target stone top at 308 120 309) so water is placed next to the wheel's south side. Checks both blocks and the bucket count. Wheel rotation is not in the block state, so only the block states are observed.",
+ "setup": [
+  "give {player} create:water_wheel 1",
+  "give {player} minecraft:water_bucket 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:water_wheel"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:water_bucket"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0,
+   "pitch": 60
+  },
+  {
+   "do": "use_item"
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    309
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

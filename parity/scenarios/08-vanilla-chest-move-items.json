@@ -1,0 +1,59 @@
+{
+ "id": "08-vanilla-chest-move-items",
+ "setup": [
+  "give {player} minecraft:cobblestone 5",
+  "give {player} minecraft:chest 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:chest"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "chest",
+   "slot": "hotbar:0",
+   "mode": "shift"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "click_slot",
+   "in": "chest",
+   "slot": "container:0",
+   "mode": "shift"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "close"
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}

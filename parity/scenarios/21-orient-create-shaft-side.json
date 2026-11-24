@@ -1,0 +1,33 @@
+{
+ "id": "21-orient-create-shaft-side",
+ "setup": [
+  "give {player} create:shaft 1",
+  "setblock 310 120 310 minecraft:air",
+  "setblock 311 121 310 minecraft:stone"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:shaft"
+  },
+  {
+   "do": "place",
+   "pos": [
+    310,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    310,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

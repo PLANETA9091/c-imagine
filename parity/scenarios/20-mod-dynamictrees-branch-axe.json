@@ -1,0 +1,52 @@
+{
+ "id": "20-mod-dynamictrees-branch-axe",
+ "setup": [
+  "give {player} dynamictrees:oak_branch 1",
+  "give {player} minecraft:iron_axe 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "dynamictrees:oak_branch"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:iron_axe"
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

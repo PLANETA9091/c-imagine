@@ -1,0 +1,52 @@
+{
+ "id": "14-mod-break-andesite-casing-pickaxe",
+ "setup": [
+  "give {player} create:andesite_casing 1",
+  "give {player} minecraft:iron_pickaxe 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:andesite_casing"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:iron_pickaxe"
+  },
+  {
+   "do": "break",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

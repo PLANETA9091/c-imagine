@@ -1,0 +1,65 @@
+{
+ "id": "06-vanilla-craft-sticks-crafting-table",
+ "setup": [
+  "give {player} minecraft:oak_planks 2",
+  "give {player} minecraft:crafting_table 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:crafting_table"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:0",
+   "mode": "right"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:3",
+   "mode": "right"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "result",
+   "mode": "shift"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

@@ -1,0 +1,97 @@
+{
+ "id": "32-mod-hand-crank-beside-mechanical-press",
+ "notes": "create:hand_crank placed on the floor, mechanical press placed on its east side (air under the press so the crank is its only neighbour), then the hand is emptied (the press was the last item) and the crank is used. Checks block states of both and the screen. The crank animation is only visible in screenshots.",
+ "setup": [
+  "give {player} create:hand_crank 1",
+  "give {player} create:mechanical_press 1",
+  "setblock 309 120 310 minecraft:air"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:hand_crank"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "create:mechanical_press"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    309,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    309,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "wait",
+   "seconds": 5
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

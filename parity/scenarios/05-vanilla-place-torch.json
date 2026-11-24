@@ -1,0 +1,31 @@
+{
+ "id": "05-vanilla-place-torch",
+ "setup": [
+  "give {player} minecraft:torch 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:torch"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

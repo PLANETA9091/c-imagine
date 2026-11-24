@@ -1,0 +1,72 @@
+{
+ "id": "17-mod-craft-create-andesite-alloy",
+ "setup": [
+  "give {player} minecraft:andesite 1",
+  "give {player} minecraft:iron_nugget 1",
+  "give {player} minecraft:crafting_table 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:crafting_table"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "hotbar:1",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "grid:1",
+   "mode": "left"
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "crafting",
+   "slot": "result",
+   "mode": "shift"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}

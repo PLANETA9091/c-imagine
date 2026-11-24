@@ -1,0 +1,32 @@
+{
+ "id": "19-mod-dynamictrees-seed-on-dirt",
+ "setup": [
+  "setblock 308 120 310 minecraft:dirt",
+  "give {player} dynamictrees:oak_seed 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "dynamictrees:oak_seed"
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

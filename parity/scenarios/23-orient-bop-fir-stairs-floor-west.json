@@ -1,0 +1,42 @@
+{
+ "id": "23-orient-bop-fir-stairs-floor-west",
+ "notes": "Stairs placed on the floor (clicked top face of the platform stone) while looking west (tp yaw 90). Checks the stairs facing state on both stacks. Vanilla stairs face toward the placing player.",
+ "setup": [
+  "give {player} biomesoplenty:fir_stairs 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "biomesoplenty:fir_stairs"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    310.5,
+    121,
+    310.5
+   ],
+   "yaw": 90,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  }
+ ]
+}

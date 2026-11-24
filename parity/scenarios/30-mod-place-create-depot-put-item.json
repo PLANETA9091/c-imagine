@@ -1,0 +1,59 @@
+{
+ "id": "30-mod-place-create-depot-put-item",
+ "notes": "create:depot placed on the floor, then an iron ingot used on its top face. Checks the depot block state and the inventory (ingot count down by one). The depot's block-entity contents are not observable on the vanilla client; only the server side (/cim inspect) shows them, and the runner does not read that yet.",
+ "setup": [
+  "give {player} create:depot 1",
+  "give {player} minecraft:iron_ingot 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "create:depot"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "select",
+   "item": "minecraft:iron_ingot"
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ],
+   "face": "up"
+  },
+  {
+   "observe": "block",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}

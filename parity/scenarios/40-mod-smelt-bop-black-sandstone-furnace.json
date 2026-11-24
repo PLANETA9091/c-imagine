@@ -1,0 +1,87 @@
+{
+ "id": "40-mod-smelt-bop-black-sandstone-furnace",
+ "notes": "biomesoplenty:black_sandstone smelted to biomesoplenty:smooth_black_sandstone (census recipes.csv, minecraft:smelting, BOP). Same click pattern as scenario 07 (input, coal fuel, shift-click output). Checks the screen, the output and the inventory.",
+ "setup": [
+  "give {player} biomesoplenty:black_sandstone 1",
+  "give {player} minecraft:coal 1",
+  "give {player} minecraft:furnace 1"
+ ],
+ "steps": [
+  {
+   "do": "select",
+   "item": "minecraft:furnace"
+  },
+  {
+   "do": "tp",
+   "pos": [
+    308.5,
+    121,
+    308.5
+   ],
+   "yaw": 0.0,
+   "pitch": 0.0
+  },
+  {
+   "do": "place",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "do": "interact",
+   "pos": [
+    308,
+    121,
+    310
+   ]
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "hotbar:0",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "input",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "hotbar:1",
+   "mode": "left"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "fuel",
+   "mode": "left"
+  },
+  {
+   "do": "wait",
+   "seconds": 15
+  },
+  {
+   "observe": "screen"
+  },
+  {
+   "do": "click_slot",
+   "in": "furnace",
+   "slot": "output",
+   "mode": "shift"
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "observe": "screen"
+  }
+ ]
+}
