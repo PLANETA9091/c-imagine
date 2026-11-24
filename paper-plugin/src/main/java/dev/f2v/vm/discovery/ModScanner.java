@@ -847,7 +847,8 @@ public final class ModScanner {
         for (String owner : owners) {
             if (owner == null || owner.isBlank()) continue;
             String id = owner.toLowerCase(Locale.ROOT);
-            if (lower.startsWith("key." + id + ".") || lower.startsWith("keybind." + id + ".")) return true;
+            if (lower.startsWith("key." + id + ".") || lower.startsWith("keybind." + id + ".")
+                    || lower.startsWith("keybinds." + id + ".")) return true;
         }
         return false;
     }

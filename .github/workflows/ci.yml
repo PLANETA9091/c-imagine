@@ -161,6 +161,7 @@ jobs:
           for t in KeyCensus KeyboardState KeyboardLayout CameraLock BreakSpeed HudPack ScreenPack ScreenHud; do
             java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" "dev.cim.hud.$t" --selftest
           done
+          java -cp "target/cim-paper-plugin.jar:$(cat target/selftest-cp.txt)" dev.cim.keys.CombatRollRules --selftest
       - uses: actions/upload-artifact@v4
         with:
           name: cim-paper-plugin
