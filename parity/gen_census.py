@@ -19,8 +19,11 @@ platform rebuilt, player at 308 121 308; every scenario also refills its own tar
                place it at 308 121 311, observe block, break, collect, observe block + inventory.
   interact     ia-<menu>--<ns>-<name>   place the menu block at 308 121 310, interact, observe screen, close.
                Only menus.csv rows with opener_kind=block (item openers are not in this family).
-  item-use     fu-<ns>-<name>   food: food_to 18, use_item hold 2 s, observe player and inventory.
-               Tools: none generated (see _skipped.csv).
+  item-use     fu-<ns>-<name>   food (MODDED_FOOD, from the jar bytecode): food_to 18, use_item hold 2 s,
+               observe player and inventory.
+  tool         tl-<ns>-<name>   modded tools with a real tool class (MODDED_TOOLS, from the jar bytecode):
+               a vanilla block for the tool kind is set at 308 121 311, the tool is selected, the block and the
+               inventory (with durability) are observed, the block is broken and collected, observe again.
   craft        cr-<ns>-<recipe>  crafting_shaped only; sample evenly spaced from the feasible recipes of each
                mod (default 20 per mod). Crafting table placed, interact, ingredients click_slot'ed into grid
                cells (left-pick the hotbar stack, right-click one cell per item), observe screen (result).
@@ -40,7 +43,7 @@ import sys
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FAMILIES = ("place-break", "interact", "item-use", "craft")
+FAMILIES = ("place-break", "interact", "item-use", "craft", "tool")
 
 STAND = [308.5, 121, 308.5]       # player stands here (facing +z)
 PB_POS = [308, 121, 311]          # place-break target, 3 blocks in front of the player
@@ -48,6 +51,47 @@ MENU_POS = [308, 121, 310]        # interact / craft target
 TOOL_TAGS = ("pickaxe", "axe", "shovel", "hoe")
 TECH_RE = re.compile(r"controller|liquid|_fluid$|void|moving_piston|virtual|debug|_tile$|structure_block|jigsaw|^air$")
 SAFE_RE = re.compile(r"[^a-z0-9_.-]")
+
+# Modded food, decided from the jar bytecode (NOT from the census name guess, which picked non-food such
+# as create:steam_engine and missed create:sweet_roll). Evidence: create-1.21.1-6.0.10 AllItems.class. Every
+# food item's registration calls Item$Properties.food(FoodProperties) inside a properties lambda
+# (lambda$static$N). The item is the ldc name string that precedes that lambda's invokedynamic in <clinit>
+# (static {}), with only the registrate item(...)/tag(...) calls between them. Method: javap -c -v on the
+# class, bootstrap-method table for lambda targets, scan of static {} in order (scratch/censusgen2/map2.py).
+# Nutrition/saturation are the FoodProperties$Builder constants of the same lambda.
+# Scan coverage: only create has FoodProperties / world/food references (7 classes; the 5 food() calls
+# are all in AllItems). biomesoplenty, dynamictrees and the other jars reference no world/food class and
+# no DataComponents.FOOD/CONSUMABLE, so they have no food items. create:blaze_cake, create:chocolate_bucket,
+# create:pulp and the dynamictrees seeds/branches are census is_food=guess but have no food() call.
+MODDED_FOOD = {
+    "create:bar_of_chocolate": "AllItems lambda$static$1: nutrition 6, saturation 0.3",
+    "create:sweet_roll": "AllItems lambda$static$2: nutrition 6, saturation 0.8 (census said is_food=no)",
+    "create:chocolate_glazed_berries": "AllItems lambda$static$3: nutrition 7, saturation 0.8",
+    "create:honeyed_apple": "AllItems lambda$static$4: nutrition 8, saturation 0.8",
+    "create:builders_tea": "AllItems lambda$static$6: nutrition 16, saturation 0.6, alwaysEdible, effect, stacksTo 16",
+}
+
+# Modded tools with a real tool class, from the jar bytecode. The census is_tool flag is not used: it
+# misses classes such as create:cardboard_sword (census is_tool=no, is_weapon=guess).
+# Evidence: CardboardSwordItem.class extends net/minecraft/world/item/SwordItem (invokespecial SwordItem.<init>
+# with Tier AllToolMaterials.CARDBOARD); registered as AllItems.CARDBOARD_SWORD (ldc "cardboard_sword").
+# AllToolMaterials.CARDBOARD has uses=0 (the durability constant), so the tool may not be damageable at all.
+# The scan (javap of every class referencing PickaxeItem/AxeItem/ShovelItem/HoeItem/SwordItem/DiggerItem/
+# TieredItem/component/Tool/DataComponents.TOOL) found no other tool classes: AxeItem/ShovelItem only in
+# GlitchCore BlockHelper and Create LogStrippingFakeRecipes/LitBlazeBurnerBlock (not items), HoeItem only in
+# BOP ModVanillaCompat (not an item), no digger or tool component anywhere else.
+MODDED_TOOLS = {
+    "create:cardboard_sword": {"kind": "sword", "evidence": "CardboardSwordItem extends SwordItem, tier CARDBOARD (uses 0)"},
+}
+# Vanilla block broken by each tool kind (vanilla tool-tag fit): stone for a pickaxe, log for an axe, dirt for
+# a shovel, hay bale for a hoe, grass for a sword (a sword is not a digger: short grass has hardness 0).
+TOOL_BREAK = {
+    "pickaxe": "minecraft:stone",
+    "axe": "minecraft:oak_log",
+    "shovel": "minecraft:dirt",
+    "hoe": "minecraft:hay_block",
+    "sword": "minecraft:short_grass",
+}
 
 
 def safe(text):
@@ -195,26 +239,29 @@ def gen_interact(census, menu, opener):
 
 
 def is_food_candidate(item):
-    """(ok, reason). is_food=yes, or is_food=guess for a real registry item (names only, unverified)."""
+    """(ok, reason). A food is a MODDED_FOOD entry (jar bytecode) or a census is_food=yes row. A census guess
+    alone is not enough: the guess picked non-food items."""
     fid = item["full_id"]
-    if item["is_food"] not in ("yes", "guess"):
-        return False, "not food"
     if "/" in fid:
         return False, "path-like id (not a registry item)"
     if item["in_server_registry"] != "yes":
         return False, "not in server registry (unobtainable)"
-    return True, ""
+    if fid in MODDED_FOOD:
+        return True, ""
+    if item["is_food"] == "yes":
+        return True, ""
+    return False, "census is_food=%s not confirmed by jar bytecode (no Item$Properties.food call)" % item["is_food"]
 
 
 def gen_food(item):
     fid = item["full_id"]
     sid = "fu-" + safe("%s-%s" % ns_name(fid))
-    flag = "census is_food=yes" if item["is_food"] == "yes" else "census is_food=guess (food flag unverified)"
+    flag = "food evidence: " + MODDED_FOOD[fid] if fid in MODDED_FOOD else "census is_food=yes"
     sc = {
         "id": sid,
         "notes": "%s. Health restored to 20 first (instant_health), food_to 18 (needs food >= 18 at start: "
                  "food only rises by eating, so earlier scenarios leave it at >= 18), then one bite/drink with a 2 s hold, "
-                 "observe food and saturation. Durability is not observed by the runner." % flag,
+                 "observe food and saturation." % flag,
         "setup": ["effect give {player} minecraft:instant_health 1 10", "give {player} %s 1" % fid],
         "steps": [{"do": "food_to", "value": 18, "max_ticks": 1200},
                   {"observe": "player"},
@@ -225,6 +272,37 @@ def gen_food(item):
                   {"observe": "inventory"}],
     }
     return sid, sc
+
+
+def gen_tool(census, full_id, spec):
+    """-> (sid, scenario, reason). Tool kind -> vanilla block to break, the modded tool is the only breaker."""
+    item = census.items.get(full_id)
+    if item is None:
+        return None, None, "not in census"
+    if item["in_server_registry"] != "yes":
+        return None, None, "not in server registry (unobtainable)"
+    block = TOOL_BREAK.get(spec["kind"])
+    if block is None:
+        return None, None, "no vanilla block for tool kind %s" % spec["kind"]
+    sid = "tl-" + safe("%s-%s" % ns_name(full_id))
+    setup = ["fill 308 120 311 308 120 311 minecraft:stone",
+             "setblock 308 121 311 %s" % block,
+             "give {player} %s 1" % full_id]
+    steps = [{"do": "tp", "pos": list(STAND), "yaw": 0.0, "pitch": 0.0},
+             {"do": "select", "item": full_id},
+             {"observe": "block", "pos": list(PB_POS)},
+             {"observe": "inventory"},
+             {"do": "break", "pos": list(PB_POS), "timeout": 20},
+             {"do": "collect", "pos": list(PB_POS)},
+             {"observe": "block", "pos": list(PB_POS)},
+             {"observe": "inventory"}]
+    notes = ("tool %s (%s, %s): breaks %s. Inventory is observed before and after the break, so the durability "
+             "delta (per stack damage / max_damage in the record's durability field) is the tool's wear. "
+             "Expected from vanilla rules, not verified: a sword does 2 damage only on blocks with destroy speed "
+             "> 0, and short grass has destroy speed 0, so no wear is expected. The census tool flag is no. "
+             "If the tool is not damageable (CARDBOARD uses 0), no damage field is expected at all." % (
+                 full_id, spec["kind"], spec["evidence"], block))
+    return sid, {"id": sid, "notes": notes, "setup": setup, "steps": steps}, ""
 
 
 def parse_shaped(census, rec):
@@ -355,21 +433,36 @@ def generate(census, families, craft_per_mod, recipe_json):
                 add("interact", sid, sc)
 
     if "item-use" in families:
-        for full_id in sorted(census.items):
-            item = census.items[full_id]
-            if item["is_food"] in ("yes", "guess"):
-                ok, why = is_food_candidate(item)
-                if not ok:
-                    skipped.append(("item-use", full_id, why))
-                    continue
-                sid, sc = gen_food(item)
-                add("item-use", sid, sc)
-        for full_id in sorted(census.items):
-            item = census.items[full_id]
-            if item["is_tool"] in ("yes", "guess"):
-                skipped.append(("item-use", full_id,
-                                "tool (is_tool=%s): census has no tool kind, so no matching block to break; "
-                                "durability is not observable by the runner" % item["is_tool"]))
+        for full_id in sorted(set(census.items) | set(MODDED_FOOD)):
+            item = census.items.get(full_id)
+            if item is None:
+                if full_id in MODDED_FOOD:
+                    skipped.append(("item-use", full_id, "jar-verified food not in census"))
+                continue
+            if item["is_food"] not in ("yes", "guess") and full_id not in MODDED_FOOD:
+                continue
+            ok, why = is_food_candidate(item)
+            if not ok:
+                skipped.append(("item-use", full_id, why))
+                continue
+            sid, sc = gen_food(item)
+            add("item-use", sid, sc)
+
+    if "tool" in families:
+        for full_id in sorted(set(census.items) | set(MODDED_TOOLS)):
+            spec = MODDED_TOOLS.get(full_id)
+            if spec is None:
+                item = census.items[full_id]
+                if item["is_tool"] in ("yes", "guess"):
+                    skipped.append(("tool", full_id,
+                                    "census is_tool=%s but no digger/sword class or minecraft:tool component in "
+                                    "the jars" % item["is_tool"]))
+                continue
+            sid, sc, why = gen_tool(census, full_id, spec)
+            if why:
+                skipped.append(("tool", full_id, why))
+                continue
+            add("tool", sid, sc)
 
     if "craft" in families:
         by_ns = {}

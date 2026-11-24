@@ -1,6 +1,6 @@
 {
  "id": "fu-create-honeyed_apple",
- "notes": "census is_food=guess (food flag unverified). Health restored to 20 first (instant_health), food_to 18 (needs food >= 18 at start: food only rises by eating, so earlier scenarios leave it at >= 18), then one bite/drink with a 2 s hold, observe food and saturation. Durability is not observed by the runner.",
+ "notes": "food evidence: AllItems lambda$static$4: nutrition 8, saturation 0.8. Health restored to 20 first (instant_health), food_to 18 (needs food >= 18 at start: food only rises by eating, so earlier scenarios leave it at >= 18), then one bite/drink with a 2 s hold, observe food and saturation.",
  "setup": [
   "effect give {player} minecraft:instant_health 1 10",
   "give {player} create:honeyed_apple 1"

@@ -301,6 +301,34 @@ def norm_inventory(reply):  # player inventory: names by item only
     return {"counts": {k: v for k, v in counts.items() if v}, "carried": cid, "selected": None}
 
 
+DUR_KEYS = ("damage", "max_damage")
+
+
+def norm_durability(reply):
+    """Per-stack durability from a raw inventory reply (kept OUT of the compared result, see run.py).
+    status "reported" when some stack carries a damage or max_damage key, else "not_reported" (this
+    includes a reply with no durability fields at all, and a damageable stack whose field is omitted at 0:
+    the two cannot be told apart from the reply). stacks: [{group, slot, item, count, damage, max_damage}]
+    for every stack with a durability key; fields: the durability keys seen."""
+    out, seen = [], set()
+    for group in ("hotbar", "main", "armor", "offhand"):
+        entries = reply.get(group) if isinstance(reply, dict) else None
+        if isinstance(entries, dict):
+            entries = [entries]
+        for s in entries or []:
+            if not isinstance(s, dict):
+                continue
+            keys = [k for k in DUR_KEYS if k in s]
+            if not keys:
+                continue
+            seen.update(keys)
+            out.append({"group": group, "slot": s.get("slot"), "item": norm_id(s.get("item")),
+                        "count": int(s.get("count") or 0),
+                        "damage": s.get("damage"), "max_damage": s.get("max_damage")})
+    return {"status": "reported" if out else "not_reported", "source": "client",
+            "fields": sorted(seen), "stacks": out}
+
+
 def norm_held(reply):
     held = reply.get("held")
     if isinstance(held, dict):
@@ -362,6 +390,12 @@ def norm_player(reply):
 
 # ------------------------------------------------------------------ base
 class Stack:
+    _inv_raw = None
+
+    def last_durability(self):
+        """Durability of the most recent observe_inventory (raw reply kept by the stack)."""
+        return norm_durability(self._inv_raw or {})
+
     name = "?"
     player = "?"
 
@@ -599,7 +633,9 @@ class TruthStack(Stack):
         return {"state": st, "id": st.split("[", 1)[0]}
 
     def observe_inventory(self):
-        return norm_inventory(self.call("inventory"))
+        raw = self.call("inventory")
+        self._inv_raw = raw
+        return norm_inventory(raw)
 
     def observe_screen(self):
         return norm_screen(self.call("screen"), self.name)
@@ -996,15 +1032,17 @@ class OursStack(Stack):
         return {"state": st, "id": st.split("[", 1)[0]}
 
     def observe_inventory(self):
+        raw = self.ctl("inventory")
+        self._inv_raw = raw  # client-side reply: the only place durability is reported (see norm_durability)
         srv = self._server_counts()
-        carried = self.ctl("inventory").get("carried")
+        carried = raw.get("carried")
         cid = norm_id(carried.get("item")) if isinstance(carried, dict) and carried.get("count") else None
         if srv is not None:
             counts = dict(srv)
             if cid:
                 counts[cid] = counts.get(cid, 0) + int(carried.get("count", 0))
             return {"counts": {k: v for k, v in counts.items() if v}, "carried": cid, "selected": None}
-        return norm_inventory(self.ctl("inventory"))
+        return norm_inventory(raw)
 
     def _hud_menu(self):
         """'/cim inspect screen' for the player when a menu is open on the server (drawn on the HUD by

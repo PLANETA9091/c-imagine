@@ -10,24 +10,37 @@ interact,crafting_blueprint,item opener (interact family is block openers only)
 interact,linked_controller,item opener (interact family is block openers only)
 interact,schedule,item opener (interact family is block openers only)
 interact,factory_panel_set_item/create:factory_panel,opener create:factory_panel not a placeable registry block in census
+item-use,create:blaze_cake,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:blaze_cake_base,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:cherry_window,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:cherry_window_pane,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:chocolate_bucket,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:creative_blaze_cake,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:potato_cannon,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
 item-use,create:potato_cannon/cog,path-like id (not a registry item)
 item-use,create:potato_cannon/item,path-like id (not a registry item)
-item-use,biomesoplenty:music_disc_wanderer,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,biomesoplenty:potted_toadstool,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,biomesoplenty:toadstool,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:crafting_blueprint,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:factory_gauge,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:goggles,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:mechanical_drill,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:mechanical_saw,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wand_of_symmetry,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wand_of_symmetry/bits,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wand_of_symmetry/core,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wand_of_symmetry/core_glow,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wand_of_symmetry/item,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wrench,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wrench/gear,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
-item-use,create:wrench/item,"tool (is_tool=guess): census has no tool kind, so no matching block to break; durability is not observable by the runner"
+item-use,create:pulp,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:steam_engine,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,create:steam_whistle,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,dynamictrees:apple_oak_seed,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,dynamictrees:cherry_branch,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+item-use,dynamictrees:cherry_seed,census is_food=guess not confirmed by jar bytecode (no Item$Properties.food call)
+tool,biomesoplenty:music_disc_wanderer,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,biomesoplenty:potted_toadstool,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,biomesoplenty:toadstool,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:crafting_blueprint,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:factory_gauge,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:goggles,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:mechanical_drill,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:mechanical_saw,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wand_of_symmetry,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wand_of_symmetry/bits,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wand_of_symmetry/core,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wand_of_symmetry/core_glow,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wand_of_symmetry/item,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wrench,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wrench/gear,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
+tool,create:wrench/item,census is_tool=guess but no digger/sword class or minecraft:tool component in the jars
 craft,biomesoplenty:black_sandstone_slab,not in the sample (20 per mod)
 craft,biomesoplenty:black_sandstone_stairs,not in the sample (20 per mod)
 craft,biomesoplenty:black_sandstone_wall,not in the sample (20 per mod)

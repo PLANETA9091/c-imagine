@@ -81,7 +81,10 @@ def run_step(stack, step, shots_dir, idx, rec):
             return stack.observe_block(step["pos"])
         if kind == "inventory":
             rec["source"] = stack.source_of("inventory")
-            return stack.observe_inventory()
+            res = stack.observe_inventory()
+            # durability is recorded beside the result, not in it: diff.py compares results only
+            rec["durability"] = stack.last_durability()
+            return res
         if kind == "screen":
             stack.wait(5)  # menus update over the next ticks after a click; read after 5
             return stack.observe_screen()

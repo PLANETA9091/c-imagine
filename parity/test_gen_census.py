@@ -195,6 +195,11 @@ def synthetic_census():
         row(ns="create", id="guess_bar", full_id="create:guess_bar", is_food="guess"),
         row(ns="create", id="path/cog", full_id="create:path/cog", is_food="guess"),
         row(ns="create", id="wrench", full_id="create:wrench", is_tool="guess", block_item="no"),
+        row(ns="create", id="cardboard_sword", full_id="create:cardboard_sword", is_tool="no", is_weapon="guess",
+            block_item="no"),
+        row(ns="create", id="sweet_roll", full_id="create:sweet_roll", is_food="no", block_item="no"),
+        row(ns="create", id="honeyed_apple", full_id="create:honeyed_apple", is_food="guess", block_item="no"),
+        row(ns="create", id="steam_engine", full_id="create:steam_engine", is_food="guess", block_item="no"),
         row(ns="create", id="andesite_alloy", full_id="create:andesite_alloy", block_item="no"),
         row(ns="create", id="shaft", full_id="create:shaft", block_item="no"),
         row(ns="create", id="andesite", full_id="create:andesite", block_item="no"),
@@ -393,6 +398,77 @@ class TestSyntheticGeneration(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_scenario({"id": "x", "setup": ["smash everything"], "steps": [{"observe": "inventory"}]},
                               self.do_names, self.obs_names)
+
+
+class TestFoodAndToolFamilies(unittest.TestCase):
+    """Food comes from MODDED_FOOD (jar bytecode), not the census guess; tools from MODDED_TOOLS."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.census = synthetic_census()
+        cls.scen, cls.skipped = g.generate(cls.census, list(g.FAMILIES), 20, synthetic_recipe_json)
+        cls.food = {sid: sc for sid, sc in cls.scen["item-use"]}
+        cls.tool = {sid: sc for sid, sc in cls.scen["tool"]}
+
+    def test_food_from_jar_evidence_only(self):
+        self.assertIn("fu-create-honeyed_apple", self.food)   # census guess, jar-confirmed
+        self.assertIn("fu-create-sweet_roll", self.food)      # census said no, jar-confirmed
+        self.assertIn("fu-biomesoplenty-mushroom_stew", self.food)  # census is_food=yes
+        self.assertNotIn("fu-create-steam_engine", self.food)  # census guess, not food
+        self.assertNotIn("fu-create-guess_bar", self.food)
+        skipped = {(f, src) for f, src, _ in self.skipped}
+        self.assertIn(("item-use", "create:steam_engine"), skipped)
+        self.assertIn("food evidence", self.food["fu-create-honeyed_apple"]["notes"])
+
+    def test_every_modded_food_is_in_table(self):
+        for fid in g.MODDED_FOOD:
+            self.assertTrue(fid.startswith("create:"), fid)
+
+    def test_tool_family_contents(self):
+        sc = self.tool["tl-create-cardboard_sword"]
+        self.assertIn("setblock 308 121 311 minecraft:short_grass", sc["setup"])
+        self.assertIn("give {player} create:cardboard_sword 1", sc["setup"])
+        ops = [s.get("do") or s.get("observe") for s in sc["steps"]]
+        self.assertEqual(ops, ["tp", "select", "block", "inventory", "break", "collect", "block", "inventory"])
+        self.assertNotIn("tl-create-steam_engine", self.tool)
+        self.assertIn(("tool", "create:wrench"), {(f, s) for f, s, _ in self.skipped})
+
+    def test_tool_kind_blocks_cover_every_kind(self):
+        kinds = set(v["kind"] for v in g.MODDED_TOOLS.values())
+        self.assertTrue(kinds <= set(g.TOOL_BREAK))
+        self.assertEqual(set(g.TOOL_BREAK), {"pickaxe", "axe", "shovel", "hoe", "sword"})
+
+
+class TestDurabilityNormalization(unittest.TestCase):
+    """The runner records durability beside the compared result (run.py), from the raw inventory reply."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.stacks = _load("stacks")
+
+    def test_truth_reply_has_no_durability_fields(self):
+        reply = {"hotbar": [{"slot": 0, "index": 0, "item": "minecraft:diamond_pickaxe", "count": 1}],
+                 "main": [], "armor": [], "offhand": {"slot": 0, "index": 0, "item": "minecraft:air", "count": 0},
+                 "carried": None}
+        d = self.stacks.norm_durability(reply)
+        self.assertEqual(d["status"], "not_reported")
+        self.assertEqual(d["stacks"], [])
+
+    def test_horizon_reply_damage_only(self):
+        reply = {"hotbar": [{"count": 1, "item": "minecraft:oak_planks", "slot": 0},
+                            {"count": 1, "damage": 9, "item": "minecraft:diamond_pickaxe", "slot": 3,
+                             "components": "{\"minecraft:damage\":9}"}],
+                 "main": [], "armor": [], "carried": None}
+        d = self.stacks.norm_durability(reply)
+        self.assertEqual(d["status"], "reported")
+        self.assertEqual(d["fields"], ["damage"])
+        self.assertEqual(d["stacks"], [{"group": "hotbar", "slot": 3, "item": "minecraft:diamond_pickaxe",
+                                        "count": 1, "damage": 9, "max_damage": None}])
+
+    def test_run_py_keeps_durability_out_of_result(self):
+        with open(os.path.join(HERE, "run.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn('rec["durability"] = stack.last_durability()', src)
 
 
 class TestRealCensus(unittest.TestCase):
