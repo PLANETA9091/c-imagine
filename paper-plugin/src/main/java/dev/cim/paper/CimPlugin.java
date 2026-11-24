@@ -1440,10 +1440,17 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             modded = moddedBlockOfState(block.getBlockData().getAsString());
         }
         if (modded != null) {
+            // The real state, when Paper kept it (a placed block) or the layer holds it (a ticking one).
+            String placed = dev.cim.hud.HudBootstrap.placedStateAt(this, block);
+            String layer = placed == null ? dev.cim.hud.HudBootstrap.layerStateAt(block) : null;
+            String real = placed != null && stateIdOf(placed).equals(modded) ? placed
+                    : layer != null && stateIdOf(layer).equals(modded) ? layer : null;
             o.addProperty("id", modded);
-            o.addProperty("state", modded);
-            o.addProperty("source", "carrier");
-            o.addProperty("partial", true);
+            o.addProperty("state", real != null ? real : modded);
+            o.addProperty("source", real == null ? "carrier" : real == placed ? "placed" : "layer");
+            if (real == null) {
+                o.addProperty("partial", true);
+            }
         } else {
             String state = normalizeBlockState(block.getBlockData().getAsString());
             o.addProperty("id", block.getType().getKey().toString());
@@ -1451,6 +1458,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             o.addProperty("source", "paper");
         }
         emitInspect(sender, o);
+    }
+
+    /** The block id of a state text ({@code ns:id[k=v]} gives {@code ns:id}). */
+    private static String stateIdOf(String state) {
+        int open = state.indexOf('[');
+        return open < 0 ? state : state.substring(0, open);
     }
 
     /** One stack as an inspect object: the modded id when it is a carrier, else the vanilla id; plus its count. */
