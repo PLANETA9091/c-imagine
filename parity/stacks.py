@@ -986,8 +986,11 @@ class OursStack(Stack):
         return self.ctl("respawn")
 
     def heal_close(self):
+        # A real client screen (container, inventory) closes on the client; only when the client
+        # shows the world can an open menu be one ScreenHud draws on the HUD (closed by sneak).
+        if ours_kind(self.ctl("screen")) != "playing":
+            return self.ctl("close")
         if self._hud_menu() is not None:
-            # ScreenHud draws the menu on the HUD and closes it on sneak (Esc is not visible to the server)
             self.key("key.sneak", 1)
             return {"closed": "sneak"}
         return self.ctl("close")
