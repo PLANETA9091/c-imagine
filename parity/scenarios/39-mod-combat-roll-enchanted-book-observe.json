@@ -1,7 +1,6 @@
 {
  "id": "39-mod-combat-roll-enchanted-book-observe",
- "notes": "Enchanted book with combat_roll:acrobat given to the player (census: enchantment acrobat, chest armour). Observe-only: checks the item count and the screen. Enchantment data is not part of the normalized inventory, so only the book's presence is compared.",
- "todo": "Roll keybind not runnable: truth-ctl and horizon-ctl have no key-press command, so the Combat Roll roll action itself is not exercised. Needs a 'key' command in both adapters.",
+ "notes": "Enchanted book with combat_roll:acrobat given to the player (census: enchantment acrobat, chest armour). Checks the book's presence, then presses the Combat Roll roll key (keybinds.combat_roll.roll, default R = GLFW 82) for one tick and compares the player's position and velocity before and after. OURS cannot press mod KeyMappings, so its key step fails with the adapter's error by design.",
  "setup": [
   "give {player} minecraft:enchanted_book[stored_enchantments={levels:{\"combat_roll:acrobat\":1}}] 1"
  ],
@@ -15,6 +14,17 @@
   },
   {
    "observe": "screen"
+  },
+  {
+   "observe": "motion"
+  },
+  {
+   "do": "key",
+   "key": "keybinds.combat_roll.roll",
+   "ticks": 1
+  },
+  {
+   "observe": "motion"
   }
  ]
 }

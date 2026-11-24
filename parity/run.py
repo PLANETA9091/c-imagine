@@ -82,6 +82,8 @@ def run_step(stack, step, shots_dir, idx, rec):
             return stack.observe_screen()
         if kind == "player":
             return stack.observe_player()
+        if kind == "motion":
+            return stack.motion()
         raise ValueError("unknown observe: %s" % kind)
 
     do = step["do"]
@@ -96,6 +98,13 @@ def run_step(stack, step, shots_dir, idx, rec):
         return stack.interact(step["pos"], step.get("face"))
     if do == "use_item":
         return stack.use_item(step.get("hold"))
+    if do == "use_at":
+        point = step["point"]
+        if not isinstance(point, list) or len(point) != 3:
+            raise ValueError("use_at point must be [x, y, z]")
+        return stack.use_at(point)
+    if do == "key":
+        return stack.key(step["key"], step.get("ticks", 1))
     if do == "click_slot":
         kind = step.get("in", "inventory")
         idx = stacks.slot_index(stack.name, kind, step["slot"])

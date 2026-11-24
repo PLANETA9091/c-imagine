@@ -1,9 +1,8 @@
 {
  "id": "24-orient-bop-fir-slab-side-face-center",
- "notes": "Slab clicked on the centre of the east-facing side of a stone block (neighbour at 308 121 312, air below so the only solid neighbour is the stone). The face-centre click (hit y 0.5) gives the lower half in vanilla. Checks type=bottom on both stacks.",
- "todo": "UPPER-HALF click not covered: neither truth-ctl 'place' nor horizon-ctl 'place' takes a hit point, and 'interact' takes only a FACE name (face centre). Needs a hit-point arg in both adapters (add optional 'hit' to the runner place step, then pass it to each ctl). Only the lower-half case is runnable now.",
+ "notes": "Slab clicked on the north face of a stone block (stone at 308 121 312, air at 308 121 311 is the target). Two aimed clicks on the same face: hit y 121.75 (upper part of the block) and hit y 121.25 (lower part). Vanilla slab placement takes the half from the hit y. Checks type=top and type=bottom on both stacks via use_at (aim point + right click).",
  "setup": [
-  "give {player} biomesoplenty:fir_slab 1",
+  "give {player} biomesoplenty:fir_slab 2",
   "setblock 308 120 311 minecraft:air",
   "setblock 308 121 312 minecraft:stone"
  ],
@@ -23,11 +22,34 @@
    "pitch": 0.0
   },
   {
-   "do": "place",
+   "do": "use_at",
+   "point": [
+    308.5,
+    121.75,
+    312.0
+   ]
+  },
+  {
+   "observe": "block",
    "pos": [
     308,
     121,
     311
+   ]
+  },
+  {
+   "observe": "inventory"
+  },
+  {
+   "do": "command",
+   "text": "setblock 308 121 311 minecraft:air"
+  },
+  {
+   "do": "use_at",
+   "point": [
+    308.5,
+    121.25,
+    312.0
    ]
   },
   {

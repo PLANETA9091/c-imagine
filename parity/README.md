@@ -85,10 +85,17 @@ are artifacts and are not committed.
 ```
 
 - `do`: `select` (item or 1-based slot), `place` (pos, item), `interact` (pos, optional face name), `break`,
-  `collect` (walk onto a pos to pick up drops), `use_item` (optional hold), `click_slot` (`in`, `slot`, `mode`),
+  `collect` (walk onto a pos to pick up drops), `use_item` (optional hold), `use_at` (`point` [x, y, z],
+  block-space doubles: aim at the point, right-click the first block hit from the eye; TRUTH `use-at`, OURS
+  `look-at` + `mouse right down/up`; the result is `hit_pos`, `hit_face`, `block_after`, `inventory_change`),
+  `key` (`key` name, `ticks`, default 1: TRUTH `key NAME tap --ticks N`; OURS a vanilla KeyMapping map to
+  horizon-ctl `key`/`mouse` down, wait, up, with key.jump -> space, key.sneak -> shift, key.sprint -> ctrl,
+  key.attack/use -> mouse left/right, key.hotbar.N -> N; a mod KeyMapping fails on OURS with a clear error),
+  `click_slot` (`in`, `slot`, `mode`),
   `tp` (pos, yaw, pitch), `wait` (ticks or seconds), `command`, `open_inventory`, `close`.
   A `do` step may set `"block_only": true` to compare only the block after the action (random outcomes).
-- `observe`: `block` (pos), `inventory`, `screen`, `player`.
+- `observe`: `block` (pos), `inventory`, `screen`, `player` (health, food, saturation), `motion`
+  (`position` and `velocity`, [x, y, z] rounded to 0.1; TRUTH `state.player`, OURS horizon `state`).
 - Slot names are abstract: `hotbar:H`, `main:M`, `grid:N`, `result`, `input`, `fuel`, `output`, `container:N`, `armor:K`, `offhand`.
 - Modded ids in `give`/`setblock` are translated to `/cim give` on OURS; a modded block is placed with a `place` step (no `setblock`).
 - `todo`: a scenario that cannot be run fully with the current adapters; the field says what is missing.

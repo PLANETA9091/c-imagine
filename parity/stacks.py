@@ -291,6 +291,53 @@ def norm_held(reply):
     return None
 
 
+def _f3(v):
+    """Vector as [x, y, z] rounded to 1 decimal, from a list or an {x, y, z} dict; None when absent."""
+    if isinstance(v, dict):
+        v = [v.get("x"), v.get("y"), v.get("z")]
+    if not isinstance(v, (list, tuple)) or len(v) != 3 or any(not isinstance(c, (int, float)) for c in v):
+        return None
+    return [round(float(c), 1) for c in v]
+
+
+def _target_pos_face(t):
+    """Block [x, y, z] and lower-case face name from a state 'target' dict; (None, None) when absent."""
+    if not isinstance(t, dict):
+        return None, None
+    pos = t.get("pos", t.get("block_pos"))
+    if isinstance(pos, dict):
+        pos = [pos.get("x"), pos.get("y"), pos.get("z")]
+    if not isinstance(pos, list) or len(pos) != 3:
+        return None, None
+    try:
+        pos = [int(v) for v in pos]
+    except (TypeError, ValueError):
+        return None, None
+    face = t.get("face")
+    return pos, (face.lower() if isinstance(face, str) else None)
+
+
+# Vanilla KeyMapping translation key -> (horizon-ctl command, key or button name).
+OURS_KEYS = {
+    "key.forward": ("key", "w"), "key.back": ("key", "s"), "key.left": ("key", "a"),
+    "key.right": ("key", "d"), "key.jump": ("key", "space"), "key.sneak": ("key", "shift"),
+    "key.sprint": ("key", "ctrl"), "key.inventory": ("key", "e"), "key.drop": ("key", "q"),
+    "key.swapOffhand": ("key", "f"), "key.attack": ("mouse", "left"), "key.use": ("mouse", "right"),
+}
+for _n in range(1, 10):
+    OURS_KEYS["key.hotbar.%d" % _n] = ("key", str(_n))
+
+
+def ours_key_of(name):
+    """horizon-ctl (command, name) for a vanilla KeyMapping. Mod KeyMappings fail here by design."""
+    if name in OURS_KEYS:
+        return OURS_KEYS[name]
+    raise ValueError(
+        "OURS cannot press %s: not a vanilla KeyMapping. Mod KeyMappings are client-side keybinds "
+        "(Combat Roll's roll is one); the Horizon client has no such binding and c-imagine's /keyboard "
+        "only delivers VirtualKeyEvent to the server, so no mod action runs." % name)
+
+
 def norm_player(reply):
     p = reply.get("player") or reply
     return {"health": p.get("health"), "food": p.get("food"), "saturation": p.get("saturation")}
@@ -317,6 +364,15 @@ class Stack:
         raise NotImplementedError
 
     def use_item(self, hold=None):
+        raise NotImplementedError
+
+    def use_at(self, point):
+        raise NotImplementedError
+
+    def key(self, name, ticks=1):
+        raise NotImplementedError
+
+    def motion(self):
         raise NotImplementedError
 
     def click_slot(self, index, mode="left", kind="inventory"):
@@ -437,6 +493,27 @@ class TruthStack(Stack):
         # truth-ctl use-item has no hold argument: one right-click (see report, eating is a limitation)
         r = self.call("use-item")
         return {"inventory_change": norm_delta(r.get("inventory_change"))}
+
+    def use_at(self, point):
+        r = self.call("use-at", [str(float(v)) for v in point])
+        hit = r.get("hit") or {}
+        pos = hit.get("pos")
+        face = hit.get("face")
+        return {
+            "hit_pos": [int(v) for v in pos] if pos else None,
+            "hit_face": face.lower() if isinstance(face, str) else None,
+            "block_after": block_id(r.get("block")),
+            "inventory_change": norm_delta(r.get("inventory_change")),
+        }
+
+    def key(self, name, ticks=1):
+        ticks = int(ticks)
+        self.call("key", [name, "tap", "--ticks", str(ticks)], timeout=max(60, ticks / 20.0 + 30))
+        return {"pressed": True, "ticks": ticks}
+
+    def motion(self):
+        p = self.call("state").get("player") or {}
+        return {"position": _f3(p.get("position")), "velocity": _f3(p.get("velocity"))}
 
     def click_slot(self, index, mode="left", kind="inventory"):
         before, _ = _map_from_screen(self.call("screen"))
@@ -748,6 +825,38 @@ class OursStack(Stack):
         self.ctl(*args)
         self._settle(6)
         return {"inventory_change": self._delta(before, self._counts())}
+
+    def use_at(self, point):
+        """look-at the point, then a right press and release. The hit is the crosshair target after the
+        turn (what the click uses); block and inventory are then read like place."""
+        before = self._counts()
+        self.ctl("look-at", *[str(float(v)) for v in point])
+        self.ctl("wait", 1)  # the crosshair target refreshes on the next client tick
+        hit_pos, hit_face = _target_pos_face(self.ctl("state").get("target"))
+        self.ctl("mouse", "right", "down")
+        self.ctl("mouse", "right", "up")
+        self._settle(5)  # same reply point as truth-ctl use-at: 5 ticks
+        return {
+            "hit_pos": hit_pos,
+            "hit_face": hit_face,
+            "block_after": self._server_block_id(hit_pos) if hit_pos else None,
+            "inventory_change": self._delta(before, self._counts()),
+        }
+
+    def key(self, name, ticks=1):
+        cmd, code = ours_key_of(name)
+        ticks = int(ticks)
+        self.ctl(cmd, code, "down")
+        try:
+            self.ctl("wait", ticks, timeout=max(60, ticks / 20.0 + 30))
+        finally:
+            self.ctl(cmd, code, "up")
+        return {"pressed": True, "ticks": ticks}
+
+    def motion(self):
+        r = self.ctl("state")
+        p = r.get("player") if isinstance(r.get("player"), dict) else r
+        return {"position": _f3(p.get("position")), "velocity": _f3(p.get("velocity"))}
 
     def _screen_map(self):
         scr = self._apply_server_ids(self.ctl("screen"))
