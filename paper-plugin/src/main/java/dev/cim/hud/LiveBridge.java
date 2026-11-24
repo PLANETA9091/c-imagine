@@ -174,6 +174,16 @@ final class LiveBridge {
         return null;
     }
 
+    /** The layer's block entity at {@code block} as JSON (saveWithFullMetadata), or null when it holds none. */
+    String blockEntityAt(org.bukkit.block.Block block) {
+        for (String line : call("inspect-be\t" + block.getX() + "\t" + block.getY() + "\t" + block.getZ()).split("\n")) {
+            if (line.startsWith("be\t")) {
+                return line.substring("be\t".length());
+            }
+        }
+        return null;
+    }
+
     private static String sanitize(String blockId) {
         return blockId.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9._-]", "_");
     }

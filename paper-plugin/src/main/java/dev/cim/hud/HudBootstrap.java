@@ -63,6 +63,11 @@ public final class HudBootstrap {
         return screens == null ? null : screens.layerStateAt(block);
     }
 
+    /** The layer's block entity JSON at a block, or null (no layer, or none there). For /cim inspect be. */
+    public static String layerBlockEntityAt(org.bukkit.block.Block block) {
+        return screens == null ? null : screens.layerBlockEntityAt(block);
+    }
+
     /** True when the id is an allocated mod item (false while the HUD layer is not up). */
     public static boolean hasAllocatedItem(String moddedId) {
         return screens != null && screens.isAllocatedItem(moddedId);

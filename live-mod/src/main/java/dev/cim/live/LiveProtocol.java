@@ -92,6 +92,10 @@ public final class LiveProtocol {
             if (head[0].equals("blockat")) {
                 return blockAt(head);
             }
+            // inspect-be TAB x TAB y TAB z: "be TAB <json>" for the block entity the facade holds, else "none".
+            if (head[0].equals("inspect-be")) {
+                return inspectBe(head);
+            }
             if (head[0].equals("door-outline")) {
                 var lookup = net.minecraft.core.registries.BuiltInRegistries.BLOCK.asLookup();
                 var state = net.minecraft.commands.arguments.blocks.BlockStateParser
@@ -916,6 +920,16 @@ public final class LiveProtocol {
     private static String blockAt(String[] head) {
         net.minecraft.world.level.block.state.BlockState held = LiveMenus.level().store().heldStateAt(pos(head, 1));
         return held == null ? "none\n" : "state\t" + BlockStates.format(held) + "\n";
+    }
+
+    /**
+     * inspect-be TAB x TAB y TAB z: the layer's real block entity at the position as JSON (its
+     * saveWithFullMetadata, see {@link NbtJson}), "be TAB json", or "none" when it holds none there.
+     */
+    private static String inspectBe(String[] head) {
+        net.minecraft.world.level.block.entity.BlockEntity be = LiveMenus.level().getBlockEntity(pos(head, 1));
+        return be == null ? "none\n"
+                : "be\t" + NbtJson.of(be.saveWithFullMetadata(LiveMenus.level().registryAccess())) + "\n";
     }
 
     /** The state {@code text} names when its block is {@code block}, else null (the block's default then). */
