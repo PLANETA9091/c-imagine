@@ -922,6 +922,10 @@ final class LiveBridge {
         if (stack == null || stack.getType().isAir()) {
             return "-";
         }
+        return withEnchantments(stackJson(stack), stack);
+    }
+
+    private String stackJson(ItemStack stack) {
         String json = stack.hasItemMeta()
                 ? stack.getItemMeta().getPersistentDataContainer().get(key, PersistentDataType.STRING) : null;
         if (json != null) {
@@ -930,6 +934,20 @@ final class LiveBridge {
         }
         String id = moddedId.apply(stack);
         return "{\"id\":\"" + id + "\",\"count\":" + stack.getAmount() + "}";
+    }
+
+    /**
+     * The layer's {@code minecraft:enchantments} component (1.21.1 form, {@code {"levels":{id:level}}})
+     * carries the Paper stack's enchantments: the layer runs the mod's effect from them (Create's
+     * capacity and potato recovery). A stack with no enchantments drops a stale component.
+     */
+    static String withEnchantments(String json, ItemStack stack) {
+        java.util.Map<org.bukkit.enchantments.Enchantment, Integer> enchants = dev.cim.paper.EnchantGate.enchantsOf(stack);
+        java.util.Map<String, Integer> levels = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<org.bukkit.enchantments.Enchantment, Integer> e : enchants.entrySet()) {
+            levels.put(e.getKey().getKey().toString(), e.getValue());
+        }
+        return dev.cim.paper.EnchantGate.layerJson(json, levels);
     }
 
     /** A layer stack on Paper: the vanilla item, or the modded item's carrier, with its JSON kept. */

@@ -147,6 +147,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         dev.cim.paper.EnchantRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         f2vInit();
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
+        // Modded enchantments only on the modded items they belong to (see EnchantGate).
+        getServer().getPluginManager().registerEvents(new EnchantGate(), this);
         f2vAutoOfferInit();
         // Slice 1 of mod world generation: new overworld chunks get the mods' biome-modifier features.
         dev.cim.worldgen.ModWorldgen.start(this, f2v == null ? List.of() : f2v.blocks());
