@@ -64,6 +64,12 @@ class OffsetCommandTests(unittest.TestCase):
         self.assertEqual(run.offset_command("tp {player} ~ ~ ~", ORIGIN), "tp {player} ~ ~ ~")
         self.assertEqual(run.offset_command("tp {player} @s", ORIGIN), "tp {player} @s")
 
+    def test_summon_coordinates_follow_the_entity_id(self):
+        self.assertEqual(run.offset_command("summon minecraft:item 310.5 121.5 310.5 {Item:{id:\"minecraft:stone\"}}",
+                                            ORIGIN),
+                         "summon minecraft:item 374.5 121.5 310.5 {Item:{id:\"minecraft:stone\"}}")
+        self.assertEqual(run.offset_command("summon minecraft:item ~ ~1 ~", ORIGIN), "summon minecraft:item ~ ~1 ~")
+
     def test_forceload_has_no_y(self):
         self.assertEqual(run.offset_command("forceload add 300 300 310 310", ORIGIN),
                          "forceload add 364 300 374 310")
@@ -79,7 +85,7 @@ class OffsetCommandTests(unittest.TestCase):
             self.assertEqual(run.offset_command(t, ORIGIN), t)
 
     def test_unsupported_commands_raise(self):
-        for head in ("clone", "execute", "summon", "locate", "spreadplayers"):
+        for head in ("clone", "execute", "locate", "spreadplayers"):
             with self.assertRaises(ValueError):
                 run.offset_command("%s 1 2 3" % head, ORIGIN)
 

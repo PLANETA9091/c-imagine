@@ -46,8 +46,8 @@ def sub(text, player):
 # lane's area. This is the only place coordinates are rewritten. Every position-carrying key and command
 # is listed here; anything else that takes coordinates raises instead of silently building in the wrong place.
 POSITION_KEYS = ("pos", "point")  # scenario step keys holding [x, y, z]
-COORD_COMMANDS = ("setblock", "fill", "tp", "forceload")  # setup/command heads with absolute coords
-UNSUPPORTED_COMMANDS = ("clone", "summon", "execute", "place", "spreadplayers", "setworldspawn",
+COORD_COMMANDS = ("setblock", "fill", "tp", "forceload", "summon")  # setup/command heads with absolute coords
+UNSUPPORTED_COMMANDS = ("clone", "execute", "place", "spreadplayers", "setworldspawn",
                         "spawnpoint", "teleport", "particle", "playsound", "locate")
 SELECTOR_COORD_RE = re.compile(r"(?<=[\[,])([xyz])=(-?\d+(?:\.\d+)?)(?=[,\]])")
 NUM_RE = re.compile(r"^-?\d+(?:\.\d+)?$")
@@ -83,6 +83,9 @@ def _coord_indexes(head, tokens):
         else:
             return []
         return [(start, "x"), (start + 1, "y"), (start + 2, "z")]
+    if head == "summon":
+        # summon <entity> x y z [nbt]: the coordinates follow the entity id
+        return [(2, "x"), (3, "y"), (4, "z")] if len(tokens) >= 5 else []
     if head == "forceload":
         # forceload add|remove x1 z1 [x2 z2] | query [x z]: x and z only (no y)
         if len(tokens) >= 3 and tokens[1] in ("add", "remove"):
