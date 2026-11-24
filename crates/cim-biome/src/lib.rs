@@ -281,7 +281,8 @@ impl Rewriter {
                     .collect();
                 let mut remap = HashMap::new();
                 for (vanilla_name, mod_name) in &alias {
-                    let (Some(&from), Some(&to)) = (by_name.get(vanilla_name.as_str()), mod_ids.get(mod_name))
+                    let (Some(&from), Some(&to)) =
+                        (by_name.get(vanilla_name.as_str()), mod_ids.get(mod_name))
                     else {
                         continue;
                     };
@@ -382,7 +383,10 @@ mod tests {
         let out = rw.rewrite(&reg).expect("registry rewritten");
         assert!(out.len() > reg.len());
         assert_eq!(rw.alias_len(), 1);
-        assert_eq!(rw.alias()[0], ("minecraft:plains".to_string(), "mod:prairie".to_string()));
+        assert_eq!(
+            rw.alias()[0],
+            ("minecraft:plains".to_string(), "mod:prairie".to_string())
+        );
 
         // chunk: 24 sections, block container single air(0), biome container
         // single plains(0) -> must become the modded id (2).
@@ -390,7 +394,7 @@ mod tests {
         for _ in 0..packet::OVERWORLD_SECTIONS {
             buf.extend_from_slice(&0u16.to_be_bytes()); // nonEmpty
             buf.extend_from_slice(&0u16.to_be_bytes()); // fluid
-            // block: bits=0, single value 0 (26.3 writes no long array for it)
+                                                        // block: bits=0, single value 0 (26.3 writes no long array for it)
             buf.push(0);
             nbt::write_varint(&mut buf, 0);
             // biome: bits=0, single value 0

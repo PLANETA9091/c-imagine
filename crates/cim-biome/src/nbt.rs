@@ -246,17 +246,15 @@ fn skip_payload(r: &mut Reader<'_>, ty: u8) -> Result<(), BiomeError> {
             }
             Ok(())
         }
-        TAG_COMPOUND => {
-            loop {
-                let t = r.u8()?;
-                if t == TAG_END {
-                    return Ok(());
-                }
-                let n = r.u16()?;
-                r.bytes(n as usize)?;
-                skip_payload(r, t)?;
+        TAG_COMPOUND => loop {
+            let t = r.u8()?;
+            if t == TAG_END {
+                return Ok(());
             }
-        }
+            let n = r.u16()?;
+            r.bytes(n as usize)?;
+            skip_payload(r, t)?;
+        },
         _ => Err(BiomeError::BadNbt(ty)),
     }
 }

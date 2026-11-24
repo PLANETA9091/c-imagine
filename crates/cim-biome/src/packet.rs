@@ -7,7 +7,7 @@
 //! `x i32, z i32, heightmaps, buffer`, and the buffer is one record per
 //! section `(nonEmpty u16, fluid u16, block container, biome container)`.
 
-use crate::nbt::{self, Reader, NbtWriter};
+use crate::nbt::{self, NbtWriter, Reader};
 use crate::{BiomeDef, BiomeError};
 use std::collections::HashMap;
 
@@ -178,7 +178,7 @@ fn rewrite_buffer(buf: &[u8], remap: &HashMap<u32, u32>) -> Option<Vec<u8>> {
         let head = r.pos();
         r.u16().ok()?; // nonEmptyBlockCount
         r.u16().ok()?; // fluidCount
-        // block states: skip (no remap)
+                       // block states: skip (no remap)
         skip_container(&mut r, 4096)?;
         let bio_start = r.pos();
         let rewritten = rewrite_container(&mut r, remap, 64)?;
@@ -240,7 +240,10 @@ fn rewrite_container(
         if v < 0 {
             return None;
         }
-        nbt::write_varint(&mut out, remap.get(&(v as u32)).copied().unwrap_or(v as u32) as i32);
+        nbt::write_varint(
+            &mut out,
+            remap.get(&(v as u32)).copied().unwrap_or(v as u32) as i32,
+        );
         return Some(out);
     }
     let len = r.varint().ok()?;
@@ -423,12 +426,12 @@ mod tests {
     }
 }
 
-
 /// Step-by-step parse report for one chunk payload (debugging aid).
 pub fn dissect(payload: &[u8]) -> String {
     let mut out = String::new();
     let mut r = Reader::new(payload);
-    let x = r.i32(); let z = r.i32();
+    let x = r.i32();
+    let z = r.i32();
     out.push_str(&format!("x={x:?} z={z:?}\n"));
     let maps = r.varint();
     out.push_str(&format!("heightmaps={maps:?}\n"));
@@ -437,7 +440,9 @@ pub fn dissect(payload: &[u8]) -> String {
             for _ in 0..m {
                 let _ = r.varint();
                 if let Ok(len) = r.varint() {
-                    if len >= 0 { let _ = r.bytes(len as usize * 8); }
+                    if len >= 0 {
+                        let _ = r.bytes(len as usize * 8);
+                    }
                 }
             }
         }
@@ -445,32 +450,62 @@ pub fn dissect(payload: &[u8]) -> String {
     let len = r.varint();
     out.push_str(&format!("buffer_len={len:?} at {}\n", r.pos()));
     let Ok(len) = len else { return out };
-    let Ok(buf) = r.bytes(len as usize) else { return out };
-    out.push_str(&format!("buffer bytes={} tail={}\n", buf.len(), r.remaining()));
+    let Ok(buf) = r.bytes(len as usize) else {
+        return out;
+    };
+    out.push_str(&format!(
+        "buffer bytes={} tail={}\n",
+        buf.len(),
+        r.remaining()
+    ));
     let mut b = Reader::new(buf);
     for i in 0..OVERWORLD_SECTIONS {
         let p0 = b.pos();
-        let n = b.u16(); let f = b.u16();
+        let n = b.u16();
+        let f = b.u16();
         let block = skip_container(&mut b, 4096);
-        if block.is_none() { out.push_str(&format!("section {i}: block container failed at {p0}\n")); return out; }
+        if block.is_none() {
+            out.push_str(&format!("section {i}: block container failed at {p0}\n"));
+            return out;
+        }
         let bio_at = b.pos();
         let bits = b.u8();
-        let Ok(bits) = bits else { out.push_str(&format!("section {i}: biome bits missing at {bio_at}\n")); return out; };
+        let Ok(bits) = bits else {
+            out.push_str(&format!("section {i}: biome bits missing at {bio_at}\n"));
+            return out;
+        };
         let a = b.varint();
-        out.push_str(&format!("section {i}: n={n:?} f={f:?} block_ok bio_bits={bits} a={a:?} at={bio_at}\n"));
+        out.push_str(&format!(
+            "section {i}: n={n:?} f={f:?} block_ok bio_bits={bits} a={a:?} at={bio_at}\n"
+        ));
         match a {
-            Ok(a) if a > 0 => { for _ in 0..a { if b.varint().is_err() { out.push_str("  palette fail\n"); return out; } } }
+            Ok(a) if a > 0 => {
+                for _ in 0..a {
+                    if b.varint().is_err() {
+                        out.push_str("  palette fail\n");
+                        return out;
+                    }
+                }
+            }
             Ok(_) => {}
-            Err(_) => { out.push_str("  a fail\n"); return out; }
+            Err(_) => {
+                out.push_str("  a fail\n");
+                return out;
+            }
         }
-        let Some(cnt) = longs_for(bits, 64) else { out.push_str("  bad bits\n"); return out };
+        let Some(cnt) = longs_for(bits, 64) else {
+            out.push_str("  bad bits\n");
+            return out;
+        };
         out.push_str(&format!("  data_longs={cnt}\n"));
-        if b.bytes(cnt * 8).is_err() { out.push_str("  data fail\n"); return out; }
+        if b.bytes(cnt * 8).is_err() {
+            out.push_str("  data fail\n");
+            return out;
+        }
     }
     out.push_str(&format!("end={} remaining={}\n", buf.len(), b.remaining()));
     out
 }
-
 
 /// The 26.3 biome definition as JSON (same shape as the codec's NBT form).
 ///

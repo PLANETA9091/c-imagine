@@ -86,44 +86,44 @@ pub unsafe extern "C" fn cplugin_init(
         .map(|p| p.version < 2)
         .unwrap_or(true);
     if legacy_weave {
-    for pattern in [
-        "net/minecraft/server/network/ServerHandshakePacketListenerImpl",
-        "net/minecraft/network/Connection",
-        "net/minecraft/network/PacketDecoder",
-        "net/minecraft/network/PacketEncoder",
-    ] {
-        cplug_sdk::hooks::register_bytes(pattern, move |name, data| {
-            // Diagnostics: dump the raw woven bytes (CIM_DUMP_WOVEN=<dir>) so
-            // the strip can be diffed against the pristine kernel class.
-            if let Some(dir) = std::env::var_os("CIM_DUMP_WOVEN") {
-                let safe = name.replace('/', "_");
-                let path = std::path::Path::new(&dir).join(format!("{safe}.woven.class"));
-                let _ = std::fs::write(path, data);
-            }
-            match cplug_sdk::weave::strip_invokestatic_prefix(
-                data.to_vec(),
-                "dev/crussty/hooks/NetHooks",
-            ) {
-                Ok(Some(repaired)) => {
-                    eprintln!(
+        for pattern in [
+            "net/minecraft/server/network/ServerHandshakePacketListenerImpl",
+            "net/minecraft/network/Connection",
+            "net/minecraft/network/PacketDecoder",
+            "net/minecraft/network/PacketEncoder",
+        ] {
+            cplug_sdk::hooks::register_bytes(pattern, move |name, data| {
+                // Diagnostics: dump the raw woven bytes (CIM_DUMP_WOVEN=<dir>) so
+                // the strip can be diffed against the pristine kernel class.
+                if let Some(dir) = std::env::var_os("CIM_DUMP_WOVEN") {
+                    let safe = name.replace('/', "_");
+                    let path = std::path::Path::new(&dir).join(format!("{safe}.woven.class"));
+                    let _ = std::fs::write(path, data);
+                }
+                match cplug_sdk::weave::strip_invokestatic_prefix(
+                    data.to_vec(),
+                    "dev/crussty/hooks/NetHooks",
+                ) {
+                    Ok(Some(repaired)) => {
+                        eprintln!(
                         "{} weave repair: stripped foreign NetHooks prefix from {name} ({} -> {} bytes)",
                         cim_core::LOG_PREFIX,
                         data.len(),
                         repaired.len()
                     );
-                    Some(repaired)
+                        Some(repaired)
+                    }
+                    Ok(None) => None,
+                    Err(e) => {
+                        eprintln!(
+                            "{} weave repair FAILED for {name}: {e}",
+                            cim_core::LOG_PREFIX
+                        );
+                        None
+                    }
                 }
-                Ok(None) => None,
-                Err(e) => {
-                    eprintln!(
-                        "{} weave repair FAILED for {name}: {e}",
-                        cim_core::LOG_PREFIX
-                    );
-                    None
-                }
-            }
-        });
-    }
+            });
+        }
     } else {
         eprintln!(
             "{} weave repair: runtime platform v2+ (typed hooks; legacy prefix strip disabled)",
@@ -458,7 +458,6 @@ fn serde_options_json(
         module_lib.replace('\\', "/"),
     )
 }
-
 
 // ---------------------------------------------------------------------------
 // Modded-biome wire channel + server-registry hand-off
