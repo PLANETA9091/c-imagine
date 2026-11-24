@@ -1419,6 +1419,16 @@ public final class F2vPack {
      */
     static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
                                     List<VisualBlock> ledgerRows, boolean mushroom) {
+        return planCarriers(discovered, manifest, ledgerRows, mushroom, Set.of());
+    }
+
+    /**
+     * The planner with the display-only ids (S5): a multipart block shows one display per part, so it
+     * never holds a note slot. A ledger note row of such an id keeps its slot reserved (a placed carrier
+     * of an older world is never reissued) but the effective row is the display family.
+     */
+    static CarrierPlan planCarriers(Collection<String> discovered, List<VisualBlock> manifest,
+                                    List<VisualBlock> ledgerRows, boolean mushroom, Set<String> displayOnly) {
         final int capacity = mushroom ? CARRIER_CAPACITY + MUSHROOM_CAPACITY : CARRIER_CAPACITY;
         Set<String> found = new TreeSet<>(discovered);
         List<String> notes = new ArrayList<>();
@@ -1431,7 +1441,8 @@ public final class F2vPack {
                 notes.add("carrier manifest: display rows are automatic, dropped " + row.moddedBlockId());
                 continue;
             }
-            effective.add(row);
+            effective.add(displayOnly.contains(row.moddedBlockId())
+                    ? new VisualBlock(row.moddedBlockId(), DISPLAY_FAMILY, 0) : row);
             used.add(slotKey(row));
             placed.add(row.moddedBlockId());
             manifestIds.add(row.moddedBlockId());
@@ -1470,7 +1481,7 @@ public final class F2vPack {
             used.add(slotKey(row));
             ledger.add(row);
             if (found.contains(id)) {
-                effective.add(row);
+                effective.add(displayOnly.contains(id) ? new VisualBlock(id, DISPLAY_FAMILY, 0) : row);
                 placed.add(id);
             }
         }
@@ -1486,7 +1497,7 @@ public final class F2vPack {
                 cursor++;
             }
             VisualBlock row;
-            if (cursor >= capacity) {
+            if (displayOnly.contains(id) || cursor >= capacity) {
                 // the slot families are full: the display family takes it, unbounded
                 row = new VisualBlock(id, DISPLAY_FAMILY, 0);
                 displayed++;
@@ -1596,11 +1607,26 @@ public final class F2vPack {
         return Boolean.getBoolean("cim.f2v.mushroomCarriers");
     }
 
+    /** The ids of the jars' multipart blockstates (S5): they take the display family, one display per part. */
+    static Set<String> multipartIds(List<Path> jars, Collection<String> ids) throws IOException {
+        Set<String> out = new TreeSet<>();
+        try (JarCache cache = new JarCache(jars)) {
+            for (String id : ids) {
+                if (KIND_MULTIPART.equals(resolveBlockVisuals(cache, id).kind())) {
+                    out.add(id);
+                }
+            }
+        }
+        return out;
+    }
+
     static CarrierPlan carrierPlan(Path f2vDir, Path modsDir, List<VisualBlock> manifest,
                                    boolean persist) throws IOException {
         Path ledgerFile = f2vDir.resolve(CARRIER_LEDGER);
-        CarrierPlan plan = planCarriers(discoverBlockIds(listJars(modsDir)), manifest,
-                readBlockManifest(ledgerFile), mushroomCarriersEnabled());
+        List<Path> jars = listJars(modsDir);
+        Set<String> discovered = new TreeSet<>(discoverBlockIds(jars));
+        CarrierPlan plan = planCarriers(discovered, manifest, readBlockManifest(ledgerFile),
+                mushroomCarriersEnabled(), multipartIds(jars, discovered));
         if (persist) {
             Files.createDirectories(f2vDir);
             writeIfChanged(ledgerFile, blockRowsText(LEDGER_HEADER, plan.ledger()));
@@ -1759,7 +1785,7 @@ public final class F2vPack {
      * is the canonical {@code when} JSON ("" when the part is unconditional). {@code model}
      * is {@code ns:path}; a bare model id is in the minecraft namespace, as the pack reads it.
      */
-    record BlockstateLook(String variantKey, String model, int x, int y, boolean uvlock, int weight) {
+    record BlockstateLook(String variantKey, String model, int x, int y, boolean uvlock, int weight, int part) {
     }
 
     /** The looks of one blockstate; {@code kind} is single, rotation, multi, multipart or none. */
@@ -1815,14 +1841,16 @@ public final class F2vPack {
                 return new BlockstateVisuals(variantKind(looks), looks);
             }
             if (obj.has("multipart") && obj.get("multipart").isJsonArray()) {
+                int applicable = 0;
                 for (JsonElement p : obj.getAsJsonArray("multipart")) {
                     if (!p.isJsonObject() || !p.getAsJsonObject().has("apply")) {
                         continue;
                     }
                     JsonObject part = p.getAsJsonObject();
                     String when = part.has("when") ? canonicalJson(part.get("when")) : "";
+                    int partIndex = applicable++; // the part's index among the parts that apply
                     for (JsonElement e : alternatives(part.get("apply"))) {
-                        BlockstateLook look = look(when, e);
+                        BlockstateLook look = look(when, e, partIndex);
                         if (look != null) {
                             looks.add(look);
                         }
@@ -1878,6 +1906,10 @@ public final class F2vPack {
     }
 
     private static BlockstateLook look(String variantKey, JsonElement e) {
+        return look(variantKey, e, 0);
+    }
+
+    private static BlockstateLook look(String variantKey, JsonElement e, int part) {
         if (!e.isJsonObject()) {
             return null;
         }
@@ -1887,7 +1919,7 @@ public final class F2vPack {
             return null;
         }
         return new BlockstateLook(variantKey, model.indexOf(':') < 0 ? "minecraft:" + model : model,
-                intField(o, "x", 0), intField(o, "y", 0), boolField(o, "uvlock"), intField(o, "weight", 1));
+                intField(o, "x", 0), intField(o, "y", 0), boolField(o, "uvlock"), intField(o, "weight", 1), part);
     }
 
     private static int intField(JsonObject o, String name, int dflt) {
@@ -1974,6 +2006,30 @@ public final class F2vPack {
     static final String BLOCK_LOOKS = "visual-block-looks.tsv";
     static final String BLOCK_LOOKS_HEADER = "block_id\tvariant_key\tweight\titem_model\trot_x\trot_y\n";
 
+    /**
+     * The per-part runtime table (S5): {@link #BLOCK_PARTS}; one row per alternative of each applicable
+     * part of a multipart block, parts in blockstate order. The when column is the canonical JSON ("" when
+     * the part is unconditional); rot is 0/0 for baked looks, as in {@link #BLOCK_LOOKS}.
+     */
+    static final String BLOCK_PARTS = "visual-block-parts.tsv";
+    static final String BLOCK_PARTS_HEADER = "block_id\tpart\twhen\tweight\titem_model\trot_x\trot_y\n";
+
+    static String blockPartsText(Map<String, BlockstateVisuals> byBlock) {
+        StringBuilder sb = new StringBuilder(BLOCK_PARTS_HEADER);
+        for (Map.Entry<String, BlockstateVisuals> b : new TreeMap<>(byBlock).entrySet()) {
+            if (!KIND_MULTIPART.equals(b.getValue().kind())) {
+                continue;
+            }
+            for (BlockstateLook l : b.getValue().looks()) {
+                boolean baked = isBakedLook(l);
+                sb.append(b.getKey()).append('\t').append(l.part()).append('\t').append(l.variantKey()).append('\t')
+                        .append(l.weight()).append('\t').append(lookItemModel(l)).append('\t')
+                        .append(baked ? 0 : l.x()).append('\t').append(baked ? 0 : l.y()).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
     /** A uvlock look with an x or y rotation: its model is pre-baked (GalleryPack.bakeUvlockDisplayModel). */
     static boolean isBakedLook(BlockstateLook l) {
         return l.uvlock() && (l.x() != 0 || l.y() != 0);
@@ -2029,14 +2085,18 @@ public final class F2vPack {
      * family does); every baked uvlock look gets its rotated model and an items/ definition under
      * {@code _display_uv/}. Deterministic: blocks in id order, looks in table order.
      */
+    /** The kinds whose looks get display items and the look table: rotation, multi and multipart. */
+    static boolean hasLooks(String kind) {
+        return KIND_ROTATION.equals(kind) || KIND_MULTI.equals(kind) || KIND_MULTIPART.equals(kind);
+    }
+
     private static void emitPerStateDisplays(List<Path> jars, JarCache blockJars, Map<String, BlockstateVisuals> looks,
                                              TreeMap<String, byte[]> entries, int[] compositeNo,
                                              Map<String, String> alphaBySprite, List<String> warnings)
             throws IOException {
         Set<String> done = new TreeSet<>();
         for (Map.Entry<String, BlockstateVisuals> b : new TreeMap<>(looks).entrySet()) {
-            String kind = b.getValue().kind();
-            if (!KIND_ROTATION.equals(kind) && !KIND_MULTI.equals(kind)) {
+            if (!hasLooks(b.getValue().kind())) {
                 continue;
             }
             for (BlockstateLook l : b.getValue().looks()) {
@@ -2989,6 +3049,7 @@ public final class F2vPack {
         // Read-only over the jars and outside the zip, so the pack sha1 does not move.
         writeIfChanged(outDir.resolve(BLOCK_VARIANTS), blockVariantsText(blockLooks));
         writeIfChanged(outDir.resolve(BLOCK_LOOKS), blockLooksText(blockLooks));
+        writeIfChanged(outDir.resolve(BLOCK_PARTS), blockPartsText(blockLooks));
         // 14-dy THE PLACEHOLDER LEDGER: the build's placeholder fallbacks
         // (sprite, context, uses) — the texture-fidelity audit's named
         // backlog, written next to the manifest and summarized in the
@@ -5447,6 +5508,7 @@ public final class F2vPack {
         exactFaceTileSelftest(failures);
         blockVariantsSelftest(failures);
         perStateSelftest(failures);
+        multipartSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;
@@ -5544,6 +5606,53 @@ public final class F2vPack {
     }
 
     /** Per-state visuals (S2): the uvlock bake and element rotation under x/y, and the look table rows. */
+    /** S5: multipart parts (indices, weighted parts), the part TSV, and the display-only planner rule. */
+    private static void multipartSelftest(List<String> failures) {
+        BlockstateVisuals mp = parseBlockstateVisuals("{\"multipart\":["
+                + "{\"apply\":{\"model\":\"fakemod:block/post\"}},"
+                + "{\"when\":{\"north\":\"true\"},\"apply\":{\"model\":\"fakemod:block/side\",\"uvlock\":true}},"
+                + "{\"when\":{\"east\":\"true\"},\"apply\":[{\"model\":\"fakemod:block/side\",\"y\":90},"
+                + "{\"model\":\"fakemod:block/side2\",\"y\":90,\"weight\":2}]},"
+                + "{\"when\":{\"west\":\"true\"}}]}");
+        expect(failures, mp.kind().equals(KIND_MULTIPART) && mp.looks().size() == 4,
+                "multipart parts: kind and four alternatives, got " + mp.looks().size());
+        expect(failures, mp.looks().get(0).part() == 0 && mp.looks().get(1).part() == 1
+                && mp.looks().get(2).part() == 2 && mp.looks().get(3).part() == 2,
+                "multipart parts: indices 0,1,2,2 (applicable parts, no apply skipped)");
+        expect(failures, mp.looks().get(1).uvlock() && isBakedLook(mp.looks().get(1)) == false
+                && !isBakedLook(mp.looks().get(0)), "multipart parts: uvlock with no rotation is not baked");
+        Map<String, BlockstateVisuals> byBlock = new TreeMap<>(Map.of("fakemod:mp", mp,
+                "fakemod:rot", parseBlockstateVisuals("{\"variants\":{\"axis=x\":{\"model\":\"fakemod:block/p\",\"x\":90}}}")));
+        String parts = blockPartsText(byBlock);
+        expect(failures, parts.startsWith(BLOCK_PARTS_HEADER), "part tsv: header");
+        expect(failures, parts.split("\n").length == 1 + 4 && !parts.contains("fakemod:rot"),
+                "part tsv: four multipart rows, no variant block");
+        expect(failures, parts.contains("fakemod:mp\t2\t{\"east\":\"true\"}\t2\t"),
+                "part tsv: the weighted part row keeps its when and weight");
+        expect(failures, parts.contains("fakemod:mp\t0\t\t1\t"), "part tsv: unconditional part has an empty when");
+
+        // S5 planner: a display-only id takes no note slot; its ledger slot stays reserved
+        F2vPack.VisualBlock first = slotAt(0);
+        F2vPack.VisualBlock second = slotAt(1);
+        CarrierPlan fresh = planCarriers(List.of("fakemod:mp", "fakemod:a"), List.of(), List.of(), false,
+                Set.of("fakemod:mp"));
+        expect(failures, fresh.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:mp") && b.isDisplay())
+                && fresh.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:a")
+                && b.instrument().equals(first.instrument()) && b.note() == first.note()),
+                "planner: display-only id is a display row, the next id takes slot 0");
+        CarrierPlan kept = planCarriers(List.of("fakemod:mp", "fakemod:a"), List.of(),
+                List.of(new VisualBlock("fakemod:mp", second.instrument(), second.note())), false, Set.of("fakemod:mp"));
+        expect(failures, kept.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:mp") && b.isDisplay())
+                && kept.ledger().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:mp") && !b.isDisplay()
+                && b.note() == second.note())
+                && kept.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:a")
+                && b.instrument().equals(first.instrument()) && b.note() == first.note()),
+                "planner: a ledger note row of a display-only id is reserved (kept in the ledger) and not reissued");
+        CarrierPlan none = planCarriers(List.of("fakemod:mp"), List.of(), List.of(), false);
+        expect(failures, none.effective().stream().anyMatch(b -> b.moddedBlockId().equals("fakemod:mp") && !b.isDisplay()),
+                "planner: without display-only ids a block keeps its note slot");
+    }
+
     private static void perStateSelftest(List<String> failures) {
         // a box with distinct sides, one face of each direction, default uvs (explicit uv on up for the trace)
         String box = "{\"from\":[2,0,4],\"to\":[6,8,12],\"faces\":{"

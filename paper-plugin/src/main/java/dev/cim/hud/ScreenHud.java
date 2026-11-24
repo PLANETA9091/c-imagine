@@ -312,6 +312,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         // S3a: the per-state looks of the multi-look blocks (absent before the S2 pack: no looks)
         DisplayCarriers.setLooks(dev.cim.f2v.BlockLooks.load(f2v));
+        // S5: the multipart parts (one display per active part); absent before the S5 pack: no parts
+        DisplayCarriers.setParts(dev.cim.f2v.BlockParts.load(f2v));
     }
 
     /** The placed state text Paper keeps at {@code block} (chunk PDC {@code bs_x_y_z}), or null. */
@@ -1351,7 +1353,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bridge.keepBlockEntity(player, state);
         // Broken by hand, by the block's own code: it drops the backpack, with its contents.
         player.getInventory().setItemInMainHand(null);
-        LiveBridge.Broken broken = bridge.breakBlock(player, at, result.placedId());
+        LiveBridge.Broken broken = bridge.breakBlock(player, at, result.placedId(), this::carried);
+        applyNeighbourStates(bridge, broken, at.getWorld());
         out.add("placed block broken -> " + (broken.state().error() != null ? broken.state().error()
                 : "removed=" + broken.removed() + " drops " + broken.spilled().stream()
                 .map(st -> bridge.toLayer(st).replaceAll(".*\"id\":\"([^\"]+)\".*", "$1") + " x" + st.getAmount()).toList()));
@@ -1839,7 +1842,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
             return;
         }
-        LiveBridge.Broken broken = bridge.breakBlock(event.getPlayer(), block, modded);
+        LiveBridge.Broken broken = bridge.breakBlock(event.getPlayer(), block, modded, this::carried);
         if (display) {
             DisplayCarriers.remove(block);
         }
@@ -1850,6 +1853,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         if (bridge.release(block, null)) {
             logTicking();
         }
+        applyNeighbourStates(bridge, broken, block.getWorld());
         event.setDropItems(false);
         org.bukkit.Location at = block.getLocation().add(0.5, 0.5, 0.5);
         for (ItemStack stack : broken.spilled()) {
@@ -1858,6 +1862,25 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bridge.applyInventory(event.getPlayer(), broken.state());
         log.info("[cim-screen] " + event.getPlayer().getName() + " broke " + modded + ": " + broken.spilled().size()
                 + " stack(s) dropped");
+    }
+
+    /**
+     * S5: the mod blocks next to a broken one whose shapes the layer recomputed (fence and wall connections). A
+     * display-family neighbour is shown in its new state; a note carrier keeps the new state text. Vanilla
+     * neighbours are Paper's own neighbour updates and are not touched here.
+     */
+    private void applyNeighbourStates(LiveBridge bridge, LiveBridge.Broken broken, org.bukkit.World world) {
+        for (LiveBridge.Placement p : broken.changed()) {
+            F2vPack.VisualBlock row = blockCarrierRows.get(p.id());
+            if (row == null || broken.state().error() != null) {
+                continue;
+            }
+            Block at = world.getBlockAt(p.x(), p.y(), p.z());
+            if (knownDisplay(row.moddedBlockId()) && DisplayCarriers.idAt(at) != null) {
+                DisplayCarriers.place(at, row.moddedBlockId(), p.state());
+            }
+            bridge.keepPlacedState(at, p.state());
+        }
     }
 
     /**

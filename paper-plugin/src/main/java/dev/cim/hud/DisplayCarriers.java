@@ -1,6 +1,7 @@
 package dev.cim.hud;
 
 import dev.cim.f2v.BlockLooks;
+import dev.cim.f2v.BlockParts;
 import dev.cim.f2v.F2vPack;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
@@ -19,6 +20,7 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.logging.Logger;
 import java.util.HashMap;
 import java.util.List;
@@ -51,6 +53,12 @@ import java.util.regex.Pattern;
  * and as the right rotation the look's x/y ({@link BlockLooks#rotation}). The rig's left rotation is
  * unchanged, so the renderer's yaw still cancels. A block with no state, or no look row, keeps the
  * default item and identity right rotation (the pre-S3a display).
+ *
+ * <p>Multipart (S5): a multipart block has one display per ACTIVE part of its placed state
+ * ({@link BlockParts#active}), each an ItemDisplay with the part's item and rotation, tagged with its part
+ * signature. A sync keeps the displays already showing the wanted set and replaces the rest. Neighbour
+ * changes arrive as placements (use-on and break report the cells whose shape the layer recomputed), so a
+ * fence's connections follow its neighbours.
  */
 final class DisplayCarriers {
     private static final String NS = "cim";
@@ -58,6 +66,8 @@ final class DisplayCarriers {
     private static final NamespacedKey ENTITY_ID = new NamespacedKey(NS, "display_id");
     /** On the display entity: the block position it stands at ({@code x,y,z}). */
     private static final NamespacedKey ENTITY_AT = new NamespacedKey(NS, "display_at");
+    /** On the display entity: the part it shows for a multipart block ({@link #partSig}); absent on a single display. */
+    private static final NamespacedKey ENTITY_SIG = new NamespacedKey(NS, "display_sig");
     private static final String KEY_PREFIX = "disp_";
     private static final Pattern KEY = Pattern.compile(KEY_PREFIX + "(-?\\d+)_(-?\\d+)_(-?\\d+)");
 
@@ -67,9 +77,22 @@ final class DisplayCarriers {
     private DisplayCarriers() {
     }
 
+    /** The multipart part table of the running pack ({@link BlockParts#load}); empty until set (S5). */
+    private static volatile Map<String, List<BlockParts.Row>> parts = Map.of();
+
     /** Installs the running pack's look table (called where the block rows are read at boot). */
     static void setLooks(Map<String, List<BlockLooks.Look>> table) {
         looks = table == null ? Map.of() : table;
+    }
+
+    /** Installs the running pack's multipart part table (called where the look table is read at boot). */
+    static void setParts(Map<String, List<BlockParts.Row>> table) {
+        parts = table == null ? Map.of() : table;
+    }
+
+    /** True when the pack's part table names {@code moddedId} as a multipart block: one display per active part. */
+    static boolean isMultipart(String moddedId) {
+        return BlockParts.isMultipart(parts, moddedId);
     }
 
     /** The mod id of the display at a barrier's position, or null (O(1): the chunk's PDC; no entity scan). */
@@ -149,6 +172,11 @@ final class DisplayCarriers {
      */
     static void place(Block at, String moddedId, String state) {
         remove(at); // a stale display at this position goes first
+        if (isMultipart(moddedId)) {
+            List<ItemDisplay> now = syncParts(at, moddedId, state, List.of());
+            keyTo(at, moddedId, now.getFirst());
+            return;
+        }
         ItemDisplay display = spawn(at, moddedId, state);
         at.getChunk().getPersistentDataContainer().set(slot(at), PersistentDataType.STRING,
                 moddedId + "|" + display.getUniqueId());
@@ -161,6 +189,14 @@ final class DisplayCarriers {
      */
     static boolean updateState(Block at, String moddedId, String state) {
         Chunk chunk = at.getChunk();
+        if (isMultipart(moddedId)) {
+            List<ItemDisplay> here = displaysAt(chunk, at);
+            if (here.isEmpty()) {
+                return false;
+            }
+            keyTo(at, moddedId, syncParts(at, moddedId, state, here).getFirst());
+            return true;
+        }
         String value = chunk.getPersistentDataContainer().get(slot(at), PersistentDataType.STRING);
         ItemDisplay display = value == null ? null : displayOf(at.getWorld(), value);
         if (display == null) {
@@ -182,11 +218,16 @@ final class DisplayCarriers {
 
     /** The display entity for {@code moddedId} at {@code at} in {@code state} (the block centre, FIXED billboard). */
     private static ItemDisplay spawn(Block at, String moddedId, String state) {
+        BlockLooks.Look look = lookAt(at, moddedId, state);
+        debugLook(at, moddedId, state, look);
+        return spawnWith(at, moddedId, look, null);
+    }
+
+    /** One display at the block centre showing {@code look} (null: the default item); {@code sig} marks a part. */
+    private static ItemDisplay spawnWith(Block at, String moddedId, BlockLooks.Look look, String sig) {
         World world = at.getWorld();
         Location centre = at.getLocation().add(0.5, 0.5, 0.5);
         String where = where(at);
-        BlockLooks.Look look = lookAt(at, moddedId, state);
-        debugLook(at, moddedId, state, look);
         return world.spawn(centre, ItemDisplay.class, e -> {
             e.setItemStack(stack(moddedId, look == null ? null : look.itemModel()));
             e.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.NONE);
@@ -196,7 +237,77 @@ final class DisplayCarriers {
             PersistentDataContainer pdc = e.getPersistentDataContainer();
             pdc.set(ENTITY_ID, PersistentDataType.STRING, moddedId);
             pdc.set(ENTITY_AT, PersistentDataType.STRING, where);
+            if (sig != null) {
+                pdc.set(ENTITY_SIG, PersistentDataType.STRING, sig);
+            }
         });
+    }
+
+    /**
+     * The part signature of a multipart display: its part index, item and rotation. The default display of a
+     * block with no active part is {@code default}.
+     */
+    static String partSig(BlockLooks.Look look) {
+        return look == null ? "default" : look.variantKey() + "|" + look.itemModel() + "|" + look.rotX() + "," + look.rotY();
+    }
+
+    /**
+     * Makes a multipart block's displays show the parts its placed state activates: one display per active part
+     * (the default one when none is active). Displays already showing exactly that set are kept; any other set
+     * is replaced. Returns the block's displays (never empty).
+     */
+    private static List<ItemDisplay> syncParts(Block at, String moddedId, String state, List<ItemDisplay> existing) {
+        List<BlockLooks.Look> active = BlockParts.active(parts, moddedId, state == null ? "" : state,
+                at.getX(), at.getY(), at.getZ());
+        List<String> want = new ArrayList<>();
+        if (active.isEmpty()) {
+            want.add(partSig(null));
+        } else {
+            for (BlockLooks.Look l : active) {
+                want.add(partSig(l));
+            }
+        }
+        List<String> have = new ArrayList<>();
+        for (ItemDisplay d : existing) {
+            String sig = d.getPersistentDataContainer().get(ENTITY_SIG, PersistentDataType.STRING);
+            have.add(sig == null ? "" : sig);
+        }
+        Collections.sort(want);
+        Collections.sort(have);
+        if (want.equals(have)) {
+            return new ArrayList<>(existing);
+        }
+        for (ItemDisplay d : existing) {
+            d.remove();
+        }
+        List<ItemDisplay> out = new ArrayList<>();
+        if (active.isEmpty()) {
+            out.add(spawnWith(at, moddedId, null, partSig(null)));
+        } else {
+            for (BlockLooks.Look l : active) {
+                out.add(spawnWith(at, moddedId, l, partSig(l)));
+            }
+        }
+        return out;
+    }
+
+    /** The loaded displays standing at {@code at} (a chunk entity scan: a multipart block has several). */
+    private static List<ItemDisplay> displaysAt(Chunk chunk, Block at) {
+        List<ItemDisplay> out = new ArrayList<>();
+        String where = where(at);
+        for (Entity e : chunk.getEntities()) {
+            if (e instanceof ItemDisplay d && where.equals(e.getPersistentDataContainer().get(ENTITY_AT,
+                    PersistentDataType.STRING))) {
+                out.add(d);
+            }
+        }
+        return out;
+    }
+
+    /** The chunk key of {@code at} names {@code display} (its uuid) and the mod id. */
+    private static void keyTo(Block at, String moddedId, ItemDisplay display) {
+        at.getChunk().getPersistentDataContainer().set(slot(at), PersistentDataType.STRING,
+                moddedId + "|" + display.getUniqueId());
     }
 
     /**
@@ -209,22 +320,15 @@ final class DisplayCarriers {
         NamespacedKey key = slot(at);
         String value = pdc.get(key, PersistentDataType.STRING);
         pdc.remove(key);
-        boolean gone = false;
         if (value != null) {
             ItemDisplay display = displayOf(at.getWorld(), value);
             if (display != null) {
                 display.remove();
-                gone = true;
             }
         }
-        if (!gone) {
-            String where = where(at);
-            for (Entity e : chunk.getEntities()) {
-                if (e instanceof ItemDisplay && where.equals(e.getPersistentDataContainer().get(ENTITY_AT,
-                        PersistentDataType.STRING))) {
-                    e.remove();
-                }
-            }
+        // a multipart block has one display per part: the position is swept whether or not the key's one was there
+        for (ItemDisplay d : displaysAt(chunk, at)) {
+            d.remove();
         }
     }
 
@@ -288,6 +392,14 @@ final class DisplayCarriers {
                 continue;
             }
             String where = where(at);
+            if (isMultipart(id)) {
+                // one display per active part: the parts the state activates, the rest of the set goes
+                String partState = stateOf == null ? null : stateOf.apply(at);
+                List<ItemDisplay> shown = byPos.remove(where);
+                List<ItemDisplay> now = syncParts(at, id, partState, shown == null ? List.of() : shown);
+                keyTo(at, id, now.getFirst());
+                continue;
+            }
             List<ItemDisplay> here = byPos.getOrDefault(where, new ArrayList<>());
             // one display per position: the one the key names when it is there, else the first
             ItemDisplay keep = null;

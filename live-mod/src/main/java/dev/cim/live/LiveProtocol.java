@@ -215,6 +215,21 @@ public final class LiveProtocol {
                     net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
                             Integer.parseInt(head[4]), Integer.parseInt(head[5]), Integer.parseInt(head[6]));
                     FacadeServerLevel level = LiveMenus.level();
+                    // S5: the real neighbourhood Paper sent (nb lines) stands in the facade, so the neighbour
+                    // shape pass below can recompute the connections the broken block leaves (fences, walls, panes).
+                    java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> breakSeeded =
+                            new java.util.LinkedHashMap<>();
+                    for (Neighbour n : Neighbour.parse(lines)) {
+                        net.minecraft.world.level.block.state.BlockState real =
+                                BlockStates.parse(Neighbour.layerState(n.state()));
+                        if (real != null) {
+                            breakSeeded.put(new net.minecraft.core.BlockPos(n.x(), n.y(), n.z()), real);
+                        }
+                    }
+                    for (var seed : breakSeeded.entrySet()) {
+                        level.setBlock(seed.getKey(), seed.getValue(), 3);
+                    }
+                    level.store().beginPlacement();
                     level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                     net.minecraft.world.level.block.Block breakBlock = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
                             net.minecraft.resources.ResourceLocation.parse(head[3]));
@@ -246,10 +261,31 @@ public final class LiveProtocol {
                             st.getBlock().playerDestroy(level, player, pos, st, be, used);
                         }
                     }
+                    level.store().updateNeighbourShapes();
+                    java.util.Map<net.minecraft.core.BlockPos, net.minecraft.world.level.block.state.BlockState> breakWrites =
+                            level.store().endPlacement();
                     StringBuilder out = new StringBuilder(state(player, null));
                     out.append("broken\t").append(removed).append('\n');
                     for (net.minecraft.world.item.ItemStack spilled : FacadeServerLevel.takeSpilled()) {
                         out.append("spill\t").append(encode(spilled)).append('\n');
+                    }
+                    // the cells the break changed besides the broken one (its neighbours' new shapes), for Paper
+                    for (var write : breakWrites.entrySet()) {
+                        var p = write.getKey();
+                        var now = level.getBlockState(p);
+                        if (p.equals(pos) || now == write.getValue()) {
+                            continue;
+                        }
+                        out.append("placed\t").append(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(now.getBlock()))
+                                .append('\t').append(p.getX()).append('\t').append(p.getY()).append('\t').append(p.getZ())
+                                .append('\t').append(net.minecraft.commands.arguments.blocks.BlockStateParser.serialize(now))
+                                .append('\n');
+                    }
+                    for (var write : breakWrites.entrySet()) {
+                        level.setBlock(write.getKey(), write.getValue(), 3);
+                    }
+                    for (net.minecraft.core.BlockPos seededAt : breakSeeded.keySet()) {
+                        level.setBlock(seededAt, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                     }
                     level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
                     yield out.toString();
@@ -363,6 +399,8 @@ public final class LiveProtocol {
                                 stack.use(level, player, net.minecraft.world.InteractionHand.MAIN_HAND);
                             }
                         }
+                        // S5: the cells around what the action changed recompute their shapes (fence and wall connections)
+                        store.updateNeighbourShapes();
                     } finally {
                         player.setShiftKeyDown(false);
                         if (context != null) {
