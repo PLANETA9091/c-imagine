@@ -1157,10 +1157,19 @@ jobs:
           test -f seed-pack/f2v/visual-sounds.tsv
           test -f seed-pack/f2v/visual-particles.tsv
           FCPL="$(cat paper-plugin/target/selftest-cp.txt)"
+          # 14-e256: the 1.21.1 client-extra jar rides the assets list AFTER
+          # the 26.3 client — first-match-wins keeps the 26.3 art where both
+          # carry the sprite and fills the gaps for the sprites 26.3 RENAMED
+          # (the measured chain class: block/chain.png exists only in the
+          # 1.21.1 client; 273 candle-holder item composites aborted the
+          # whole-shard bake without it)
+          EXTRA121="$(find nfc -name 'client-*-extra.jar' | head -1)"
+          test -n "$EXTRA121" || { echo "the 1.21.1 client-extra jar is missing from nfc — the vanilla-rename class would re-abort"; ls nfc; exit 1; }
+          echo "assets jars: visual-client/client.jar + $EXTRA121"
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
             java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
-            --assets visual-client/client.jar 2>&1 | tee pack-build.log
+            --assets "visual-client/client.jar:$EXTRA121" 2>&1 | tee pack-build.log
           # 14-e78 THE WORLD PAYLOAD: the walk's world = the environment the
           # truth's shots rendered (the wooden room + the wall's real blocks)
           # — the ours' fresh-gen world rendered the gray void (the e77
