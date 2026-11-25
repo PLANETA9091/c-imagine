@@ -2644,8 +2644,19 @@ public final class F2vPack {
                 if (!gallery.isEmpty()) {
                     List<Map.Entry<Float, String>> paperEntries =
                             new ArrayList<>(paperFloatEntries);
+                    // 14-e266 THE BISECT PROBE: -Dcim.f2v.paperSpaces=items builds the
+                    // host def with the ITEM space ONLY (no gallery, no fluid rows) —
+                    // one flight names which space mixes the tree (the measured
+                    // paper-host abort survived every sprite-level fix; the decompiled
+                    // one-atlas-per-tree law says SOME child set carries the other
+                    // atlas's instances). DIAGNOSTIC ONLY: the wall's blockstates ride
+                    // untouched (the block channel never read the def), the item pages
+                    // = the honest probe shape. Absent property = the full def.
+                    String spaces = System.getProperty("cim.f2v.paperSpaces", "all");
                     for (GalleryPack.Resolved r : gallery) {
-                        paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                        if (spaces.equals("all") || spaces.contains("gallery")) {
+                            paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                        }
                     }
                     paperEntries.sort(Map.Entry.comparingByKey());
                     entries.put("assets/minecraft/items/paper.json",
@@ -2669,12 +2680,15 @@ public final class F2vPack {
         // compares honestly, dyn class).
         List<FluidTexture> fluidTextures =
                 scanFluidTextures(jars, entries, warnings);
+        String spaces = System.getProperty("cim.f2v.paperSpaces", "all");
         if (!fluidTextures.isEmpty()) {
             // re-emit paper.json with items + gallery + fluid rows merged
             List<Map.Entry<Float, String>> paperEntries =
                     new ArrayList<>(paperFloatEntries);
             for (GalleryPack.Resolved r : gallery) {
-                paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                if (spaces.equals("all") || spaces.contains("gallery")) {
+                    paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                }
             }
             for (FluidTexture ft : fluidTextures) {
                 paperEntries.add(Map.entry(ft.cmd(), ft.modelRef()));
@@ -2746,7 +2760,9 @@ public final class F2vPack {
             List<Map.Entry<Float, String>> paperEntries =
                     new ArrayList<>(paperFloatEntries);
             for (GalleryPack.Resolved r : gallery) {
-                paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                if (spaces.equals("all") || spaces.contains("gallery")) {
+                    paperEntries.add(Map.entry(r.cmd(), r.modelRef()));
+                }
             }
             for (FluidTexture ft : fluidTextures) {
                 paperEntries.add(Map.entry(ft.cmd(), ft.modelRef()));

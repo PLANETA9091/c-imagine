@@ -1166,8 +1166,13 @@ jobs:
           EXTRA121="$(find nfc -name 'client-*-extra.jar' | head -1)"
           test -n "$EXTRA121" || { echo "the 1.21.1 client-extra jar is missing from nfc — the vanilla-rename class would re-abort"; ls nfc; exit 1; }
           echo "assets jars: visual-client/client.jar + $EXTRA121"
+          # 14-e266 THE BISECT PROBE: -Dcim.f2v.paperSpaces=items builds the host
+          # def with the ITEM space ONLY — one flight names which child set mixes
+          # the uniform tree (the measured paper-host abort). The wall's
+          # blockstates ride untouched; the item pages = the honest probe shape.
+          # Revert to the full def once the class is named.
           JAVA_HOME=${{ steps.jdk25.outputs.path }} PATH=${{ steps.jdk25.outputs.path }}/bin:$PATH \
-            java -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
+            java -Dcim.f2v.paperSpaces=items -cp "paper-plugin/target/cim-paper-plugin.jar:$FCPL" dev.cim.f2v.F2vPack \
             --build srv-wall/mods seed-pack/f2v \
             --assets "visual-client/client.jar:$EXTRA121" 2>&1 | tee pack-build.log
           # 14-e78 THE WORLD PAYLOAD: the walk's world = the environment the
