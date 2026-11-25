@@ -290,7 +290,7 @@ final class Backfill implements Listener {
         // 14-e259 THE SWEEP: a load older than LOAD_TIMEOUT_MS counts as lost —
         // re-queue it so the pending set can drain (the quiesce waits on it); the
         // second timeout of the same chunk escalates its next issue to urgent.
-        // 14-e261 THE BOUNDED GIVE-UP: a chunk that resisted FOUR attempts (two
+        // 14-e261 THE BOUNDED GIVE-UP: a chunk that resisted THREE attempts (two
         // of them on the urgent lane — the measured world -5,3/-5,4 class, run
         // 45677159970: the urgent load hung exactly like the default one) is a
         // chunk-system wedge the loader cannot route around. The drain wins over
@@ -298,13 +298,16 @@ final class Backfill implements Listener {
         // warning, the coverage gap is honest (N chunks undecorated, named in
         // the boot log), and the quiesce fires so the harness measures what it
         // is for. The wg_done flag stays UNWRITTEN — the chunk keeps its
-        // not-decorated truth.
+        // not-decorated truth. THREE attempts = 3 x 30 s, INSIDE the harness's
+        // 120 s awaitBackfill window (the measured twentieth run: the fourth
+        // attempt's timeout landed 2 s AFTER the await gave up — the bound must
+        // fire inside the wait, never after it).
         long now = System.currentTimeMillis();
         for (java.util.Map.Entry<ModWorldgen.Pending, Long> e : new ArrayList<>(loading.entrySet())) {
             if (now - e.getValue() > LOAD_TIMEOUT_MS) {
                 loading.remove(e.getKey());
                 int attempts = loadAttempts.merge(e.getKey(), 1, Integer::sum);
-                if (attempts >= 4) {
+                if (attempts >= 3) {
                     loadAttempts.remove(e.getKey());
                     if (ModWorldgen.PENDING.remove(e.getKey())) {
                         ModWorldgen.PENDING_DIRTY.set(true);
