@@ -77,6 +77,9 @@ final class Backfill implements Listener {
      *  URGENT lane (the measured 12-starved-chunk class — the same chunks timed out and
      *  re-queued forever at the default priority while 157 siblings completed). */
     private final java.util.HashMap<ModWorldgen.Pending, Integer> loadAttempts = new java.util.HashMap<>();
+    /** The bounded give-up ledger: chunks the loader could not route around (the wedge
+     *  class), named in the boot log — the honest coverage gap, never a silent drop. */
+    private final java.util.HashSet<ModWorldgen.Pending> GAVE_UP = new java.util.HashSet<>();
     /** An async load older than this counts as lost: re-queued with a named warning. */
     private static final long LOAD_TIMEOUT_MS = 30_000L;
     private boolean scanned;
@@ -287,11 +290,33 @@ final class Backfill implements Listener {
         // 14-e259 THE SWEEP: a load older than LOAD_TIMEOUT_MS counts as lost —
         // re-queue it so the pending set can drain (the quiesce waits on it); the
         // second timeout of the same chunk escalates its next issue to urgent.
+        // 14-e261 THE BOUNDED GIVE-UP: a chunk that resisted FOUR attempts (two
+        // of them on the urgent lane — the measured world -5,3/-5,4 class, run
+        // 45677159970: the urgent load hung exactly like the default one) is a
+        // chunk-system wedge the loader cannot route around. The drain wins over
+        // the infinite wait: the chunk leaves the pending set with a LOUD named
+        // warning, the coverage gap is honest (N chunks undecorated, named in
+        // the boot log), and the quiesce fires so the harness measures what it
+        // is for. The wg_done flag stays UNWRITTEN — the chunk keeps its
+        // not-decorated truth.
         long now = System.currentTimeMillis();
         for (java.util.Map.Entry<ModWorldgen.Pending, Long> e : new ArrayList<>(loading.entrySet())) {
             if (now - e.getValue() > LOAD_TIMEOUT_MS) {
                 loading.remove(e.getKey());
                 int attempts = loadAttempts.merge(e.getKey(), 1, Integer::sum);
+                if (attempts >= 4) {
+                    loadAttempts.remove(e.getKey());
+                    if (ModWorldgen.PENDING.remove(e.getKey())) {
+                        ModWorldgen.PENDING_DIRTY.set(true);
+                        GAVE_UP.add(e.getKey());
+                        ModWorldgen.log().warning(ModWorldgen.LOG_PREFIX + "worldgen: GAVE UP on "
+                                + e.getKey().world() + " " + e.getKey().x() + "," + e.getKey().z()
+                                + " after " + attempts + " load attempts (two urgent) — the chunk stays "
+                                + "undecorated, the coverage gap is named; gave-up total "
+                                + GAVE_UP.size());
+                    }
+                    continue;
+                }
                 requeue(e.getKey(), "async load timed out after " + LOAD_TIMEOUT_MS + " ms"
                         + (attempts >= 2 ? " — escalating to the urgent lane" : ""));
             }
