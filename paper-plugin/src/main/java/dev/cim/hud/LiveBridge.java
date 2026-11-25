@@ -241,8 +241,19 @@ final class LiveBridge {
         if (parse(call(in)).error() != null) {
             return false;
         }
-        return ticking.put(at, new Tracked(block.getWorld().getName(), block.getX(), block.getY(), block.getZ(),
+        // 14-e258 THE TICKET LAW: a tracked ticking carrier holds its chunk with a PLUGIN
+        // chunk ticket — Paper's chunk GC cannot unload the chunk under the block entity
+        // (the measured flap: the tracker released "by chunk-unload" twice inside the
+        // 40-tick window even with the backfill's ticket-retention, because the depot's
+        // chunk carried NO backfill ticket by then — the TickingCheck hook only guards the
+        // backfill's own release path, not the GC). The ticket rides the tracker's life:
+        // added here, dropped in release() when the chunk's last tracker leaves.
+        boolean grew = ticking.put(at, new Tracked(block.getWorld().getName(), block.getX(), block.getY(), block.getZ(),
                 blockId)) == null;
+        if (grew) {
+            block.getChunk().addPluginChunkTicket(plugin);
+        }
+        return grew;
     }
 
     /**
@@ -267,6 +278,17 @@ final class LiveBridge {
             put(keepIn.getPersistentDataContainer(), block, t.blockId(), state.blockEntity());
         }
         ticking.remove(at);
+        // 14-e258 THE TICKET LAW (the drop side): the chunk's plugin ticket lifts only
+        // when its last tracked ticking carrier leaves — the GC may unload the chunk
+        // again, the kept-in-chunk data re-adopts on the next load (adoptChunk).
+        // NEVER sync-load here (the e253 wedge class): only a LOADED chunk gets the
+        // removal; an unloaded chunk's ticket died with its unload already.
+        if (!hasTickingIn(t.world(), t.chunkX(), t.chunkZ())) {
+            org.bukkit.World w = plugin.getServer().getWorld(t.world());
+            if (w != null && w.isChunkLoaded(t.chunkX(), t.chunkZ())) {
+                w.getChunkAt(t.chunkX(), t.chunkZ()).removePluginChunkTicket(plugin);
+            }
+        }
         if (Boolean.getBoolean("cim.live.release.debug")) {
             plugin.getLogger().warning("[cim-live] released " + t.blockId() + " at " + at + " by " + by
                     + " (kept in chunk: " + (keepIn != null) + ")");
