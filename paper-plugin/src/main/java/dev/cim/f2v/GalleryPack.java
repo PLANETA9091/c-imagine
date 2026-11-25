@@ -1092,7 +1092,7 @@ public final class GalleryPack {
                 // (copyParentGraph only walks parents + textures — the
                 // F2vPack item path does the same putIfAbsent dance)
                 entries.putIfAbsent(cand, modelBytes);
-                F2vPack.copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
+                F2vPack.copyParentGraph(zf, jars, cand, modelBytes, entries, warnings, 0);
                 // report the namespace the model was actually FOUND under
                 // (a minecraft fallback hit re-anchors the returned ref so
                 // the composite walk starts at the right chain)
@@ -1207,15 +1207,49 @@ public final class GalleryPack {
                         : spritePathPng(sprite);
                 byte[] bytes = readPngFromJars(jars, png);
                 if (bytes == null) {
+                    // 14-e256 THE UNBOUND-KEY LAW: dropping the key leaves the
+                    // model's elements referencing an UNBOUND #key — the items
+                    // bake resolves it to the missing sprite stamped with the
+                    // OTHER atlas and validateAtlasUsage aborts the whole host
+                    // def (the measured chain class: 26.3 renamed
+                    // block/chain.png, 273 candle-holder composites aborted
+                    // per shard). Bind the key at the bit-exact missing sprite
+                    // instead — the same art the truth leg renders for a
+                    // texture it cannot resolve — and the ledger names it.
                     warnings.add("item composite: texture missing: " + sprite
-                            + " (" + modelRef + ")");
+                            + " (" + modelRef + ") — placeholder");
+                    recordPlaceholderUse(sprite);
+                    textures.put(t.getKey(), placeholderSprite(entries));
                     continue;
                 }
                 putHosted(jars, key, png, bytes, entries, warnings);
                 textures.put(t.getKey(), newSprite);
                 texNo++;
             } else {
-                // pack block-path sprite: its PNG was already copied by copyModelGraph
+                // pack block-path sprite: copyModelGraph copies its PNG —
+                // VERIFY instead of trusting (14-e256, the measured mekanism
+                // factory class: the flat child walk missed parent-only stubs
+                // and the composite kept sprites the pack never carried, the
+                // items bake aborted on the mixed atlases). Copy from the jars
+                // when the PNG did not land; fall to the bit-exact missing
+                // sprite when NO jar carries it (the cross-mod class:
+                // buzzier_bees candle textures with the dep mod outside the
+                // ladder — the truth leg renders the missing sprite there too,
+                // so the placeholder is the parity shape, and the ledger
+                // names every row).
+                String pngPath = spritePathPng(sprite);
+                if (!entries.containsKey(pngPath)) {
+                    byte[] bytes = readPngFromJars(jars, pngPath);
+                    if (bytes == null) {
+                        warnings.add("item composite: sprite uncarrivable: " + sprite
+                                + " (" + modelRef + ") — placeholder");
+                        recordPlaceholderUse(sprite);
+                        textures.put(t.getKey(), placeholderSprite(entries));
+                        continue;
+                    }
+                    byte[] meta = readPngFromJars(jars, pngPath + ".mcmeta");
+                    writeTexture(entries, pngPath, sprite, bytes, meta, warnings);
+                }
                 textures.put(t.getKey(), sprite);
             }
         }

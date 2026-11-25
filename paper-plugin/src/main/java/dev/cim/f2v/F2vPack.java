@@ -1692,7 +1692,7 @@ public final class F2vPack {
             if (e != null) {
                 byte[] bytes = zf.getInputStream(e).readAllBytes();
                 entries.putIfAbsent(file, bytes);
-                copyParentGraph(zf, file, bytes, entries, warnings, 0);
+                copyParentGraph(zf, cache.paths(), file, bytes, entries, warnings, 0);
                 return ref;
             }
         }
@@ -3204,7 +3204,7 @@ public final class F2vPack {
                     }
                     byte[] modelBytes = zf.getInputStream(e).readAllBytes();
                     entries.putIfAbsent(cand, modelBytes);
-                    copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
+                    copyParentGraph(zf, jars, cand, modelBytes, entries, warnings, 0);
                     // the model ref matches the found location
                     String baseRef;
                     if (cand.startsWith("assets/" + ns + "/models/item/")) {
@@ -3259,7 +3259,7 @@ public final class F2vPack {
                     }
                     byte[] modelBytes = zf.getInputStream(e).readAllBytes();
                     entries.putIfAbsent(cand, modelBytes);
-                    copyParentGraph(zf, cand, modelBytes, entries, warnings, 0);
+                    copyParentGraph(zf, jars, cand, modelBytes, entries, warnings, 0);
                     if (cand.startsWith("assets/" + ns + "/models/block/")) {
                         return ns + ":block/" + path;
                     }
@@ -3550,7 +3550,7 @@ public final class F2vPack {
 
     /** Depth-limited parent walk within the SAME jar as the entry model
      *  (package-visible: GalleryPack's direct-model rows reuse it). */
-    static void copyParentGraph(ZipFile zf, String modelPath, byte[] modelBytes,
+    static void copyParentGraph(ZipFile zf, List<Path> jars, String modelPath, byte[] modelBytes,
                                         TreeMap<String, byte[]> entries,
                                         List<String> warnings, int depth) throws IOException {
         if (depth > 16) {
@@ -3569,8 +3569,23 @@ public final class F2vPack {
             if (pe != null && !entries.containsKey(parentFile)) {
                 byte[] pb = zf.getInputStream(pe).readAllBytes();
                 entries.put(parentFile, pb);
-                copyParentGraph(zf, parentFile, pb, entries, warnings, depth + 1);
-            } else if (pe == null) {
+                copyParentGraph(zf, jars, parentFile, pb, entries, warnings, depth + 1);
+            } else if (pe == null && jars != null && !entries.containsKey(parentFile)
+                    && !parentNs.equals("minecraft")) {
+                // 14-e256: the parent may live in ANOTHER ladder jar than the
+                // model that references it — the one-zip walk missed it and
+                // the composite kept sprites the pack never carried. VANILLA
+                // parents stay client-side (the bare "block/cube" form lands
+                // here with parentNs=minecraft — never copied).
+                byte[] pb = modelBytesAcrossJars(jars, parentFile);
+                if (pb != null) {
+                    entries.put(parentFile, pb);
+                    copyParentGraph(zf, jars, parentFile, pb, entries, warnings, depth + 1);
+                } else {
+                    warnings.add("parent model missing in jar: " + parent
+                            + " (referenced by " + modelPath + ")");
+                }
+            } else if (pe == null && jars == null) {
                 warnings.add("parent model missing in jar: " + parent
                         + " (referenced by " + modelPath + ")");
             }
@@ -3593,25 +3608,79 @@ public final class F2vPack {
             if (obj.has("children") && obj.getAsJsonObject("children").isJsonObject()) {
                 for (Map.Entry<String, JsonElement> ch : obj.getAsJsonObject("children")
                         .entrySet()) {
-                    if (!ch.getValue().isJsonObject()) {
+                    if (ch.getValue().isJsonObject()) {
+                        JsonObject child = ch.getValue().getAsJsonObject();
+                        if (child.has("textures") && child.getAsJsonObject("textures")
+                                .isJsonObject()) {
+                            for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
+                                    .entrySet()) {
+                                copyTextureRef(zf, t.getValue().getAsString(),
+                                        modelPath + " child " + ch.getKey(), entries, warnings);
+                            }
+                        }
+                    }
+                    // 14-e256 THE CHILD PARENT CHAIN: a composite child may be a
+                    // PARENT-ONLY stub ({"parent": "..."} — the measured mekanism
+                    // factory family: the child's real textures live one graph hop
+                    // deeper, the flat walk never carried them, the item def bake
+                    // aborted on the missing sprites) or a STRING model ref. Walk
+                    // each child's parent graph exactly like the top-level one.
+                    String childParent = null;
+                    if (ch.getValue().isJsonObject()) {
+                        JsonObject child = ch.getValue().getAsJsonObject();
+                        if (child.has("parent") && child.get("parent").isJsonPrimitive()) {
+                            childParent = child.get("parent").getAsString();
+                        }
+                    } else if (ch.getValue().isJsonPrimitive()) {
+                        childParent = ch.getValue().getAsString();
+                    }
+                    if (childParent == null || childParent.startsWith("minecraft:")
+                            || childParent.startsWith("#")) {
                         continue;
                     }
-                    JsonObject child = ch.getValue().getAsJsonObject();
-                    if (!child.has("textures") || !child.getAsJsonObject("textures")
-                            .isJsonObject()) {
+                    String childNs = childParent.contains(":")
+                            ? childParent.substring(0, childParent.indexOf(':')) : "minecraft";
+                    String childPath = childParent.contains(":")
+                            ? childParent.substring(childParent.indexOf(':') + 1) : childParent;
+                    String childFile = "assets/" + childNs + "/models/" + childPath + ".json";
+                    if (childNs.equals("minecraft") || entries.containsKey(childFile)) {
+                        continue; // vanilla parents resolve client-side; walked files are done
+                    }
+                    ZipEntry ce = zf.getEntry(childFile);
+                    byte[] cb = ce != null ? zf.getInputStream(ce).readAllBytes()
+                            : (jars != null ? modelBytesAcrossJars(jars, childFile) : null);
+                    if (cb == null) {
+                        warnings.add("composite child parent missing in jars: " + childParent
+                                + " (referenced by " + modelPath + ")");
                         continue;
                     }
-                    for (Map.Entry<String, JsonElement> t : child.getAsJsonObject("textures")
-                            .entrySet()) {
-                        copyTextureRef(zf, t.getValue().getAsString(),
-                                modelPath + " child " + ch.getKey(), entries, warnings);
-                    }
+                    entries.put(childFile, cb);
+                    copyParentGraph(zf, jars, childFile, cb, entries, warnings, depth + 1);
                 }
             }
         } catch (Exception bad) {
             // not a JSON-object model — the string extractors above already
             // did their best; nothing to add for children
         }
+    }
+
+    /** The bytes of one model file across the ladder jars (first match
+     *  wins, the same order the JarCache reads follow), or null when no
+     *  jar carries it. The child-parent walk reads through this when the
+     *  referencing model's own jar misses the parent. */
+    private static byte[] modelBytesAcrossJars(List<Path> jars, String modelFile) throws IOException {
+        if (jars == null) {
+            return null;
+        }
+        for (Path jar : jars) {
+            try (ZipFile jf = new ZipFile(jar.toFile())) {
+                ZipEntry e = jf.getEntry(modelFile);
+                if (e != null) {
+                    return jf.getInputStream(e).readAllBytes();
+                }
+            }
+        }
+        return null;
     }
 
     /** Copy ONE concrete modded sprite (the PNG behind a texture ref) into
@@ -4312,7 +4381,17 @@ public final class F2vPack {
                     manifest = Path.of(args[i + 1]);
                 }
                 if (args[i].equals("--assets")) {
-                    extraAssets.add(Path.of(args[i + 1]));
+                    // 14-e256: ':'-separated list (the 26.3 client first, the
+                    // 1.21.1 client-extra second — first-match-wins keeps the
+                    // render target's art where both carry the sprite, and the
+                    // 1.21.1 jar fills the gaps for the sprites 26.3 renamed,
+                    // the measured chain class). The property form
+                    // (-Dcim.f2v.assetsJars) already splits the same way.
+                    for (String s : args[i + 1].split(":")) {
+                        if (!s.isBlank()) {
+                            extraAssets.add(Path.of(s));
+                        }
+                    }
                 }
             }
             List<VisualItem> rows = Files.isRegularFile(manifest)
@@ -4435,6 +4514,51 @@ public final class F2vPack {
             + "\"faces\": {\"north\": {\"uv\": [0,1,6,10], \"texture\": \"#0\"}}}]}}}";
     private static final String BS_COMPOSITE =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/comp\"}}}";
+    /** 14-e256 THE STUB-CHILDREN FIXTURE (the measured mekanism factory
+     *  shape): composite children are PARENT-ONLY stubs — the real textures
+     *  live in the children's parent models, one graph hop deeper. The flat
+     *  child walk never carried them: the pack shipped refs to absent
+     *  sprites and the item def bake aborted on the mixed atlases (the
+     *  mekanism factory class: 38 unique absent sprites, 460 bake failures
+     *  per shard). The walk must descend into every child's parent chain. */
+    private static final String MODEL_STUB_COMP =
+            "{\"loader\": \"neoforge:composite\", \"parent\": \"block/block\", "
+            + "\"textures\": {\"particle\": \"fakemod:block/comp_tex\"}, "
+            + "\"children\": {"
+            + "\"base\": {\"parent\": \"fakemod:block/stub_base\"}, "
+            + "\"led\": {\"parent\": \"fakemod:block/stub_led\"}}}";
+    private static final String MODEL_STUB_BASE =
+            "{\"parent\": \"minecraft:block/block\", "
+            + "\"textures\": {\"base_side\": \"fakemod:block/stub_base_tex\"}, "
+            + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,8,16], "
+            + "\"faces\": {\"north\": {\"uv\": [0,8,16,16], \"texture\": \"#base_side\"}}}]}";
+    private static final String MODEL_STUB_LED =
+            "{\"parent\": \"minecraft:block/block\", "
+            + "\"textures\": {\"front_led_led\": \"fakemod:block/stub_led_tex\"}, "
+            + "\"elements\": [{\"from\": [2,8,2], \"to\": [14,10,14], "
+            + "\"faces\": {\"north\": {\"uv\": [0,0,12,2], \"texture\": \"#front_led_led\"}}}]}";
+    private static final String BS_STUB =
+            "{\"variants\": {\"axis=y\": {\"model\": \"fakemod:block/stub_comp\"}, "
+            + "\"axis=x\": {\"model\": \"fakemod:block/stub_comp\", \"x\": 90}}}";
+    /** 14-e256 THE UNCARRIVABLE-SPRITE FIXTURES: (a) a cross-namespace ref
+     *  NO ladder jar carries (the buzzier_bees candle class — the dep mod is
+     *  outside the ladder and the truth leg renders the missing sprite
+     *  there too); (b) a bare vanilla ref the assets jars lack (the chain
+     *  class — 26.3 renamed block/chain.png). The composite must bind the
+     *  model's keys at the bit-exact missing sprite instead of dropping
+     *  them (an unbound key aborts the whole host def bake). */
+    private static final String MODEL_GHOST =
+            "{\"parent\": \"minecraft:block/cube_all\", "
+            + "\"textures\": {\"all\": \"ghostmod:block/absent_tex\"}}";
+    private static final String MODEL_CHAINISH =
+            "{\"parent\": \"minecraft:block/cube_all\", "
+            + "\"textures\": {\"all\": \"block/renamed_vanilla_tex\"}}";
+    private static final String BS_GHOST =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/ghost\"}, "
+            + "\"facing=north\": {\"model\": \"fakemod:block/ghost\", \"y\": 90}}}";
+    private static final String BS_CHAINISH =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/chainish\"}, "
+            + "\"facing=north\": {\"model\": \"fakemod:block/chainish\", \"y\": 90}}}";
     private static final String BS_ROCK =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/rock\"}, "
             + "\"facing=north\": {\"model\": \"fakemod:block/rock_arrow\", \"y\": 90}}}";
@@ -4521,6 +4645,19 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/textures/block/post_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/side_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/block/arrow_tex.png", testPng());
+            // 14-e256 fixtures: the stub-children composite + the uncarrivable
+            // sprites (the def emit route rides the rotation-kind blockstates
+            // — emitPerStateDisplays is what aborts on the missing sprites)
+            jarEntries.put("assets/fakemod/blockstates/stub_comp.json", BS_STUB.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/stub_comp.json", MODEL_STUB_COMP.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/stub_base.json", MODEL_STUB_BASE.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/stub_led.json", MODEL_STUB_LED.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/block/stub_base_tex.png", testPng());
+            jarEntries.put("assets/fakemod/textures/block/stub_led_tex.png", testPng());
+            jarEntries.put("assets/fakemod/blockstates/ghost.json", BS_GHOST.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/ghost.json", MODEL_GHOST.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/chainish.json", BS_CHAINISH.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/chainish.json", MODEL_CHAINISH.getBytes(StandardCharsets.UTF_8));
             // 14-ak CT fixture: a synthetic create-namespace pillar — the
             // blockstate + the cube_column model + the palette sprites AND
             // the connected sheets (the remap reads them from the jars)
@@ -5324,6 +5461,38 @@ public final class F2vPack {
                     "composite: both children's elements present");
             expect(failures, entries.containsKey("assets/fakemod/textures/block/feet_tex.png"),
                     "composite: the child sprite PNG rides the pack");
+            // 14-e256 THE STUB-CHILDREN CARRIAGE: the display def of the
+            // parent-only-stub composite carries BOTH children's deep
+            // textures — the flat walk shipped refs the pack never carried
+            // (the measured mekanism factory class) and the bake aborted
+            expect(failures, entries.containsKey("assets/fakemod/textures/block/stub_base_tex.png")
+                            && entries.containsKey("assets/fakemod/textures/block/stub_led_tex.png"),
+                    "stub children: BOTH deep PNGs ride the pack (the walk descended)");
+            String stubDef = str(entries, "assets/c-imagine/items/_display/fakemod/block/stub_comp.json");
+            String stubModel = displayDefModel(entries, stubDef);
+            expect(failures, stubModel.contains("fakemod:block/stub_base_tex")
+                            && stubModel.contains("fakemod:block/stub_led_tex"),
+                    "stub children: the composite references both deep sprites: " + stubModel);
+            // 14-e256 THE PLACEHOLDER BINDING: the uncarrivable refs bind at
+            // the bit-exact missing sprite — no unbound keys left behind
+            String ghostModel = displayDefModel(entries,
+                    str(entries, "assets/c-imagine/items/_display/fakemod/block/ghost.json"));
+            expect(failures, !ghostModel.contains("ghostmod:block/absent_tex")
+                            && ghostModel.contains(GalleryPack.PLACEHOLDER_SPRITE),
+                    "uncarrivable cross-ns ref binds at the missing sprite: " + ghostModel);
+            String chainModel = displayDefModel(entries,
+                    str(entries, "assets/c-imagine/items/_display/fakemod/block/chainish.json"));
+            expect(failures, !chainModel.contains("block/renamed_vanilla_tex")
+                            && chainModel.contains(GalleryPack.PLACEHOLDER_SPRITE),
+                    "vanilla-absent bare ref binds at the missing sprite: " + chainModel);
+            expect(failures, r1.placeholders().stream()
+                            .anyMatch(ph -> ph[0].equals("ghostmod:block/absent_tex"))
+                            && r1.placeholders().stream()
+                            .anyMatch(ph -> ph[0].equals("block/renamed_vanilla_tex")),
+                    "placeholder ledger names both uncarrivable sprites");
+            expect(failures, r1.warnings().stream().anyMatch(w -> w.contains("sprite uncarrivable"))
+                            && r1.warnings().stream().anyMatch(w -> w.contains("texture missing: block/renamed_vanilla_tex")),
+                    "the uncarrivable + vanilla-missing warnings are named");
             String mcmeta = str(entries, "pack.mcmeta");
             expect(failures, mcmeta.contains("\"min_format\": [" + PACK_FORMAT_MAJOR
                     + ", " + PACK_FORMAT_MINOR + "]"), "pack.mcmeta min_format pair");
@@ -7277,6 +7446,20 @@ public final class F2vPack {
     private static String str(TreeMap<String, byte[]> entries, String key) {
         byte[] b = entries.get(key);
         return b == null ? "" : new String(b, StandardCharsets.UTF_8);
+    }
+
+    /** 14-e256 selftest helper: one display def's emitted model JSON — the
+     *  def's {@code model.model} ref resolved through the pack entries (an
+     *  empty string when either hop is missing). */
+    private static String displayDefModel(TreeMap<String, byte[]> entries, String defJson) {
+        try {
+            String ref = JsonParser.parseString(defJson).getAsJsonObject()
+                    .getAsJsonObject("model").get("model").getAsString();
+            return str(entries, "assets/c-imagine/models/items/"
+                    + ref.substring(ref.lastIndexOf('/') + 1) + ".json");
+        } catch (RuntimeException bad) {
+            return "";
+        }
     }
 
     private static TreeMap<String, byte[]> readZip(Path zip) throws IOException {
