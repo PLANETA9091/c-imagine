@@ -43,12 +43,14 @@ final class LiveBridge {
     }
 
     private final NamespacedKey key;
+    private final org.bukkit.plugin.Plugin plugin;
     private final Function<String, ItemStack> carrier;
     private final Function<ItemStack, String> moddedId;
 
     LiveBridge(org.bukkit.plugin.Plugin plugin, Function<String, ItemStack> carrier,
                Function<ItemStack, String> moddedId) {
         this.key = new NamespacedKey(plugin, "live_stack");
+        this.plugin = plugin;
         this.carrier = carrier;
         this.moddedId = moddedId;
     }
@@ -248,6 +250,13 @@ final class LiveBridge {
      * chunk unload), else the block is gone (broken). True when the set shrank.
      */
     boolean release(org.bukkit.block.Block block, org.bukkit.Chunk keepIn) {
+        return release(block, keepIn, "ungated");
+    }
+
+    /** The release with its caller named: the 14-e256 diagnostic — the survival smoke's ticking
+     *  flap (1 -> 0 -> 1 inside the 40-tick window) could not be attributed from the logs, so
+     *  every release names who released. Debug-gated by -Dcim.live.release.debug=true. */
+    boolean release(org.bukkit.block.Block block, org.bukkit.Chunk keepIn, String by) {
         String at = where(block.getWorld().getName(), block.getX(), block.getY(), block.getZ());
         Tracked t = ticking.get(at);
         if (t == null) {
@@ -258,6 +267,10 @@ final class LiveBridge {
             put(keepIn.getPersistentDataContainer(), block, t.blockId(), state.blockEntity());
         }
         ticking.remove(at);
+        if (Boolean.getBoolean("cim.live.release.debug")) {
+            plugin.getLogger().warning("[cim-live] released " + t.blockId() + " at " + at + " by " + by
+                    + " (kept in chunk: " + (keepIn != null) + ")");
+        }
         return true;
     }
 
@@ -296,7 +309,7 @@ final class LiveBridge {
         boolean shrank = false;
         for (Tracked t : new ArrayList<>(ticking.values())) {
             if (t.world().equals(chunk.getWorld().getName()) && t.chunkX() == chunk.getX() && t.chunkZ() == chunk.getZ()) {
-                shrank |= release(chunk.getWorld().getBlockAt(t.x(), t.y(), t.z()), chunk);
+                shrank |= release(chunk.getWorld().getBlockAt(t.x(), t.y(), t.z()), chunk, "chunk-unload");
             }
         }
         return shrank;
@@ -330,7 +343,7 @@ final class LiveBridge {
             if (!t.blockId().equals(carriedId.apply(block))) {
                 block.getChunk().getPersistentDataContainer().remove(blockKey(block, t.blockId()));
                 forgetPlacedState(block);
-                shrank |= release(block, null);
+                shrank |= release(block, null, "save-shrink-carrier-mismatch");
                 continue;
             }
             State state = parse(call("save\t" + t.x() + "\t" + t.y() + "\t" + t.z()));

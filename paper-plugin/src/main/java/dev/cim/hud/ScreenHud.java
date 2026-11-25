@@ -1847,7 +1847,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[cim-screen] live break failed: " + broken.state().error());
             return;
         }
-        if (bridge.release(block, null)) {
+        if (bridge.release(block, null, "break")) {
             logTicking();
         }
         event.setDropItems(false);
