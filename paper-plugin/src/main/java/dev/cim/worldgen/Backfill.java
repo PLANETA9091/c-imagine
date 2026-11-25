@@ -68,9 +68,13 @@ final class Backfill implements Listener {
     private static final java.util.concurrent.atomic.AtomicLong ANSWERS = new java.util.concurrent.atomic.AtomicLong();
     private static final java.util.concurrent.atomic.AtomicLong POLLS = new java.util.concurrent.atomic.AtomicLong();
     private final List<Job> jobs = new ArrayList<>();
-    /** Chunks whose async load is in flight (the callback has not landed yet).
-     *  Main thread only, same as every other field in this class. */
-    private final Set<ModWorldgen.Pending> loading = new HashSet<>();
+    /** Chunks whose async load is in flight (the callback has not landed yet), with the
+     *  enqueue wall-clock — a future that never completes (the measured 15-stuck-pending
+     *  class, run 45673102010) gets re-queued by the sweep, never stranded. Main thread
+     *  only, same as every other field in this class. */
+    private final java.util.HashMap<ModWorldgen.Pending, Long> loading = new java.util.HashMap<>();
+    /** An async load older than this counts as lost: re-queued with a named warning. */
+    private static final long LOAD_TIMEOUT_MS = 30_000L;
     private boolean scanned;
     private int finishedSinceLog;
 
@@ -91,6 +95,17 @@ final class Backfill implements Listener {
         Backfill b = instance;
         return b != null && b.queue.isEmpty() && b.jobs.isEmpty() && b.loading.isEmpty()
                 && ModWorldgen.PENDING.isEmpty();
+    }
+
+    /** Main thread: re-queue one pending chunk (a lost load or a busy-race drop) — the chunk
+     *  keeps its pending place and cycles through the queue again instead of stranding. */
+    private void requeue(ModWorldgen.Pending at, String why) {
+        if (ModWorldgen.PENDING.contains(at) && !queued.contains(at)) {
+            queued.add(at);
+            queue.add(at);
+            ModWorldgen.log().warning(ModWorldgen.LOG_PREFIX + "worldgen: re-queued " + at.world()
+                    + " " + at.x() + "," + at.z() + " (" + why + ")");
+        }
     }
 
     /** Loads the pending file, listens for chunk loads and runs the tick on the main thread. */
@@ -213,7 +228,7 @@ final class Backfill implements Listener {
         while (started < PER_TICK && jobs.size() < IN_FLIGHT && !queue.isEmpty()) {
             ModWorldgen.Pending at = queue.poll();
             queued.remove(at);
-            if (!ModWorldgen.PENDING.contains(at) || busy(at) || loading.contains(at)) {
+            if (!ModWorldgen.PENDING.contains(at) || busy(at) || loading.containsKey(at)) {
                 continue;
             }
             World world = Bukkit.getWorld(at.world());
@@ -228,7 +243,11 @@ final class Backfill implements Listener {
             // never ran, the whole smoke failed). Paper's async loader
             // schedules the generation through the chunk system and hands
             // the chunk back later; the start continues in the callback.
-            loading.add(at);
+            // 14-e259 THE RETRY NET: a future that FAILS or never lands must
+            // not strand the chunk (the measured 15-stuck-pending class) —
+            // the exceptionally arm re-queues it, the sweep re-queues the
+            // silent ones, the quiesce never lies.
+            loading.put(at, System.currentTimeMillis());
             world.getChunkAtAsync(at.x(), at.z()).thenAccept(chunk -> {
                 try {
                     Bukkit.getScheduler().runTask(plugin, () -> {
@@ -241,8 +260,27 @@ final class Backfill implements Listener {
                     // the ticket goes with it
                     loading.remove(at);
                 }
+            }).exceptionally(ex -> {
+                try {
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        loading.remove(at);
+                        requeue(at, "async load failed: " + ex.getClass().getSimpleName());
+                    });
+                } catch (RuntimeException e) {
+                    loading.remove(at);
+                }
+                return null;
             });
             started++;
+        }
+        // 14-e259 THE SWEEP: a load older than LOAD_TIMEOUT_MS counts as lost —
+        // re-queue it so the pending set can drain (the quiesce waits on it).
+        long now = System.currentTimeMillis();
+        for (java.util.Map.Entry<ModWorldgen.Pending, Long> e : new ArrayList<>(loading.entrySet())) {
+            if (now - e.getValue() > LOAD_TIMEOUT_MS) {
+                loading.remove(e.getKey());
+                requeue(e.getKey(), "async load timed out after " + LOAD_TIMEOUT_MS + " ms");
+            }
         }
         persist();
         if (queue.isEmpty() && jobs.isEmpty() && finishedSinceLog > 0) {
@@ -255,6 +293,9 @@ final class Backfill implements Listener {
     /** Main thread, once the async load lands: the old in-loop start branch. */
     private void loadReady(ModWorldgen.Pending at, World world, Chunk chunk) {
         if (!ModWorldgen.PENDING.contains(at) || busy(at)) {
+            // 14-e259: a busy-race drop used to strand the chunk (its queue slot was
+            // already polled) — re-queue so the pending set can drain.
+            requeue(at, "load landed while a job holds the chunk");
             return;
         }
         if (flagged(chunk) && !forced.contains(at)) {
