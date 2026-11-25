@@ -2989,7 +2989,12 @@ public final class F2vPack {
         // never exceed the sprite; clamp every emitted model's face uv into
         // [0,16]. String-level surgery: models without an offending uv array
         // stay byte-identical (the pack sha1 moves only with real fixes).
-        sanitizeFaceUvs(entries, warnings);
+        // 14-e257: the sanitizer runs LAST — the S2 per-state displays (the
+        // creative_motor class, measured run 45662975972: the composite rode
+        // the unclamped uv [14,4,20,10] and 26.3's
+        // computeMaterialTransparency threw out of bounds) and the overlay
+        // files all emit after the old pre-flush call site. Idempotent:
+        // models without an offending uv array stay byte-identical.
 
         ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
         // files generated beside the pack (scripts/f2v/entity-remap.py) ride it verbatim
@@ -3006,6 +3011,19 @@ public final class F2vPack {
         try (JarCache displayJars = new JarCache(jars)) {
             emitPerStateDisplays(jars, displayJars, blockLooks, entries, compositeNo, alphaBySprite, warnings);
         }
+        // 26.3 MODEL UV SANITIZER (run #46 forensics, measured): create-1.21.1
+        // models carry element-face uv rects extending PAST the sprite
+        // (creative_motor/block.json north face uv [14,4,20,10] — a legal
+        // 1.21.1 texture-bleed). 26.3's FaceBakery.computeMaterialTransparency
+        // samples that rect INSIDE the sprite image and THROWS
+        // ("Cannot compute translucency out of bounds") — the exception aborts
+        // the ENTIRE host item def bake (minecraft:paper: 21939 range
+        // entries), and every gallery ItemDisplay then renders the missing
+        // item model = the #46 universal missingno wall. Vanilla 26.3 models
+        // never exceed the sprite; clamp every emitted model's face uv into
+        // [0,16]. String-level surgery: models without an offending uv array
+        // stay byte-identical (the pack sha1 moves only with real fixes).
+        sanitizeFaceUvs(entries, warnings);
         byte[] zip = zip(entries);
         validateDownloadSize(zip.length);
         String sha1 = sha1Hex(zip);
@@ -4536,7 +4554,7 @@ public final class F2vPack {
             "{\"parent\": \"minecraft:block/block\", "
             + "\"textures\": {\"front_led_led\": \"fakemod:block/stub_led_tex\"}, "
             + "\"elements\": [{\"from\": [2,8,2], \"to\": [14,10,14], "
-            + "\"faces\": {\"north\": {\"uv\": [0,0,12,2], \"texture\": \"#front_led_led\"}}}]}";
+            + "\"faces\": {\"north\": {\"uv\": [0,0,12,20], \"texture\": \"#front_led_led\"}}}]}";
     private static final String BS_STUB =
             "{\"variants\": {\"axis=y\": {\"model\": \"fakemod:block/stub_comp\"}, "
             + "\"axis=x\": {\"model\": \"fakemod:block/stub_comp\", \"x\": 90}}}";
@@ -4553,6 +4571,21 @@ public final class F2vPack {
     private static final String MODEL_CHAINISH =
             "{\"parent\": \"minecraft:block/cube_all\", "
             + "\"textures\": {\"all\": \"block/renamed_vanilla_tex\"}}";
+    /** 14-e257 THE UNBOUND-ELEMENT FIXTURE: the ae2 quartz_fixture shape —
+     *  the model's OWN elements reference a key no chain level binds (the
+     *  deliberate unbound #missing / the runtime-bound part base class). The
+     *  composite must bind the key at the bit-exact missing sprite instead
+     *  of leaving the def to abort on the mixed-atlas validation. */
+    private static final String MODEL_UNBOUND =
+            "{\"textures\": {\"all\": \"fakemod:block/stub_base_tex\"}, "
+            + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], \"faces\": {"
+            + "\"north\": {\"uv\": [0,0,16,16], \"texture\": \"#all\"}, "
+            + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#never_bound\"}}}, "
+            + "{\"from\": [0,0,0], \"to\": [8,8,8], \"faces\": {"
+            + "\"north\": {\"uv\": [0,0,8,8], \"texture\": \"#all\"}}}]}";
+    private static final String BS_UNBOUND =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/unbound\"}, "
+            + "\"facing=north\": {\"model\": \"fakemod:block/unbound\", \"y\": 90}}}";
     private static final String BS_GHOST =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/ghost\"}, "
             + "\"facing=north\": {\"model\": \"fakemod:block/ghost\", \"y\": 90}}}";
@@ -4658,6 +4691,8 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/models/block/ghost.json", MODEL_GHOST.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/chainish.json", BS_CHAINISH.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/chainish.json", MODEL_CHAINISH.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/blockstates/unbound.json", BS_UNBOUND.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/unbound.json", MODEL_UNBOUND.getBytes(StandardCharsets.UTF_8));
             // 14-ak CT fixture: a synthetic create-namespace pillar — the
             // blockstate + the cube_column model + the palette sprites AND
             // the connected sheets (the remap reads them from the jars)
@@ -5493,6 +5528,23 @@ public final class F2vPack {
             expect(failures, r1.warnings().stream().anyMatch(w -> w.contains("sprite uncarrivable"))
                             && r1.warnings().stream().anyMatch(w -> w.contains("texture missing: block/renamed_vanilla_tex")),
                     "the uncarrivable + vanilla-missing warnings are named");
+            // 14-e257 THE UNBOUND-ELEMENT LAW: the ae2 fixture shape binds
+            String unboundModel = displayDefModel(entries,
+                    str(entries, "assets/c-imagine/items/_display/fakemod/block/unbound.json"));
+            expect(failures, unboundModel.contains("never_bound")
+                            && unboundModel.contains(GalleryPack.PLACEHOLDER_SPRITE)
+                            && unboundModel.contains("fakemod:block/stub_base_tex"),
+                    "unbound element ref binds at the missing sprite, the bound keys stay: " + unboundModel);
+            expect(failures, r1.placeholders().stream()
+                            .anyMatch(ph -> ph[0].contains("never_bound")),
+                    "placeholder ledger names the unbound element ref");
+            // 14-e257 THE SANITIZER RUNS LAST: the per-state display composite's
+            // out-of-range uv (the stub_led face [0,0,12,20]) comes out clamped
+            // (the sanitizer rewrites the rect as "uv": [0, 0, 12, 16])
+            expect(failures, stubModel.contains("[0, 0, 12, 16]") || stubModel.contains("[0,0,12,16]"),
+                    "per-state display composite uv clamped after the moved sanitizer: " + stubModel);
+            expect(failures, !stubModel.contains("12, 20") && !stubModel.contains("12,20"),
+                    "no unclamped uv survives in the emitted composite");
             String mcmeta = str(entries, "pack.mcmeta");
             expect(failures, mcmeta.contains("\"min_format\": [" + PACK_FORMAT_MAJOR
                     + ", " + PACK_FORMAT_MINOR + "]"), "pack.mcmeta min_format pair");

@@ -1285,6 +1285,26 @@ public final class GalleryPack {
             warnings.add("item composite without textures: " + modelRef);
             return null;
         }
+        // 14-e257 THE UNBOUND-ELEMENT LAW: an element face referencing a key
+        // the merged chain never binds resolves at bake to the missing sprite
+        // stamped with the OTHER atlas — validateAtlasUsage aborts the whole
+        // host def (the measured fifteenth flight: ae2's quartz_fixture
+        // bakes a DELIBERATE unbound #missing, the smart_cable's #base rides
+        // a runtime-only binding, and the abort cascaded into the
+        // minecraft:paper host def's 21,939 entries). Bind every unbound
+        // face ref at the bit-exact missing sprite — for the deliberate
+        // unbound refs the truth leg renders the missing sprite too (exact
+        // parity); for the runtime-bound ones (ae2 part bases) the cell
+        // stays a named parity gap in the ledger, never a silent abort.
+        java.util.Set<String> refs = elementFaceRefs(mg.elements());
+        for (String r : refs) {
+            if (!textures.containsKey(r)) {
+                warnings.add("item composite: unbound element ref #" + r
+                        + " (" + modelRef + ") — placeholder");
+                recordPlaceholderUse("#" + r + " @ " + modelRef);
+                textures.put(r, placeholderSprite(entries));
+            }
+        }
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
         // THE GUI IDENTITY (measured on the #302 gal-inv-ae20 pair: the hotbar
@@ -1319,6 +1339,49 @@ public final class GalleryPack {
         String file = "assets/" + WRAPPER_NS + "/models/items/i" + itemNo + ".json";
         entries.put(file, wrapper.toString().getBytes(StandardCharsets.UTF_8));
         return WRAPPER_NS + ":items/i" + itemNo;
+    }
+
+    /** 14-e257: every element face texture key an elements array references
+     *  ("#name" refs, the leading '#') — the keys the composite's texture
+     *  map must bind before the def bakes. */
+    private static java.util.Set<String> elementFaceRefs(JsonArray elements) {
+        java.util.Set<String> out = new java.util.LinkedHashSet<>();
+        if (elements == null) {
+            return out;
+        }
+        java.util.Deque<JsonElement> stack = new java.util.ArrayDeque<>();
+        for (JsonElement e : elements) {
+            stack.push(e);
+        }
+        while (!stack.isEmpty()) {
+            JsonElement e = stack.pop();
+            if (e.isJsonObject()) {
+                JsonObject o = e.getAsJsonObject();
+                if (o.has("faces") && o.getAsJsonObject("faces").isJsonObject()) {
+                    for (Map.Entry<String, JsonElement> f : o.getAsJsonObject("faces")
+                            .entrySet()) {
+                        if (f.getValue().isJsonObject()
+                                && f.getValue().getAsJsonObject().has("texture")
+                                && f.getValue().getAsJsonObject().get("texture")
+                                        .isJsonPrimitive()) {
+                            String ref = f.getValue().getAsJsonObject()
+                                    .get("texture").getAsString();
+                            if (ref.startsWith("#")) {
+                                out.add(ref.substring(1));
+                            }
+                        }
+                    }
+                }
+                if (o.has("elements") && o.get("elements").isJsonArray()) {
+                    stack.push(o.getAsJsonArray("elements"));
+                }
+            } else if (e.isJsonArray()) {
+                for (JsonElement c : e.getAsJsonArray()) {
+                    stack.push(c);
+                }
+            }
+        }
+        return out;
     }
 
     static String blockAlphaRenderType(List<Path> jars, String ref, List<String> warnings,
