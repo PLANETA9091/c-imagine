@@ -128,6 +128,10 @@ jobs:
             echo $? > cimbot-exit-1
           ) &
           cd srv
+          # 14-e256: the release-caller attribution rides EVERY boot — the
+          # flap (1 -> 0 -> 1 inside the 40-tick window) must name its
+          # releaser from the boot log
+          export JAVA_TOOL_OPTIONS="-Dcim.live.release.debug=true"
           crussty run > boot.log 2>&1 &
           SRV=$!
           for i in $(seq 1 150); do
@@ -156,6 +160,7 @@ jobs:
             echo $? > cimbot-exit-2
           ) &
           cd srv
+          export JAVA_TOOL_OPTIONS="-Dcim.live.release.debug=true"
           crussty run > boot.log 2>&1 &
           SRV=$!
           for i in $(seq 1 150); do
