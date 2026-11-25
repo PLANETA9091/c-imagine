@@ -2537,7 +2537,8 @@ public final class F2vPack {
                 casesForHost.sort(Map.Entry.comparingByKey());
                 if (!casesForHost.isEmpty()) {
                     entries.put("assets/minecraft/items/" + hostPath + ".json",
-                            selectDef(hostPath, casesForHost).getBytes(StandardCharsets.UTF_8));
+                            selectDef(hostPath, casesForHost,
+                                    fallbackComposite(hostPath, jars, entries, warnings)).getBytes(StandardCharsets.UTF_8));
                 }
             }
         }
@@ -4290,6 +4291,12 @@ public final class F2vPack {
      * fallback branch, exactly like the range_dispatch variant.
      */
     static String selectDef(String hostPath, List<Map.Entry<String, String>> cases) {
+        return selectDef(hostPath, cases, null);
+    }
+
+    /** 14-e264: the select dispatch carries the uniform-tree fallback too (the
+     *  same one-atlas-per-tree law — the brick def's tree = the flat composites). */
+    static String selectDef(String hostPath, List<Map.Entry<String, String>> cases, String fallbackRef) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n  \"model\": {\n")
           .append("    \"type\": \"minecraft:select\",\n")
@@ -4304,8 +4311,9 @@ public final class F2vPack {
             sb.append(i + 1 < cases.size() ? ",\n" : "\n");
         }
         sb.append("    ],\n")
-          .append("    \"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/")
-          .append(hostPath).append("\"}\n")
+          .append("    \"fallback\": {\"type\": \"minecraft:model\", \"model\": \"")
+          .append(fallbackRef != null ? fallbackRef : "minecraft:item/" + hostPath)
+          .append("\"}\n")
           .append("  }\n}\n");
         return sb.toString();
     }
@@ -5614,9 +5622,11 @@ public final class F2vPack {
             expect(failures, entries.keySet().stream().anyMatch(k -> k.startsWith(
                     "assets/c-imagine/textures/block/items/flat_")),
                     "the sprite-driven item's sprite rides the pack block-path hosted");
-            expect(failures, paper.contains(
-                    "\"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/paper\"}"),
-                    "paper def fallback keeps the vanilla look");
+            expect(failures, paper.contains("c-imagine:items/fallback_paper"),
+                    "paper def fallback = the uniform-tree composite (the block-path hosted tile)");
+            expect(failures, entries.containsKey(
+                    "assets/c-imagine/textures/block/items/fallback_paper.png"),
+                    "the fallback tile rides the pack (the honest paper-look stand-in)");
             // PALETTE channel zip contents: atlas source + palette PNGs + the
             // retinted variant model + both thresholds in the host def
             // 14-e252: the mod-atlas carry re-serializes the file in gson
@@ -5795,9 +5805,8 @@ public final class F2vPack {
                     "brick def strings index 0");
             expect(failures, brick.contains("c-imagine:items/i"),
                     "brick def references the modded wand model (the flat composite — the uniform-tree law)");
-            expect(failures, brick.contains(
-                    "\"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/brick\"}"),
-                    "brick def fallback keeps the vanilla look");
+            expect(failures, brick.contains("c-imagine:items/fallback_brick"),
+                    "brick def fallback = the uniform-tree composite");
             expect(failures, r1.items().stream()
                     .filter(i -> i.moddedId().equals("fakemod:wand_thing"))
                     .allMatch(i -> !i.isFloatDispatch() && "wand".equals(i.selectValue())),
