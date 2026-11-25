@@ -73,6 +73,10 @@ final class Backfill implements Listener {
      *  class, run 45673102010) gets re-queued by the sweep, never stranded. Main thread
      *  only, same as every other field in this class. */
     private final java.util.HashMap<ModWorldgen.Pending, Long> loading = new java.util.HashMap<>();
+    /** Timeout attempts per chunk: the second one escalates the re-issued load to the
+     *  URGENT lane (the measured 12-starved-chunk class — the same chunks timed out and
+     *  re-queued forever at the default priority while 157 siblings completed). */
+    private final java.util.HashMap<ModWorldgen.Pending, Integer> loadAttempts = new java.util.HashMap<>();
     /** An async load older than this counts as lost: re-queued with a named warning. */
     private static final long LOAD_TIMEOUT_MS = 30_000L;
     private boolean scanned;
@@ -243,15 +247,22 @@ final class Backfill implements Listener {
             // never ran, the whole smoke failed). Paper's async loader
             // schedules the generation through the chunk system and hands
             // the chunk back later; the start continues in the callback.
-            // 14-e259 THE RETRY NET: a future that FAILS or never lands must
-            // not strand the chunk (the measured 15-stuck-pending class) —
-            // the exceptionally arm re-queues it, the sweep re-queues the
-            // silent ones, the quiesce never lies.
+            // 14-e259 THE RETRY NET + THE URGENT ESCALATION: a future that FAILS
+            // or never lands must not strand the chunk (the measured 15-stuck-pending
+            // class) — the exceptionally arm re-queues it, the sweep re-queues the
+            // silent ones, and a chunk that timed out TWICE re-issues its load on
+            // the urgent lane (the 12-starved-chunk class: the same chunks cycled
+            // the default-priority queue forever while 157 siblings completed).
+            boolean urgent = loadAttempts.getOrDefault(at, 0) >= 2;
             loading.put(at, System.currentTimeMillis());
-            world.getChunkAtAsync(at.x(), at.z()).thenAccept(chunk -> {
+            java.util.concurrent.CompletableFuture<Chunk> load = urgent
+                    ? world.getChunkAtAsyncUrgently(at.x(), at.z())
+                    : world.getChunkAtAsync(at.x(), at.z());
+            load.thenAccept(chunk -> {
                 try {
                     Bukkit.getScheduler().runTask(plugin, () -> {
                         loading.remove(at);
+                        loadAttempts.remove(at);
                         loadReady(at, world, chunk);
                     });
                 } catch (RuntimeException e) {
@@ -274,12 +285,15 @@ final class Backfill implements Listener {
             started++;
         }
         // 14-e259 THE SWEEP: a load older than LOAD_TIMEOUT_MS counts as lost —
-        // re-queue it so the pending set can drain (the quiesce waits on it).
+        // re-queue it so the pending set can drain (the quiesce waits on it); the
+        // second timeout of the same chunk escalates its next issue to urgent.
         long now = System.currentTimeMillis();
         for (java.util.Map.Entry<ModWorldgen.Pending, Long> e : new ArrayList<>(loading.entrySet())) {
             if (now - e.getValue() > LOAD_TIMEOUT_MS) {
                 loading.remove(e.getKey());
-                requeue(e.getKey(), "async load timed out after " + LOAD_TIMEOUT_MS + " ms");
+                int attempts = loadAttempts.merge(e.getKey(), 1, Integer::sum);
+                requeue(e.getKey(), "async load timed out after " + LOAD_TIMEOUT_MS + " ms"
+                        + (attempts >= 2 ? " — escalating to the urgent lane" : ""));
             }
         }
         persist();
