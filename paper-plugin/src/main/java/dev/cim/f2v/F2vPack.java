@@ -2066,6 +2066,11 @@ public final class F2vPack {
                         if (!renderType.equals("solid")) {
                             GalleryPack.setCompositeRenderType(entries, composite, renderType);
                         }
+                    } else {
+                        // 14-e263: the raw model rides — bind its unbound element
+                        // refs the same way the item route does (the host def
+                        // aborts on one unbound key otherwise)
+                        GalleryPack.bindUnboundElementRefs(ref, jars, entries, warnings);
                     }
                 }
                 putDisplayItem(entries, displayItemDefPath(ref), allocatedItemDef(model).getBytes(StandardCharsets.UTF_8),
@@ -3092,8 +3097,17 @@ public final class F2vPack {
             if (comp != null) {
                 // THE ITEM EMISSIVE-BAKE: a tabled modded item's composite carries light_emission
                 found = GalleryPack.applyItemEmissive(moddedId, comp, emissiveTable, emissiveBakeLog);
+            } else {
+                // 14-e263 THE RAW-ROUTE BIND: the composite builder refused (an
+                // exception) — the RAW model rides, and its unbound element refs
+                // abort the whole host def at bake (the measured twentieth
+                // flight: minecraft:paper died on one raw child's unbound ref).
+                GalleryPack.bindUnboundElementRefs(found, jars, entries, warnings);
             }
         } else if (quadModel == null && found != null) {
+            // 14-e263: a sprite-driven model's chain can still carry unbound
+            // element refs (the ae2 part-base class) — bind them the same way.
+            GalleryPack.bindUnboundElementRefs(found, jars, entries, warnings);
             // THE SPRITE EMISSIVE UPGRADE: a tabled sprite model becomes a flat-quad composite + light_emission
             String upgraded = GalleryPack.synthesizeSpriteEmissive(
                     jars, found, moddedId, compositeNo[0], emissiveTable, entries, warnings);

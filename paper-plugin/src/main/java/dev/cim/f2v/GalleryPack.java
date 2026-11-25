@@ -1384,6 +1384,125 @@ public final class GalleryPack {
         return out;
     }
 
+    /**
+     * 14-e263 THE RAW-ROUTE BIND: a raw model copy that rides an item def
+     * (the composite builder refused, or a sprite-driven chain) may carry
+     * element faces referencing keys its whole parent chain never binds —
+     * the ae2 part-base class (#base, runtime-bound), the dynamictrees
+     * branch class (#bark / #rings), the create robit class (#robit). The
+     * bake resolves an unbound key to the missing sprite stamped with the
+     * OTHER atlas and validateAtlasUsage aborts the WHOLE host def (the
+     * measured twentieth flight: minecraft:paper's range_dispatch died on
+     * one raw child, 21,939 entries with it). Bind every unbound ref at the
+     * bit-exact missing sprite — the truth leg renders the runtime-bound
+     * art there, so the affected cells stay a NAMED parity gap in the
+     * ledger, never a silent whole-def abort. The chain's merged texture
+     * map decides what "unbound" means (the pack's own copies, child over
+     * parent) — no false positives on models whose parents bind the key.
+     *
+     * @return the number of keys bound
+     */
+    static int bindUnboundElementRefs(String modelRef, List<Path> jars,
+                                      TreeMap<String, byte[]> entries, List<String> warnings)
+            throws IOException {
+        String ns = "minecraft";
+        String path = modelRef;
+        int c = modelRef.indexOf(':');
+        if (c > 0) {
+            ns = modelRef.substring(0, c);
+            path = modelRef.substring(c + 1);
+        }
+        String file = null;
+        for (String cand : new String[]{"assets/" + ns + "/models/" + path + ".json",
+                "assets/" + ns + "/models/item/" + path + ".json"}) {
+            if (entries.containsKey(cand)) {
+                file = cand;
+                break;
+            }
+        }
+        if (file == null) {
+            return 0;
+        }
+        JsonObject model;
+        try {
+            model = JsonParser.parseString(new String(entries.get(file), StandardCharsets.UTF_8))
+                    .getAsJsonObject();
+        } catch (RuntimeException bad) {
+            return 0;
+        }
+        if (!model.has("elements") || !model.get("elements").isJsonArray()) {
+            return 0;
+        }
+        java.util.Set<String> refs = elementFaceRefs(model.getAsJsonArray("elements"));
+        if (refs.isEmpty()) {
+            return 0;
+        }
+        // the chain's merged texture map, read from the PACK's own copies
+        // (child over parent — the same merge the client runs)
+        Map<String, String> merged = new java.util.LinkedHashMap<>();
+        String cur = model.has("parent") && model.get("parent").isJsonPrimitive()
+                ? model.get("parent").getAsString() : null;
+        java.util.List<JsonObject> chain = new ArrayList<>();
+        chain.add(model);
+        int depth = 0;
+        while (cur != null && depth++ < 16) {
+            if (cur.startsWith("#") || cur.startsWith("minecraft:")) {
+                break;
+            }
+            String pns = cur.contains(":") ? cur.substring(0, cur.indexOf(':')) : ns;
+            String ppath = cur.contains(":") ? cur.substring(cur.indexOf(':') + 1) : cur;
+            String pfile = "assets/" + pns + "/models/" + ppath + ".json";
+            if (!entries.containsKey(pfile)) {
+                break;
+            }
+            try {
+                JsonObject pj = JsonParser.parseString(new String(entries.get(pfile), StandardCharsets.UTF_8))
+                        .getAsJsonObject();
+                chain.add(pj);
+                cur = pj.has("parent") && pj.get("parent").isJsonPrimitive()
+                        ? pj.get("parent").getAsString() : null;
+            } catch (RuntimeException bad) {
+                break;
+            }
+        }
+        // child over parent: the chain is parent-first, later levels override
+        for (JsonObject level : chain) {
+            if (level.has("textures") && level.getAsJsonObject("textures").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> t : level.getAsJsonObject("textures")
+                        .entrySet()) {
+                    merged.put(t.getKey(), t.getValue().isJsonPrimitive()
+                            ? t.getValue().getAsString() : "");
+                }
+            }
+        }
+        int bound = 0;
+        for (String r : refs) {
+            if (merged.containsKey(r)) {
+                continue;
+            }
+            textures:
+            {
+                if (model.has("textures") && model.getAsJsonObject("textures").isJsonObject()) {
+                    model.getAsJsonObject("textures").addProperty(r, placeholderSprite(entries));
+                    bound++;
+                    warnings.add("raw model bind: unbound element ref #" + r + " (" + file + ") — placeholder");
+                    recordPlaceholderUse("#" + r + " @ " + file);
+                    break textures;
+                }
+                JsonObject texs = new JsonObject();
+                texs.addProperty(r, placeholderSprite(entries));
+                model.add("textures", texs);
+                bound++;
+                warnings.add("raw model bind: unbound element ref #" + r + " (" + file + ") — placeholder");
+                recordPlaceholderUse("#" + r + " @ " + file);
+            }
+        }
+        if (bound > 0) {
+            entries.put(file, model.toString().getBytes(StandardCharsets.UTF_8));
+        }
+        return bound;
+    }
+
     static String blockAlphaRenderType(List<Path> jars, String ref, List<String> warnings,
                                        Map<String, String> alphaBySprite) throws IOException {
         ModelGraph graph = resolveModelGraph(jars, ref, warnings);
