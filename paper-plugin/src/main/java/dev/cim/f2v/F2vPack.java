@@ -2530,7 +2530,8 @@ public final class F2vPack {
                 entriesForHost.sort(Map.Entry.comparingByKey());
                 if (!entriesForHost.isEmpty()) {
                     entries.put("assets/minecraft/items/" + hostPath + ".json",
-                            itemDef(hostPath, entriesForHost).getBytes(StandardCharsets.UTF_8));
+                            itemDef(hostPath, entriesForHost,
+                                    fallbackComposite(hostPath, jars, entries, warnings)).getBytes(StandardCharsets.UTF_8));
                 }
             } else {
                 casesForHost.sort(Map.Entry.comparingByKey());
@@ -2647,7 +2648,8 @@ public final class F2vPack {
                     }
                     paperEntries.sort(Map.Entry.comparingByKey());
                     entries.put("assets/minecraft/items/paper.json",
-                            itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+                            itemDef("paper", paperEntries,
+                                    fallbackComposite("paper", jars, entries, warnings)).getBytes(StandardCharsets.UTF_8));
                 }
             }
         }
@@ -2678,7 +2680,8 @@ public final class F2vPack {
             }
             paperEntries.sort(Map.Entry.comparingByKey());
             entries.put("assets/minecraft/items/paper.json",
-                    itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+                    itemDef("paper", paperEntries,
+                            fallbackComposite("paper", jars, entries, warnings)).getBytes(StandardCharsets.UTF_8));
             StringBuilder fl = new StringBuilder();
             for (FluidTexture ft : fluidTextures) {
                 fl.append(ft.fluidId()).append('\t').append(ft.cmd()).append('\n');
@@ -2752,7 +2755,8 @@ public final class F2vPack {
             }
             paperEntries.sort(Map.Entry.comparingByKey());
             entries.put("assets/minecraft/items/paper.json",
-                    itemDef("paper", paperEntries).getBytes(StandardCharsets.UTF_8));
+                    itemDef("paper", paperEntries,
+                            fallbackComposite("paper", jars, entries, warnings)).getBytes(StandardCharsets.UTF_8));
             StringBuilder cb = new StringBuilder();
             for (FluidCube fc : fluidCubes) {
                 cb.append(fc.fluidId()).append('\t').append(fc.cmd()).append('\n');
@@ -3105,15 +3109,25 @@ public final class F2vPack {
                 GalleryPack.bindUnboundElementRefs(found, jars, entries, warnings);
             }
         } else if (quadModel == null && found != null) {
-            // 14-e263: a sprite-driven model's chain can still carry unbound
-            // element refs (the ae2 part-base class) — bind them the same way.
-            GalleryPack.bindUnboundElementRefs(found, jars, entries, warnings);
-            // THE SPRITE EMISSIVE UPGRADE: a tabled sprite model becomes a flat-quad composite + light_emission
-            String upgraded = GalleryPack.synthesizeSpriteEmissive(
-                    jars, found, moddedId, compositeNo[0], emissiveTable, entries, warnings);
-            if (upgraded != null) {
+            // 14-e264 THE UNIFORM-TREE LAW: a sprite-driven model's own item-path
+            // sprites = the items-atlas instances INSIDE a tree whose other children
+            // (the gallery composites) carry the blocks-atlas instances — the mixed
+            // tree aborts the WHOLE host def (the measured paper-host abort). The
+            // sprite model rides the flat-quad composite (the measured
+            // synthesizeSpriteEmissive shape, no emissive): its sprite hosts
+            // block-path = the blocks-atlas instances = the uniform tree.
+            String sprite = GalleryPack.firstConcreteSprite(jars, found, warnings);
+            String flat = sprite != null
+                    ? GalleryPack.synthesizeSpriteFlatComposite(jars, sprite,
+                            "flat_" + compositeNo[0], "i" + compositeNo[0], entries, warnings)
+                    : null;
+            if (flat != null) {
                 compositeNo[0]++;
-                found = upgraded;
+                found = GalleryPack.applyItemEmissive(moddedId, flat, emissiveTable, emissiveBakeLog);
+            } else {
+                // the sprite never resolved: the raw model stays — bind its unbound
+                // element refs the same way (the abort law still applies)
+                GalleryPack.bindUnboundElementRefs(found, jars, entries, warnings);
             }
         }
         return found;
@@ -4023,6 +4037,17 @@ public final class F2vPack {
     }
 
     static String itemDef(String hostPath, List<Map.Entry<Float, String>> entries) {
+        return itemDef(hostPath, entries, null);
+    }
+
+    /** 14-e264: the fallback = a PACK composite (the host's vanilla sprite hosted
+     *  block-path) when given — the vanilla item sprite = an item-path sprite = the
+     *  items-atlas instance inside a tree whose other children carry the
+     *  blocks-atlas instances = the mixed tree the whole-def abort rides (the
+     *  decompiled CuboidItemModelWrapper.validateAtlasUsage law: ONE atlas per
+     *  tree). The fallback = the no-match render (cosmetic: every dispatched
+     *  stack matches a threshold) — the honest paper-look tile keeps it. */
+    static String itemDef(String hostPath, List<Map.Entry<Float, String>> entries, String fallbackRef) {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n  \"model\": {\n")
           .append("    \"type\": \"minecraft:range_dispatch\",\n")
@@ -4041,10 +4066,21 @@ public final class F2vPack {
             sb.append(i + 1 < entries.size() ? ",\n" : "\n");
         }
         sb.append("    ],\n")
-          .append("    \"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/")
-          .append(hostPath).append("\"}\n")
+          .append("    \"fallback\": {\"type\": \"minecraft:model\", \"model\": \"")
+          .append(fallbackRef != null ? fallbackRef : "minecraft:item/" + hostPath)
+          .append("\"}\n")
           .append("  }\n}\n");
         return sb.toString();
+    }
+
+    /** 14-e264: the uniform-tree fallback for one host — the host's vanilla item
+     *  sprite hosted block-path inside the flat-quad composite, or null (the
+     *  caller keeps the vanilla fallback ref) when no jar carries the sprite. */
+    private static String fallbackComposite(String hostPath, List<Path> jars,
+                                            TreeMap<String, byte[]> entries,
+                                            List<String> warnings) throws IOException {
+        return GalleryPack.synthesizeSpriteFlatComposite(jars, "minecraft:item/" + hostPath,
+                "fallback_" + hostPath, "fallback_" + hostPath, entries, warnings);
     }
 
     /**
@@ -5573,8 +5609,11 @@ public final class F2vPack {
                     "paper def first threshold = CMD_BASE");
             expect(failures, paper.contains("\"threshold\": 2000.0"),
                     "paper def second threshold = 2000.0");
-            expect(failures, paper.contains("\"model\": \"fakemod:item/cool_sword\""),
-                    "paper def references the modded item model");
+            expect(failures, paper.contains("c-imagine:items/i"),
+                    "paper def references the modded item model (the flat composite — the uniform-tree law)");
+            expect(failures, entries.keySet().stream().anyMatch(k -> k.startsWith(
+                    "assets/c-imagine/textures/block/items/flat_")),
+                    "the sprite-driven item's sprite rides the pack block-path hosted");
             expect(failures, paper.contains(
                     "\"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/paper\"}"),
                     "paper def fallback keeps the vanilla look");
@@ -5740,9 +5779,9 @@ public final class F2vPack {
             boolean vanillaLeak = entries.keySet().stream()
                     .anyMatch(k -> k.startsWith("assets/minecraft/models/"));
             expect(failures, !vanillaLeak, "no vanilla model copies");
-            // both rows resolve at the item/ location and reach the host def
-            expect(failures, paper.contains("fakemod:item/deep_thing"),
-                    "second row model ref present");
+            // both rows resolve through the flat composites and reach the host def
+            expect(failures, paper.contains("c-imagine:items/i"),
+                    "second row model ref present (the flat composite ref)");
             // SELECT dispatch (v2): the brick host def dispatches on
             // custom_model_data STRINGS with the vanilla look as fallback
             String brick = str(entries, "assets/minecraft/items/brick.json");
@@ -5754,8 +5793,8 @@ public final class F2vPack {
                     "brick def case when=wand");
             expect(failures, brick.contains("\"index\": 0"),
                     "brick def strings index 0");
-            expect(failures, brick.contains("fakemod:item/wand_thing"),
-                    "brick def references the modded wand model");
+            expect(failures, brick.contains("c-imagine:items/i"),
+                    "brick def references the modded wand model (the flat composite — the uniform-tree law)");
             expect(failures, brick.contains(
                     "\"fallback\": {\"type\": \"minecraft:model\", \"model\": \"minecraft:item/brick\"}"),
                     "brick def fallback keeps the vanilla look");

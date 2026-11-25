@@ -1503,6 +1503,21 @@ public final class GalleryPack {
         return bound;
     }
 
+    /** 14-e264: the concrete layer0 sprite of a model chain (the flat-quad
+     *  composite route's input), or null when the chain has none. */
+    static String firstConcreteSprite(List<Path> jars, String modelRef, List<String> warnings)
+            throws IOException {
+        ModelGraph mg = resolveModelGraph(jars, modelRef, warnings);
+        if (mg == null || mg.textures == null) {
+            return null;
+        }
+        String sprite = mg.textures.get("layer0");
+        if (sprite == null || sprite.isEmpty() || sprite.startsWith("#")) {
+            return null;
+        }
+        return sprite;
+    }
+
     static String blockAlphaRenderType(List<Path> jars, String ref, List<String> warnings,
                                        Map<String, String> alphaBySprite) throws IOException {
         ModelGraph graph = resolveModelGraph(jars, ref, warnings);
@@ -2219,6 +2234,68 @@ public final class GalleryPack {
         entries.put("assets/c-imagine/models/"
                 + compRef.split(":")[1] + ".json", wrapper.toString().getBytes(StandardCharsets.UTF_8));
         return compRef;
+    }
+
+    /**
+     * 14-e264 THE UNIFORM-TREE LAW: the host item def's whole dispatch tree
+     * validates against ONE atlas (CuboidItemModelWrapper.validateAtlasUsage
+     * — decompiled: the FIRST quad's sprite atlas = expected, every later
+     * quad must match). The def's children span the gallery composites
+     * (their tiles = block-path sprites = the blocks-atlas instances) and
+     * the vanilla fallback (the host item sprite = an item-path sprite =
+     * the items-atlas instance) — the tree = mixed and the WHOLE def
+     * aborts, the wall's item displays and every allocated item with it
+     * (the measured paper-host aborts since the gate-hard era). The fix:
+     * EVERY sprite in the tree = block-path hosted (the blocks-atlas
+     * instances). This shape = the measured synthesizeSpriteEmissive slab
+     * WITHOUT the light_emission: a thin north/south slab carrying the
+     * sprite, the texture HOSTED under c-imagine:block/ from the jars (the
+     * vanilla sprites ride the client jar). The sprite-driven item models
+     * (item/generated chains) ride it too — their item-path sprites leave
+     * the tree otherwise.
+     *
+     * @param sprite concrete sprite ref (ns:path or bare, item-path ok)
+     * @param key    the hosted tile key under c-imagine:block/ (unique)
+     * @param file   the composite model file under assets/c-imagine/models/items/
+     * @return the composite ref, or null when no jar carries the sprite
+     */
+    static String synthesizeSpriteFlatComposite(List<Path> jars, String sprite, String key,
+                                                String file, TreeMap<String, byte[]> entries,
+                                                List<String> warnings) throws IOException {
+        String texRef = sprite.contains(":") ? sprite : "minecraft:" + sprite;
+        String png = "assets/" + texRef.split(":", 2)[0] + "/textures/"
+                + texRef.split(":", 2)[1] + ".png";
+        byte[] bytes = readPngFromJars(jars, png);
+        if (bytes == null) {
+            warnings.add("sprite composite: texture missing: " + texRef + " (" + key + ")");
+            return null;
+        }
+        String hostedKey = "items/" + key;
+        putHosted(jars, hostedKey, png, bytes, entries, warnings);
+        String tex = WRAPPER_NS + ":block/" + hostedKey;
+        JsonObject el = new JsonObject();
+        el.add("from", com.google.gson.JsonParser.parseString("[0.01,0.01,7.99]"));
+        el.add("to", com.google.gson.JsonParser.parseString("[15.99,15.99,8.01]"));
+        JsonObject faces = new JsonObject();
+        for (String face : new String[]{"north", "south"}) {
+            JsonObject f = new JsonObject();
+            f.add("uv", com.google.gson.JsonParser.parseString("[0.0,0.0,16.0,16.0]"));
+            f.addProperty("texture", "#p0");
+            faces.add(face, f);
+        }
+        el.add("faces", faces);
+        JsonArray elements = new JsonArray();
+        elements.add(el);
+        JsonObject wrapper = new JsonObject();
+        wrapper.addProperty("parent", "minecraft:block/block");
+        wrapper.addProperty("render_type", "minecraft:cutout");
+        JsonObject texObj = new JsonObject();
+        texObj.addProperty("p0", tex);
+        wrapper.add("textures", texObj);
+        wrapper.add("elements", elements);
+        entries.put("assets/c-imagine/models/items/" + file + ".json",
+                wrapper.toString().getBytes(StandardCharsets.UTF_8));
+        return WRAPPER_NS + ":items/" + file;
     }
 
     /** Block id + re-sorted {@code prop=val} pairs — one canonical spelling
