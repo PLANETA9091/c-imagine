@@ -30,14 +30,57 @@ class FlipReportTest(unittest.TestCase):
                          (1, 3, 2, 1, 5))
 
     def test_excluded_rows_and_namespace_item_class(self):
+        # 14-e272 THE EXERCISED LAW: only a manifest skip row (verdict
+        # "skipped") is an absence; every demoted verdict rode a measured
+        # crop and counts exercised.
         data = {"rows": [{"verdict": v} for v in
                          ["GREEN", "RED", "DYNAMIC", "SPILL", "AIR", "ANIMATED", "skipped"]]}
         table = self.report({"join-item-create-p0.json": data,
                              "join-fluid-create-p0.json": {"rows": []}})
         r = table[("item", "create")]
-        self.assertEqual((r["eff"], r["green"], r["red"], r["skipped"]), (2, 1, 1, 5))
+        self.assertEqual((r["eff"], r["green"], r["red"], r["skipped"], r["demoted"]),
+                         (6, 1, 1, 1, 4))
         self.assertEqual(table[("fluid", "create")]["state"], "NO-DATA")
         self.assertNotIn(("block", "create"), table)
+
+    def test_demoted_rows_are_exercised_not_no_data(self):
+        # THE 28th-FLIGHT FLUID CLOSURE: every compared fluid cell measured
+        # over the gate and demoted ANIMATED (the animation-table + the
+        # self-pair floor law) — the class must read EXERCISED, never
+        # NO-DATA, and 0 red with demoted rows must NOT read GATED-GREEN.
+        data = {"rows": [{"verdict": "ANIMATED"}] * 4}
+        r = self.report({"join-fluid-biomesoplenty-p0.json": data})[("fluid", "biomesoplenty")]
+        self.assertEqual((r["pages"], r["eff"], r["green"], r["red"],
+                          r["skipped"], r["demoted"]), (1, 4, 0, 0, 0, 4))
+        self.assertEqual(r["state"], "GATED (0 red, 4 demoted report-only)")
+
+    def test_entity_family_aggregates_series_into_the_ledger_row(self):
+        # THE 28th-FLIGHT ENTITY CLOSURE: the mobs gate sees only Mob-kind
+        # subjects (everything else is a wrong-series skip row) while the
+        # dyn/large series carry the modded types — the census folds the
+        # three series into the ledger's one entity row (coverage-gate.py
+        # fans `entity` out to the three series; this is the inverse).
+        table = self.report({
+            "join-e-create-0.json": {"rows": [{"verdict": "skipped"}] * 9},
+            "join-e-dyn-create-p0.json": {"rows": [{"verdict": "DYNAMIC"},
+                                                   {"verdict": "GREEN"}]},
+            "join-e-large-create-p3.json": {"rows": [{"verdict": "skipped"}]},
+        })
+        self.assertNotIn(("e-dyn", "create"), table)
+        self.assertNotIn(("e-large", "create"), table)
+        r = table[("e", "create")]
+        self.assertEqual((r["pages"], r["eff"], r["green"], r["red"],
+                          r["skipped"], r["demoted"]), (3, 2, 1, 0, 10, 1))
+        self.assertEqual(r["state"], "GATED (0 red, 1 demoted report-only)")
+
+    def test_diagnostic_entity_series_never_read_gated_green(self):
+        # a modded dyn/large join is pjoin 0 (diagnostic): folded into the
+        # gated "e" row it must carry its rows as demoted (report-only) and
+        # can never read GATED-GREEN while demoted > 0.
+        data = {"rows": [{"verdict": "DYNAMIC"}] * 3}
+        r = self.report({"join-e-dyn-supplementaries-p0.json": data})[("e", "supplementaries")]
+        self.assertEqual((r["eff"], r["demoted"]), (3, 3))
+        self.assertEqual(r["state"], "GATED (0 red, 3 demoted report-only)")
 
     def test_stream_preview_is_read_from_producer_schema(self):
         data = {"verdict": "RED", "truth_count": 5, "ours_count": 4,
