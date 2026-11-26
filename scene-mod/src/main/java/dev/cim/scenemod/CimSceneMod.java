@@ -770,7 +770,7 @@ public final class CimSceneMod {
         final int fSkipFluid = skipFluid;
         final int fSkipInvisible = skipInvisible;
         runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, pitch, slice,
-                rowStr, blockStem, fPlaced, fMutated, fSkipFluid, fSkipInvisible, 0));
+                rowStr, blockStem, fPlaced, fMutated, fSkipFluid, fSkipInvisible, 0, 0, null));
         return placed;
     }
 
@@ -1116,9 +1116,18 @@ public final class CimSceneMod {
         return 1;
     }
 
-    /** One real settle before the manifest; falling blocks extend it until they land. */
+    /** One real settle before the manifest; falling blocks extend it until they land.
+     *  Task E (settle-before-capture): a BE-bearing page settles one extra read (see
+     *  settleBlockPage) so a placement-window state flip -- measured #158 "silent
+     *  powered/open flips" -- can no longer freeze a mid-chase render pose (create
+     *  doors: LerpedFloat 0.15/tick linear, 7-tick convergence, the 14-e57f law). */
     static final int BLOCK_SETTLE_TICKS = 10;
     private static final int BLOCK_SETTLE_RETRIES = 8;
+    /** BE-pose settle rounds: one unconditional for any BE-bearing page, plus
+     *  mutation-driven rounds (a read whose settled body differs from the previous
+     *  read keeps going) bounded by BLOCK_SETTLE_RETRIES. One round = 10 ticks, the
+     *  worst chase the receipts know being 7 ticks (0.15/tick, the 14-e57f law). */
+    static final int BE_SETTLE_ROUNDS = 1;
 
     /**
      * The tile's settled state, gzipped NBT in base64 — tab/newline-free for
@@ -1145,20 +1154,34 @@ public final class CimSceneMod {
      * unsupported or turn into something else over the following ticks, and a
      * falling block can land on a cell that was empty. A cell the world emptied
      * becomes a named skip; a cell the world filled becomes a cell.
+     *
+     * <p>Task E THE BE-POSE SETTLE ROUND (settle-before-capture): a BE-bearing
+     * page settles one extra read (BE_SETTLE_ROUNDS) and keeps settling while a
+     * read's settled body still differs from the previous read's (bounded by
+     * BLOCK_SETTLE_RETRIES): a placement-window state flip (measured #158
+     * "silent powered/open flips") starts the render pose's chase at the flip
+     * instant, and the 14-di freeze pins whatever pose the chase has reached.
+     * Create doors chase 0.15/tick linear and converge in 7 ticks (the 14-e57f
+     * bytecode law), so settling one round past the last observed mutation pins
+     * the SETTLED pose -- the pose the quad dump's fresh capture BE
+     * reconstructs -- instead of a mid-chase pose the capture can never
+     * reproduce. {@code beRounds} counts completed BE rounds; {@code prevTsv}
+     * carries the previous read's manifest body (null = the first read).
      */
     private static void settleBlockPage(ServerLevel level, String namespace, int page, int pitch, List<BlockState> slice,
                                         String[] rowStr, String blockStem, int placed, int mutated,
-                                        int skipFluid, int skipInvisible, int tries) {
+                                        int skipFluid, int skipInvisible, int tries, int beRounds, String prevTsv) {
         AABB wall = new AABB(GALLERY_X0 - 1, GALLERY_Y0 - 1, GALLERY_Z - 1,
                 GALLERY_X0 + pitch * (GALLERY_COLS - 1) + 2,
                 GALLERY_Y0 + pitch * (GALLERY_ROWS - 1) + 4, GALLERY_Z + 2);
         if (tries < BLOCK_SETTLE_RETRIES
                 && !level.getEntitiesOfClass(net.minecraft.world.entity.item.FallingBlockEntity.class, wall).isEmpty()) {
             runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, pitch, slice,
-                    rowStr, blockStem, placed, mutated, skipFluid, skipInvisible, tries + 1));
+                    rowStr, blockStem, placed, mutated, skipFluid, skipInvisible, tries + 1, beRounds, prevTsv));
             return;
         }
         int dissolved = 0;
+        int beCells = 0;
         StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tstate\tdyn\tlight\n");
         // 14-bn: the settled BEs' real NBT rides a SIBLING file (".benbt" — no
         // ".tsv" suffix, so every manifest glob that counts pages stays
@@ -1205,6 +1228,7 @@ public final class CimSceneMod {
                     .append(blockDynFlag(now)).append('\t')
                     .append(now.getLightEmission()).append('\n');
             if (now.hasBlockEntity()) {
+                beCells++;
                 BlockEntity tile = level.getBlockEntity(pos);
                 String nbt = tile == null ? null : benbtB64(level, tile);
                 if (nbt != null) {
@@ -1213,6 +1237,27 @@ public final class CimSceneMod {
                     benbtRows++;
                 }
             }
+        }
+
+        // Task E THE BE-POSE SETTLE ROUND GATE (settle-before-capture): a
+        // BE-bearing page always takes one more settle read (BE_SETTLE_ROUNDS);
+        // past that, a round continues only while its settled body differs from
+        // the previous read's (the wall is still mutating -- a flip landed
+        // inside the window and its render-pose chase may still be running).
+        // One round = BLOCK_SETTLE_TICKS ticks, the worst chase the receipts
+        // know being 7 ticks (create doors, the 14-e57f law: LerpedFloat
+        // 0.15/tick linear); BLOCK_SETTLE_RETRIES bounds a pathological ticker
+        // deterministically. A continuing pass writes no manifest, fires no
+        // done marker and does NOT freeze (the 14-di law: the terminal pass
+        // freezes, a superseded pass does not).
+        if (beCells > 0 && beRounds < BE_SETTLE_ROUNDS + BLOCK_SETTLE_RETRIES
+                && (beRounds < BE_SETTLE_ROUNDS || (prevTsv != null && !prevTsv.equals(tsv.toString())))) {
+            LOGGER.info("[cimscene] gallery settle ns={} page={} reason=be-pose round={} be_cells={}",
+                    namespace, page, beRounds + 1, beCells);
+            String body = tsv.toString();
+            runAfterTicks(level.getServer(), BLOCK_SETTLE_TICKS, () -> settleBlockPage(level, namespace, page, pitch, slice,
+                    rowStr, blockStem, placed, mutated, skipFluid, skipInvisible, tries, beRounds + 1, body));
+            return;
         }
 
         // drops from the settle window are not page content
@@ -1240,12 +1285,12 @@ public final class CimSceneMod {
         }
 
         LOGGER.info("[cimscene] gallery{} done ns={} page={} cells={} mutated={} dissolved={} skipped_fluid={} "
-                        + "skipped_invisible={} first={} last={} pitch={}",
+                        + "skipped_invisible={} first={} last={} pitch={} be_cells={} be_rounds={}",
                 pitch == 1 ? "" : "-iso", namespace, page, placed, mutated, dissolved, skipFluid, skipInvisible,
                 stateString(slice.get(0), BuiltInRegistries.BLOCK.getKey(slice.get(0).getBlock())),
                 stateString(slice.get(slice.size() - 1),
                         BuiltInRegistries.BLOCK.getKey(slice.get(slice.size() - 1).getBlock())),
-                pitch);
+                pitch, beCells, beRounds);
         writeDoneMarkerFile(blockStem, false);
         // 14-di THE SETTLE FREEZE: the world stops HERE, at the settle frame,
         // before the walk's settle-shot loop fires a single md5 attempt — the

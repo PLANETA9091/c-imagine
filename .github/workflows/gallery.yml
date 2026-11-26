@@ -542,7 +542,12 @@ jobs:
           # walk's — and doMobSpawning false must ride with it (the truth pins
           # it at camera-pins; a spawn during a settle would walk into the
           # cells on ONE leg only). Ticks stay fast: BE settling is tick-count
-          # driven, the same 10-tick windows at 1000 t/s.
+          # driven, the same 10-tick windows at 1000 t/s. Task E: BE-bearing
+          # pages take one extra settle read (the scene's BE-pose round,
+          # "reason=be-pose" in boot.log) -- the wait_done marker contract
+          # absorbs it unchanged (10 ms per page at 1000 t/s; the truth shards
+          # pay ~0.5 s per BE page at 20 t/s); the frozen pose pins CONVERGED,
+          # the pose the quad dump's fresh capture BE reconstructs.
           WALK_OK=""
           for ATTEMPT in 1 2 3; do
             echo "=== block walk attempt $ATTEMPT (fresh dump client) ==="
