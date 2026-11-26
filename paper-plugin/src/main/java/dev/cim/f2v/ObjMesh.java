@@ -685,24 +685,39 @@ final class ObjMesh {
             a1 = aMax;
             b0 = bMin;
             b1 = bMax;
-            // four output pixels per source texel keep the slanted edge sharp:
-            // 14-bj measured the BOP plant reds at ~110k ae on crops that look
-            // near-identical — the truth's native render samples a 16-px sprite
-            // at ~3.75 px/texel on the 60px/cell wall, and the old 2px/texel
-            // cutout loses the edge-stepping race (lumaloop 21, glowworm_silk
-            // 19, high_grass 13 at the #161 baseline). 4px/texel matches the
-            // native density; the 120 cap keeps the sheet budget bounded.
-            double texels = 1;
-            int size = src == null ? 16 : src.getWidth();
-            for (int i = 0; i < pts.length; i++) {
-                int j = (i + 1) % pts.length;
-                double dp = len(sub(pts[j], pts[i]));
-                if (dp > 1e-6) {
-                    texels = Math.max(texels, len(sub2(uvs[j], uvs[i])) / 16 * size / dp);
-                }
-            }
-            pw = Math.max(2, Math.min(120, (int) Math.ceil((a1 - a0) * texels * 4)));
-            ph = Math.max(2, Math.min(120, (int) Math.ceil((b1 - b0) * texels * 4)));
+            // 3-f-retry: the tile is sized to the element's OUTPUT pixel
+            // footprint, so each tile pixel IS one screen pixel and render()
+            // runs the native per-pixel UV math (pixel centre -> fan
+            // barycentric -> interpolated UV -> NEAREST texel x vertex
+            // colour) at the output density with NO intermediate grid. The
+            // old tile rasterized the polygon at texels*4 px/model-unit — an
+            // edge-dependent, usually non-integer px/source-texel density —
+            // and the client then minified it ~0.94x onto the ~60.5px cell:
+            // every sprite texel boundary drawn at tile px m*texels*4 carries
+            // sub-pixel phase (m*texels*4 mod 1) that drifts step to step,
+            // the client's bilinear resample turns every boundary into a
+            // ~1px ramp whose centre wanders with that phase, and on the
+            // CUTOUT layer the ramp's alpha-blend px render OPAQUE (the
+            // alpha<0.1 discard only drops the nearly-empty ones — the 14-cc
+            // receipt below). Straight edges keep ONE constant phase ->
+            // nearly clean; a diagonal edge quantizes every staircase corner
+            // independently -> bright 1-3px outlines on every diagonal (run
+            // 45865564587 wall shots: timber_brace/cage/cross_brace ~114 red
+            // cells, content identical between legs). At output density the
+            // client resample is 1:1 (texel centres hit texel centres) and
+            // the per-step phases vanish. PPU = the wall-shot cell scale:
+            // 60.5px per 16 model units (the ~3.75-3.78 px/texel the 14-bj
+            // receipt measured on 16px sprites).
+            final double ppu = 60.5 / 16;
+            // cap: polyInLimits bounds a poly's span under 48 model units
+            // (the bounding sphere about the centroid stays inside
+            // [-16,32]), so 48*ppu = 181.5 -> 182 is the exact bound; 184
+            // keeps the 2px gutter regime (5x5 tiles per 1024-sheet, the
+            // budget shape the old 120 cap gave). The old 120 CLIPPED long
+            // braces (a 48-unit diagonal wants 181px) and silently
+            // reintroduced the minify.
+            pw = Math.max(2, Math.min(184, (int) Math.round((a1 - a0) * ppu)));
+            ph = Math.max(2, Math.min(184, (int) Math.round((b1 - b0) * ppu)));
         }
 
         private static float[][] readColors(JsonArray cs) {
@@ -755,12 +770,13 @@ final class ObjMesh {
                         // ages, bramble, the open-trapdoor faces; ae 60-151K,
                         // ours defocused where the truth is crisp blocky texels;
                         // sheet forensics: the objcut tiles themselves are
-                        // pre-blurred). The tile keeps the 4px/texel screen
-                        // density (the display pipeline minifies it ~0.94x onto
-                        // the 60.5px cell) — only the sampling goes pure: the
-                        // tile = the sprite's own texels x the interpolated
-                        // vertex colour, and the client's bilinear resample then
-                        // reproduces the same phase-matched staircase the truth's
+                        // pre-blurred). 3-f-retry: the tile itself now carries
+                        // the OUTPUT density (pw/ph = the element's own screen
+                        // footprint — see the Cell constructor receipt) so the
+                        // client's resample is 1:1 and only the sampling stays
+                        // pure: the tile pixel = the sprite texel x the
+                        // interpolated vertex colour the native screen pixel
+                        // samples.
                         // nearest sampler draws. The 14-bm door-panel finding
                         // rode the era when the door faces baked through THIS
                         // path; since 14-bs they route to exact-pixel tiles
