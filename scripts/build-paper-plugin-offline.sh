@@ -22,11 +22,14 @@ ADVKEY="$(find "$A/paper263/libraries" -name 'adventure-key-*.jar' | head -1)"
 ANN="$A/annotations.jar"
 BUNGEE="$A/bungee-chat.jar"
 GUAVA="$(find "$A/paper263/libraries" -name 'guava-3*.jar' | head -1)"
+# 14-e267: brigadier rides paper-api's pom (provided) — NativeModCommands
+# imports it; the offline build mirrors the Maven classpath
+BRIG="$(find "$A/paper263/libraries" -name 'brigadier-*.jar' | head -1)"
 ASM="$(find "$A/paper263/libraries" "$A" -name 'asm*-9*.jar' -o -name 'maven-artifact-*.jar' | tr '\n' ':')"
 ASM_ANALYSIS="$(find "$A/paper263/libraries" "$A" -name 'asm-analysis-9.9.1.jar' -print -quit)"
 [ -n "$ASM_ANALYSIS" ] || { echo "ERROR: asm-analysis-9.9.1.jar missing"; exit 2; }
 [ -f "$PAPER_API" ] || { echo "ERROR: paper-api jar missing: $PAPER_API"; exit 2; }
-for f in "$GSON" "$JOML" "$NETTY" "$NETTY2" "$ADV" "$ADVKEY" "$ANN" "$BUNGEE" "$GUAVA"; do
+for f in "$GSON" "$JOML" "$NETTY" "$NETTY2" "$ADV" "$ADVKEY" "$ANN" "$BUNGEE" "$GUAVA" "$BRIG"; do
   [ -n "$f" ] && [ -f "$f" ] || { echo "ERROR: dependency jar missing ($f)"; exit 2; }
 done
 
@@ -36,7 +39,7 @@ BUILD="$ROOT/paper-plugin/build/offline/classes"
 rm -rf "$BUILD"
 mkdir -p "$BUILD"
 
-CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA:$ASM"
+CP="$PAPER_API:$GSON:$JOML:$NETTY:$NETTY2:$ADV:$ADVKEY:$ANN:$BUNGEE:$GUAVA:$BRIG:$ASM"
 echo "=== javac cim-paper-plugin (offline) ==="
 # JDK 25 reads Paper's v69 API, while plugin bytecode follows the Java 21
 # repository contract, exactly as in the Maven build.

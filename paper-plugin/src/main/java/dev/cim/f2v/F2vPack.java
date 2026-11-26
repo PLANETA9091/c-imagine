@@ -4657,6 +4657,22 @@ public final class F2vPack {
             + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#never_bound\"}}}, "
             + "{\"from\": [0,0,0], \"to\": [8,8,8], \"faces\": {"
             + "\"north\": {\"uv\": [0,0,8,8], \"texture\": \"#all\"}}}]}";
+    /** 14-e267 THE BROKEN-CHAIN FIXTURE (the measured twenty-third flight's
+     *  72-wrapper class): the part's texture VALUE is a #ref the whole chain
+     *  never defines — the wrapper carries "p0_up": "#top" with no "top" key
+     *  and the client's slot chase dangles, stamping the BLOCKS-atlas missing
+     *  sprite into the items-bound cuboid = the mixed tree = the whole
+     *  minecraft:paper host def aborts at validateAtlasUsage. The same element
+     *  carries the g2454 class: a face referencing a key NOTHING defines
+     *  (#nowhere -> the renamed #p0_nowhere). The gallery composite's
+     *  slot-closure bind must chase (a) and bind (b) at the placeholder tile. */
+    private static final String MODEL_BROKENCHAIN =
+            "{\"textures\": {\"up\": \"#top\"}, "
+            + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], \"faces\": {"
+            + "\"north\": {\"uv\": [0,0,16,16], \"texture\": \"#up\"}, "
+            + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#nowhere\"}}}]}";
+    private static final String BS_BROKENCHAIN =
+            "{\"variants\": {\"\": {\"model\": \"fakemod:block/zz_broken_chain\"}}}";
     private static final String BS_UNBOUND =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/unbound\"}, "
             + "\"facing=north\": {\"model\": \"fakemod:block/unbound\", \"y\": 90}}}";
@@ -4695,7 +4711,10 @@ public final class F2vPack {
             + "west=false]#0,0,12,12,12,12\n"
             // tint-bake fixture row: the composite must reference the BAKED
             // sibling sprite while the raw texture stays untouched
-            + "fakemod:tinted_bloom\n";
+            + "fakemod:tinted_bloom\n"
+            // 14-e267: the broken-chain row — the slot-closure bind's fixture
+            // (zz_ = sorts LAST, the index-based asserts above stay stable)
+            + "fakemod:zz_broken_chain\n";
 
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
@@ -4767,6 +4786,12 @@ public final class F2vPack {
             jarEntries.put("assets/fakemod/models/block/chainish.json", MODEL_CHAINISH.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/blockstates/unbound.json", BS_UNBOUND.getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/models/block/unbound.json", MODEL_UNBOUND.getBytes(StandardCharsets.UTF_8));
+            // 14-e267 fixture: the broken-chain composite (the 72-wrapper class
+            // + the g2454 undefined-key class, both shapes in one state)
+            jarEntries.put("assets/fakemod/blockstates/zz_broken_chain.json",
+                    BS_BROKENCHAIN.getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/models/block/zz_broken_chain.json",
+                    MODEL_BROKENCHAIN.getBytes(StandardCharsets.UTF_8));
             // 14-ak CT fixture: a synthetic create-namespace pillar — the
             // blockstate + the cube_column model + the palette sprites AND
             // the connected sheets (the remap reads them from the jars)
@@ -4966,9 +4991,9 @@ public final class F2vPack {
             // composite — including the vanilla-parent shape (own textures,
             // elements from the client jar's block/cube_all), which the old
             // direct path rendered as NOTHING (measured run 41126658261)
-            expect(failures, r1.gallery().size() == 8,
-                    "gallery: 8 state rows resolved, got " + r1.gallery().size());
-            if (r1.gallery().size() == 8) {
+            expect(failures, r1.gallery().size() == 9,
+                    "gallery: 9 state rows resolved, got " + r1.gallery().size());
+            if (r1.gallery().size() == 9) {
                 List<GalleryPack.Resolved> g = r1.gallery();
                 // pane[north=false] = composite of the unconditional parts
                 // (post + the y90 side) — multipart rows are ALWAYS composites
@@ -5037,8 +5062,8 @@ public final class F2vPack {
                 }
             }
             expect(failures, r1.gallery().stream()
-                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 8,
-                    "gallery: cmds unique (100000..100007)");
+                    .mapToDouble(GalleryPack.Resolved::cmd).distinct().count() == 9,
+                    "gallery: cmds unique (100000..100008)");
 
             // -- TINT-BAKE channel asserts -----------------------------------------
             // the bake log lands in the build report's warnings (the pack
@@ -5759,6 +5784,77 @@ public final class F2vPack {
             String g3 = str(entries, "assets/c-imagine/models/gallery/g3.json");
             expect(failures, g3.contains("\"p0_all\":\"fakemod:block/arrow_tex\""),
                     "gallery y90 bake keeps the VARIANT's texture override (arrow_tex)");
+            // 14-e267 THE SLOT-CLOSURE LAW over EVERY emitted gallery wrapper:
+            // every textures value = a concrete sprite (no dangling #ref chain
+            // survives the bind) and every element face ref has its key bound —
+            // one dangling quad stamps the BLOCKS-atlas missing sprite into the
+            // items-bound cuboid and aborts the whole minecraft:paper host def
+            // (the measured twenty-third flight's 72-wrapper class).
+            int wrappers = 0;
+            int danglingValues = 0;
+            int danglingFaceRefs = 0;
+            String brokenWrapper = null;
+            String placeholder = GalleryPack.PLACEHOLDER_SPRITE;
+            for (Map.Entry<String, byte[]> we : entries.entrySet()) {
+                if (!we.getKey().startsWith("assets/c-imagine/models/gallery/g")
+                        || !we.getKey().endsWith(".json")) {
+                    continue;
+                }
+                com.google.gson.JsonObject w = com.google.gson.JsonParser.parseString(
+                        new String(we.getValue(), StandardCharsets.UTF_8)).getAsJsonObject();
+                if (!w.has("textures") || !w.has("elements")) {
+                    continue;
+                }
+                wrappers++;
+                com.google.gson.JsonObject tex = w.getAsJsonObject("textures");
+                java.util.Set<String> bound = new java.util.HashSet<>();
+                for (Map.Entry<String, JsonElement> t : tex.entrySet()) {
+                    bound.add(t.getKey());
+                    if (t.getValue().getAsString().startsWith("#")) {
+                        danglingValues++;
+                    }
+                }
+                java.util.Deque<com.google.gson.JsonElement> stack = new java.util.ArrayDeque<>();
+                stack.push(w.getAsJsonArray("elements"));
+                while (!stack.isEmpty()) {
+                    com.google.gson.JsonElement el = stack.pop();
+                    if (el.isJsonArray()) {
+                        for (com.google.gson.JsonElement c : el.getAsJsonArray()) {
+                            stack.push(c);
+                        }
+                        continue;
+                    }
+                    if (!el.isJsonObject() || !el.getAsJsonObject().has("faces")) {
+                        continue;
+                    }
+                    for (Map.Entry<String, JsonElement> f : el.getAsJsonObject()
+                            .getAsJsonObject("faces").entrySet()) {
+                        if (f.getValue().isJsonObject()
+                                && f.getValue().getAsJsonObject().has("texture")
+                                && f.getValue().getAsJsonObject().get("texture").isJsonPrimitive()) {
+                            String t = f.getValue().getAsJsonObject().get("texture").getAsString();
+                            if (t.startsWith("#") && !bound.contains(t.substring(1))) {
+                                danglingFaceRefs++;
+                            }
+                        }
+                    }
+                }
+                String raw = new String(we.getValue(), StandardCharsets.UTF_8);
+                if (raw.contains("\"p0_up\":\"" + placeholder + "\"")
+                        && raw.contains("\"p0_nowhere\":\"" + placeholder + "\"")) {
+                    brokenWrapper = we.getKey();
+                }
+            }
+            expect(failures, wrappers > 0, "gallery wrapper slot-closure scan found wrappers");
+            expect(failures, danglingValues == 0,
+                    "every gallery wrapper texture value is a concrete sprite (slot-closure), got "
+                            + danglingValues);
+            expect(failures, danglingFaceRefs == 0,
+                    "every gallery wrapper face ref has its key bound (slot-closure), got "
+                            + danglingFaceRefs);
+            expect(failures, brokenWrapper != null,
+                    "gallery broken-chain fixture binds BOTH dangling shapes at the placeholder (chased "
+                            + "p0_up + face-ref p0_nowhere)");
             expect(failures, paper.contains("\"threshold\": " + GalleryPack.CMD_BASE),
                     "paper def carries the gallery cmd base");
             expect(failures, paper.contains("c-imagine:gallery/g0"),

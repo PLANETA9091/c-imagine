@@ -1692,6 +1692,45 @@ public final class GalleryPack {
         // 14-bs: the door sprites sample their own exact tiles (the atlas
         // layouts/mip chains differ between the legs)
         bakeFaceTiles(mergedElements, textures, jars, entries, warnings);
+        // 14-e267 THE SLOT-CLOSURE BIND (the composite route's 14-e257 law):
+        // the 26.3 client's MaterialBaker binds items.png FIRST and stamps a
+        // dangling #ref with the BLOCKS-atlas missing sprite — one such quad
+        // inside an items-bound cuboid = the mixed tree = the whole
+        // minecraft:paper host def aborts at CuboidItemModelWrapper
+        // .validateAtlasUsage (the measured twenty-third flight: 72 gallery
+        // wrappers with broken chains like #p0_bottom -> #top abort the def).
+        // Two dangling shapes live here: (a) a texture VALUE that still names
+        // a #ref after the graph's own chain walk (the walk keeps the dangling
+        // ref when the chain breaks — the client's slot chase then dangles on
+        // the prefixed map); (b) an element face referencing a key the
+        // prefixed map never defined (g2454's #p0_missing class). Chase the
+        // values; bind every unbound face ref at the carried placeholder tile
+        // — the ledger names the gap, the bake stays uniform.
+        for (Map.Entry<String, String> t : textures.entrySet()) {
+            String v = t.getValue();
+            int hops = 0;
+            while (v != null && v.startsWith("#") && hops++ < 8) {
+                String next = textures.get(v.substring(1));
+                if (next == null) {
+                    break;
+                }
+                v = next;
+            }
+            if (v != null && v.startsWith("#")) {
+                warnings.add("gallery composite: unbound texture chain " + t.getKey()
+                        + " -> " + t.getValue() + " (" + state + ") — placeholder");
+                recordPlaceholderUse(t.getKey() + " -> " + t.getValue() + " @ " + state);
+                textures.put(t.getKey(), placeholderSprite(entries));
+            }
+        }
+        for (String r : elementFaceRefs(mergedElements)) {
+            if (!textures.containsKey(r)) {
+                warnings.add("gallery composite: unbound element ref #" + r
+                        + " (" + state + ") — placeholder");
+                recordPlaceholderUse("#" + r + " @ " + state);
+                textures.put(r, placeholderSprite(entries));
+            }
+        }
         displayScale *= normalizeCompositeBounds(mergedElements);
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
