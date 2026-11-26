@@ -2092,6 +2092,8 @@ jobs:
                 rcon "cimscene lightpoke 0 0" > poke-receipt.log 2>&1
                                 tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
                 bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p.png"
+                sleep 2   # 14-aj the self-consistency pair (the minecraft mob-page pattern): a modded mob that moves against ITSELF is idle-pose phase, never a channel defect — the second shot feeds the ANIMATED demotion on the mobs gate
+                bash scripts/visual/shot.sh "truth-shots/gal-e$SERIES-$NS$p-self.png"
                 echo "shot $NS $SERIES page $p"
               done
               [ "$EX" = "1" ] || { echo "$NS $SERIES walk hit the MAXP cap without exhausted"; exit 1; }
@@ -3344,6 +3346,8 @@ jobs:
                                 tail -1 poke-receipt.log   # 14-e15 the receipt rides the job log; the FILE route is the coproc-safe one (a pipeline subshell kills the coproc fd — the 14-e15 walk-killer, three runs x 16 shards each)
                 bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 test -s "ours-shots/ours-gal-e$SERIES-$NS$p.png" || { echo "$NS $SERIES page $p shot missing"; exit 1; }
+                sleep 2   # 14-aj the self-consistency pair (the truth-leg mirror): the ANIMATED class needs BOTH legs' second shots
+                bash scripts/visual/shot.sh "ours-shots/ours-gal-e$SERIES-$NS$p-self.png"
                 echo "shot $NS $SERIES page $p"
               done
               [ "$EX" = "1" ] || { echo "ours $NS $SERIES replay hit the MAXP cap"; exit 1; }
@@ -3940,7 +3944,7 @@ jobs:
                 --pitch 2 --gate 240000
             done
           done
-          echo "=== MOD-NAMESPACE entity pages (per ladder ns): mobs = the gate, dyn/large = diagnostic ==="
+          echo "=== MOD-NAMESPACE entity pages (per ladder ns): mobs = the gate, dyn/large = diagnostic (the join files still ride the join- contract so the class census sees them) ==="
           for NS in $LADDER_NS; do
             for SERIES in mobs dyn large; do
               TAG=$([ "$SERIES" = mobs ] && echo entity || echo entity$SERIES)
@@ -3951,14 +3955,32 @@ jobs:
                 O="ours-shots/ours-gal-e$SERIES-$NS$p.png"
                 if [ -f "$T" ] && [ -f "$O" ]; then
                   if [ "$SERIES" = mobs ]; then
-                    pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" \
+                    # 14-aj the self-consistency pair (the minecraft mob-page pattern): the modded mob rows demote to ANIMATED on their own second shot instead of red-gating an idle-pose phase — the run-623 supplementaries reds rode shift-saturated ±6px pose offsets (ae 604-839k over the 240k gate, self_ae absent on this lane)
+                    SELF_T=""; SELF_O=""
+                    [ -f "truth-shots/gal-e$SERIES-$NS$p-self.png" ] && SELF_T="--truth-self truth-shots/gal-e$SERIES-$NS$p-self.png"
+                    [ -f "ours-shots/ours-gal-e$SERIES-$NS$p-self.png" ] && SELF_O="--ours-self ours-shots/ours-gal-e$SERIES-$NS$p-self.png"
+                    pjoin 1 python3 scripts/cimscene/gallery-diff.py --gate-dyn --truth "$T" --ours "$O" $SELF_T $SELF_O \
                       --manifest "$M" --out "gallery-report/join-e-$NS-$p.json" \
                       --diff-dir "gallery-report/diff-e-$NS-$p" \
                       --pitch 2 --gate 240000
                   else
+                    # 14-e272 THE ENTITY CENSUS VISIBILITY: the modded dyn/
+                    # large joins were named diag-e-<ns>-<series>-p<p>.json,
+                    # which flip-report.py's join-*.json glob never read —
+                    # every modded non-Mob subject (create's nine, DT's two,
+                    # supplementaries' fourteen of sixteen...) is exercised
+                    # by its own series' walk and compared here, but the
+                    # class summary read NO-DATA (the mobs join only ever
+                    # holds Mob-kind rows + wrong-series skip rows). The
+                    # output rides the 14-bf minecraft precedent's name
+                    # (join-e-<series>-<ns>-p<p>.json — flip-report's ns_of
+                    # parses the series segment, ns = the real namespace)
+                    # so the exercised cells land in the census. The join
+                    # STAYS diagnostic (pjoin 0, no --gate-dyn): the flip
+                    # law owns any promotion, never the rename.
                     pjoin 0 python3 scripts/cimscene/gallery-diff.py --truth "$T" --ours "$O" \
-                      --manifest "$M" --out "gallery-report/diag-e-$NS-$SERIES-$p.json" \
-                      --diff-dir "gallery-report/diff-e-$NS-$SERIES-$p" \
+                      --manifest "$M" --out "gallery-report/join-e-$SERIES-$NS-$p.json" \
+                      --diff-dir "gallery-report/diff-e-$SERIES-$NS-$p" \
                       --pitch 2 --gate 240000
                   fi
                 elif [ "$SERIES" = mobs ]; then
@@ -4095,7 +4117,7 @@ jobs:
               fi
             done
           done
-          echo "=== INVENTORY pages: full-frame + per-slot GUI join (DIAGNOSTIC — geometry/gates FIRST-RUN-UNMEASURED, see inv-diff.py) ==="
+          echo "=== INVENTORY pages: full-frame + per-slot GUI join (DIAGNOSTIC — the run-623 calibration: slot gate = the measured slot-ae p10 91752 (clears the 73296 empty-slot floor x1.25), frame gate = 1.5x the measured max 26.89; the class STAYS diagnostic — 0/72 rows flip green, the deltas are real content + the empty-slot floor) ==="
           for NS in $LADDER_NS; do
             for M in $(find truth-meta -name "gallery-inv-$NS-p*.tsv" | sort -V); do
               B=$(basename "$M" .tsv); p=${B##*-p}
@@ -4104,6 +4126,7 @@ jobs:
               if [ -f "$T" ] && [ -f "$O" ]; then
                 pjoin 0 python3 scripts/cimscene/inv-diff.py --truth "$T" --ours "$O" \
                   --ns "$NS" --page "$p" \
+                  --slot-gate 91752 --frame-gate 40 \
                   --out "gallery-report/diag-inv-$NS-p$p.json"
               else
                 echo "$NS inv page $p shots missing (tolerated: diagnostic)"
@@ -4794,7 +4817,7 @@ jobs:
               g = json.load(open(f))
               summary["shards"][g["shard"]] = {"gate": g["gate"],
                                                "join_pages": g["join_pages"],
-                                               "reds": g["reds"][:50]}
+                                               "reds": g["reds"][:200]}
           for f in sorted(glob.glob('reports/*/join-*.json')):
               try:
                   r = json.load(open(f))
@@ -4811,7 +4834,7 @@ jobs:
                   fam_total[fam] += 1
           summary["join_census"] = {
               "total_red_rows": total_red_rows,
-              "by_block": dict(fam_total.most_common(60)),
+              "by_block": dict(fam_total.most_common()),
           }
           json.dump(summary, open('gallery-verdict/verdict-summary.json', 'w'), indent=1)
           PY
