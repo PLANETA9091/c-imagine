@@ -4670,7 +4670,9 @@ public final class F2vPack {
             "{\"textures\": {\"up\": \"#top\"}, "
             + "\"elements\": [{\"from\": [0,0,0], \"to\": [16,16,16], \"faces\": {"
             + "\"north\": {\"uv\": [0,0,16,16], \"texture\": \"#up\"}, "
-            + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#nowhere\"}}}]}";
+            + "\"south\": {\"uv\": [0,0,16,16], \"texture\": \"#nowhere\"}, "
+            + "\"east\": {\"uv\": [0,0,16,16], \"texture\": \"up\"}, "
+            + "\"west\": {\"uv\": [0,0,16,16], \"texture\": \"ghost_face\"}}}]}";
     private static final String BS_BROKENCHAIN =
             "{\"variants\": {\"\": {\"model\": \"fakemod:block/zz_broken_chain\"}}}";
     private static final String BS_UNBOUND =
@@ -5793,6 +5795,7 @@ public final class F2vPack {
             int wrappers = 0;
             int danglingValues = 0;
             int danglingFaceRefs = 0;
+            int danglingFaceMaterials = 0;
             String brokenWrapper = null;
             String placeholder = GalleryPack.PLACEHOLDER_SPRITE;
             for (Map.Entry<String, byte[]> we : entries.entrySet()) {
@@ -5843,6 +5846,54 @@ public final class F2vPack {
                 if (raw.contains("\"p0_up\":\"" + placeholder + "\"")
                         && raw.contains("\"p0_nowhere\":\"" + placeholder + "\"")) {
                     brokenWrapper = we.getKey();
+                    // 14-e268: the fixture's FOUR faces — the ref to the broken
+                    // chain, the face-ref to the undefined key, the BARE value
+                    // naming a map key, and the unhosted concrete material —
+                    // ALL of them bake at the placeholder tile.
+                    int binds = raw.split(placeholder, -1).length - 1;
+                    expect(failures, binds >= 3 && !raw.contains("ghost_face")
+                                    && !raw.contains("\"texture\":\"up\""),
+                            "gallery broken-chain fixture binds bare-slot + unhosted-material faces "
+                                    + "at the placeholder (binds=" + binds + ")");
+                }
+                // the universal concrete-face half: every emitted wrapper's
+                // bare face value = the placeholder, a vanilla-carried sprite,
+                // or a PNG the pack entries carry
+                java.util.Deque<com.google.gson.JsonElement> fstack = new java.util.ArrayDeque<>();
+                fstack.push(w.getAsJsonArray("elements"));
+                while (!fstack.isEmpty()) {
+                    com.google.gson.JsonElement el = fstack.pop();
+                    if (el.isJsonArray()) {
+                        for (com.google.gson.JsonElement c : el.getAsJsonArray()) {
+                            fstack.push(c);
+                        }
+                        continue;
+                    }
+                    if (!el.isJsonObject() || !el.getAsJsonObject().has("faces")) {
+                        continue;
+                    }
+                    for (Map.Entry<String, JsonElement> f : el.getAsJsonObject()
+                            .getAsJsonObject("faces").entrySet()) {
+                        if (!f.getValue().isJsonObject()
+                                || !f.getValue().getAsJsonObject().has("texture")
+                                || !f.getValue().getAsJsonObject().get("texture").isJsonPrimitive()) {
+                            continue;
+                        }
+                        String t = f.getValue().getAsJsonObject().get("texture").getAsString();
+                        if (t.startsWith("#")) {
+                            continue;
+                        }
+                        String sprite = t.contains(":") ? t : "minecraft:" + t;
+                        int colon = sprite.indexOf(':');
+                        String png = "assets/" + sprite.substring(0, colon)
+                                + "/textures/" + sprite.substring(colon + 1) + ".png";
+                        boolean ok = t.equals(placeholder)
+                                || sprite.startsWith("minecraft:")
+                                || entries.containsKey(png);
+                        if (!ok) {
+                            danglingFaceMaterials++;
+                        }
+                    }
                 }
             }
             expect(failures, wrappers > 0, "gallery wrapper slot-closure scan found wrappers");
@@ -5852,6 +5903,9 @@ public final class F2vPack {
             expect(failures, danglingFaceRefs == 0,
                     "every gallery wrapper face ref has its key bound (slot-closure), got "
                             + danglingFaceRefs);
+            expect(failures, danglingFaceMaterials == 0,
+                    "every gallery wrapper bare face material is hosted (slot-closure), got "
+                            + danglingFaceMaterials);
             expect(failures, brokenWrapper != null,
                     "gallery broken-chain fixture binds BOTH dangling shapes at the placeholder (chased "
                             + "p0_up + face-ref p0_nowhere)");

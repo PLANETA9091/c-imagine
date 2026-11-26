@@ -1661,7 +1661,7 @@ public final class GalleryPack {
             }
             for (JsonElement el : baked) {
                 mergedElements.add(renameTextureRefs(
-                        inflateDegenerate(el.getAsJsonObject()), prefix));
+                        inflateDegenerate(el.getAsJsonObject()), prefix, mg.textures().keySet()));
             }
             partNo++;
         }
@@ -1729,6 +1729,51 @@ public final class GalleryPack {
                         + " (" + state + ") — placeholder");
                 recordPlaceholderUse("#" + r + " @ " + state);
                 textures.put(r, placeholderSprite(entries));
+            }
+        }
+        // (c) 14-e268 THE CONCRETE-FACE CHECK: a face carrying a bare id that
+        // names NO map key rides as a CONCRETE material directly — if its
+        // sprite's PNG exists nowhere in the resource stack (no pack entry,
+        // no jar), nothing stitches it and the 26.3 client stamps the
+        // BLOCKS-atlas missing sprite SILENTLY (no unresolved-ref warn — the
+        // measured dynamictrees roots class reached the abort exactly this
+        // way). Bind the face at the placeholder tile; the ledger names the
+        // gap. (A PNG that exists but rides no atlas source is not measured
+        // — the atlas carry keeps every referenced path stitched; the pack
+        // audit remains the post-build honesty gate.)
+        String placeholderSprite = placeholderSprite(entries);
+        for (JsonElement elEl : mergedElements) {
+            if (!elEl.isJsonObject() || !elEl.getAsJsonObject().has("faces")) {
+                continue;
+            }
+            JsonObject faces = elEl.getAsJsonObject().getAsJsonObject("faces");
+            for (Map.Entry<String, JsonElement> f : faces.entrySet()) {
+                if (!f.getValue().isJsonObject()
+                        || !f.getValue().getAsJsonObject().has("texture")
+                        || !f.getValue().getAsJsonObject().get("texture").isJsonPrimitive()) {
+                    continue;
+                }
+                String t = f.getValue().getAsJsonObject().get("texture").getAsString();
+                if (t.startsWith("#")) {
+                    continue;
+                }
+                String sprite = t.contains(":") ? t : "minecraft:" + t;
+                String png = spritePathPng(sprite);
+                if (entries.containsKey(png)) {
+                    continue;
+                }
+                try {
+                    if (readPngFromJars(jars, png) != null) {
+                        continue;
+                    }
+                } catch (IOException bad) {
+                    warnings.add("gallery composite: face sprite read failed: " + sprite
+                            + " (" + state + ") — " + bad);
+                }
+                warnings.add("gallery composite: unhosted face material " + t
+                        + " (" + state + ") — placeholder");
+                recordPlaceholderUse(t + " @ " + state);
+                f.getValue().getAsJsonObject().addProperty("texture", placeholderSprite);
             }
         }
         displayScale *= normalizeCompositeBounds(mergedElements);
@@ -2597,7 +2642,8 @@ public final class GalleryPack {
             els = shiftElementsXYZ(els, c.dx(), c.dy(), c.dz());
             for (JsonElement el : els) {
                 JsonObject e = inflateDegenerate(el.getAsJsonObject());
-                mergedElements.add(renameTextureRefs(e, prefix));
+                mergedElements.add(renameTextureRefs(e, prefix,
+                        extractWrapperTextures(model).keySet()));
             }
             cellNo++;
         }
@@ -4422,8 +4468,26 @@ public final class GalleryPack {
         return out;
     }
 
-    /** Rewrite element face texture refs {@code #key} -> {@code #prefix_key}. */
-    private static JsonObject renameTextureRefs(JsonObject element, String prefix) {
+    /**
+     * Rename the element's face texture refs under the part prefix.
+     *
+     * <p>14-e268 THE BARE-SLOT REWRITE: a face texture value that names one
+     * of the part's OWN texture keys WITHOUT the {@code #} (the measured
+     * dynamictrees roots shape: {@code "texture": "roots"} against a map
+     * carrying {@code roots: dynamictrees:block/roots}) was written verbatim
+     * — and the 26.3 client resolves a bare face value as a CONCRETE material
+     * id, never a slot lookup: {@code minecraft:roots} is stitched NOWHERE,
+     * the quad silently stamps the BLOCKS-atlas missing sprite (no warn, no
+     * unresolved-ref line), and the mixed tree aborts the whole
+     * minecraft:paper host def. Rewrite every bare value that names a map
+     * key into the proper {@code #<prefix><key>} ref — the mod's own texture
+     * rides, which is never worse than the missingno the bare value baked.
+     *
+     * @param keys the part's texture-key set the bare values may name
+     *             (nullable for the legacy call shapes — no bare rewrite)
+     */
+    private static JsonObject renameTextureRefs(JsonObject element, String prefix,
+                                                java.util.Set<String> keys) {
         JsonObject out = element.deepCopy();
         if (!out.has("faces")) {
             return out;
@@ -4436,6 +4500,8 @@ public final class GalleryPack {
                 String t = face.get("texture").getAsString();
                 if (t.startsWith("#")) {
                     face.addProperty("texture", "#" + prefix + t.substring(1));
+                } else if (keys != null && keys.contains(t)) {
+                    face.addProperty("texture", "#" + prefix + t);
                 }
             }
             renamed.add(f.getKey(), face);
@@ -4721,9 +4787,15 @@ public final class GalleryPack {
                                                 int depth) {
         JsonArray out = new JsonArray();
         if (json.has("elements")) {
+            java.util.Set<String> levelKeys = new java.util.HashSet<>();
+            if (json.has("textures") && json.getAsJsonObject("textures").isJsonObject()) {
+                for (Map.Entry<String, JsonElement> t : json.getAsJsonObject("textures").entrySet()) {
+                    levelKeys.add(t.getKey());
+                }
+            }
             for (JsonElement el : json.getAsJsonArray("elements")) {
                 out.add(prefix.isEmpty() ? el.deepCopy()
-                        : renameTextureRefs(el.getAsJsonObject(), prefix));
+                        : renameTextureRefs(el.getAsJsonObject(), prefix, levelKeys));
             }
         }
         if (json.has("children")) {
@@ -4745,7 +4817,10 @@ public final class GalleryPack {
                         }
                     }
                     for (JsonElement el : child.getAsJsonArray("elements")) {
-                        out.add(renameTextureRefs(el.getAsJsonObject(), childPrefix));
+                        out.add(renameTextureRefs(el.getAsJsonObject(), childPrefix,
+                                child.has("textures") && child.getAsJsonObject("textures").isJsonObject()
+                                        ? child.getAsJsonObject("textures").keySet()
+                                        : java.util.Set.of()));
                     }
                 } else if (child.has("parent") && child.get("parent").isJsonPrimitive() && jars != null) {
                     JsonArray chained = mergeChildChain(jars, child, childPrefix, textures,
