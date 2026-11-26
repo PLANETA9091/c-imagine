@@ -18,6 +18,20 @@ Every diagnostic class reports its own measured metric; the RECOMMENDATION
 column is mechanical: pixel/stream classes with measured content and zero
 failures are candidates for review. Frame CONTENT only proves presence;
 those classes still require calibration. This tool never flips a gate.
+
+14-e272 THE EXERCISED LAW: a manifest skip row (gallery-diff verdict
+"skipped") is an ABSENCE — nothing was compared, and it stays the skipped
+column. Every other verdict rode a measured crop (gallery-diff.py
+classify: GREEN / RED / DYNAMIC / SPILL / AIR / ANIMATED / DISSOLVED-RACE)
+and counts EXERCISED (eff); the demoted column names the report-only
+verdicts. The old eff = GREEN + RED hid exercised classes behind NO-DATA:
+the 28th flight's fluid rows (49 compared cells, every one over-gate then
+demoted ANIMATED by the animation-table + self-pair law) and the modded
+entity dyn/large series (their joins were diag-e-* files this tool never
+globbed) both measured content while the summary read NO-DATA. The state
+machine keeps the laws intact: 0 red with demoted rows is never
+GATED-GREEN/FLIP-CANDIDATE, and the entity family folds back into the
+ledger's one "e" row.
 """
 import argparse
 import glob
@@ -48,9 +62,15 @@ GATED_CLASSES = {"block", "item", "fluid", "e"}
 
 def ns_of(name):
     # Read the producer's filename contract, not a fixed mod allowlist.
-    # Entity pages use -N; block/item and diagnostic pages use -pN.
+    # Entity pages use -N; block/item and diagnostic pages use -pN; menu
+    # joins are join-menu-<ns>_<menu>.json (no page suffix — the row's
+    # state carries the menu id; the run-623 menu reds read as
+    # block/minecraft without this branch).
+    m = re.match(r'join-menu-([a-z0-9_.-]+?)_', name)
+    if m:
+        return m.group(1)
     m = re.fullmatch(
-        r'(?:join-(?:(?:item|fluid|particle|e(?:-(?:dyn|large))?)-)?'
+        r'(?:join-(?:(?:item|fluid|particle|e(?:-(?:dyn|large))?|menu)-)?'
         r'|diag-(?:sound|pstream|held|gui|biome|inv|iso)-)'
         r'([a-z0-9_.-]+?)-p?\d+\.json', name)
     return m.group(1) if m else "minecraft"
@@ -74,7 +94,7 @@ def main():
             if name.startswith("diag-iso-"):
                 cls = "blockiso"   # 14-e32 the isolation lane (diagnostic)
             else:
-                match = re.match(r'join-(item|fluid|particle|e)(?:-|\d)', name)
+                match = re.match(r'join-(item|fluid|particle|e|menu)(?:-|\d)', name)
                 cls = match.group(1) if match else "block"
             # The dyn/large entity series are diagnostic, separate from mobs.
             if cls == "e" and re.search(r'-(dyn|large)-', name):
@@ -83,13 +103,15 @@ def main():
             counts = Counter(r["verdict"] for r in d.get("rows", []))
             if d.get("verdict") == "GLOBAL-MISALIGNED":
                 counts["RED"] += 1
-            eff = counts["GREEN"] + counts["RED"]
+            # 14-e272 THE EXERCISED LAW: a manifest skip row is an absence;
+            # every demoted verdict is a measured cell (see the docstring).
+            eff = sum(n for v, n in counts.items() if v != "skipped")
             rows.append({"class": cls, "ns": ns, "pages": 1,
                          "metric": "green",
                          "green": counts["GREEN"], "eff": eff,
                          "red": counts["RED"],
-                         "skipped": sum(n for v, n in counts.items()
-                                        if v not in ("GREEN", "RED"))})
+                         "demoted": eff - counts["GREEN"] - counts["RED"],
+                         "skipped": counts["skipped"]})
 
     # --- stream diagnostics: sound / particle ---
     for pat, cls in (("[d]iag-sound-*.json", "sound"),
@@ -145,7 +167,8 @@ def main():
 
     # --- aggregate per (class, ns) ---
     merged = defaultdict(lambda: {"pages": 0, "green": 0, "eff": 0,
-                                  "red": 0, "skipped": 0, "metrics": set()})
+                                  "red": 0, "demoted": 0, "skipped": 0,
+                                  "metrics": set()})
     for r in rows:
         k = (r["class"], r["ns"])
         m = merged[k]
@@ -153,8 +176,30 @@ def main():
         m["green"] += r["green"]
         m["eff"] += r["eff"]
         m["red"] += r["red"]
+        m["demoted"] += r.get("demoted", 0)
         m["skipped"] += r["skipped"]
         m["metrics"].add(r["metric"])
+
+    # 14-e272 THE ENTITY FAMILY = THE LEDGER'S ONE ROW: coverage-gate.py
+    # fans the ledger's single `entity` row into the mobs/dyn/large series
+    # (each series paginates the SAME entry list — wrong-series subjects are
+    # skip rows, never coverage), so the census folds the three series back
+    # into the one ("e", ns) row exercised-vs-registered reads at. The mobs
+    # gate's REDs stay the red column; the modded dyn/large diagnostics'
+    # DYNAMIC demotions stay demoted (report-only — the state machine keeps
+    # them out of every gated-green claim).
+    for ns in {ns for (cls, ns) in merged if cls in ("e-dyn", "e-large")}:
+        base = merged.setdefault(("e", ns),
+                                 {"pages": 0, "green": 0, "eff": 0,
+                                  "red": 0, "demoted": 0, "skipped": 0,
+                                  "metrics": set()})
+        for cls in ("e-dyn", "e-large"):
+            part = merged.pop((cls, ns), None)
+            if part is None:
+                continue
+            for f in ("pages", "green", "eff", "red", "demoted", "skipped"):
+                base[f] += part[f]
+            base["metrics"] |= part["metrics"]
 
     table = []
     for (cls, ns), m in sorted(merged.items()):
@@ -163,7 +208,7 @@ def main():
         if m["red"] and not m["eff"]:
             ready = "BROKEN (missing artifact)"
         if pct is not None and m["metrics"] != {"frame"}:
-            if m["red"] == 0:
+            if m["red"] == 0 and m["demoted"] == 0:
                 # 14-e33 THE GATED-GREEN LAW (the dynamictrees read, measured
                 # x2): a GATED pixel class (block/item/fluid/e-mobs — the
                 # joins the workflow pairs with || GATE=1) with zero red has
@@ -175,6 +220,14 @@ def main():
                 # receipt hunting for a nonexistent gate change.
                 ready = ("GATED-GREEN (0 red)" if cls in GATED_CLASSES
                          else "FLIP-CANDIDATE (0 red)")
+            elif m["red"] == 0 and m["demoted"] > 0:
+                # 14-e272: 0 red with demoted rows is NOT a gated-green — the
+                # demoted rows never gated (their verdicts are the report-only
+                # structural/animation classes); the name must say so.
+                ready = ("GATED (0 red, %d demoted report-only)" % m["demoted"]
+                         if cls in GATED_CLASSES else
+                         "FLIP-PARTIAL (0 red, %d demoted report-only)"
+                         % m["demoted"])
             elif pct >= 90:
                 ready = "NEAR (>=90%)"
         if m["metrics"] == {"frame"}:
@@ -182,7 +235,8 @@ def main():
         table.append({"class": cls, "ns": ns, "pages": m["pages"],
                       "eff": m["eff"], "green": m["green"], "red": m["red"],
                       "green_pct": round(pct, 3) if pct is not None else None,
-                      "skipped": m["skipped"], "state": ready})
+                      "skipped": m["skipped"], "demoted": m["demoted"],
+                      "state": ready})
 
     if args.out_json:
         json.dump(table, open(args.out_json, "w"), indent=1)
