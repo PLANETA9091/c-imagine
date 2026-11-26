@@ -28,13 +28,39 @@ Method (all inputs already pulled by verdict-pull.py + the seed artifacts):
      mean = the expected scaled by a roughly uniform factor < 0.6 — the
      light/pin class, not a binding bug), NO-CAPTURE (the seed data
      missing for the cell — the audit gap, named).
+  6. The channel-swap audit (14-e9.2, the inverted-colors suspicion settled
+     mechanically): for every compared pair above, the file's own relative
+     error (|ours - expected| / max(expected, 8), mean) is computed TWICE —
+     unswapped and with ours' R and B channels exchanged. Swapping either
+     side is the identical metric (the exchange is an involution and each
+     denominator travels with its own channel), so one direction covers
+     both suspicions: ours inverted at capture OR the expected capture
+     inverted at bake. CHANNEL-SWAP = the swapped fit at least HALVES the
+     unswapped MAE (ratio <= --swap-factor 0.5) while the unswapped MAE
+     clears the noise floor (--swap-floor 0.02 — below it the pair already
+     fits and no delta exists for a swap to explain). The calibration: a
+     genuine swap measures ratio ~0 (the exchange KILLS the error), while
+     the match/dim/tint mechanisms all measure ratio >= 1 (the exchange
+     never helps a scaling mechanism — the per-face cimtints are all
+     <= 0.8 and cannot reorder the channels). PROVISIONAL: the 0.5 factor
+     is fixture-calibrated, not dispatch-calibrated — it hardens only
+     after a real run's ratio distribution is read x2 (the flip law);
+     report-only, never a gate.
 
 Usage:
   capture-fingerprint.py <reports-root> <seed-scenes-dir> [--tolerance 0.18]
+                         [--swap-factor 0.5] [--swap-floor 0.02]
                          [--out /tmp/capture-fingerprint.json] [--top 24]
 
   <reports-root> = the dir holding gallery-report-N/ (the verdict-pull --out)
   <seed-scenes-dir> = the seed's scenes/ dir (rows.tsv, quads/, *.ctx.tsv)
+
+Output contract: the census JSON gains an additive "channel_swap" object
+(threshold, status, pairs, flagged, subjects) and every COMPARED row gains
+swap_mae / swap_mae_rb / swap_ratio / swap_flag — existing keys never change
+semantics. Images that are absent or yield no pixels stay NAMED (NO-CAPTURE /
+NO-OURS-CROP / EMPTY-OURS / UNREADABLE-OURS) and simply leave their pair
+unaudited — the honest degradation, never a crash.
 
 Exit code 0 always: report-only, never gates.
 """
@@ -48,6 +74,12 @@ import sys
 
 import numpy as np
 from PIL import Image
+
+# 14-e9.2 the channel-swap audit defaults — PROVISIONAL (docstring step 6):
+# fixture-calibrated, never gate-read; a real dispatch calibrates them via
+# --swap-factor/--swap-floor before they harden.
+SWAP_FACTOR = 0.5
+SWAP_FLOOR = 0.02
 
 
 def load_mean(png_path):
@@ -107,7 +139,15 @@ class SeedIndex:
             return None
         if h not in self.capture_means:
             p = os.path.join(self.tex_dir, h + ".png")
-            self.capture_means[h] = load_mean(p) if os.path.isfile(p) else None
+            if not os.path.isfile(p):
+                self.capture_means[h] = None
+            else:
+                try:
+                    self.capture_means[h] = load_mean(p)
+                except Exception:
+                    # the corrupt capture = the audit gap, named NO-CAPTURE
+                    # upstream — the honest degradation, never a crash
+                    self.capture_means[h] = None
         return self.capture_means[h]
 
 
@@ -116,6 +156,8 @@ def main(argv=None):
     ap.add_argument("reports_root")
     ap.add_argument("seed_scenes")
     ap.add_argument("--tolerance", type=float, default=0.18)
+    ap.add_argument("--swap-factor", type=float, default=SWAP_FACTOR)
+    ap.add_argument("--swap-floor", type=float, default=SWAP_FLOOR)
     ap.add_argument("--out", default="/tmp/capture-fingerprint.json")
     ap.add_argument("--top", type=int, default=24)
     args = ap.parse_args(argv)
@@ -126,7 +168,10 @@ def main(argv=None):
     tex_dir = seed.tex_dir
     for f in glob.glob(os.path.join(tex_dir, "*.png")):
         h = os.path.basename(f)[:-4]
-        m = load_mean(f)
+        try:
+            m = load_mean(f)
+        except Exception:
+            continue   # the corrupt capture never joins the nearest-match set
         if m is not None:
             all_caps[h] = m
     cap_ids = list(all_caps)
@@ -135,6 +180,12 @@ def main(argv=None):
     report_dirs = sorted(glob.glob(os.path.join(args.reports_root, "gallery-report-*")))
     census = collections.Counter()
     rows_out = []
+    # 14-e9.2 the swap audit's own tallies (kept OUT of the census Counter —
+    # a flagged row is still exactly one red row, and "red rows audited" must
+    # keep counting rows, not flags)
+    swap_pairs = 0
+    swap_flagged = 0
+    swap_subjects = []
     for rd in report_dirs:
         for jf in sorted(glob.glob(os.path.join(rd, "join-*.json"))):
             try:
@@ -180,16 +231,57 @@ def main(argv=None):
                 if not hits:
                     census["NO-OURS-CROP"] += 1
                     continue
-                ours = load_mean(hits[0])
+                try:
+                    ours = load_mean(hits[0])
+                except Exception:
+                    # the crop file exists but yields no pixels — named, not
+                    # a crash (the honesty law)
+                    census["UNREADABLE-OURS"] += 1
+                    continue
                 if ours is None:
                     census["EMPTY-OURS"] += 1
                     continue
                 rel = np.abs(ours - expected) / np.maximum(expected, 8.0)
+                # 14-e9.2 the channel-swap audit: the SAME normalization,
+                # computed once with ours' R/B exchanged. Swapping either
+                # side is the identical metric (the exchange is an
+                # involution; each denominator travels with its own
+                # channel), so one direction covers both suspicions — ours
+                # inverted at capture OR the expected capture inverted at
+                # bake. The flag = the swap decisively EXPLAINS the delta:
+                # unswapped MAE above the floor (a delta exists) and the
+                # swapped MAE at most --swap-factor of it (the exchange
+                # halves the error — no scaling mechanism ever does: the
+                # match/dim/tint fixtures all measure ratio >= 1).
+                swap_mae = float(rel.mean())
+                swap_mae_rb = float(
+                    (np.abs(ours[[2, 1, 0]] - expected)
+                     / np.maximum(expected, 8.0)).mean())
+                swap_pairs += 1
+                if swap_mae > args.swap_floor:
+                    swap_ratio = swap_mae_rb / swap_mae
+                    swap_flag = bool(swap_ratio <= args.swap_factor)
+                else:
+                    swap_ratio = None   # the pair already fits: no delta
+                    swap_flag = False   # for a swap to explain (0/0 guard)
+                swap_row = {"swap_mae": round(swap_mae, 4),
+                            "swap_mae_rb": round(swap_mae_rb, 4),
+                            "swap_ratio": None if swap_ratio is None
+                                          else round(swap_ratio, 3),
+                            "swap_flag": swap_flag}
+                if swap_flag:
+                    swap_flagged += 1
+                    swap_subjects.append({"page": page, "col": r["col"],
+                                          "row": r["row"],
+                                          "state": r.get("state", ""),
+                                          "swap_mae": swap_row["swap_mae"],
+                                          "swap_mae_rb": swap_row["swap_mae_rb"],
+                                          "swap_ratio": swap_row["swap_ratio"]})
                 if rel.mean() <= args.tolerance:
                     census["MATCH"] += 1
                     rows_out.append({"page": page, "col": r["col"],
                                      "row": r["row"], "state": r.get("state", ""),
-                                     "class": "MATCH", "q": qhash})
+                                     "class": "MATCH", "q": qhash, **swap_row})
                     continue
                 scale = float(np.median(ours / np.maximum(expected, 8.0)))
                 if 0.0 < scale < 0.6:
@@ -197,7 +289,7 @@ def main(argv=None):
                     rows_out.append({"page": page, "col": r["col"],
                                      "row": r["row"], "state": r.get("state", ""),
                                      "class": "DIM", "q": qhash,
-                                     "scale": round(scale, 3)})
+                                     "scale": round(scale, 3), **swap_row})
                     continue
                 # 14-e9.1 the honest semantics: the expected here is the RAW
                 # capture mean, while the pack's composite multiplies it by
@@ -218,7 +310,7 @@ def main(argv=None):
                 rows_out.append({"page": page, "col": r["col"],
                                  "row": r["row"], "state": r.get("state", ""),
                                  "class": cls,
-                                 "q": qhash, "nearest": nearest})
+                                 "q": qhash, "nearest": nearest, **swap_row})
 
     total = sum(census.values())
     print(f"red rows audited: {total}")
@@ -231,8 +323,28 @@ def main(argv=None):
         print("\ntint-or-foreign families (the bake-transform audit separates the two):")
         for fam, v in fam_tof.most_common(args.top):
             print(f"  {fam:52s} x{v}")
+    # 14-e9.2 the channel-swap summary line (additive — the census above and
+    # its "red rows audited" total are untouched by the flag tally)
+    if swap_pairs:
+        print("\nchannel-swap audit (ours' R/B exchanged, the file's own normalization):")
+        print(f"  pairs compared: {swap_pairs}   CHANNEL-SWAP flagged: {swap_flagged}")
+        print(f"  threshold: swapped MAE <= {args.swap_factor} x unswapped MAE"
+              f" (floor {args.swap_floor}) — PROVISIONAL, fixture-calibrated only;"
+              " report-only, never gates")
+        for s in swap_subjects[: args.top]:
+            print(f"  {s['page']} c{s['col']} r{s['row']}  {s['state']}"
+                  f"  ratio={s['swap_ratio']}")
+    elif total:
+        print("\nchannel-swap audit: 0 pairs compared (every red row named"
+              " absent/empty upstream — the honest degradation)")
     with open(args.out, "w", encoding="utf-8") as fh:
-        json.dump({"census": dict(census), "rows": rows_out}, fh, indent=1)
+        json.dump({"census": dict(census), "rows": rows_out,
+                   "channel_swap": {
+                       "threshold": f"swapped MAE <= {args.swap_factor} x unswapped MAE,"
+                                    f" unswapped MAE > {args.swap_floor}",
+                       "status": "PROVISIONAL — fixture-calibrated, never gate-read",
+                       "pairs": swap_pairs, "flagged": swap_flagged,
+                       "subjects": swap_subjects[: args.top]}}, fh, indent=1)
     print(f"\n-> {args.out}")
     return 0
 
