@@ -2954,14 +2954,23 @@ public final class F2vPack {
         // + addAll) — only OUR sources live here, vanilla trims keep working.
         emitPaletteAtlas(jars, validPalettes, entries, warnings);
 
-        // 14-cd THE FLUID ATLAS SOURCES: the vanilla block-atlas stack scans
-        // textures/block/ only — the fluid/liquid/fluidcube directories the
-        // fluid channels host would never stitch and the model renders the
-        // magenta checker. The directory sources APPEND to whatever the
-        // palette channel put in items.json (the measured SpriteSourceList
-        // merge — this emit runs AFTER emitPaletteAtlas for exactly that);
-        // the same three ride BOTH atlas files, each model's single sprite
-        // resolves in whichever atlas bakes it.
+        // 14-cd THE FLUID ATLAS SOURCES + 14-e270 THE ATLAS SPLIT: the vanilla
+        // block-atlas stack scans textures/block/ only — the fluid/liquid/
+        // fluidcube directories the fluid channels host would never stitch
+        // and the model renders the magenta checker. The directory sources
+        // APPEND to whatever the palette channel put in items.json (the
+        // measured SpriteSourceList merge — this emit runs AFTER
+        // emitPaletteAtlas for exactly that). THE SPLIT LAW (the measured
+        // twenty-sixth flight's 3,137 block-model rejects + the surviving
+        // paper-host abort): MaterialBaker binds ITEMS-FIRST for BOTH
+        // pipelines — a block-path sprite claimed by the ITEMS atlas binds
+        // items.png and the block channel REJECTS the model (the mirror
+        // law), while the item pipeline's blocks.png fallback never needed
+        // the claim at all (decompiled bakeForAtlas: items null -> blocks).
+        // The atlas files therefore stay in the VANILLA SPLIT: block-side
+        // dirs ride blocks.json ONLY, item-path dirs ride items.json ONLY —
+        // the def tree is 100% block-side (the e264 hosting law) so it bakes
+        // uniform blocks.png (legal) and the block channel stops rejecting.
         if (!fluidTextures.isEmpty() || !fluidCubes.isEmpty()) {
             String fluidSources = "{\"sources\": ["
                     + "{\"type\": \"minecraft:directory\", \"source\": \"fluid\", \"prefix\": \"fluid/\"}, "
@@ -2969,7 +2978,6 @@ public final class F2vPack {
                     + "{\"type\": \"minecraft:directory\", \"source\": \"fluidcube\", \"prefix\": \"fluidcube/\"}"
                     + "]}";
             appendAtlasSources("assets/minecraft/atlases/blocks.json", fluidSources, entries);
-            appendAtlasSources("assets/minecraft/atlases/items.json", fluidSources, entries);
         }
 
         // 14-e252 THE MOD-ATLAS CARRY (runs LAST so the pack's own atlas
@@ -3277,12 +3285,14 @@ public final class F2vPack {
                     }
                     if (paletteRow != null) {
                         // variant model next to the base, textures retinted to
-                        // the permutated sprite ids
+                        // the permutated sprite ids — the generated sprite rides
+                        // the HOSTED block-path base (the 14-e270 split law)
                         String variantFile = cand.substring(0, cand.length() - ".json".length())
                                 + paletteRow.separator() + paletteSuffix + ".json";
                         String variantJson = retintModelJson(
                                 new String(modelBytes, StandardCharsets.UTF_8),
-                                paletteRow.baseSprite(), paletteRow.separator(), paletteSuffix);
+                                paletteRow.baseSprite(), hostedPaletteBase(paletteRow),
+                                paletteRow.separator(), paletteSuffix);
                         entries.put(variantFile, variantJson.getBytes(StandardCharsets.UTF_8));
                         return baseRef + paletteRow.separator() + paletteSuffix;
                     }
@@ -3474,8 +3484,27 @@ public final class F2vPack {
             for (String perm : pr.variants().values()) {
                 copyResourcePng(jars, perm, entries, warnings);
             }
+            // 14-e270 THE PALETTE HOSTING: the base sprite re-hosts BLOCK-PATH
+            // so the GENERATED permutation sprite (base + separator + suffix)
+            // claims the blocks atlas — under the atlas split the def tree
+            // must stay 100% block-side (an item-path palette sprite binds
+            // items.png and mixes the whole host def).
+            String hostedBase = hostedPaletteBase(pr);
+            String baseNs = pr.baseSprite().substring(0, pr.baseSprite().indexOf(':'));
+            String basePath = pr.baseSprite().substring(pr.baseSprite().indexOf(':') + 1);
+            String hostedPng = "assets/" + GalleryPack.WRAPPER_NS + "/textures/block/palettes/"
+                    + baseNs + "/" + basePath + ".png";
+            if (!entries.containsKey(hostedPng)) {
+                byte[] basePng = readJarResource(jars, pr.baseSprite());
+                if (basePng != null) {
+                    entries.put(hostedPng, basePng);
+                } else {
+                    warnings.add("palette hosting: base png missing in jars: "
+                            + pr.baseSprite());
+                }
+            }
             sb.append("    {\"type\": \"minecraft:paletted_permutations\", ")
-              .append("\"textures\": [\"").append(pr.baseSprite()).append("\"], ")
+              .append("\"textures\": [\"").append(hostedBase).append("\"], ")
               .append("\"palette_key\": \"").append(paletteSpritePath(pr.paletteKey())).append("\", ")
               .append("\"permutations\": {");
             boolean first = true;
@@ -3491,8 +3520,45 @@ public final class F2vPack {
             sb.append(i + 1 < paletteRows.size() ? ",\n" : "\n");
         }
         sb.append("  ]\n}\n");
-        entries.put("assets/minecraft/atlases/items.json",
-                sb.toString().getBytes(StandardCharsets.UTF_8));
+        // 14-e270: APPEND (never PUT) — the item route's atlasReferencedTexture
+        // singles already live in blocks.json and the append preserves them
+        // (the old items.json PUT wiped whatever the earlier emitters wrote).
+        appendAtlasSources("assets/minecraft/atlases/blocks.json",
+                sb.toString(), entries);
+    }
+
+    /** 14-e270: the palette row's base sprite re-hosted under the block-path
+     *  space ({@code c-imagine:block/palettes/<ns>/<path>}) — the generated
+     *  permutation sprites inherit the path prefix and claim the blocks
+     *  atlas (the def tree stays 100% block-side under the atlas split). */
+    static String hostedPaletteBase(PaletteRow row) {
+        String base = row.baseSprite();
+        int c = base.indexOf(':');
+        String ns = c > 0 ? base.substring(0, c) : "minecraft";
+        String path = c > 0 ? base.substring(c + 1) : base;
+        return GalleryPack.WRAPPER_NS + ":block/palettes/" + ns + "/" + path;
+    }
+
+    /** Raw bytes of one sprite's PNG from the jar stack (the sprite id's
+     *  {@code assets/<ns>/textures/<path>.png} location). */
+    private static byte[] readJarResource(List<Path> jars, String spriteId) {
+        int c = spriteId.indexOf(':');
+        if (c <= 0) {
+            return null;
+        }
+        String file = "assets/" + spriteId.substring(0, c) + "/textures/"
+                + spriteId.substring(c + 1) + ".png";
+        for (Path jar : jars) {
+            try (ZipFile zf = new ZipFile(jar.toFile())) {
+                ZipEntry e = zf.getEntry(file);
+                if (e != null) {
+                    return zf.getInputStream(e).readAllBytes();
+                }
+            } catch (IOException bad) {
+                // try the next jar
+            }
+        }
+        return null;
     }
 
     /** Full jar resource path ({@code ns:textures/palettes/x.png}) -> sprite id. */
@@ -3604,10 +3670,12 @@ public final class F2vPack {
      * ({@code <baseSprite><separator><suffix>}); quoted-value-exact
      * replacement keeps #refs and vanilla textures untouched.
      */
-    static String retintModelJson(String baseJson, String baseSprite,
-                                  String separator, String suffix) {
-        String from = "\"" + baseSprite + "\"";
-        String to = "\"" + baseSprite + separator + suffix + "\"";
+    static String retintModelJson(String baseJson, String originalSprite,
+                                  String hostedBase, String separator, String suffix) {
+        // the model carries the ORIGINAL base sprite; the retint points it at
+        // the HOSTED block-path generated permutation sprite (14-e270)
+        String from = "\"" + originalSprite + "\"";
+        String to = "\"" + hostedBase + separator + suffix + "\"";
         return baseJson.replace(from, to);
     }
 
@@ -3793,7 +3861,15 @@ public final class F2vPack {
         if (!automatic) atlasReferencedTexture(ref, entries);
     }
 
-    /** Vanilla 26.3 uses single sources for model sprites outside directory scans. */
+    /**
+     * Vanilla 26.3 uses single sources for model sprites outside directory scans.
+     * 14-e270 THE SPLIT LAW: the single rides the BLOCKS stack ONLY — every
+     * sprite the def tree resolves must bind blocks.png (uniform blocks is the
+     * legal shape the decompiled validateAtlasUsage accepts, and the block
+     * channel rejects any model whose sprite claims the items atlas). An
+     * items.json claim here would bind the sprite items-first and mix the
+     * whole host def.
+     */
     private static void atlasReferencedTexture(String ref, TreeMap<String, byte[]> entries) {
         JsonObject source = new JsonObject();
         source.addProperty("type", "minecraft:single");
@@ -3802,9 +3878,7 @@ public final class F2vPack {
         sources.add(source);
         JsonObject definition = new JsonObject();
         definition.add("sources", sources);
-        for (String atlas : List.of("blocks", "items")) {
-            appendAtlasSources("assets/minecraft/atlases/" + atlas + ".json", definition.toString(), entries);
-        }
+        appendAtlasSources("assets/minecraft/atlases/blocks.json", definition.toString(), entries);
     }
 
     /** The source types the stock client's SpriteSourceList codec parses
@@ -3876,17 +3950,23 @@ public final class F2vPack {
                     }
                     String atlasFile = name.substring(atlasMarker + "/atlases/".length());
                     if (atlasFile.equals("blocks.json") || atlasFile.equals("items.json")) {
-                        // the ATLAS ID IS THE FILE NAME (SpriteSourceList
+                        // THE ATLAS ID IS THE FILE NAME (SpriteSourceList
                         // getResourceStack reads atlases/<id>.json across ALL
                         // namespace directories) — every mod's blocks.json /
                         // items.json feeds the vanilla blocks / items atlas.
-                        // The 26.3 atlas split: item models bake against
-                        // items.png, block models against blocks.png — the
-                        // same sources ride both stacks (the 14-cd fluid law)
-                        for (String stack : List.of("blocks.json", "items.json")) {
-                            appendAtlasSources("assets/minecraft/atlases/" + stack,
-                                    "{\"sources\": " + accepted.toString() + "}", entries);
-                        }
+                        // 14-e270 THE SPLIT LAW (the measured twenty-sixth
+                        // flight's 3,137 block-model rejects): a mod's
+                        // blocks.json rides the BLOCKS stack and its
+                        // items.json rides the ITEMS stack — the old
+                        // both-stacks clone (the 14-cd fluid law) made
+                        // MaterialBaker bind every block-path sprite
+                        // items-first and the block channel rejected every
+                        // model carrying one. The item pipeline reaches
+                        // block-side sprites through the decompiled blocks
+                        // fallback (items null -> blocks) — no cross-claim
+                        // needed.
+                        appendAtlasSources("assets/minecraft/atlases/" + atlasFile,
+                                "{\"sources\": " + accepted.toString() + "}", entries);
                     } else {
                         // any other atlas file name (armor_trims.json = the
                         // worn-armor trim atlas) merges additively at its
@@ -4832,6 +4912,13 @@ public final class F2vPack {
                     + "]}").getBytes(StandardCharsets.UTF_8));
             jarEntries.put("assets/fakemod/textures/trims/items/card_chestplate_trim.png", testPng());
             jarEntries.put("assets/fakemod/textures/entity/hat.png", testPng());
+            // 14-e270 the SPLIT fixture: the mod's own items.json rides the
+            // ITEMS stack ONLY (its single must never cross-claim blocks.json)
+            jarEntries.put("assets/fakemod/atlases/items.json",
+                    ("{\"sources\":[{\"type\":\"single\","
+                    + "\"resource\":\"fakemod:items/carried_item_tex\"}]}")
+                            .getBytes(StandardCharsets.UTF_8));
+            jarEntries.put("assets/fakemod/textures/items/carried_item_tex.png", testPng());
             jarEntries.put("assets/fakemod/textures/item/holder_tex.png", testPng());
             jarEntries.put("assets/fakemod/models/item/card_chestplate_emerald_trim.json",
                     ("{\"parent\": \"minecraft:item/generated\", \"textures\": {"
@@ -5675,17 +5762,26 @@ public final class F2vPack {
             // 14-e252: the mod-atlas carry re-serializes the file in gson
             // compact form, so the assertions read the SPACE-STRIPPED body
             // (the source SET is the contract, not the emitter's spacing)
+            // 14-e270 THE ATLAS SPLIT: the palette channel's generated sprites
+            // ride the HOSTED block-path base, so the source + the whole
+            // def tree live on the BLOCKS stack; items.json stays item-path
+            // only (the vanilla split — the block channel rejects any model
+            // whose sprite binds items.png, the item pipeline falls back to
+            // blocks.png by the decompiled MaterialBaker law).
             String atlas = str(entries, "assets/minecraft/atlases/items.json");
             String atlasCompact = atlas.replace(" ", "");
-            expect(failures, atlas.contains("\"minecraft:paletted_permutations\""),
+            String blocksAtlas = str(entries, "assets/minecraft/atlases/blocks.json");
+            String blocksAtlasCompact = blocksAtlas.replace(" ", "");
+            expect(failures, blocksAtlas.contains("\"minecraft:paletted_permutations\""),
                     "atlas carries the paletted_permutations source");
-            expect(failures, atlasCompact.contains("\"textures\":[\"fakemod:item/gem_tex\"]"),
-                    "atlas source recolors the base sprite");
-            expect(failures, atlasCompact.contains("\"palette_key\":\"fakemod:gem_key\""),
+            expect(failures, blocksAtlasCompact.contains(
+                            "\"textures\":[\"c-imagine:block/palettes/fakemod/item/gem_tex\"]"),
+                    "palette source recolors the HOSTED block-path base sprite");
+            expect(failures, blocksAtlasCompact.contains("\"palette_key\":\"fakemod:gem_key\""),
                     "atlas source palette_key in the 26.3 converter space (no palettes/ segment)");
-            expect(failures, atlasCompact.contains("\"red\":\"fakemod:gem_red\""),
+            expect(failures, blocksAtlasCompact.contains("\"red\":\"fakemod:gem_red\""),
                     "atlas source permutation entry (26.3 converter space)");
-            expect(failures, atlasCompact.contains("\"separator\":\"_\""),
+            expect(failures, blocksAtlasCompact.contains("\"separator\":\"_\""),
                     "atlas source separator");
             expect(failures, entries.containsKey(
                     "assets/fakemod/textures/palettes/gem_key.png"), "palette key png copied");
@@ -5693,23 +5789,29 @@ public final class F2vPack {
                     "assets/fakemod/textures/palettes/gem_red.png"), "permutation png copied");
             expect(failures, entries.containsKey(
                     "assets/fakemod/models/item/gem.json"), "base gem model copied");
+            expect(failures, entries.containsKey(
+                    "assets/c-imagine/textures/block/palettes/fakemod/item/gem_tex.png"),
+                    "the palette base PNG re-hosted block-path (the def tree stays block-side)");
+            expect(failures, !atlasCompact.contains("paletted_permutations"),
+                    "the atlas split: items.json carries NO block-side palette source");
             // 14-e252 THE MOD-ATLAS CARRY zip contents: the carried PP rides
-            // BOTH atlas stacks with 26.3 palette refs, the custom type and
-            // the off-26.3 material are gone, the referenced PNGs ride, the
+            // the stack its own atlas file names (the fake mod ships
+            // atlases/blocks.json), with 26.3 palette refs, the custom type
+            // and the off-26.3 material gone, the referenced PNGs ride, the
             // trim item model got its allocated def
-            expect(failures, atlas.contains("\"fakemod:trims/items/card_chestplate_trim\""),
-                    "mod atlas carry: the PP base rides the items stack");
-            expect(failures, atlas.contains("\"minecraft:trim/emerald\"")
-                            && atlas.contains("\"minecraft:trim/resin\""),
+            expect(failures, blocksAtlas.contains("\"fakemod:trims/items/card_chestplate_trim\""),
+                    "mod atlas carry: the PP base rides the blocks stack (its own atlas file)");
+            expect(failures, blocksAtlas.contains("\"minecraft:trim/emerald\"")
+                            && blocksAtlas.contains("\"minecraft:trim/resin\""),
                     "mod atlas carry: 1.21.1 palette refs rewritten to the 26.3 trim system");
-            expect(failures, !atlas.contains("trims/color_palettes/"),
+            expect(failures, !blocksAtlas.contains("trims/color_palettes/"),
                     "mod atlas carry: no 1.21.1 palette ref survives on the 26.3 stack");
-            expect(failures, !atlas.contains("ruby"),
+            expect(failures, !blocksAtlas.contains("ruby"),
                     "mod atlas carry: the off-26.3 trim material dropped");
             expect(failures, r1.warnings().stream().anyMatch(w ->
                     w.contains("trim material missing on 26.3 dropped: ruby")),
                     "mod atlas carry: the dropped material stays loud in the ledger");
-            expect(failures, !atlas.contains("fakemod:custom_kind"),
+            expect(failures, !blocksAtlas.contains("fakemod:custom_kind"),
                     "mod atlas carry: the custom source type skipped");
             expect(failures, r1.warnings().stream().anyMatch(w ->
                     w.contains("custom source type skipped: fakemod:custom_kind")),
@@ -5723,13 +5825,28 @@ public final class F2vPack {
             expect(failures, entries.containsKey(
                     "assets/c-imagine/items/fakemod/card_chestplate_emerald_trim.json"),
                     "mod atlas carry: the trim item model got its allocated def");
-            String blocksAtlas = str(entries, "assets/minecraft/atlases/blocks.json");
-            expect(failures, blocksAtlas.contains("\"fakemod:trims/items/card_chestplate_trim\""),
-                    "mod atlas carry: the same PP rides the blocks stack (the 26.3 atlas split)");
+            expect(failures, atlas.contains("\"fakemod:items/carried_item_tex\""),
+                    "mod atlas carry: the mod's items.json rides the ITEMS stack");
+            expect(failures, !blocksAtlas.contains("\"fakemod:items/carried_item_tex\""),
+                    "mod atlas carry: the items.json single does NOT cross-claim the blocks stack");
+            // 14-e270 THE SPLIT LAW over the emitted atlas files: the items
+            // stack carries NO block-side directory, the blocks stack carries
+            // NO item-path directory — the cross-claims made MaterialBaker
+            // bind block sprites items-first and the block channel rejected
+            // 3,137 models (the measured twenty-sixth flight).
+            expect(failures, !atlasCompact.contains("\"source\":\"block\"")
+                            && !atlasCompact.contains("\"source\":\"fluidcube\"")
+                            && !atlasCompact.contains("\"source\":\"part\"")
+                            && !atlasCompact.contains("\"source\":\"fluid\"")
+                            && !atlasCompact.contains("\"source\":\"liquid\""),
+                    "the atlas split: items.json claims NO block-side directory");
+            expect(failures, !blocksAtlasCompact.contains("\"source\":\"item\"")
+                            && !blocksAtlasCompact.contains("\"source\":\"item/\""),
+                    "the atlas split: blocks.json claims NO item-path directory");
             String gemRed = str(entries, "assets/fakemod/models/item/gem_red.json");
             Map<String, String> gemRedTex = extractTextures(gemRed);
-            expect(failures, "fakemod:item/gem_tex_red".equals(gemRedTex.get("layer0")),
-                    "variant model retinted to the permutated sprite");
+            expect(failures, "c-imagine:block/palettes/fakemod/item/gem_tex_red".equals(gemRedTex.get("layer0")),
+                    "variant model retinted to the HOSTED block-path permutated sprite");
             expect(failures, gemRed.contains("minecraft:item/generated"),
                     "variant model keeps the base parent");
             expect(failures, paper.contains("\"threshold\": 3001.0"),
@@ -5935,22 +6052,26 @@ public final class F2vPack {
             boolean warned = r1.warnings().stream()
                     .anyMatch(w -> w.contains("outside item|block dirs"));
             expect(failures, !warned, "referenced deep texture is supported");
+            // 14-e270 THE SPLIT: the referenced odd-path sprite rides the
+            // BLOCKS stack ONLY (the def tree stays block-side; an items.json
+            // claim would bind the sprite items-first and mix the def).
             JsonObject single = new JsonObject();
             single.addProperty("type", "minecraft:single");
             single.addProperty("resource", "fakemod:deep/custom_tex");
-            for (String referencedAtlas : List.of("blocks", "items")) {
-                String atlasPath = "assets/minecraft/atlases/" + referencedAtlas + ".json";
-                byte[] before = entries.get(atlasPath);
-                atlasReferencedTexture("fakemod:deep/custom_tex", entries);
-                expect(failures, java.util.Arrays.equals(before, entries.get(atlasPath)),
-                        "repeated texture reference keeps atlas stable: " + referencedAtlas);
-                int count = 0;
-                for (JsonElement source : JsonParser.parseString(str(entries, atlasPath))
-                        .getAsJsonObject().getAsJsonArray("sources")) {
-                    if (source.equals(single)) count++;
-                }
-                expect(failures, count == 1, "deep texture stitched once: " + referencedAtlas);
+            String deepAtlasPath = "assets/minecraft/atlases/blocks.json";
+            byte[] before = entries.get(deepAtlasPath);
+            atlasReferencedTexture("fakemod:deep/custom_tex", entries);
+            expect(failures, java.util.Arrays.equals(before, entries.get(deepAtlasPath)),
+                    "repeated texture reference keeps atlas stable: blocks");
+            int count = 0;
+            for (JsonElement source : JsonParser.parseString(str(entries, deepAtlasPath))
+                    .getAsJsonObject().getAsJsonArray("sources")) {
+                if (source.equals(single)) count++;
             }
+            expect(failures, count == 1, "deep texture stitched once: blocks");
+            expect(failures, !str(entries, "assets/minecraft/atlases/items.json")
+                            .contains("fakemod:deep/custom_tex"),
+                    "the atlas split: the odd-path single does NOT cross-claim the items stack");
             // no vanilla-namespace assets leaked into the pack
             boolean vanillaLeak = entries.keySet().stream()
                     .anyMatch(k -> k.startsWith("assets/minecraft/models/"));
