@@ -716,8 +716,8 @@ final class ObjMesh {
             }
             n = normal(vs);
             double[] e = sub(pts[1], pts[0]);
-            ex = scale(e, 1 / Math.max(len(e), 1e-9));
-            ey = cross(n, ex);
+            double[] exF = scale(e, 1 / Math.max(len(e), 1e-9));
+            double[] eyF = cross(n, exF);
             // 14-e283 THE WALL FRAME OVERRIDE: the captured quads carry
             // CHAMFERED first edges (the sprite-edge inset 0.0156 -> the
             // first edge normalizes to a 45-degree diagonal on the real
@@ -732,9 +732,11 @@ final class ObjMesh {
             // becomes the screen-aligned grid the snap needs. The mirrored
             // law below keeps the winding for n = -z.
             if (wallChannel && Math.abs(n[2]) > 0.999) {
-                ex = new double[]{1, 0, 0};
-                ey = cross(n, ex);
+                exF = new double[]{1, 0, 0};
+                eyF = cross(n, exF);
             }
+            ex = exF;
+            ey = eyF;
             double aMin = Double.MAX_VALUE;
             double aMax = -Double.MAX_VALUE;
             double bMin = Double.MAX_VALUE;
