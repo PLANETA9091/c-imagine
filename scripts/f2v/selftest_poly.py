@@ -108,14 +108,19 @@ def new_size(P):
     return pw, ph, ppu
 
 
-def render_tile(pw, ph, P, UV):
+def render_tile(pw, ph, P, UV, bounds=None):
     # verbatim port of Cell.render() (ObjMesh.java lines 720-811) -- the loop
     # the patch does NOT touch; only the pw/ph fed into it changes. Returns
     # (tile, tex) with tex[j][i] = the sampled source texel (tx0, ty0).
+    # bounds=None -> the polygon's own bbox (the legacy shape); the 14-e281
+    # snap path passes the SNAPPED bounds (X/J ordered) here.
     w, h = SPRITE.size
     fh = w if (h > w and h % w == 0) else h          # frame-0 rule (779-780)
-    a0 = min(p[0] for p in P); a1 = max(p[0] for p in P)
-    b0 = min(p[1] for p in P); b1 = max(p[1] for p in P)
+    if bounds is None:
+        a0 = min(p[0] for p in P); a1 = max(p[0] for p in P)
+        b0 = min(p[1] for p in P); b1 = max(p[1] for p in P)
+    else:
+        a0, a1, b0, b1 = bounds
     spx = SPRITE.load()
     out = [[(0, 0, 0, 0)] * pw for _ in range(ph)]
     tex = [[None] * pw for _ in range(ph)]
@@ -143,15 +148,18 @@ def render_tile(pw, ph, P, UV):
     return out, tex
 
 
-def ref_tile(pw, ph, P, UV):
+def ref_tile(pw, ph, P, UV, bounds=None):
     # INDEPENDENT implementation of the native per-pixel contract: edge
     # functions instead of the Java bary formula; same epsilon regime
     # (degenerate |2*area| < 1e-12 skip; normalized weights < -1e-9 reject).
     # Returns (tile, tex) like render_tile.
     w, h = SPRITE.size
     fh = w if (h > w and h % w == 0) else h
-    a0 = min(p[0] for p in P); a1 = max(p[0] for p in P)
-    b0 = min(p[1] for p in P); b1 = max(p[1] for p in P)
+    if bounds is None:
+        a0 = min(p[0] for p in P); a1 = max(p[0] for p in P)
+        b0 = min(p[1] for p in P); b1 = max(p[1] for p in P)
+    else:
+        a0, a1, b0, b1 = bounds
     spx = SPRITE.load()
 
     def e2(ax, ay, bx, by, cx, cy):  # 2 * signed area of triangle (a, b, c)
@@ -276,3 +284,92 @@ straight_n = run("straight square control", STRAIGHT["P"], STRAIGHT["UV"])
 print()
 print(f"diagonal {diag_n} vs straight {straight_n} boundary-diff px "
       f"(evidence shape: diagonal >> straight)")
+
+# === 14-e281 THE TILE-FIDELITY LAW: the wall channel's screen-grid snap ======
+# The law (ObjMesh.java Cell ctor, proposals/tile-fidelity-law.md): for the
+# wall channel's axis-aligned wall-facing polys the tile is sized to the
+# SCREEN pixels the polygon actually spans (X0 = floor, pw = ceil - floor at
+# the polygon's own depth J = -G), the element rect snaps to the same grid
+# (bounds = X/J), and the raster samples the screen pixel centres mapped into
+# the plane -- texel == pixel 1:1. This battery pins:
+#   1. the grid law (spans 1.3/2.5/4/13/16/48 -> pw = ceil-floor, <= 184, the
+#      snapped bounds project to integer px EXACTLY),
+#   2. the contract: the snapped render == the independent edge-function REF
+#      at the SAME snapped bounds (texel EXACT, colour <= 1),
+#   3. the evidence: the snapped tile differs from the legacy round()-sized
+#      tile resampled (the diamond's fractional edges),
+#   4. the mirror law: J < 0 (the wall's sign) exercises the ordered bounds
+#      on EVERY case (tile column i = screen px X1-1-i).
+
+WALL_F_PX = 360.0 / math.tan(math.radians(35.0))   # 514.1333, the 720p contract
+WALL_CONTENT_Z = 8.993                              # the e91j/e278 content plane
+WALL_CAM_Z = 0.5
+
+
+def wall_g(mz_plane):
+    # the polygon's own depth -> its px-per-model-unit (the law's G)
+    zw = WALL_CONTENT_Z + (16.0 - mz_plane) / 16.0
+    return WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0)
+
+
+def snap_size(P, mz_plane=16.0):
+    # verbatim port of the patched Cell sizing (the wall-channel gate branch)
+    jx = jy = -wall_g(mz_plane)
+    a0 = min(p[0] for p in P); a1 = max(p[0] for p in P)
+    b0 = min(p[1] for p in P); b1 = max(p[1] for p in P)
+    x0 = math.floor(min(jx * a0, jx * a1)); x1 = math.ceil(max(jx * a0, jx * a1))
+    y0 = math.floor(min(jy * b0, jy * b1)); y1 = math.ceil(max(jy * b0, jy * b1))
+    pw, ph = x1 - x0, y1 - y0
+    bounds = (min(x0 / jx, x1 / jx), max(x0 / jx, x1 / jx),
+              min(y0 / jy, y1 / jy), max(y0 / jy, y1 / jy))
+    return pw, ph, bounds, jx
+
+
+print()
+print("[tile-fidelity law: the screen-grid snap]")
+g16 = wall_g(16.0)
+print(f"  wall G at mz=16: {g16:.5f} px/unit (the legacy ppu 3.78125, "
+      f"delta {g16 - 60.5 / 16:+.5f})")
+
+# 1. the grid law over the measured span table
+for span in (1.3, 2.5, 4.0, 13.0, 16.0, 48.0):
+    rect = dict(P=[(2.0, 2.0), (2.0 + span, 2.0), (2.0 + span, 2.0 + span), (2.0, 2.0 + span)],
+                UV=[(0, 0), (16, 0), (16, 16), (0, 16)])
+    pw, ph, bounds, jx = snap_size(rect["P"])
+    lo = min(jx * 2.0, jx * (2.0 + span)); hi = max(jx * 2.0, jx * (2.0 + span))
+    assert pw == math.ceil(hi) - math.floor(lo), f"span {span}: pw {pw} != ceil-floor"
+    assert pw <= 184 and ph <= 184, f"span {span}: cap blown {pw}x{ph}"
+    # the snapped bounds project to integer px exactly (the rect IS the grid)
+    for edge in (bounds[0], bounds[1]):
+        assert abs(jx * edge - round(jx * edge)) < 1e-9, f"span {span}: rect edge off-grid"
+    print(f"  span {span:5.1f}: J*span {jx * span:8.3f} px -> tile {pw}x{ph}, "
+          f"rect [{bounds[0]:.4f}, {bounds[1]:.4f}] on-grid")
+
+# 2+3+4. the contract + the evidence on the real fixtures at mz=16
+def snap_battery(name, P, UV):
+    pw, ph, bounds, jx = snap_size(P)
+    snapped, snapped_tex = render_tile(pw, ph, P, UV, bounds=bounds)
+    ref, ref_tex = ref_tile(pw, ph, P, UV, bounds=bounds)
+    tex_bad = [(i, j) for j in range(ph) for i in range(pw)
+               if snapped_tex[j][i] != ref_tex[j][i]]
+    assert not tex_bad, f"{name}: SNAPPED != REF at {len(tex_bad)} px"
+    deltas = [abs(x - y) for j in range(ph) for i in range(pw)
+              for x, y in zip(snapped[j][i], ref[j][i])]
+    assert max(deltas) <= 1, f"{name}: SNAPPED vs REF colour delta {max(deltas)} > 1"
+    # the legacy tile (round at the FIXED ppu) resampled onto the snapped grid
+    pw_o, ph_o, _ = new_size(P)
+    legacy = render_tile(pw_o, ph_o, P, UV)[0]
+    gpu = naive_bilinear(legacy, pw, ph)
+    n = diff_count(gpu, snapped)
+    print(f"  {name}: snapped tile {pw}x{ph} (bounds a[{bounds[0]:.3f},{bounds[1]:.3f}] "
+          f"b[{bounds[2]:.3f},{bounds[3]:.3f}]) == REF texel EXACT, colours max|d|={max(deltas)}; "
+          f"legacy-resampled boundary-diff {n} px of {pw * ph}")
+    return n
+
+snap_diag = snap_battery("diagonal diamond @mz16", DIAG["P"], DIAG["UV"])
+snap_straight = snap_battery("straight square @mz16", STRAIGHT["P"], STRAIGHT["UV"])
+assert snap_diag > 0 or snap_straight > 0, \
+    "the evidence assert died: the snapped tile == the legacy tile everywhere"
+print(f"  evidence: the snap MOVES the lattice (boundary-diff {snap_diag}/{snap_straight} px) "
+      f"-- the harness sees the disease the law removes")
+print("TILE-FIDELITY LAW BATTERY OK")
