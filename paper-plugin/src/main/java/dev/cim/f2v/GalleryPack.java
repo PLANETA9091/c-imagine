@@ -3448,10 +3448,13 @@ public final class GalleryPack {
             }
         }
         // a re-hosted sprite exists only in the pack, not in any jar
+        // 14-e281: the wall channel rides the screen-grid tile snap —
+        // the gallery block lane only, and only at the identity shrink
+        // (k > 1 rescales the frame and breaks the snap's depth map).
         ObjMesh.materialize(elements, textures, sprite -> {
             byte[] hosted = entries.get(spritePathPng(sprite));
             return hosted != null ? hosted : readPngFromJars(jars, spritePathPng(sprite));
-        }, WRAPPER_NS, entries, warnings);
+        }, WRAPPER_NS, entries, warnings, block && k == 1);
         // 14-bs: the door sprites sample their own exact tiles (the atlas
         // layouts/mip chains differ between the legs) — the q-path composites
         // carry the same direct sprite windows

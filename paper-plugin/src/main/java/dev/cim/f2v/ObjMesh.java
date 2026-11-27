@@ -487,6 +487,18 @@ final class ObjMesh {
     static void materialize(JsonArray elements, Map<String, String> textures, SpriteReader reader,
                             String spriteNs, Map<String, byte[]> entries,
                             List<String> warnings) throws IOException {
+        materialize(elements, textures, reader, spriteNs, entries, warnings, false);
+    }
+
+    /**
+     * 14-e281: {@code wallChannel} = the gallery block channel's mesh replay
+     * (the wall rig's screen-grid tile snap fires there; the caller gates it
+     * on the wrapper shrink k == 1 — a shrunk frame breaks the depth map).
+     * The item/gui and non-wall lanes keep the legacy output-density path.
+     */
+    static void materialize(JsonArray elements, Map<String, String> textures, SpriteReader reader,
+                            String spriteNs, Map<String, byte[]> entries,
+                            List<String> warnings, boolean wallChannel) throws IOException {
         for (int i = 0; i < elements.size(); i++) {
             JsonObject el = elements.get(i).getAsJsonObject();
             if (!el.has(POLY)) {
@@ -496,7 +508,7 @@ final class ObjMesh {
             String ref = poly.get("tex").getAsString();
             String sprite = textures.get(ref.startsWith("#") ? ref.substring(1) : ref);
             BufferedImage src = BAKER.image(sprite, reader, warnings);
-            Cell cell = new Cell(el, poly, src);
+            Cell cell = new Cell(el, poly, src, wallChannel);
             int[] at = BAKER.place(cell.render(), cell.pw, cell.ph);
             String key = "cimcut" + at[0];
             textures.put(key, spriteNs + ":block/" + Baker.SHEET + at[0]);
@@ -629,6 +641,23 @@ final class ObjMesh {
         }
     }
 
+    // ---- 14-e281 THE WALL RIG (the e91j/e278 measured constants) ------------
+    // The gallery block channel's camera contract: 70-degree vertical FOV at
+    // 1280x720 -> F = 514.1333 px (CimPlugin GALLERY_F_PX). The ours content
+    // plane renders at z = 8.993 world (the e91j GALLERY_DZ fit residual, the
+    // e278 split-half-validated phase law's DIST-EPS = 8.493 distance); the
+    // capture frame's mz = 16 plane IS that content plane (the capture is the
+    // world-aligned cell frame, z mirrored: capture mz 16 = the truth's face
+    // plane), and deeper capture planes sit farther (world z grows toward +z).
+    // The projection sign law (the 14-t receipt): sx = W/2 - F*(x-0.5)/d —
+    // screen px DECREASE as the world/model coordinate grows on both axes.
+    static final double WALL_FRAME_H = 720.0;
+    static final double WALL_VFOV_DEG = 70.0;
+    static final double WALL_F_PX = (WALL_FRAME_H / 2.0)
+            / Math.tan(Math.toRadians(WALL_VFOV_DEG / 2.0)); // 514.1333
+    static final double WALL_CONTENT_Z = 8.993;
+    static final double WALL_CAM_Z = 0.5;
+
     /** One polygon's rectangle in its own plane, and its place in the atlas. */
     private static final class Cell {
         final JsonObject el;
@@ -649,7 +678,7 @@ final class ObjMesh {
         int x;
         int y;
 
-        Cell(JsonObject el, JsonObject poly, BufferedImage src) {
+        Cell(JsonObject el, JsonObject poly, BufferedImage src, boolean wallChannel) {
             this.el = el;
             this.src = src;
             tex = poly.get("tex").getAsString();
@@ -681,10 +710,78 @@ final class ObjMesh {
                 bMin = Math.min(bMin, dot(q, ey));
                 bMax = Math.max(bMax, dot(q, ey));
             }
-            a0 = aMin;
-            a1 = aMax;
-            b0 = bMin;
-            b1 = bMax;
+            // 14-e281 THE TILE-FIDELITY LAW (the screen-grid snap;
+            // proposals/tile-fidelity-law.md, the A1/A2b forensics):
+            // the e273 output-density tile still lands edges 1-4 px off
+            // because the per-polygon round() makes the tile grid
+            // non-commensurate with the screen grid (the tile grid step on
+            // screen = span*G/pw = 0.98-1.05 px, never exactly 1): every
+            // silhouette corner and sprite-texel boundary re-quantizes at an
+            // arbitrarily-phased grid — the measured cage ±1-3 px bar-width
+            // scatter, the diagonal enrichment 1.48-2.44x, the interior texel
+            // drift (barnacles corr 0.605-0.675). THE SNAP: size the tile to
+            // the screen pixels the polygon actually spans (X0 = floor of the
+            // projected span, pw = ceil - floor), snap the element rect to the
+            // same grid (the bounds = X/J — the rect's projected span is then
+            // EXACTLY pw px), and raster at the screen pixel centres mapped
+            // into the plane — texel == pixel 1:1, the mask = the native
+            // pixel-centre rule, the sprite sampling = the native per-screen-px
+            // NEAREST. The ordered bounds absorb the sign of J (the mirrored
+            // mapping renders tile column i at screen px X1-1-i, sampled at
+            // its own centre — exact for both signs). The interior sampling is
+            // exact in ANY frame (both legs sample uv(absolute px)); the G
+            // calibration error only bends the rect scale second-order.
+            // GATES (everything else = the legacy path byte-identical):
+            // wall channel only, |n_z| > 0.999 (wall-facing), the basis
+            // screen-axis-aligned (|ex_x|,|ey_y| > 0.999 with the cross terms
+            // < 1e-3 — rotated rects keep the legacy path), spans within the
+            // 184 cap after the snap growth (worst case 183). The e278 per-cell
+            // phase snap stays the origin anchor (residual <= 0.047 px); the
+            // per-cell absolute-phase remainder (<= 1 px, uniform per cell) is
+            // the honest residual this law cannot touch — it is the phase
+            // lottery the join's shift search already absorbs the integer part
+            // of.
+            double aLo = aMin;
+            double aHi = aMax;
+            double bLo = bMin;
+            double bHi = bMax;
+            int pwSnap = 0;
+            int phSnap = 0;
+            boolean snapped = false;
+            if (wallChannel && Math.abs(n[2]) > 0.999
+                    && Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999
+                    && Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3) {
+                final double mzPlane = n[2] * dot(pts[0], n);
+                final double zw = WALL_CONTENT_Z + (16.0 - mzPlane) / 16.0;
+                if (zw - WALL_CAM_Z > 1.0) {
+                    final double g = WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0);
+                    final double jx = -g;
+                    final double jy = -g;
+                    final int x0 = (int) Math.floor(Math.min(jx * aMin, jx * aMax));
+                    final int x1 = (int) Math.ceil(Math.max(jx * aMin, jx * aMax));
+                    final int y0 = (int) Math.floor(Math.min(jy * bMin, jy * bMax));
+                    final int y1 = (int) Math.ceil(Math.max(jy * bMin, jy * bMax));
+                    final int wSpan = x1 - x0;
+                    final int hSpan = y1 - y0;
+                    if (wSpan >= 2 && wSpan <= 184 && hSpan >= 2 && hSpan <= 184) {
+                        aLo = Math.min(x0 / jx, x1 / jx);
+                        aHi = Math.max(x0 / jx, x1 / jx);
+                        bLo = Math.min(y0 / jy, y1 / jy);
+                        bHi = Math.max(y0 / jy, y1 / jy);
+                        pwSnap = wSpan;
+                        phSnap = hSpan;
+                        snapped = true;
+                    }
+                }
+            }
+            a0 = aLo;
+            a1 = aHi;
+            b0 = bLo;
+            b1 = bHi;
+            if (snapped) {
+                pw = pwSnap;
+                ph = phSnap;
+            } else {
             // 3-f-retry: the tile is sized to the element's OUTPUT pixel
             // footprint, so each tile pixel IS one screen pixel and render()
             // runs the native per-pixel UV math (pixel centre -> fan
@@ -718,6 +815,7 @@ final class ObjMesh {
             // reintroduced the minify.
             pw = Math.max(2, Math.min(184, (int) Math.round((a1 - a0) * ppu)));
             ph = Math.max(2, Math.min(184, (int) Math.round((b1 - b0) * ppu)));
+            }
         }
 
         private static float[][] readColors(JsonArray cs) {
