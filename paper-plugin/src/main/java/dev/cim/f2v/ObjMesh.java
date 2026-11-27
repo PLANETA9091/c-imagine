@@ -718,23 +718,12 @@ final class ObjMesh {
             double[] e = sub(pts[1], pts[0]);
             double[] exF = scale(e, 1 / Math.max(len(e), 1e-9));
             double[] eyF = cross(n, exF);
-            // 14-e283 THE WALL FRAME OVERRIDE: the captured quads carry
-            // CHAMFERED first edges (the sprite-edge inset 0.0156 -> the
-            // first edge normalizes to a 45-degree diagonal on the real
-            // door/wall rows), so the polygon's own ex/ey frame is rotated
-            // off the screen axes and the axis-aligned basis gate would
-            // reject EVERY real quad (the #637 flight measured ae deltas
-            // exactly +0 across all families = the tiles never moved). For
-            // the wall-facing polys the raster frame = the WORLD x/y axes:
-            // the barycentric weights are affine-invariant under the linear
-            // frame change (the same polygon, the same uv interpolation),
-            // the silhouette is untouched, and only the raster lattice
-            // becomes the screen-aligned grid the snap needs. The mirrored
-            // law below keeps the winding for n = -z.
-            if (wallChannel && Math.abs(n[2]) > 0.999) {
-                exF = new double[]{1, 0, 0};
-                eyF = cross(n, exF);
-            }
+            // 14-e284 THE WALL FRAME OVERRIDE MEASURED NEGATIVE and is
+            // reverted: the #639 flight's per-cell diff (1230 -> 1413, bop
+            // +75 / create +40 / supp +41) — the world-frame bbox + the
+            // identity rotation moved the rendered rect the e278 phase law
+            // was NOT fitted on. The polygon's own frame stays; the v2 snap
+            // below scales the rect about its CENTRE (the phase anchor).
             ex = exF;
             ey = eyF;
             double aMin = Double.MAX_VALUE;
@@ -790,9 +779,6 @@ final class ObjMesh {
                 snapGate("channel");
             } else if (Math.abs(n[2]) <= 0.999) {
                 snapGate("nz");
-            } else if (!(Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999)
-                    || !(Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3)) {
-                snapGate("basis");
             } else {
                 final double mzPlane = n[2] * dot(pts[0], n);
                 final double zw = WALL_CONTENT_Z + (16.0 - mzPlane) / 16.0;
@@ -800,6 +786,17 @@ final class ObjMesh {
                     snapGate("depth");
                 }
                 if (zw - WALL_CAM_Z > 1.0) {
+                    // 14-e285 v2 THE CENTRE-PRESERVING SNAP: the projected
+                    // span of the polygon's own bbox = |J|*span px (fractional);
+                    // the tile = the pixels that span actually covers
+                    // (floor..ceil), and the element rect scales about the
+                    // bbox CENTRE to span'/J = pw px exactly — texel==pixel
+                    // 1:1 with the rect's centre (the e278 phase anchor)
+                    // UNMOVED, so the landed per-cell phase law stays fitted.
+                    // The growth rides into the transparent margins (<= 1 px
+                    // per side, the cutout discards = the native not-covered
+                    // rule). The polygon's own frame rides (the #639
+                    // world-frame reframe measured NEGATIVE and is reverted).
                     final double g = WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0);
                     final double jx = -g;
                     final double jy = -g;
@@ -810,10 +807,14 @@ final class ObjMesh {
                     final int wSpan = x1 - x0;
                     final int hSpan = y1 - y0;
                     if (wSpan >= 2 && wSpan <= 184 && hSpan >= 2 && hSpan <= 184) {
-                        aLo = Math.min(x0 / jx, x1 / jx);
-                        aHi = Math.max(x0 / jx, x1 / jx);
-                        bLo = Math.min(y0 / jy, y1 / jy);
-                        bHi = Math.max(y0 / jy, y1 / jy);
+                        double aMid = (aMin + aMax) / 2;
+                        double bMid = (bMin + bMax) / 2;
+                        double aHalf = (wSpan / jx) / 2;
+                        double bHalf = (hSpan / jy) / 2;
+                        aLo = Math.min(aMid - aHalf, aMid + aHalf);
+                        aHi = Math.max(aMid - aHalf, aMid + aHalf);
+                        bLo = Math.min(bMid - bHalf, bMid + bHalf);
+                        bHi = Math.max(bMid - bHalf, bMid + bHalf);
                         pwSnap = wSpan;
                         phSnap = hSpan;
                         snapped = true;
