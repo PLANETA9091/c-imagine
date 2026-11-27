@@ -326,7 +326,15 @@ jobs:
             [ "$ok" = "1" ] || { echo "gallery page $p produced no done marker"; tail -20 srv-create/boot.log; exit 1; }
             line=$(grep "gallery done ns=create page=$p " srv-create/boot.log | tail -1)
             echo "$line"
-            echo "$line" | grep -q "cells=0" && { echo "gallery exhausted at page $p (content pages: $PAGES)"; break; }
+            # 14-e274 THE DONE-LINE FIELDS GREW: the settle gate (193e72d4) appends
+            # "be_cells=N be_rounds=N" to every block done line — a bare substring
+            # grep "cells=0" matches "be_cells=0" and false-exhausts the walk on
+            # the first BE-free page (measured run 45891583398: the create sweep
+            # stopped at page 25 of ~408, the wall kept page 25's rails, and the
+            # probe checked page 24's manifest cells -> 24x WALLCHECK_MISSING).
+            # The field match is space-delimited, plus the scene's own
+            # exhausted=1 marker (the marker this loop always meant to read).
+            echo "$line" | grep -qE " cells=0 |exhausted=1" && { echo "gallery exhausted at page $p (content pages: $PAGES)"; break; }
             PAGES=$((PAGES+1))
             test -f "srv-create/c-imagine/scenes/gallery-create-p$p.tsv" \
               || { echo "gallery manifest p$p missing"; exit 1; }
