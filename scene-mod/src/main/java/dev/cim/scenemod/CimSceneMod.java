@@ -6066,7 +6066,8 @@ public final class CimSceneMod {
         writeGalleryIndex(level, namespace);
         String dimStem = "gallery-dimension-" + namespace + "-p" + page;
 
-        Registry<DimensionType> dims = level.registryAccess().registryOrThrow(Registries.DIMENSION_TYPE);
+        Registry<net.minecraft.world.level.dimension.DimensionType> dims =
+                level.registryAccess().registryOrThrow(Registries.DIMENSION_TYPE);
         List<ResourceLocation> ids = new ArrayList<>(dims.keySet());
         ids.sort(Comparator.comparing(ResourceLocation::toString));
         List<ResourceLocation> entries = new ArrayList<>();
@@ -6085,7 +6086,9 @@ public final class CimSceneMod {
         ResourceLocation id = entries.get(page);
 
         ServerLevel target = null;
-        for (ServerLevel lvl : level.getServer().getLevels()) {
+        // NeoForge's patched enumeration (the vanilla getLevels() Map is not
+        // the mapped surface here; getAllLevels() is the Forge/NeoForge patch)
+        for (ServerLevel lvl : level.getServer().getAllLevels()) {
             ResourceLocation key = level.registryAccess()
                     .registryOrThrow(Registries.DIMENSION_TYPE).getKey(lvl.dimensionType());
             if (id.equals(key)) {
