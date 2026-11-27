@@ -63,7 +63,7 @@ public final class ModScanner {
     // Bump whenever a newly discovered surface changes runtime behaviour. Keeping the schema
     // coupled to the scanner contract prevents an otherwise-valid jar fingerprint from reviving
     // an older profile that predates Ponder/placeable/UI/spatial metadata.
-    private static final int CACHE_SCHEMA = 90;
+    private static final int CACHE_SCHEMA = 91;
 
     private ModScanner() {}
 
@@ -255,8 +255,30 @@ public final class ModScanner {
 
     // --- scan ----------------------------------------------------------------
 
+    /**
+     * Scans one archive against its dependency context: the sibling jars in the same
+     * directory plus the vanilla archive named by {@code -Df2v.vanillaJar} when that
+     * file exists. Superclasses that live in another jar (a Backpacks screen extending a
+     * Core screen, a vanilla intermediate such as ConfirmScreen) then resolve, so the
+     * Screen and menu checks see the real inheritance chain.
+     */
     public static Profile scan(Path jarPath) throws IOException {
-        return scan(jarPath, null);
+        List<Path> archives = new ArrayList<>();
+        Path dir = jarPath.toAbsolutePath().normalize().getParent();
+        if (dir != null && Files.isDirectory(dir)) {
+            try (java.util.stream.Stream<Path> siblings = Files.list(dir)) {
+                siblings.filter(p -> p.getFileName().toString().endsWith(".jar"))
+                        .sorted().forEach(archives::add);
+            }
+        }
+        String vanilla = System.getProperty("f2v.vanillaJar");
+        if (vanilla != null && !vanilla.isBlank() && Files.isRegularFile(Path.of(vanilla))) {
+            archives.add(Path.of(vanilla));
+        }
+        if (archives.isEmpty()) return scan(jarPath, null);
+        try (CrossJarClassPath classPath = CrossJarClassPath.index(archives)) {
+            return scan(jarPath, classPath);
+        }
     }
 
     /** Reads only archive identity/dependency metadata. Used by ModSetResolver before any
@@ -1053,13 +1075,9 @@ public final class ModScanner {
         // a vanilla client. Their background asset is still useful to the server-side menu bridge.
         boolean screen = isSubclass(node, "net/minecraft/client/gui/screens/inventory/AbstractContainerScreen", nodes)
                 || isSubclass(node, "net/minecraft/client/gui/screens/Screen", nodes);
-        // An unresolved client-library superclass can hide the Screen inheritance chain in a
-        // nested jar. Keep concrete *Screen classes, but never promote every GuiGraphics helper,
-        // widget, row or overlay into a standalone screen asset.
-        String simpleClientName = node.name.substring(node.name.lastIndexOf('/') + 1);
-        boolean unresolvedNamedScreen = simpleClientName.endsWith("Screen")
-                && node.methods.stream().anyMatch(method -> method.desc != null
-                && method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;"));
+        // Only classes that really extend Screen are screens. A name-only guess (a *Screen class
+        // with a GuiGraphics method) promoted widgets that extend GuiElement, so it is gone; the
+        // cross-jar index resolves the chain instead.
         boolean be = isSubclass(node, "net/minecraft/world/level/block/entity/BlockEntity", nodes);
         boolean entity = isSubclass(node, "net/minecraft/world/entity/Entity", nodes);
 
@@ -1073,7 +1091,7 @@ public final class ModScanner {
                 p.menus.add(mi);
             }
         }
-        if ((screen || unresolvedNamedScreen)
+        if (screen
                 && (node.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) == 0) {
             p.screens.add(analyzeScreen(node, nodes));
         }
