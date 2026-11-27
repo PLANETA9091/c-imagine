@@ -51,6 +51,7 @@ Usage:
   capture-fingerprint.py <reports-root> <seed-scenes-dir> [--tolerance 0.18]
                          [--swap-factor 0.5] [--swap-floor 0.02]
                          [--out /tmp/capture-fingerprint.json] [--top 24]
+                         [--no-pixel-audit]
 
   <reports-root> = the dir holding gallery-report-N/ (the verdict-pull --out)
   <seed-scenes-dir> = the seed's scenes/ dir (rows.tsv, quads/, *.ctx.tsv)
@@ -61,6 +62,19 @@ swap_mae / swap_mae_rb / swap_ratio / swap_flag — existing keys never change
 semantics. Images that are absent or yield no pixels stay NAMED (NO-CAPTURE /
 NO-OURS-CROP / EMPTY-OURS / UNREADABLE-OURS) and simply leave their pair
 unaudited — the honest degradation, never a crash.
+
+14-e280 THE PIXEL-SWAP AUDIT (the mean-metric's dispatch read x2 measured
+the flag zone = the sparse-alpha-mask artifact class: 22/24 flagged rows
+deterministic across two flights with IDENTICAL ratios 0.15-0.46, but
+clustered on windowed doors / flora — families whose opaque masks differ
+between the legs, which skews a MEAN non-uniformly and lets the exchange
+"fit" by coincidence; a genuine hard swap measures ratio ~0). The upgrade
+compares the ALIGNED PIXEL PAIR (ours rolled by the join's own shift, the
+joint opaque mask) instead of the means: pixel_mae = mean |ours-truth| over
+the joint opaque pixels, pixel_mae_rb = the same with ours' R/B exchanged,
+pixel_flag = the exchange HALVES the pixel MAE above the floor. Additive
+"pixel_swap" object + per-row pixel_* keys; report-only, never gates —
+the same flip law hardens it after both flights' distributions agree.
 
 Exit code 0 always: report-only, never gates.
 """
@@ -80,6 +94,10 @@ from PIL import Image
 # --swap-factor/--swap-floor before they harden.
 SWAP_FACTOR = 0.5
 SWAP_FLOOR = 0.02
+# 14-e280 the pixel audit's own floor: pixel MAE rides RAW 0-255 units (no
+# relative normalization — the joint-opaque comparison needs no denominator),
+# so the "no delta exists" guard is its own constant (2/255 ~ invisible).
+PIXEL_SWAP_FLOOR = 2.0
 
 
 def load_mean(png_path):
@@ -88,6 +106,32 @@ def load_mean(png_path):
     if not op.any():
         return None
     return a[..., :3][op].mean(axis=0)
+
+
+def pixel_swap_pair(ours_png, truth_png, shift):
+    """The aligned per-pixel R/B exchange audit (14-e280). Returns None when
+    either crop is absent/unreadable or the joint opaque mask is skimpy
+    (< 50 px — the honest naming upstream). Otherwise a dict with the
+    unswapped and R/B-exchanged pixel MAEs and their ratio."""
+    try:
+        o = np.asarray(Image.open(ours_png).convert("RGBA"), dtype=np.float32)
+        t = np.asarray(Image.open(truth_png).convert("RGBA"), dtype=np.float32)
+    except Exception:
+        return None
+    if o.shape != t.shape:
+        return None
+    dx, dy = (shift or [0, 0])[:2]
+    oo = np.roll(np.roll(o, int(dy), axis=0), int(dx), axis=1)
+    joint = (o[..., 3] > 8) & (t[..., 3] > 8)
+    if int(joint.sum()) < 50:
+        return None
+    diff = np.abs(oo[..., :3] - t[..., :3])[joint]
+    swapped = np.abs(oo[..., [2, 1, 0]] - t[..., :3])[joint]
+    mae = float(diff.mean())
+    mae_rb = float(swapped.mean())
+    return {"pixel_mae": round(mae, 4), "pixel_mae_rb": round(mae_rb, 4),
+            "pixel_ratio": round(mae_rb / mae, 3) if mae > 0 else None,
+            "pixel_n": int(joint.sum())}
 
 
 class SeedIndex:
@@ -158,6 +202,10 @@ def main(argv=None):
     ap.add_argument("--tolerance", type=float, default=0.18)
     ap.add_argument("--swap-factor", type=float, default=SWAP_FACTOR)
     ap.add_argument("--swap-floor", type=float, default=SWAP_FLOOR)
+    ap.add_argument("--pixel-floor", type=float, default=PIXEL_SWAP_FLOOR,
+                    help="the pixel audit's raw-MAE floor (0-255 units)")
+    ap.add_argument("--no-pixel-audit", action="store_true",
+                    help="skip the 14-e280 aligned per-pixel swap audit")
     ap.add_argument("--out", default="/tmp/capture-fingerprint.json")
     ap.add_argument("--top", type=int, default=24)
     args = ap.parse_args(argv)
@@ -186,6 +234,11 @@ def main(argv=None):
     swap_pairs = 0
     swap_flagged = 0
     swap_subjects = []
+    # 14-e280 the pixel audit's own tallies (separate from the mean tallies
+    # for the same reason: rows, not flags)
+    pixel_pairs = 0
+    pixel_flagged = 0
+    pixel_subjects = []
     for rd in report_dirs:
         for jf in sorted(glob.glob(os.path.join(rd, "join-*.json"))):
             try:
@@ -277,6 +330,30 @@ def main(argv=None):
                                           "swap_mae": swap_row["swap_mae"],
                                           "swap_mae_rb": swap_row["swap_mae_rb"],
                                           "swap_ratio": swap_row["swap_ratio"]})
+                # 14-e280 the aligned per-pixel audit on the SAME pair: the
+                # mean metric's dispatch flag zone measured = the
+                # sparse-alpha-mask artifact class; the pixel metric on the
+                # joint opaque mask is the hardening candidate.
+                px = None
+                if not args.no_pixel_audit:
+                    truth_stem = stem.replace("_ours.png", "_truth.png")
+                    truth_hits = glob.glob(os.path.join(rd, "diff-*", truth_stem))
+                    if truth_hits:
+                        px = pixel_swap_pair(hits[0], truth_hits[0], r.get("shift"))
+                    if px is not None:
+                        pixel_pairs += 1
+                        pr = px["pixel_ratio"]
+                        px_flag = bool(pr is not None
+                                       and px["pixel_mae"] > args.pixel_floor
+                                       and pr <= args.swap_factor)
+                        px["pixel_flag"] = px_flag
+                        swap_row.update(px)
+                        if px_flag:
+                            pixel_flagged += 1
+                            pixel_subjects.append({"page": page, "col": r["col"],
+                                                   "row": r["row"],
+                                                   "state": r.get("state", ""),
+                                                   **px})
                 if rel.mean() <= args.tolerance:
                     census["MATCH"] += 1
                     rows_out.append({"page": page, "col": r["col"],
@@ -337,6 +414,19 @@ def main(argv=None):
     elif total:
         print("\nchannel-swap audit: 0 pairs compared (every red row named"
               " absent/empty upstream — the honest degradation)")
+    # 14-e280 the pixel audit's summary (additive, report-only)
+    if pixel_pairs:
+        prs = [s["pixel_ratio"] for s in pixel_subjects]
+        print("\npixel-swap audit (aligned pair, joint opaque mask, ours' R/B"
+              " exchanged):")
+        print(f"  pairs compared: {pixel_pairs}   PIXEL-SWAP flagged:"
+              f" {pixel_flagged}")
+        print(f"  threshold: swapped pixel MAE <= {args.swap_factor} x"
+              f" unswapped (floor {args.swap_floor}) — report-only, never"
+              " gates")
+        for s in pixel_subjects[: args.top]:
+            print(f"  {s['page']} c{s['col']} r{s['row']}  {s['state']}"
+                  f"  pixel_ratio={s['pixel_ratio']} n={s['pixel_n']}")
     with open(args.out, "w", encoding="utf-8") as fh:
         json.dump({"census": dict(census), "rows": rows_out,
                    "channel_swap": {
@@ -344,7 +434,14 @@ def main(argv=None):
                                     f" unswapped MAE > {args.swap_floor}",
                        "status": "PROVISIONAL — fixture-calibrated, never gate-read",
                        "pairs": swap_pairs, "flagged": swap_flagged,
-                       "subjects": swap_subjects[: args.top]}}, fh, indent=1)
+                       "subjects": swap_subjects[: args.top]},
+                   "pixel_swap": {
+                       "threshold": f"swapped pixel MAE <= {args.swap_factor} x"
+                                    f" unswapped, unswapped > {args.pixel_floor}"
+                                    " (raw 0-255), joint opaque mask >= 50 px",
+                       "status": "PROVISIONAL — report-only, never gate-read",
+                       "pairs": pixel_pairs, "flagged": pixel_flagged,
+                       "subjects": pixel_subjects[: args.top]}}, fh, indent=1)
     print(f"\n-> {args.out}")
     return 0
 
