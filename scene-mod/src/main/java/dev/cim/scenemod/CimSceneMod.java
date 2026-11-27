@@ -6452,12 +6452,12 @@ public final class CimSceneMod {
                         vehicle.setNoGravity(true);
                         vehicle.setInvulnerable(true);
                         vehicle.setDeltaMovement(Vec3.ZERO);
-                        MOTION_PINNED.put(vehicle, pinDeadline);
+                        MOTION_PINNED.put(vehicle, new PinSpec(vehicle.position(), pinDeadline));
                     } else if (seat) {
                         Entity rider = e.getFirstPassenger();
                         rider.addTag(GALLERY_TAG);
                         rider.setDeltaMovement(Vec3.ZERO);
-                        MOTION_PINNED.put(rider, pinDeadline);
+                        MOTION_PINNED.put(rider, new PinSpec(rider.position(), pinDeadline));
                     }
                 } else if (itemPlaced) {
                     ServerPlayer owner = level.getServer().getPlayerList().getPlayerByName("cimviewer");
