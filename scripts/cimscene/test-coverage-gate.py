@@ -763,6 +763,98 @@ def main():
               "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
+    # Y: 14-e281 THE GATED LEDGER — an entity-dyn subject whose walk note
+    # rides the demotable family (dissolved:own-timer) AND whose (class,
+    # subject) pair carries a gated.tsv row prints the GATED line, leaves
+    # the verdict GREEN, and the final line NAMES the demotion.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-entitydyn-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tentity\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tdynamictrees:falling_tree\t0\tdissolved:own-timer\n",
+            encoding="utf-8")
+        (root / "scenes" / "gallery-create-gated.tsv").write_text(
+            "class\tsubject\treason\n"
+            "entity-dyn\tdynamictrees:falling_tree\town-timer\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "GATED\tentity-dyn\tdynamictrees:falling_tree(dissolved:own-timer)" \
+                in r.stdout \
+            and "demoted=1" in r.stdout
+        print("Y entity-dyn gated row GATED+GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # AA: the particle lane's codec ladder — a gated codec row for the
+    # no-simple-options family demotes the same way.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-particle-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tthing\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tae2:lightning_arc_fx\t0\t"
+            "no-simple-options:filler-cursor-exhausted:Not a list: \"north\"\n",
+            encoding="utf-8")
+        (root / "scenes" / "gallery-create-gated.tsv").write_text(
+            "class\tsubject\treason\n"
+            "particle\tae2:lightning_arc_fx\tcodec-unconstructible\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 0 and "COVERAGE: GREEN" in r.stdout \
+            and "GATED\tparticle\tae2:lightning_arc_fx(" in r.stdout \
+            and "demoted=1" in r.stdout
+        print("AA particle gated codec row GATED+GREEN:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # Z: the blockentity branch — a gated remainder name drops out (GATED
+    # line) while a NON-gated remainder name keeps REDDING the class.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-create-be-uncovered.tsv").write_text(
+            "create:canvas_sign\ncreate:spooky_be\ncreate:third_be\n",
+            encoding="utf-8")
+        (root / "scenes" / "gallery-variant-blockentity-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tsubject\tdyn\tnote\n"
+            "cell\t-5\t-60\t9\tcreate:canvas_sign\t1\tok\n"
+            "cell\t-3\t-60\t9\tcreate:other_be\t1\tok\n", encoding="utf-8")
+        (root / "scenes" / "gallery-create-gated.tsv").write_text(
+            "class\tsubject\treason\n"
+            "blockentity\tcreate:spooky_be\ttransient-motion-state\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "COVERAGE: RED" in r.stdout \
+            and "GATED\tblockentity\tcreate:spooky_be" in r.stdout \
+            and "uncovered-remaining=create:third_be" in r.stdout \
+            and "uncovered-remaining=create:spooky_be" not in r.stdout
+        print("Z blockentity gated split, non-gated stays RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
+    # AC: a gated subject failing for a NEW reason (a non-demotable note
+    # family) stays RED — the gate must never widen the demotion silently.
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        build_fixture(root)
+        (root / "scenes" / "gallery-entitydyn-create-p0.tsv").write_text(
+            "cell\tx\ty\tz\tentity\tdyn\tnote\n"
+            "skip\t-1\t-1\t-1\tdynamictrees:falling_tree\t0\tclient-crash-banned\n",
+            encoding="utf-8")
+        (root / "scenes" / "gallery-create-gated.tsv").write_text(
+            "class\tsubject\treason\n"
+            "entity-dyn\tdynamictrees:falling_tree\town-timer\n",
+            encoding="utf-8")
+        r = run_gate(root)
+        ok = r.returncode == 1 and "COVERAGE: RED" in r.stdout \
+            and "dynamictrees:falling_tree(client-crash-banned)" in r.stdout \
+            and "GATED" not in r.stdout
+        print("AC gated subject new reason stays RED:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        failures += 0 if ok else 1
+
     print("SMOKE:", "ALL PASS" if failures == 0 else f"{failures} FAILURES")
     return 1 if failures else 0
 
