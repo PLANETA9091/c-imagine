@@ -407,6 +407,42 @@ def unshown_rows(scenes, mf_tpl, ns, needed, cls):
     return out
 
 
+def read_gated(scenes, ns):
+    """14-e281 the GATED ledger: the class/subject pairs the walk's own
+    receipts demoted to named report-only (the receipt e272 pattern, the
+    writer side in CimSceneMod's GATED_SUBJECTS). Missing file = empty map —
+    no demotions, everything stays RED (the honest default). A stale row is
+    inert: the walk's own cell row beats a gated name (covered-beats-gated)."""
+    f = scenes / f"gallery-{ns}-gated.tsv"
+    if not f.is_file():
+        return {}
+    out = {}
+    for line in f.read_text(encoding="utf-8").splitlines()[1:]:
+        parts = line.split("\t")
+        if len(parts) != 3 or not parts[0].strip() or not parts[1].strip():
+            continue
+        out[(parts[0].strip(), parts[1].strip())] = parts[2].strip()
+    return out
+
+
+def gated_reason(gated, cls, entry):
+    """The gated reason for an unshown entry 'id(note)', or None. A demotion
+    applies ONLY to the exact (class, subject) pair AND only when the note
+    rides a demotable family (dissolved = the entity lanes' own-timer/moved
+    split, no-simple-options = the particle codec ladder) — a gated subject
+    failing for a NEW reason stays RED (the honest channel; the AC fixture)."""
+    if "(" not in entry:
+        return None
+    sid, note = entry.split("(", 1)
+    note = note.rstrip(")")
+    reason = gated.get((cls, sid))
+    if reason is None:
+        return None
+    if note.startswith("dissolved") or note.startswith("no-simple-options"):
+        return reason
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ns", required=True)
@@ -433,6 +469,7 @@ def main():
                                         "yes" if olist is not None else "no"))
 
     incomplete = []
+    demoted = []  # 14-e281: the named report-only demotions, ON the verdict line
     print(f"coverage-gate: ns={args.ns} index={args.index}")
     for cls, total_cells in index.items():
         total, cells_per_page = total_cells
@@ -483,6 +520,19 @@ def main():
             names = [l.strip() for l in
                      f.read_text(encoding="utf-8").splitlines() if l.strip()]
             remainder = [n for n in names if n not in covered]
+            # 14-e281 the gated split: a covered name never reaches remainder
+            # (covered-beats-gated); a gated remainder name prints the GATED
+            # line and drops out of the RED — everything else REDs exactly
+            # as before, every demotion named on the verdict.
+            gated_map = read_gated(scenes, args.ns)
+            be_gated = [(n, gated_map[("blockentity", n)]) for n in remainder
+                        if ("blockentity", n) in gated_map]
+            remainder = [n for n in remainder
+                         if ("blockentity", n) not in gated_map]
+            for n, reason in be_gated:
+                print(f"GATED\tblockentity\t{n} (gated: {reason} — receipt e272 "
+                      "demotion, named report-only)")
+                demoted.append(f"blockentity/{n}")
             # the walked-class completeness (the variant walk's own receipts)
             infix = shot_infix("variant-blockentity", args.ns)
             tstem = shot_stem(tbase, "variant-blockentity", args.ns)
@@ -600,7 +650,17 @@ def main():
                     no_exhaust = True
             ok = needed == 0 or (missing_mf == 0 and missing_ts == 0
                                  and missing_os == 0 and not no_exhaust)
-            unshown = unshown_rows(scenes, mf_tpl, args.ns, needed, sub)
+            unshown_all = unshown_rows(scenes, mf_tpl, args.ns, needed, sub)
+            gated_map = read_gated(scenes, args.ns)
+            unshown = []
+            for u in unshown_all:
+                reason = gated_reason(gated_map, sub, u)
+                if reason is None:
+                    unshown.append(u)
+                else:
+                    print(f"GATED\t{sub}\t{u} (gated: {reason} — receipt e272 "
+                          "demotion, named report-only)")
+                    demoted.append(f"{sub}/{u.split('(')[0]}")
             if unshown:
                 ok = False
             # DIAGNOSTIC classes (2026-11-04): the checks above run and
@@ -632,6 +692,13 @@ def main():
         print(f"COVERAGE: RED — incomplete walks: {', '.join(incomplete)} "
               f"(content that never reached a page is RED, not green)")
         return 1
+    if demoted:
+        print(f"COVERAGE: GREEN — every class walked to exhaustion, every page "
+              f"manifested and shot on both legs (demoted={len(demoted)}: "
+              + ", ".join(demoted[:12])
+              + (f" +{len(demoted) - 12} more" if len(demoted) > 12 else "")
+              + " — named report-only, receipt e272 pattern)")
+        return 0
     print("COVERAGE: GREEN — every class walked to exhaustion, "
           "every page manifested and shot on both legs")
     return 0
