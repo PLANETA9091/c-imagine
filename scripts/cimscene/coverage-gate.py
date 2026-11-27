@@ -336,8 +336,12 @@ ABSENCE_NOTES = {
     # 14-ec: every named absence the blockentity lane's placement/settle can
     # emit — the plan builder found no placeable state, the registry lacks the
     # support block, the item/setBlock placement failed, the settle read a
-    # different BE type at the cell
-    "variant-blockentity": ("no-valid-state", "no-support", "failed", "be-missing", "assert-failed"),
+    # different BE type at the cell. 14-e281: "dissolved" rides too — the
+    # self-timed BE carriers (supplementaries block_generator, structure_temp)
+    # consume their own timer and vanish mid-settle; the measured walk notes
+    # name it (the run-46049855366 supp reconciliation), the old tuple read
+    # those two names as unexplained absences = an honesty hole.
+    "variant-blockentity": ("no-valid-state", "no-support", "failed", "be-missing", "dissolved", "assert-failed"),
 }
 
 
