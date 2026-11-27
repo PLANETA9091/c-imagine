@@ -246,6 +246,14 @@ jobs:
               rows = ["slot\titem"]
               rows += [f"{'hotbar.' if i < 9 else 'inventory.'}{i}\t{it}"
                        for i, it in enumerate(items)]
+              # 14-e275 THE TURN-OVER LAW: the manifest names ALL 36 slots —
+              # slice-rows-only left the unlisted slots carrying whatever the
+              # viewer held before (the e272 stale-inventory receipt:
+              # ae2-p10 ≡ bop-p10 at 32/36 slots). minecraft:air rows name
+              # the empty slots explicitly; the plugin's carrier fill clears
+              # them instead of leaving the stale carrier.
+              rows += [f"{'hotbar.' if i < 9 else 'inventory.'}{i}\tminecraft:air"
+                       for i in range(len(items), 36)]
               (scenes / f"gallery-inv-{ns}-p0.tsv").write_text(
                   "\n".join(rows) + "\n", encoding="utf-8")
               print(f"derived inv manifest {ns}: {len(items)} slot(s)")
