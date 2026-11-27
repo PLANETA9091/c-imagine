@@ -161,6 +161,11 @@ CLASSES = {
             "gallery-gui done ns={ns} page={p} cells=0"),
     "biome": ("gallery-biome-{ns}-p{p}.tsv", "gal-b", "ours-gal-b",
               "gallery-biome done ns={ns} page={p} cells=0"),
+    # 14-e283 THE PER-DIMENSION CAMERA RIG: one dimension type per page, the
+    # 3x3 vantage platform built INSIDE the target level, the viewer
+    # teleported in (the walk is the named lane shipped; DIAGNOSTIC-first).
+    "dimension": ("gallery-dimension-{ns}-p{p}.tsv", "gal-dim", "ours-gal-dim",
+                  "gallery-dimension done ns={ns} page={p} cells=0"),
     # held rides the ITEM walk: same manifest, same exhaustion marker, its
     # own shot stem (the first-person held shot after the item page shot)
     "held": ("gallery-item-{ns}-p{p}.tsv", "gal-h", "ours-gal-h",
@@ -242,7 +247,7 @@ CLASSES = {
 # honest-RED semantics, the biome flip's precedent); the pixel framediff
 # joins stay report-only until the per-cell contracts ship. inv STAYS
 # diagnostic (the x2 table has inv reds — dynamictrees inv 0/1).
-DIAGNOSTIC_CLASSES = {"sound", "inv",
+DIAGNOSTIC_CLASSES = {"sound", "inv", "dimension",
                       "blockiso",
                       "variant-painting", "variant-wolf", "variant-cat",
                       "variant-frog", "variant-villager", "variant-effect",
@@ -271,7 +276,12 @@ SERIES_WORD = {"entity-mobs": "mobs", "entity-dyn": "dyn",
 # The documented line: worldgen plumbing (features, carvers, loot,
 # predicates, attributes, menus, recipes...) shapes the world or has no
 # per-entry pixel surface — it stays OUTSIDE the world-frame ledger.
-NO_WALK = {"dimension_type"}
+# 14-e283: NO_WALK emptied — dimension_type graduated to the
+# per-dimension camera rig (the CLASSES "dimension" row above;
+# DIAGNOSTIC-first until the x2 flip precondition holds). The set stays
+# (empty) — the no-walk branch remains the honest shape for any future
+# ledger class that ships without a walk.
+NO_WALK = set()
 # biome LEFT the no-walk set (2026-11-04): the biome-tint walk exists now
 # (`cimscene gallery biome <ns> <p>` — one biome per page, fillbiome over
 # the wall region, grass/foliage/water tint sample in frame). It starts
@@ -294,6 +304,8 @@ VARIANT_CLASS = {
     "decorated_pot_pattern": "variant-pot",
     "enchantment": "variant-enchant",
     "jukebox_song": "variant-jukebox",
+    # 14-e283: the ledger's dimension_type row maps onto the camera-rig walk
+    "dimension_type": "dimension",
 }
 
 # per class: manifest skip-row notes that mean the subject is ABSENT from
@@ -342,6 +354,10 @@ ABSENCE_NOTES = {
     # name it (the run-46049855366 supp reconciliation), the old tuple read
     # those two names as unexplained absences = an honesty hole.
     "variant-blockentity": ("no-valid-state", "no-support", "failed", "be-missing", "dissolved", "assert-failed"),
+    # 14-e283 the dimension lane's own absences: the type registers but no
+    # dimension is instantiated; the seed walk runs headless (the shard walks
+    # carry the shots); a hostile level refuses the teleport
+    "dimension": ("no-live-level", "no-viewer", "teleport-failed", "assert-failed"),
 }
 
 
@@ -439,6 +455,11 @@ def gated_reason(gated, cls, entry):
     if reason is None:
         return None
     if note.startswith("dissolved") or note.startswith("no-simple-options"):
+        return reason
+    # 14-e283: the dimension lane's hostile-level family (the GATED fallback
+    # row's reason=dimension-unreachable rides the teleport-failed/no-live
+    # notes)
+    if note.startswith("teleport-failed") or note.startswith("no-live-level"):
         return reason
     return None
 
