@@ -443,6 +443,12 @@ public final class CimSceneMod {
                                                 .executes(ctx -> galleryBiome(ctx.getSource(),
                                                         StringArgumentType.getString(ctx, "namespace"),
                                                         IntegerArgumentType.getInteger(ctx, "page"))))))
+                        .then(Commands.literal("dimension")
+                                .then(Commands.argument("namespace", StringArgumentType.word())
+                                        .then(Commands.argument("page", IntegerArgumentType.integer(0))
+                                                .executes(ctx -> galleryDimension(ctx.getSource(),
+                                                        StringArgumentType.getString(ctx, "namespace"),
+                                                        IntegerArgumentType.getInteger(ctx, "page"))))))
                         // 14-e210 THE OURS-MODE PAGE (the route-1 port's first cut, the
                         // e195/e209 design's concrete surface): the ours wall leg becomes
                         // the modded server — the band = the REAL blocks (the modded
@@ -2617,7 +2623,12 @@ public final class CimSceneMod {
                 .append("banner_pattern\t").append(bannerPatterns).append("\t").append(GALLERY_CELLS).append('\n')
                 .append("decorated_pot_pattern\t").append(potPatterns).append("\t").append(GALLERY_CELLS).append('\n')
                 .append("jukebox_song\t").append(jukeboxSongs).append("\t").append(GALLERY_CELLS).append('\n')
-                .append("dimension_type\t").append(dimensionTypes).append("\t0\n");
+                // 14-e283: dimension_type LEFT the no-walk set (the
+                // per-dimension camera rig shipped: `gallery dimension` —
+                // one dimension type per page, the 3x3 vantage platform
+                // built INSIDE the target level and the viewer teleported
+                // in; DIAGNOSTIC-first per the 2026-11-04 pattern)
+                .append("dimension_type\t").append(dimensionTypes).append("\t1\n");
         // BLOCK ENTITY RECONCILIATION: a BlockEntityType whose every valid
         // state is fluid-carried or RenderShape.INVISIBLE would never reach
         // the block wall — its renderer would silently vanish from the
@@ -6029,6 +6040,112 @@ public final class CimSceneMod {
         LOGGER.info("[cimscene] gallery-biome done ns={} page={} cells={} failed={} biome={}",
                 namespace, page, placed, failed, id);
         writeDoneMarkerFile(biomeStem, false);
+        return placed;
+    }
+
+    /**
+     * 14-e283 THE PER-DIMENSION CAMERA RIG (the named lane shipped; the
+     * proposal coverage-walks-completion.md section 2.3). ONE dimension type
+     * per page: enumerate the namespace's dimension types from the ledger
+     * registry, find the live {@link ServerLevel} whose dimension type key
+     * matches, build a 3x3 vantage platform INSIDE that level (a possibly
+     * void world needs the viewer's footing) and teleport the dump viewer
+     * in — the shot = the dimension's own render from 8 blocks out (the
+     * gallery focal contract). The walk is server-side except the teleport;
+     * the workflow's fixed settle window covers the client's dimension
+     * switch before the shot. DIAGNOSTIC-first (the gate reports, never
+     * reds, until the x2 flip law's precondition holds). The honest notes:
+     * no-live-level (the type registers but no dimension is instantiated —
+     * the spatial-storage type without its dimension), no-viewer (the seed
+     * walk runs headless — the shard walks carry the manifests), the
+     * teleport-failed family for a hostile level.
+     */
+    private static int galleryDimension(CommandSourceStack src, String namespace, int page) {
+        ServerLevel level = src.getLevel();
+        setGalleryFrozen(level.getServer(), false, "dimension page entry");
+        writeGalleryIndex(level, namespace);
+        String dimStem = "gallery-dimension-" + namespace + "-p" + page;
+
+        Registry<DimensionType> dims = level.registryAccess().registryOrThrow(Registries.DIMENSION_TYPE);
+        List<ResourceLocation> ids = new ArrayList<>(dims.keySet());
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        List<ResourceLocation> entries = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            if (id.getNamespace().equals(namespace)) entries.add(id);
+        }
+
+        LOGGER.info("[cimscene] gallery-dimension begin ns={} page={} dims={} cellsPerPage=1",
+                namespace, page, entries.size());
+        if (page >= entries.size()) {
+            writeDoneMarkerFile(dimStem, true);
+            LOGGER.info("[cimscene] gallery-dimension done ns={} page={} cells=0 failed=0 exhausted=1",
+                    namespace, page);
+            return 0;
+        }
+        ResourceLocation id = entries.get(page);
+
+        ServerLevel target = null;
+        for (ServerLevel lvl : level.getServer().getLevels()) {
+            ResourceLocation key = level.registryAccess()
+                    .registryOrThrow(Registries.DIMENSION_TYPE).getKey(lvl.dimensionType());
+            if (id.equals(key)) {
+                target = lvl;
+                break;
+            }
+        }
+
+        StringBuilder tsv = new StringBuilder("cell\tx\ty\tz\tdimension\tnote\n");
+        int placed = 0, failed = 0;
+        if (target == null) {
+            failed++;
+            tsv.append("skip\t-1\t-1\t-1\t").append(id).append("\tno-live-level\n");
+            LOGGER.info("[cimscene] gallery-dimension skip ns={} page={} reason=no-live-level dim={}",
+                    namespace, page, id);
+        } else {
+            // THE VANTAGE: the 3x3 platform the viewer stands on, at the
+            // fixed Y=64 (the void/sky dimensions host it; a hostile level
+            // that refuses the build surfaces as its own honest note)
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    target.setBlock(new BlockPos(dx, 63, dz),
+                            Blocks.POLISHED_ANDESITE.defaultBlockState(), 3);
+                }
+            }
+            ServerPlayer viewer = level.getServer().getPlayerList()
+                    .getPlayerByName("cimviewer");
+            boolean teleported = false;
+            if (viewer == null) {
+                tsv.append("cell\t0\t64\t0\t").append(id).append("\tno-viewer\n");
+                LOGGER.info("[cimscene] gallery-dimension ns={} page={} dim={} note=no-viewer "
+                        + "(the seed walk runs headless; the shard walks carry the shots)",
+                        namespace, page, id);
+            } else {
+                try {
+                    // 8 blocks out (the gallery focal distance), facing the
+                    // platform (yaw 180 = north = -z toward it)
+                    viewer.teleportTo(target, 0.5, 64.0, 8.5, 180.0f, 0.0f);
+                    teleported = true;
+                } catch (Throwable t) {
+                    LOGGER.info("[cimscene] gallery-dimension teleport failed dim={}: {}",
+                            id, t.toString());
+                }
+                placed++;
+                tsv.append("cell\t0\t64\t0\t").append(id)
+                        .append(teleported ? "\tok\n" : "\tteleport-failed\n");
+            }
+            LOGGER.info("[cimscene] gallery-dimension done ns={} page={} cells={} failed={} dim={} "
+                    + "teleported={} level={}", namespace, page, placed, failed, id, teleported,
+                    target.dimension().location());
+        }
+        String manifest = "gallery-dimension-" + namespace + "-p" + page + ".tsv";
+        try {
+            Path parent = Path.of("c-imagine", "scenes");
+            Files.createDirectories(parent);
+            Files.writeString(parent.resolve(manifest), tsv.toString(), StandardCharsets.UTF_8);
+        } catch (IOException ioe) {
+            LOGGER.error("[cimscene] gallery-dimension manifest write failed {}: {}", manifest, ioe.toString());
+        }
+        writeDoneMarkerFile(dimStem, false);
         return placed;
     }
 
