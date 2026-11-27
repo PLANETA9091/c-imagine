@@ -11,9 +11,12 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -25,28 +28,35 @@ import java.util.zip.ZipOutputStream;
  * Finds the keybindings mods register, by reading their jars.
  *
  * <p>KeyMapping is a client class, so a server never sees a registration
- * happen. The registration still sits in the jar as data: every class that
- * touches {@code net/minecraft/client/KeyMapping} carries the translation key
- * and the GLFW default in its bytecode, either at the constructor call or, as
- * in Create's {@code AllKeys} enum, in a constant table that builds the
- * translation key from a prefix. Both shapes reduce to "a string, then the
- * next int before another string".
+ * happen. The registration still sits in the jar as data. Three shapes carry it:
+ * <ul>
+ *   <li>a constructor call on KeyMapping or on any class that extends it, with the
+ *       translation key as the name argument, the GLFW default after it, and the
+ *       category last (Create, Combat Roll, Sophisticated Backpacks);</li>
+ *   <li>a builder chain whose class is not a KeyMapping itself but names one in
+ *       its {@code build()} descriptor, with the translation key passed as a
+ *       constant (Mekanism's {@code MekKeyBindingBuilder});</li>
+ *   <li>a constant table that builds the translation key from a prefix, as in
+ *       Create's {@code AllKeys} enum.</li>
+ * </ul>
+ * A name passed as an enum constant ({@code MekanismLang.KEY_BOOST}) is resolved
+ * through the constant's own static initializer, which pushes the prefix and the
+ * path of the lang key ("key", "key_boost") that Util.makeDescriptionId joins.
  *
- * <p>A lang key only counts when such a class names it. That keeps ordinary
- * {@code key.*} lang entries out of the keyboard.
+ * <p>A lang key only counts when such a class names it. Category keys
+ * ({@code key.categories.*}, {@code key.category.*}, {@code *.category}) name the
+ * group a binding sits in, so they never count as a binding themselves.
  */
 public final class KeyCensus {
 
-    private static final byte[] KEY_MAPPING =
-            "net/minecraft/client/KeyMapping".getBytes(StandardCharsets.UTF_8);
+    private static final String KEY_MAPPING_NAME = "net/minecraft/client/KeyMapping";
     private static final Pattern LANG_PATH =
             Pattern.compile("assets/([^/]+)/lang/en_us\\.json");
     private static final Pattern LANG_ENTRY =
             Pattern.compile("\"((?:[^\"\\\\]|\\\\.)+)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
     private static final int MAX_NESTED_DEPTH = 2;
     private static final Pattern CTOR_NAME = Pattern.compile("[a-z0-9_-]+(?:\\.[a-z0-9_-]+)+");
-    private static final String KEY_MAPPING_NAME = "net/minecraft/client/KeyMapping";
-    /** Stream marker for {@code new KeyMapping}: the next string pushed is the constructor's name argument. */
+    /** Stream marker for {@code new} of a KeyMapping class: the next string pushed is the constructor's name argument. */
     static final Object NEW_KEY_MAPPING = new Object();
 
     /** One registered binding. {@code defaultKey} is a GLFW code, -1 when unbound. */
@@ -71,7 +81,10 @@ public final class KeyCensus {
         return out;
     }
 
-    /** Scans one jar's bytes, including jar-in-jar companions. */
+    /**
+     * Scans one jar's bytes, including jar-in-jar companions. The KeyMapping
+     * hierarchy is resolved within this jar and its nested jars only.
+     */
     public static List<ModKey> scanJar(byte[] jar) throws IOException {
         Scan scan = new Scan();
         collect(jar, scan, 0);
@@ -91,8 +104,10 @@ public final class KeyCensus {
                 }
                 byte[] body = zip.readAllBytes();
                 if (cls) {
-                    if (contains(body, KEY_MAPPING)) {
-                        scan.tokens.add(ClassTokens.read(body));
+                    try {
+                        scan.addClass(ClassTokens.read(body));
+                    } catch (IOException | RuntimeException notAClass) {
+                        // A truncated or unusual class file cannot register a key; skip it.
                     }
                 } else if (isLang) {
                     scan.readLang(lang.group(1), new String(body, StandardCharsets.UTF_8));
@@ -103,24 +118,18 @@ public final class KeyCensus {
         }
     }
 
-    private static boolean contains(byte[] hay, byte[] needle) {
-        outer:
-        for (int i = 0, end = hay.length - needle.length; i <= end; i++) {
-            for (int j = 0; j < needle.length; j++) {
-                if (hay[i + j] != needle[j]) {
-                    continue outer;
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    /** Lang tables and bytecode tokens gathered from one jar. */
+    /** Lang tables and decoded classes gathered from one jar. */
     private static final class Scan {
         final Map<String, String> lang = new HashMap<>();
         final Map<String, String> langOwner = new HashMap<>();
-        final List<List<Object>> tokens = new ArrayList<>();
+        final Map<String, ClassTokens.Decoded> classes = new HashMap<>();
+        private final Map<String, String> fieldKeys = new HashMap<>();
+
+        void addClass(ClassTokens.Decoded d) {
+            if (d.name() != null) {
+                classes.putIfAbsent(d.name(), d);
+            }
+        }
 
         void readLang(String ns, String json) {
             Matcher m = LANG_ENTRY.matcher(json);
@@ -130,7 +139,23 @@ public final class KeyCensus {
             }
         }
 
+        /** KeyMapping plus every class in this scan that extends it, transitively. */
+        Set<String> family() {
+            Set<String> fam = new HashSet<>();
+            fam.add(KEY_MAPPING_NAME);
+            for (boolean grew = true; grew; ) {
+                grew = false;
+                for (ClassTokens.Decoded d : classes.values()) {
+                    if (d.superName() != null && fam.contains(d.superName()) && fam.add(d.name())) {
+                        grew = true;
+                    }
+                }
+            }
+            return fam;
+        }
+
         List<ModKey> resolve() {
+            Set<String> family = family();
             Map<String, ModKey> found = new LinkedHashMap<>();
             Map<String, String> bySuffix = new HashMap<>();
             for (String key : lang.keySet()) {
@@ -138,10 +163,16 @@ public final class KeyCensus {
                     bySuffix.put(key.substring(key.lastIndexOf('.') + 1), key);
                 }
             }
-            for (List<Object> stream : tokens) {
+            // Sorted by class name so the first hit for a key is the same on every run.
+            for (ClassTokens.Decoded cf : new TreeMap<>(classes).values()) {
+                boolean relevant = cf.mentionsKeyMapping() || cf.classRefs().stream().anyMatch(family::contains);
+                if (!relevant) {
+                    continue;
+                }
+                List<Object> stream = normalize(cf.tokens(), family);
                 String category = "";
                 for (Object t : stream) {
-                    if (t instanceof String s && s.startsWith("key.categories.")) {
+                    if (t instanceof String s && isCategoryKey(s)) {
                         category = lang.getOrDefault(s, s);
                     }
                 }
@@ -164,8 +195,7 @@ public final class KeyCensus {
                     ctorName = false;
                     String id = asCtorName ? s
                             : lang.containsKey(s) && isBindingKey(s) ? s : bySuffix.get(s);
-                    if (id == null && s.startsWith("key.") && !s.startsWith("key.categories.")
-                            && s.indexOf('.', 4) > 0) {
+                    if (id == null && s.startsWith("key.") && !isCategoryKey(s) && s.indexOf('.', 4) > 0) {
                         id = s;
                     }
                     if (id == null) {
@@ -184,15 +214,95 @@ public final class KeyCensus {
             return new ArrayList<>(found.values());
         }
 
+        /**
+         * Maps a class's raw tokens onto what a registration reads: a constructor
+         * of a KeyMapping class becomes the marker, a static field becomes the
+         * lang key its constant builds (or nothing), and every other class
+         * reference disappears.
+         */
+        private List<Object> normalize(List<Object> raw, Set<String> family) {
+            List<Object> out = new ArrayList<>(raw.size());
+            for (Object t : raw) {
+                if (t instanceof ClassTokens.NewRef r) {
+                    if (family.contains(r.cls())) {
+                        out.add(NEW_KEY_MAPPING);
+                    }
+                } else if (t instanceof ClassTokens.FieldRef f) {
+                    String key = fieldKey(f);
+                    if (key != null) {
+                        out.add(key);
+                    }
+                } else {
+                    out.add(t);
+                }
+            }
+            return out;
+        }
+
+        /**
+         * The lang key an enum-style constant stands for. Its static initializer
+         * pushes the constant's own name, then the prefix and the path that
+         * Util.makeDescriptionId joins into "prefix.namespace.path".
+         */
+        private String fieldKey(ClassTokens.FieldRef f) {
+            String cacheKey = f.owner() + "#" + f.name();
+            if (fieldKeys.containsKey(cacheKey)) {
+                return fieldKeys.get(cacheKey);
+            }
+            String out = null;
+            ClassTokens.Decoded owner = classes.get(f.owner());
+            if (owner != null) {
+                List<Object> t = owner.tokens();
+                for (int i = 0; i < t.size() && out == null; i++) {
+                    if (!f.name().equals(t.get(i))) {
+                        continue;
+                    }
+                    // The constant's ordinal (an int) may sit between its name and the two strings.
+                    List<String> strs = new ArrayList<>();
+                    for (int j = i + 1; j < t.size() && j <= i + 4 && strs.size() < 2; j++) {
+                        if (t.get(j) instanceof String s) {
+                            strs.add(s);
+                        } else if (!(t.get(j) instanceof Integer)) {
+                            break;
+                        }
+                    }
+                    if (strs.size() == 2) {
+                        out = lookupPathKey(strs.get(0), strs.get(1));
+                    }
+                }
+            }
+            fieldKeys.put(cacheKey, out);
+            return out;
+        }
+
+        /** The one binding key shaped {@code prefix.<namespace>.path}; ambiguous or absent gives null. */
+        private String lookupPathKey(String prefix, String path) {
+            String only = null;
+            for (String k : lang.keySet()) {
+                if (k.startsWith(prefix + ".") && k.endsWith("." + path) && isBindingKey(k)) {
+                    if (only != null) {
+                        return null;
+                    }
+                    only = k;
+                }
+            }
+            return only;
+        }
+
+        /** Category keys name a group of bindings; they are never bindings. */
+        static boolean isCategoryKey(String key) {
+            return key.startsWith("key.categories.") || key.startsWith("key.category.")
+                    || key.endsWith(".category") || key.endsWith(".categories");
+        }
+
         private static boolean isBindingKey(String key) {
-            return (key.startsWith("key.") && !key.startsWith("key.categories."))
-                    || key.startsWith("keybinds.")
-                    || key.contains(".keyinfo.");
+            return !isCategoryKey(key) && ((key.startsWith("key.") || key.startsWith("keybinds."))
+                    || key.contains(".keyinfo."));
         }
 
         /** A dotted, lower-case name that is not a category; any prefix counts. */
         private static boolean isCtorName(String s) {
-            return s.length() <= 160 && CTOR_NAME.matcher(s).matches() && !s.startsWith("key.categories.");
+            return s.length() <= 160 && CTOR_NAME.matcher(s).matches() && !isCategoryKey(s);
         }
 
         private static int nextKeyCode(List<Object> stream, int from) {
@@ -210,11 +320,33 @@ public final class KeyCensus {
         }
     }
 
-    /** Linear decoder: yields the String and int constants a class pushes, in code order. */
+    /** Linear decoder: yields the String, int, class-instantiation and static-field references a class pushes, in code order. */
     static final class ClassTokens {
         private static final int LOOKUPSWITCH = 0xab;
         private static final int TABLESWITCH = 0xaa;
         private static final int WIDE = 0xc4;
+
+        /** {@code new X} in code: the class's internal name. */
+        record NewRef(String cls) {
+        }
+
+        /** {@code getstatic owner.name} in code. */
+        record FieldRef(String owner, String name) {
+        }
+
+        /**
+         * One class file's header and code tokens. {@code classRefs} holds every
+         * class the constant pool names; {@code mentionsKeyMapping} is true when a
+         * descriptor or string in the pool names KeyMapping.
+         */
+        record Decoded(String name, String superName, Set<String> classRefs, boolean mentionsKeyMapping,
+                       List<Object> tokens) {
+        }
+
+        /** Constant-pool lookups the code decoder needs. */
+        private record Pool(Object[] v, int[] stringRef, int[] classRef, int[] fieldClass, int[] fieldNat,
+                            int[] natName) {
+        }
 
         /** Operand bytes after each opcode, for every fixed-length instruction. */
         private static final byte[] OPERANDS = new byte[256];
@@ -241,11 +373,7 @@ public final class KeyCensus {
             }
         }
 
-        static int operands(int op) {
-            return OPERANDS[op];
-        }
-
-        static List<Object> read(byte[] cls) throws IOException {
+        static Decoded read(byte[] cls) throws IOException {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(cls));
             if (in.readInt() != 0xCAFEBABE) {
                 throw new IOException("not a class file");
@@ -255,6 +383,9 @@ public final class KeyCensus {
             Object[] pool = new Object[count];
             int[] stringRef = new int[count];
             int[] classRef = new int[count];
+            int[] fieldClass = new int[count];
+            int[] fieldNat = new int[count];
+            int[] natName = new int[count];
             for (int i = 1; i < count; i++) {
                 int tag = in.readUnsignedByte();
                 switch (tag) {
@@ -268,7 +399,16 @@ public final class KeyCensus {
                     case 7 -> classRef[i] = in.readUnsignedShort();
                     case 16, 19, 20 -> in.readUnsignedShort();
                     case 8 -> stringRef[i] = in.readUnsignedShort();
-                    case 9, 10, 11, 12, 17, 18 -> in.readInt();
+                    case 9 -> {
+                        fieldClass[i] = in.readUnsignedShort();
+                        fieldNat[i] = in.readUnsignedShort();
+                    }
+                    case 10, 11 -> in.readInt();
+                    case 12 -> {
+                        natName[i] = in.readUnsignedShort();
+                        in.readUnsignedShort();
+                    }
+                    case 17, 18 -> in.readInt();
                     case 15 -> {
                         in.readUnsignedByte();
                         in.readUnsignedShort();
@@ -276,7 +416,20 @@ public final class KeyCensus {
                     default -> throw new IOException("bad constant tag " + tag);
                 }
             }
-            in.skipBytes(6);
+            Pool p = new Pool(pool, stringRef, classRef, fieldClass, fieldNat, natName);
+            Set<String> refs = new HashSet<>();
+            boolean mentions = false;
+            for (int i = 1; i < count; i++) {
+                if (classRef[i] != 0 && pool[classRef[i]] instanceof String n) {
+                    refs.add(n);
+                }
+                if (pool[i] instanceof String s && s.contains(KEY_MAPPING_NAME)) {
+                    mentions = true;
+                }
+            }
+            in.readUnsignedShort(); // access flags
+            String self = className(p, in.readUnsignedShort());
+            String sup = className(p, in.readUnsignedShort());
             in.skipBytes(in.readUnsignedShort() * 2);
             List<Object> tokens = new ArrayList<>();
             for (int section = 0; section < 2; section++) {
@@ -289,15 +442,22 @@ public final class KeyCensus {
                         int len = in.readInt();
                         byte[] body = in.readNBytes(len);
                         if ("Code".equals(name)) {
-                            decode(body, pool, stringRef, classRef, tokens);
+                            decode(body, p, tokens);
                         }
                     }
                 }
             }
-            return tokens;
+            return new Decoded(self, sup, refs, mentions, tokens);
         }
 
-        private static void decode(byte[] attr, Object[] pool, int[] stringRef, int[] classRef, List<Object> out) {
+        private static String className(Pool p, int idx) {
+            if (idx == 0 || p.classRef()[idx] == 0) {
+                return null;
+            }
+            return p.v()[p.classRef()[idx]] instanceof String s ? s : null;
+        }
+
+        private static void decode(byte[] attr, Pool p, List<Object> out) {
             int start = 8;
             int end = start + (((attr[4] & 255) << 24) | ((attr[5] & 255) << 16)
                     | ((attr[6] & 255) << 8) | (attr[7] & 255));
@@ -312,15 +472,22 @@ public final class KeyCensus {
                     out.add((int) (short) (((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255)));
                 } else if (op == 0xbb) {
                     int idx = ((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255);
-                    if (classRef[idx] != 0 && KEY_MAPPING_NAME.equals(pool[classRef[idx]])) {
-                        out.add(NEW_KEY_MAPPING);
+                    String cls = className(p, idx);
+                    if (cls != null) {
+                        out.add(new NewRef(cls));
+                    }
+                } else if (op == 0xb2) {
+                    int idx = ((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255);
+                    String owner = className(p, p.fieldClass()[idx]);
+                    if (owner != null && p.v()[p.natName()[p.fieldNat()[idx]]] instanceof String name) {
+                        out.add(new FieldRef(owner, name));
                     }
                 } else if (op == 0x12 || op == 0x13) {
                     int idx = op == 0x12 ? attr[pc + 1] & 255
                             : ((attr[pc + 1] & 255) << 8) | (attr[pc + 2] & 255);
-                    if (stringRef[idx] != 0) {
-                        out.add(pool[stringRef[idx]]);
-                    } else if (pool[idx] instanceof Integer v) {
+                    if (p.stringRef()[idx] != 0) {
+                        out.add(p.v()[p.stringRef()[idx]]);
+                    } else if (p.v()[idx] instanceof Integer v) {
                         out.add(v);
                     }
                 }
@@ -351,59 +518,105 @@ public final class KeyCensus {
     /** Selftest marker: a {@code new net/minecraft/client/KeyMapping} in the fixture class. */
     private static final Object NEW_KM = new Object();
 
-    /** Hand-assembled class: {@code <clinit>} pushes the given ldc strings and sipush ints. */
-    static byte[] fixtureClass(Object... pushes) throws IOException {
+    /** Selftest: {@code new cls} in the fixture's static initializer. */
+    private record NewOf(String cls) {
+    }
+
+    /** Selftest: {@code getstatic owner.name} in the fixture's static initializer. */
+    private record StaticOf(String owner, String name) {
+    }
+
+    /** Selftest: a hand-assembled constant pool, entries appended in the order they are first requested. */
+    private static final class Asm {
+        private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        private final DataOutputStream pool = new DataOutputStream(bytes);
+        private final Map<String, Integer> refs = new HashMap<>();
+        private int next = 1;
+
+        int utf(String s) throws IOException {
+            Integer have = refs.get("U" + s);
+            if (have != null) {
+                return have;
+            }
+            pool.writeByte(1);
+            pool.writeUTF(s);
+            refs.put("U" + s, next);
+            return next++;
+        }
+
+        int cls(String name) throws IOException {
+            Integer have = refs.get("C" + name);
+            if (have != null) {
+                return have;
+            }
+            int u = utf(name);
+            pool.writeByte(7);
+            pool.writeShort(u);
+            refs.put("C" + name, next);
+            return next++;
+        }
+
+        int str(String s) throws IOException {
+            Integer have = refs.get("S" + s);
+            if (have != null) {
+                return have;
+            }
+            int u = utf(s);
+            pool.writeByte(8);
+            pool.writeShort(u);
+            refs.put("S" + s, next);
+            return next++;
+        }
+
+        int field(String owner, String name) throws IOException {
+            Integer have = refs.get("F" + owner + "." + name);
+            if (have != null) {
+                return have;
+            }
+            int c = cls(owner);
+            int n = utf(name);
+            int d = utf("I");
+            pool.writeByte(12);
+            pool.writeShort(n);
+            pool.writeShort(d);
+            int nat = next++;
+            pool.writeByte(9);
+            pool.writeShort(c);
+            pool.writeShort(nat);
+            refs.put("F" + owner + "." + name, next);
+            return next++;
+        }
+    }
+
+    /** Hand-assembled class: {@code <clinit>} pushes the given strings, ints, instantiations and static reads. */
+    static byte[] classFile(String name, String superName, Object... pushes) throws IOException {
+        Asm a = new Asm();
+        int thisIdx = a.cls(name);
+        int superIdx = a.cls(superName);
+        int clinit = a.utf("<clinit>");
+        int desc = a.utf("()V");
+        int codeName = a.utf("Code");
         ByteArrayOutputStream code = new ByteArrayOutputStream();
-        ByteArrayOutputStream cp = new ByteArrayOutputStream();
-        DataOutputStream pool = new DataOutputStream(cp);
-        int next = 1;
-        pool.writeByte(1);
-        pool.writeUTF("Fix");
-        int utfName = next++;
-        pool.writeByte(7);
-        pool.writeShort(utfName);
-        int thisClass = next++;
-        pool.writeByte(1);
-        pool.writeUTF("java/lang/Object");
-        int utfObj = next++;
-        pool.writeByte(7);
-        pool.writeShort(utfObj);
-        int superClass = next++;
-        pool.writeByte(1);
-        pool.writeUTF("net/minecraft/client/KeyMapping");
-        int kmUtf = next++;
-        pool.writeByte(7);
-        pool.writeShort(kmUtf);
-        int kmClass = next++;
-        pool.writeByte(1);
-        pool.writeUTF("<clinit>");
-        int clinit = next++;
-        pool.writeByte(1);
-        pool.writeUTF("()V");
-        int desc = next++;
-        pool.writeByte(1);
-        pool.writeUTF("Code");
-        int codeName = next++;
         for (Object p : pushes) {
-            if (p == NEW_KM) {
-                code.write(0xbb);
-                code.write(kmClass >> 8);
-                code.write(kmClass);
-            } else if (p instanceof String s) {
-                pool.writeByte(1);
-                pool.writeUTF(s);
-                int utf = next++;
-                pool.writeByte(8);
-                pool.writeShort(utf);
-                int str = next++;
+            if (p instanceof String s) {
+                int idx = a.str(s);
                 code.write(0x13);
-                code.write(str >> 8);
-                code.write(str);
-            } else {
-                int v = (Integer) p;
+                code.write(idx >> 8);
+                code.write(idx);
+            } else if (p instanceof Integer v) {
                 code.write(0x11);
                 code.write(v >> 8);
                 code.write(v);
+            } else if (p instanceof NewOf n) {
+                int idx = a.cls(n.cls());
+                code.write(0xbb);
+                code.write(idx >> 8);
+                code.write(idx);
+            } else if (p instanceof StaticOf f) {
+                int idx = a.field(f.owner(), f.name());
+                code.write(0xb2);
+                code.write(idx >> 8);
+                code.write(idx);
             }
             code.write(0x57);
         }
@@ -411,12 +624,14 @@ public final class KeyCensus {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         DataOutputStream d = new DataOutputStream(out);
         d.writeInt(0xCAFEBABE);
-        d.writeInt(65);
-        d.writeShort(next);
-        cp.writeTo(d);
+        d.writeShort(0);
+        d.writeShort(65);
+        d.writeShort(a.next);
+        a.pool.flush();
+        a.bytes.writeTo(d);
         d.writeShort(0x21);
-        d.writeShort(thisClass);
-        d.writeShort(superClass);
+        d.writeShort(thisIdx);
+        d.writeShort(superIdx);
         d.writeShort(0);
         d.writeShort(0);
         d.writeShort(1);
@@ -436,12 +651,24 @@ public final class KeyCensus {
         return out.toByteArray();
     }
 
-    private static byte[] fixtureJar(byte[] cls, String lang) throws IOException {
+    /** Selftest fixture extending Object: {@code NEW_KM} stands for {@code new KeyMapping}. */
+    static byte[] fixtureClass(Object... pushes) throws IOException {
+        Object[] mapped = new Object[pushes.length];
+        for (int i = 0; i < pushes.length; i++) {
+            mapped[i] = pushes[i] == NEW_KM ? new NewOf(KEY_MAPPING_NAME) : pushes[i];
+        }
+        return classFile("Fix", "java/lang/Object", mapped);
+    }
+
+    /** Selftest jar: the lang table as assets/fixmod, then the (entry name, class bytes) pairs. */
+    private static byte[] fixtureJar(String lang, Object... entries) throws IOException {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         try (ZipOutputStream z = new ZipOutputStream(bos)) {
-            z.putNextEntry(new ZipEntry("fix/Keys.class"));
-            z.write(cls);
-            z.closeEntry();
+            for (int i = 0; i + 1 < entries.length; i += 2) {
+                z.putNextEntry(new ZipEntry((String) entries[i]));
+                z.write((byte[]) entries[i + 1]);
+                z.closeEntry();
+            }
             z.putNextEntry(new ZipEntry("assets/fixmod/lang/en_us.json"));
             z.write(lang.getBytes(StandardCharsets.UTF_8));
             z.closeEntry();
@@ -458,10 +685,13 @@ public final class KeyCensus {
         return keys.stream().filter(k -> k.id().equals(id)).findFirst().orElse(null);
     }
 
-    /** {@code KeyCensus --selftest [real-create.jar]}. */
+    /** {@code KeyCensus --selftest [real-create.jar [real-combat-roll.jar]]}. */
     public static void main(String[] args) throws IOException {
         int bad = 0;
-        byte[] jar = fixtureJar(fixtureClass(
+        byte[] jar = fixtureJar("{\"key.fixmod.dash\":\"Dash\",\"fixmod.keyinfo.enum_style\":\"Enum Style\","
+                        + "\"fixmod.keyinfo.unbound_one\":\"Unbound\",\"key.fixmod.unused\":\"Never registered\","
+                        + "\"key.categories.fixmod\":\"Fix Mod\",\"keybinds.fixmod.roll\":\"Roll\"}",
+                "fix/Keys.class", fixtureClass(
                         "key.fixmod.dash", 82, "key.categories.fixmod",
                         "enum_style", 342, "Some description",
                         "unbound_one", -1,
@@ -469,10 +699,7 @@ public final class KeyCensus {
                         NEW_KM, "keybinds.fixmod.roll", 82, "key.categories.fixmod",
                         NEW_KM, "fixmod.custom.spin", 90, "key.categories.fixmod",
                         NEW_KM, "keybinds.fixmod.nolang", -1,
-                        NEW_KM, 70, "key.categories.fixmod"),
-                "{\"key.fixmod.dash\":\"Dash\",\"fixmod.keyinfo.enum_style\":\"Enum Style\","
-                        + "\"fixmod.keyinfo.unbound_one\":\"Unbound\",\"key.fixmod.unused\":\"Never registered\","
-                        + "\"key.categories.fixmod\":\"Fix Mod\",\"keybinds.fixmod.roll\":\"Roll\"}");
+                        NEW_KM, 70, "key.categories.fixmod"));
         List<ModKey> keys = scanJar(jar);
         ModKey dash = find(keys, "key.fixmod.dash");
         bad += check(dash != null && dash.defaultKey() == 82 && dash.label().equals("Dash"),
@@ -495,6 +722,44 @@ public final class KeyCensus {
                 "keybinds.* unbound constructor name, label falls back to the id");
         bad += check(find(keys, "key.categories.fixmod") == null,
                 "a category after a computed name (no literal name) is not a binding");
+
+        // A subclass of a subclass of KeyMapping registers like KeyMapping itself (Mekanism's MekKeyBinding shape).
+        byte[] sub = fixtureJar("{\"keybinds.fixmod.sub\":\"Sub Key\",\"key.categories.fixmod\":\"Fix Mod\"}",
+                "fix/Mid.class", classFile("fix/Mid", KEY_MAPPING_NAME),
+                "fix/Sub.class", classFile("fix/Sub", "fix/Mid"),
+                "fix/Reg.class", classFile("fix/Reg", "java/lang/Object",
+                        new NewOf("fix/Sub"), "keybinds.fixmod.sub", 77, "key.categories.fixmod"));
+        ModKey subKey = find(scanJar(sub), "keybinds.fixmod.sub");
+        bad += check(subKey != null && subKey.defaultKey() == 77 && subKey.label().equals("Sub Key")
+                && subKey.category().equals("Fix Mod"), "transitive KeyMapping subclass registers its name and code");
+
+        // A builder passes an enum constant as the name; the constant's static initializer builds the lang key.
+        byte[] enumConst = fixtureJar("{\"key.fixmod.key_boost\":\"Boost\",\"key.fixmod.mode\":\"Mode\"}",
+                "fix/Lang.class", classFile("fix/Lang", "java/lang/Object",
+                        "KEY_BOOST", 4, "key", "key_boost", "KEY_MODE", 5, "key", "mode"),
+                "fix/Build.class", classFile("fix/Build", KEY_MAPPING_NAME,
+                        new StaticOf("fix/Lang", "KEY_BOOST"), 341,
+                        new StaticOf("fix/Lang", "KEY_MODE"), 340));
+        List<ModKey> enumKeys = scanJar(enumConst);
+        ModKey boost = find(enumKeys, "key.fixmod.key_boost");
+        bad += check(boost != null && boost.defaultKey() == 341 && boost.label().equals("Boost"),
+                "enum constant name resolves through its static initializer");
+        ModKey mode = find(enumKeys, "key.fixmod.mode");
+        bad += check(mode != null && mode.defaultKey() == 340, "a second enum constant resolves to its own key");
+
+        // Category keys are groups, never bindings; a binding in the group takes the group's label.
+        byte[] cats = fixtureJar("{\"key.fixmod.category\":\"Fix Cat\",\"key.category.fixmod.main\":\"Fix Main\","
+                        + "\"key.fixmod.dash2\":\"Dash Two\"}",
+                "fix/Cat.class", fixtureClass(
+                        NEW_KM, "key.fixmod.dash2", 82, "key.fixmod.category"),
+                "fix/Group.class", classFile("fix/Group", "java/lang/Object",
+                        "key.category.fixmod.main"));
+        List<ModKey> catKeys = scanJar(cats);
+        bad += check(find(catKeys, "key.fixmod.category") == null, "a *.category lang key is not a binding");
+        bad += check(find(catKeys, "key.category.fixmod.main") == null, "a key.category.* lang key is not a binding");
+        ModKey dash2 = find(catKeys, "key.fixmod.dash2");
+        bad += check(dash2 != null && dash2.defaultKey() == 82 && dash2.category().equals("Fix Cat"),
+                "a binding takes its *.category label as category");
         if (args.length > 2) {
             ModKey combatRoll = find(scanJar(Files.readAllBytes(Path.of(args[2]))), "keybinds.combat_roll.roll");
             bad += check(combatRoll != null && combatRoll.defaultKey() == 82, "real Combat Roll jar: keybinds.combat_roll.roll defaults to R");
