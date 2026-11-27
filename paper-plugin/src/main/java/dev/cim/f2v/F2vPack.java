@@ -6257,6 +6257,7 @@ public final class F2vPack {
                 && inflated.getAsJsonArray("from").get(2).getAsDouble() < 32,
                 "gallery: a degenerate plane on the limit inflates inward only");
         unlitBlockSelftest(failures);
+        doorCompositionSelftest(failures);
         carrierSelftest(failures);
         itemAllocationSelftest(failures);
         rawCaptureTextureSelftest(failures);
@@ -7335,6 +7336,93 @@ public final class F2vPack {
                 "multipart takes the first part's model");
         expect(failures, defaultBlockstateModel("{") == null && defaultBlockstateModel("[]") == null,
                 "malformed blockstates resolve to no model");
+    }
+
+    /**
+     * 14-e276 THE OPEN-POSE DOOR COMPOSITION's synthetic proof: a closed
+     * sibling (the full panel + the right frame piece) and an open leaf-only
+     * mesh (the measured slid shape, x -13..3, z 12.5..15.5) through the
+     * quad channel. The composition must carry the closed sibling's
+     * non-overlapping frame rows (the frame piece at x 4..16 survives, the
+     * full panel row at x 0..16 z13 DROPS — its z overlaps the slid leaf's
+     * slab), keep the leaf rows at their raw world coords (the truth's leaf
+     * rides the pocket too), and normalize the half window. The emitted
+     * composite: exactly two elements, the frame in-cell, the leaf's tile
+     * slab centered on the leaf's raw center (x -5; the tile's pixel-edge
+     * bulge rides the slab through the plane rotation).
+     */
+    private static void doorCompositionSelftest(List<String> failures) throws IOException {
+        Path quads = Files.createTempDirectory("f2v-door-selftest");
+        String closed = "create:brass_door[facing=north,half=lower,open=false,visible=false]";
+        String open = "create:brass_door[facing=north,half=lower,open=true,visible=false]";
+        String sprite = "fixture:block/door_panel";
+        java.util.function.BiFunction<double[][], String, String> quadRow = (v, mat) -> {
+            StringBuilder b = new StringBuilder(sprite).append("\t0\t0");
+            for (double[] p : v) {
+                b.append('\t').append(p[0]).append('\t').append(p[1]).append('\t')
+                        .append(p[2]).append('\t').append(p[3]).append('\t').append(p[4]);
+            }
+            for (int i = 0; i < 12; i++) b.append("\t1");
+            for (int i = 0; i < 4; i++) b.append("\t1");
+            return b.append('\t').append(mat).toString();
+        };
+        java.util.function.Function<double[], String> panel = (z) -> quadRow.apply(
+                new double[][]{{0, 0, z[0], 0, 16}, {16, 0, z[1], 16, 16},
+                        {16, 16, z[1], 16, 0}, {0, 16, z[0], 0, 0}}, "cutout");
+        // rows.tsv: the bare state -> its #q<hash> capture (the same file the
+        // walk's QuadDump ledger writes)
+        Files.writeString(quads.resolve("rows.tsv"),
+                closed + "#qclosed\n" + open + "#qopen\n", StandardCharsets.UTF_8);
+        // the closed capture: the full panel (frame + leaf at rest, z13) +
+        // the right frame piece (x 4..16, z14 — does not reach the pocket)
+        Files.writeString(quads.resolve("closed.tsv"),
+                panel.apply(new double[]{13, 13}) + "\n"
+                + quadRow.apply(new double[][]{{4, 0, 14, 0, 16}, {16, 0, 14, 16, 16},
+                        {16, 16, 14, 16, 0}, {4, 16, 14, 0, 0}}, "cutout") + "\n",
+                StandardCharsets.UTF_8);
+        // the open capture: THE LEAF ONLY at the raw slid frame (the measured
+        // train_door box: x -13..3, z 12.5..15.5 — a slab, so the closed
+        // panel row's z overlaps it and drops)
+        Files.writeString(quads.resolve("open.tsv"),
+                quadRow.apply(new double[][]{{-13, 0, 12.5, 0, 16}, {3, 0, 15.5, 16, 16},
+                        {3, 16, 15.5, 16, 0}, {-13, 16, 12.5, 0, 0}}, "cutout") + "\n",
+                StandardCharsets.UTF_8);
+        GalleryPack.resetModelScales();
+        ObjMesh.resetBaker();
+        TreeMap<String, byte[]> entries = new TreeMap<>();
+        var opaque = new java.awt.image.BufferedImage(16, 16,
+                java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 16; y++) {
+            for (int x = 0; x < 16; x++) opaque.setRGB(x, y, 0xffc8a064);
+        }
+        var png = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(opaque, "png", png);
+        entries.put(GalleryPack.spritePathPng(sprite), png.toByteArray());
+        List<String> warnings = new ArrayList<>();
+        GalleryPack.setQuadDir(quads);
+        var rows = GalleryPack.build(List.of(), List.of(new GalleryPack.Input(open + "#qopen")),
+                entries, warnings, Map.of(), new ArrayList<>());
+        expect(failures, rows.size() == 1, "door composition: the open row resolves");
+        if (rows.isEmpty()) return;
+        ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
+        JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+        int frame = 0, slid = 0, total = 0;
+        for (var mv : node.getAsJsonArray("models")) {
+            JsonObject draw = mv.getAsJsonObject();
+            JsonObject model = JsonParser.parseString(new String(entries.get("assets/"
+                    + draw.get("model").getAsString().replace(":", "/models/") + ".json"),
+                    StandardCharsets.UTF_8)).getAsJsonObject();
+            for (var elE : model.getAsJsonArray("elements")) {
+                JsonObject el = elE.getAsJsonObject();
+                double x0 = el.getAsJsonArray("from").get(0).getAsDouble();
+                double x1 = el.getAsJsonArray("to").get(0).getAsDouble();
+                total++;
+                if (x0 >= 3.99 && x1 <= 16.01) frame++;
+                if (x0 <= -12.9 && Math.abs((x0 + x1) / 2 - (-5.0)) < 0.05) slid++;
+            }
+        }
+        expect(failures, total == 2 && frame == 1 && slid == 1,
+                "door composition: frame carried in-cell, leaf raw-centered, full panel dropped");
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
