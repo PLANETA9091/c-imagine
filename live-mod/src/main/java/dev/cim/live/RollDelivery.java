@@ -11,9 +11,10 @@ import java.lang.reflect.Method;
  * food exhaustion, the PlayerStartRolling event and the RollAnimation broadcast. The payload is
  * built reflectively from the mod's own classes, so nothing about the mod is re-implemented here.
  *
- * <p>The sender is a {@link SessionServerPlayer} facade: the effects land on the facade, not on
- * the Paper player the key came from. Until the real ServerPlayer can be passed in, the reply
- * always says {@code facade=true} and the Paper side keeps its own effects.
+ * <p>The sender is the real ServerPlayer the Paper side hands over (its NMS handle, by key), when
+ * it is an instance of the ServerPlayer class this code sees (a shared-classloader check). Only
+ * then does the reply say {@code real=true}, and the Paper side skips its own effects. Otherwise
+ * the handler runs on the {@link SessionServerPlayer} facade and the reply says {@code facade=true}.
  */
 final class RollDelivery {
 
@@ -21,7 +22,10 @@ final class RollDelivery {
     }
 
     /** {@code vx, vy, vz}: the velocity the client's roll would send (the impulse). */
-    static String deliver(SessionServerPlayer player, double vx, double vy, double vz) throws Exception {
+    static String deliver(SessionServerPlayer facade, Object real, double vx, double vy, double vz) throws Exception {
+        boolean realPlayer = real instanceof net.minecraft.server.level.ServerPlayer;
+        net.minecraft.server.level.ServerPlayer player = realPlayer
+                ? (net.minecraft.server.level.ServerPlayer) real : facade;
         ClassLoader loader = RollDelivery.class.getClassLoader();
         Class<?> publish = LivePayloads.load("net/combat_roll/network/Packets$RollPublish", loader);
         Class<?> visuals = LivePayloads.load("net/combat_roll/client/RollEffect$Visuals", loader);
@@ -31,7 +35,8 @@ final class RollDelivery {
         puff.setAccessible(true);
         Constructor<?> visualsCtor = visuals.getDeclaredConstructor(String.class, particles);
         visualsCtor.setAccessible(true);
-        Object look = visualsCtor.newInstance("roll", puff.get(null));
+        // The client's own Visuals name (MinecraftClientMixin.tryRolling), the animation id.
+        Object look = visualsCtor.newInstance("combat_roll:roll", puff.get(null));
 
         Constructor<?> ctor = LivePayloads.constructor(publish,
                 "(ILnet/combat_roll/client/RollEffect$Visuals;Lnet/minecraft/world/phys/Vec3;)V");
@@ -52,6 +57,6 @@ final class RollDelivery {
         }
         handle.setAccessible(true);
         handle.invoke(null, payload, player.getServer(), player);
-        return "handled\troll\tfacade=true";
+        return "handled\troll\t" + (realPlayer ? "real=true" : "facade=true");
     }
 }

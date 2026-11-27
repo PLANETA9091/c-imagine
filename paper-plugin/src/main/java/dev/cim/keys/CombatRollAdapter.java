@@ -141,7 +141,11 @@ public final class CombatRollAdapter implements ModKeyAdapter, Listener {
         if (!(entry instanceof java.util.function.Function<?, ?> fn)) {
             return false;
         }
+        String key = "cim.roll.player." + player.getUniqueId();
         try {
+            // The NMS ServerPlayer behind the Paper player (CraftPlayer.getHandle), shared by the same JVM.
+            Object handle = player.getClass().getMethod("getHandle").invoke(player);
+            System.getProperties().put(key, handle);
             String request = "roll-deliver\t" + player.getUniqueId() + "\t" + impulse.x() + "\t" + impulse.y()
                     + "\t" + impulse.z();
             String reply = ((java.util.function.Function<String, String>) fn).apply(request);
@@ -151,9 +155,11 @@ public final class CombatRollAdapter implements ModKeyAdapter, Listener {
                 return false;
             }
             return first.contains("real=true");
-        } catch (RuntimeException e) {
+        } catch (ReflectiveOperationException | RuntimeException e) {
             plugin.getLogger().warning("[cim-key] roll-deliver failed: " + e);
             return false;
+        } finally {
+            System.getProperties().remove(key);
         }
     }
 
