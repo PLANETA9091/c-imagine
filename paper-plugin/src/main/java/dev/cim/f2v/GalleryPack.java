@@ -2417,6 +2417,7 @@ public final class GalleryPack {
         quadDir = dir;
         itemQuadMap = null;
         spriteAliases = null;
+        doorQuadMap = null;
     }
 
     // ------------------------------------------------------- 14-bq doors --
@@ -2953,6 +2954,17 @@ public final class GalleryPack {
             entries.put(modelFile, empty.toString().getBytes(StandardCharsets.UTF_8));
             return ref;
         }
+        // 14-e276 THE OPEN-POSE DOOR COMPOSITION: the Create sliding doors'
+        // open-pose capture = the leaf-only mesh at the raw world frame (the
+        // e47/e48 receipts) — the truth's open cell renders the IN-CELL DOOR
+        // FRAME the walk-time tesselation never recorded. Compose the closed
+        // sibling's frame rows + the raw leaf rows, each half normalized to
+        // its own cell. Returns null (= the raw mesh, byte-identical replay)
+        // for every non-door state, every closed pose, every in-cell mesh.
+        List<String> doorRows = composeOpenDoorMesh(stateKey, capturedRows, warnings);
+        if (doorRows != null) {
+            capturedRows = doorRows;
+        }
         List<ObjMesh.Face> faces = new ArrayList<>();
         List<int[]> flags = new ArrayList<>();
         List<String> faceMaterials = new ArrayList<>();
@@ -3472,6 +3484,280 @@ public final class GalleryPack {
             registerUnlitBlockLayers(jars, wrapper, ref, k, entries, elementTints, elementMaterials, elementLightTints);
         }
         return ref;
+    }
+
+    // ------------------------------------------------- 14-e276 door compose --
+
+    /** 14-e276: the quad dir's rows.tsv — bare state -> its {@code #q<hash>}
+     * capture hashes in file order (the 14-dt multi-mesh list). Cached per
+     * quadDir (reset in {@link #setQuadDir}). */
+    private static Map<String, List<String>> doorQuadMap;
+
+    private static Map<String, List<String>> doorQuadRows() throws IOException {
+        if (doorQuadMap == null) {
+            Map<String, List<String>> m = new java.util.HashMap<>();
+            Path file = quadDir == null ? null : quadDir.resolve("rows.tsv");
+            if (file != null && java.nio.file.Files.isRegularFile(file)) {
+                for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                    int marker = line.indexOf("#q");
+                    if (marker < 0) {
+                        continue;
+                    }
+                    String hash = line.substring(marker + 2).trim();
+                    if (!hash.isEmpty()) {
+                        m.computeIfAbsent(line.substring(0, marker), k -> new ArrayList<>()).add(hash);
+                    }
+                }
+            }
+            doorQuadMap = m;
+        }
+        return doorQuadMap;
+    }
+
+    /**
+     * 14-e276 THE OPEN-POSE DOOR COMPOSITION (the e47/e48 receipts, the
+     * replay side). The captured open-pose mesh of a Create sliding door =
+     * THE LEAF ONLY at the raw world frame — measured train_door
+     * facing=north half=lower: [-13,0,12.5]->[3,16,15.5] (the leaf slid
+     * 13 px west into the pocket) + [-13,15.968,12.5]->[3,31.968,15.5] (the
+     * OTHER half's leaf, one row up on the wall). The truth's open cell
+     * renders THE IN-CELL DOOR FRAME + the pocket opening + the leaf, and
+     * the frame geometry is ABSENT from the capture — the leaf's world
+     * frame is CORRECT (the truth's leaf is also out-of-cell), the disease
+     * = the missing frame. The composed mesh = the CLOSED sibling's frame
+     * rows (the closed capture = the full panel; its rows that do not
+     * overlap the leaf's slid position) + the open mesh's leaf rows at
+     * their raw coords, both normalized per half (see {@link #halfCellRows}).
+     *
+     * <p>Detection — ALL must hold, anything else returns null (= the raw
+     * mesh, the pre-e276 replay): the state is the measured slider family
+     * {@code create:{brass,framed_glass,train}_door} at {@code open=true}
+     * with a {@code half} (the folding copper/andesite open pose FOLDS, it
+     * does not slide); the mesh's coordinates extend past the cell; a
+     * closed-pose sibling capture ({@code open=false}, otherwise the same
+     * state) exists in rows.tsv with in-cell own-half content. The
+     * closed-pose path never reaches the composition (its meshes are
+     * in-cell) — e58d's 136 closed cells stay byte-identical.
+     */
+    static List<String> composeOpenDoorMesh(String stateKey, List<String> rows,
+                                                    List<String> warnings) throws IOException {
+        if (!isOpenSlidingDoorState(stateKey)) {
+            return null;
+        }
+        // the leaf's slid-position box — the frame rows' exclusion test
+        double[] leaf = meshAabb(rows);
+        if (leaf == null || !pastCell(leaf)) {
+            return null; // an in-cell open mesh is not the leaf-only shape
+        }
+        String closed = stateKey.replace("open=true", "open=false");
+        List<String> closedRows = siblingMeshRows(closed, meshMaterial(rows));
+        if (closedRows == null) {
+            warnings.add("gallery: 14-e276 open-pose door has no matching closed-pose sibling mesh: " + stateKey);
+            return null;
+        }
+        List<String> frame = halfCellRows(closedRows, stateKey.contains("half=upper"));
+        if (frame.isEmpty() || !inCellXz(frame)) {
+            warnings.add("gallery: 14-e276 closed-pose sibling has no in-cell own-half content: " + stateKey);
+            return null;
+        }
+        List<String> leafRows = halfCellRows(rows, stateKey.contains("half=upper"));
+        if (leafRows.isEmpty()) {
+            warnings.add("gallery: 14-e276 open mesh has no own-half content: " + stateKey);
+            return null;
+        }
+        List<String> out = new ArrayList<>();
+        for (String row : frame) {
+            if (!overlaps(row, leaf)) {
+                out.add(row);
+            }
+        }
+        out.addAll(leafRows);
+        return out;
+    }
+
+    /**
+     * 14-e276: the measured slider family at the OPEN pose. The 14-bq/14-ck
+     * door grammar minus the folding copper/andesite doors (their open pose
+     * is the 91-degree fold, not the slide — no closed-sibling frame law).
+     */
+    private static boolean isOpenSlidingDoorState(String state) {
+        if (state == null || !state.startsWith("create:")) {
+            return false;
+        }
+        int br = state.indexOf('[');
+        if (br < 0) {
+            return false;
+        }
+        String block = state.substring("create:".length(), br);
+        if (!block.equals("brass_door") && !block.equals("framed_glass_door")
+                && !block.equals("train_door")) {
+            return false;
+        }
+        return state.contains("open=true")
+                && (state.contains("half=lower") || state.contains("half=upper"));
+    }
+
+    /**
+     * The closed-pose sibling mesh: rows.tsv's hashes for the closed state,
+     * the same chunk material as the open mesh (the 14-dt multi-mesh law —
+     * the door's panel and its window ride different render layers, each
+     * pairs with its own closed mesh), rows.tsv order. Null when the closed
+     * state has no capture or none of its meshes names this material.
+     */
+    private static List<String> siblingMeshRows(String closedState, String material) throws IOException {
+        List<String> hashes = doorQuadRows().get(closedState);
+        if (hashes == null || quadDir == null) {
+            return null;
+        }
+        for (String hash : hashes) {
+            Path file = quadDir.resolve(hash + ".tsv");
+            if (!java.nio.file.Files.isRegularFile(file)) {
+                continue;
+            }
+            List<String> rows = Files.readAllLines(file, StandardCharsets.UTF_8);
+            if (meshMaterial(rows).equals(material)) {
+                return rows;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 14-e276 THE PER-CELL HALF WINDOW: the walk-time door meshes span the
+     * full 2-tall panel (y 0..32 anchored at the door's lower cell — the
+     * measured double-mesh), so a half=upper state's mesh renders one row
+     * up (the e46 (2) closed-cells' top-band class). half=lower keeps the
+     * y 0..16 rows; half=upper keeps the y 16..32 rows translated -16 into
+     * its own cell. The measured BER half offset (the upper half anchored
+     * at y+0.998 = 15.968 px) straddles the seam inside the texel
+     * tolerance.
+     */
+    private static List<String> halfCellRows(List<String> rows, boolean upper) {
+        double lo = upper ? 16 - DOOR_CELL_TOL : -DOOR_CELL_TOL;
+        double hi = upper ? 32 + DOOR_CELL_TOL : 16 + DOOR_CELL_TOL;
+        List<String> out = new ArrayList<>();
+        for (String line : rows) {
+            double[] q = quadAabb(line);
+            if (q == null || q[1] < lo || q[4] > hi) {
+                continue;
+            }
+            out.add(upper ? shiftRowY(line, -16) : line);
+        }
+        return out;
+    }
+
+    /** The mesh's coordinate AABB over its parseable rows ({@code null} when
+     * the mesh has none — the parse loop's 23-column gate). */
+    private static double[] meshAabb(List<String> rows) {
+        double[] box = null;
+        for (String line : rows) {
+            double[] q = quadAabb(line);
+            if (q == null) {
+                continue;
+            }
+            if (box == null) {
+                box = q;
+            } else {
+                for (int a = 0; a < 3; a++) {
+                    box[a] = Math.min(box[a], q[a]);
+                    box[3 + a] = Math.max(box[3 + a], q[3 + a]);
+                }
+            }
+        }
+        return box;
+    }
+
+    /** One quad row's vertex-coordinate AABB (columns 3..22, x y z per
+     * vertex), or null for a row the parse loop skips (&lt; 23 columns). */
+    private static double[] quadAabb(String line) {
+        String[] c = line.split("\t");
+        if (c.length < 23) {
+            return null;
+        }
+        double[] box = {Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE,
+                -Double.MAX_VALUE, -Double.MAX_VALUE, -Double.MAX_VALUE};
+        for (int i = 0; i < 4; i++) {
+            int o = 3 + i * 5;
+            for (int a = 0; a < 3; a++) {
+                double v = Double.parseDouble(c[o + a]);
+                box[a] = Math.min(box[a], v);
+                box[3 + a] = Math.max(box[3 + a], v);
+            }
+        }
+        return box;
+    }
+
+    /**
+     * 14-e276 tolerance: one texel. The measured BER half offset straddle
+     * (the upper leaf at y 15.968) sits inside it; model-grid noise does
+     * not.
+     */
+    private static final double DOOR_CELL_TOL = 0.0625;
+
+    /** Any vertex coordinate outside the cell — the leaf-only open-pose
+     * shape's mark (the measured leaf at x -13, the other half at y 32). */
+    private static boolean pastCell(double[] box) {
+        return box[0] < -DOOR_CELL_TOL || box[1] < -DOOR_CELL_TOL || box[2] < -DOOR_CELL_TOL
+                || box[3] > 16 + DOOR_CELL_TOL || box[4] > 16 + DOOR_CELL_TOL
+                || box[5] > 16 + DOOR_CELL_TOL;
+    }
+
+    /** x/z in-cell (the y axis is windowed by construction). */
+    private static boolean inCellXz(List<String> rows) {
+        for (String line : rows) {
+            double[] q = quadAabb(line);
+            if (q == null) {
+                continue;
+            }
+            if (q[0] < -DOOR_CELL_TOL || q[2] < -DOOR_CELL_TOL
+                    || q[3] > 16 + DOOR_CELL_TOL || q[5] > 16 + DOOR_CELL_TOL) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Strict AABB overlap — touching faces do not overlap (a trim flush
+     * with the slid leaf's box survives the frame test). */
+    private static boolean overlaps(String line, double[] box) {
+        double[] q = quadAabb(line);
+        if (q == null) {
+            return false;
+        }
+        for (int a = 0; a < 3; a++) {
+            if (q[a] >= box[3 + a] - 1e-6 || box[a] >= q[3 + a] - 1e-6) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Re-emits the row with every vertex y translated by {@code dy} model
+     * units (the vertex columns ride the parse loop's 3+i*5 layout). */
+    private static String shiftRowY(String line, double dy) {
+        String[] c = line.split("\t", -1);
+        for (int i = 0; i < 4; i++) {
+            int o = 3 + i * 5;
+            c[o + 1] = Double.toString(Double.parseDouble(c[o + 1]) + dy);
+        }
+        return String.join("\t", c);
+    }
+
+    /** The mesh's chunk material: its first parseable row's named material,
+     * the block legacy default (cutout) on the 39/41-column shapes — the
+     * same rule the parse loop applies per row. */
+    private static String meshMaterial(List<String> rows) {
+        for (String line : rows) {
+            String[] c = line.split("\t");
+            if (c.length < 23) {
+                continue;
+            }
+            if (c.length == 40 || c.length == 42) {
+                return c[39];
+            }
+            return "cutout";
+        }
+        return "cutout";
     }
 
     /**
