@@ -297,21 +297,24 @@ def main():
         print("J foreign skip note GREEN:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
-    # K: a no-walk visual class with entries -> RED, named (12-aq)
-    # (biome LEFT the no-walk set 2026-11-04; the 12 variant classes LEFT it
-    # 2026-11-11 (14-dx) — dimension_type is the one REMAINING no-walk class,
-    # so K rides it now)
+    # K: the last no-walk class GRADUATED (14-e283 — the per-dimension
+    # camera rig shipped; NO_WALK is empty). The graduated class with a
+    # positive total and NO walk reports DIAG-INCOMPLETE — NAMED on the
+    # verdict, report-only until the x2 flip (the 2026-11-04 law); the
+    # missing manifest/shots are the honest channel, never silently green.
     with tempfile.TemporaryDirectory() as td:
         root = pathlib.Path(td)
         build_fixture(root)
         idx = root / "scenes" / "gallery-create-index.tsv"
         txt = idx.read_text(encoding="utf-8").replace(
-            "dimension_type\t0\t0\n", "dimension_type\t64\t0\n")
+            "dimension_type\t0\t0\n", "dimension_type\t64\t1\n")
         idx.write_text(txt, encoding="utf-8")
         r = run_gate(root)
-        ok = r.returncode == 1 and "dimension_type\ttotal=64" in r.stdout \
-            and "no-walk-yet" in r.stdout
-        print("K no-walk class RED:", "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
+        ok = "dimension\ttotal=64" in r.stdout \
+            and "DIAG-INCOMPLETE" in r.stdout \
+            and "missing_manifests=64" in r.stdout
+        print("K dimension graduated walk named DIAG:",
+              "PASS" if ok else f"FAIL\n{r.stdout}{r.stderr}")
         failures += 0 if ok else 1
 
     # L: an unreadable dynamic registry (-1) -> RED
