@@ -165,6 +165,7 @@ public final class HudBootstrap {
         camera = new CameraLock(plugin);
         VirtualKeyboard keyboard = new VirtualKeyboard(plugin.getLogger(), keys, camera);
         plugin.getServer().getPluginManager().registerEvents(keyboard, plugin);
+        dev.cim.keys.ModKeyBridge.enable(plugin, Path.of(System.getProperty("user.dir"), "mods"));
         PluginCommand command = plugin.getCommand("keyboard");
         if (command != null) {
             command.setExecutor(keyboard);
