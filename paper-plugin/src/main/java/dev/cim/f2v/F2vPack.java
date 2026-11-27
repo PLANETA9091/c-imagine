@@ -7519,7 +7519,16 @@ public final class F2vPack {
                         }
                     }
                 }
-                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min > 60;
+                // 14-e275: the gradient contract rides the OUTPUT-density tile
+                // (3-f-retry: pw = the element's own screen footprint). This
+                // fixture quad's footprint is 4 px, so the barycentric grid
+                // samples pixel CENTRES at captured 0.5..0.8 — red 100..160,
+                // spread exactly 60.0. The old 64px oversampled tile inset the
+                // centres 1/128 of the span (81..159, spread 78) — the strict
+                // `> 60` belonged to that two-stage grid. Exactly-once keeps
+                // its teeth: a squared multiply lands min 50 (< 79), a missing
+                // multiply lands max 200 (> 161), a flat capture spreads 0.
+                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min >= 60;
                 expect(failures, correct && min <= max,
                         "captured RGB: opaque source times captured color exactly once mode=" + mode);
             }
