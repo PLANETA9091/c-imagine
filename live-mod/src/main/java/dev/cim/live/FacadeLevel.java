@@ -483,7 +483,8 @@ public final class FacadeLevel extends Level {
 
         @Override
         public long getGameTime() {
-            return 0L;
+            // The layer's tick count: scheduled ticks (LevelTicks) are due against it.
+            return LiveProtocol.ticks();
         }
 
         @Override
