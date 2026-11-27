@@ -410,6 +410,35 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     }
 
     /** A chunk loads: its placed mod blocks, kept in its PDC, tick in the layer from now on. */
+    /**
+     * Neighbour updates for the layer's tracked blocks: a redstone power change, a block placed or broken next
+     * to one. Cheap: a chunk-keyed quick reject, then six cell lookups; only a hit queues a "neighbour" line,
+     * which the next layer tick delivers (see LiveBridge.tick). BlockPhysicsEvent is not used (too hot).
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onRedstoneNeighbour(org.bukkit.event.block.BlockRedstoneEvent event) {
+        neighbourEvent(event.getBlock());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlaceNeighbour(org.bukkit.event.block.BlockPlaceEvent event) {
+        neighbourEvent(event.getBlockPlaced());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBreakNeighbour(org.bukkit.event.block.BlockBreakEvent event) {
+        neighbourEvent(event.getBlock());
+    }
+
+    private void neighbourEvent(org.bukkit.block.Block block) {
+        LiveBridge bridge = this.live;
+        if (bridge == null) {
+            return;
+        }
+        bridge.neighbourChanged(block.getWorld().getName(), block.getX(), block.getY(), block.getZ(),
+                block.getType().getKey().toString());
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onChunkLoad(org.bukkit.event.world.ChunkLoadEvent event) {
         adoptDisplays(event.getChunk());

@@ -57,7 +57,7 @@ public final class LiveProtocol {
             String[] lines = request.split("\n");
             String[] head = lines[0].split("\t");
             if (head[0].equals("tick")) {
-                return tick();
+                return tick(head, lines);
             }
             // Whether the real server is up: interactions need its resources (no player, no uuid).
             if (head[0].equals("ready")) {
@@ -799,6 +799,7 @@ public final class LiveProtocol {
         }
         TICKING.put(pos, head[4]);
         refreshTickList();
+        refreshTickSections();
         return "adopted\t" + TICKING.size() + "\n";
     }
 
@@ -812,6 +813,7 @@ public final class LiveProtocol {
         StringBuilder out = new StringBuilder(save(head));
         if (TICKING.remove(pos) != null) {
             refreshTickList();
+            refreshTickSections();
         }
         if (!BLOCKS.containsValue(pos)) {
             // removeBlockEntity only: no onRemove, so nothing a mod drops is spilled into the facade.
@@ -996,9 +998,43 @@ public final class LiveProtocol {
         return be == null ? "" : "be\t" + be.saveWithoutMetadata(LiveMenus.level().registryAccess()) + "\n";
     }
 
+    /** The gamerule randomTickSpeed, as Paper last sent it (vanilla default 3). */
+    private static int randomTickSpeed = 3;
+    /** Vanilla's per-cell draws: the seeded LCG of the layer's random ticks (see RandomTickMath). */
+    private static final RandomTickMath RANDOM_CELLS = new RandomTickMath(0);
+    /** The random source a random tick and a scheduled tick draw from (the facade's seeded source). */
+    private static final net.minecraft.util.RandomSource RANDOM = net.minecraft.util.RandomSource.create(0L);
+    /** The section keys (x>>4, y>>4, z>>4 packed) of the placed blocks, rebuilt when the ticking set changes. */
+    private static long[] tickSections = new long[0];
+
+    private static long sectionKey(net.minecraft.core.BlockPos p) {
+        return ((long) (p.getX() >> 4) & 0x3FFFFFFL) | (((long) (p.getZ() >> 4) & 0x3FFFFFFL) << 26)
+                | (((long) (p.getY() >> 4) & 0xFFFL) << 52);
+    }
+
+    private static void refreshTickSections() {
+        java.util.HashSet<Long> keys = new java.util.HashSet<>();
+        for (net.minecraft.core.BlockPos p : TICKING.keySet()) {
+            keys.add(sectionKey(p));
+        }
+        long[] out = new long[keys.size()];
+        int i = 0;
+        for (Long k : keys) {
+            out[i++] = k;
+        }
+        tickSections = out;
+    }
+
+    /**
+     * tick TAB speed|- , then optional "neighbour TAB x TAB y TAB z TAB blockId" lines (Paper's neighbour events).
+     * Order per tick: neighbour updates, block entity ticks, scheduled ticks, random ticks.
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static String tick() {
+    private static String tick(String[] head, String[] lines) {
         ticks++;
+        if (head.length > 1 && !head[1].equals("-")) {
+            randomTickSpeed = Integer.parseInt(head[1]);
+        }
         FacadeServerLevel level = LiveMenus.level();
         int ticked = 0;
         SPILLS.setLength(0);
@@ -1026,6 +1062,13 @@ public final class LiveProtocol {
                     drainSpills(spills, pos);
                 }
             }
+            for (int i = 1; i < lines.length; i++) {
+                if (lines[i].startsWith("neighbour\t")) {
+                    neighbour(level, lines[i].split("\t", 5));
+                }
+            }
+            scheduledTicks(level);
+            randomTicks(level);
         } finally {
             store.endTickRecording();
         }
@@ -1037,6 +1080,75 @@ public final class LiveProtocol {
         }
         return "ticked\t" + ticked + spills;
     }
+
+    /**
+     * A Paper neighbour event: the cell at x y z changed to blockId, so each tracked block next to it gets its
+     * neighborChanged (vanilla's neighbour update, the source being the changed cell).
+     */
+    private static void neighbour(FacadeServerLevel level, String[] p) {
+        net.minecraft.core.BlockPos at = pos(p, 1);
+        net.minecraft.world.level.block.Block source = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(
+                net.minecraft.resources.ResourceLocation.parse(p[4]));
+        for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
+            net.minecraft.core.BlockPos n = at.relative(d);
+            if (TICKING.containsKey(n)) {
+                net.minecraft.world.level.block.state.BlockState state = level.getBlockState(n);
+                try {
+                    state.handleNeighborChanged(level, n, source, at, false);
+                } catch (Throwable t) {
+                    // A machine that cannot take the update keeps its state.
+                }
+            }
+        }
+    }
+
+    /** Due scheduled block ticks (the facade's LevelTicks, game time = the layer's tick count). */
+    private static void scheduledTicks(FacadeServerLevel level) {
+        level.getBlockTicks().tick(ticks, 1000, (net.minecraft.core.BlockPos pos, net.minecraft.world.level.block.Block block) -> {
+            net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+            if (state.is(block)) {
+                try {
+                    state.tick(level, pos, RANDOM);
+                } catch (Throwable t) {
+                    // A block that cannot tick here drops its tick.
+                }
+            }
+        });
+    }
+
+    /**
+     * vanilla tickChunk for the sections holding placed blocks: randomTickSpeed cells drawn per section per tick
+     * (RandomTickMath); a drawn cell that is a placed block and randomly ticks gets randomTick. Neighbour context
+     * is what Paper last sent (not refreshed per tick: a known gap). Allocates only per drawn tracked cell.
+     */
+    private static void randomTicks(FacadeServerLevel level) {
+        if (randomTickSpeed <= 0 || tickSections.length == 0) {
+            return;
+        }
+        int[] cells = RANDOM_CELLS_BUF;
+        for (long key : tickSections) {
+            int x0 = (int) ((key & 0x3FFFFFFL) << 38 >> 38) << 4;
+            int z0 = (int) (((key >> 26) & 0x3FFFFFFL) << 38 >> 38) << 4;
+            int y0 = (int) (((key >> 52) & 0xFFFL) << 52 >> 52) << 4;
+            int n = RANDOM_CELLS.drawSection(randomTickSpeed, cells);
+            for (int k = 0; k < n; k++) {
+                int c = cells[k];
+                net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(x0 + (c & 15), y0 + (c >> 8), z0 + ((c >> 4) & 15));
+                if (TICKING.containsKey(pos)) {
+                    net.minecraft.world.level.block.state.BlockState state = level.getBlockState(pos);
+                    if (state.isRandomlyTicking()) {
+                        try {
+                            state.randomTick(level, pos, RANDOM);
+                        } catch (Throwable t) {
+                            // A block that cannot random-tick here skips this draw.
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private static final int[] RANDOM_CELLS_BUF = new int[16];
 
     /**
      * S3c: the cells a tick changed that lie within one block of a tracked (ticking or menu-held) block, as

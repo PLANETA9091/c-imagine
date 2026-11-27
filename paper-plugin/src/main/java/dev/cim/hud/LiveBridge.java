@@ -236,8 +236,12 @@ final class LiveBridge {
         if (parse(call(in)).error() != null) {
             return false;
         }
-        return ticking.put(at, new Tracked(block.getWorld().getName(), block.getX(), block.getY(), block.getZ(),
+        boolean added = ticking.put(at, new Tracked(block.getWorld().getName(), block.getX(), block.getY(), block.getZ(),
                 blockId)) == null;
+        if (added) {
+            trackedChunks.merge(chunkKey(block.getX(), block.getZ()), 1, Integer::sum);
+        }
+        return added;
     }
 
     /**
@@ -255,6 +259,7 @@ final class LiveBridge {
             put(keepIn.getPersistentDataContainer(), block, t.blockId(), state.blockEntity());
         }
         ticking.remove(at);
+        trackedChunks.computeIfPresent(chunkKey(block.getX(), block.getZ()), (k, n) -> n <= 1 ? null : n - 1);
         return true;
     }
 
@@ -784,12 +789,56 @@ final class LiveBridge {
     /** The cells a tick changed near tracked blocks (S3c); the shared empty list when none did (no allocation). */
     private static final List<Placement> NO_CHANGES = List.of();
 
+    /** randomTickSpeed as last sent to the layer; the gamerule is sent only when it changes. */
+    private int sentRandomTickSpeed = -1;
+    /** Neighbour events since the last tick: "neighbour\tx\ty\tz\tid" lines, sent with the next tick. */
+    private final List<String> pendingNeighbours = new ArrayList<>();
+    /** Chunk keys holding a tracked block: the quick reject before a neighbour event looks at its six cells. */
+    private final java.util.HashMap<Long, Integer> trackedChunks = new java.util.HashMap<>();
+
+    static long chunkKey(int x, int z) {
+        return ((long) (x >> 4) & 0xFFFFFFFFL) | (((long) (z >> 4) & 0xFFFFFFFFL) << 32);
+    }
+
+    /** True when the block at x y z in the named world is a tracked (ticking) block: a neighbour event filter. */
+    boolean isTracked(String world, int x, int y, int z) {
+        return trackedChunks.containsKey(chunkKey(x, z)) && ticking.containsKey(where(world, x, y, z));
+    }
+
+    /** A block changed in the world at x y z to id: each tracked neighbour gets a neighbour update in the next tick. */
+    void neighbourChanged(String world, int x, int y, int z, String id) {
+        for (int[] d : NEIGHBOURS) {
+            if (isTracked(world, x + d[0], y + d[1], z + d[2])) {
+                pendingNeighbours.add("neighbour\t" + x + "\t" + y + "\t" + z + "\t" + id);
+                return;
+            }
+        }
+    }
+
+    private static final int[][] NEIGHBOURS = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+
     List<Placement> tick() {
         Function<String, String> fn = entry();
         if (fn == null) {
+            pendingNeighbours.clear();
             return NO_CHANGES;
         }
-        String answer = fn.apply("tick\t-");
+        // Paper's randomTickSpeed (gamerule of the first world), sent only when it changes.
+        String speed = "-";
+        if (!org.bukkit.Bukkit.getWorlds().isEmpty()) {
+            Integer v = org.bukkit.Bukkit.getWorlds().get(0).getGameRuleValue(org.bukkit.GameRule.RANDOM_TICK_SPEED);
+            int now = v == null ? 3 : v;
+            if (now != sentRandomTickSpeed) {
+                sentRandomTickSpeed = now;
+                speed = Integer.toString(now);
+            }
+        }
+        StringBuilder req = new StringBuilder("tick\t").append(speed);
+        for (String n : pendingNeighbours) {
+            req.append('\n').append(n);
+        }
+        pendingNeighbours.clear();
+        String answer = fn.apply(req.toString());
         if (answer.indexOf('\n') < 0) {
             return NO_CHANGES; // nothing spilled or changed: the common tick splits nothing
         }
