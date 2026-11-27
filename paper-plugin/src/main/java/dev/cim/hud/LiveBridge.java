@@ -781,20 +781,47 @@ final class LiveBridge {
      * One server tick of the layer's menus and placed block entities. What they spilled drops in
      * Paper's world at the block that spilled it; nothing is kept for a later break to hand out.
      */
-    void tick() {
+    /** The cells a tick changed near tracked blocks (S3c); the shared empty list when none did (no allocation). */
+    private static final List<Placement> NO_CHANGES = List.of();
+
+    List<Placement> tick() {
         Function<String, String> fn = entry();
         if (fn == null) {
-            return;
+            return NO_CHANGES;
         }
         String answer = fn.apply("tick\t-");
         if (answer.indexOf('\n') < 0) {
-            return; // nothing spilled: the common tick splits nothing
+            return NO_CHANGES; // nothing spilled or changed: the common tick splits nothing
         }
+        List<Placement> changed = null;
         for (String line : answer.split("\n")) {
             if (line.startsWith("spill\t")) {
                 drop(line);
+            } else if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t", 6);
+                if (changed == null) {
+                    changed = new ArrayList<>();
+                }
+                changed.add(new Placement(p[1], Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                        Integer.parseInt(p[4]), p[5], null, List.of()));
             }
         }
+        return changed == null ? NO_CHANGES : changed;
+    }
+
+    /** The world a tracked (ticking or menu-held) block stands at {@code x,y,z} in, or null (the layer keys by position). */
+    org.bukkit.World worldAt(int x, int y, int z) {
+        for (Tracked t : ticking.values()) {
+            if (t.x() == x && t.y() == y && t.z() == z) {
+                return org.bukkit.Bukkit.getWorld(t.world());
+            }
+        }
+        for (org.bukkit.block.Block b : openBlocks.values()) {
+            if (b.getX() == x && b.getY() == y && b.getZ() == z) {
+                return b.getWorld();
+            }
+        }
+        return null;
     }
 
     private void drop(String line) {

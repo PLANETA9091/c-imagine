@@ -347,6 +347,63 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return live;
     }
 
+    /**
+     * S3c: the cells a layer tick changed (a machine's blockstate, a tree's growth) applied to Paper's world, as
+     * {@link #applyPlacements} applies a use's: a mod block re-looks its display or keeps its new state (a note
+     * carrier keeps the text); another mod block gets its carrier and its tracking follows the new id; a vanilla
+     * block takes its exact state; air clears the cell. Each change is inside a tracked block's neighbourhood
+     * (LiveProtocol.nearTracked), so the layer is authoritative there.
+     */
+    private void applyTickChanges(LiveBridge bridge, List<LiveBridge.Placement> changes) {
+        for (LiveBridge.Placement p : changes) {
+            org.bukkit.World world = bridge.worldAt(p.x(), p.y(), p.z());
+            if (world == null) {
+                continue;
+            }
+            Block at = world.getBlockAt(p.x(), p.y(), p.z());
+            String kind = placementKind(p.id());
+            if (kind.equals("mod")) {
+                F2vPack.VisualBlock row = blockCarrierRows.get(p.id());
+                if (row == null) {
+                    continue;
+                }
+                String id = row.moddedBlockId();
+                if (id.equals(carried(at))) {
+                    // the same block in a new state: a display shows its look, a note carrier keeps the text
+                    if (knownDisplay(id) && DisplayCarriers.idAt(at) != null) {
+                        DisplayCarriers.updateState(at, id, p.state());
+                    }
+                    bridge.keepPlacedState(at, p.state());
+                    continue;
+                }
+                // another mod block now: its carrier goes down and the tick tracking follows the new id
+                if (knownDisplay(id)) {
+                    at.setType(Material.BARRIER, false);
+                    DisplayCarriers.place(at, id, p.state());
+                } else {
+                    if (at.getType() == Material.BARRIER) {
+                        DisplayCarriers.remove(at);
+                    }
+                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
+                }
+                bridge.keepPlacedState(at, p.state());
+                bridge.release(at, null);
+                if (bridge.track(at, id, null)) {
+                    logTicking();
+                }
+            } else if (kind.equals("vanilla") && !readableState(p.state())) {
+                continue;
+            } else {
+                if (DisplayCarriers.idAt(at) != null) {
+                    DisplayCarriers.remove(at);
+                }
+                bridge.forgetPlacedState(at);
+                bridge.release(at, null);
+                at.setBlockData(org.bukkit.Bukkit.createBlockData(kind.equals("air") ? "minecraft:air" : p.state()), false);
+            }
+        }
+    }
+
     /** The one line that says how many placed mod block entities tick in the layer now. */
     private void logTicking() {
         log.info("[c-imagine] live: ticking " + live.tickingCount() + " placed block entities");
@@ -388,14 +445,60 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.warning("[c-imagine] live: display flush failed: " + e);
         }
         if (chunk.isEntitiesLoaded() || plugin == null) {
+            migrateChunk(chunk);
             DisplayCarriers.adopt(chunk, this::knownDisplay, this::stateAt);
             return;
         }
         org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
             if (chunk.isLoaded()) {
+                migrateChunk(chunk);
                 DisplayCarriers.adopt(chunk, this::knownDisplay, this::stateAt);
             }
         });
+    }
+
+    /** The chunk PDC key of a placed block's state text, as LiveBridge writes it ({@code bs_x_y_z}). */
+    private static final java.util.regex.Pattern STATE_KEY = java.util.regex.Pattern.compile("bs_(-?\\d+)_(-?\\d+)_(-?\\d+)");
+
+    /**
+     * S3b: a chunk's placed blocks that moved to the display family convert on load. A note carrier standing where
+     * a display block was placed becomes a barrier with its per-state display (state from the placed-state key);
+     * a barrier whose placed state is known but whose display key is gone gets its display back. Only the chunk's
+     * {@code bs_} keys are read (no block scan); the pass is idempotent (a converted block is no longer a note).
+     */
+    private void migrateChunk(org.bukkit.Chunk chunk) {
+        org.bukkit.persistence.PersistentDataContainer pdc = chunk.getPersistentDataContainer();
+        int converted = 0;
+        int respawned = 0;
+        for (org.bukkit.NamespacedKey k : new ArrayList<>(pdc.getKeys())) {
+            if (!k.getKey().startsWith("bs_")) {
+                continue;
+            }
+            java.util.regex.Matcher m = STATE_KEY.matcher(k.getKey());
+            if (!m.matches()) {
+                continue;
+            }
+            Block at = chunk.getWorld().getBlockAt(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)),
+                    Integer.parseInt(m.group(3)));
+            String state = pdc.get(k, org.bukkit.persistence.PersistentDataType.STRING);
+            StateMigration.Action action = StateMigration.decide(at.getType() == Material.NOTE_BLOCK,
+                    at.getType() == Material.BARRIER, DisplayCarriers.hasKey(at), state, this::knownDisplay);
+            if (action == StateMigration.Action.NONE) {
+                continue;
+            }
+            String id = StateMigration.stateId(state);
+            if (action == StateMigration.Action.NOTE_TO_DISPLAY) {
+                at.setType(Material.BARRIER, false);
+                converted++;
+            } else {
+                respawned++;
+            }
+            DisplayCarriers.place(at, id, state);
+        }
+        if (converted + respawned > 0) {
+            log.info("[c-imagine] live: chunk " + chunk.getX() + "," + chunk.getZ() + " migrated " + converted
+                    + " note carrier(s) to the display family, respawned " + respawned + " display(s)");
+        }
     }
 
     /** The worldgen debug switch (the same {@code -Dcim.worldgen.debug} flag). */
@@ -525,7 +628,11 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             if (!any && !live.hasTicking()) {
                 return;
             }
-            live.tick();
+            // S3c: the cells the layer's own ticks changed near tracked blocks go into Paper's world (empty list: no work)
+            List<LiveBridge.Placement> changed = live.tick();
+            if (!changed.isEmpty()) {
+                applyTickChanges(live, changed);
+            }
             // Every 200 ticks the placed block entities' data is kept in their chunks; a block whose carrier is gone stops.
             if (++liveTicks % 200 == 0 && live.saveAll(this::carried)) {
                 logTicking();

@@ -346,6 +346,11 @@ final class DisplayCarriers {
         }
     }
 
+    /** True when the chunk keeps a display key for {@code at} (the key names the display; the entity may be gone). */
+    static boolean hasKey(Block at) {
+        return at.getChunk().getPersistentDataContainer().has(slot(at), PersistentDataType.STRING);
+    }
+
     /** True when a barrier at {@code block} is a display (the pistons and explosions read it). */
     static boolean displayed(Block block) {
         return idAt(block) != null;

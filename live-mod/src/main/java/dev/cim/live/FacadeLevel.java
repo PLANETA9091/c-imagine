@@ -134,6 +134,26 @@ public final class FacadeLevel extends Level {
         }
     }
 
+    /** S3c: the cells a layer tick changed (first old state each), reused across ticks: no allocation when none changes. */
+    private final java.util.HashMap<BlockPos, BlockState> tickWrites = new java.util.HashMap<>();
+    private boolean tickRecording;
+
+    /** Starts recording the writes of one tick (see LiveProtocol.tick). */
+    void beginTickRecording() {
+        tickWrites.clear();
+        tickRecording = true;
+    }
+
+    /** Stops recording; the recorded cells stay readable through {@link #tickWrites()} until the next begin. */
+    void endTickRecording() {
+        tickRecording = false;
+    }
+
+    /** The cells the last recorded tick wrote, with the state each held before its first write. */
+    java.util.Map<BlockPos, BlockState> tickWrites() {
+        return tickWrites;
+    }
+
     java.util.Map<BlockPos, BlockState> endPlacement() {
         var writes = placementWrites;
         placementWrites = null;
@@ -164,6 +184,9 @@ public final class FacadeLevel extends Level {
         }
         if (placementWrites != null) {
             placementWrites.putIfAbsent(pos.immutable(), old);
+        }
+        if (tickRecording) {
+            tickWrites.putIfAbsent(pos.immutable(), old);
         }
         if (state.isAir()) {
             states.remove(key);
