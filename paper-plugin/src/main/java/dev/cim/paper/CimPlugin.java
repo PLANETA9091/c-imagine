@@ -4811,8 +4811,10 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * no pack row count as nochannel (the slot stays empty, the join names
      * it). The E/ESC key presses and the shot live in the CI walk.
      *
-     * <p>Returns {@code [placed, nochannel, cells]}; the RCON marker is
-     * {@code gallerypage-inv <ns> p<page> -> placed=N nochannel=K cells=M}.
+     * <p>Returns {@code [placed, nochannel, cells, cleared]}; the RCON marker
+     * is {@code gallerypage-inv <ns> p<page> -> placed=N nochannel=K cells=M
+     * cleared=C} — cleared counts the manifest's air rows (the 14-e275
+     * turn-over law) plus the nochannel slots, every one set to empty
      */
     private int[] galleryPageInv(String ns, int page) {
         Path mf = Path.of(System.getProperty("user.dir"), "c-imagine", "scenes",
@@ -4864,12 +4866,12 @@ public final class CimPlugin extends JavaPlugin implements Listener {
             }
         });
         int[] counts = callSync(() -> {
-            int placed = 0, nochannel = 0;
+            int placed = 0, nochannel = 0, cleared = 0;
             org.bukkit.entity.Player viewer =
                     org.bukkit.Bukkit.getPlayerExact("cimviewer");
             if (viewer == null) {
                 log().warning(LOG_PREFIX + "f2v gallery-inv: no cimviewer online — fill skipped");
-                return new int[]{0, slots.size(), slots.size()};
+                return new int[]{0, slots.size(), slots.size(), 0};
             }
             for (String[] row : slots) {
                 // slot|item  (slot = hotbar.0..8 | inventory.9..35)
@@ -4878,13 +4880,6 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 }
                 String slotName = row[0];
                 String itemId = row[1];
-                Float cmd = cmdByItem.get(itemId);
-                if (cmd == null) {
-                    nochannel++;
-                    log().warning(LOG_PREFIX + "f2v gallery-inv: no pack CMD for "
-                            + itemId + " — slot " + slotName + " left empty (nochannel)");
-                    continue;
-                }
                 int bukkitSlot;
                 if (slotName.startsWith("hotbar.")) {
                     bukkitSlot = Integer.parseInt(slotName.substring("hotbar.".length()));
@@ -4903,6 +4898,24 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 if (bukkitSlot < 0 || bukkitSlot > 35) {
                     continue;
                 }
+                Float cmd = cmdByItem.get(itemId);
+                // 14-e275 THE TURN-OVER LAW: an air row names an empty slot
+                // explicitly (the manifest carries ALL 36 slots every page —
+                // the walk's stale-inventory receipt, ae2-p10 ≡ bop-p10 at
+                // 32/36 slots) — clear it, never leave the previous page's
+                // carrier sitting there. Same for nochannel: a slot whose
+                // item cannot resolve shows NOTHING (what ours can honestly
+                // render), not the stale wrong item.
+                if (itemId.equals("minecraft:air") || cmd == null) {
+                    viewer.getInventory().setItem(bukkitSlot, null);
+                    cleared++;
+                    if (cmd == null) {
+                        nochannel++;
+                        log().warning(LOG_PREFIX + "f2v gallery-inv: no pack CMD for "
+                                + itemId + " — slot " + slotName + " cleared (nochannel)");
+                    }
+                    continue;
+                }
                 ItemStack stack = new ItemStack(Material.matchMaterial("paper"));
                 final float fcmd = cmd;
                 stack.editMeta(meta -> {
@@ -4914,9 +4927,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 placed++;
             }
             viewer.updateInventory();
-            return new int[]{placed, nochannel, slots.size()};
+            return new int[]{placed, nochannel, slots.size(), cleared};
         });
-        return counts == null ? new int[]{0, 0, -1} : counts;
+        return counts == null ? new int[]{0, 0, -1, 0} : counts;
     }
 
     /**
@@ -5778,7 +5791,8 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-inv " + args[1]
                         + " p" + page + " -> placed=" + counts[0]
                         + " nochannel=" + counts[1]
-                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2]));
+                        + " cells=" + (counts[2] < 0 ? "missing" : counts[2])
+                        + " cleared=" + counts[3]);
             } catch (NumberFormatException nfe) {
                 sender.sendMessage(LOG_PREFIX + "gallerypage-inv: bad page number: " + args[2]);
             }

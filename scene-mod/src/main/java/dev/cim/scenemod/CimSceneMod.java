@@ -6014,6 +6014,19 @@ public final class CimSceneMod {
             String slot = i < 9 ? ("hotbar." + i) : ("inventory." + (i - 9));
             tsv.append(slot).append('\t').append(slice.get(i)).append('\n');
         }
+        // 14-e275 THE TURN-OVER LAW: the manifest names ALL 36 slots every
+        // page — the slice's own rows only left the unlisted slots carrying
+        // the PREVIOUS page's items on BOTH legs (the e272 stale-inventory
+        // receipt: ae2-p10 ≡ bop-p10 at 32/36 slots, identical ae vectors
+        // across namespaces = the walk's inventory turn-over missed on
+        // stride pages). minecraft:air rows name the empty slots explicitly:
+        // the truth's rcon `item replace ... with minecraft:air` empties the
+        // slot, ours' carrier fill clears it — the inventory turns over
+        // fully on every page, symmetrically.
+        for (int i = slice.size(); i < INV_CELLS; i++) {
+            String slot = i < 9 ? ("hotbar." + i) : ("inventory." + (i - 9));
+            tsv.append(slot).append("\tminecraft:air\n");
+        }
         String manifest = "gallery-inv-" + namespace + "-p" + page + ".tsv";
         try {
             Path parent = Path.of("c-imagine", "scenes");
