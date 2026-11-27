@@ -162,8 +162,10 @@ public final class KeyCensus {
                     // The first string a KeyMapping constructor takes is its name, whatever the prefix.
                     boolean asCtorName = ctorName && isCtorName(s);
                     ctorName = false;
+                    // A translation key the class passes by name is the binding itself, whatever its
+                    // naming scheme (keybinds.*, .keyinfo.*, ...); the prefix test only resolves suffixes.
                     String id = asCtorName ? s
-                            : lang.containsKey(s) && isBindingKey(s) ? s : bySuffix.get(s);
+                            : lang.containsKey(s) && !s.startsWith("key.categories.") ? s : bySuffix.get(s);
                     if (id == null && s.startsWith("key.") && !s.startsWith("key.categories.")
                             && s.indexOf('.', 4) > 0) {
                         id = s;

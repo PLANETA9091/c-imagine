@@ -1877,12 +1877,32 @@ public final class GuiSpriteBytecodeScanner {
         }
     }
 
-    private static final String GUI_ELEMENT = "net/createmod/catnip/gui/element/GuiGameElement";
-    private static final String GUI_ELEMENT_BUILDER = GUI_ELEMENT + "$GuiRenderBuilder";
     private static final String PARTIAL_MODEL = "Ldev/engine_room/flywheel/lib/model/baked/PartialModel;";
+    /** Model sources a 3D GUI element factory takes (Minecraft's own types, any library). */
+    private static final java.util.Set<String> ELEMENT_SUBJECT_TYPES = java.util.Set.of(
+            "Lnet/minecraft/world/item/ItemStack;", "Lnet/minecraft/world/level/ItemLike;",
+            "Lnet/minecraft/world/level/block/state/BlockState;",
+            "Lnet/minecraft/world/level/block/entity/BlockEntity;",
+            "Lnet/minecraft/world/level/material/Fluid;", PARTIAL_MODEL);
 
-    /** GuiGameElement draws a 3D block or item model: {@code GuiGameElement.of(subject)} then
-     * {@code at(x,y,z)} or a pose translate, {@code scale}, and {@code render(g)}. The subject is a
+    /** Shape of a 3D GUI element factory read from the call site alone (the builder's own class need
+     * not be readable): a static call returning the builder type that the render call is made on,
+     * whose arguments are all object types and include a model source (ItemStack, ItemLike,
+     * BlockState, BlockEntity, Fluid or a PartialModel). Any library's {@code of(subject)} matches. */
+    private static boolean isGuiElementFactory(MethodInsnNode call, String builder) {
+        if (call.getOpcode() != Opcodes.INVOKESTATIC || !builder.equals(Type.getReturnType(call.desc).getInternalName())
+                || Type.getReturnType(call.desc).getSort() != Type.OBJECT) return false;
+        boolean subject = false;
+        for (Type arg : Type.getArgumentTypes(call.desc)) {
+            if (arg.getSort() != Type.OBJECT) return false;
+            subject |= ELEMENT_SUBJECT_TYPES.contains(arg.getDescriptor());
+        }
+        return subject;
+    }
+
+    /** GuiGameElement-style builders draw a 3D block or item model: {@code of(subject)} then
+     * {@code at(x,y,z)} or a pose translate, {@code scale}, and {@code render(g)}. Found by shape
+     * (see isGuiElementFactory), so other libraries' equivalents are read too. The subject is a
      * registry entry the bytecode names (constant id), or the screen's own field (dynamic: the
      * opener resolves it at open time). A helper's x/y are seeded from its callers' arguments, so
      * a toolbox drawn by renderToolbox(g, leftPos + imageWidth + 50, ...) resolves. Partial models
@@ -1929,7 +1949,6 @@ public final class GuiSpriteBytecodeScanner {
                     Map<Integer, Sym> own = seeds.getOrDefault(method.name + method.desc, Map.of());
                     for (AbstractInsnNode insn : method.instructions) {
                         if (!(insn instanceof MethodInsnNode render) || !"render".equals(render.name)
-                                || !GUI_ELEMENT_BUILDER.equals(render.owner)
                                 || !"(Lnet/minecraft/client/gui/GuiGraphics;)V".equals(render.desc)) continue;
                         MethodInsnNode of = guiElementSubjectCall(render);
                         if (of == null || of.desc.contains(PARTIAL_MODEL)) continue;
@@ -2096,10 +2115,10 @@ public final class GuiSpriteBytecodeScanner {
         return out;
     }
 
-    /** The nearest GuiGameElement.of before a render call in its own chain, or null. */
+    /** The nearest element factory (see isGuiElementFactory) before a render call in its own chain, or null. */
     private static MethodInsnNode guiElementSubjectCall(MethodInsnNode render) {
         for (AbstractInsnNode cursor = render.getPrevious(); cursor != null; cursor = cursor.getPrevious()) {
-            if (cursor instanceof MethodInsnNode call && GUI_ELEMENT.equals(call.owner) && "of".equals(call.name)) {
+            if (cursor instanceof MethodInsnNode call && isGuiElementFactory(call, render.owner)) {
                 return call;
             }
             if (cursor instanceof MethodInsnNode call && "render".equals(call.name)) return null;
