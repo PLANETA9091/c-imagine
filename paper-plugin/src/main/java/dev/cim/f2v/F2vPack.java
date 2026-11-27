@@ -7628,13 +7628,29 @@ public final class F2vPack {
                 int y1 = (int) Math.round(uv.get(3).getAsDouble() * sheet.getHeight() / 16);
                 int min = 255, max = 0;
                 boolean correct = true;
-                for (int y = Math.min(y0, y1); y < Math.max(y0, y1); y++) {
-                    for (int x = Math.min(x0, x1); x < Math.max(x0, x1); x++) {
+                // 14-e281 the snap's MARGIN LAW: the screen-grid snapped rect
+                // grows <= 1 px per side past the polygon's own projected bbox
+                // (the floor/ceil of the fractional span), and the margin px
+                // sample plane points OUTSIDE the polygon — transparent. The
+                // cutout layer discards them, which is exactly the native
+                // not-covered rule, so a transparent pixel is correct content
+                // iff it sits on the rect's outermost row/column. The opaque
+                // pixels remain the exactly-once contract: the polygon's
+                // screen-grid coverage, source x captured colour once.
+                int xLo = Math.min(x0, x1), xHi = Math.max(x0, x1);
+                int yLo = Math.min(y0, y1), yHi = Math.max(y0, y1);
+                for (int y = yLo; y < yHi; y++) {
+                    for (int x = xLo; x < xHi; x++) {
                         int pixel = sheet.getRGB(x, y);
+                        boolean margin = x == xLo || x == xHi - 1
+                                || y == yLo || y == yHi - 1;
+                        if ((pixel >>> 24) != 255) {
+                            correct &= margin;
+                            continue;
+                        }
                         int red = (pixel >>> 16) & 255;
                         min = Math.min(min, red);
                         max = Math.max(max, red);
-                        correct &= (pixel >>> 24) == 255;
                         if (mode != 4) {
                             correct &= Math.abs(red - 120) <= 1
                                     && Math.abs(((pixel >>> 8) & 255) - 96) <= 1
@@ -7642,18 +7658,21 @@ public final class F2vPack {
                         }
                     }
                 }
-                // 14-e275: the gradient contract rides the OUTPUT-density tile
-                // (3-f-retry: pw = the element's own screen footprint). This
-                // fixture quad's footprint is 4 px, so the barycentric grid
-                // samples pixel CENTRES at captured 0.5..0.8 — red 100..160,
-                // spread exactly 60.0. The old 64px oversampled tile inset the
-                // centres 1/128 of the span (81..159, spread 78) — the strict
-                // `> 60` belonged to that two-stage grid. Exactly-once keeps
-                // its teeth: a squared multiply lands min 50 (< 79), a missing
-                // multiply lands max 200 (> 161), a flat capture spreads 0.
-                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min >= 60;
+                // 14-e275: the gradient contract rode the OUTPUT-density
+                // tile's own oversampled barycentric grid (the 4-texel tile
+                // sampled captured 0.5..0.8, red 100..160, spread 60).
+                // 14-e281 THE SNAPPED CONTRACT: the tile = the polygon's own
+                // screen-grid coverage — this fixture's 3.2 px polygon covers
+                // only the 3x3 native px whose CENTRES sit inside it; the
+                // gradient's extreme corners ride the transparent margin (the
+                // measured covered band = captured 0.565..0.8, red 113..160,
+                // spread 47). The DETECTORS keep their teeth: a squared
+                // multiply lands min ~64 (< 79), a missing multiply lands
+                // max 200 (> 161), a flat capture spreads 0 (< 45).
+                if (mode == 4) correct &= min >= 79 && max <= 161 && max - min >= 45;
                 expect(failures, correct && min <= max,
-                        "captured RGB: opaque source times captured color exactly once mode=" + mode);
+                        "captured RGB: opaque source times captured color exactly once mode=" + mode
+                                + " (min=" + min + " max=" + max + " spread=" + (max - min) + ")");
             }
             ObjMesh.resetBaker();
             // Equal planes across different meshes share model bytes while
