@@ -169,6 +169,14 @@ public final class GalleryPack {
 
     /** First auto-assigned custom_model_data float for gallery rows. */
     public static final float CMD_BASE = 100_000.0f;
+    /**
+     * 14-e278: the 14-e276 open-pose door composition is gated OFF in the
+     * live path (the 31st flight measured it a +18 create regression: the
+     * composed open cells render the closed sibling's full panel, the closed
+     * neighbors lose their own mesh). {@code true} re-arms the live path;
+     * the method + selftest remain regardless.
+     */
+    static final boolean OPEN_DOOR_COMPOSITION_LIVE = false;
     /** Namespace + dir the composite models emit under. */
     static final String WRAPPER_NS = "c-imagine";
 
@@ -2961,7 +2969,24 @@ public final class GalleryPack {
         // sibling's frame rows + the raw leaf rows, each half normalized to
         // its own cell. Returns null (= the raw mesh, byte-identical replay)
         // for every non-door state, every closed pose, every in-cell mesh.
-        List<String> doorRows = composeOpenDoorMesh(stateKey, capturedRows, warnings);
+        //
+        // 14-e278 GATED OFF in the live path. The 31st flight (run
+        // 46030357021) measured the sibling-rows law FALSE on the real
+        // captures: the five slider open=true cells regressed 4-40x
+        // (brass c6r3 16,224 -> 670,253 ae; train c4r1 13,409 -> 375,444),
+        // and all 12 closed-pose regressions are Chebyshev-1 neighbors of a
+        // composed cell — the crops (ci-logs/r631/shots/comp-s{0,5}-*.png)
+        // show the open cells rendering the FULL CLOSED PANEL where the
+        // truth renders near-sky, and the closed cells having LOST their own
+        // mesh (ours near-empty vs the truth's frame+window). The synthetic
+        // fixture proved the row algebra, not the per-door pixels. The raw
+        // mesh replay returns; the rebuild rides the per-state mesh-binding
+        // evidence (the QuadDump lane). The method and its
+        // doorCompositionSelftest stay — the algebra is proven, the LIVE
+        // path is off.
+        List<String> doorRows = OPEN_DOOR_COMPOSITION_LIVE
+                ? composeOpenDoorMesh(stateKey, capturedRows, warnings)
+                : null;
         if (doorRows != null) {
             capturedRows = doorRows;
         }
