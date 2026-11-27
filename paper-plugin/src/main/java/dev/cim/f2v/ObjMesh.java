@@ -504,6 +504,7 @@ final class ObjMesh {
             if (!el.has(POLY)) {
                 continue;
             }
+            // (the per-element walk; the snap census prints after the loop)
             JsonObject poly = el.getAsJsonObject(POLY);
             String ref = poly.get("tex").getAsString();
             String sprite = textures.get(ref.startsWith("#") ? ref.substring(1) : ref);
@@ -516,12 +517,29 @@ final class ObjMesh {
             cell.y = at[2];
             cell.replace(key, Baker.SIZE, Baker.SIZE);
         }
+        if (wallChannel && (snapTried > 0 || !snapGates.isEmpty())) {
+            warnings.add("obj: tile-snap wall-channel census tried=" + snapTried
+                    + " fired=" + snapFired + " gates=" + snapGates);
+        }
     }
 
     private static final Baker BAKER = new Baker();
 
     static void resetBaker() {
         BAKER.reset();
+        snapTried = 0;
+        snapFired = 0;
+        snapGates = new java.util.TreeMap<>();
+    }
+
+    // 14-e283 the snap's flight instrumentation: the gate census rides the
+    // pack build's warnings so the seed log names WHY a wall poly fell back
+    static int snapTried;
+    static int snapFired;
+    static java.util.TreeMap<String, Integer> snapGates = new java.util.TreeMap<>();
+
+    private static void snapGate(String why) {
+        snapGates.merge(why, 1, Integer::sum);
     }
 
     static int tileHashCollisions() {
@@ -700,6 +718,23 @@ final class ObjMesh {
             double[] e = sub(pts[1], pts[0]);
             ex = scale(e, 1 / Math.max(len(e), 1e-9));
             ey = cross(n, ex);
+            // 14-e283 THE WALL FRAME OVERRIDE: the captured quads carry
+            // CHAMFERED first edges (the sprite-edge inset 0.0156 -> the
+            // first edge normalizes to a 45-degree diagonal on the real
+            // door/wall rows), so the polygon's own ex/ey frame is rotated
+            // off the screen axes and the axis-aligned basis gate would
+            // reject EVERY real quad (the #637 flight measured ae deltas
+            // exactly +0 across all families = the tiles never moved). For
+            // the wall-facing polys the raster frame = the WORLD x/y axes:
+            // the barycentric weights are affine-invariant under the linear
+            // frame change (the same polygon, the same uv interpolation),
+            // the silhouette is untouched, and only the raster lattice
+            // becomes the screen-aligned grid the snap needs. The mirrored
+            // law below keeps the winding for n = -z.
+            if (wallChannel && Math.abs(n[2]) > 0.999) {
+                ex = new double[]{1, 0, 0};
+                ey = cross(n, ex);
+            }
             double aMin = Double.MAX_VALUE;
             double aMax = -Double.MAX_VALUE;
             double bMin = Double.MAX_VALUE;
@@ -748,11 +783,20 @@ final class ObjMesh {
             int pwSnap = 0;
             int phSnap = 0;
             boolean snapped = false;
-            if (wallChannel && Math.abs(n[2]) > 0.999
-                    && Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999
-                    && Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3) {
+            snapTried++;
+            if (!wallChannel) {
+                snapGate("channel");
+            } else if (Math.abs(n[2]) <= 0.999) {
+                snapGate("nz");
+            } else if (!(Math.abs(ex[0]) > 0.999 && Math.abs(ey[1]) > 0.999)
+                    || !(Math.abs(ex[1]) < 1e-3 && Math.abs(ey[0]) < 1e-3)) {
+                snapGate("basis");
+            } else {
                 final double mzPlane = n[2] * dot(pts[0], n);
                 final double zw = WALL_CONTENT_Z + (16.0 - mzPlane) / 16.0;
+                if (zw - WALL_CAM_Z <= 1.0) {
+                    snapGate("depth");
+                }
                 if (zw - WALL_CAM_Z > 1.0) {
                     final double g = WALL_F_PX / ((zw - WALL_CAM_Z) * 16.0);
                     final double jx = -g;
@@ -771,6 +815,9 @@ final class ObjMesh {
                         pwSnap = wSpan;
                         phSnap = hSpan;
                         snapped = true;
+                        snapFired++;
+                    } else {
+                        snapGate("cap");
                     }
                 }
             }
