@@ -3058,8 +3058,9 @@ public final class F2vPack {
         // [0,16]. String-level surgery: models without an offending uv array
         // stay byte-identical (the pack sha1 moves only with real fixes).
         sanitizeFaceUvs(entries, warnings);
-        // Modded enchantment names: the stock client translates enchantment.<ns>.<id>
-        // from the pack's lang (the mod jar is not on the client's classpath).
+        // Modded enchantment names and damage death messages: the stock client translates
+        // enchantment.<ns>.<id> and death.attack.<message_id> from the pack's lang (the
+        // mod jar is not on the client's classpath).
         putEnchantmentLang(jars, entries, warnings);
         byte[] zip = zip(entries);
         validateDownloadSize(zip.length);
@@ -3219,27 +3220,34 @@ public final class F2vPack {
 
     /**
      * {@code assets/c-imagine/lang/en_us.json}: the {@code enchantment.<ns>.*} names
-     * (and descriptions) of every mod namespace that declares an enchantment, taken
-     * from that mod's own en_us.json. Writes nothing when no mod declares one.
+     * (and descriptions) of every mod namespace that declares an enchantment, and
+     * the {@code death.attack.*} messages of every mod namespace that declares a
+     * damage type, taken from that mod's own en_us.json. Writes nothing when no
+     * mod declares either.
      */
     static void putEnchantmentLang(List<Path> jars, TreeMap<String, byte[]> entries, List<String> warnings) {
-        java.util.Set<String> namespaces = new java.util.TreeSet<>();
-        java.util.regex.Pattern decl = java.util.regex.Pattern.compile("data/([^/]+)/enchantment/[^/]+\\.json");
+        java.util.Set<String> enchantNs = new java.util.TreeSet<>();
+        java.util.Set<String> damageNs = new java.util.TreeSet<>();
+        java.util.regex.Pattern decl =
+                java.util.regex.Pattern.compile("data/([^/]+)/(enchantment|damage_type)/[^/]+\\.json");
         for (Path jar : jars) {
             try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
                 var names = zip.entries();
                 while (names.hasMoreElements()) {
                     java.util.regex.Matcher m = decl.matcher(names.nextElement().getName());
                     if (m.matches()) {
-                        namespaces.add(m.group(1));
+                        (m.group(2).equals("enchantment") ? enchantNs : damageNs).add(m.group(1));
                     }
                 }
             } catch (IOException | RuntimeException e) {
-                warnings.add("enchant lang: cannot list " + jar.getFileName() + ": " + e.getMessage());
+                warnings.add("mod lang: cannot list " + jar.getFileName() + ": " + e.getMessage());
             }
         }
-        // vanilla's own enchantment names ship with the client
-        namespaces.remove("minecraft");
+        // vanilla's own enchantment names and death messages ship with the client
+        enchantNs.remove("minecraft");
+        damageNs.remove("minecraft");
+        java.util.Set<String> namespaces = new java.util.TreeSet<>(enchantNs);
+        namespaces.addAll(damageNs);
         if (namespaces.isEmpty()) {
             return;
         }
@@ -3254,13 +3262,15 @@ public final class F2vPack {
                     String raw = new String(zip.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8);
                     com.google.gson.JsonObject mine = com.google.gson.JsonParser.parseString(raw).getAsJsonObject();
                     for (String key : new java.util.TreeSet<>(mine.keySet())) {
-                        if (key.startsWith("enchantment." + ns + ".") && !lang.has(key)) {
+                        boolean wanted = (enchantNs.contains(ns) && key.startsWith("enchantment." + ns + "."))
+                                || (damageNs.contains(ns) && key.startsWith("death.attack."));
+                        if (wanted && !lang.has(key)) {
                             lang.add(key, mine.get(key));
                         }
                     }
                 }
             } catch (IOException | RuntimeException e) {
-                warnings.add("enchant lang: cannot read " + jar.getFileName() + ": " + e.getMessage());
+                warnings.add("mod lang: cannot read " + jar.getFileName() + ": " + e.getMessage());
             }
         }
         if (lang.size() == 0) {
@@ -4855,6 +4865,53 @@ public final class F2vPack {
             // (zz_ = sorts LAST, the index-based asserts above stay stable)
             + "fakemod:zz_broken_chain\n";
 
+    /**
+     * The mod lang export: enchantment names come from enchantment namespaces,
+     * death messages from damage_type namespaces, vanilla is never copied, and a
+     * key of an unrelated namespace is left out.
+     */
+    static void modLangSelftest(List<String> failures) throws IOException {
+        Path tmp = Files.createTempDirectory("f2v-modlang");
+        try {
+            Path jar = tmp.resolve("fakemod.jar");
+            try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
+                putZip(zos, "data/create/damage_type/mechanical_saw.json", "{}");
+                putZip(zos, "data/combat_roll/enchantment/acrobat.json", "{}");
+                putZip(zos, "assets/create/lang/en_us.json",
+                        "{\"death.attack.create.mechanical_saw\":\"%1$s was sawn\",\"item.create.x\":\"X\"}");
+                putZip(zos, "assets/combat_roll/lang/en_us.json",
+                        "{\"enchantment.combat_roll.acrobat\":\"Acrobat\",\"death.attack.other\":\"no\"}");
+            }
+            TreeMap<String, byte[]> entries = new TreeMap<>();
+            List<String> warnings = new ArrayList<>();
+            putEnchantmentLang(List.of(jar), entries, warnings);
+            String lang = new String(entries.getOrDefault("assets/c-imagine/lang/en_us.json", new byte[0]),
+                    StandardCharsets.UTF_8);
+            if (!lang.contains("death.attack.create.mechanical_saw")) {
+                failures.add("mod lang: damage death message missing");
+            }
+            if (!lang.contains("enchantment.combat_roll.acrobat")) {
+                failures.add("mod lang: enchantment name missing");
+            }
+            if (lang.contains("item.create.x")) {
+                failures.add("mod lang: unrelated key copied");
+            }
+            if (lang.contains("death.attack.other")) {
+                failures.add("mod lang: death key of a namespace without damage types copied");
+            }
+        } finally {
+            try (var walk = Files.walk(tmp)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> p.toFile().delete());
+            }
+        }
+    }
+
+    private static void putZip(java.util.zip.ZipOutputStream zos, String name, String body) throws IOException {
+        zos.putNextEntry(new java.util.zip.ZipEntry(name));
+        zos.write(body.getBytes(StandardCharsets.UTF_8));
+        zos.closeEntry();
+    }
+
     static boolean selftest() throws Exception {
         List<String> failures = new ArrayList<>();
         Path tmp = Files.createTempDirectory("f2v-selftest");
@@ -6329,6 +6386,7 @@ public final class F2vPack {
         exactFaceTileSelftest(failures);
         blockVariantsSelftest(failures);
         perStateSelftest(failures);
+        modLangSelftest(failures);
         if (failures.isEmpty()) {
             System.out.println("f2v pack selftest: ALL OK");
             return true;

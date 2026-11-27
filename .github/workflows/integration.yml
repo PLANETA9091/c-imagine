@@ -334,6 +334,15 @@ jobs:
           unzip -p srv/c-imagine/f2v/pack.zip assets/c-imagine/lang/en_us.json \
             | grep -q '"enchantment.cimtest.test_enchant": "Test Enchant"' \
             || fail "pack lang lacks the modded enchantment name"
+          # modded damage types (crates/cim-damage): the cimtest fixture damage type is a
+          # real Paper registry entry, and the pack carries its death message lang
+          grep -q "damage defs: 1 -> " srv/boot.log \
+            || fail "module did not write the damage type definitions"
+          grep -q "damage registry: 1 modded damage type(s) registered" srv/boot.log \
+            || fail "cimtest damage type not registered in the server damage type registry"
+          unzip -p srv/c-imagine/f2v/pack.zip assets/c-imagine/lang/en_us.json \
+            | grep -q '"death.attack.cimtest.test_damage"' \
+            || fail "pack lang lacks the modded death message"
           # client-side state machine: the WIRE accept is proven bot-side
           # ("resource pack accepted (F2V)" check, asserted in the python
           # block above). MEASURED on 3cab5d8: the config-phase (properties)

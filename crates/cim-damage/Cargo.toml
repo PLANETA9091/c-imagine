@@ -1,0 +1,10 @@
+[package]
+name = "cim-damage"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Modded damage types: 1.21.1 data-driven damage_type JSON -> 26.3 definitions (server registry entries)"
+
+[dependencies]
+serde_json = "1"
+zip = { workspace = true }

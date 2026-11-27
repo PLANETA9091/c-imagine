@@ -14,6 +14,7 @@ crate-type = ["cdylib", "rlib"]
 cim-core = { workspace = true }
 cim-biome = { workspace = true }
 cim-enchant = { workspace = true }
+cim-damage = { workspace = true }
 cim-modscan = { workspace = true }
 cim-reloc = { workspace = true }
 cplug-abi = { workspace = true }
