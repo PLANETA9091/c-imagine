@@ -109,6 +109,51 @@ public final class FacadeLevel extends Level {
         placementWrites = new java.util.LinkedHashMap<>();
     }
 
+    /**
+     * S5: the neighbour shape pass of the action just run (vanilla {@code updateShape} around every cell it
+     * changed). A fence, wall or pane next to a changed cell recomputes its connections, as a neighbour update
+     * does on NeoForge, and the new state is a placement write (so Paper gets it). Only the cells the facade
+     * holds (the neighbourhood Paper sent) are updated; one pass, no cascade.
+     */
+    void updateNeighbourShapes() {
+        if (placementWrites == null) {
+            return;
+        }
+        for (BlockPos changed : new java.util.ArrayList<>(placementWrites.keySet())) {
+            for (net.minecraft.core.Direction d : net.minecraft.core.Direction.values()) {
+                BlockPos at = changed.relative(d); // the neighbour; the changed cell is at d from it
+                BlockState held = heldStateAt(at);
+                if (held == null) {
+                    continue;
+                }
+                BlockState now = held.updateShape(d.getOpposite(), getBlockState(changed), this, at, changed);
+                if (now != held) {
+                    setBlock(at, now, 3);
+                }
+            }
+        }
+    }
+
+    /** S3c: the cells a layer tick changed (first old state each), reused across ticks: no allocation when none changes. */
+    private final java.util.HashMap<BlockPos, BlockState> tickWrites = new java.util.HashMap<>();
+    private boolean tickRecording;
+
+    /** Starts recording the writes of one tick (see LiveProtocol.tick). */
+    void beginTickRecording() {
+        tickWrites.clear();
+        tickRecording = true;
+    }
+
+    /** Stops recording; the recorded cells stay readable through {@link #tickWrites()} until the next begin. */
+    void endTickRecording() {
+        tickRecording = false;
+    }
+
+    /** The cells the last recorded tick wrote, with the state each held before its first write. */
+    java.util.Map<BlockPos, BlockState> tickWrites() {
+        return tickWrites;
+    }
+
     java.util.Map<BlockPos, BlockState> endPlacement() {
         var writes = placementWrites;
         placementWrites = null;
@@ -139,6 +184,9 @@ public final class FacadeLevel extends Level {
         }
         if (placementWrites != null) {
             placementWrites.putIfAbsent(pos.immutable(), old);
+        }
+        if (tickRecording) {
+            tickWrites.putIfAbsent(pos.immutable(), old);
         }
         if (state.isAir()) {
             states.remove(key);

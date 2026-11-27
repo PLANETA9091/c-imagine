@@ -694,14 +694,15 @@ final class LiveBridge {
     }
 
     /** What breaking a mod block did: the stacks it spilled, the player's inventory after. */
-    record Broken(boolean removed, List<ItemStack> spilled, State state) {
+    record Broken(boolean removed, List<ItemStack> spilled, State state, List<Placement> changed) {
     }
 
     /**
      * The player breaks a mod block of Paper's world by the block's own code, with the data
      * Paper kept for it; the kept data goes with the block.
      */
-    Broken breakBlock(Player player, org.bukkit.block.Block block, String blockId) {
+    Broken breakBlock(Player player, org.bukkit.block.Block block, String blockId,
+                      java.util.function.Function<org.bukkit.block.Block, String> moddedAt) {
         saveFresh(block, blockId);
         StringBuilder in = new StringBuilder("break\t").append(player.getUniqueId()).append('\t')
                 .append(player.getName()).append('\t').append(blockId).append('\t')
@@ -718,9 +719,14 @@ final class LiveBridge {
         if (kept != null) {
             in.append("\nbe\t").append(kept);
         }
+        // S5: the real neighbourhood, so the layer recomputes the shapes the break leaves around it
+        for (String nb : neighbourLines(block, moddedAt)) {
+            in.append('\n').append(nb);
+        }
         String answer = call(in.toString());
         boolean removed = false;
         List<ItemStack> spilled = new ArrayList<>();
+        List<Placement> changed = new ArrayList<>();
         for (String line : answer.split("\n")) {
             if (line.startsWith("broken\t")) {
                 removed = Boolean.parseBoolean(line.substring(7));
@@ -729,6 +735,10 @@ final class LiveBridge {
                 if (stack != null) {
                     spilled.add(stack);
                 }
+            } else if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t", 6);
+                changed.add(new Placement(p[1], Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                        Integer.parseInt(p[4]), p.length == 6 ? p[5] : p[1], null, new ArrayList<>()));
             }
         }
         State state = parse(answer);
@@ -736,7 +746,7 @@ final class LiveBridge {
             chunk.remove(blockKey(block, blockId));
             forgetPlacedState(block);
         }
-        return new Broken(removed, spilled, state);
+        return new Broken(removed, spilled, state, changed);
     }
 
     /** A block's destroy time (-1 unbreakable, 0 instant) and whether its drops need the right tool. */
@@ -867,20 +877,47 @@ final class LiveBridge {
      * One server tick of the layer's menus and placed block entities. What they spilled drops in
      * Paper's world at the block that spilled it; nothing is kept for a later break to hand out.
      */
-    void tick() {
+    /** The cells a tick changed near tracked blocks (S3c); the shared empty list when none did (no allocation). */
+    private static final List<Placement> NO_CHANGES = List.of();
+
+    List<Placement> tick() {
         Function<String, String> fn = entry();
         if (fn == null) {
-            return;
+            return NO_CHANGES;
         }
         String answer = fn.apply("tick\t-");
         if (answer.indexOf('\n') < 0) {
-            return; // nothing spilled: the common tick splits nothing
+            return NO_CHANGES; // nothing spilled or changed: the common tick splits nothing
         }
+        List<Placement> changed = null;
         for (String line : answer.split("\n")) {
             if (line.startsWith("spill\t")) {
                 drop(line);
+            } else if (line.startsWith("placed\t")) {
+                String[] p = line.split("\t", 6);
+                if (changed == null) {
+                    changed = new ArrayList<>();
+                }
+                changed.add(new Placement(p[1], Integer.parseInt(p[2]), Integer.parseInt(p[3]),
+                        Integer.parseInt(p[4]), p[5], null, List.of()));
             }
         }
+        return changed == null ? NO_CHANGES : changed;
+    }
+
+    /** The world a tracked (ticking or menu-held) block stands at {@code x,y,z} in, or null (the layer keys by position). */
+    org.bukkit.World worldAt(int x, int y, int z) {
+        for (Tracked t : ticking.values()) {
+            if (t.x() == x && t.y() == y && t.z() == z) {
+                return org.bukkit.Bukkit.getWorld(t.world());
+            }
+        }
+        for (org.bukkit.block.Block b : openBlocks.values()) {
+            if (b.getX() == x && b.getY() == y && b.getZ() == z) {
+                return b.getWorld();
+            }
+        }
+        return null;
     }
 
     private void drop(String line) {
