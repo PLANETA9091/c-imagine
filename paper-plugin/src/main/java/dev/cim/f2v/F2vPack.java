@@ -1259,6 +1259,35 @@ public final class F2vPack {
         return sb.isEmpty() ? moddedId : sb.toString();
     }
 
+    /** Lang-entry suffixes that name a text under an item/block id, never an item itself
+     *  (a {@code <id>.tooltip} or {@code <id>.description} key read as an id). */
+    private static final java.util.Set<String> LANG_SUFFIXES = java.util.Set.of(
+            "tooltip", "tooltips", "description", "desc", "summary", "subtitle", "title",
+            "label", "name", "category", "hint", "tip");
+
+    /** 14-pg: true for a manifest id that is a translation key rather than a registry item id:
+     *  its last dotted segment is a lang suffix ({@code ns:thing.tooltip}), or it has a lang
+     *  root ({@code item.}, {@code block.}, {@code key.}, {@code entity.}) before its path. */
+    static boolean isNonItemRowId(String moddedId) {
+        int colon = moddedId.indexOf(':');
+        if (colon <= 0 || colon == moddedId.length() - 1) {
+            return false;
+        }
+        String path = moddedId.substring(colon + 1);
+        String[] segments = path.split("\\.");
+        for (int i = 1; i < segments.length; i++) {
+            if (LANG_SUFFIXES.contains(segments[i])) {
+                return true; // <id>.tooltip, <id>.tooltip.empty, <id>.description
+            }
+        }
+        for (String root : List.of("item.", "block.", "key.", "entity.")) {
+            if (path.startsWith(root)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** The candidates: discovered mod ids that are plain, not vanilla, not ours, and not a manifest row; sorted. */
     static List<String> itemCandidates(Collection<String> discovered, Collection<String> manifestIds) {
         Set<String> manifest = new HashSet<>(manifestIds);
@@ -2506,6 +2535,13 @@ public final class F2vPack {
                 String found = itemModelRef(row.moddedId(), jars, entries, warnings,
                         paletteByVariantId, emissiveTable, itemEmissiveBakeLog, compositeNo);
                 if (found == null) {
+                    if (isNonItemRowId(row.moddedId())) {
+                        // 14-pg: a lang-derived row (a description/tooltip key, not an item id)
+                        // has no item model by construction: a note, not a failed item.
+                        warnings.add("manifest row is a lang key, not an item id: "
+                                + row.moddedId() + " — row skipped");
+                        continue;
+                    }
                     warnings.add("no item model found for " + row.moddedId()
                             + " in any mod jar — row dropped");
                     manifestFailed++;
@@ -7335,6 +7371,69 @@ public final class F2vPack {
                 "multipart takes the first part's model");
         expect(failures, defaultBlockstateModel("{") == null && defaultBlockstateModel("[]") == null,
                 "malformed blockstates resolve to no model");
+        try { blockstateRefSelftest(failures); } catch (Exception e) { failures.add("blockstate ref selftest threw: " + e); }
+        expect(failures, isNonItemRowId("sophisticatedbackpacks:advanced_alchemy_upgrade.tooltip")
+                && isNonItemRowId("mekanism:item.desc") && isNonItemRowId("ns:key.mod.thing") && isNonItemRowId("sophisticatedcore:storage.tooltip.empty")
+                && !isNonItemRowId("create:brass_ingot") && !isNonItemRowId("ae2:part.cable_base")
+                && !isNonItemRowId("cimtest:test_gem"),
+                "lang-key manifest ids (tooltip/description/key roots) are not item rows; real ids are");
+    }
+
+    /** 14-pg: blockstate-ref resolution over a hand-made jar (no real mod): variants default/first,
+     *  multipart first part, namespaced refs with a parent chain, a fallback to the id-named model. */
+    private static void blockstateRefSelftest(List<String> failures) throws Exception {
+        Path dir = Files.createTempDirectory("f2v-bsref");
+        try {
+            Path jar = dir.resolve("bsref-1.0.jar");
+            TreeMap<String, byte[]> je = new TreeMap<>();
+            je.put("assets/bsref/blockstates/adv_bin.json", ("{\"variants\":{\"active=false,facing=north\":"
+                    + "{\"model\":\"bsref:block/bin/advanced\"},\"active=true,facing=north\":"
+                    + "{\"model\":\"bsref:block/bin/advanced_active\"}}}").getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/models/block/bin/advanced.json", ("{\"parent\":\"bsref:block/bin/base\","
+                    + "\"textures\":{\"side\":\"bsref:liquid/liquid\"}}").getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/models/block/bin/base.json", ("{\"parent\":\"minecraft:block/cube_all\","
+                    + "\"textures\":{\"all\":\"bsref:block/bin/base_tex\"}}").getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/models/block/bin/advanced_active.json", "{}".getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/blockstates/mp_pipe.json", ("{\"multipart\":[{\"apply\":{\"model\":"
+                    + "\"bsref:block/pipe/core\"}},{\"when\":{\"north\":\"true\"},\"apply\":"
+                    + "{\"model\":\"bsref:block/pipe/arm\"}}]}").getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/models/block/pipe/core.json", "{}".getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/models/block/pipe/arm.json", "{}".getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/models/block/plain_block.json", "{}".getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/blockstates/broken.json", ("{\"variants\":{\"\":{\"model\":"
+                    + "\"bsref:block/missing_model\"}}}").getBytes(StandardCharsets.UTF_8));
+            je.put("assets/bsref/textures/block/base_tex.png", testPng());
+            je.put("assets/bsref/textures/liquid/liquid.png", testPng());
+            writeJar(jar, je);
+
+            List<Path> jars = List.of(jar);
+            try (JarCache cache = new JarCache(jars)) {
+                TreeMap<String, byte[]> entries = new TreeMap<>();
+                List<String> warnings = new ArrayList<>();
+                expect(failures, "bsref:block/bin/advanced".equals(
+                        resolveBlockModel(cache, jars, "bsref:adv_bin", entries, warnings)),
+                        "variant default (sorted first key) resolves to its namespaced model ref");
+                expect(failures, entries.containsKey("assets/bsref/models/block/bin/advanced.json")
+                        && entries.containsKey("assets/bsref/models/block/bin/base.json"),
+                        "the resolved model's parent chain is copied into the pack entries");
+
+                entries.clear();
+                expect(failures, "bsref:block/pipe/core".equals(
+                        resolveBlockModel(cache, jars, "bsref:mp_pipe", entries, warnings)),
+                        "multipart resolves to its first part's model");
+
+                entries.clear();
+                expect(failures, "bsref:block/plain_block".equals(
+                        resolveBlockModel(cache, jars, "bsref:plain_block", entries, warnings)),
+                        "without a blockstate the id-named block model is the fallback");
+
+                entries.clear();
+                expect(failures, resolveBlockModel(cache, jars, "bsref:broken", entries, warnings) == null,
+                        "a blockstate whose model is absent and no id-named model resolves to null");
+            }
+        } finally {
+            deleteRecursively(dir);
+        }
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
