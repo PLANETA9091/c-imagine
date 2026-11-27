@@ -7371,22 +7371,21 @@ public final class F2vPack {
                         {16, 16, z[1], 16, 0}, {0, 16, z[0], 0, 0}}, "cutout");
         // rows.tsv: the bare state -> its #q<hash> capture (the same file the
         // walk's QuadDump ledger writes)
+        String panelRow = panel.apply(new double[]{13, 13});
+        String frameRow = quadRow.apply(new double[][]{{4, 0, 14, 0, 16}, {16, 0, 14, 16, 16},
+                {16, 16, 14, 16, 0}, {4, 16, 14, 0, 0}}, "cutout");
+        String leafRow = quadRow.apply(new double[][]{{-13, 0, 12.5, 0, 16}, {3, 0, 15.5, 16, 16},
+                {3, 16, 15.5, 16, 0}, {-13, 16, 12.5, 0, 0}}, "cutout");
         Files.writeString(quads.resolve("rows.tsv"),
                 closed + "#qclosed\n" + open + "#qopen\n", StandardCharsets.UTF_8);
         // the closed capture: the full panel (frame + leaf at rest, z13) +
         // the right frame piece (x 4..16, z14 — does not reach the pocket)
-        Files.writeString(quads.resolve("closed.tsv"),
-                panel.apply(new double[]{13, 13}) + "\n"
-                + quadRow.apply(new double[][]{{4, 0, 14, 0, 16}, {16, 0, 14, 16, 16},
-                        {16, 16, 14, 16, 0}, {4, 16, 14, 0, 0}}, "cutout") + "\n",
+        Files.writeString(quads.resolve("closed.tsv"), panelRow + "\n" + frameRow + "\n",
                 StandardCharsets.UTF_8);
         // the open capture: THE LEAF ONLY at the raw slid frame (the measured
         // train_door box: x -13..3, z 12.5..15.5 — a slab, so the closed
         // panel row's z overlaps it and drops)
-        Files.writeString(quads.resolve("open.tsv"),
-                quadRow.apply(new double[][]{{-13, 0, 12.5, 0, 16}, {3, 0, 15.5, 16, 16},
-                        {3, 16, 15.5, 16, 0}, {-13, 16, 12.5, 0, 0}}, "cutout") + "\n",
-                StandardCharsets.UTF_8);
+        Files.writeString(quads.resolve("open.tsv"), leafRow + "\n", StandardCharsets.UTF_8);
         GalleryPack.resetModelScales();
         ObjMesh.resetBaker();
         TreeMap<String, byte[]> entries = new TreeMap<>();
@@ -7406,6 +7405,11 @@ public final class F2vPack {
         if (rows.isEmpty()) return;
         ObjMesh.flushBaker(GalleryPack.WRAPPER_NS, entries);
         JsonObject node = GalleryPack.itemNode(rows.getFirst().modelRef());
+        // 14-e278 SECTION A — THE LIVE GATE: the composition is gated off in
+        // the live path (the 31st flight measured the sibling-rows law false
+        // on the real captures: the composed open cells rendered the closed
+        // sibling's full panel, the closed neighbors lost their own mesh).
+        // The live path replays the RAW leaf mesh byte-identical.
         int frame = 0, slid = 0, total = 0;
         for (var mv : node.getAsJsonArray("models")) {
             JsonObject draw = mv.getAsJsonObject();
@@ -7421,8 +7425,39 @@ public final class F2vPack {
                 if (x0 <= -12.9 && Math.abs((x0 + x1) / 2 - (-5.0)) < 0.05) slid++;
             }
         }
-        expect(failures, total == 2 && frame == 1 && slid == 1,
-                "door composition: frame carried in-cell, leaf raw-centered, full panel dropped");
+        expect(failures, total == 1 && frame == 0 && slid == 1,
+                "door gate: the live path replays the raw leaf only (composition gated off)");
+        // 14-e278 SECTION B — THE ALGEBRA: the composition method itself is
+        // proven on the same synthetic fixture (a direct call; the live path
+        // keeps the gate, the rebuild rides the per-state mesh evidence).
+        List<String> composed = GalleryPack.composeOpenDoorMesh(
+                open, List.of(leafRow), new ArrayList<>());
+        expect(failures, composed != null && composed.size() == 2,
+                "door algebra: the composition composes (frame + leaf, panel dropped)");
+        if (composed != null) {
+            boolean hasFrame = false;
+            boolean hasLeaf = false;
+            for (String r : composed) {
+                String[] f = r.split("\t");
+                if (f.length < 23) {
+                    continue;
+                }
+                double[] xs = new double[4];
+                for (int vi = 0; vi < 4; vi++) {
+                    xs[vi] = Double.parseDouble(f[3 + vi * 5]);
+                }
+                double x0 = Math.min(Math.min(xs[0], xs[1]), Math.min(xs[2], xs[3]));
+                double x1 = Math.max(Math.max(xs[0], xs[1]), Math.max(xs[2], xs[3]));
+                if (Math.abs(x0 - 4) < 0.01 && Math.abs(x1 - 16) < 0.01) {
+                    hasFrame = true;
+                }
+                if (Math.abs(x0 - (-13)) < 0.01 && Math.abs(x1 - 3) < 0.01) {
+                    hasLeaf = true;
+                }
+            }
+            expect(failures, hasFrame && hasLeaf,
+                    "door algebra: frame carried in-cell (x 4..16) + leaf raw (x -13..3)");
+        }
     }
 
     private static void unlitBlockSelftest(List<String> failures) throws IOException {
