@@ -1050,7 +1050,8 @@ final class LiveBridge {
             }
             stack.setItemMeta(meta);
         }
-        return stack;
+        // The 1.21.1 prototype's components (food, tool, armour, equippable, rarity...) as 26.3 components.
+        return modded ? CarrierApply.apply(stack, json) : stack;
     }
 
 }

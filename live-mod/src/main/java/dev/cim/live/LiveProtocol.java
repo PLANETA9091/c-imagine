@@ -1124,15 +1124,19 @@ public final class LiveProtocol {
             return "-";
         }
         RegistryOps<JsonElement> ops = LiveMenus.level().registryAccess().createSerializationContext(JsonOps.INSTANCE);
-        return withPrototype(ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).getOrThrow(), stack).toString();
+        return withPrototype(ItemStack.OPTIONAL_CODEC.encodeStart(ops, stack).getOrThrow(), stack, ops).toString();
     }
 
     /**
-     * A mod item's prototype values the codec leaves out (its components hold only what differs from
-     * them): {@code max_damage} when it is damageable, {@code enchantable} when its enchantment value is
-     * above 0. Paper sets them on the carrier (LayerStackData). Vanilla items are not touched.
+     * A mod item's prototype the codec leaves out (its components hold only what differs from them).
+     * Top-level {@code max_damage} when it is damageable, {@code enchantable} when its enchantment value is
+     * above 0, and one {@code prototype} object with the 1.21.1 values the carrier needs as 26.3 components
+     * (LayerStackData, CarrierComponents on Paper): the food, tool, attribute modifier, fire resistance,
+     * rarity and max stack components, encoded with their own codecs, plus the equipment slot and sound
+     * (Equipable), the glider flag (ElytraItem) and the use animation of a food item. Vanilla items are not
+     * touched.
      */
-    static JsonElement withPrototype(JsonElement json, ItemStack stack) {
+    static JsonElement withPrototype(JsonElement json, ItemStack stack, RegistryOps<JsonElement> ops) {
         if (!json.isJsonObject() || stack.isEmpty()) {
             return json;
         }
@@ -1147,7 +1151,61 @@ public final class LiveProtocol {
         if (enchantable > 0) {
             obj.addProperty("enchantable", enchantable);
         }
+        JsonObject proto = prototype(stack, ops);
+        if (proto.size() > 0) {
+            obj.add("prototype", proto);
+        }
         return obj;
+    }
+
+    /** The prototype object of a mod item (see withPrototype); empty for an item with none of these. */
+    static JsonObject prototype(ItemStack stack, RegistryOps<JsonElement> ops) {
+        JsonObject proto = new JsonObject();
+        net.minecraft.world.item.Item item = stack.getItem();
+        net.minecraft.core.component.DataComponentMap components = item.components();
+        for (net.minecraft.core.component.DataComponentType<?> type : PROTOTYPE_COMPONENTS) {
+            Object value = components.get(type);
+            if (value == null) {
+                continue;
+            }
+            try {
+                proto.add(net.minecraft.core.registries.BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(type).toString(),
+                        encodeComponent(type, value, ops));
+            } catch (RuntimeException e) {
+                // A component whose codec cannot encode it is left out; the rest still reach Paper.
+            }
+        }
+        if (item instanceof net.minecraft.world.item.Equipable equipable) {
+            proto.addProperty("equip_slot", equipable.getEquipmentSlot().getName());
+            net.minecraft.resources.ResourceLocation sound = net.minecraft.core.registries.BuiltInRegistries.SOUND_EVENT
+                    .getKey(equipable.getEquipSound().value());
+            if (sound != null) {
+                proto.addProperty("equip_sound", sound.toString());
+            }
+        }
+        if (item instanceof net.minecraft.world.item.ElytraItem) {
+            proto.addProperty("glider", true);
+        }
+        if (components.has(net.minecraft.core.component.DataComponents.FOOD)) {
+            proto.addProperty("use_animation", item.getUseAnimation(stack).name().toLowerCase(java.util.Locale.ROOT));
+        }
+        return proto;
+    }
+
+    /** The 1.21.1 components a carrier takes from its prototype (CarrierComponents maps them to 26.3). */
+    private static final java.util.List<net.minecraft.core.component.DataComponentType<?>> PROTOTYPE_COMPONENTS = java.util.List.of(
+            net.minecraft.core.component.DataComponents.FOOD,
+            net.minecraft.core.component.DataComponents.TOOL,
+            net.minecraft.core.component.DataComponents.ATTRIBUTE_MODIFIERS,
+            net.minecraft.core.component.DataComponents.FIRE_RESISTANT,
+            net.minecraft.core.component.DataComponents.RARITY,
+            net.minecraft.core.component.DataComponents.MAX_STACK_SIZE);
+
+    @SuppressWarnings("unchecked")
+    private static <T> JsonElement encodeComponent(net.minecraft.core.component.DataComponentType<?> type, Object value,
+            RegistryOps<JsonElement> ops) {
+        net.minecraft.core.component.DataComponentType<T> typed = (net.minecraft.core.component.DataComponentType<T>) type;
+        return typed.codecOrThrow().encodeStart(ops, (T) value).getOrThrow();
     }
 
     /** fresh TAB itemId: "fresh TAB stack" for the item at count 1 with its prototype data, or "fresh TAB -". */

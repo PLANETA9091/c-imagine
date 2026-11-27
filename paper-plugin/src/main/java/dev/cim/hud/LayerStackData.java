@@ -27,6 +27,8 @@ public final class LayerStackData {
     static final String ENCHANTABLE = "enchantable";
     static final String DAMAGE = "minecraft:damage";
     static final String ENCHANTMENTS = "minecraft:enchantments";
+    /** The 1.21.1 prototype object (CarrierComponents maps it to 26.3 components; the carrier keeps none of it). */
+    static final String PROTOTYPE = "prototype";
 
     private static JsonObject object(String json) {
         JsonElement el = JsonParser.parseString(json);
@@ -95,12 +97,19 @@ public final class LayerStackData {
     /** The stack JSON without the prototype keys the layer's codec would not use (what Paper keeps is the layer's own data). */
     public static String stripPrototype(String json) {
         JsonObject obj = object(json);
-        if (!obj.has(MAX_DAMAGE) && !obj.has(ENCHANTABLE)) {
+        if (!obj.has(MAX_DAMAGE) && !obj.has(ENCHANTABLE) && !obj.has(PROTOTYPE)) {
             return json;
         }
         obj.remove(MAX_DAMAGE);
         obj.remove(ENCHANTABLE);
+        obj.remove(PROTOTYPE);
         return obj.toString();
+    }
+
+    /** The stack's prototype object (the 1.21.1 values for the carrier's components), or null when the layer sent none. */
+    public static JsonObject prototypeOf(String json) {
+        JsonObject obj = object(json);
+        return obj.has(PROTOTYPE) && obj.get(PROTOTYPE).isJsonObject() ? obj.getAsJsonObject(PROTOTYPE) : null;
     }
 
     // ---- selftest ----
