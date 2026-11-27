@@ -1458,6 +1458,23 @@ final class QuadDump {
             }
             Minecraft mc = Minecraft.getInstance();
             BlockState state = cells.get(pos);
+            // 14-e278 THE REAL-BE LAW (the joined capture): the truth client's
+            // BERs render the JOINED LEVEL's own synced block entities — the
+            // dump must host THOSE, not a fabricated default. The measured
+            // disease: every EntityBlock cell without a .benbt row got a
+            // fresh default BE whose type-default output rode the dumped mesh
+            // (the crystal_display east cells rendered the default crystal
+            // where the truth renders the power-driven state — one-sided mass
+            // 0.28-0.66, the supp-display lane). Pull the real BE first; the
+            // fresh-BE fallback (+ the .benbt restore below) stays for the
+            // cells the client has not synced.
+            if (mc.level != null) {
+                BlockEntity real = mc.level.getBlockEntity(pos);
+                if (real != null && !real.isRemoved()) {
+                    blockEntities.put(pos.immutable(), real);
+                    return real;
+                }
+            }
             // Keep worldless static capture's original fallback. Joined
             // capture supplies real BEs to model.getModelData as well as BERs.
             if (mc.level == null || state == null || !(state.getBlock() instanceof EntityBlock block)) {
