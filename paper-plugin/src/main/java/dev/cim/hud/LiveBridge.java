@@ -943,6 +943,15 @@ final class LiveBridge {
         }
     }
 
+    /**
+     * After a layer break, the held slot takes the layer's tool again: Paper's own break (the event is not
+     * cancelled) may have worn the carrier as a vanilla tool, and the layer's wear is the only one.
+     */
+    void resyncHeld(Player player, State state) {
+        int slot = heldSlots.getOrDefault(player.getUniqueId(), player.getInventory().getHeldItemSlot());
+        player.getInventory().setItem(slot, toPaper(state.inventory()[0]));
+    }
+
     /** Latched once the layer's real server is up; until then interactions are refused. */
     private static volatile boolean ready;
 
@@ -1013,11 +1022,24 @@ final class LiveBridge {
         return toPaper("{\"id\":\"" + itemId + "\",\"count\":" + count + "}");
     }
 
-    /** A Paper stack as the layer reads it: its own JSON when it has been there before. */
+    /**
+     * A Paper stack as the layer reads it: its own JSON when it has been there before. The damage is the
+     * Paper stack's own when Paper changed it since (a vanilla hit on the carrier, an armour hit): the
+     * layer's stack takes it, so the layer is the one source either way.
+     */
     String toLayer(ItemStack stack) {
         if (stack == null || stack.getType().isAir()) {
             return "-";
         }
+        String json = LayerStackData.stripPrototype(withEnchantments(stackJson(stack), stack));
+        int paperDamage = paperDamage(stack);
+        if (paperDamage != LayerStackData.damageOf(json)) {
+            json = LayerStackData.withDamage(json, paperDamage);
+        }
+        return json;
+    }
+
+    private String stackJson(ItemStack stack) {
         String json = stack.hasItemMeta()
                 ? stack.getItemMeta().getPersistentDataContainer().get(key, PersistentDataType.STRING) : null;
         if (json != null) {
@@ -1028,7 +1050,42 @@ final class LiveBridge {
         return "{\"id\":\"" + id + "\",\"count\":" + stack.getAmount() + "}";
     }
 
-    /** A layer stack on Paper: the vanilla item, or the modded item's carrier, with its JSON kept. */
+    /** The damage Paper's stack carries (0 when it has none). */
+    static int paperDamage(ItemStack stack) {
+        return stack.hasItemMeta() && stack.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable d
+                ? d.getDamage() : 0;
+    }
+
+    /**
+     * The layer's {@code minecraft:enchantments} component (1.21.1 form, {@code {"levels":{id:level}}})
+     * carries the Paper stack's enchantments: the layer runs the mod's effect from them (Create's
+     * capacity and potato recovery). A stack with no enchantments drops a stale component.
+     */
+    static String withEnchantments(String json, ItemStack stack) {
+        java.util.Map<org.bukkit.enchantments.Enchantment, Integer> enchants = dev.cim.paper.EnchantGate.enchantsOf(stack);
+        java.util.Map<String, Integer> levels = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<org.bukkit.enchantments.Enchantment, Integer> e : enchants.entrySet()) {
+            levels.put(e.getKey().getKey().toString(), e.getValue());
+        }
+        return dev.cim.paper.EnchantGate.layerJson(json, levels);
+    }
+
+    /** A fresh stack of a layer item (count 1), with the prototype data the layer knows; null when it cannot answer. */
+    ItemStack fresh(String itemId) {
+        for (String line : call("fresh\t" + itemId).split("\n")) {
+            if (line.startsWith("fresh\t")) {
+                String json = line.substring(6);
+                return json.equals("-") ? null : toPaper(json);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * A layer stack on Paper: the vanilla item, or the modded item's carrier, with its JSON kept. The
+     * prototype data goes on the carrier: a mod item's max damage (its durability, one to a stack) and its
+     * enchantability (0 when the layer sends none), the damage the layer holds, the enchantments it carries.
+     */
     ItemStack toPaper(String json) {
         if (json == null || json.equals("-")) {
             return null;
@@ -1054,12 +1111,43 @@ final class LiveBridge {
             stack = new ItemStack(Material.PAPER);
         }
         stack.setAmount(amount);
+        boolean modded = !itemId.startsWith("minecraft:");
+        int maxDamage = LayerStackData.maxDamageOf(json);
+        int damage = LayerStackData.damageOf(json);
+        java.util.Map<String, Integer> enchants = LayerStackData.enchantmentsOf(json);
         // Only a stack with data of its own needs its JSON: a bare one rebuilds from its id.
-        if (standIn || json.contains("\"components\"")) {
+        boolean keep = standIn || json.contains("\"components\"") || maxDamage > 0;
+        if (keep || modded || !enchants.isEmpty()) {
             org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
-            meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, json);
+            if (keep) {
+                meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, LayerStackData.stripPrototype(json));
+            }
+            if (meta instanceof org.bukkit.inventory.meta.Damageable d) {
+                if (maxDamage > 0) {
+                    d.setMaxDamage(maxDamage);
+                }
+                if (damage > 0) {
+                    d.setDamage(damage);
+                }
+            }
+            if (maxDamage > 0) {
+                meta.setMaxStackSize(1);
+            }
+            if (modded) {
+                Integer enchantable = LayerStackData.enchantableOf(json);
+                meta.setEnchantable(enchantable == null ? 0 : enchantable);
+            }
+            for (java.util.Map.Entry<String, Integer> e : enchants.entrySet()) {
+                org.bukkit.enchantments.Enchantment enchantment = org.bukkit.enchantments.Enchantment.getByKey(
+                        NamespacedKey.fromString(e.getKey()));
+                if (enchantment != null) {
+                    meta.addEnchant(enchantment, e.getValue(), true);
+                }
+            }
             stack.setItemMeta(meta);
         }
-        return stack;
+        // The 1.21.1 prototype's components (food, tool, armour, equippable, rarity...) as 26.3 components.
+        return modded ? CarrierApply.apply(stack, json) : stack;
     }
+
 }

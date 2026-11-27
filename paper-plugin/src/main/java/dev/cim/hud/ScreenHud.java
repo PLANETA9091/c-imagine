@@ -603,6 +603,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return moddedId != null && allocatedItems.contains(moddedId);
     }
 
+    /** A fresh stack of a mod item from the layer (its prototype data), or null when the layer cannot answer. */
+    public ItemStack freshCarrier(String moddedId) {
+        LiveBridge bridge = liveReady();
+        return bridge == null ? null : bridge.fresh(moddedId);
+    }
+
     /** The real stack that shows as a modded item, or air when there is none. */
     ItemStack carrier(String moddedId) {
         if (moddedId != null && plugin instanceof dev.cim.paper.CimPlugin cim) {
@@ -1872,6 +1878,7 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             }
             return;
         }
+        ItemStack heldBefore = event.getPlayer().getInventory().getItemInMainHand().clone();
         LiveBridge.Broken broken = bridge.breakBlock(event.getPlayer(), block, modded);
         if (display) {
             DisplayCarriers.remove(block);
@@ -1889,6 +1896,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             block.getWorld().dropItemNaturally(at, stack);
         }
         bridge.applyInventory(event.getPlayer(), broken.state());
+        Player breaker = event.getPlayer();
+        if (!heldBefore.getType().isAir() && "-".equals(broken.state().inventory()[0])) {
+            // The tool wore out in the layer: the item is gone, and it breaks as a vanilla tool does.
+            breaker.getWorld().playSound(breaker.getLocation(), org.bukkit.Sound.ENTITY_ITEM_BREAK, 0.8f, 1f);
+        }
+        org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> bridge.resyncHeld(breaker, broken.state()));
         log.info("[cim-screen] " + event.getPlayer().getName() + " broke " + modded + ": " + broken.spilled().size()
                 + " stack(s) dropped");
     }
