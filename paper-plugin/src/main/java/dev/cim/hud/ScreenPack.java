@@ -1855,6 +1855,7 @@ public final class ScreenPack {
             }
         }
         bad += check(fonts > 0, "no font breaks the ascent rule, checked " + fonts);
+        bad += ItemGlyphs.selftest();
         System.out.println(bad == 0 ? "ScreenPack selftest: ALL PASS" : "ScreenPack selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
     }

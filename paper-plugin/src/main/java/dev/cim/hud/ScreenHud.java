@@ -1080,9 +1080,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         // subject is the opener's block or item.
         for (ScreenPack.Icon icon : s.scene.icons()) {
             String id = icon.item() != null ? icon.item() : s.openerItem();
-            String glyph = id == null || glyphs == null ? null : glyphs.glyph(id);
+            int bucket = ItemGlyphs.bucket(icon.scale());
+            String glyph = id == null || glyphs == null ? null : glyphs.glyph(id, bucket);
             if (glyph != null) {
-                frame.free(s.originX + icon.x(), s.originY + icon.y(), glyph, glyphs.advance(id));
+                frame.free(s.originX + icon.x(), s.originY + icon.y(), glyph, glyphs.advance(id, bucket));
             }
         }
         // What a press state (a window) draws over the slots goes over their items, as it does
