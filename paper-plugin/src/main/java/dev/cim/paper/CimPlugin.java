@@ -151,6 +151,9 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         // the modded biome ids and the client gets them through the normal
         // configuration sync.
         dev.cim.paper.BiomeRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
+        // Modded enchantments as REAL entries of the server enchantment registry
+        // (definitions from the Rust module, crates/cim-enchant).
+        dev.cim.paper.EnchantRegistry.install(getServer().getWorldContainer().toPath().toAbsolutePath(), log());
         f2vInit();
         getServer().getPluginManager().registerEvents(new NativeModCommands(this), this);
         f2vAutoOfferInit();
@@ -1372,7 +1375,7 @@ public final class CimPlugin extends JavaPlugin implements Listener {
      * and the server log. Runs on the server thread (command dispatch).
      */
     private void inspect(CommandSender sender, String[] args) {
-        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
+        String usage = LOG_PREFIX + "inspect: /cim inspect block <x> <y> <z> | be <x> <y> <z> | inv <player> | entities <x> <y> <z> <r> | screen <player>";
         try {
             switch (args[1].toLowerCase(Locale.ROOT)) {
                 case "block" -> {
@@ -1382,6 +1385,14 @@ public final class CimPlugin extends JavaPlugin implements Listener {
                     }
                     inspectBlock(sender, inspectWorld(sender), Integer.parseInt(args[2]),
                             Integer.parseInt(args[3]), Integer.parseInt(args[4]));
+                }
+                case "be" -> {
+                    if (args.length != 5) {
+                        sender.sendMessage(usage);
+                        return;
+                    }
+                    inspectBlockEntity(sender, Integer.parseInt(args[2]), Integer.parseInt(args[3]),
+                            Integer.parseInt(args[4]));
                 }
                 case "inv" -> {
                     if (args.length != 3) {
@@ -1422,10 +1433,16 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         return sender instanceof Player p ? p.getWorld() : Bukkit.getWorlds().get(0);
     }
 
-    /** Sends one {@code CIM-INSPECT} line to the sender and logs it at INFO. */
+    /**
+     * Logs one {@code CIM-INSPECT} line at INFO. A player sender gets it in chat only when
+     * {@code -Dcim.inspect.echo=true} is set (the harness reads the server log and the JSON
+     * covers the screenshots); a console sender always gets it.
+     */
     private void emitInspect(CommandSender sender, com.google.gson.JsonObject obj) {
         String line = "CIM-INSPECT " + INSPECT_GSON.toJson(obj);
-        sender.sendMessage(line);
+        if (!(sender instanceof Player) || Boolean.getBoolean("cim.inspect.echo")) {
+            sender.sendMessage(line);
+        }
         log().info(line);
     }
 
@@ -1566,6 +1583,29 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         emitInspect(sender, o);
     }
 
+    /**
+     * {@code /cim inspect be x y z}: the layer's real block entity there, as its saveWithFullMetadata JSON
+     * under {@code nbt} ({@code id} is the BE type id; both null when the layer holds none).
+     */
+    private void inspectBlockEntity(CommandSender sender, int x, int y, int z) {
+        World world = inspectWorld(sender);
+        Block block = world.getBlockAt(x, y, z);
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        o.addProperty("kind", "be");
+        com.google.gson.JsonArray pos = new com.google.gson.JsonArray();
+        pos.add(x);
+        pos.add(y);
+        pos.add(z);
+        o.add("pos", pos);
+        String json = dev.cim.hud.HudBootstrap.layerBlockEntityAt(block);
+        com.google.gson.JsonElement nbt = json == null ? null : com.google.gson.JsonParser.parseString(json);
+        String type = nbt != null && nbt.isJsonObject() && nbt.getAsJsonObject().has("id")
+                ? nbt.getAsJsonObject().get("id").getAsString() : null;
+        o.addProperty("id", type);
+        o.add("nbt", nbt == null ? com.google.gson.JsonNull.INSTANCE : nbt);
+        emitInspect(sender, o);
+    }
+
     /** The block id of a state text ({@code ns:id[k=v]} gives {@code ns:id}). */
     private static String stateIdOf(String state) {
         int open = state.indexOf('[');
@@ -1651,26 +1691,61 @@ public final class CimPlugin extends JavaPlugin implements Listener {
         }
         dev.cim.hud.ScreenHud.InspectScreen v = dev.cim.hud.HudBootstrap.inspectScreenForHarness(p,
                 this::moddedIdOfStack);
+        // A vanilla-container-backed menu (schematic table, furnace) has no HUD session: its top slots are
+        // the container's own, mapped back to modded ids the same way as inspect inv.
+        org.bukkit.inventory.InventoryView view = p.getOpenInventory();
+        org.bukkit.inventory.Inventory top = view == null ? null : view.getTopInventory();
+        // The player's own 2x2 crafting view is CRAFTING with 5 slots; a furnace (3 slots) or a bigger
+        // grid is a container.
+        boolean container = top != null && (top.getSize() > 5
+                || top.getType() != org.bukkit.event.inventory.InventoryType.CRAFTING)
+                && (!v.open() || v.slots().isEmpty());
         com.google.gson.JsonObject o = new com.google.gson.JsonObject();
         o.addProperty("kind", "screen");
         o.addProperty("player", p.getName());
-        o.addProperty("open", v.open());
-        o.add("menu_type", v.menuType() == null ? com.google.gson.JsonNull.INSTANCE
-                : new com.google.gson.JsonPrimitive(v.menuType()));
+        o.addProperty("open", v.open() || container);
+        String menuType = v.menuType();
+        if (container && menuType == null) {
+            menuType = top.getType().name().toLowerCase(java.util.Locale.ROOT);
+        }
+        o.add("menu_type", menuType == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(menuType));
         // The simple class name (ToolboxMenu), as the spec and the runner's notes use it.
         String cls = v.menuClass() == null ? null
                 : v.menuClass().substring(Math.max(v.menuClass().lastIndexOf('.'), v.menuClass().lastIndexOf('$')) + 1);
         o.add("menu_class", cls == null ? com.google.gson.JsonNull.INSTANCE : new com.google.gson.JsonPrimitive(cls));
-        o.addProperty("screen", v.screen());
-        o.add("title", v.title() == null ? com.google.gson.JsonNull.INSTANCE
-                : new com.google.gson.JsonPrimitive(v.title()));
+        o.addProperty("screen", container && !v.open() ? "container" : v.screen());
+        String title = v.title();
+        if (container && title == null && view != null) {
+            title = view.getTitle();
+        }
+        o.add("title", title == null ? com.google.gson.JsonNull.INSTANCE
+                : new com.google.gson.JsonPrimitive(title));
         com.google.gson.JsonArray slots = new com.google.gson.JsonArray();
-        for (dev.cim.hud.ScreenHud.InspectSlot s : v.slots()) {
-            com.google.gson.JsonObject so = new com.google.gson.JsonObject();
-            so.addProperty("index", s.index());
-            so.addProperty("item", s.item());
-            so.addProperty("count", s.count());
-            slots.add(so);
+        if (container) {
+            for (int i = 0; i < top.getSize(); i++) {
+                ItemStack stack = top.getItem(i);
+                if (stack == null || stack.getType().isAir()) {
+                    continue;
+                }
+                String item = moddedIdOfStack(stack);
+                if (item == null) {
+                    item = stack.getType().getKey().toString();
+                }
+                com.google.gson.JsonObject so = new com.google.gson.JsonObject();
+                so.addProperty("index", i);
+                so.addProperty("item", item);
+                so.addProperty("count", stack.getAmount());
+                slots.add(so);
+            }
+        } else {
+            for (dev.cim.hud.ScreenHud.InspectSlot s : v.slots()) {
+                com.google.gson.JsonObject so = new com.google.gson.JsonObject();
+                so.addProperty("index", s.index());
+                so.addProperty("item", s.item());
+                so.addProperty("count", s.count());
+                slots.add(so);
+            }
         }
         o.add("slots", slots);
         emitInspect(sender, o);

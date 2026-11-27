@@ -92,6 +92,10 @@ public final class LiveProtocol {
             if (head[0].equals("blockat")) {
                 return blockAt(head);
             }
+            // inspect-be TAB x TAB y TAB z: "be TAB <json>" for the block entity the facade holds, else "none".
+            if (head[0].equals("inspect-be")) {
+                return inspectBe(head);
+            }
             if (head[0].equals("door-outline")) {
                 var lookup = net.minecraft.core.registries.BuiltInRegistries.BLOCK.asLookup();
                 var state = net.minecraft.commands.arguments.blocks.BlockStateParser
@@ -761,12 +765,15 @@ public final class LiveProtocol {
     }
 
     /**
-     * release TAB x TAB y TAB z: the block leaves the ticking set (its chunk unloaded, or it was
-     * broken). Its data goes back as a "be" line, unless a menu holds it open.
+     * release TAB x TAB y TAB z [TAB gone]: the block leaves the ticking set (its chunk unloaded, or it was
+     * broken). Its data goes back as a "be" line, unless a menu holds it open. "gone": Paper no longer holds
+     * a block there (a fill, an explosion, a piston), so the facade's block at the cell goes too; else it stays
+     * as the facade's (a chunk unload keeps it for the next adopt).
      */
     private static String release(String[] head) {
         net.minecraft.core.BlockPos pos = pos(head, 1);
         FacadeServerLevel level = LiveMenus.level();
+        boolean gone = head.length > 4 && head[4].equals("gone");
         StringBuilder out = new StringBuilder(save(head));
         if (TICKING.remove(pos) != null) {
             refreshTickList();
@@ -774,6 +781,9 @@ public final class LiveProtocol {
         if (!BLOCKS.containsValue(pos)) {
             // removeBlockEntity only: no onRemove, so nothing a mod drops is spilled into the facade.
             level.removeBlockEntity(pos);
+            if (gone) {
+                level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+            }
         }
         return out.append("released\t").append(TICKING.size()).append('\n').toString();
     }
@@ -916,6 +926,16 @@ public final class LiveProtocol {
     private static String blockAt(String[] head) {
         net.minecraft.world.level.block.state.BlockState held = LiveMenus.level().store().heldStateAt(pos(head, 1));
         return held == null ? "none\n" : "state\t" + BlockStates.format(held) + "\n";
+    }
+
+    /**
+     * inspect-be TAB x TAB y TAB z: the layer's real block entity at the position as JSON (its
+     * saveWithFullMetadata, see {@link NbtJson}), "be TAB json", or "none" when it holds none there.
+     */
+    private static String inspectBe(String[] head) {
+        net.minecraft.world.level.block.entity.BlockEntity be = LiveMenus.level().getBlockEntity(pos(head, 1));
+        return be == null ? "none\n"
+                : "be\t" + NbtJson.of(be.saveWithFullMetadata(LiveMenus.level().registryAccess())) + "\n";
     }
 
     /** The state {@code text} names when its block is {@code block}, else null (the block's default then). */

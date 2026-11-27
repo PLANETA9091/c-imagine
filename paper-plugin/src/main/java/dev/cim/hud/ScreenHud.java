@@ -21,7 +21,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.player.PlayerAnimationEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
@@ -131,6 +134,19 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         List<ScreenPack.Piece> pieces;
         /** Which press state that is (its widget index), or -1 for the menu as opened. */
         int stateIndex = -1;
+        /** The opener that opened this screen ({@code block:<id>}, {@code item:<id>}, ...), or null. */
+        String opener;
+
+        /** The item a dynamic icon of this screen draws: the opener's block or item id, else null. */
+        String openerItem() {
+            if (opener == null) {
+                return null;
+            }
+            if (opener.startsWith("block:")) {
+                return opener.substring("block:".length());
+            }
+            return opener.startsWith("item:") ? opener.substring("item:".length()) : null;
+        }
 
         Session(ScreenPack.Scene scene, GuiCaptures.Capture capture, Pointer pointer) {
             this.scene = scene;
@@ -210,6 +226,8 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     private Map<String, GuiCaptures.Capture> captures;
     private final Path scenesDir;
     private final ItemGlyphs glyphs;
+    /** The opener of the screen about to open for a player, read when the session is made. */
+    private final java.util.Map<java.util.UUID, String> pendingOpeners = new java.util.HashMap<>();
     private final Map<Float, String> itemCarriers = new HashMap<>();
     private final Map<String, F2vPack.VisualItem> carrierRows = new HashMap<>();
     /** Mod items the pack allocated a definition for (no manifest row): their stacks name it through item_model. */
@@ -652,8 +670,10 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
     /** Opens a scene with the slots it draws: its capture's, or the live menu's own for a scanned scene. */
     private void open(Player player, ScreenPack.Scene scene, GuiCaptures.Capture capture) {
         log.info("[cim-screen] " + player.getName() + " opened " + scene.shortName());
-        open.put(player.getUniqueId(), new Session(scene, capture,
-                new Pointer(POINTER_X, POINTER_Y, player.getYaw(), player.getPitch())));
+        Session session = new Session(scene, capture,
+                new Pointer(POINTER_X, POINTER_Y, player.getYaw(), player.getPitch()));
+        session.opener = pendingOpeners.remove(player.getUniqueId());
+        open.put(player.getUniqueId(), session);
         if (camera != null && !harnessFrame) {
             // Not during the click that opened it: a mount from inside that event is lost.
             org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> {
@@ -1054,6 +1074,15 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                         frame.free(x, y, String.valueOf(HudPack.SLOT_HOVER), 17);
                     }
                 }
+            }
+        }
+        // 3D element icons (GuiGameElement): the item's flat icon at the recorded place. A dynamic
+        // subject is the opener's block or item.
+        for (ScreenPack.Icon icon : s.scene.icons()) {
+            String id = icon.item() != null ? icon.item() : s.openerItem();
+            String glyph = id == null || glyphs == null ? null : glyphs.glyph(id);
+            if (glyph != null) {
+                frame.free(s.originX + icon.x(), s.originY + icon.y(), glyph, glyphs.advance(id));
             }
         }
         // What a press state (a window) draws over the slots goes over their items, as it does
@@ -1506,6 +1535,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         }
         // A scanned scene has no capture: the layer's own slots (its positions, owners and
         // indices) stand in for it, so the menu's slots are drawn and clicked as a capture's are.
+        if (opener != null) {
+            pendingOpeners.put(player.getUniqueId(), opener.startsWith("sneak+") ? opener.substring(6) : opener);
+        }
         open(player, scene, captured ? captureOf(scene) : liveCapture(state));
         Session s = open.get(player.getUniqueId());
         s.live = true;
@@ -1996,6 +2028,12 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         return bridge == null ? null : bridge.blockAt(block);
     }
 
+    /** The layer's block entity JSON at a block, or null (no layer, or it holds none there). For /cim inspect be. */
+    String layerBlockEntityAt(Block block) {
+        LiveBridge bridge = liveReady();
+        return bridge == null ? null : bridge.blockEntityAt(block);
+    }
+
     /** The live bridge, only once the layer's real server is up (else null). */
     private LiveBridge liveReady() {
         LiveBridge bridge = live();
@@ -2220,7 +2258,115 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
                 : sceneForOpener((player.isSneaking() ? "sneak+" : "") + opener);
         if (scene != null) {
             event.setCancelled(true);
+            pendingOpeners.put(player.getUniqueId(), opener);
             open(player, scene);
+        }
+    }
+
+    /**
+     * Puts every block the layer's use placed, or removed (minecraft:air), into Paper's world. Checked
+     * first, then applied, so a refusal changes nothing. A cell inside the neighbourhood the layer was sent
+     * is the layer's to set (whatever Paper holds there, a vanilla block included); a cell outside it must
+     * be free for the placement (air, replaceable, a carrier, or the clicked carrier itself). A projected
+     * door cell is always refused. Also refused: a mod block with no carrier row, or a vanilla state Paper
+     * cannot read. A mod block is its carrier (a display family block gets its barrier and look); a vanilla
+     * block is its exact state and no mod tracking; air clears the cell.
+     */
+    private boolean applyPlacements(Player player, LiveBridge bridge, Block clicked, LiveBridge.UseOn result) {
+        var world = clicked.getWorld();
+        for (LiveBridge.Placement p : result.placements()) {
+            Block at = world.getBlockAt(p.x(), p.y(), p.z());
+            boolean inPlace = at.equals(clicked) && carried(clicked) != null;
+            boolean free = at.getType().isAir() || at.isReplaceable() || inPlace || carrierCell(at);
+            if (!placementAllowed(result.covers(p.x(), p.y(), p.z()), free, projectedDoor(at) != null)) {
+                log.info("[cim-screen] " + p.id() + " at " + p.x() + "," + p.y() + "," + p.z()
+                        + " lands on " + at.getBlockData().getAsString() + ", not a free cell: refused");
+                return false;
+            }
+            switch (placementKind(p.id())) {
+                case "mod" -> {
+                    if (blockCarrierRows.get(p.id()) == null) {
+                        log.info("[cim-screen] " + p.id() + " placed in the layer has no carrier here");
+                        return false;
+                    }
+                }
+                case "vanilla" -> {
+                    if (!readableState(p.state())) {
+                        log.info("[cim-screen] " + p.state() + " placed in the layer is not a Paper state: refused");
+                        return false;
+                    }
+                }
+                default -> { }
+            }
+        }
+        StringBuilder placed = new StringBuilder();
+        for (LiveBridge.Placement p : result.placements()) {
+            Block at = world.getBlockAt(p.x(), p.y(), p.z());
+            String kind = placementKind(p.id());
+            if (kind.equals("mod")) {
+                F2vPack.VisualBlock row = blockCarrierRows.get(p.id());
+                if (knownDisplay(row.moddedBlockId())) {
+                    at.setType(Material.BARRIER, false);
+                    DisplayCarriers.place(at, row.moddedBlockId(), p.state());
+                } else {
+                    if (at.getType() == Material.BARRIER) {
+                        DisplayCarriers.remove(at);
+                    }
+                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
+                }
+                bridge.keepPlaced(at, p.id(), p.blockEntity());
+                bridge.keepPlacedState(at, p.state());
+                if (bridge.track(at, p.id(), p.blockEntity())) {
+                    logTicking();
+                }
+            } else {
+                // A vanilla block or air is not a mod block: whatever carrier and tracking the cell had go
+                // (a display, a note carrier, the kept state, the ticking block), whether or not it was a carrier.
+                if (DisplayCarriers.idAt(at) != null) {
+                    DisplayCarriers.remove(at);
+                }
+                bridge.forgetPlacedState(at);
+                bridge.release(at, null);
+                at.setBlockData(org.bukkit.Bukkit.createBlockData(kind.equals("air") ? "minecraft:air" : p.state()), false);
+            }
+            placed.append(p.id()).append(" at ").append(at.getX()).append(',').append(at.getY()).append(',')
+                    .append(at.getZ()).append("; ");
+        }
+        log.info("[cim-screen] " + player.getName() + " placed " + placed.toString().trim());
+        return true;
+    }
+
+    /** A carrier Paper holds in this cell: a note block, or a barrier with its item display. */
+    private boolean carrierCell(Block at) {
+        return DisplayCarriers.idAt(at) != null || carried(at) != null;
+    }
+
+    /**
+     * Whether a placement the layer made is applied. Inside the neighbourhood it was sent it always is (a change
+     * there is authoritative); outside it only into a free cell. A projected door cell never is.
+     */
+    static boolean placementAllowed(boolean sent, boolean freeCell, boolean projectedDoor) {
+        return !projectedDoor && (sent || freeCell);
+    }
+
+    /** "air" for a removed cell, "vanilla" for a minecraft: block, else "mod" (the id a mod block carries). */
+    static String placementKind(String id) {
+        if (id.equals("minecraft:air") || id.equals("minecraft:cave_air") || id.equals("minecraft:void_air")) {
+            return "air";
+        }
+        return id.startsWith("minecraft:") ? "vanilla" : "mod";
+    }
+
+    /** True when Paper reads this state text (a vanilla state from the layer, in Paper's format). */
+    private static boolean readableState(String state) {
+        if (state == null) {
+            return false;
+        }
+        try {
+            org.bukkit.Bukkit.createBlockData(state);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 
@@ -2259,41 +2405,9 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
             log.info("[cim-screen] " + player.getName() + " placed both halves of " + result.placements().getFirst().id());
             return true;
         }
-        if (result.placements().size() > 1) {
-            log.info("[cim-screen] Multi-block placement needs a complete projection: "
-                    + result.placements().stream()
-                    .map(p -> p.state() + " collision=" + p.collision()).toList());
-            return false;
-        }
-        boolean did = false;
-        if (result.placedId() != null) {
-            F2vPack.VisualBlock row = blockCarrierRows.get(result.placedId());
-            Block at = clicked.getWorld().getBlockAt(result.x(), result.y(), result.z());
-            // The clicked carrier itself may change in place (an axe strips the log it hit): its new
-            // carrier replaces the old one, the old display with it.
-            boolean inPlace = at.equals(clicked) && carried(clicked) != null;
-            if (row != null && (at.getType().isAir() || at.isReplaceable() || inPlace) && projectedDoor(at) == null) {
-                if (knownDisplay(row.moddedBlockId())) {
-                    at.setType(Material.BARRIER, false);
-                    DisplayCarriers.place(at, row.moddedBlockId(), result.placedState());
-                } else {
-                    if (at.getType() == Material.BARRIER) {
-                        DisplayCarriers.remove(at);
-                    }
-                    at.setBlockData(org.bukkit.Bukkit.createBlockData(F2vPack.carrierState(row)), false);
-                }
-                bridge.keepPlaced(at, result.placedId(), result.placedBlockEntity());
-                bridge.keepPlacedState(at, result.placedState());
-                if (bridge.track(at, result.placedId(), result.placedBlockEntity())) {
-                    logTicking();
-                }
-                log.info("[cim-screen] " + player.getName() + " placed " + result.placedId() + " at "
-                        + at.getX() + "," + at.getY() + "," + at.getZ());
-                did = true;
-            } else {
-                log.info("[cim-screen] " + result.placedId() + " placed in the layer has no carrier here");
-            }
-        }
+        // Every block the layer's use placed or removed goes into Paper's world (the layer is the authority for the
+        // whole click); a refused plan leaves the world as it was and the click falls through as before.
+        boolean did = !result.placements().isEmpty() && applyPlacements(player, bridge, clicked, result);
         if (result.state().open()) {
             // A menu the clicked carrier's own use opened is the block's (its capture is keyed by block:);
             // any other menu is the held item's.
@@ -2932,6 +3046,54 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         moddedUseTick.remove(event.getPlayer().getUniqueId());
     }
 
+    /**
+     * Ways a session ends when the server's own view ends. A live menu's container closed by the client
+     * (ESC, the inventory key) has already run its removed() and its give-back, so the session is only
+     * dropped; anything else is closed as a sneak or a quit closes it, which gives the held items back.
+     */
+    enum EndWay { NONE, DROP, CLOSE }
+
+    static EndWay endWay(boolean hasSession, boolean live, boolean vanillaClosed) {
+        if (!hasSession) {
+            return EndWay.NONE;
+        }
+        return vanillaClosed && live ? EndWay.DROP : EndWay.CLOSE;
+    }
+
+    /**
+     * A vanilla container close (ESC, the inventory key, a teleport) never reaches this class otherwise. A session
+     * left behind keeps the camera seated and the view frozen and swallows every right click and swing until a
+     * sneak, so the server's close ends it here.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (!(event.getPlayer() instanceof Player player)) {
+            return;
+        }
+        Session s = open.get(player.getUniqueId());
+        switch (endWay(s != null, s != null && s.live, true)) {
+            case DROP -> {
+                open.remove(player.getUniqueId());
+                if (camera != null) {
+                    camera.release(player, "screen");
+                }
+                log.info("[cim-screen] " + player.getName() + " closed the live menu on the server; session ended");
+            }
+            case CLOSE -> close(player);
+            case NONE -> { }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDeath(PlayerDeathEvent event) {
+        close(event.getEntity());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        close(event.getPlayer());
+    }
+
     private static int check(boolean ok, String what) {
         System.out.println((ok ? "ok   " : "FAIL ") + what);
         return ok ? 0 : 1;
@@ -2979,6 +3141,44 @@ public final class ScreenHud implements HudService.Layer, Listener, CommandExecu
         bad += check(playerIndex(0) == 9 && playerIndex(26) == 35 && playerIndex(27) == 0,
                 "player slots map main inventory then hotbar");
         bad += liveResolutionSelftest();
+        bad += check("air".equals(placementKind("minecraft:air")) && "air".equals(placementKind("minecraft:cave_air"))
+                && "vanilla".equals(placementKind("minecraft:stone")) && "mod".equals(placementKind("create:shaft"))
+                && "mod".equals(placementKind("dynamictrees:branch")),
+                "a placed id is air, vanilla or mod, so the multi-placement apply knows which carrier to put");
+        // A placement inside the sent neighbourhood is applied over any block (the dynamic trees rooty dirt on a
+        // vanilla dirt); outside it only into a free cell; a projected door never.
+        bad += check(placementAllowed(true, false, false), "a placement inside the sent neighbourhood over dirt applies");
+        bad += check(placementAllowed(true, true, false), "a placement inside the neighbourhood into air applies");
+        bad += check(!placementAllowed(false, false, false), "a placement outside the neighbourhood over dirt is refused");
+        bad += check(placementAllowed(false, true, false), "a placement outside the neighbourhood into air applies");
+        bad += check(endWay(false, false, true) == EndWay.NONE && endWay(false, true, true) == EndWay.NONE,
+                "no session, nothing to end, whatever the close");
+        bad += check(endWay(true, true, true) == EndWay.DROP,
+                "a live menu the client closed is dropped, its own removed() already gave items back");
+        bad += check(endWay(true, false, true) == EndWay.CLOSE && endWay(true, true, false) == EndWay.CLOSE,
+                "a non-live session, or a close not from the server's container, closes as a sneak does");
+        bad += check(!placementAllowed(true, true, true) && !placementAllowed(false, true, true),
+                "a projected door cell is refused either way");
+        // A ticking entry whose carrier Paper no longer holds is stale (a fill, a piston, a plugin); a carrier that
+        // still stands is not. The layer's facade drops the stale cell (release gone), so the next use sees air.
+        bad += check(LiveBridge.staleCarrier("dynamictrees:oak_branch", null), "a ticking block gone from Paper is stale");
+        bad += check(LiveBridge.staleCarrier("dynamictrees:oak_branch", "dynamictrees:oak_sapling"),
+                "a ticking block replaced by another carrier is stale");
+        bad += check(!LiveBridge.staleCarrier("dynamictrees:oak_branch", "dynamictrees:oak_branch"),
+                "a ticking block whose carrier still stands is kept");
+        // A 3D icon's dynamic subject is the opener's block or item; a sneak prefix never reaches here.
+        ScreenPack.Scene bare = new ScreenPack.Scene("com/simibubi/create/content/equipment/toolbox/ToolboxScreen",
+                null, 176, 166, false, List.of(), List.of(), null);
+        Session fromBlock = new Session(bare, null, new Pointer(0, 0, 0, 0));
+        fromBlock.opener = "block:create:brown_toolbox";
+        Session fromItem = new Session(bare, null, new Pointer(0, 0, 0, 0));
+        fromItem.opener = "item:create:wrench";
+        Session fromOther = new Session(bare, null, new Pointer(0, 0, 0, 0));
+        fromOther.opener = "place+item:create:wrench";
+        bad += check("create:brown_toolbox".equals(fromBlock.openerItem())
+                && "create:wrench".equals(fromItem.openerItem()) && fromOther.openerItem() == null
+                && new Session(bare, null, new Pointer(0, 0, 0, 0)).openerItem() == null,
+                "a dynamic 3D icon draws its opener's block or item, and nothing else");
         System.out.println(bad == 0 ? "ScreenHud selftest: ALL PASS" : "ScreenHud selftest: " + bad + " FAILED");
         System.exit(bad == 0 ? 0 : 1);
     }

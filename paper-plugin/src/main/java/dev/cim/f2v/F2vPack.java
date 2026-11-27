@@ -3058,6 +3058,9 @@ public final class F2vPack {
         // [0,16]. String-level surgery: models without an offending uv array
         // stay byte-identical (the pack sha1 moves only with real fixes).
         sanitizeFaceUvs(entries, warnings);
+        // Modded enchantment names: the stock client translates enchantment.<ns>.<id>
+        // from the pack's lang (the mod jar is not on the client's classpath).
+        putEnchantmentLang(jars, entries, warnings);
         byte[] zip = zip(entries);
         validateDownloadSize(zip.length);
         String sha1 = sha1Hex(zip);
@@ -3212,6 +3215,60 @@ public final class F2vPack {
                 e.setValue(out.toString().getBytes(StandardCharsets.UTF_8));
             }
         }
+    }
+
+    /**
+     * {@code assets/c-imagine/lang/en_us.json}: the {@code enchantment.<ns>.*} names
+     * (and descriptions) of every mod namespace that declares an enchantment, taken
+     * from that mod's own en_us.json. Writes nothing when no mod declares one.
+     */
+    static void putEnchantmentLang(List<Path> jars, TreeMap<String, byte[]> entries, List<String> warnings) {
+        java.util.Set<String> namespaces = new java.util.TreeSet<>();
+        java.util.regex.Pattern decl = java.util.regex.Pattern.compile("data/([^/]+)/enchantment/[^/]+\\.json");
+        for (Path jar : jars) {
+            try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+                var names = zip.entries();
+                while (names.hasMoreElements()) {
+                    java.util.regex.Matcher m = decl.matcher(names.nextElement().getName());
+                    if (m.matches()) {
+                        namespaces.add(m.group(1));
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                warnings.add("enchant lang: cannot list " + jar.getFileName() + ": " + e.getMessage());
+            }
+        }
+        // vanilla's own enchantment names ship with the client
+        namespaces.remove("minecraft");
+        if (namespaces.isEmpty()) {
+            return;
+        }
+        com.google.gson.JsonObject lang = new com.google.gson.JsonObject();
+        for (Path jar : jars) {
+            try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
+                for (String ns : namespaces) {
+                    var entry = zip.getEntry("assets/" + ns + "/lang/en_us.json");
+                    if (entry == null) {
+                        continue;
+                    }
+                    String raw = new String(zip.getInputStream(entry).readAllBytes(), StandardCharsets.UTF_8);
+                    com.google.gson.JsonObject mine = com.google.gson.JsonParser.parseString(raw).getAsJsonObject();
+                    for (String key : new java.util.TreeSet<>(mine.keySet())) {
+                        if (key.startsWith("enchantment." + ns + ".") && !lang.has(key)) {
+                            lang.add(key, mine.get(key));
+                        }
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                warnings.add("enchant lang: cannot read " + jar.getFileName() + ": " + e.getMessage());
+            }
+        }
+        if (lang.size() == 0) {
+            return;
+        }
+        entries.put("assets/c-imagine/lang/en_us.json",
+                new com.google.gson.GsonBuilder().setPrettyPrinting().create().toJson(lang)
+                        .getBytes(StandardCharsets.UTF_8));
     }
 
     private static List<Path> listJars(Path modsDir) throws IOException {

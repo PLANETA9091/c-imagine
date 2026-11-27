@@ -8,7 +8,7 @@ public final class ServerCapture {
     public static boolean looksLikeKeybind(String value) {
         if (value == null || value.length() < 5 || value.length() > 160) return false;
         String lower = value.toLowerCase(java.util.Locale.ROOT);
-        return (lower.startsWith("key.") || lower.startsWith("keybind."))
+        return (lower.startsWith("key.") || lower.startsWith("keybind.") || lower.startsWith("keybinds."))
                 && !lower.startsWith("key.categories.")
                 && !lower.endsWith(".category")
                 && !lower.contains(".category.")

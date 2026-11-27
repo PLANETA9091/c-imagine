@@ -324,6 +324,16 @@ jobs:
             || fail "boot-time rebuild sha1 does not match the pre-boot pack (determinism broken)"
           grep -q "f2v pack: serving http://127.0.0.1:25580/cim-f2v-pack.zip" srv/boot.log \
             || fail "pack HTTP server not serving on the properties URL"
+          # modded enchantments (crates/cim-enchant): the cimtest fixture enchantment is
+          # a real Paper registry entry (2 tags: non_treasure + its nested in_enchanting_table),
+          # and the pack carries its lang name for the stock client
+          grep -q "enchant defs: 1 -> " srv/boot.log \
+            || fail "module did not write the enchantment definitions"
+          grep -q "enchant registry: 1 modded enchantment(s) registered (2 tag(s) bound)" srv/boot.log \
+            || fail "cimtest enchantment not registered in the server enchantment registry"
+          unzip -p srv/c-imagine/f2v/pack.zip assets/c-imagine/lang/en_us.json \
+            | grep -q '"enchantment.cimtest.test_enchant": "Test Enchant"' \
+            || fail "pack lang lacks the modded enchantment name"
           # client-side state machine: the WIRE accept is proven bot-side
           # ("resource pack accepted (F2V)" check, asserted in the python
           # block above). MEASURED on 3cab5d8: the config-phase (properties)
