@@ -63,7 +63,7 @@ public final class ModScanner {
     // Bump whenever a newly discovered surface changes runtime behaviour. Keeping the schema
     // coupled to the scanner contract prevents an otherwise-valid jar fingerprint from reviving
     // an older profile that predates Ponder/placeable/UI/spatial metadata.
-    private static final int CACHE_SCHEMA = 89;
+    private static final int CACHE_SCHEMA = 90;
 
     private ModScanner() {}
 
@@ -329,6 +329,7 @@ public final class ModScanner {
             finalizeModVersions(p);
             readServiceProviders(jar, p);
             readSoundsJson(jar, p);
+            addKeyCensus(jarPath, p);
             p.packetCodecs.addAll(PacketCodecBytecodeScanner.scan(graph));
             p.mapPipelines.addAll(MapPipelineBytecodeScanner.scan(graph));
             // Fluid material registrations and their synthetic tint suppliers live in the owning
@@ -461,6 +462,7 @@ public final class ModScanner {
         readManifestMeta(nestedManifest, p);
         readServiceProviders(entries, p);
         readSoundsJson(entries, p);
+        addKeyCensus(archive.bytes(), p);
         p.packetCodecs.addAll(PacketCodecBytecodeScanner.scan(graph));
         p.mapPipelines.addAll(MapPipelineBytecodeScanner.scan(graph));
         p.fluidMaterials.addAll(FluidRenderBytecodeScanner.scan(nodes));
@@ -1096,9 +1098,6 @@ public final class ModScanner {
             p.fluids.add(node.name);
         }
         collectRegistryKeys(node, p);
-        // Key mappings are commonly registered from a client setup/event class rather than a
-        // Screen subclass. Scanning only screens made the server-only capture miss most binds.
-        collectKeybinds(node, p);
         collectClientInputActions(node, nodes, p);
     }
 
@@ -1711,37 +1710,29 @@ public final class ModScanner {
         return null;
     }
 
-    private static void collectKeybinds(ClassNode node, Profile p) {
-        Set<String> found = new LinkedHashSet<>();
-        for (FieldNode f : node.fields) {
-            String d = f.desc;
-            if (!d.endsWith("Lcom/mojang/blaze3d/platform/InputConstants$Key;")
-                    && !d.endsWith("Lnet/minecraft/client/KeyMapping;")) {
-                continue;
-            }
-            if (f.value instanceof String s && s.matches("[a-z0-9_.-]+")) {
-                if (dev.f2v.capture.ServerCapture.looksLikeKeybind(s)) found.add(s);
-            }
+    /**
+     * Keybindings come from {@link dev.cim.hud.KeyCensus}, the one generic reader of
+     * KeyMapping registrations: constructors of KeyMapping and its subclasses, builder
+     * chains, enum-constant names resolved through the lang table, and category keys excluded.
+     */
+    private static void addKeyCensus(Path jarPath, Profile p) {
+        try {
+            addKeyCensus(Files.readAllBytes(jarPath), p);
+        } catch (IOException failure) {
+            F2VLog.warn("[vm] keybind census could not read " + jarPath + ": " + failure);
         }
-        for (MethodNode method : node.methods) {
-            for (AbstractInsnNode insn : method.instructions) {
-                if (!(insn instanceof MethodInsnNode call)
-                        || !call.owner.equals("net/minecraft/client/KeyMapping")
-                        || !call.name.equals("<init>")) continue;
-                // The translation name/category are LDC strings immediately before the
-                // constructor. Walk a bounded window and keep key.* but not categories.
-                int remaining = 24;
-                for (AbstractInsnNode previous = insn.getPrevious(); previous != null && remaining-- > 0;
-                     previous = previous.getPrevious()) {
-                    if (previous instanceof LdcInsnNode ldc && ldc.cst instanceof String s
-                            && dev.f2v.capture.ServerCapture.looksLikeKeybind(s)) {
-                        found.add(s);
-                    }
-                }
-            }
+    }
+
+    private static void addKeyCensus(byte[] jar, Profile p) {
+        List<dev.cim.hud.KeyCensus.ModKey> keys;
+        try {
+            keys = dev.cim.hud.KeyCensus.scanJar(jar);
+        } catch (IOException | RuntimeException failure) {
+            F2VLog.warn("[vm] keybind census failed in " + p.modId + ": " + failure);
+            return;
         }
-        for (String key : found) {
-            if (!p.keybindNames.contains(key)) p.keybindNames.add(key);
+        for (dev.cim.hud.KeyCensus.ModKey key : keys) {
+            if (!p.keybindNames.contains(key.id())) p.keybindNames.add(key.id());
         }
     }
 
