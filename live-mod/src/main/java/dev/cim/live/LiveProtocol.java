@@ -565,6 +565,12 @@ public final class LiveProtocol {
                     LiveMenus.end(id);
                     yield out;
                 }
+                case "roll-deliver" -> {
+                    // roll-deliver TAB uuid TAB vx TAB vy TAB vz: the roll's payload, to Combat Roll's handler.
+                    SessionServerPlayer player = LiveMenus.session(id, "cimlive");
+                    yield RollDelivery.deliver(player, Double.parseDouble(head[2]),
+                            Double.parseDouble(head[3]), Double.parseDouble(head[4]));
+                }
                 default -> "error\tunknown command " + head[0];
             };
         } catch (Throwable t) {

@@ -62,6 +62,13 @@ public final class CombatRollAdapter implements ModKeyAdapter, Listener {
     static final String FALLBACK_SOUND = "minecraft:block.wood.place";
     /** RollEffect: 15 puffs per roll. */
     static final int PUFFS = 15;
+    /**
+     * -Dcim.roll.deliver=true: also hand the roll's payload to Combat Roll's own server handler in
+     * the layer (roll-deliver). Off by default. The layer currently runs the handler on a
+     * SessionServerPlayer facade, so its effects do not reach the Paper player: the reply says so
+     * and the port's effects below still run.
+     */
+    static final boolean DELIVER = Boolean.getBoolean("cim.roll.deliver");
 
     private final Plugin plugin;
     private final ModKeyBridge bridge;
@@ -114,9 +121,40 @@ public final class CombatRollAdapter implements ModKeyAdapter, Listener {
                 inWater, waterHeight, player.isInLava(), CombatRollRules.friction(below.getType().getKey().toString()));
         player.setVelocity(player.getVelocity().add(new Vector(impulse.x(), impulse.y(), impulse.z())));
         state.onRoll();
+        // The handler applies no velocity itself, so the impulse above always stays on the Paper side.
+        boolean delivered = DELIVER && deliver(player, impulse);
+        if (delivered) {
+            return;
+        }
         state.startInvulnerability();
         player.setExhaustion(player.getExhaustion() + CombatRollRules.EXHAUST_ON_ROLL);
         effects(player);
+    }
+
+    /**
+     * roll-deliver to the layer: Combat Roll's handler does the server effects. True only when the
+     * layer reports the effects reached the real player; the facade reply is false, so the port runs.
+     */
+    @SuppressWarnings("unchecked")
+    private boolean deliver(Player player, Vec impulse) {
+        Object entry = System.getProperties().get("cim.live");
+        if (!(entry instanceof java.util.function.Function<?, ?> fn)) {
+            return false;
+        }
+        try {
+            String request = "roll-deliver\t" + player.getUniqueId() + "\t" + impulse.x() + "\t" + impulse.y()
+                    + "\t" + impulse.z();
+            String reply = ((java.util.function.Function<String, String>) fn).apply(request);
+            String first = reply == null ? "" : reply.split("\n", 2)[0];
+            if (!first.startsWith("handled")) {
+                plugin.getLogger().warning("[cim-key] roll-deliver: " + first);
+                return false;
+            }
+            return first.contains("real=true");
+        } catch (RuntimeException e) {
+            plugin.getLogger().warning("[cim-key] roll-deliver failed: " + e);
+            return false;
+        }
     }
 
     /** RollEffect.playVisuals for everyone who can see the roller: puffs at the feet and the roll sound. */
