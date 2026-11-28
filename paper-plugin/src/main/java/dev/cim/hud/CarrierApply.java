@@ -31,11 +31,57 @@ final class CarrierApply {
             Object patch = result.getClass().getMethod("getOrThrow").invoke(result);
             Object nms = craft.getMethod("asNMSCopy", org.bukkit.inventory.ItemStack.class).invoke(null, stack);
             nmsStack.getMethod("applyComponents", patchCls).invoke(nms, patch);
-            return (org.bukkit.inventory.ItemStack) craft.getMethod("asBukkitCopy", nmsStack).invoke(null, nms);
+            return copyBack(craft, nmsStack, nms);
         } catch (Throwable t) {
             java.util.logging.Logger.getLogger("c-imagine").warning(
                     "[cim] carrier components refused: " + (t.getCause() != null ? t.getCause() : t));
             return stack;
+        }
+    }
+
+    /**
+     * The nms -> bukkit copy-back. The classic {@code CraftItemStack.asBukkitCopy(ItemStack)}
+     * measured MISSING on paper 26.3-263 (NoSuchMethod, the survival #74 receipt — every carrier
+     * apply refused there and the recipes floor collapsed 300 -> 43). Pin the converter
+     * empirically instead of guessing a renamed symbol: the public static methods taking exactly
+     * one nms ItemStack, returning an assignably-bukkit ItemStack, and named "copy" (the copy
+     * semantics — a mirror would alias the mutated nms stack, never acceptable). One match pins
+     * with an info receipt; zero or several receipt the full candidate list (the next flight
+     * names the truth, never a silent guess).
+     */
+    private static org.bukkit.inventory.ItemStack copyBack(Class<?> craft, Class<?> nmsStack,
+                                                           Object nms) throws Exception {
+        try {
+            return (org.bukkit.inventory.ItemStack) craft
+                    .getMethod("asBukkitCopy", nmsStack).invoke(null, nms);
+        } catch (NoSuchMethodException renamed) {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            java.util.List<java.lang.reflect.Method> copies = new java.util.ArrayList<>();
+            for (java.lang.reflect.Method m : craft.getDeclaredMethods()) {
+                if (!java.lang.reflect.Modifier.isStatic(m.getModifiers())) {
+                    continue;
+                }
+                Class<?>[] p = m.getParameterTypes();
+                if (p.length == 1 && p[0] == nmsStack
+                        && org.bukkit.inventory.ItemStack.class.isAssignableFrom(m.getReturnType())) {
+                    names.add(m.getName());
+                    if (m.getName().toLowerCase(java.util.Locale.ROOT).contains("copy")) {
+                        copies.add(m);
+                    }
+                }
+            }
+            copies.sort(java.util.Comparator.comparing(java.lang.reflect.Method::getName));
+            if (copies.isEmpty() || copies.size() > 1) {
+                throw new NoSuchMethodException("no unique copy-named nms->bukkit converter on "
+                        + craft.getName() + "; static one-arg candidates=" + names
+                        + " copy-named=" + copies.stream().map(java.lang.reflect.Method::getName).toList());
+            }
+            java.lang.reflect.Method pinned = copies.get(0);
+            pinned.setAccessible(true);
+            java.util.logging.Logger.getLogger("c-imagine").info(
+                    "[cim] carrier copy-back pinned: CraftItemStack." + pinned.getName()
+                    + " (the classic asBukkitCopy is absent; candidates=" + names + ")");
+            return (org.bukkit.inventory.ItemStack) pinned.invoke(null, nms);
         }
     }
 
