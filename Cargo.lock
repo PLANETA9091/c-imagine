@@ -167,6 +167,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cim-classgraph"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "cim-core"
 version = "0.1.0"
 dependencies = [
@@ -559,6 +569,7 @@ name = "imagine"
 version = "0.1.0"
 dependencies = [
  "cim-biome",
+ "cim-classgraph",
  "cim-core",
  "cim-damage",
  "cim-enchant",

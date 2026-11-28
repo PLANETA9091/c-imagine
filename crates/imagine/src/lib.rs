@@ -20,6 +20,7 @@ mod bundled;
 mod kernel_bridge;
 mod layerconfig;
 mod modwatch;
+mod native_classgraph;
 mod native_reloc;
 mod options;
 

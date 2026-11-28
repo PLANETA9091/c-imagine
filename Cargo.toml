@@ -10,6 +10,7 @@ members = [
     "crates/cim-bridge",
     "crates/cim-f2v",
     "crates/cim-biome",
+    "crates/cim-classgraph",
     "crates/cim-enchant",
     "crates/cim-damage",
     "crates/imagine",
@@ -33,6 +34,7 @@ cim-registry = { path = "crates/cim-registry" }
 cim-bridge = { path = "crates/cim-bridge" }
 cim-f2v = { path = "crates/cim-f2v" }
 cim-biome = { path = "crates/cim-biome" }
+cim-classgraph = { path = "crates/cim-classgraph" }
 cim-enchant = { path = "crates/cim-enchant" }
 cim-damage = { path = "crates/cim-damage" }
 cplug-abi = { path = "third_party/cplug-abi" }
