@@ -265,7 +265,7 @@ jobs:
           mkfifo console.in
           # keep the FIFO open and feed console commands from a file later
           # paperclip patches the Mojang jar on first boot (network needed)
-          tail -f console.in | java -Xmx2G -Dcim.f2v.assetsJars="$GITHUB_WORKSPACE/visual-client/client.jar" -jar paper.jar --nogui > boot.log 2>&1 &
+          tail -f console.in | java -Xmx2G -Dcim.f2v.assetsJars="$GITHUB_WORKSPACE/visual-client/client.jar" -Df2v.vanillaJar="$GITHUB_WORKSPACE/visual-client/client.jar" -jar paper.jar --nogui > boot.log 2>&1 &
           echo $! > ../srv.pid
           cd ..
           # wait for Done (120 x 2s)
