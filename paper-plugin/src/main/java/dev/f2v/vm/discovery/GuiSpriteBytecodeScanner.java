@@ -33,8 +33,10 @@ import java.util.Map;
  * no mod id, screen name, framebuffer capture or client class loading is required.</p>
  */
 public final class GuiSpriteBytecodeScanner {
-    /** The vanilla player-inventory panel width (AbstractContainerScreen's 176-wide chest panel). */
-    private static final int INVENTORY_PANEL_WIDTH = 176;
+    /** The player's own inventory type; a menu that builds a Slot over it lays out player slots. */
+    private static final String PLAYER_INVENTORY_DESC = "Lnet/minecraft/world/entity/player/Inventory;";
+    private static final String SLOT = "net/minecraft/world/inventory/Slot";
+    private static final String ABSTRACT_MENU = "net/minecraft/world/inventory/AbstractContainerMenu";
 
 
     public static final class Sprite {
@@ -2762,18 +2764,136 @@ public final class GuiSpriteBytecodeScanner {
         return null;
     }
 
+    /** The vanilla player-inventory panel by identity, never by width: Create's PLAYER_INVENTORY sheet
+     * (texture player_inventory) or vanilla's container/inventory texture. */
+    public static boolean isPlayerInventorySprite(Sprite sprite) {
+        if (sprite == null) return false;
+        if ("PLAYER_INVENTORY".equals(sprite.field)) return true;
+        String texture = sprite.texture == null ? "" : sprite.texture.toLowerCase(java.util.Locale.ROOT);
+        return texture.equals("player_inventory") || texture.endsWith("container/inventory")
+                || texture.endsWith("container/inventory.png");
+    }
+
+    /**
+     * Whether a screen's menu lays out the player's own inventory slots, read from the menu's bytecode.
+     * TRUE: a menu constructor (or a same-jar helper it passes the Inventory to) builds a vanilla Slot
+     * over an Inventory, whether or not the construction sits in a loop. FALSE: the menu takes no
+     * Inventory. null (unknown): the menu takes one but the Slot construction is not readable (for
+     * example a vanilla superclass helper), or the menu cannot be found. Nothing here guesses a width.
+     */
+    static Boolean playerSlots(ClassNode screen, Map<String, ClassNode> nodes) {
+        String menu = menuOf(screen, nodes);
+        ClassNode owner = menu == null ? null : nodes.get(menu);
+        if (owner == null || owner.methods == null) return null;
+        int found = 0;
+        java.util.Set<MethodNode> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (MethodNode ctor : owner.methods) {
+            if ("<init>".equals(ctor.name)) found = Math.max(found, inventorySlots(owner, ctor, nodes, visited));
+            if (found == 2) break;
+        }
+        return found == 2 ? Boolean.TRUE : found == 1 ? null : Boolean.FALSE;
+    }
+
+    /** The menu class a screen is bound to: its AbstractContainerScreen generic, else a menu-typed constructor argument. */
+    static String menuOf(ClassNode screen, Map<String, ClassNode> nodes) {
+        if (screen.signature != null) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("Screen<L([^;]+);>").matcher(screen.signature);
+            if (m.find()) return m.group(1);
+        }
+        if (screen.methods != null) for (MethodNode ctor : screen.methods) {
+            if (!"<init>".equals(ctor.name) || ctor.desc == null) continue;
+            for (Type arg : Type.getArgumentTypes(ctor.desc)) {
+                if (arg.getSort() != Type.OBJECT) continue;
+                ClassNode candidate = nodes.get(arg.getInternalName());
+                if (candidate != null && isAncestor(candidate, ABSTRACT_MENU, nodes)) return arg.getInternalName();
+            }
+        }
+        return null;
+    }
+
+    /** 2 when a method reachable from the menu builds a Slot over an Inventory, 1 when an Inventory reaches
+     * a call the scan cannot read (a vanilla superclass helper), 0 otherwise. The walk follows every call
+     * that resolves inside the scanned jars, virtual calls from the menu class (so subclass overrides such as
+     * addSlots count), each method once. */
+    private static int inventorySlots(ClassNode root, MethodNode method, Map<String, ClassNode> nodes,
+            java.util.Set<MethodNode> visited) {
+        if (method.instructions == null || method.desc == null || !visited.add(method)) return 0;
+        java.util.Set<Integer> inventoryLocals = new java.util.HashSet<>();
+        int local = (method.access & Opcodes.ACC_STATIC) != 0 ? 0 : 1;
+        for (Type arg : Type.getArgumentTypes(method.desc)) {
+            if (PLAYER_INVENTORY_DESC.equals(arg.getDescriptor())) inventoryLocals.add(local);
+            local += arg.getSize();
+        }
+        int result = 0;
+        for (AbstractInsnNode insn : method.instructions) {
+            if (insn instanceof TypeInsnNode type && insn.getOpcode() == Opcodes.NEW && SLOT.equals(type.desc)) {
+                // The container argument is an expression (player.getInventory()), so any Inventory
+                // producer between the NEW and the Slot constructor's call is the one it receives.
+                AbstractInsnNode end = insn.getNext();
+                while (end != null && !(end instanceof MethodInsnNode init && "<init>".equals(init.name)
+                        && SLOT.equals(init.owner))) end = end.getNext();
+                for (AbstractInsnNode cursor = insn.getNext(); cursor != null && cursor != end; cursor = cursor.getNext()) {
+                    if (isInventory(cursor, inventoryLocals)) return 2;
+                }
+            } else if (insn instanceof MethodInsnNode call && call.desc != null) {
+                MethodNode callee = resolveCall(root, call, nodes);
+                if (callee == null) {
+                    if (call.desc.contains(PLAYER_INVENTORY_DESC) && !nodes.containsKey(call.owner)) result = Math.max(result, 1);
+                    continue;
+                }
+                int r = inventorySlots(root, callee, nodes, visited);
+                if (r == 2) return 2;
+                result = Math.max(result, r);
+            }
+        }
+        return result;
+    }
+
+    /** The jar method a call lands on: virtual calls dispatch from the menu class, static and special calls from their owner. */
+    private static MethodNode resolveCall(ClassNode root, MethodInsnNode call, Map<String, ClassNode> nodes) {
+        if (call.name == null || (call.name.startsWith("<") && !"<init>".equals(call.name))) return null;
+        if (call.getOpcode() == Opcodes.INVOKEVIRTUAL || call.getOpcode() == Opcodes.INVOKEINTERFACE) {
+            for (String cursor = root.name; cursor != null;) {
+                ClassNode cn = nodes.get(cursor);
+                if (cn == null) break;
+                MethodNode m = findMethod(cn, call.name, call.desc);
+                if (m != null && m.instructions != null && m.instructions.size() > 0) return m;
+                cursor = cn.superName;
+            }
+        }
+        for (String cursor = call.owner; cursor != null;) {
+            ClassNode cn = nodes.get(cursor);
+            if (cn == null) break;
+            MethodNode m = findMethod(cn, call.name, call.desc);
+            if (m != null) return m;
+            cursor = cn.superName;
+        }
+        return null;
+    }
+
+    /** The producer of a Slot's container argument is the player's Inventory. */
+    private static boolean isInventory(AbstractInsnNode producer, java.util.Set<Integer> inventoryLocals) {
+        if (producer instanceof VarInsnNode load && load.getOpcode() == Opcodes.ALOAD) {
+            return inventoryLocals.contains(load.var);
+        }
+        if (producer instanceof FieldInsnNode field) return PLAYER_INVENTORY_DESC.equals(field.desc);
+        if (producer instanceof MethodInsnNode call) return call.desc != null && call.desc.endsWith(")" + PLAYER_INVENTORY_DESC);
+        return false;
+    }
+
     /** A screen method that calls a helper (its own or inherited, same jar) which blits a sprite
      * with its own parameters as coordinates draws that sprite too, exactly as Java dispatch does.
      * ToolboxScreen.renderBg calls the inherited renderPlayerInventory(g, x, y), which blits
      * AllGuiTextures.PLAYER_INVENTORY at its parameters: the caller gets that panel as an unresolved
      * (-1, -1) layer, the same floating inventory rule the direct draws use. Only 176-wide sprites
-     * qualify, the vanilla player-inventory panel width. Static aliases (PLAYER = PLAYER_INVENTORY)
+     * qualify when the screen's menu lays out player slots (see playerSlots). Static aliases (PLAYER = PLAYER_INVENTORY)
      * resolve through the screen's clinit. The call-site predicate is kept on the copy. */
     private static void collectCalledHelperLayers(Map<String, ClassNode> nodes, Map<String, Sprite> sprites,
             List<ScreenLayer> layers) {
         if (nodes == null || nodes.isEmpty() || layers == null || sprites == null) return;
         for (ClassNode node : nodes.values()) {
             if (node == null || node.methods == null || !declaresGuiGraphicsMethod(node)) continue;
+            boolean playerSlots = Boolean.TRUE.equals(playerSlots(node, nodes));
             for (MethodNode method : node.methods) {
                 if (method == null || method.instructions == null || method.desc == null
                         || !method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;")) continue;
@@ -2802,7 +2922,7 @@ public final class GuiSpriteBytecodeScanner {
                         Sym receiver = stack.get(3), x = stack.get(1), y = stack.get(0);
                         if (receiver.kind() != Sym.SPRITE || x.kind() == Sym.INT || y.kind() == Sym.INT) continue;
                         Sprite sprite = sprites.get(receiver.sprite());
-                        if (sprite == null || sprite.width != INVENTORY_PANEL_WIDTH) continue;
+                        if (sprite == null || !playerSlots || !isPlayerInventorySprite(sprite)) continue;
                         boolean exists = layers.stream().anyMatch(existing -> existing != null
                                 && node.name.equals(existing.screenClass)
                                 && sprite.owner.equals(existing.spriteOwner)

@@ -31,8 +31,7 @@ public final class ScreenPack {
     private static final int GLYPH_LIMIT = 0xF000;
     /** A glyph must fit the client's 256px font page, with room for its padding. */
     private static final int TILE = 240;
-    /** The vanilla inventory panel's width; its first slot sits at (8, 17). */
-    private static final int INVENTORY_PANEL_WIDTH = 176;
+    /** A floating inventory panel's first player slot sits at (8, 17) inside the panel. */
     private static final String ITEM_MANIFEST = "visual-items.resolved.tsv";
     private static final String CACHE = "screens.tsv";
     private static final String ICONS = "icons.tsv";
@@ -730,7 +729,11 @@ public final class ScreenPack {
                     // Conditional art depends on live state the scan cannot know.
                     if (sprite != null && slashed(l.screenClass).equals(slashed(b.screenClass))
                             && !l.conditional && !l.partialOnly && !l.stretched) {
-                        boolean floating = l.x < 0 && sprite.width == INVENTORY_PANEL_WIDTH;
+                        // Floating: the player-inventory panel (by identity) on a menu that lays out player
+                        // slots. An unknown menu stays non-floating rather than guessing a width.
+                        ModScanner.ScreenInfo owner = info.get(slashed(l.screenClass));
+                        boolean floating = l.x < 0 && owner != null && Boolean.TRUE.equals(owner.playerSlots)
+                                && GuiSpriteBytecodeScanner.isPlayerInventorySprite(sprite);
                         for (Piece p : tiles(sprite, textures, floating ? 0 : l.x, floating ? 0 : l.y, shared, art)) {
                             pieces.add(new Piece(p.glyph(), p.x(), p.y(), p.w(), p.h(), floating));
                         }

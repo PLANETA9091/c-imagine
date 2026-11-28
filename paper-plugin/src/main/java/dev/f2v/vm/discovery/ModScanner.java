@@ -212,6 +212,8 @@ public final class ModScanner {
         public final List<String> menuClasses = new ArrayList<>();
         public int width = -1;
         public int height = -1;
+        /** The menu lays out the player's own inventory slots: TRUE/FALSE, null when unknown. */
+        public Boolean playerSlots;
         /** PNG/resource strings referenced by the screen bytecode, for server-only GUI baking. */
         public final List<String> textureAssets = new ArrayList<>();
     }
@@ -1550,6 +1552,7 @@ public final class ModScanner {
             }
         }
         inferInheritedScreenSize(si, node);
+        si.playerSlots = GuiSpriteBytecodeScanner.playerSlots(node, nodes);
         int[] sharedSize = GuiSpriteBytecodeScanner.screenSizeHint(node, nodes);
         if (si.width <= 0 && sharedSize[0] > 0) si.width = sharedSize[0];
         if (si.height <= 0 && sharedSize[1] > 0) si.height = sharedSize[1];
