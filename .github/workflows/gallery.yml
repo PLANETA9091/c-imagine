@@ -4776,6 +4776,13 @@ jobs:
           # merge the fresh truth manifests (ANY shard's copy of the index /
           # reconciliation file is byte-identical — registry-derived)
           find truth-meta -name 'gallery-*.tsv' -exec cp {} scenes/ \;
+          # THE REGISTRY CENSUS (report-only first flight, the 14-e31
+          # flip-law precedent): registered (the scene-mod census, 7
+          # registries) vs exercised (the merged page manifests). Never
+          # gates; the receipt rides the verdict artifact + the summary.
+          ENTRIES=$(find truth-meta -name 'scene-manifest-entries.tsv' | head -1)
+          python3 scripts/cimscene/registry-census.py --scenes scenes --entries "$ENTRIES" \
+            --json gallery-verdict/registry-census.json | tee gallery-verdict/registry-census.txt
           # merge the boot logs (each shard's exhaustion markers live in its
           # own log; the terminal-marker check must see the union)
           find truth-meta -name 'boot.log' -type f | sort | xargs cat > merged-boot.log
@@ -4873,6 +4880,13 @@ jobs:
               "total_red_rows": total_red_rows,
               "by_block": dict(fam_total.most_common()),
           }
+          # THE REGISTRY CENSUS rides the summary (report-only): the
+          # registered-vs-exercised gap per registry per namespace.
+          try:
+              summary["registry_census"] = json.load(
+                  open('gallery-verdict/registry-census.json'))
+          except Exception as exc:
+              summary["registry_census"] = {"error": str(exc)}
           json.dump(summary, open('gallery-verdict/verdict-summary.json', 'w'), indent=1)
           PY
           exit $GATE
