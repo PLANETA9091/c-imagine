@@ -63,7 +63,7 @@ public final class ModScanner {
     // Bump whenever a newly discovered surface changes runtime behaviour. Keeping the schema
     // coupled to the scanner contract prevents an otherwise-valid jar fingerprint from reviving
     // an older profile that predates Ponder/placeable/UI/spatial metadata.
-    private static final int CACHE_SCHEMA = 89;
+    private static final int CACHE_SCHEMA = 91;
 
     private ModScanner() {}
 
@@ -256,8 +256,30 @@ public final class ModScanner {
 
     // --- scan ----------------------------------------------------------------
 
+    /**
+     * Scans one archive against its dependency context: the sibling jars in the same
+     * directory plus the vanilla archive named by {@code -Df2v.vanillaJar} when that
+     * file exists. Superclasses that live in another jar (a Backpacks screen extending a
+     * Core screen, a vanilla intermediate such as ConfirmScreen) then resolve, so the
+     * Screen and menu checks see the real inheritance chain.
+     */
     public static Profile scan(Path jarPath) throws IOException {
-        return scan(jarPath, null);
+        List<Path> archives = new ArrayList<>();
+        Path dir = jarPath.toAbsolutePath().normalize().getParent();
+        if (dir != null && Files.isDirectory(dir)) {
+            try (java.util.stream.Stream<Path> siblings = Files.list(dir)) {
+                siblings.filter(p -> p.getFileName().toString().endsWith(".jar"))
+                        .sorted().forEach(archives::add);
+            }
+        }
+        String vanilla = System.getProperty("f2v.vanillaJar");
+        if (vanilla != null && !vanilla.isBlank() && Files.isRegularFile(Path.of(vanilla))) {
+            archives.add(Path.of(vanilla));
+        }
+        if (archives.isEmpty()) return scan(jarPath, null);
+        try (CrossJarClassPath classPath = CrossJarClassPath.index(archives)) {
+            return scan(jarPath, classPath);
+        }
     }
 
     /** Reads only archive identity/dependency metadata. Used by ModSetResolver before any
@@ -330,6 +352,7 @@ public final class ModScanner {
             finalizeModVersions(p);
             readServiceProviders(jar, p);
             readSoundsJson(jar, p);
+            addKeyCensus(jarPath, p);
             p.packetCodecs.addAll(PacketCodecBytecodeScanner.scan(graph));
             p.mapPipelines.addAll(MapPipelineBytecodeScanner.scan(graph));
             // Fluid material registrations and their synthetic tint suppliers live in the owning
@@ -463,6 +486,7 @@ public final class ModScanner {
         readManifestMeta(nestedManifest, p);
         readServiceProviders(entries, p);
         readSoundsJson(entries, p);
+        addKeyCensus(archive.bytes(), p);
         p.packetCodecs.addAll(PacketCodecBytecodeScanner.scan(graph));
         p.mapPipelines.addAll(MapPipelineBytecodeScanner.scan(graph));
         p.fluidMaterials.addAll(FluidRenderBytecodeScanner.scan(nodes));
@@ -1053,16 +1077,9 @@ public final class ModScanner {
         // a vanilla client. Their background asset is still useful to the server-side menu bridge.
         boolean screen = isSubclass(node, "net/minecraft/client/gui/screens/inventory/AbstractContainerScreen", nodes)
                 || isSubclass(node, "net/minecraft/client/gui/screens/Screen", nodes);
-        // An unresolved client-library superclass can hide the Screen inheritance chain in a
-        // nested jar. Keep concrete *Screen classes, but never promote every GuiGraphics helper,
-        // widget, row or overlay into a standalone screen asset.
-        String simpleClientName = node.name.substring(node.name.lastIndexOf('/') + 1);
-        // Only when the superclass is UNRESOLVED: a resolved non-Screen parent
-        // (GuiInnerScreen -> GuiScalableElement -> GuiElement) is a widget, not a screen.
-        boolean unresolvedNamedScreen = simpleClientName.endsWith("Screen")
-                && (node.superName == null || !nodes.containsKey(node.superName))
-                && node.methods.stream().anyMatch(method -> method.desc != null
-                && method.desc.contains("Lnet/minecraft/client/gui/GuiGraphics;"));
+        // Only classes that really extend Screen are screens. A name-only guess (a *Screen class
+        // with a GuiGraphics method) promoted widgets that extend GuiElement, so it is gone; the
+        // cross-jar index resolves the chain instead.
         boolean be = isSubclass(node, "net/minecraft/world/level/block/entity/BlockEntity", nodes);
         boolean entity = isSubclass(node, "net/minecraft/world/entity/Entity", nodes);
 
@@ -1076,7 +1093,7 @@ public final class ModScanner {
                 p.menus.add(mi);
             }
         }
-        if ((screen || unresolvedNamedScreen)
+        if (screen
                 && (node.access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) == 0) {
             p.screens.add(analyzeScreen(node, nodes));
         }
@@ -1101,9 +1118,6 @@ public final class ModScanner {
             p.fluids.add(node.name);
         }
         collectRegistryKeys(node, p);
-        // Key mappings are commonly registered from a client setup/event class rather than a
-        // Screen subclass. Scanning only screens made the server-only capture miss most binds.
-        collectKeybinds(node, p);
         collectClientInputActions(node, nodes, p);
     }
 
@@ -1716,37 +1730,29 @@ public final class ModScanner {
         return null;
     }
 
-    private static void collectKeybinds(ClassNode node, Profile p) {
-        Set<String> found = new LinkedHashSet<>();
-        for (FieldNode f : node.fields) {
-            String d = f.desc;
-            if (!d.endsWith("Lcom/mojang/blaze3d/platform/InputConstants$Key;")
-                    && !d.endsWith("Lnet/minecraft/client/KeyMapping;")) {
-                continue;
-            }
-            if (f.value instanceof String s && s.matches("[a-z0-9_.-]+")) {
-                if (dev.f2v.capture.ServerCapture.looksLikeKeybind(s)) found.add(s);
-            }
+    /**
+     * Keybindings come from {@link dev.cim.hud.KeyCensus}, the one generic reader of
+     * KeyMapping registrations: constructors of KeyMapping and its subclasses, builder
+     * chains, enum-constant names resolved through the lang table, and category keys excluded.
+     */
+    private static void addKeyCensus(Path jarPath, Profile p) {
+        try {
+            addKeyCensus(Files.readAllBytes(jarPath), p);
+        } catch (IOException failure) {
+            F2VLog.warn("[vm] keybind census could not read " + jarPath + ": " + failure);
         }
-        for (MethodNode method : node.methods) {
-            for (AbstractInsnNode insn : method.instructions) {
-                if (!(insn instanceof MethodInsnNode call)
-                        || !call.owner.equals("net/minecraft/client/KeyMapping")
-                        || !call.name.equals("<init>")) continue;
-                // The translation name/category are LDC strings immediately before the
-                // constructor. Walk a bounded window and keep key.* but not categories.
-                int remaining = 24;
-                for (AbstractInsnNode previous = insn.getPrevious(); previous != null && remaining-- > 0;
-                     previous = previous.getPrevious()) {
-                    if (previous instanceof LdcInsnNode ldc && ldc.cst instanceof String s
-                            && dev.f2v.capture.ServerCapture.looksLikeKeybind(s)) {
-                        found.add(s);
-                    }
-                }
-            }
+    }
+
+    private static void addKeyCensus(byte[] jar, Profile p) {
+        List<dev.cim.hud.KeyCensus.ModKey> keys;
+        try {
+            keys = dev.cim.hud.KeyCensus.scanJar(jar);
+        } catch (IOException | RuntimeException failure) {
+            F2VLog.warn("[vm] keybind census failed in " + p.modId + ": " + failure);
+            return;
         }
-        for (String key : found) {
-            if (!p.keybindNames.contains(key)) p.keybindNames.add(key);
+        for (dev.cim.hud.KeyCensus.ModKey key : keys) {
+            if (!p.keybindNames.contains(key.id())) p.keybindNames.add(key.id());
         }
     }
 
