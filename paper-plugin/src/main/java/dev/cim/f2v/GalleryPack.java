@@ -1315,6 +1315,15 @@ public final class GalleryPack {
         }
         JsonObject wrapper = new JsonObject();
         wrapper.addProperty("parent", "minecraft:block/block");
+        // THE GUI LIGHT PARITY: the block/block parent inherits
+        // "gui_light": "side", but the TRUTH chain resolves its own value
+        // (item/generated = "front" — flat) and the captured mesh would be
+        // re-shaded by OUR side lighting — the heterogeneous per-item
+        // same-sprite color-off class (the inv lane renders these wrappers
+        // in GUI; display-entity lanes are unaffected by gui_light). The
+        // wrapper carries the chain-resolved value explicitly; the identity
+        // gui display above stays untouched (the #302 size/rotation fix).
+        wrapper.addProperty("gui_light", mg.guiLight());
         // THE GUI IDENTITY (measured on the #302 gal-inv-ae20 pair: the hotbar
         // cube matched at ae 5585 while every main-slot item rendered oversized
         // and rotated — the quad dump captures the item meshes ALREADY in the
@@ -4830,7 +4839,7 @@ public final class GalleryPack {
     /** {@code displayScale}: the shrink an oversized OBJ mesh took to fit the
      *  element limits, undone by the item definition's transformation. */
     private record ModelGraph(Map<String, String> textures, JsonArray elements,
-                              double displayScale) {
+                              double displayScale, String guiLight) {
     }
 
     private static boolean isObjModel(JsonObject json) {
@@ -4996,6 +5005,13 @@ public final class GalleryPack {
         double displayScale = 1;
         String cur = ref;
         int depth = 0;
+        // THE GUI LIGHT CHAIN LAW: vanilla resolves "gui_light" child-over-parent
+        // (the walk here goes child -> parent, so the FIRST level carrying the
+        // key wins), and a chain with the key nowhere rides the model
+        // deserializer default "side". The measured 26.3 vanilla assets carry
+        // the two values that matter: block/block.json = "side",
+        // item/generated.json = "front".
+        String guiLight = null;
         while (cur != null && depth <= 16) {
             depth++;
             // resolve THIS hop: a namespaced ref wins, a bare ref rides the
@@ -5047,6 +5063,9 @@ public final class GalleryPack {
             if (elements == null && (json.has("elements") || json.has("children"))) {
                 elements = mergeModelGeometry(jars, json, "", textures, warnings, 0);
             }
+            if (guiLight == null && json.has("gui_light")) {
+                guiLight = json.get("gui_light").getAsString();
+            }
             if (elements == null && isObjModel(json)) {
                 ObjGeometry g = readObjGeometry(jars, json, warnings);
                 if (g != null) {
@@ -5057,7 +5076,7 @@ public final class GalleryPack {
             cur = json.has("parent") ? json.get("parent").getAsString() : null;
         }
         if (elements == null) {
-            return new ModelGraph(textures, null, 1);
+            return new ModelGraph(textures, null, 1, guiLight == null ? "side" : guiLight);
         }
         // resolve #ref chains to concrete sprite ids
         Map<String, String> resolved = new LinkedHashMap<>();
@@ -5073,7 +5092,8 @@ public final class GalleryPack {
             }
             resolved.put(t.getKey(), v);
         }
-        return new ModelGraph(resolved, elements, displayScale);
+        return new ModelGraph(resolved, elements, displayScale,
+                guiLight == null ? "side" : guiLight);
     }
 
     /**
@@ -5649,7 +5669,8 @@ public final class GalleryPack {
             return null;
         }
         materializeCutouts(jars, mg, entries, warnings);
-        mg = new ModelGraph(resolveTextureChains(mg.textures), mg.elements, mg.displayScale());
+        mg = new ModelGraph(resolveTextureChains(mg.textures), mg.elements, mg.displayScale(),
+                mg.guiLight());
         Map<String, String> textures = hostCompositeTextures(jars, mg, "uv/", true, modelRef, entries, warnings);
         if (textures.isEmpty()) {
             warnings.add("display uv bake without textures: " + modelRef);
