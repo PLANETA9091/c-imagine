@@ -45,6 +45,7 @@ jobs:
           python3 scripts/cimscene/test-wait-scene-marker.py
           python3 scripts/cimscene/test-parity-channels.py
           python3 scripts/cimscene/test-capture-fingerprint.py
+          python3 scripts/cimscene/test-registry-census.py
       - name: client download recovery
         run: |
           python3 scripts/visual/test-fetch-client.py
