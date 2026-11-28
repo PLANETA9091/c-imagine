@@ -278,9 +278,49 @@ public final class ModScanner {
         archives.addAll(VanillaArchives.resolve());
         if (archives.isEmpty()) return scan(jarPath, null);
         NativeClassIndex.ensure(archives, Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize());
+        Path cacheDir = scanCacheDir();
+        // The profile depends on the jar bytes (size:mtime), on the sibling/vanilla classpath it
+        // was resolved against, and on the analyzer build (class identity). A hit skips bytecode
+        // analysis and the cross-jar index entirely; the index is only built on a miss.
+        String key = cacheDir == null ? null
+                : CrossJarClassPath.fingerprintOf(archives) + "-" + buildIdentity();
+        if (cacheDir != null) {
+            Profile hit = cached(jarPath, cacheDir, key);
+            if (hit != null) return hit;
+        }
         // One cross-jar index per archive set for the whole boot: every mod in a directory shares
         // the same sibling list, so the index (and its bounded ClassNode cache) is built once.
-        return scan(jarPath, sharedClassPath(archives));
+        Profile fresh = scan(jarPath, sharedClassPath(archives));
+        if (cacheDir != null) {
+            try {
+                store(jarPath, cacheDir, fresh, key);
+            } catch (RuntimeException failure) {
+                F2VLog.warn("[vm] discovery cache store skipped for " + jarPath.getFileName() + ": " + failure);
+            }
+        }
+        return fresh;
+    }
+
+    /** Profile cache directory; -Df2v.scanCache=off disables it, default is ./cache/modscan. */
+    static Path scanCacheDir() {
+        String configured = System.getProperty("f2v.scanCache");
+        if ("off".equals(configured)) return null;
+        if (configured != null && !configured.isBlank()) return Path.of(configured);
+        return Path.of(System.getProperty("user.dir", ".")).toAbsolutePath().normalize()
+                .resolve("cache").resolve("modscan");
+    }
+
+    private static String buildIdentity() {
+        try {
+            var resource = ModScanner.class.getResource("ModScanner.class");
+            if (resource != null && "file".equals(resource.getProtocol())) {
+                Path classFile = Path.of(resource.toURI());
+                return CACHE_SCHEMA + "b" + Long.toHexString(Files.size(classFile)) + "-"
+                        + Long.toHexString(Files.getLastModifiedTime(classFile).toMillis());
+            }
+        } catch (IOException | java.net.URISyntaxException | RuntimeException ignored) {
+        }
+        return Integer.toString(CACHE_SCHEMA);
     }
 
     private static final Object SHARED_LOCK = new Object();
@@ -1802,7 +1842,7 @@ public final class ModScanner {
     // --- cache + validation ---------------------------------------------------
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Gson CACHE_GSON = new Gson();
+    private static final Gson CACHE_GSON = new GsonBuilder().serializeSpecialFloatingPointValues().create();
 
     /** Returns a cached profile for the jar or null. Fingerprint = size:mtime. */
     public static Profile cached(Path jarPath, Path cacheDir) {

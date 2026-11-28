@@ -39,7 +39,8 @@ import java.util.jar.JarInputStream;
 final class CrossJarClassPath implements AutoCloseable {
     private static final AtomicLong PARSE_WARNINGS = new AtomicLong();
 
-    private record Location(Path archive, String entry) {}
+    /** renames is the obfuscated -> named class map for the vanilla client jar, else null. */
+    private record Location(Path archive, String entry, Map<String, String> renames) {}
 
     private final Map<String, Location> locations;
     private final int parsedLimit = Math.max(64,
@@ -69,8 +70,19 @@ final class CrossJarClassPath implements AutoCloseable {
         LinkedHashMap<String, Location> locations = new LinkedHashMap<>();
         for (Path archive : ordered) {
             try {
-                indexDirect(archive, locations);
-                indexNested(archive, locations);
+                LinkedHashMap<String, Location> local = new LinkedHashMap<>();
+                indexDirect(archive, local);
+                indexNested(archive, local);
+                Map<String, String> renames = JavaClientMapping.forArchive(archive);
+                for (Map.Entry<String, Location> found : local.entrySet()) {
+                    Location location = found.getValue();
+                    String name = found.getKey();
+                    if (renames != null) {
+                        name = renames.getOrDefault(name, name);
+                        location = new Location(location.archive(), location.entry(), renames);
+                    }
+                    locations.putIfAbsent(name, location);
+                }
             } catch (IOException | RuntimeException failure) {
                 if (PARSE_WARNINGS.incrementAndGet() <= 20) {
                     F2VLog.warn("[vm] dependency archive index skipped " + archive + ": " + failure);
@@ -163,6 +175,20 @@ final class CrossJarClassPath implements AutoCloseable {
             ClassReader reader = new ClassReader(bytes);
             ClassNode node = new ClassNode();
             reader.accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+            if (location.renames() != null && node.name != null) {
+                // Obfuscated vanilla jar: rename this/super/interfaces to named internal names, the
+                // same class-level renaming the native index applies (mapping.rs). Members stay obf.
+                node.name = location.renames().getOrDefault(node.name, node.name);
+                if (node.superName != null) {
+                    node.superName = location.renames().getOrDefault(node.superName, node.superName);
+                }
+                if (node.interfaces != null) {
+                    for (int i = 0; i < node.interfaces.size(); i++) {
+                        String iface = node.interfaces.get(i);
+                        node.interfaces.set(i, location.renames().getOrDefault(iface, iface));
+                    }
+                }
+            }
             if (node.name == null) {
                 failed.add(className);
                 return null;
@@ -196,7 +222,7 @@ final class CrossJarClassPath implements AutoCloseable {
             for (JarEntry entry : selected) {
                 String logical = ArchiveClassSelector.logicalPath(entry.getName(), jar.isMultiRelease());
                 String className = className(logical);
-                if (className != null) out.putIfAbsent(className, new Location(archive, entry.getName()));
+                if (className != null) out.putIfAbsent(className, new Location(archive, entry.getName(), null));
             }
         }
     }
@@ -223,7 +249,7 @@ final class CrossJarClassPath implements AutoCloseable {
                 for (String entry : selected) {
                     String logical = ArchiveClassSelector.logicalPath(entry, multiRelease);
                     String className = className(logical);
-                    if (className != null) out.putIfAbsent(className, new Location(compound, entry));
+                    if (className != null) out.putIfAbsent(className, new Location(compound, entry, null));
                 }
             } catch (IOException | RuntimeException failure) {
                 if (PARSE_WARNINGS.incrementAndGet() <= 20) {
@@ -257,6 +283,14 @@ final class CrossJarClassPath implements AutoCloseable {
                     String value = path + "\n" + Files.size(path) + "\n"
                             + Files.getLastModifiedTime(path).toMillis() + "\n";
                     digest.update(value.getBytes(StandardCharsets.UTF_8));
+                    // The obfuscated-name renames come from a sibling mappings file: key on it too.
+                    String mappingName = path.getFileName().toString().replaceFirst("\\.jar$", ".mappings.txt");
+                    Path mappings = path.resolveSibling(mappingName);
+                    if (!mappingName.equals(path.getFileName().toString()) && Files.isRegularFile(mappings)) {
+                        digest.update((mappings + "\n" + Files.size(mappings) + "\n"
+                                + Files.getLastModifiedTime(mappings).toMillis() + "\n")
+                                .getBytes(StandardCharsets.UTF_8));
+                    }
                 } catch (IOException ignored) {
                     digest.update((path + "\nmissing\n").getBytes(StandardCharsets.UTF_8));
                 }

@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.analysis.SourceInterpreter;
 import org.objectweb.asm.tree.analysis.SourceValue;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -34,6 +35,12 @@ final class BytecodeValueFlow {
     private static final int MAX_INSTRUCTIONS = 24_000;
     private static final long MAX_FRAME_CELLS = 1_000_000;
 
+    /** Insertion-ordered immutable copy. Set.copyOf iterates in a per-JVM random order, which made
+     * the emitted condition trees (AND/OR operand order) differ between boots. */
+    static <T> Set<T> orderedCopy(Collection<T> items) {
+        return java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(items));
+    }
+
     record Value(String type, String constructorDesc, Boolean booleanArgument, Integer integer) {
         static Value typed(String type) { return new Value(type, null, null, null); }
         static Value integer(int value) { return new Value(null, null, null, value); }
@@ -51,7 +58,7 @@ final class BytecodeValueFlow {
         this.nodes = nodes == null ? Map.of() : nodes;
     }
 
-    Set<String> warnings() { return Set.copyOf(warnings); }
+    Set<String> warnings() { return orderedCopy(warnings); }
 
     List<Value> argumentValues(ClassNode owner, MethodNode method, MethodInsnNode call, int argument) {
         Analysis analysis = analyze(owner, method);
@@ -86,7 +93,7 @@ final class BytecodeValueFlow {
         }
         SourceValue source = frame.getStack(frame.getStackSize() - arguments.length + argument);
         return source == null || source.insns == null || source.insns.isEmpty()
-                ? Set.of() : Set.copyOf(source.insns);
+                ? Set.of() : orderedCopy(source.insns);
     }
 
     /** Exact producer sets for the two operand-stack values consumed by a binary instruction.
@@ -102,7 +109,7 @@ final class BytecodeValueFlow {
         SourceValue right = frame.getStack(frame.getStackSize() - 1);
         if (left == null || right == null || left.insns == null || right.insns == null
                 || left.insns.isEmpty() || right.insns.isEmpty()) return List.of();
-        return List.of(Set.copyOf(left.insns), Set.copyOf(right.insns));
+        return List.of(orderedCopy(left.insns), orderedCopy(right.insns));
     }
 
     /** Exact producer set for the single operand consumed by a unary conversion/negation. */
@@ -114,7 +121,7 @@ final class BytecodeValueFlow {
         if (frame == null || frame.getStackSize() < 1) return Set.of();
         SourceValue source = frame.getStack(frame.getStackSize() - 1);
         return source == null || source.insns == null || source.insns.isEmpty()
-                ? Set.of() : Set.copyOf(source.insns);
+                ? Set.of() : orderedCopy(source.insns);
     }
 
     /**
@@ -191,7 +198,7 @@ final class BytecodeValueFlow {
         if (receiver < 0) return Set.of();
         SourceValue source = frame.getStack(receiver);
         return source == null || source.insns == null || source.insns.isEmpty()
-                ? Set.of() : Set.copyOf(source.insns);
+                ? Set.of() : orderedCopy(source.insns);
     }
 
     /** Local slot of the method parameter (or local 0 / this) supplying an instance-call receiver. */
@@ -239,7 +246,7 @@ final class BytecodeValueFlow {
         if (frame == null || frame.getStackSize() < 2) return Set.of();
         SourceValue source = frame.getStack(frame.getStackSize() - 1);
         return source == null || source.insns == null || source.insns.isEmpty()
-                ? Set.of() : Set.copyOf(source.insns);
+                ? Set.of() : orderedCopy(source.insns);
     }
 
     /** Local slot supplying the receiver of one PUTFIELD. */
@@ -276,7 +283,7 @@ final class BytecodeValueFlow {
         if (frame == null || frame.getStackSize() < 1) return Set.of();
         SourceValue source = frame.getStack(frame.getStackSize() - 1);
         return source == null || source.insns == null || source.insns.isEmpty()
-                ? Set.of() : Set.copyOf(source.insns);
+                ? Set.of() : orderedCopy(source.insns);
     }
 
     /** Fresh, straight-line varargs initializers. Escaped arrays and conditional stores need a
